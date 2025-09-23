@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -54,6 +55,13 @@ func (o *Out) WriteBytes(bs []byte) int {
 		fmt.Fprintf(os.Stderr, " %x", b)
 	}
 	return 1
+}
+
+func (o *Out) PrependBytes(bs []byte) {
+	var newBuf bytes.Buffer
+	newBuf.Write(bs)
+	newBuf.Write(o.buf.Bytes())
+	o.buf = newBuf
 }
 
 func (o *Out) WriteUnsigned(i uint) int {
