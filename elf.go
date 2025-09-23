@@ -33,15 +33,15 @@ func (o *Out) WriteELF(codeSize int) error {
 	o.Write2(sectionHeaderTableEntryIndex)
 
 	// Program header
-	o.Write4(1)                         // PT_LOAD
-	o.Write4(5)                         // flags: PF_X | PF_R (executable + readable)
-	o.Write8u(0)                        // offset in file
-	o.Write8u(baseAddr)                 // virtual address
-	o.Write8u(baseAddr)                 // physical address
+	o.Write4(1)         // PT_LOAD
+	o.Write4(5)         // flags: PF_X | PF_R (executable + readable)
+	o.Write8u(0)        // offset in file
+	o.Write8u(baseAddr) // virtual address
+	o.Write8u(baseAddr) // physical address
 	fileSize := uint64(headerSize + codeSize)
-	o.Write8u(fileSize)                 // size in file
-	o.Write8u(fileSize)                 // size in memory
-	o.Write8u(0x1000)                   // alignment
+	o.Write8u(fileSize) // size in file
+	o.Write8u(fileSize) // size in memory
+	o.Write8u(0x1000)   // alignment
 
 	return nil
 }
