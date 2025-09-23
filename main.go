@@ -11,9 +11,24 @@ import (
 
 const platform = "x86_64"
 
+type Writer interface {
+	Write(b byte) int
+	WriteN(b byte, n int) int
+	Write2(b byte) int
+	Write4(b byte) int
+	Write8(b byte) int
+	Write8u(v uint64) int
+	WriteBytes(bs []byte) int
+	WriteUnsigned(i uint) int
+}
+
 type Const struct {
 	value string
 	addr  uint64
+}
+
+type BufferWrapper struct {
+	buf *bytes.Buffer
 }
 
 type ExecutableBuilder struct {
@@ -23,17 +38,29 @@ type ExecutableBuilder struct {
 	elf, bss, text bytes.Buffer // The ELF header, .bss and .text sections, as bytes
 }
 
+func (eb *ExecutableBuilder) ELFWriter() Writer {
+	return &BufferWrapper{&eb.elf}
+}
+
+func (eb *ExecutableBuilder) BSSWriter() Writer {
+	return &BufferWrapper{&eb.bss}
+}
+
+func (eb *ExecutableBuilder) TextWriter() Writer {
+	return &BufferWrapper{&eb.text}
+}
+
 func New() *ExecutableBuilder {
-	return &ExecutableBuilder {
-		platform = platform,
-		consts = make(map[string]*Const),
+	return &ExecutableBuilder{
+		platform: platform,
+		consts:   make(map[string]*Const),
 	}
 }
 
-var globalLookup = map[string]} string{
+var globalLookup = map[string]string{
 	"SYS_WRITE": "1",
-	"SYS_EXIT": "60",
-	"STDOUT": "1",
+	"SYS_EXIT":  "60",
+	"STDOUT":    "1",
 }
 
 func (eb *ExecutableBuilder) Lookup(what string) string {
@@ -47,7 +74,11 @@ func (eb *ExecutableBuilder) Lookup(what string) string {
 }
 
 func (eb *ExecutableBuilder) Bytes() []byte {
-	return eb.buf.Bytes()
+	var result bytes.Buffer
+	result.Write(eb.elf.Bytes())
+	result.Write(eb.bss.Bytes())
+	result.Write(eb.text.Bytes())
+	return result.Bytes()
 }
 
 func (eb *ExecutableBuilder) Define(symbol, value string) {
@@ -77,8 +108,8 @@ func (eb *ExecutableBuilder) BssSize() int {
 }
 
 func (eb *ExecutableBuilder) SysWrite(what_data string, what_data_len ...string) {
-	eb.Emit("mov rax, " + GlobalLookup("SYS_WRITE"))
-	eb.Emit("mov rdi, " + GlobalLookup("STDOUT"))
+	eb.Emit("mov rax, " + eb.Lookup("SYS_WRITE"))
+	eb.Emit("mov rdi, " + eb.Lookup("STDOUT"))
 	eb.Emit("mov rsi, " + what_data)
 	if len(what_data_len) == 0 {
 		if c, ok := eb.consts[what_data]; ok {
@@ -91,7 +122,7 @@ func (eb *ExecutableBuilder) SysWrite(what_data string, what_data_len ...string)
 }
 
 func (eb *ExecutableBuilder) SysExit(code ...string) {
-	eb.Emit("mov rax, " + GlobalLookup("SYS_EXIT"))
+	eb.Emit("mov rax, " + eb.Lookup("SYS_EXIT"))
 	if len(code) == 0 {
 		eb.Emit("mov rdi, 0")
 	} else {
@@ -100,20 +131,24 @@ func (eb *ExecutableBuilder) SysExit(code ...string) {
 	eb.Emit("syscall")
 }
 
+func (eb *ExecutableBuilder) AddBSS(data []byte) {
+	eb.bss.Write(data)
+}
+
 func main() {
-	eb := NewExecutableBuilder()
+	eb := New()
 
 	// Define constants
 	eb.Define("hello", "Hello, World!\n")
 
 	// Prepare the .bss section
-	bssSymbols, bssSize := eb.BssSection()
+	bssSymbols := eb.BssSection()
 	bssAddr := baseAddr + headerSize
 	currentAddr := uint64(bssAddr)
 	for symbol, data := range bssSymbols {
 		eb.DefineAddr(symbol, currentAddr)
 		currentAddr += uint64(len(data))
-		eb.WriteBSS([]byte(data))
+		eb.AddBSS([]byte(data))
 	}
 
 	// Write .text section
@@ -121,7 +156,7 @@ func main() {
 	eb.SysExit()
 
 	// Write the ELF header
-	eb.WriteELFHeader(eb.bss.Len(), eb.text.Len())
+	eb.AddELFHeader()
 
 	// Output the executable file
 	const filename = "hello"
