@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -58,27 +57,13 @@ func (o *Out) WriteBytes(bs []byte) int {
 }
 
 func (o *Out) WriteUnsigned(i uint) int {
-	n := 0
-	if i >= 0 && i <= math.MaxUint8 {
-		o.buf.Write([]byte{byte(i), 0, 0, 0})
-		fmt.Fprintf(os.Stderr, " %x %x %x %x", i, 0, 0, 0)
-		n = 4
-	} else if i >= 0 && i <= math.MaxUint16 {
-		a := i & 0x0fff
-		b := i & 0xf000
-		o.buf.Write([]byte{byte(a), byte(b), 0, 0})
-		fmt.Fprintf(os.Stderr, " %x %x %x %x", a, b, 0, 0)
-		n = 4
-	} else if i >= 0 && i < math.MaxUint32 {
-		a := i & 0x0fff
-		b := i & 0xf0ff
-		c := i & 0xff0f
-		d := i & 0xfff0
-		o.buf.Write([]byte{byte(a), byte(b), byte(c), byte(d)})
-		fmt.Fprintf(os.Stderr, " %x %x %x %x", a, b, c, d)
-		n = 4
-	}
-	return n
+	a := byte(i & 0xff)
+	b := byte((i >> 8) & 0xff)
+	c := byte((i >> 16) & 0xff)
+	d := byte((i >> 24) & 0xff)
+	o.buf.Write([]byte{a, b, c, d})
+	fmt.Fprintf(os.Stderr, " %x %x %x %x", a, b, c, d)
+	return 4
 }
 
 func (o *Out) Emit(assembly string) error {
