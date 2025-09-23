@@ -7,86 +7,125 @@ import (
 	"strconv"
 )
 
-// A C compiler written in GO
+// A tiny compiler for x86_64 ELF files for Linux
 
-type Out struct {
+const platform = "x86_64"
+
+type Const struct {
+	value string
+	addr  uint64
+}
+
+type ExecutableBuilder struct {
 	platform string
-	env      map[string]string
-	buf      bytes.Buffer
+	consts   map[string]*Const
+
+	elf, bss, text bytes.Buffer // The ELF header, .bss and .text sections, as bytes
 }
 
-func New(platform string) *Out {
-	var o Out
-	o.env = make(map[string]string)
-	o.platform = platform
-	return &o
-}
-
-func GlobalLookup(what string) string {
-	switch what {
-	case "SYS_WRITE":
-		return "1"
-	case "SYS_EXIT":
-		return "60"
-	case "STDOUT":
-		return "1"
+func New() *ExecutableBuilder {
+	return &ExecutableBuilder {
+		platform = platform,
+		consts = make(map[string]*Const),
 	}
-	return ""
 }
 
-func (o *Out) Lookup(what string) string {
-	if v := GlobalLookup(what); v != "" {
+var globalLookup = map[string]} string{
+	"SYS_WRITE": "1",
+	"SYS_EXIT": "60",
+	"STDOUT": "1",
+}
+
+func (eb *ExecutableBuilder) Lookup(what string) string {
+	if v, ok := globalLookup[what]; ok {
 		return v
 	}
-	if v, ok := o.env[what]; ok {
-		return v
+	if c, ok := eb.consts[what]; ok {
+		return strconv.FormatUint(c.addr, 10)
 	}
 	return "0"
 }
 
-func (o *Out) Bytes() []byte {
-	return o.buf.Bytes()
+func (eb *ExecutableBuilder) Bytes() []byte {
+	return eb.buf.Bytes()
 }
 
-func (o *Out) Define(symbol, value string) {
-	o.env[symbol] = value
-	o.env[symbol+"_len"] = strconv.Itoa(len(value))
+func (eb *ExecutableBuilder) Define(symbol, value string) {
+	eb.consts[symbol] = &Const{value: value}
 }
 
-func (o *Out) SysWrite(what_data string, what_data_len ...string) {
-	o.Emit("mov rax, " + GlobalLookup("SYS_WRITE"))
-	o.Emit("mov rdi, " + GlobalLookup("STDOUT"))
-	o.Emit("mov rsi, " + what_data)
+func (eb *ExecutableBuilder) DefineAddr(symbol string, addr uint64) {
+	if c, ok := eb.consts[symbol]; ok {
+		c.addr = addr
+	}
+}
+
+func (eb *ExecutableBuilder) BssSection() map[string]string {
+	bssSymbols := make(map[string]string)
+	for name, c := range eb.consts {
+		bssSymbols[name] = c.value
+	}
+	return bssSymbols
+}
+
+func (eb *ExecutableBuilder) BssSize() int {
+	size := 0
+	for _, data := range eb.BssSection() {
+		size += len(data)
+	}
+	return size
+}
+
+func (eb *ExecutableBuilder) SysWrite(what_data string, what_data_len ...string) {
+	eb.Emit("mov rax, " + GlobalLookup("SYS_WRITE"))
+	eb.Emit("mov rdi, " + GlobalLookup("STDOUT"))
+	eb.Emit("mov rsi, " + what_data)
 	if len(what_data_len) == 0 {
-		o.Emit("mov rdx, " + what_data + "_len")
+		if c, ok := eb.consts[what_data]; ok {
+			eb.Emit("mov rdx, " + strconv.Itoa(len(c.value)))
+		}
 	} else {
-		o.Emit("mov rdx, " + what_data_len[0])
+		eb.Emit("mov rdx, " + what_data_len[0])
 	}
-	o.Emit("syscall")
+	eb.Emit("syscall")
 }
 
-func (o *Out) SysExit(code ...string) {
-	o.Emit("mov rax, " + GlobalLookup("SYS_EXIT"))
+func (eb *ExecutableBuilder) SysExit(code ...string) {
+	eb.Emit("mov rax, " + GlobalLookup("SYS_EXIT"))
 	if len(code) == 0 {
-		o.Emit("mov rdi, 0")
+		eb.Emit("mov rdi, 0")
 	} else {
-		o.Emit("mov rdi, " + code[0])
+		eb.Emit("mov rdi, " + code[0])
 	}
-	o.Emit("syscall")
+	eb.Emit("syscall")
 }
 
 func main() {
-	o := New("x86_64")
-	o.Define("hello", "Hello, World!")
-	o.SysWrite("hello")
-	o.SysExit()
-	codeStart := o.buf.Len()
+	eb := NewExecutableBuilder()
 
-	o2 := New("x86_64")
-	o2.WriteBytes(o.buf.Bytes())
-	o2.WriteELF(codeStart)
+	// Define constants
+	eb.Define("hello", "Hello, World!\n")
 
-	err := os.WriteFile("hello", o2.Bytes(), 0o755)
+	// Prepare the .bss section
+	bssSymbols, bssSize := eb.BssSection()
+	bssAddr := baseAddr + headerSize
+	currentAddr := uint64(bssAddr)
+	for symbol, data := range bssSymbols {
+		eb.DefineAddr(symbol, currentAddr)
+		currentAddr += uint64(len(data))
+		eb.WriteBSS([]byte(data))
+	}
+
+	// Write .text section
+	eb.SysWrite("hello")
+	eb.SysExit()
+
+	// Write the ELF header
+	eb.WriteELFHeader(eb.bss.Len(), eb.text.Len())
+
+	// Output the executable file
+	const filename = "hello"
+	err := os.WriteFile(filename, eb.Bytes(), 0o755)
 	if err != nil {
 		log.Fatalln(err)
 	}
