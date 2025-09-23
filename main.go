@@ -2,14 +2,27 @@ package main
 
 import (
 	"bytes"
+	"flag"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
+	"strings"
 )
 
-// A tiny compiler for x86_64 ELF files for Linux
+// A tiny compiler for x86_64, aarch64, and riscv64 ELF files for Linux
 
-const platform = "x86_64"
+func normalizeMachine(machine string) (string, error) {
+	switch strings.ToLower(machine) {
+	case "x86_64", "amd64":
+		return "x86_64", nil
+	case "arm64", "aarch64":
+		return "aarch64", nil
+	case "riscv64", "riscv", "rv64":
+		return "riscv64", nil
+	}
+	return "", fmt.Errorf("unsupported machine architecture: %s (supported: x86_64, amd64, arm64, aarch64, riscv64, riscv, rv64)", machine)
+}
 
 type Writer interface {
 	Write(b byte) int
@@ -50,7 +63,7 @@ func (eb *ExecutableBuilder) TextWriter() Writer {
 	return &BufferWrapper{&eb.text}
 }
 
-func New() *ExecutableBuilder {
+func New(platform string) *ExecutableBuilder {
 	return &ExecutableBuilder{
 		platform: platform,
 		consts:   make(map[string]*Const),
@@ -108,35 +121,94 @@ func (eb *ExecutableBuilder) BssSize() int {
 }
 
 func (eb *ExecutableBuilder) SysWrite(what_data string, what_data_len ...string) {
-	eb.Emit("mov rax, " + eb.Lookup("SYS_WRITE"))
-	eb.Emit("mov rdi, " + eb.Lookup("STDOUT"))
-	eb.Emit("mov rsi, " + what_data)
-	if len(what_data_len) == 0 {
-		if c, ok := eb.consts[what_data]; ok {
-			eb.Emit("mov rdx, " + strconv.Itoa(len(c.value)))
+	switch eb.platform {
+	case "x86_64":
+		eb.Emit("mov rax, " + eb.Lookup("SYS_WRITE"))
+		eb.Emit("mov rdi, " + eb.Lookup("STDOUT"))
+		eb.Emit("mov rsi, " + what_data)
+		if len(what_data_len) == 0 {
+			if c, ok := eb.consts[what_data]; ok {
+				eb.Emit("mov rdx, " + strconv.Itoa(len(c.value)))
+			}
+		} else {
+			eb.Emit("mov rdx, " + what_data_len[0])
 		}
-	} else {
-		eb.Emit("mov rdx, " + what_data_len[0])
+	case "aarch64":
+		eb.Emit("mov x8, " + eb.Lookup("SYS_WRITE"))
+		eb.Emit("mov x0, " + eb.Lookup("STDOUT"))
+		eb.Emit("mov x1, " + what_data)
+		if len(what_data_len) == 0 {
+			if c, ok := eb.consts[what_data]; ok {
+				eb.Emit("mov x2, " + strconv.Itoa(len(c.value)))
+			}
+		} else {
+			eb.Emit("mov x2, " + what_data_len[0])
+		}
+	case "riscv64":
+		eb.Emit("mov a7, " + eb.Lookup("SYS_WRITE"))
+		eb.Emit("mov a0, " + eb.Lookup("STDOUT"))
+		eb.Emit("mov a1, " + what_data)
+		if len(what_data_len) == 0 {
+			if c, ok := eb.consts[what_data]; ok {
+				eb.Emit("mov a2, " + strconv.Itoa(len(c.value)))
+			}
+		} else {
+			eb.Emit("mov a2, " + what_data_len[0])
+		}
 	}
 	eb.Emit("syscall")
 }
 
 func (eb *ExecutableBuilder) SysExit(code ...string) {
-	eb.Emit("mov rax, " + eb.Lookup("SYS_EXIT"))
-	if len(code) == 0 {
-		eb.Emit("mov rdi, 0")
-	} else {
-		eb.Emit("mov rdi, " + code[0])
+	switch eb.platform {
+	case "x86_64":
+		eb.Emit("mov rax, " + eb.Lookup("SYS_EXIT"))
+		if len(code) == 0 {
+			eb.Emit("mov rdi, 0")
+		} else {
+			eb.Emit("mov rdi, " + code[0])
+		}
+	case "aarch64":
+		eb.Emit("mov x8, " + eb.Lookup("SYS_EXIT"))
+		if len(code) == 0 {
+			eb.Emit("mov x0, 0")
+		} else {
+			eb.Emit("mov x0, " + code[0])
+		}
+	case "riscv64":
+		eb.Emit("mov a7, " + eb.Lookup("SYS_EXIT"))
+		if len(code) == 0 {
+			eb.Emit("mov a0, 0")
+		} else {
+			eb.Emit("mov a0, " + code[0])
+		}
 	}
 	eb.Emit("syscall")
 }
 
-func (eb *ExecutableBuilder) AddBSS(data []byte) {
+func (eb *ExecutableBuilder) WriteBSS(data []byte) {
 	eb.bss.Write(data)
 }
 
 func main() {
-	eb := New()
+	var machine = flag.String("m", "x86_64", "target machine architecture (x86_64, amd64, arm64, aarch64, riscv64, riscv, rv64)")
+	var machineLong = flag.String("machine", "x86_64", "target machine architecture (x86_64, amd64, arm64, aarch64, riscv64, riscv, rv64)")
+	var filename = "a.out"
+
+	flag.Parse()
+
+	// Use whichever flag was specified (prefer short form if both given)
+	targetMachine := *machine
+	if *machineLong != "x86_64" {
+		targetMachine = *machineLong
+	}
+
+	platform, err := normalizeMachine(targetMachine)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	eb := New(platform)
 
 	// Define constants
 	eb.Define("hello", "Hello, World!\n")
@@ -148,7 +220,7 @@ func main() {
 	for symbol, data := range bssSymbols {
 		eb.DefineAddr(symbol, currentAddr)
 		currentAddr += uint64(len(data))
-		eb.AddBSS([]byte(data))
+		eb.WriteBSS([]byte(data))
 	}
 
 	// Write .text section
@@ -156,12 +228,9 @@ func main() {
 	eb.SysExit()
 
 	// Write the ELF header
-	eb.AddELFHeader()
+	eb.WriteELFHeader()
 
-	// Output the executable file
-	const filename = "hello"
-	err := os.WriteFile(filename, eb.Bytes(), 0o755)
-	if err != nil {
+	if err := os.WriteFile(filename, eb.Bytes(), 0o755); err != nil {
 		log.Fatalln(err)
 	}
 }

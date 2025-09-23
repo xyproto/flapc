@@ -89,38 +89,93 @@ func (eb *ExecutableBuilder) Emit(assembly string) error {
 		switch head {
 		case "syscall":
 			fmt.Fprint(os.Stderr, assembly+":")
-			w.Write(0x0f)
-			w.Write(0x05)
+			switch eb.platform {
+			case "x86_64":
+				w.Write(0x0f) // syscall instruction for x86_64
+				w.Write(0x05)
+			case "aarch64":
+				w.Write(0xd4) // svc #0 instruction for aarch64
+				w.Write(0x00)
+				w.Write(0x00)
+				w.Write(0x01)
+			case "riscv64":
+				w.Write(0x73) // ecall instruction for riscv64
+				w.Write(0x00)
+				w.Write(0x00)
+				w.Write(0x00)
+			}
 			fmt.Fprintln(os.Stderr)
 		}
 	} else if len(all) == 3 {
 		switch head {
 		case "mov":
 			fmt.Fprint(os.Stderr, assembly+":")
-			w.Write(0x48)
-			w.Write(0xc7)
 			dest := strings.TrimSuffix(strings.TrimSpace(tail[0]), ",")
-			switch dest {
-			case "rax":
-				w.Write(0xc0)
-			case "rbx":
-				w.Write(0xc3)
-			case "rcx":
-				w.Write(0xc1)
-			case "rdx":
-				w.Write(0xc2)
-			case "rdi":
-				w.Write(0xc7)
-			case "rsi":
-				w.Write(0xc6)
-			}
 			val := strings.TrimSpace(tail[1])
-			if n, err := strconv.Atoi(val); err == nil { // success
-				w.WriteUnsigned(uint(n))
-			} else {
-				addr := eb.Lookup(val)
-				if n, err := strconv.Atoi(addr); err == nil { // success
+
+			switch eb.platform {
+			case "x86_64":
+				w.Write(0x48)
+				w.Write(0xc7)
+				switch dest {
+				case "rax":
+					w.Write(0xc0)
+				case "rbx":
+					w.Write(0xc3)
+				case "rcx":
+					w.Write(0xc1)
+				case "rdx":
+					w.Write(0xc2)
+				case "rdi":
+					w.Write(0xc7)
+				case "rsi":
+					w.Write(0xc6)
+				}
+				if n, err := strconv.Atoi(val); err == nil {
 					w.WriteUnsigned(uint(n))
+				} else {
+					addr := eb.Lookup(val)
+					if n, err := strconv.Atoi(addr); err == nil {
+						w.WriteUnsigned(uint(n))
+					}
+				}
+			case "aarch64":
+				// For aarch64, we'll emit mov immediate instructions
+				// This is a simplified implementation
+				switch dest {
+				case "x8", "x0", "x1", "x2": // Common ARM64 registers for syscalls
+					w.Write(0xd2) // mov immediate instruction family
+					w.Write(0x80) // placeholder for now
+					w.Write(0x00)
+					w.Write(0x08) // placeholder register encoding
+				}
+				// For now, just write a placeholder value
+				if n, err := strconv.Atoi(val); err == nil {
+					w.WriteUnsigned(uint(n))
+				} else {
+					addr := eb.Lookup(val)
+					if n, err := strconv.Atoi(addr); err == nil {
+						w.WriteUnsigned(uint(n))
+					}
+				}
+			case "riscv64":
+				// For riscv64, we'll emit addi instructions (load immediate)
+				// This is a simplified implementation
+				switch dest {
+				case "a7", "a0", "a1", "a2": // Common RISC-V registers for syscalls
+					w.Write(0x13) // addi instruction family
+					w.Write(0x08) // placeholder for now
+					w.Write(0x00)
+					w.Write(0x00) // placeholder register encoding
+				}
+				// For now, just write a placeholder value
+				if n, err := strconv.Atoi(val); err == nil {
+					w.WriteUnsigned(uint(n))
+				} else {
+					addr := eb.Lookup(val)
+					if n, err := strconv.Atoi(addr); err == nil {
+						w.WriteUnsigned(uint(n))
+					}
 				}
 			}
 			fmt.Fprintln(os.Stderr)

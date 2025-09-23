@@ -1,9 +1,13 @@
 package main
 
-const baseAddr = 0x400000  // virtual base address
-const headerSize = 64 + 56 // ELF + header size
+import "fmt"
 
-func (eb *ExecutableBuilder) AddELFHeader() error {
+const (
+	baseAddr   = 0x400000 // virtual base address
+	headerSize = 64 + 56  // ELF + header size
+)
+
+func (eb *ExecutableBuilder) WriteELFHeader() error {
 	w := eb.ELFWriter()
 	bssSize := eb.bss.Len()
 	codeSize := eb.text.Len()
@@ -20,9 +24,23 @@ func (eb *ExecutableBuilder) AddELFHeader() error {
 	w.Write(3)     // ABI version, dynamic linker version
 	w.WriteN(0, 7) // zero padding, length of 7
 	w.Write2(2)    // object file type: executable
-	w.Write2(0x3e) // machine (AMD x86-64), ARM64 is 0xB7, RISC-V is 0xF3
-	w.Write4(1)    // original ELF version (?)
+
+	// Machine type - platform specific
+	switch eb.platform {
+	case "x86_64":
+		w.Write2(0x3e) // AMD x86-64
+	case "aarch64":
+		w.Write2(0xB7) // ARM64
+	case "riscv64":
+		w.Write2(0xF3) // RISC-V
+	default:
+		return fmt.Errorf("Unsupported platform for ELF generation: %s", eb.platform)
+	}
+
+	w.Write4(1) // original ELF version (?)
+
 	entry := uint64(baseAddr + headerSize + bssSize)
+
 	w.Write8u(entry)                    // address of entry point
 	w.Write8(0x40)                      // program header table
 	const sectionAddr = 0x40 + 0x38     // right after ELF header + program header
@@ -35,7 +53,7 @@ func (eb *ExecutableBuilder) AddELFHeader() error {
 	w.Write2(0x40)                      // size of a section header table entry
 	const sectionHeaderTableEntries = 0 // 5 for: .text, .data, .bss, .shstrtab, .symtab. Can be 0 for minimal executables.
 	w.Write2(sectionHeaderTableEntries)
-	const sectionHeaderTableEntryIndex = 0 // .shstrtab at index 3, or 0 if there are no sections.
+	const sectionHeaderTableEntryIndex = 0 // .shstrtab at index 3, or 0 if there are no sections
 	w.Write2(sectionHeaderTableEntryIndex)
 
 	// Program header
