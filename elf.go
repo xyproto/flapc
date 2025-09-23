@@ -1,7 +1,5 @@
 package main
 
-import "fmt"
-
 const (
 	baseAddr   = 0x400000 // virtual base address
 	headerSize = 64 + 56  // ELF + header size
@@ -26,16 +24,7 @@ func (eb *ExecutableBuilder) WriteELFHeader() error {
 	w.Write2(2)    // object file type: executable
 
 	// Machine type - platform specific
-	switch eb.machine {
-	case "x86_64":
-		w.Write2(0x3e) // AMD x86-64
-	case "aarch64":
-		w.Write2(0xB7) // ARM64
-	case "riscv64":
-		w.Write2(0xF3) // RISC-V
-	default:
-		return fmt.Errorf("unsupported CPU: %s", eb.machine)
-	}
+	w.Write2(byte(eb.arch.ELFMachineType()))
 
 	w.Write4(1) // original ELF version (?)
 

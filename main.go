@@ -46,6 +46,7 @@ type BufferWrapper struct {
 
 type ExecutableBuilder struct {
 	machine        string
+	arch           Architecture
 	consts         map[string]*Const
 	elf, bss, text bytes.Buffer // The ELF header, .bss and .text sections, as bytes
 }
@@ -62,11 +63,17 @@ func (eb *ExecutableBuilder) TextWriter() Writer {
 	return &BufferWrapper{&eb.text}
 }
 
-func New(machine string) *ExecutableBuilder {
+func New(machine string) (*ExecutableBuilder, error) {
+	arch, err := NewArchitecture(machine)
+	if err != nil {
+		return nil, err
+	}
+
 	return &ExecutableBuilder{
 		machine: machine,
+		arch:    arch,
 		consts:  make(map[string]*Const),
-	}
+	}, nil
 }
 
 var globalLookup = map[string]string{
@@ -119,72 +126,6 @@ func (eb *ExecutableBuilder) BssSize() int {
 	return size
 }
 
-func (eb *ExecutableBuilder) SysWrite(what_data string, what_data_len ...string) {
-	switch eb.machine {
-	case "x86_64":
-		eb.Emit("mov rax, " + eb.Lookup("SYS_WRITE"))
-		eb.Emit("mov rdi, " + eb.Lookup("STDOUT"))
-		eb.Emit("mov rsi, " + what_data)
-		if len(what_data_len) == 0 {
-			if c, ok := eb.consts[what_data]; ok {
-				eb.Emit("mov rdx, " + strconv.Itoa(len(c.value)))
-			}
-		} else {
-			eb.Emit("mov rdx, " + what_data_len[0])
-		}
-	case "aarch64":
-		eb.Emit("mov x8, " + eb.Lookup("SYS_WRITE"))
-		eb.Emit("mov x0, " + eb.Lookup("STDOUT"))
-		eb.Emit("mov x1, " + what_data)
-		if len(what_data_len) == 0 {
-			if c, ok := eb.consts[what_data]; ok {
-				eb.Emit("mov x2, " + strconv.Itoa(len(c.value)))
-			}
-		} else {
-			eb.Emit("mov x2, " + what_data_len[0])
-		}
-	case "riscv64":
-		eb.Emit("mov a7, " + eb.Lookup("SYS_WRITE"))
-		eb.Emit("mov a0, " + eb.Lookup("STDOUT"))
-		eb.Emit("mov a1, " + what_data)
-		if len(what_data_len) == 0 {
-			if c, ok := eb.consts[what_data]; ok {
-				eb.Emit("mov a2, " + strconv.Itoa(len(c.value)))
-			}
-		} else {
-			eb.Emit("mov a2, " + what_data_len[0])
-		}
-	}
-	eb.Emit("syscall")
-}
-
-func (eb *ExecutableBuilder) SysExit(code ...string) {
-	switch eb.machine {
-	case "x86_64":
-		eb.Emit("mov rax, " + eb.Lookup("SYS_EXIT"))
-		if len(code) == 0 {
-			eb.Emit("mov rdi, 0")
-		} else {
-			eb.Emit("mov rdi, " + code[0])
-		}
-	case "aarch64":
-		eb.Emit("mov x8, " + eb.Lookup("SYS_EXIT"))
-		if len(code) == 0 {
-			eb.Emit("mov x0, 0")
-		} else {
-			eb.Emit("mov x0, " + code[0])
-		}
-	case "riscv64":
-		eb.Emit("mov a7, " + eb.Lookup("SYS_EXIT"))
-		if len(code) == 0 {
-			eb.Emit("mov a0, 0")
-		} else {
-			eb.Emit("mov a0, " + code[0])
-		}
-	}
-	eb.Emit("syscall")
-}
-
 func (eb *ExecutableBuilder) WriteBSS(data []byte) {
 	eb.bss.Write(data)
 }
@@ -215,15 +156,18 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	eb := New(platform)
+	eb, err := New(platform)
+	if err != nil {
+		log.Fatalln(err)
+	}
 
 	// If input files are provided, process them; otherwise use default "Hello, World!"
 	if len(inputFiles) > 0 {
 		// Process input source files (.c or .h)
 		for _, file := range inputFiles {
-			if !strings.HasSuffix(file, ".c") && !strings.HasSuffix(file, ".h") {
-				log.Fatalf("Unsupported file type: %s (only .c and .h files are supported)", file)
-			}
+			//if !strings.HasSuffix(file, ".c") && !strings.HasSuffix(file, ".h") {
+			//log.Fatalf("Unsupported file type: %s (only .c and .h files are supported)", file)
+			//}
 			// TODO: Parse and compile the input file
 			log.Printf("Processing input file: %s", file)
 		}
