@@ -32,8 +32,8 @@ func (o *Out) WriteELF() error {
 	size += o.Write2(sectionHeaderTableEntryIndex)
 	o.Write(byte(size))
 
-	psize := 0
-	psize += o.Write4()
+	//psize := 0
+	//psize += o.Write4()
 
 	return nil
 }
