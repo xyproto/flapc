@@ -76,7 +76,15 @@ func (o *Out) Emit(assembly string) error {
 	if len(all) > 1 {
 		tail = all[1:]
 	}
-	if len(all) == 3 {
+	if len(all) == 1 {
+		switch head {
+		case "syscall":
+			fmt.Fprint(os.Stderr, assembly+":")
+			o.Write(0x0f)
+			o.Write(0x05)
+			fmt.Fprintln(os.Stderr)
+		}
+	} else if len(all) == 3 {
 		switch head {
 		case "mov":
 			fmt.Fprint(os.Stderr, assembly+":")
@@ -92,10 +100,19 @@ func (o *Out) Emit(assembly string) error {
 				o.Write(0xc1)
 			case "rdx":
 				o.Write(0xc2)
+			case "rdi":
+				o.Write(0xc7)
+			case "rsi":
+				o.Write(0xc6)
 			}
 			val := strings.TrimSpace(tail[1])
 			if n, err := strconv.Atoi(val); err == nil { // success
 				o.WriteUnsigned(uint(n))
+			} else {
+				addr := o.Lookup(val)
+				if n, err := strconv.Atoi(addr); err == nil { // success
+					o.WriteUnsigned(uint(n))
+				}
 			}
 			fmt.Fprintln(os.Stderr)
 		}
