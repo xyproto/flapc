@@ -1,9 +1,10 @@
 package main
 
 import (
-	"fmt"
+	"bytes"
+	"log"
+	"os"
 	"strconv"
-	"strings"
 )
 
 // A C compiler written in GO
@@ -11,7 +12,7 @@ import (
 type Out struct {
 	platform string
 	env      map[string]string
-	sb       strings.Builder
+	buf      bytes.Buffer
 }
 
 func New(platform string) *Out {
@@ -43,8 +44,8 @@ func (o *Out) Lookup(what string) string {
 	return "0"
 }
 
-func (o *Out) Get() string {
-	return o.sb.String()
+func (o *Out) Bytes() []byte {
+	return o.buf.Bytes()
 }
 
 func (o *Out) Define(symbol, value string) {
@@ -76,8 +77,12 @@ func (o *Out) SysExit(code ...string) {
 
 func main() {
 	o := New("x86_64")
+	o.WriteELF()
 	o.Define("hello", "Hello, World!")
 	o.SysWrite("hello")
 	o.SysExit()
-	fmt.Println(o.Get())
+	err := os.WriteFile("hello", o.Bytes(), 0o755)
+	if err != nil {
+		log.Fatalln(err)
+	}
 }
