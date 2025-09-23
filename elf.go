@@ -1,6 +1,6 @@
 package main
 
-func (o *Out) WriteELF() error {
+func (o *Out) WriteELF(codeSize int) error {
 	// Magic
 	o.Write(0x7f)
 	o.Write(0x45)                       // E
@@ -15,8 +15,9 @@ func (o *Out) WriteELF() error {
 	o.Write2(2)                         // object file type: executable
 	o.Write2(0x3e)                      // machine (AMD x86-64), ARM64 is 0xB7, RISC-V is 0xF3
 	o.Write4(1)                         // original ELF version (?)
-	const startAddr = 0x400078          // .text section start
-	o.Write8u(startAddr)                // address of entry point
+	const baseAddr = 0x400000           // virtual base address
+	const headerSize = 64 + 56          // ELF + header size
+	o.Write8u(baseAddr + headerSize)    // address of entry point
 	o.Write8(0x40)                      // program header table
 	const sectionAddr = 0x40 + 0x38     // right after ELF header + program header
 	o.Write8u(sectionAddr)              // start of section header table

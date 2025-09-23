@@ -49,6 +49,14 @@ func (o *Out) Write8u(v uint64) int {
 	return 8
 }
 
+func (o *Out) WriteBytes(bs []byte) int {
+	o.buf.Write(bs)
+	for _, b := range bs {
+		fmt.Fprintf(os.Stderr, " %x", b)
+	}
+	return 1
+}
+
 func (o *Out) WriteUnsigned(i uint) int {
 	n := 0
 	if i >= 0 && i <= math.MaxUint8 {

@@ -77,11 +77,16 @@ func (o *Out) SysExit(code ...string) {
 
 func main() {
 	o := New("x86_64")
-	o.WriteELF()
 	o.Define("hello", "Hello, World!")
 	o.SysWrite("hello")
 	o.SysExit()
-	err := os.WriteFile("hello", o.Bytes(), 0o755)
+	codeStart := o.buf.Len()
+
+	o2 := New("x86_64")
+	o2.WriteBytes(o.buf.Bytes())
+	o2.WriteELF(codeStart)
+
+	err := os.WriteFile("hello", o2.Bytes(), 0o755)
 	if err != nil {
 		log.Fatalln(err)
 	}
