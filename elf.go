@@ -3,22 +3,23 @@ package main
 const baseAddr = 0x400000  // virtual base address
 const headerSize = 64 + 56 // ELF + header size
 
-func (o *Out) WriteELF(codeSize int) error {
+func (o *Out) WriteELF(bssSize, codeSize int) error {
 	// Magic
 	o.Write(0x7f)
-	o.Write(0x45)                       // E
-	o.Write(0x4c)                       // L
-	o.Write(0x46)                       // F
-	o.Write(2)                          // 64-bit
-	o.Write(1)                          // little endian
-	o.Write(1)                          // ELF version
-	o.Write(3)                          // Linux
-	o.Write(3)                          // ABI version, dynamic linker version
-	o.WriteN(0, 7)                      // zero padding, length of 7
-	o.Write2(2)                         // object file type: executable
-	o.Write2(0x3e)                      // machine (AMD x86-64), ARM64 is 0xB7, RISC-V is 0xF3
-	o.Write4(1)                         // original ELF version (?)
-	o.Write8u(baseAddr + headerSize)    // address of entry point
+	o.Write(0x45)  // E
+	o.Write(0x4c)  // L
+	o.Write(0x46)  // F
+	o.Write(2)     // 64-bit
+	o.Write(1)     // little endian
+	o.Write(1)     // ELF version
+	o.Write(3)     // Linux
+	o.Write(3)     // ABI version, dynamic linker version
+	o.WriteN(0, 7) // zero padding, length of 7
+	o.Write2(2)    // object file type: executable
+	o.Write2(0x3e) // machine (AMD x86-64), ARM64 is 0xB7, RISC-V is 0xF3
+	o.Write4(1)    // original ELF version (?)
+	entry := uint64(baseAddr + headerSize + bssSize)
+	o.Write8u(entry)                    // address of entry point
 	o.Write8(0x40)                      // program header table
 	const sectionAddr = 0x40 + 0x38     // right after ELF header + program header
 	o.Write8u(sectionAddr)              // start of section header table
@@ -39,7 +40,7 @@ func (o *Out) WriteELF(codeSize int) error {
 	o.Write8u(0)        // offset in file
 	o.Write8u(baseAddr) // virtual address
 	o.Write8u(baseAddr) // physical address
-	fileSize := uint64(headerSize + codeSize)
+	fileSize := uint64(headerSize + bssSize + codeSize)
 	o.Write8u(fileSize) // size in file
 	o.Write8u(fileSize) // size in memory
 	o.Write8u(0x1000)   // alignment
