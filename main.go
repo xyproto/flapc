@@ -47,14 +47,6 @@ func (o *Out) Get() string {
 	return o.sb.String()
 }
 
-func (o *Out) Emit(assembly string, comment ...string) {
-	if len(comment) == 0 {
-		o.sb.WriteString(assembly + "\n")
-	} else {
-		o.sb.WriteString(assembly + "\t;\t" + comment[0] + "\n")
-	}
-}
-
 func (o *Out) Define(symbol, value string) {
 	o.env[symbol] = value
 	o.env[symbol+"_len"] = strconv.Itoa(len(value))
