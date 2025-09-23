@@ -15,10 +15,10 @@ func (o *Out) WriteELF() error {
 	o.Write2(0x3e)                      // machine (AMD x86-64), ARM64 is 0xB7, RISC-V is 0xF3
 	o.Write4(1)                         // original ELF version (?)
 	const startAddr = 0x80              // ?
-	o.Write8(startAddr)                 // address of entry point
+	o.Write8u(startAddr)                // address of entry point
 	o.Write8(0x40)                      // program header table
 	const sectionAddr = 0xff            // ?
-	o.Write8(sectionAddr)               // start of section header table
+	o.Write8u(sectionAddr)              // start of section header table
 	o.Write4(0)                         // "interpretation of this field depends on the target architecture"
 	o.Write2(64)                        // size of this ELF header
 	o.Write2(0x38)                      // size of a program header table entry

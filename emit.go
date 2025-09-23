@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -39,6 +40,12 @@ func (o *Out) Write4(b byte) int {
 func (o *Out) Write8(b byte) int {
 	o.buf.Write([]byte{b, 0, 0, 0, 0, 0, 0, 0})
 	fmt.Fprintf(os.Stderr, " %x %x %x %x %x %x %x %x", b, 0, 0, 0, 0, 0, 0, 0)
+	return 8
+}
+
+func (o *Out) Write8u(v uint64) int {
+	binary.Write(&o.buf, binary.LittleEndian, v)
+	fmt.Fprintf(os.Stderr, " %x", v)
 	return 8
 }
 
