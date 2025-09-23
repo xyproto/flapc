@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-var errNoAssembly = errors.New("no assembly given")
+var errNoAssembly = errors.New("no Assembly given")
 
 func (o *Out) Write(b byte) int {
 	o.buf.Write([]byte{b})
