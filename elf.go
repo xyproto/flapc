@@ -26,7 +26,7 @@ func (eb *ExecutableBuilder) WriteELFHeader() error {
 	w.Write2(2)    // object file type: executable
 
 	// Machine type - platform specific
-	switch eb.platform {
+	switch eb.machine {
 	case "x86_64":
 		w.Write2(0x3e) // AMD x86-64
 	case "aarch64":
@@ -34,7 +34,7 @@ func (eb *ExecutableBuilder) WriteELFHeader() error {
 	case "riscv64":
 		w.Write2(0xF3) // RISC-V
 	default:
-		return fmt.Errorf("Unsupported platform for ELF generation: %s", eb.platform)
+		return fmt.Errorf("unsupported CPU: %s", eb.machine)
 	}
 
 	w.Write4(1) // original ELF version (?)

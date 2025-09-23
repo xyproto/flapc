@@ -89,7 +89,7 @@ func (eb *ExecutableBuilder) Emit(assembly string) error {
 		switch head {
 		case "syscall":
 			fmt.Fprint(os.Stderr, assembly+":")
-			switch eb.platform {
+			switch eb.machine {
 			case "x86_64":
 				w.Write(0x0f) // syscall instruction for x86_64
 				w.Write(0x05)
@@ -113,7 +113,7 @@ func (eb *ExecutableBuilder) Emit(assembly string) error {
 			dest := strings.TrimSuffix(strings.TrimSpace(tail[0]), ",")
 			val := strings.TrimSpace(tail[1])
 
-			switch eb.platform {
+			switch eb.machine {
 			case "x86_64":
 				w.Write(0x48)
 				w.Write(0xc7)

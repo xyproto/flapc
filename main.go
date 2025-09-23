@@ -45,9 +45,8 @@ type BufferWrapper struct {
 }
 
 type ExecutableBuilder struct {
-	platform string
-	consts   map[string]*Const
-
+	machine        string
+	consts         map[string]*Const
 	elf, bss, text bytes.Buffer // The ELF header, .bss and .text sections, as bytes
 }
 
@@ -63,10 +62,10 @@ func (eb *ExecutableBuilder) TextWriter() Writer {
 	return &BufferWrapper{&eb.text}
 }
 
-func New(platform string) *ExecutableBuilder {
+func New(machine string) *ExecutableBuilder {
 	return &ExecutableBuilder{
-		platform: platform,
-		consts:   make(map[string]*Const),
+		machine: machine,
+		consts:  make(map[string]*Const),
 	}
 }
 
@@ -121,7 +120,7 @@ func (eb *ExecutableBuilder) BssSize() int {
 }
 
 func (eb *ExecutableBuilder) SysWrite(what_data string, what_data_len ...string) {
-	switch eb.platform {
+	switch eb.machine {
 	case "x86_64":
 		eb.Emit("mov rax, " + eb.Lookup("SYS_WRITE"))
 		eb.Emit("mov rdi, " + eb.Lookup("STDOUT"))
@@ -160,7 +159,7 @@ func (eb *ExecutableBuilder) SysWrite(what_data string, what_data_len ...string)
 }
 
 func (eb *ExecutableBuilder) SysExit(code ...string) {
-	switch eb.platform {
+	switch eb.machine {
 	case "x86_64":
 		eb.Emit("mov rax, " + eb.Lookup("SYS_EXIT"))
 		if len(code) == 0 {
@@ -193,8 +192,8 @@ func (eb *ExecutableBuilder) WriteBSS(data []byte) {
 func main() {
 	var machine = flag.String("m", "x86_64", "target machine architecture (x86_64, amd64, arm64, aarch64, riscv64, riscv, rv64)")
 	var machineLong = flag.String("machine", "x86_64", "target machine architecture (x86_64, amd64, arm64, aarch64, riscv64, riscv, rv64)")
-	var filename = "a.out"
-
+	var output = flag.String("o", "main", "output executable filename")
+	var outputLong = flag.String("output", "main", "output executable filename")
 	flag.Parse()
 
 	// Use whichever flag was specified (prefer short form if both given)
@@ -203,15 +202,37 @@ func main() {
 		targetMachine = *machineLong
 	}
 
+	// Use whichever output flag was specified (prefer short form if both given)
+	outputFile := *output
+	if *outputLong != "main" {
+		outputFile = *outputLong
+	}
+
+	// Get input files from remaining arguments
+	inputFiles := flag.Args()
+
 	platform, err := normalizeMachine(targetMachine)
 	if err != nil {
 		log.Fatalln(err)
 	}
-
 	eb := New(platform)
 
-	// Define constants
-	eb.Define("hello", "Hello, World!\n")
+	// If input files are provided, process them; otherwise use default "Hello, World!"
+	if len(inputFiles) > 0 {
+		// Process input source files (.c or .h)
+		for _, file := range inputFiles {
+			if !strings.HasSuffix(file, ".c") && !strings.HasSuffix(file, ".h") {
+				log.Fatalf("Unsupported file type: %s (only .c and .h files are supported)", file)
+			}
+			// TODO: Parse and compile the input file
+			log.Printf("Processing input file: %s", file)
+		}
+		// For now, still generate the default Hello World
+		eb.Define("hello", "Hello, World!\n")
+	} else {
+		// Default behavior: generate Hello World
+		eb.Define("hello", "Hello, World!\n")
+	}
 
 	// Prepare the .bss section
 	bssSymbols := eb.BssSection()
@@ -230,7 +251,8 @@ func main() {
 	// Write the ELF header
 	eb.WriteELFHeader()
 
-	if err := os.WriteFile(filename, eb.Bytes(), 0o755); err != nil {
+	// Output the executable file
+	if err := os.WriteFile(outputFile, eb.Bytes(), 0o755); err != nil {
 		log.Fatalln(err)
 	}
 }
