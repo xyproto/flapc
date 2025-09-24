@@ -1,5 +1,10 @@
 package main
 
+import (
+	"fmt"
+	"os"
+)
+
 const (
 	baseAddr   = 0x400000 // virtual base address
 	headerSize = 64 + 56  // ELF + header size
@@ -28,6 +33,8 @@ func (eb *ExecutableBuilder) WriteELFHeader() error {
 
 	w.Write4(1) // original ELF version (?)
 
+	fmt.Fprintln(os.Stderr)
+
 	entry := uint64(baseAddr + headerSize + bssSize)
 
 	w.Write8u(entry)                    // address of entry point
@@ -45,6 +52,8 @@ func (eb *ExecutableBuilder) WriteELFHeader() error {
 	const sectionHeaderTableEntryIndex = 0 // .shstrtab at index 3, or 0 if there are no sections
 	w.Write2(sectionHeaderTableEntryIndex)
 
+	fmt.Fprintln(os.Stderr)
+
 	// Program header
 	w.Write4(1)         // PT_LOAD
 	w.Write4(5)         // flags: PF_X | PF_R (executable + readable)
@@ -55,6 +64,8 @@ func (eb *ExecutableBuilder) WriteELFHeader() error {
 	w.Write8u(fileSize) // size in file
 	w.Write8u(fileSize) // size in memory
 	w.Write8u(0x1000)   // alignment
+
+	fmt.Fprintln(os.Stderr)
 
 	return nil
 }

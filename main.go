@@ -12,6 +12,8 @@ import (
 
 // A tiny compiler for x86_64, aarch64, and riscv64 ELF files for Linux
 
+const versionString = "ggg 0.0.1"
+
 func normalizeMachine(machine string) (string, error) {
 	switch strings.ToLower(machine) {
 	case "x86_64", "amd64":
@@ -126,8 +128,9 @@ func (eb *ExecutableBuilder) BssSize() int {
 	return size
 }
 
-func (eb *ExecutableBuilder) WriteBSS(data []byte) {
-	eb.bss.Write(data)
+func (eb *ExecutableBuilder) WriteBSS(data []byte) uint64 {
+	n, _ := eb.bss.Write(data)
+	return uint64(n)
 }
 
 func main() {
@@ -156,41 +159,41 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
+
+	fmt.Fprintf(os.Stderr, "----=[ %s ]=----\n", versionString)
+
 	eb, err := New(platform)
 	if err != nil {
 		log.Fatalln(err)
 	}
 
-	// If input files are provided, process them; otherwise use default "Hello, World!"
 	if len(inputFiles) > 0 {
-		// Process input source files (.c or .h)
 		for _, file := range inputFiles {
-			//if !strings.HasSuffix(file, ".c") && !strings.HasSuffix(file, ".h") {
-			//log.Fatalf("Unsupported file type: %s (only .c and .h files are supported)", file)
-			//}
-			// TODO: Parse and compile the input file
-			log.Printf("Processing input file: %s", file)
+			log.Printf("source file: %s", file)
 		}
-		// For now, still generate the default Hello World
-		eb.Define("hello", "Hello, World!\n")
-	} else {
-		// Default behavior: generate Hello World
-		eb.Define("hello", "Hello, World!\n")
 	}
+
+	eb.Define("hello", "Hello, World!\n")
+
+	fmt.Fprintln(os.Stderr, "-> .bss")
 
 	// Prepare the .bss section
 	bssSymbols := eb.BssSection()
 	bssAddr := baseAddr + headerSize
 	currentAddr := uint64(bssAddr)
-	for symbol, data := range bssSymbols {
+	for symbol, value := range bssSymbols {
 		eb.DefineAddr(symbol, currentAddr)
-		currentAddr += uint64(len(data))
-		eb.WriteBSS([]byte(data))
+		currentAddr += eb.WriteBSS([]byte(value))
+		fmt.Fprintf(os.Stderr, "%s = %q\n", symbol, value)
 	}
+
+	fmt.Fprintln(os.Stderr, "-> .text")
 
 	// Write .text section
 	eb.SysWrite("hello")
 	eb.SysExit()
+
+	fmt.Fprintln(os.Stderr, "-> ELF header")
 
 	// Write the ELF header
 	eb.WriteELFHeader()
