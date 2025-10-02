@@ -196,9 +196,9 @@ func (o *Out) loadARM64RegFromMem(dst, base string, offset int32) {
 		// Use LDR with unsigned offset (must be 8-byte aligned)
 		imm12 := uint32(offset / 8)
 		instr := uint32(0xF9400000) |
-			(imm12 << 10) |                        // imm12
-			(uint32(baseReg.Encoding&31) << 5) |   // Rn (base)
-			uint32(dstReg.Encoding&31)             // Rt (dest)
+			(imm12 << 10) | // imm12
+			(uint32(baseReg.Encoding&31) << 5) | // Rn (base)
+			uint32(dstReg.Encoding&31) // Rt (dest)
 
 		o.Write(uint8(instr & 0xFF))
 		o.Write(uint8((instr >> 8) & 0xFF))
@@ -209,9 +209,9 @@ func (o *Out) loadARM64RegFromMem(dst, base string, offset int32) {
 		// Format: 11 111 0 00 01 0 imm9 00 Rn Rt
 		imm9 := uint32(offset & 0x1FF)
 		instr := uint32(0xF8400000) |
-			(imm9 << 12) |                         // imm9
-			(uint32(baseReg.Encoding&31) << 5) |   // Rn (base)
-			uint32(dstReg.Encoding&31)             // Rt (dest)
+			(imm9 << 12) | // imm9
+			(uint32(baseReg.Encoding&31) << 5) | // Rn (base)
+			uint32(dstReg.Encoding&31) // Rt (dest)
 
 		o.Write(uint8(instr & 0xFF))
 		o.Write(uint8((instr >> 8) & 0xFF))
@@ -241,9 +241,9 @@ func (o *Out) storeARM64RegToMem(src, base string, offset int32) {
 		// Use STR with unsigned offset
 		imm12 := uint32(offset / 8)
 		instr := uint32(0xF9000000) |
-			(imm12 << 10) |                        // imm12
-			(uint32(baseReg.Encoding&31) << 5) |   // Rn (base)
-			uint32(srcReg.Encoding&31)             // Rt (source)
+			(imm12 << 10) | // imm12
+			(uint32(baseReg.Encoding&31) << 5) | // Rn (base)
+			uint32(srcReg.Encoding&31) // Rt (source)
 
 		o.Write(uint8(instr & 0xFF))
 		o.Write(uint8((instr >> 8) & 0xFF))
@@ -254,9 +254,9 @@ func (o *Out) storeARM64RegToMem(src, base string, offset int32) {
 		// Format: 11 111 0 00 00 0 imm9 00 Rn Rt
 		imm9 := uint32(offset & 0x1FF)
 		instr := uint32(0xF8000000) |
-			(imm9 << 12) |                         // imm9
-			(uint32(baseReg.Encoding&31) << 5) |   // Rn (base)
-			uint32(srcReg.Encoding&31)             // Rt (source)
+			(imm9 << 12) | // imm9
+			(uint32(baseReg.Encoding&31) << 5) | // Rn (base)
+			uint32(srcReg.Encoding&31) // Rt (source)
 
 		o.Write(uint8(instr & 0xFF))
 		o.Write(uint8((instr >> 8) & 0xFF))
@@ -292,10 +292,10 @@ func (o *Out) loadRISCVRegFromMem(dst, base string, offset int32) {
 	}
 
 	instr := uint32(0x03) |
-		(3 << 12) |                            // funct3 = 011 (LD)
-		(uint32(offset&0xFFF) << 20) |         // imm[11:0]
-		(uint32(baseReg.Encoding&31) << 15) |  // rs1 (base)
-		(uint32(dstReg.Encoding&31) << 7)      // rd (dest)
+		(3 << 12) | // funct3 = 011 (LD)
+		(uint32(offset&0xFFF) << 20) | // imm[11:0]
+		(uint32(baseReg.Encoding&31) << 15) | // rs1 (base)
+		(uint32(dstReg.Encoding&31) << 7) // rd (dest)
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -327,11 +327,11 @@ func (o *Out) storeRISCVRegToMem(src, base string, offset int32) {
 	imm4_0 := uint32(offset & 0x1F)
 
 	instr := uint32(0x23) |
-		(3 << 12) |                            // funct3 = 011 (SD)
-		(imm11_5 << 25) |                      // imm[11:5]
-		(uint32(srcReg.Encoding&31) << 20) |   // rs2 (source)
-		(uint32(baseReg.Encoding&31) << 15) |  // rs1 (base)
-		(imm4_0 << 7)                          // imm[4:0]
+		(3 << 12) | // funct3 = 011 (SD)
+		(imm11_5 << 25) | // imm[11:5]
+		(uint32(srcReg.Encoding&31) << 20) | // rs2 (source)
+		(uint32(baseReg.Encoding&31) << 15) | // rs1 (base)
+		(imm4_0 << 7) // imm[4:0]
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))

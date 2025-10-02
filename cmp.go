@@ -125,8 +125,8 @@ func (o *Out) cmpARM64RegToReg(src1, src2 string) {
 	// sf=1 (64-bit), shift=00, Rd=31 (XZR)
 	instr := uint32(0xEB000000) | // SUBS base opcode
 		(uint32(src2Reg.Encoding&31) << 16) | // Rm (src2)
-		(uint32(src1Reg.Encoding&31) << 5) |  // Rn (src1)
-		31                                      // Rd = XZR (discard result)
+		(uint32(src1Reg.Encoding&31) << 5) | // Rn (src1)
+		31 // Rd = XZR (discard result)
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -154,9 +154,9 @@ func (o *Out) cmpARM64RegToImm(reg string, imm int64) {
 	// SUBS XZR, Xn, #imm
 	// Format: sf 1 1 10001 shift(2) imm12(12) Rn(5) Rd(5)
 	instr := uint32(0xF1000000) | // SUBS immediate base
-		(uint32(imm&0xFFF) << 10) |        // imm12
+		(uint32(imm&0xFFF) << 10) | // imm12
 		(uint32(regInfo.Encoding&31) << 5) | // Rn
-		31                                    // Rd = XZR
+		31 // Rd = XZR
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -184,7 +184,7 @@ func (o *Out) cmpRISCVRegToReg(src1, src2 string) {
 	instr := uint32(0x40000033) |
 		(uint32(src2Reg.Encoding&31) << 20) | // rs2
 		(uint32(src1Reg.Encoding&31) << 15) | // rs1
-		(5 << 7)                               // rd = t0 (x5)
+		(5 << 7) // rd = t0 (x5)
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -212,9 +212,9 @@ func (o *Out) cmpRISCVRegToImm(reg string, imm int64) {
 	}
 
 	instr := uint32(0x13) |
-		(uint32(negImm&0xFFF) << 20) |        // imm[11:0]
+		(uint32(negImm&0xFFF) << 20) | // imm[11:0]
 		(uint32(regInfo.Encoding&31) << 15) | // rs1
-		(5 << 7)                               // rd = t0 (x5)
+		(5 << 7) // rd = t0 (x5)
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))

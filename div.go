@@ -166,9 +166,9 @@ func (o *Out) divARM64RegByReg(dst, src string) {
 	// Format: sf 0 011010110 Rm 000011 Rn Rd
 	// sf=1 (64-bit), opcode for SDIV
 	instr := uint32(0x9AC00C00) |
-		(uint32(srcReg.Encoding&31) << 16) |  // Rm (divisor)
-		(uint32(dstReg.Encoding&31) << 5) |   // Rn (dividend, same as Rd)
-		uint32(dstReg.Encoding&31)             // Rd (quotient)
+		(uint32(srcReg.Encoding&31) << 16) | // Rm (divisor)
+		(uint32(dstReg.Encoding&31) << 5) | // Rn (dividend, same as Rd)
+		uint32(dstReg.Encoding&31) // Rd (quotient)
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -190,9 +190,9 @@ func (o *Out) divARM64RegByRegToReg(quotient, dividend, divisor string) {
 	fmt.Fprintf(os.Stderr, "sdiv %s, %s, %s:", quotient, dividend, divisor)
 
 	instr := uint32(0x9AC00C00) |
-		(uint32(divisorReg.Encoding&31) << 16) |  // Rm (divisor)
-		(uint32(dividendReg.Encoding&31) << 5) |  // Rn (dividend)
-		uint32(quotientReg.Encoding&31)            // Rd (quotient)
+		(uint32(divisorReg.Encoding&31) << 16) | // Rm (divisor)
+		(uint32(dividendReg.Encoding&31) << 5) | // Rn (dividend)
+		uint32(quotientReg.Encoding&31) // Rd (quotient)
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -259,11 +259,11 @@ func (o *Out) divRISCVRegByReg(dst, src string) {
 
 	// DIV: 0000001 rs2 rs1 100 rd 0110011
 	instr := uint32(0x33) |
-		(4 << 12) |                            // funct3 = 100 (DIV)
-		(1 << 25) |                            // funct7 = 0000001 (M extension)
-		(uint32(srcReg.Encoding&31) << 20) |   // rs2 (divisor)
-		(uint32(dstReg.Encoding&31) << 15) |   // rs1 (dividend, same as rd)
-		(uint32(dstReg.Encoding&31) << 7)      // rd (quotient)
+		(4 << 12) | // funct3 = 100 (DIV)
+		(1 << 25) | // funct7 = 0000001 (M extension)
+		(uint32(srcReg.Encoding&31) << 20) | // rs2 (divisor)
+		(uint32(dstReg.Encoding&31) << 15) | // rs1 (dividend, same as rd)
+		(uint32(dstReg.Encoding&31) << 7) // rd (quotient)
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -285,11 +285,11 @@ func (o *Out) divRISCVRegByRegToReg(quotient, dividend, divisor string) {
 	fmt.Fprintf(os.Stderr, "div %s, %s, %s:", quotient, dividend, divisor)
 
 	instr := uint32(0x33) |
-		(4 << 12) |                             // funct3 = 100 (DIV)
-		(1 << 25) |                             // funct7 = 0000001 (M extension)
+		(4 << 12) | // funct3 = 100 (DIV)
+		(1 << 25) | // funct7 = 0000001 (M extension)
 		(uint32(divisorReg.Encoding&31) << 20) | // rs2 (divisor)
 		(uint32(dividendReg.Encoding&31) << 15) | // rs1 (dividend)
-		(uint32(quotientReg.Encoding&31) << 7)   // rd (quotient)
+		(uint32(quotientReg.Encoding&31) << 7) // rd (quotient)
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -311,11 +311,11 @@ func (o *Out) remRISCVRegByReg(dst, src string) {
 
 	// REM: 0000001 rs2 rs1 110 rd 0110011
 	instr := uint32(0x33) |
-		(6 << 12) |                            // funct3 = 110 (REM)
-		(1 << 25) |                            // funct7 = 0000001 (M extension)
-		(uint32(srcReg.Encoding&31) << 20) |   // rs2 (divisor)
-		(uint32(dstReg.Encoding&31) << 15) |   // rs1 (dividend, same as rd)
-		(uint32(dstReg.Encoding&31) << 7)      // rd (remainder)
+		(6 << 12) | // funct3 = 110 (REM)
+		(1 << 25) | // funct7 = 0000001 (M extension)
+		(uint32(srcReg.Encoding&31) << 20) | // rs2 (divisor)
+		(uint32(dstReg.Encoding&31) << 15) | // rs1 (dividend, same as rd)
+		(uint32(dstReg.Encoding&31) << 7) // rd (remainder)
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -337,11 +337,11 @@ func (o *Out) remRISCVRegByRegToReg(remainder, dividend, divisor string) {
 	fmt.Fprintf(os.Stderr, "rem %s, %s, %s:", remainder, dividend, divisor)
 
 	instr := uint32(0x33) |
-		(6 << 12) |                             // funct3 = 110 (REM)
-		(1 << 25) |                             // funct7 = 0000001 (M extension)
+		(6 << 12) | // funct3 = 110 (REM)
+		(1 << 25) | // funct7 = 0000001 (M extension)
 		(uint32(divisorReg.Encoding&31) << 20) | // rs2 (divisor)
 		(uint32(dividendReg.Encoding&31) << 15) | // rs1 (dividend)
-		(uint32(remainderReg.Encoding&31) << 7)  // rd (remainder)
+		(uint32(remainderReg.Encoding&31) << 7) // rd (remainder)
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))

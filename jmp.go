@@ -17,16 +17,16 @@ import (
 type JumpCondition int
 
 const (
-	JumpEqual JumpCondition = iota          // JE/JZ - equal/zero
-	JumpNotEqual                             // JNE/JNZ - not equal/not zero
-	JumpGreater                              // JG/JNLE - greater (signed)
-	JumpGreaterOrEqual                       // JGE/JNL - greater or equal (signed)
-	JumpLess                                 // JL/JNGE - less (signed)
-	JumpLessOrEqual                          // JLE/JNG - less or equal (signed)
-	JumpAbove                                // JA/JNBE - above (unsigned)
-	JumpAboveOrEqual                         // JAE/JNB - above or equal (unsigned)
-	JumpBelow                                // JB/JNAE - below (unsigned)
-	JumpBelowOrEqual                         // JBE/JNA - below or equal (unsigned)
+	JumpEqual          JumpCondition = iota // JE/JZ - equal/zero
+	JumpNotEqual                            // JNE/JNZ - not equal/not zero
+	JumpGreater                             // JG/JNLE - greater (signed)
+	JumpGreaterOrEqual                      // JGE/JNL - greater or equal (signed)
+	JumpLess                                // JL/JNGE - less (signed)
+	JumpLessOrEqual                         // JLE/JNG - less or equal (signed)
+	JumpAbove                               // JA/JNBE - above (unsigned)
+	JumpAboveOrEqual                        // JAE/JNB - above or equal (unsigned)
+	JumpBelow                               // JB/JNAE - below (unsigned)
+	JumpBelowOrEqual                        // JBE/JNA - below or equal (unsigned)
 )
 
 // JumpConditional generates a conditional jump instruction

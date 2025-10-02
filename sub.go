@@ -136,8 +136,8 @@ func (o *Out) subARM64RegFromReg(dst, src string) {
 	// sf=1 (64-bit), shift=00
 	instr := uint32(0xCB000000) |
 		(uint32(srcReg.Encoding&31) << 16) | // Rm
-		(uint32(dstReg.Encoding&31) << 5) |  // Rn (same as Rd for 2-operand)
-		uint32(dstReg.Encoding&31)            // Rd
+		(uint32(dstReg.Encoding&31) << 5) | // Rn (same as Rd for 2-operand)
+		uint32(dstReg.Encoding&31) // Rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -163,9 +163,9 @@ func (o *Out) subARM64ImmFromReg(dst string, imm int64) {
 
 	// SUB (immediate): sf 1 0 10001 shift(2) imm12 Rn Rd
 	instr := uint32(0xD1000000) |
-		(uint32(imm&0xFFF) << 10) |          // imm12
-		(uint32(dstReg.Encoding&31) << 5) |  // Rn (same as Rd)
-		uint32(dstReg.Encoding&31)            // Rd
+		(uint32(imm&0xFFF) << 10) | // imm12
+		(uint32(dstReg.Encoding&31) << 5) | // Rn (same as Rd)
+		uint32(dstReg.Encoding&31) // Rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -188,8 +188,8 @@ func (o *Out) subARM64RegFromRegToReg(dst, src1, src2 string) {
 
 	instr := uint32(0xCB000000) |
 		(uint32(src2Reg.Encoding&31) << 16) | // Rm
-		(uint32(src1Reg.Encoding&31) << 5) |  // Rn
-		uint32(dstReg.Encoding&31)             // Rd
+		(uint32(src1Reg.Encoding&31) << 5) | // Rn
+		uint32(dstReg.Encoding&31) // Rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -213,7 +213,7 @@ func (o *Out) subRISCVRegFromReg(dst, src string) {
 	instr := uint32(0x40000033) |
 		(uint32(srcReg.Encoding&31) << 20) | // rs2
 		(uint32(dstReg.Encoding&31) << 15) | // rs1 (same as rd)
-		(uint32(dstReg.Encoding&31) << 7)    // rd
+		(uint32(dstReg.Encoding&31) << 7) // rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -240,9 +240,9 @@ func (o *Out) subRISCVImmFromReg(dst string, imm int64) {
 
 	// ADDI with negative immediate: imm[11:0] rs1 000 rd 0010011
 	instr := uint32(0x13) |
-		(uint32(negImm&0xFFF) << 20) |       // imm[11:0]
+		(uint32(negImm&0xFFF) << 20) | // imm[11:0]
 		(uint32(dstReg.Encoding&31) << 15) | // rs1 (same as rd)
-		(uint32(dstReg.Encoding&31) << 7)    // rd
+		(uint32(dstReg.Encoding&31) << 7) // rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -266,7 +266,7 @@ func (o *Out) subRISCVRegFromRegToReg(dst, src1, src2 string) {
 	instr := uint32(0x40000033) |
 		(uint32(src2Reg.Encoding&31) << 20) | // rs2
 		(uint32(src1Reg.Encoding&31) << 15) | // rs1
-		(uint32(dstReg.Encoding&31) << 7)     // rd
+		(uint32(dstReg.Encoding&31) << 7) // rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))

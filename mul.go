@@ -141,9 +141,9 @@ func (o *Out) mulARM64RegWithReg(dst, src string) {
 	// Format: sf 0 011011 000 Rm 0 11111 Rn Rd
 	// This is: MADD Xd, Xn, Xm, XZR (multiply-add with zero = multiply)
 	instr := uint32(0x9B007C00) |
-		(uint32(srcReg.Encoding&31) << 16) |  // Rm
-		(uint32(dstReg.Encoding&31) << 5) |   // Rn (same as Rd for 2-operand)
-		uint32(dstReg.Encoding&31)             // Rd
+		(uint32(srcReg.Encoding&31) << 16) | // Rm
+		(uint32(dstReg.Encoding&31) << 5) | // Rn (same as Rd for 2-operand)
+		uint32(dstReg.Encoding&31) // Rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -166,8 +166,8 @@ func (o *Out) mulARM64RegWithRegToReg(dst, src1, src2 string) {
 
 	instr := uint32(0x9B007C00) |
 		(uint32(src2Reg.Encoding&31) << 16) | // Rm
-		(uint32(src1Reg.Encoding&31) << 5) |  // Rn
-		uint32(dstReg.Encoding&31)             // Rd
+		(uint32(src1Reg.Encoding&31) << 5) | // Rn
+		uint32(dstReg.Encoding&31) // Rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -189,9 +189,9 @@ func (o *Out) mulRISCVRegWithReg(dst, src string) {
 
 	// MUL: 0000001 rs2 rs1 000 rd 0110011
 	instr := uint32(0x2000033) |
-		(uint32(srcReg.Encoding&31) << 20) |  // rs2
-		(uint32(dstReg.Encoding&31) << 15) |  // rs1 (same as rd)
-		(uint32(dstReg.Encoding&31) << 7)     // rd
+		(uint32(srcReg.Encoding&31) << 20) | // rs2
+		(uint32(dstReg.Encoding&31) << 15) | // rs1 (same as rd)
+		(uint32(dstReg.Encoding&31) << 7) // rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -215,7 +215,7 @@ func (o *Out) mulRISCVRegWithRegToReg(dst, src1, src2 string) {
 	instr := uint32(0x2000033) |
 		(uint32(src2Reg.Encoding&31) << 20) | // rs2
 		(uint32(src1Reg.Encoding&31) << 15) | // rs1
-		(uint32(dstReg.Encoding&31) << 7)     // rd
+		(uint32(dstReg.Encoding&31) << 7) // rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))

@@ -160,8 +160,8 @@ func (o *Out) callRISCVRegister(reg string) {
 	// JALR: imm[11:0] rs1 000 rd 1100111
 	// rd = ra (x1), rs1 = target register, imm = 0
 	instr := uint32(0x67) |
-		(1 << 7) |                            // rd = ra (x1)
-		(uint32(regInfo.Encoding&31) << 15)   // rs1 = target
+		(1 << 7) | // rd = ra (x1)
+		(uint32(regInfo.Encoding&31) << 15) // rs1 = target
 	// funct3 = 000, imm = 0
 
 	o.Write(uint8(instr & 0xFF))

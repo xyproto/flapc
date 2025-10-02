@@ -134,8 +134,8 @@ func (o *Out) pushRISCVReg(reg string) {
 	// ADDI sp, sp, -8
 	addiInstr := uint32(0x13) |
 		(uint32(0xFF8&0xFFF) << 20) | // imm = -8
-		(2 << 15) |                    // rs1 = sp (x2)
-		(2 << 7)                       // rd = sp (x2)
+		(2 << 15) | // rs1 = sp (x2)
+		(2 << 7) // rd = sp (x2)
 
 	o.Write(uint8(addiInstr & 0xFF))
 	o.Write(uint8((addiInstr >> 8) & 0xFF))
@@ -145,9 +145,9 @@ func (o *Out) pushRISCVReg(reg string) {
 	// SD reg, 0(sp)
 	// Format: imm[11:5] rs2 rs1 011 imm[4:0] 0100011
 	sdInstr := uint32(0x23) |
-		(3 << 12) |                              // funct3 = 011 (SD)
-		(uint32(regInfo.Encoding&31) << 20) |    // rs2 = source reg
-		(2 << 15)                                // rs1 = sp (x2)
+		(3 << 12) | // funct3 = 011 (SD)
+		(uint32(regInfo.Encoding&31) << 20) | // rs2 = source reg
+		(2 << 15) // rs1 = sp (x2)
 	// imm = 0
 
 	o.Write(uint8(sdInstr & 0xFF))
@@ -170,9 +170,9 @@ func (o *Out) popRISCVReg(reg string) {
 	// LD reg, 0(sp)
 	// Format: imm[11:0] rs1 011 rd 0000011
 	ldInstr := uint32(0x03) |
-		(3 << 12) |                           // funct3 = 011 (LD)
-		(uint32(regInfo.Encoding&31) << 7) |  // rd = dest reg
-		(2 << 15)                             // rs1 = sp (x2)
+		(3 << 12) | // funct3 = 011 (LD)
+		(uint32(regInfo.Encoding&31) << 7) | // rd = dest reg
+		(2 << 15) // rs1 = sp (x2)
 	// imm = 0
 
 	o.Write(uint8(ldInstr & 0xFF))
@@ -184,7 +184,7 @@ func (o *Out) popRISCVReg(reg string) {
 	addiInstr := uint32(0x13) |
 		(8 << 20) | // imm = 8
 		(2 << 15) | // rs1 = sp
-		(2 << 7)    // rd = sp
+		(2 << 7) // rd = sp
 
 	o.Write(uint8(addiInstr & 0xFF))
 	o.Write(uint8((addiInstr >> 8) & 0xFF))
