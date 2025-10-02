@@ -157,46 +157,13 @@ func (dl *DynamicLinker) ImportFunction(libName, funcName string) error {
 	return nil
 }
 
-// GeneratePLTEntry generates PLT (Procedure Linkage Table) entry for a function
+// GeneratePLTEntry is a stub for compatibility with libdef.go
+// Actual PLT generation is handled in elf_complete.go
 func (dl *DynamicLinker) GeneratePLTEntry(eb *ExecutableBuilder, funcName string) error {
-	fn, exists := dl.ImportedFuncs[funcName]
+	_, exists := dl.ImportedFuncs[funcName]
 	if !exists {
 		return fmt.Errorf("function %s not imported", funcName)
 	}
-
-	// This will generate architecture-specific PLT stubs
-	switch eb.machine {
-	case MachineX86_64:
-		return dl.generateX86PLTEntry(eb, funcName, fn)
-	case MachineARM64:
-		return dl.generateARM64PLTEntry(eb, funcName, fn)
-	case MachineRiscv64:
-		return dl.generateRISCVPLTEntry(eb, funcName, fn)
-	default:
-		return fmt.Errorf("unsupported architecture for PLT generation")
-	}
-}
-
-// Placeholder implementations for PLT generation
-func (dl *DynamicLinker) generateX86PLTEntry(eb *ExecutableBuilder, funcName string, fn *Function) error {
-	// TODO: Generate x86_64 PLT stub
-	// This would involve:
-	// 1. Jump to GOT entry
-	// 2. If first call, resolve symbol via dynamic linker
-	// 3. Update GOT and jump to actual function
-	fmt.Printf("// PLT entry for %s (x86_64)\n", funcName)
-	return nil
-}
-
-func (dl *DynamicLinker) generateARM64PLTEntry(eb *ExecutableBuilder, funcName string, fn *Function) error {
-	// TODO: Generate ARM64 PLT stub
-	fmt.Printf("// PLT entry for %s (ARM64)\n", funcName)
-	return nil
-}
-
-func (dl *DynamicLinker) generateRISCVPLTEntry(eb *ExecutableBuilder, funcName string, fn *Function) error {
-	// TODO: Generate RISC-V PLT stub
-	fmt.Printf("// PLT entry for %s (RISC-V)\n", funcName)
 	return nil
 }
 
