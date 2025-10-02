@@ -167,14 +167,15 @@ func TestExecutableGeneration(t *testing.T) {
 		t.Logf("file output: %s", output)
 	}
 
-	// Just verify the file was created with correct permissions
+	// Just verify the file was created with executable permissions
 	info, err := os.Stat(tmpfile)
 	if err != nil {
 		t.Fatalf("Failed to stat file: %v", err)
 	}
 
-	if info.Mode().Perm() != 0755 {
-		t.Errorf("File permissions = %o, want 0755", info.Mode().Perm())
+	// Check that owner has execute permission (umask may affect group/other)
+	if info.Mode().Perm()&0100 == 0 {
+		t.Errorf("File not executable: permissions = %o", info.Mode().Perm())
 	}
 }
 

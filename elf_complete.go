@@ -9,7 +9,7 @@ import (
 
 // WriteCompleteDynamicELF generates a fully functional dynamically-linked ELF
 // Returns (gotBase, rodataBase, error)
-func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functions []string) (uint64, uint64, error) {
+func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functions []string) (gotBase, rodataAddr, textAddr, pltBase uint64, err error) {
 	eb.elf.Reset()
 
 	rodataSize := eb.rodata.Len()
@@ -105,7 +105,7 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	currentAddr = (currentAddr + pageSize - 1) & ^uint64(pageSize-1)
 
 	// .plt (executable)
-	pltBase := currentAddr
+	pltBase = currentAddr
 	layout["plt"] = struct {
 		offset uint64
 		addr   uint64
@@ -149,7 +149,7 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	currentAddr += uint64((ds.dynamic.Len() + 7) & ^7)
 
 	// .got
-	gotBase := currentAddr
+	gotBase = currentAddr
 	layout["got"] = struct {
 		offset uint64
 		addr   uint64
@@ -196,7 +196,7 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	// Recalculate .text offset now that PLT size is known (including _start)
 	startSizeAligned := ((startSize + 7) & ^7)
 	textOffset := layout["plt"].offset + uint64(ds.plt.Len()) + uint64(startSizeAligned)
-	textAddr := layout["plt"].addr + uint64(ds.plt.Len()) + uint64(startSizeAligned)
+	textAddr = layout["plt"].addr + uint64(ds.plt.Len()) + uint64(startSizeAligned)
 	layout["text"] = struct {
 		offset uint64
 		addr   uint64
@@ -265,7 +265,7 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	}
 
 	rodataOffset := gotOffset + uint64((ds.got.Len()+7) & ^7)
-	rodataAddr := gotAddr + uint64((ds.got.Len()+7) & ^7)
+	rodataAddr = gotAddr + uint64((ds.got.Len()+7) & ^7)
 	layout["rodata"] = struct {
 		offset uint64
 		addr   uint64
@@ -484,7 +484,7 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	fmt.Fprintf(os.Stderr, "Rodata base: 0x%x (%d bytes)\n", layout["rodata"].addr, rodataSize)
 	fmt.Fprintf(os.Stderr, "Functions: %v\n", functions)
 
-	return gotBase, layout["rodata"].addr, nil
+	return gotBase, rodataAddr, textAddr, pltBase, nil
 }
 
 func (eb *ExecutableBuilder) getInterpreterPath() string {

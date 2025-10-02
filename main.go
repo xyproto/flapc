@@ -460,7 +460,7 @@ func main() {
 			ds.AddSymbol(funcName, STB_GLOBAL, STT_FUNC)
 		}
 
-		gotBase, rodataBaseAddr, err := eb.WriteCompleteDynamicELF(ds, eb.neededFunctions)
+		gotBase, rodataBaseAddr, textAddr, pltBase, err := eb.WriteCompleteDynamicELF(ds, eb.neededFunctions)
 		if err != nil {
 			log.Fatalln(err)
 		}
@@ -478,9 +478,6 @@ func main() {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error regenerating code: %v\n", err)
 		}
-
-		textAddr := uint64(0x402040)
-		pltBase := uint64(0x402000)
 		fmt.Fprintln(os.Stderr, "-> Patching PLT calls in regenerated code")
 		eb.patchPLTCalls(ds, textAddr, pltBase, eb.neededFunctions)
 
