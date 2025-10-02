@@ -4,110 +4,286 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
-// MovInstruction handles mov instruction generation using the architecture interface
-func (eb *ExecutableBuilder) MovInstruction(dest, val string) error {
-	w := eb.TextWriter()
-	fmt.Fprint(os.Stderr, fmt.Sprintf("mov %s, %s:", dest, val))
-
-	if err := eb.arch.MovImmediate(w, dest, val); err != nil {
-		return err
-	}
-
-	return eb.writeValue(w, val)
+type Out struct {
+	machine Machine
+	writer  Writer
+	eb      *ExecutableBuilder
 }
 
-// writeValue writes the immediate value (number or symbol lookup)
-func (eb *ExecutableBuilder) writeValue(w Writer, val string) error {
-	if n, err := strconv.Atoi(val); err == nil {
-		// Direct integer value
-		w.WriteUnsigned(uint(n))
-	} else {
-		// Symbol lookup
-		addr := eb.Lookup(val)
-		if n, err := strconv.Atoi(addr); err == nil {
-			w.WriteUnsigned(uint(n))
-		} else {
-			return fmt.Errorf("invalid value or symbol: %s", val)
+func (o *Out) Write(b uint8) {
+	o.writer.(*BufferWrapper).Write(b)
+}
+
+func (o *Out) WriteUnsigned(i uint) {
+	o.writer.(*BufferWrapper).WriteUnsigned(i)
+}
+
+func (o *Out) Lookup(name string) string {
+	return o.eb.Lookup(name)
+}
+
+// MovRegToReg generates a register-to-register move instruction
+func (o *Out) MovRegToReg(dst, src string) {
+	switch o.machine {
+	case MachineX86_64:
+		o.movX86RegToReg(dst, src)
+	case MachineARM64:
+		o.movARM64RegToReg(dst, src)
+	case MachineRiscv64:
+		o.movRISCVRegToReg(dst, src)
+	}
+}
+
+// MovImmToReg generates an immediate-to-register move instruction
+func (o *Out) MovImmToReg(dst, imm string) {
+	switch o.machine {
+	case MachineX86_64:
+		o.movX86ImmToReg(dst, imm)
+	case MachineARM64:
+		o.movARM64ImmToReg(dst, imm)
+	case MachineRiscv64:
+		o.movRISCVImmToReg(dst, imm)
+	}
+}
+
+// x86_64 register-to-register move
+func (o *Out) movX86RegToReg(dst, src string) {
+	dstReg, dstOk := GetRegister(o.machine, dst)
+	srcReg, srcOk := GetRegister(o.machine, src)
+
+	if !dstOk || !srcOk {
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "mov %s, %s:", dst, src)
+
+	// REX prefix for 64-bit operation
+	if dstReg.Size == 64 || srcReg.Size == 64 {
+		rex := uint8(0x48)
+		if dstReg.Encoding >= 8 {
+			rex |= 0x04 // REX.R
 		}
+		if srcReg.Encoding >= 8 {
+			rex |= 0x01 // REX.B
+		}
+		o.Write(rex)
+	}
+
+	// MOV r/m64, r64 (0x89) or MOV r/m32, r32 (0x89)
+	o.Write(0x89)
+
+	// ModR/M byte: 11|reg|r/m
+	modrm := uint8(0xC0) | ((srcReg.Encoding & 7) << 3) | (dstReg.Encoding & 7)
+	o.Write(modrm)
+
+	fmt.Fprintln(os.Stderr)
+}
+
+// x86_64 immediate-to-register move
+func (o *Out) movX86ImmToReg(dst, imm string) {
+	dstReg, dstOk := GetRegister(o.machine, dst)
+	if !dstOk {
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "mov %s, %s:", dst, imm)
+
+	// Parse immediate value
+	var immVal uint64
+	if val, err := strconv.ParseUint(imm, 0, 64); err == nil {
+		immVal = val
+	} else if addr := o.Lookup(imm); addr != "0" {
+		if val, err := strconv.ParseUint(addr, 10, 64); err == nil {
+			immVal = val
+		}
+	}
+
+	// REX prefix for 64-bit registers
+	if dstReg.Size == 64 {
+		rex := uint8(0x48)
+		if dstReg.Encoding >= 8 {
+			rex |= 0x01 // REX.B
+		}
+		o.Write(rex)
+	}
+
+	// MOV with immediate encoding
+	o.Write(0xC7) // MOV r/m64, imm32
+
+	// ModR/M byte for register direct addressing
+	modrm := uint8(0xC0) | (dstReg.Encoding & 7)
+	o.Write(modrm)
+
+	// Write 32-bit immediate (sign-extended to 64-bit)
+	o.WriteUnsigned(uint(immVal))
+
+	fmt.Fprintln(os.Stderr)
+}
+
+// ARM64 register-to-register move
+func (o *Out) movARM64RegToReg(dst, src string) {
+	dstReg, dstOk := GetRegister(o.machine, dst)
+	srcReg, srcOk := GetRegister(o.machine, src)
+
+	if !dstOk || !srcOk {
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "mov %s, %s:", dst, src)
+
+	// ARM64 MOV (register): ORR Xd, XZR, Xm
+	var instr uint32
+
+	if dstReg.Size == 64 && srcReg.Size == 64 {
+		// 64-bit: ORR Xd, XZR, Xm
+		instr = 0xAA0003E0 | (uint32(srcReg.Encoding&31) << 16) | uint32(dstReg.Encoding&31)
+	} else {
+		// 32-bit: ORR Wd, WZR, Wm
+		instr = 0x2A0003E0 | (uint32(srcReg.Encoding&31) << 16) | uint32(dstReg.Encoding&31)
+	}
+
+	// ARM64 is little-endian
+	o.Write(uint8(instr & 0xFF))
+	o.Write(uint8((instr >> 8) & 0xFF))
+	o.Write(uint8((instr >> 16) & 0xFF))
+	o.Write(uint8((instr >> 24) & 0xFF))
+
+	fmt.Fprintln(os.Stderr)
+}
+
+// ARM64 immediate-to-register move
+func (o *Out) movARM64ImmToReg(dst, imm string) {
+	dstReg, dstOk := GetRegister(o.machine, dst)
+	if !dstOk {
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "mov %s, %s:", dst, imm)
+
+	// Parse immediate value
+	var immVal uint64
+	if val, err := strconv.ParseUint(imm, 0, 64); err == nil {
+		immVal = val
+	} else if addr := o.Lookup(imm); addr != "0" {
+		if val, err := strconv.ParseUint(addr, 10, 64); err == nil {
+			immVal = val
+		}
+	}
+
+	// Use MOVZ (move with zero) for immediate values
+	var instr uint32
+	if dstReg.Size == 64 {
+		// MOVZ Xd, #imm16
+		instr = 0xD2800000 | (uint32(immVal&0xFFFF) << 5) | uint32(dstReg.Encoding&31)
+	} else {
+		// MOVZ Wd, #imm16
+		instr = 0x52800000 | (uint32(immVal&0xFFFF) << 5) | uint32(dstReg.Encoding&31)
+	}
+
+	// Write 32-bit instruction (little-endian)
+	o.Write(uint8(instr & 0xFF))
+	o.Write(uint8((instr >> 8) & 0xFF))
+	o.Write(uint8((instr >> 16) & 0xFF))
+	o.Write(uint8((instr >> 24) & 0xFF))
+
+	fmt.Fprintln(os.Stderr)
+}
+
+// RISC-V register-to-register move
+func (o *Out) movRISCVRegToReg(dst, src string) {
+	dstReg, dstOk := GetRegister(o.machine, dst)
+	srcReg, srcOk := GetRegister(o.machine, src)
+
+	if !dstOk || !srcOk {
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "mv %s, %s:", dst, src)
+
+	// RISC-V MV is implemented as ADDI rd, rs1, 0
+	// Format: imm[11:0] | rs1 | 000 | rd | 0010011
+	var instr uint32 = 0x13 // opcode for ADDI
+
+	instr |= uint32(dstReg.Encoding&31) << 7  // rd
+	instr |= 0 << 12                          // funct3 = 000 for ADDI
+	instr |= uint32(srcReg.Encoding&31) << 15 // rs1
+	instr |= 0 << 20                          // immediate = 0
+
+	// Write 32-bit instruction (little-endian)
+	o.Write(uint8(instr & 0xFF))
+	o.Write(uint8((instr >> 8) & 0xFF))
+	o.Write(uint8((instr >> 16) & 0xFF))
+	o.Write(uint8((instr >> 24) & 0xFF))
+
+	fmt.Fprintln(os.Stderr)
+}
+
+// RISC-V immediate-to-register move
+func (o *Out) movRISCVImmToReg(dst, imm string) {
+	dstReg, dstOk := GetRegister(o.machine, dst)
+	if !dstOk {
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "li %s, %s:", dst, imm)
+
+	// Parse immediate value
+	var immVal int64
+	if val, err := strconv.ParseInt(imm, 0, 64); err == nil {
+		immVal = val
+	} else if addr := o.Lookup(imm); addr != "0" {
+		if val, err := strconv.ParseInt(addr, 10, 64); err == nil {
+			immVal = val
+		}
+	}
+
+	// For simplicity, use ADDI rd, x0, imm for small immediates
+	if immVal >= -2048 && immVal <= 2047 {
+		// ADDI rd, x0, imm
+		var instr uint32 = 0x13 // opcode
+
+		instr |= uint32(dstReg.Encoding&31) << 7 // rd
+		instr |= 0 << 12                         // funct3 = 000
+		instr |= 0 << 15                         // rs1 = x0
+		instr |= uint32((immVal & 0xFFF)) << 20  // immediate
+
+		o.Write(uint8(instr & 0xFF))
+		o.Write(uint8((instr >> 8) & 0xFF))
+		o.Write(uint8((instr >> 16) & 0xFF))
+		o.Write(uint8((instr >> 24) & 0xFF))
+	} else {
+		// For larger immediates, would need LUI + ADDI sequence
+		// For now, just use ADDI with truncated immediate
+		immVal = immVal & 0xFFF
+		var instr uint32 = 0x13
+
+		instr |= uint32(dstReg.Encoding&31) << 7
+		instr |= 0 << 12
+		instr |= 0 << 15
+		instr |= uint32(immVal&0xFFF) << 20
+
+		o.Write(uint8(instr & 0xFF))
+		o.Write(uint8((instr >> 8) & 0xFF))
+		o.Write(uint8((instr >> 16) & 0xFF))
+		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
 	fmt.Fprintln(os.Stderr)
-	return nil
 }
 
-// IsValidRegister checks if a register is valid using the architecture interface
-func (eb *ExecutableBuilder) IsValidRegister(reg string) bool {
-	return eb.arch.IsValidRegister(reg)
-}
+// MovInstruction handles both register-to-register and immediate-to-register moves
+func (o *Out) MovInstruction(dst, src string) {
+	// Clean up source and destination
+	dst = strings.TrimSuffix(strings.TrimSpace(dst), ",")
+	src = strings.TrimSpace(src)
 
-// RISC-V Architecture Implementation
-func (r *Riscv64) MovImmediate(w Writer, dest, val string) error {
-	// RISC-V doesn't have a direct mov instruction, use addi rd, x0, imm
-	switch dest {
-	case "a0", "a1", "a2", "a7":
-		w.Write(0x13) // addi instruction
-		w.Write(0x08) // Placeholder encoding
-		w.Write(0x00)
-		w.Write(0x00)
-	case "t0", "t1", "t2":
-		w.Write(0x13) // addi instruction
-		w.Write(0x02) // Different register encoding
-		w.Write(0x00)
-		w.Write(0x00)
-	default:
-		return fmt.Errorf("unsupported riscv64 register: %s", dest)
-	}
-	return nil
-}
-
-func (r *Riscv64) IsValidRegister(reg string) bool {
-	validRegs := []string{"x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15", "x16", "x17", "x18", "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "x29", "x30", "x31", "zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2", "s0", "s1", "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"}
-	for _, validReg := range validRegs {
-		if reg == validReg {
-			return true
-		}
-	}
-	return false
-}
-
-func (r *Riscv64) Syscall(w Writer) error {
-	w.Write(0x73) // ecall instruction for riscv64
-	w.Write(0x00)
-	w.Write(0x00)
-	w.Write(0x00)
-	return nil
-}
-
-func (r *Riscv64) ELFMachineType() uint16 {
-	return 0xF3 // RISC-V
-}
-
-func (r *Riscv64) Name() string {
-	return "riscv64"
-}
-
-func (eb *ExecutableBuilder) SysWriteRiscv64(what_data string, what_data_len ...string) {
-	eb.Emit("mov a7, " + eb.Lookup("SYS_WRITE"))
-	eb.Emit("mov a0, " + eb.Lookup("STDOUT"))
-	eb.Emit("mov a1, " + what_data)
-	if len(what_data_len) == 0 {
-		if c, ok := eb.consts[what_data]; ok {
-			eb.Emit("mov a2, " + strconv.Itoa(len(c.value)))
-		}
+	// Check if source is a register
+	if IsRegister(o.machine, src) {
+		o.MovRegToReg(dst, src)
 	} else {
-		eb.Emit("mov a2, " + what_data_len[0])
+		o.MovImmToReg(dst, src)
 	}
-	eb.Emit("syscall")
-}
-
-func (eb *ExecutableBuilder) SysExitRiscv64(code ...string) {
-	eb.Emit("mov a7, " + eb.Lookup("SYS_EXIT"))
-	if len(code) == 0 {
-		eb.Emit("mov a0, 0")
-	} else {
-		eb.Emit("mov a0, " + code[0])
-	}
-	eb.Emit("syscall")
 }

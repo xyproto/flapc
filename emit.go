@@ -53,7 +53,7 @@ func (bw *BufferWrapper) WriteBytes(bs []byte) int {
 	for _, b := range bs {
 		fmt.Fprintf(os.Stderr, " %x", b)
 	}
-	return 1
+	return len(bs)
 }
 
 func (o *ExecutableBuilder) PrependBytes(bs []byte) {
@@ -86,12 +86,18 @@ func (eb *ExecutableBuilder) Emit(assembly string) error {
 	}
 	if len(all) == 1 {
 		switch head {
-		case "syscall":
+		case "syscall", "ecall":
 			fmt.Fprint(os.Stderr, assembly+":")
 			if err := eb.arch.Syscall(w); err != nil {
 				return err
 			}
 			fmt.Fprintln(os.Stderr)
+		}
+	} else if len(all) == 2 {
+		switch head {
+		case "call":
+			funcName := strings.TrimSpace(tail[0])
+			return eb.GenerateCallInstruction(funcName)
 		}
 	} else if len(all) == 3 {
 		switch head {

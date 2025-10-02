@@ -21,8 +21,8 @@ type Architecture interface {
 // X86_64 implements Architecture for x86_64
 type X86_64 struct{}
 
-// Aarch64 implements Architecture for aarch64
-type Aarch64 struct{}
+// ARM64 implements Architecture for aarch64
+type ARM64 struct{}
 
 // Riscv64 implements Architecture for riscv64
 type Riscv64 struct{}
@@ -33,7 +33,7 @@ func NewArchitecture(machine string) (Architecture, error) {
 	case "x86_64":
 		return &X86_64{}, nil
 	case "aarch64":
-		return &Aarch64{}, nil
+		return &ARM64{}, nil
 	case "riscv64":
 		return &Riscv64{}, nil
 	default:

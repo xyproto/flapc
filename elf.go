@@ -28,7 +28,7 @@ func (eb *ExecutableBuilder) WriteELFHeader() error {
 	w.WriteN(0, 7) // zero padding, length of 7
 	w.Write2(2)    // object file type: executable
 
-	// Machine type - platform specific
+	// Machine type - machine specific
 	w.Write2(byte(eb.arch.ELFMachineType()))
 
 	w.Write4(1) // original ELF version (?)

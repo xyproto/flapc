@@ -2,7 +2,7 @@ package main
 
 import "strconv"
 
-func (eb *ExecutableBuilder) SysWriteAarch64(what_data string, what_data_len ...string) {
+func (eb *ExecutableBuilder) SysWriteARM64(what_data string, what_data_len ...string) {
 	eb.Emit("mov x8, " + eb.Lookup("SYS_WRITE"))
 	eb.Emit("mov x0, " + eb.Lookup("STDOUT"))
 	eb.Emit("mov x1, " + what_data)
@@ -16,7 +16,7 @@ func (eb *ExecutableBuilder) SysWriteAarch64(what_data string, what_data_len ...
 	eb.Emit("syscall")
 }
 
-func (eb *ExecutableBuilder) SysExitAarch64(code ...string) {
+func (eb *ExecutableBuilder) SysExitARM64(code ...string) {
 	eb.Emit("mov x8, " + eb.Lookup("SYS_EXIT"))
 	if len(code) == 0 {
 		eb.Emit("mov x0, 0")
