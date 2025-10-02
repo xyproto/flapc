@@ -284,6 +284,11 @@ func (o *Out) MovInstruction(dst, src string) {
 	if IsRegister(o.machine, src) {
 		o.MovRegToReg(dst, src)
 	} else {
-		o.MovImmToReg(dst, src)
+		// Check if this is a symbol in PIE mode
+		if o.eb.useDynamicLinking && isSymbolName(src) {
+			o.LeaSymbolToReg(dst, src)
+		} else {
+			o.MovImmToReg(dst, src)
+		}
 	}
 }

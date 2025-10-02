@@ -8,13 +8,11 @@ import (
 )
 
 // WriteCompleteDynamicELF generates a fully functional dynamically-linked ELF
-// Returns (gotBase, bssBase, error)
+// Returns (gotBase, rodataBase, error)
 func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functions []string) (uint64, uint64, error) {
-	// Reset ELF buffer to prevent accumulation
 	eb.elf.Reset()
 
-	// Calculate all section sizes and offsets
-	bssSize := eb.bss.Len()
+	rodataSize := eb.rodata.Len()
 	codeSize := eb.text.Len()
 
 	// Build all dynamic sections first
@@ -160,13 +158,13 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	currentOffset += uint64((ds.got.Len() + 7) & ^7)
 	currentAddr += uint64((ds.got.Len() + 7) & ^7)
 
-	// .bss
-	layout["bss"] = struct {
+	// .rodata
+	layout["rodata"] = struct {
 		offset uint64
 		addr   uint64
 		size   int
-	}{currentOffset, currentAddr, bssSize}
-	currentAddr += uint64(bssSize)
+	}{currentOffset, currentAddr, rodataSize}
+	currentAddr += uint64(rodataSize)
 
 	// Now generate PLT and GOT with correct addresses
 	ds.GeneratePLT(functions, gotBase, pltBase)
@@ -266,13 +264,13 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 		ds.updateRelocationAddress(oldGotEntryAddr, newGotEntryAddr)
 	}
 
-	bssOffset := gotOffset + uint64((ds.got.Len()+7) & ^7)
-	bssAddr := gotAddr + uint64((ds.got.Len()+7) & ^7)
-	layout["bss"] = struct {
+	rodataOffset := gotOffset + uint64((ds.got.Len()+7) & ^7)
+	rodataAddr := gotAddr + uint64((ds.got.Len()+7) & ^7)
+	layout["rodata"] = struct {
 		offset uint64
 		addr   uint64
 		size   int
-	}{bssOffset, bssAddr, layout["bss"].size}
+	}{rodataOffset, rodataAddr, layout["rodata"].size}
 
 	// Entry point is already set to _start above
 	// (entryPoint := layout["_start"].addr)
@@ -355,17 +353,15 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	w.Write8u(exSize)
 	w.Write8u(pageSize)
 
-	// PT_LOAD #2 (writable: dynamic, got, bss)
+	// PT_LOAD #2 (writable: dynamic, got, rodata)
 	rwStart := layout["dynamic"].offset
-	// Include BSS in file size since we write it to the file
-	rwFileSize := layout["bss"].offset + uint64(layout["bss"].size) - rwStart
-	// Memory size is the same as file size
+	rwFileSize := layout["rodata"].offset + uint64(layout["rodata"].size) - rwStart
 	rwMemSize := rwFileSize
 
 	fmt.Fprintf(os.Stderr, "\n=== Writable Segment Debug ===\n")
 	fmt.Fprintf(os.Stderr, "rwStart (dynamic.offset): 0x%x\n", rwStart)
 	fmt.Fprintf(os.Stderr, "GOT offset: 0x%x, size: %d\n", layout["got"].offset, layout["got"].size)
-	fmt.Fprintf(os.Stderr, "BSS offset: 0x%x, size: %d\n", layout["bss"].offset, layout["bss"].size)
+	fmt.Fprintf(os.Stderr, "Rodata offset: 0x%x, size: %d\n", layout["rodata"].offset, layout["rodata"].size)
 	fmt.Fprintf(os.Stderr, "Calculated rwFileSize: 0x%x\n", rwFileSize)
 	fmt.Fprintf(os.Stderr, "Calculated rwMemSize: 0x%x\n", rwMemSize)
 
@@ -457,6 +453,10 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 		w.Write(0)
 	}
 
+	// Patch RIP-relative relocations before writing text section
+	fmt.Fprintf(os.Stderr, "\n=== Patching RIP-relative relocations ===\n")
+	eb.PatchRIPRelocations(layout["text"].addr, layout["rodata"].addr, rodataSize)
+
 	w.WriteBytes(eb.text.Bytes())
 	for i := codeSize; i < (codeSize+7)&^7; i++ {
 		w.Write(0)
@@ -475,16 +475,16 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	fmt.Fprintf(os.Stderr, "Writing GOT section (%d bytes) at file position ~0x%x\n", ds.got.Len(), eb.elf.Len())
 	writePadded(&ds.got, (ds.got.Len()+7)&^7)
 
-	// BSS is not written to file (NOBITS)
+	w.WriteBytes(eb.rodata.Bytes())
 
 	fmt.Fprintf(os.Stderr, "\n=== Complete Dynamic ELF ===\n")
 	fmt.Fprintf(os.Stderr, "Entry point: 0x%x\n", entryPoint)
 	fmt.Fprintf(os.Stderr, "PLT base: 0x%x (%d bytes)\n", pltBase, ds.plt.Len())
 	fmt.Fprintf(os.Stderr, "GOT base: 0x%x (%d bytes)\n", gotBase, ds.got.Len())
-	fmt.Fprintf(os.Stderr, "BSS base: 0x%x (%d bytes)\n", layout["bss"].addr, bssSize)
+	fmt.Fprintf(os.Stderr, "Rodata base: 0x%x (%d bytes)\n", layout["rodata"].addr, rodataSize)
 	fmt.Fprintf(os.Stderr, "Functions: %v\n", functions)
 
-	return gotBase, layout["bss"].addr, nil
+	return gotBase, layout["rodata"].addr, nil
 }
 
 func (eb *ExecutableBuilder) getInterpreterPath() string {

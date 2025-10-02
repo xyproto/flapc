@@ -67,30 +67,85 @@ type Const struct {
 	addr  uint64
 }
 
+type RIPRelocation struct {
+	offset     uint64 // Offset in text section where displacement is
+	symbolName string // Name of symbol being referenced
+}
+
 type BufferWrapper struct {
 	buf *bytes.Buffer
 }
 
 type ExecutableBuilder struct {
-	machine           Machine
-	arch              Architecture
-	consts            map[string]*Const
-	dynlinker         *DynamicLinker // Dynamic library support
-	useDynamicLinking bool
-	neededFunctions   []string
-	elf, bss, text    bytes.Buffer // The ELF header, .bss and .text sections, as bytes
+	machine                 Machine
+	arch                    Architecture
+	consts                  map[string]*Const
+	dynlinker               *DynamicLinker
+	useDynamicLinking       bool
+	neededFunctions         []string
+	ripRelocations          []RIPRelocation
+	elf, rodata, data, text bytes.Buffer
 }
 
 func (eb *ExecutableBuilder) ELFWriter() Writer {
 	return &BufferWrapper{&eb.elf}
 }
 
-func (eb *ExecutableBuilder) BSSWriter() Writer {
-	return &BufferWrapper{&eb.bss}
+func (eb *ExecutableBuilder) RodataWriter() Writer {
+	return &BufferWrapper{&eb.rodata}
+}
+
+func (eb *ExecutableBuilder) DataWriter() Writer {
+	return &BufferWrapper{&eb.data}
 }
 
 func (eb *ExecutableBuilder) TextWriter() Writer {
 	return &BufferWrapper{&eb.text}
+}
+
+// PatchRIPRelocations patches all RIP-relative LEA instructions with actual offsets
+func (eb *ExecutableBuilder) PatchRIPRelocations(textAddr, rodataAddr uint64, rodataSize int) {
+	for _, reloc := range eb.ripRelocations {
+		// Find the symbol address
+		var targetAddr uint64
+		if c, ok := eb.consts[reloc.symbolName]; ok {
+			// c.addr is already the absolute virtual address
+			targetAddr = c.addr
+		} else {
+			fmt.Fprintf(os.Stderr, "Warning: Symbol %s not found for RIP relocation\n", reloc.symbolName)
+			continue
+		}
+
+		// Calculate RIP at the point after the LEA instruction
+		// The offset field is the last 4 bytes of the instruction
+		ripAddr := textAddr + reloc.offset + 4 // +4 because RIP points after the instruction
+
+		// Calculate displacement (signed 32-bit offset from RIP to target)
+		displacement := int64(targetAddr) - int64(ripAddr)
+
+		// Check if displacement fits in 32 bits
+		if displacement < -0x80000000 || displacement > 0x7FFFFFFF {
+			fmt.Fprintf(os.Stderr, "Warning: RIP-relative displacement too large: %d\n", displacement)
+			continue
+		}
+
+		// Patch the 4-byte displacement in the text section (little-endian)
+		textBytes := eb.text.Bytes()
+		offset := int(reloc.offset)
+		if offset+4 > len(textBytes) {
+			fmt.Fprintf(os.Stderr, "Warning: Relocation offset %d out of bounds\n", offset)
+			continue
+		}
+
+		disp32 := uint32(displacement)
+		textBytes[offset] = byte(disp32 & 0xFF)
+		textBytes[offset+1] = byte((disp32 >> 8) & 0xFF)
+		textBytes[offset+2] = byte((disp32 >> 16) & 0xFF)
+		textBytes[offset+3] = byte((disp32 >> 24) & 0xFF)
+
+		fmt.Fprintf(os.Stderr, "Patched RIP relocation: %s at offset 0x%x, target 0x%x, RIP 0x%x, displacement %d\n",
+			reloc.symbolName, reloc.offset, targetAddr, ripAddr, displacement)
+	}
 }
 
 func New(machineStr string) (*ExecutableBuilder, error) {
@@ -154,7 +209,8 @@ func (eb *ExecutableBuilder) Lookup(what string) string {
 func (eb *ExecutableBuilder) Bytes() []byte {
 	var result bytes.Buffer
 	result.Write(eb.elf.Bytes())
-	result.Write(eb.bss.Bytes())
+	result.Write(eb.rodata.Bytes())
+	result.Write(eb.data.Bytes())
 	result.Write(eb.text.Bytes())
 	return result.Bytes()
 }
@@ -169,24 +225,37 @@ func (eb *ExecutableBuilder) DefineAddr(symbol string, addr uint64) {
 	}
 }
 
-func (eb *ExecutableBuilder) BssSection() map[string]string {
-	bssSymbols := make(map[string]string)
+func (eb *ExecutableBuilder) RodataSection() map[string]string {
+	rodataSymbols := make(map[string]string)
 	for name, c := range eb.consts {
-		bssSymbols[name] = c.value
+		rodataSymbols[name] = c.value
 	}
-	return bssSymbols
+	return rodataSymbols
 }
 
-func (eb *ExecutableBuilder) BssSize() int {
+func (eb *ExecutableBuilder) RodataSize() int {
 	size := 0
-	for _, data := range eb.BssSection() {
+	for _, data := range eb.RodataSection() {
 		size += len(data)
 	}
 	return size
 }
 
-func (eb *ExecutableBuilder) WriteBSS(data []byte) uint64 {
-	n, _ := eb.bss.Write(data)
+func (eb *ExecutableBuilder) WriteRodata(data []byte) uint64 {
+	n, _ := eb.rodata.Write(data)
+	return uint64(n)
+}
+
+func (eb *ExecutableBuilder) DataSection() map[string]string {
+	return make(map[string]string)
+}
+
+func (eb *ExecutableBuilder) DataSize() int {
+	return 0
+}
+
+func (eb *ExecutableBuilder) WriteData(data []byte) uint64 {
+	n, _ := eb.data.Write(data)
 	return uint64(n)
 }
 
@@ -358,19 +427,13 @@ func main() {
 	eb.useDynamicLinking = true
 	eb.neededFunctions = []string{"printf", "exit"}
 
-	// Write the ELF header (use complete dynamic linking if enabled)
 	if eb.useDynamicLinking && len(eb.neededFunctions) > 0 {
-		// Write BSS data to buffer first (to know size)
-		// Write BSS data to buffer first (to know size)
-		fmt.Fprintln(os.Stderr, "-> .bss")
-		bssSymbols := eb.BssSection()
-		// We need to estimate BSS address for code generation
-		// This is a chicken-and-egg problem - we need text size to calculate layout,
-		// but need BSS addresses to generate text. We'll use an estimated address.
-		estimatedBSSAddr := uint64(0x403000 + 0x100) // Rough estimate
-		currentAddr := estimatedBSSAddr
-		for symbol, value := range bssSymbols {
-			eb.WriteBSS([]byte(value))
+		fmt.Fprintln(os.Stderr, "-> .rodata")
+		rodataSymbols := eb.RodataSection()
+		estimatedRodataAddr := uint64(0x403000 + 0x100)
+		currentAddr := estimatedRodataAddr
+		for symbol, value := range rodataSymbols {
+			eb.WriteRodata([]byte(value))
 			eb.DefineAddr(symbol, currentAddr)
 			currentAddr += uint64(len(value))
 			fmt.Fprintf(os.Stderr, "%s = %q at ~0x%x (estimated)\n", symbol, value, eb.consts[symbol].addr)
@@ -397,51 +460,47 @@ func main() {
 			ds.AddSymbol(funcName, STB_GLOBAL, STT_FUNC)
 		}
 
-		// Write the complete dynamic ELF - this will calculate correct GOT base
-		// and add relocations with the right addresses
-		gotBase, bssBaseAddr, err := eb.WriteCompleteDynamicELF(ds, eb.neededFunctions)
+		gotBase, rodataBaseAddr, err := eb.WriteCompleteDynamicELF(ds, eb.neededFunctions)
 		if err != nil {
 			log.Fatalln(err)
 		}
 
-		// Update BSS addresses with actual values and regenerate code
-		fmt.Fprintln(os.Stderr, "-> .bss (final addresses) and regenerating code")
-		currentAddr = bssBaseAddr
-		for symbol, value := range bssSymbols {
+		fmt.Fprintln(os.Stderr, "-> .rodata (final addresses) and regenerating code")
+		currentAddr = rodataBaseAddr
+		for symbol, value := range rodataSymbols {
 			eb.DefineAddr(symbol, currentAddr)
 			currentAddr += uint64(len(value))
 			fmt.Fprintf(os.Stderr, "%s = %q at 0x%x\n", symbol, value, eb.consts[symbol].addr)
 		}
 
-		// Regenerate code with correct BSS addresses
 		eb.text.Reset()
 		err = eb.GenerateGlibcHelloWorld()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error regenerating code: %v\n", err)
 		}
 
-		// Patch PLT calls in the regenerated code
-		// Text is at 0x402040 (_start is at 0x402030), PLT is at 0x402000
 		textAddr := uint64(0x402040)
 		pltBase := uint64(0x402000)
 		fmt.Fprintln(os.Stderr, "-> Patching PLT calls in regenerated code")
 		eb.patchPLTCalls(ds, textAddr, pltBase, eb.neededFunctions)
 
-		// Patch the ELF buffer's text section with the regenerated code
+		fmt.Fprintln(os.Stderr, "-> Patching RIP-relative relocations in regenerated code")
+		rodataSize := eb.rodata.Len()
+		eb.PatchRIPRelocations(textAddr, rodataBaseAddr, rodataSize)
+
 		fmt.Fprintln(os.Stderr, "-> Updating ELF with regenerated code")
 		eb.patchTextInELF()
 
 		fmt.Fprintf(os.Stderr, "Final GOT base: 0x%x\n", gotBase)
 
 	} else {
-		// Static linking path
-		fmt.Fprintln(os.Stderr, "-> .bss")
-		bssSymbols := eb.BssSection()
-		bssAddr := baseAddr + headerSize
-		currentAddr := uint64(bssAddr)
-		for symbol, value := range bssSymbols {
+		fmt.Fprintln(os.Stderr, "-> .rodata")
+		rodataSymbols := eb.RodataSection()
+		rodataAddr := baseAddr + headerSize
+		currentAddr := uint64(rodataAddr)
+		for symbol, value := range rodataSymbols {
 			eb.DefineAddr(symbol, currentAddr)
-			currentAddr += eb.WriteBSS([]byte(value))
+			currentAddr += eb.WriteRodata([]byte(value))
 			fmt.Fprintf(os.Stderr, "%s = %q\n", symbol, value)
 		}
 

@@ -12,7 +12,7 @@ import (
 // This is a simplified approach - just add INTERP segment
 func (eb *ExecutableBuilder) WriteDynamicELF() error {
 	w := eb.ELFWriter()
-	bssSize := eb.bss.Len()
+	rodataSize := eb.rodata.Len()
 	codeSize := eb.text.Len()
 
 	// Interpreter path (architecture-specific)
@@ -24,20 +24,18 @@ func (eb *ExecutableBuilder) WriteDynamicELF() error {
 		interp = "/lib/ld-linux-riscv64-lp64d.so.1"
 	}
 
-	interpLen := len(interp) + 1 // +1 for null terminator
+	interpLen := len(interp) + 1
 
-	// Calculate offsets
 	elfHeaderSize := uint64(64)
 	progHeaderSize := uint64(56)
-	numProgHeaders := uint64(2) // INTERP + LOAD
+	numProgHeaders := uint64(2)
 	headersSize := elfHeaderSize + (progHeaderSize * numProgHeaders)
 
-	// Align to page boundary
 	alignedHeaderSize := (headersSize + 0xfff) & ^uint64(0xfff)
 
 	interpOffset := alignedHeaderSize
-	bssOffset := interpOffset + uint64(interpLen)
-	codeOffset := bssOffset + uint64(bssSize)
+	rodataOffset := interpOffset + uint64(interpLen)
+	codeOffset := rodataOffset + uint64(rodataSize)
 
 	entry := baseAddr + codeOffset
 
