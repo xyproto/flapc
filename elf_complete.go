@@ -453,9 +453,9 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 		w.Write(0)
 	}
 
-	// Patch RIP-relative relocations before writing text section
-	fmt.Fprintf(os.Stderr, "\n=== Patching RIP-relative relocations ===\n")
-	eb.PatchRIPRelocations(layout["text"].addr, layout["rodata"].addr, rodataSize)
+	// Patch PC-relative relocations before writing text section
+	fmt.Fprintf(os.Stderr, "\n=== Patching PC-relative relocations ===\n")
+	eb.PatchPCRelocations(layout["text"].addr, layout["rodata"].addr, rodataSize)
 
 	w.WriteBytes(eb.text.Bytes())
 	for i := codeSize; i < (codeSize+7)&^7; i++ {
@@ -506,32 +506,40 @@ func (eb *ExecutableBuilder) patchPLTCalls(ds *DynamicSections, textAddr uint64,
 
 	fmt.Fprintf(os.Stderr, "Text bytes (%d total): %x\n", len(textBytes), textBytes)
 
+	switch eb.machine {
+	case MachineX86_64:
+		eb.patchX86PLTCalls(textBytes, ds, textAddr, pltBase, functions)
+	case MachineARM64:
+		eb.patchARM64PLTCalls(textBytes, ds, textAddr, pltBase, functions)
+	case MachineRiscv64:
+		eb.patchRISCVPLTCalls(textBytes, ds, textAddr, pltBase, functions)
+	}
+
+	// Write the patched bytes back
+	eb.text.Reset()
+	eb.text.Write(textBytes)
+}
+
+func (eb *ExecutableBuilder) patchX86PLTCalls(textBytes []byte, ds *DynamicSections, textAddr, pltBase uint64, functions []string) {
 	// Search for placeholder call instructions (0xE8 followed by 0x78563412)
-	// This is the little-endian encoding of 0x12345678
 	placeholder := []byte{0x78, 0x56, 0x34, 0x12}
 
 	funcIndex := 0
 	for i := 0; i < len(textBytes); i++ {
-		// Look for CALL opcode (0xE8) followed by placeholder
 		if i > 0 && i+3 < len(textBytes) && textBytes[i-1] == 0xE8 {
 			fmt.Fprintf(os.Stderr, "Found 0xE8 at i-1=%d, checking placeholder at i=%d: %x\n", i-1, i, textBytes[i:i+4])
 			if bytes.Equal(textBytes[i:i+4], placeholder) {
 				fmt.Fprintf(os.Stderr, "  -> Placeholder matches!\n")
 				if funcIndex < len(functions) {
-					// Calculate PLT entry address
-					// PLT[0] is 16 bytes, each function entry is 16 bytes
 					pltOffset := ds.GetPLTOffset(functions[funcIndex])
 					if pltOffset >= 0 {
 						targetAddr := pltBase + uint64(pltOffset)
-						// Current instruction address (the byte after the call opcode)
 						currentAddr := textAddr + uint64(i)
-						// Relative offset for the call
 						relOffset := int32(targetAddr - (currentAddr + 4))
 
-						fmt.Fprintf(os.Stderr, "Patching call #%d (%s): i=%d, currentAddr=0x%x, targetAddr=0x%x, relOffset=%d (0x%x)\n",
+						fmt.Fprintf(os.Stderr, "Patching x86-64 call #%d (%s): i=%d, currentAddr=0x%x, targetAddr=0x%x, relOffset=%d (0x%x)\n",
 							funcIndex, functions[funcIndex], i, currentAddr, targetAddr, relOffset, uint32(relOffset))
 
-						// Patch the offset
 						textBytes[i] = byte(relOffset & 0xFF)
 						textBytes[i+1] = byte((relOffset >> 8) & 0xFF)
 						textBytes[i+2] = byte((relOffset >> 16) & 0xFF)
@@ -542,8 +550,87 @@ func (eb *ExecutableBuilder) patchPLTCalls(ds *DynamicSections, textAddr uint64,
 			}
 		}
 	}
+}
 
-	// Write the patched bytes back
-	eb.text.Reset()
-	eb.text.Write(textBytes)
+func (eb *ExecutableBuilder) patchARM64PLTCalls(textBytes []byte, ds *DynamicSections, textAddr, pltBase uint64, functions []string) {
+	// Search for placeholder BL instructions (0x94000000)
+	funcIndex := 0
+	for i := 0; i+3 < len(textBytes); i += 4 {
+		instr := uint32(textBytes[i]) |
+			(uint32(textBytes[i+1]) << 8) |
+			(uint32(textBytes[i+2]) << 16) |
+			(uint32(textBytes[i+3]) << 24)
+
+		// BL instruction: 100101 imm26
+		if (instr&0xFC000000) == 0x94000000 && (instr&0x03FFFFFF) == 0 {
+			if funcIndex < len(functions) {
+				pltOffset := ds.GetPLTOffset(functions[funcIndex])
+				if pltOffset >= 0 {
+					targetAddr := pltBase + uint64(pltOffset)
+					currentAddr := textAddr + uint64(i)
+					offset := int64(targetAddr - currentAddr)
+
+					// BL uses signed 26-bit word offset (multiply by 4)
+					wordOffset := offset >> 2
+					if wordOffset >= -0x2000000 && wordOffset < 0x2000000 {
+						imm26 := uint32(wordOffset) & 0x03FFFFFF
+						blInstr := 0x94000000 | imm26
+
+						fmt.Fprintf(os.Stderr, "Patching ARM64 call #%d (%s): offset=0x%x, currentAddr=0x%x, targetAddr=0x%x, wordOffset=%d\n",
+							funcIndex, functions[funcIndex], i, currentAddr, targetAddr, wordOffset)
+
+						textBytes[i] = byte(blInstr & 0xFF)
+						textBytes[i+1] = byte((blInstr >> 8) & 0xFF)
+						textBytes[i+2] = byte((blInstr >> 16) & 0xFF)
+						textBytes[i+3] = byte((blInstr >> 24) & 0xFF)
+					}
+				}
+				funcIndex++
+			}
+		}
+	}
+}
+
+func (eb *ExecutableBuilder) patchRISCVPLTCalls(textBytes []byte, ds *DynamicSections, textAddr, pltBase uint64, functions []string) {
+	// Search for placeholder JAL instructions (0x000000EF)
+	funcIndex := 0
+	for i := 0; i+3 < len(textBytes); i += 4 {
+		instr := uint32(textBytes[i]) |
+			(uint32(textBytes[i+1]) << 8) |
+			(uint32(textBytes[i+2]) << 16) |
+			(uint32(textBytes[i+3]) << 24)
+
+		// JAL instruction: imm[20|10:1|11|19:12] rd 1101111
+		if (instr&0x7F) == 0x6F && (instr&0xFFFFF000) == 0 {
+			if funcIndex < len(functions) {
+				pltOffset := ds.GetPLTOffset(functions[funcIndex])
+				if pltOffset >= 0 {
+					targetAddr := pltBase + uint64(pltOffset)
+					currentAddr := textAddr + uint64(i)
+					offset := int64(targetAddr - currentAddr)
+
+					// JAL uses signed 21-bit offset
+					if offset >= -0x100000 && offset < 0x100000 {
+						// Encode immediate in JAL format: [20|10:1|11|19:12]
+						imm20 := (uint32(offset>>20) & 1) << 31
+						imm10_1 := (uint32(offset>>1) & 0x3FF) << 21
+						imm11 := (uint32(offset>>11) & 1) << 20
+						imm19_12 := (uint32(offset>>12) & 0xFF) << 12
+						rd := (instr >> 7) & 0x1F
+
+						jalInstr := imm20 | imm19_12 | imm11 | imm10_1 | (rd << 7) | 0x6F
+
+						fmt.Fprintf(os.Stderr, "Patching RISC-V call #%d (%s): offset=0x%x, currentAddr=0x%x, targetAddr=0x%x, pcOffset=%d\n",
+							funcIndex, functions[funcIndex], i, currentAddr, targetAddr, offset)
+
+						textBytes[i] = byte(jalInstr & 0xFF)
+						textBytes[i+1] = byte((jalInstr >> 8) & 0xFF)
+						textBytes[i+2] = byte((jalInstr >> 16) & 0xFF)
+						textBytes[i+3] = byte((jalInstr >> 24) & 0xFF)
+					}
+				}
+				funcIndex++
+			}
+		}
+	}
 }

@@ -44,7 +44,7 @@ func (o *Out) leaX86SymbolToReg(dst, symbol string) {
 
 	// Record the position where we need to patch the displacement
 	displacementOffset := uint64(o.eb.text.Len())
-	o.eb.ripRelocations = append(o.eb.ripRelocations, RIPRelocation{
+	o.eb.pcRelocations = append(o.eb.pcRelocations, PCRelocation{
 		offset:     displacementOffset,
 		symbolName: symbol,
 	})
@@ -62,22 +62,38 @@ func (o *Out) leaARM64SymbolToReg(dst, symbol string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "adrp %s, %s:", dst, symbol)
+	fmt.Fprintf(os.Stderr, "adrp %s, %s; add %s, %s, :lo12:%s:", dst, symbol, dst, dst, symbol)
 
-	// ADRP loads page address relative to PC
+	// Record position for relocation (ADRP is at this offset)
+	adrpOffset := uint64(o.eb.text.Len())
+	o.eb.pcRelocations = append(o.eb.pcRelocations, PCRelocation{
+		offset:     adrpOffset,
+		symbolName: symbol,
+	})
+
+	// ADRP: loads page address relative to PC
 	// Format: 1 immlo[1:0] 10000 immhi[20:0] Rd
-	// For now, placeholder - needs proper offset calculation
-	var instr uint32 = 0x90000000 | uint32(dstReg.Encoding&31)
+	// Placeholder - will be patched with actual page offset
+	adrpInstr := uint32(0x90000000) | uint32(dstReg.Encoding&31)
 
-	// Write 32-bit instruction (little-endian)
-	o.Write(uint8(instr & 0xFF))
-	o.Write(uint8((instr >> 8) & 0xFF))
-	o.Write(uint8((instr >> 16) & 0xFF))
-	o.Write(uint8((instr >> 24) & 0xFF))
+	o.Write(uint8(adrpInstr & 0xFF))
+	o.Write(uint8((adrpInstr >> 8) & 0xFF))
+	o.Write(uint8((adrpInstr >> 16) & 0xFF))
+	o.Write(uint8((adrpInstr >> 24) & 0xFF))
+
+	// ADD: adds low 12 bits of address
+	// Format: sf 0 0 10001 shift[1:0] imm12[11:0] Rn[4:0] Rd[4:0]
+	// sf=1 (64-bit), shift=00, imm12=placeholder
+	addInstr := uint32(0x91000000) |
+		(uint32(dstReg.Encoding&31) << 5) | // Rn (source)
+		uint32(dstReg.Encoding&31) // Rd (dest)
+
+	o.Write(uint8(addInstr & 0xFF))
+	o.Write(uint8((addInstr >> 8) & 0xFF))
+	o.Write(uint8((addInstr >> 16) & 0xFF))
+	o.Write(uint8((addInstr >> 24) & 0xFF))
 
 	fmt.Fprintln(os.Stderr)
-
-	// TODO: ADD instruction for page offset
 }
 
 // RISC-V AUIPC + ADDI for loading symbol addresses
@@ -87,20 +103,38 @@ func (o *Out) leaRISCVSymbolToReg(dst, symbol string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "auipc %s, %%pcrel_hi(%s):", dst, symbol)
+	fmt.Fprintf(os.Stderr, "auipc %s, %%pcrel_hi(%s); addi %s, %s, %%pcrel_lo:", dst, symbol, dst, dst)
 
-	// AUIPC adds upper 20 bits of PC-relative offset to PC
+	// Record position for relocation (AUIPC is at this offset)
+	auipcOffset := uint64(o.eb.text.Len())
+	o.eb.pcRelocations = append(o.eb.pcRelocations, PCRelocation{
+		offset:     auipcOffset,
+		symbolName: symbol,
+	})
+
+	// AUIPC: adds upper 20 bits of PC-relative offset to PC
 	// Format: imm[31:12] rd 0010111
-	var instr uint32 = 0x17 | (uint32(dstReg.Encoding&31) << 7)
+	// Placeholder - will be patched with actual offset
+	auipcInstr := uint32(0x17) | (uint32(dstReg.Encoding&31) << 7)
 
-	o.Write(uint8(instr & 0xFF))
-	o.Write(uint8((instr >> 8) & 0xFF))
-	o.Write(uint8((instr >> 16) & 0xFF))
-	o.Write(uint8((instr >> 24) & 0xFF))
+	o.Write(uint8(auipcInstr & 0xFF))
+	o.Write(uint8((auipcInstr >> 8) & 0xFF))
+	o.Write(uint8((auipcInstr >> 16) & 0xFF))
+	o.Write(uint8((auipcInstr >> 24) & 0xFF))
+
+	// ADDI: adds lower 12 bits
+	// Format: imm[11:0] rs1 000 rd 0010011
+	addiInstr := uint32(0x13) |
+		(uint32(dstReg.Encoding&31) << 7) | // rd (dest)
+		(uint32(dstReg.Encoding&31) << 15) // rs1 (source)
+	// funct3 = 000 for ADDI (bits 12-14)
+
+	o.Write(uint8(addiInstr & 0xFF))
+	o.Write(uint8((addiInstr >> 8) & 0xFF))
+	o.Write(uint8((addiInstr >> 16) & 0xFF))
+	o.Write(uint8((addiInstr >> 24) & 0xFF))
 
 	fmt.Fprintln(os.Stderr)
-
-	// TODO: ADDI instruction for lower 12 bits
 }
 
 // LeaImmToReg generates a LEA instruction with an immediate offset

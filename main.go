@@ -67,8 +67,8 @@ type Const struct {
 	addr  uint64
 }
 
-type RIPRelocation struct {
-	offset     uint64 // Offset in text section where displacement is
+type PCRelocation struct {
+	offset     uint64 // Offset in text section where relocation data is
 	symbolName string // Name of symbol being referenced
 }
 
@@ -83,7 +83,7 @@ type ExecutableBuilder struct {
 	dynlinker               *DynamicLinker
 	useDynamicLinking       bool
 	neededFunctions         []string
-	ripRelocations          []RIPRelocation
+	pcRelocations           []PCRelocation
 	elf, rodata, data, text bytes.Buffer
 }
 
@@ -103,49 +103,167 @@ func (eb *ExecutableBuilder) TextWriter() Writer {
 	return &BufferWrapper{&eb.text}
 }
 
-// PatchRIPRelocations patches all RIP-relative LEA instructions with actual offsets
-func (eb *ExecutableBuilder) PatchRIPRelocations(textAddr, rodataAddr uint64, rodataSize int) {
-	for _, reloc := range eb.ripRelocations {
+// PatchPCRelocations patches all PC-relative address loads with actual offsets
+func (eb *ExecutableBuilder) PatchPCRelocations(textAddr, rodataAddr uint64, rodataSize int) {
+	textBytes := eb.text.Bytes()
+
+	for _, reloc := range eb.pcRelocations {
 		// Find the symbol address
 		var targetAddr uint64
 		if c, ok := eb.consts[reloc.symbolName]; ok {
-			// c.addr is already the absolute virtual address
 			targetAddr = c.addr
 		} else {
-			fmt.Fprintf(os.Stderr, "Warning: Symbol %s not found for RIP relocation\n", reloc.symbolName)
+			fmt.Fprintf(os.Stderr, "Warning: Symbol %s not found for PC relocation\n", reloc.symbolName)
 			continue
 		}
 
-		// Calculate RIP at the point after the LEA instruction
-		// The offset field is the last 4 bytes of the instruction
-		ripAddr := textAddr + reloc.offset + 4 // +4 because RIP points after the instruction
-
-		// Calculate displacement (signed 32-bit offset from RIP to target)
-		displacement := int64(targetAddr) - int64(ripAddr)
-
-		// Check if displacement fits in 32 bits
-		if displacement < -0x80000000 || displacement > 0x7FFFFFFF {
-			fmt.Fprintf(os.Stderr, "Warning: RIP-relative displacement too large: %d\n", displacement)
-			continue
-		}
-
-		// Patch the 4-byte displacement in the text section (little-endian)
-		textBytes := eb.text.Bytes()
 		offset := int(reloc.offset)
-		if offset+4 > len(textBytes) {
-			fmt.Fprintf(os.Stderr, "Warning: Relocation offset %d out of bounds\n", offset)
-			continue
+
+		switch eb.machine {
+		case MachineX86_64:
+			eb.patchX86_64PCRel(textBytes, offset, textAddr, targetAddr, reloc.symbolName)
+		case MachineARM64:
+			eb.patchARM64PCRel(textBytes, offset, textAddr, targetAddr, reloc.symbolName)
+		case MachineRiscv64:
+			eb.patchRISCV64PCRel(textBytes, offset, textAddr, targetAddr, reloc.symbolName)
 		}
-
-		disp32 := uint32(displacement)
-		textBytes[offset] = byte(disp32 & 0xFF)
-		textBytes[offset+1] = byte((disp32 >> 8) & 0xFF)
-		textBytes[offset+2] = byte((disp32 >> 16) & 0xFF)
-		textBytes[offset+3] = byte((disp32 >> 24) & 0xFF)
-
-		fmt.Fprintf(os.Stderr, "Patched RIP relocation: %s at offset 0x%x, target 0x%x, RIP 0x%x, displacement %d\n",
-			reloc.symbolName, reloc.offset, targetAddr, ripAddr, displacement)
 	}
+}
+
+func (eb *ExecutableBuilder) patchX86_64PCRel(textBytes []byte, offset int, textAddr, targetAddr uint64, symbolName string) {
+	// x86-64 RIP-relative: displacement is at offset, instruction ends at offset+4
+	if offset+4 > len(textBytes) {
+		fmt.Fprintf(os.Stderr, "Warning: Relocation offset %d out of bounds\n", offset)
+		return
+	}
+
+	ripAddr := textAddr + uint64(offset) + 4 // RIP points after displacement
+	displacement := int64(targetAddr) - int64(ripAddr)
+
+	if displacement < -0x80000000 || displacement > 0x7FFFFFFF {
+		fmt.Fprintf(os.Stderr, "Warning: x86-64 displacement too large: %d\n", displacement)
+		return
+	}
+
+	disp32 := uint32(displacement)
+	textBytes[offset] = byte(disp32 & 0xFF)
+	textBytes[offset+1] = byte((disp32 >> 8) & 0xFF)
+	textBytes[offset+2] = byte((disp32 >> 16) & 0xFF)
+	textBytes[offset+3] = byte((disp32 >> 24) & 0xFF)
+
+	fmt.Fprintf(os.Stderr, "Patched x86-64 PC relocation: %s at offset 0x%x, target 0x%x, RIP 0x%x, displacement %d\n",
+		symbolName, offset, targetAddr, ripAddr, displacement)
+}
+
+func (eb *ExecutableBuilder) patchARM64PCRel(textBytes []byte, offset int, textAddr, targetAddr uint64, symbolName string) {
+	// ARM64: ADRP at offset, ADD at offset+4
+	// ADRP loads page-aligned address (upper 52 bits)
+	// ADD adds the low 12 bits
+	if offset+8 > len(textBytes) {
+		fmt.Fprintf(os.Stderr, "Warning: ARM64 relocation offset %d out of bounds\n", offset)
+		return
+	}
+
+	instrAddr := textAddr + uint64(offset)
+
+	// Page offset calculation for ADRP
+	instrPage := instrAddr & ^uint64(0xFFF)
+	targetPage := targetAddr & ^uint64(0xFFF)
+	pageOffset := int64(targetPage - instrPage)
+
+	// Check if page offset fits in 21 bits (signed, shifted)
+	if pageOffset < -0x100000000 || pageOffset > 0xFFFFFFFF {
+		fmt.Fprintf(os.Stderr, "Warning: ARM64 page offset too large: %d\n", pageOffset)
+		return
+	}
+
+	// Low 12 bits for ADD
+	low12 := uint32(targetAddr & 0xFFF)
+
+	// Patch ADRP instruction (bits [23:5] get immlo, bits [30:29] get immhi)
+	adrpInstr := uint32(textBytes[offset]) |
+		(uint32(textBytes[offset+1]) << 8) |
+		(uint32(textBytes[offset+2]) << 16) |
+		(uint32(textBytes[offset+3]) << 24)
+
+	pageOffsetShifted := uint32(pageOffset >> 12)
+	immlo := (pageOffsetShifted & 0x3) << 29           // bits [1:0] -> [30:29]
+	immhi := ((pageOffsetShifted >> 2) & 0x7FFFF) << 5 // bits [20:2] -> [23:5]
+
+	adrpInstr = (adrpInstr & 0x9F00001F) | immlo | immhi
+
+	textBytes[offset] = byte(adrpInstr & 0xFF)
+	textBytes[offset+1] = byte((adrpInstr >> 8) & 0xFF)
+	textBytes[offset+2] = byte((adrpInstr >> 16) & 0xFF)
+	textBytes[offset+3] = byte((adrpInstr >> 24) & 0xFF)
+
+	// Patch ADD instruction (bits [21:10] get imm12)
+	addInstr := uint32(textBytes[offset+4]) |
+		(uint32(textBytes[offset+5]) << 8) |
+		(uint32(textBytes[offset+6]) << 16) |
+		(uint32(textBytes[offset+7]) << 24)
+
+	addInstr = (addInstr & 0xFFC003FF) | (low12 << 10)
+
+	textBytes[offset+4] = byte(addInstr & 0xFF)
+	textBytes[offset+5] = byte((addInstr >> 8) & 0xFF)
+	textBytes[offset+6] = byte((addInstr >> 16) & 0xFF)
+	textBytes[offset+7] = byte((addInstr >> 24) & 0xFF)
+
+	fmt.Fprintf(os.Stderr, "Patched ARM64 PC relocation: %s at offset 0x%x, target 0x%x, page offset %d, low12 0x%x\n",
+		symbolName, offset, targetAddr, pageOffset, low12)
+}
+
+func (eb *ExecutableBuilder) patchRISCV64PCRel(textBytes []byte, offset int, textAddr, targetAddr uint64, symbolName string) {
+	// RISC-V: AUIPC at offset, ADDI at offset+4
+	// AUIPC loads upper 20 bits of PC-relative offset
+	// ADDI adds the lower 12 bits
+	if offset+8 > len(textBytes) {
+		fmt.Fprintf(os.Stderr, "Warning: RISC-V relocation offset %d out of bounds\n", offset)
+		return
+	}
+
+	instrAddr := textAddr + uint64(offset)
+	pcOffset := int64(targetAddr) - int64(instrAddr)
+
+	if pcOffset < -0x80000000 || pcOffset > 0x7FFFFFFF {
+		fmt.Fprintf(os.Stderr, "Warning: RISC-V offset too large: %d\n", pcOffset)
+		return
+	}
+
+	// Split into upper 20 bits and lower 12 bits
+	// If bit 11 is set, we need to add 1 to upper because ADDI sign-extends
+	upper := uint32((pcOffset + 0x800) >> 12)
+	lower := uint32(pcOffset & 0xFFF)
+
+	// Patch AUIPC instruction (bits [31:12] get upper 20 bits)
+	auipcInstr := uint32(textBytes[offset]) |
+		(uint32(textBytes[offset+1]) << 8) |
+		(uint32(textBytes[offset+2]) << 16) |
+		(uint32(textBytes[offset+3]) << 24)
+
+	auipcInstr = (auipcInstr & 0xFFF) | (upper << 12)
+
+	textBytes[offset] = byte(auipcInstr & 0xFF)
+	textBytes[offset+1] = byte((auipcInstr >> 8) & 0xFF)
+	textBytes[offset+2] = byte((auipcInstr >> 16) & 0xFF)
+	textBytes[offset+3] = byte((auipcInstr >> 24) & 0xFF)
+
+	// Patch ADDI instruction (bits [31:20] get lower 12 bits)
+	addiInstr := uint32(textBytes[offset+4]) |
+		(uint32(textBytes[offset+5]) << 8) |
+		(uint32(textBytes[offset+6]) << 16) |
+		(uint32(textBytes[offset+7]) << 24)
+
+	addiInstr = (addiInstr & 0xFFFFF) | (lower << 20)
+
+	textBytes[offset+4] = byte(addiInstr & 0xFF)
+	textBytes[offset+5] = byte((addiInstr >> 8) & 0xFF)
+	textBytes[offset+6] = byte((addiInstr >> 16) & 0xFF)
+	textBytes[offset+7] = byte((addiInstr >> 24) & 0xFF)
+
+	fmt.Fprintf(os.Stderr, "Patched RISC-V PC relocation: %s at offset 0x%x, target 0x%x, PC 0x%x, offset %d (upper=0x%x, lower=0x%x)\n",
+		symbolName, offset, targetAddr, instrAddr, pcOffset, upper, lower)
 }
 
 func New(machineStr string) (*ExecutableBuilder, error) {
@@ -483,7 +601,7 @@ func main() {
 
 		fmt.Fprintln(os.Stderr, "-> Patching RIP-relative relocations in regenerated code")
 		rodataSize := eb.rodata.Len()
-		eb.PatchRIPRelocations(textAddr, rodataBaseAddr, rodataSize)
+		eb.PatchPCRelocations(textAddr, rodataBaseAddr, rodataSize)
 
 		fmt.Fprintln(os.Stderr, "-> Updating ELF with regenerated code")
 		eb.patchTextInELF()
