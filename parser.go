@@ -22,6 +22,7 @@ const (
 	TOKEN_STAR
 	TOKEN_SLASH
 	TOKEN_EQUALS
+	TOKEN_COLON_EQUALS
 	TOKEN_LPAREN
 	TOKEN_RPAREN
 	TOKEN_COMMA
@@ -43,6 +44,19 @@ type Lexer struct {
 
 func NewLexer(input string) *Lexer {
 	return &Lexer{input: input, pos: 0, line: 1}
+}
+
+func (l *Lexer) peek() byte {
+	if l.pos+1 < len(l.input) {
+		return l.input[l.pos+1]
+	}
+	return 0
+}
+
+func (l *Lexer) advance() {
+	if l.pos < len(l.input) {
+		l.pos++
+	}
 }
 
 func (l *Lexer) NextToken() Token {
@@ -103,23 +117,39 @@ func (l *Lexer) NextToken() Token {
 	}
 
 	// Operators and punctuation
-	l.pos++
 	switch ch {
 	case '+':
+		l.pos++
 		return Token{Type: TOKEN_PLUS, Value: "+", Line: l.line}
 	case '-':
+		l.pos++
 		return Token{Type: TOKEN_MINUS, Value: "-", Line: l.line}
 	case '*':
+		l.pos++
 		return Token{Type: TOKEN_STAR, Value: "*", Line: l.line}
 	case '/':
+		l.pos++
 		return Token{Type: TOKEN_SLASH, Value: "/", Line: l.line}
+	case ':':
+		// Check for := before advancing
+		if l.peek() == '=' {
+			l.pos += 2 // skip both ':' and '='
+			return Token{Type: TOKEN_COLON_EQUALS, Value: ":=", Line: l.line}
+		}
+		// Otherwise, just skip it (part of type annotation, handled separately)
+		l.pos++
+		return l.NextToken()
 	case '=':
+		l.pos++
 		return Token{Type: TOKEN_EQUALS, Value: "=", Line: l.line}
 	case '(':
+		l.pos++
 		return Token{Type: TOKEN_LPAREN, Value: "(", Line: l.line}
 	case ')':
+		l.pos++
 		return Token{Type: TOKEN_RPAREN, Value: ")", Line: l.line}
 	case ',':
+		l.pos++
 		return Token{Type: TOKEN_COMMA, Value: ",", Line: l.line}
 	}
 
@@ -150,11 +180,18 @@ type Statement interface {
 }
 
 type AssignStmt struct {
-	Name  string
-	Value Expression
+	Name    string
+	Value   Expression
+	Mutable bool // true for :=, false for =
 }
 
-func (a *AssignStmt) String() string { return a.Name + " = " + a.Value.String() }
+func (a *AssignStmt) String() string {
+	op := "="
+	if a.Mutable {
+		op = ":="
+	}
+	return a.Name + " " + op + " " + a.Value.String()
+}
 func (a *AssignStmt) statementNode() {}
 
 type ExpressionStmt struct {
@@ -257,8 +294,8 @@ func (p *Parser) ParseProgram() *Program {
 }
 
 func (p *Parser) parseStatement() Statement {
-	// Check for assignment
-	if p.current.Type == TOKEN_IDENT && p.peek.Type == TOKEN_EQUALS {
+	// Check for assignment (both = and :=)
+	if p.current.Type == TOKEN_IDENT && (p.peek.Type == TOKEN_EQUALS || p.peek.Type == TOKEN_COLON_EQUALS) {
 		return p.parseAssignment()
 	}
 
@@ -274,9 +311,10 @@ func (p *Parser) parseStatement() Statement {
 func (p *Parser) parseAssignment() *AssignStmt {
 	name := p.current.Value
 	p.nextToken() // skip identifier
-	p.nextToken() // skip '='
+	mutable := p.current.Type == TOKEN_COLON_EQUALS
+	p.nextToken() // skip '=' or ':='
 	value := p.parseExpression()
-	return &AssignStmt{Name: name, Value: value}
+	return &AssignStmt{Name: name, Value: value, Mutable: mutable}
 }
 
 func (p *Parser) parseExpression() Expression {
@@ -284,9 +322,23 @@ func (p *Parser) parseExpression() Expression {
 }
 
 func (p *Parser) parseAdditive() Expression {
-	left := p.parsePrimary()
+	left := p.parseMultiplicative()
 
 	for p.peek.Type == TOKEN_PLUS || p.peek.Type == TOKEN_MINUS {
+		p.nextToken()
+		op := p.current.Value
+		p.nextToken()
+		right := p.parseMultiplicative()
+		left = &BinaryExpr{Left: left, Operator: op, Right: right}
+	}
+
+	return left
+}
+
+func (p *Parser) parseMultiplicative() Expression {
+	left := p.parsePrimary()
+
+	for p.peek.Type == TOKEN_STAR || p.peek.Type == TOKEN_SLASH {
 		p.nextToken()
 		op := p.current.Value
 		p.nextToken()
@@ -345,6 +397,7 @@ type FlapCompiler struct {
 	eb            *ExecutableBuilder
 	out           *Out
 	variables     map[string]int  // variable name -> stack offset
+	mutableVars   map[string]bool // variable name -> is mutable
 	sourceCode    string          // Store source for recompilation
 	usedFunctions map[string]bool // Track which functions are called
 	callOrder     []string        // Track order of function calls
@@ -373,6 +426,7 @@ func NewFlapCompiler(machine Machine) (*FlapCompiler, error) {
 		eb:            eb,
 		out:           out,
 		variables:     make(map[string]int),
+		mutableVars:   make(map[string]bool),
 		usedFunctions: make(map[string]bool),
 		callOrder:     []string{},
 	}, nil
@@ -382,6 +436,7 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	// Add format strings for printf
 	fc.eb.Define("fmt_str", "%s\x00")
 	fc.eb.Define("fmt_int", "%ld\n\x00")
+	fc.eb.Define("fmt_float", "%.0f\n\x00") // Print float without decimal places
 
 	// Generate code
 	// Initialize registers
@@ -488,9 +543,24 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 func (fc *FlapCompiler) compileStatement(stmt Statement) {
 	switch s := stmt.(type) {
 	case *AssignStmt:
-		// Evaluate expression into rax
+		// Check if variable already exists
+		_, exists := fc.variables[s.Name]
+
+		if exists {
+			// Variable exists - check if it's mutable
+			if !fc.mutableVars[s.Name] {
+				fmt.Fprintf(os.Stderr, "Error: cannot reassign const variable '%s'\n", s.Name)
+				os.Exit(1)
+			}
+			// It's mutable, allow reassignment
+		} else {
+			// First assignment - record mutability
+			fc.mutableVars[s.Name] = s.Mutable
+		}
+
+		// Evaluate expression into xmm0
 		fc.compileExpression(s.Value)
-		// For now, keep in rax (in full compiler, would push to stack)
+		// For now, keep in xmm0 (in full compiler, would push to stack)
 		fc.variables[s.Name] = 0
 
 	case *ExpressionStmt:
@@ -501,40 +571,47 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 func (fc *FlapCompiler) compileExpression(expr Expression) {
 	switch e := expr.(type) {
 	case *NumberExpr:
-		// Convert float to int64 for now (proper version would handle floats)
+		// Flap uses float64 foundation - all values are float64
+		// Convert to int64 first, then to float64 in xmm0
 		val := int64(e.Value)
-		if val == 0 {
-			fc.out.XorRegWithReg("rax", "rax")
-		} else {
-			fc.out.MovImmToReg("rax", strconv.FormatInt(val, 10))
-		}
+		fc.out.MovImmToReg("rax", strconv.FormatInt(val, 10))
+		// Convert integer to float64: cvtsi2sd xmm0, rax
+		fc.out.Cvtsi2sd("xmm0", "rax")
 
 	case *StringExpr:
-		// Store string and load address
-		labelName := "str_" + strconv.Itoa(len(e.Value))
+		// Store string and load address (strings still use pointers for now)
+		labelName := fmt.Sprintf("str_%d", fc.stringCounter)
+		fc.stringCounter++
 		fc.eb.Define(labelName, e.Value+"\x00")
 		fc.out.LeaSymbolToReg("rax", labelName)
 
 	case *IdentExpr:
-		// Variable is in rax from previous assignment
+		// Variable is in xmm0 from previous assignment (float64)
+		// No operation needed, value already there
 
 	case *BinaryExpr:
-		// Compile left into rax
+		// Compile left into xmm0
 		fc.compileExpression(e.Left)
-		// Save to rbx
-		fc.out.MovRegToReg("rbx", "rax")
-		// Compile right into rax
+		// Save xmm0 to stack
+		fc.out.SubImmFromReg("rsp", 16)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		// Compile right into xmm0
 		fc.compileExpression(e.Right)
-		// Perform operation
+		// Move right operand to xmm1
+		fc.out.MovRegToReg("xmm1", "xmm0")
+		// Load left operand from stack to xmm0
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 16)
+		// Perform SIMD operation (operates on float64 values)
 		switch e.Operator {
 		case "+":
-			fc.out.AddRegToReg("rax", "rbx")
+			fc.out.AddpdXmm("xmm0", "xmm1") // addpd xmm0, xmm1
 		case "-":
-			fc.out.MovRegToReg("rcx", "rax")
-			fc.out.MovRegToReg("rax", "rbx")
-			fc.out.SubRegFromReg("rax", "rcx")
+			fc.out.SubpdXmm("xmm0", "xmm1") // subpd xmm0, xmm1
 		case "*":
-			fc.out.MulRegWithReg("rax", "rbx")
+			fc.out.MulpdXmm("xmm0", "xmm1") // mulpd xmm0, xmm1
+		case "/":
+			fc.out.DivpdXmm("xmm0", "xmm1") // divpd xmm0, xmm1
 		}
 
 	case *CallExpr:
@@ -562,10 +639,10 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		} else {
 			// Print number with newline
 			fc.compileExpression(arg)
-			// Move value to rsi (second argument for printf)
-			fc.out.MovRegToReg("rsi", "rax")
-			fc.out.LeaSymbolToReg("rdi", "fmt_int")
-			fc.out.XorRegWithReg("rax", "rax") // No vector registers used
+			// xmm0 contains float64 value
+			// For printf %f, float64 goes in xmm0, and rax=1 (1 vector register used)
+			fc.out.LeaSymbolToReg("rdi", "fmt_float")
+			fc.out.MovImmToReg("rax", "1") // 1 vector register used
 			fc.trackFunctionCall("printf")
 			fc.eb.GenerateCallInstruction("printf")
 		}
@@ -573,7 +650,8 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 	case "exit":
 		if len(call.Args) > 0 {
 			fc.compileExpression(call.Args[0])
-			fc.out.MovRegToReg("rdi", "rax")
+			// Convert float64 in xmm0 to int64 in rdi
+			fc.out.Cvttsd2si("rdi", "xmm0") // truncate float to int
 		} else {
 			fc.out.XorRegWithReg("rdi", "rdi")
 		}

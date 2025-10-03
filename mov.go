@@ -51,6 +51,41 @@ func (o *Out) MovImmToReg(dst, imm string) {
 
 // x86_64 register-to-register move
 func (o *Out) movX86RegToReg(dst, src string) {
+	// Check if these are XMM registers
+	if (dst[:3] == "xmm" || dst[:1] == "v") && (src[:3] == "xmm" || src[:1] == "v") {
+		// XMM to XMM move using MOVSD
+		fmt.Fprintf(os.Stderr, "movsd %s, %s: ", dst, src)
+
+		var dstNum, srcNum int
+		fmt.Sscanf(dst, "xmm%d", &dstNum)
+		fmt.Sscanf(src, "xmm%d", &srcNum)
+
+		// F2 0F 10 - MOVSD xmm1, xmm2
+		o.Write(0xF2)
+
+		// REX if needed
+		if dstNum >= 8 || srcNum >= 8 {
+			rex := uint8(0x40)
+			if dstNum >= 8 {
+				rex |= 0x04 // REX.R
+			}
+			if srcNum >= 8 {
+				rex |= 0x01 // REX.B
+			}
+			o.Write(rex)
+		}
+
+		o.Write(0x0F)
+		o.Write(0x10)
+
+		// ModR/M byte
+		modrm := uint8(0xC0) | (uint8(dstNum&7) << 3) | uint8(srcNum&7)
+		o.Write(modrm)
+
+		fmt.Fprintln(os.Stderr)
+		return
+	}
+
 	dstReg, dstOk := GetRegister(o.machine, dst)
 	srcReg, srcOk := GetRegister(o.machine, src)
 
@@ -58,7 +93,7 @@ func (o *Out) movX86RegToReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "mov %s, %s:", dst, src)
+	fmt.Fprintf(os.Stderr, "mov %s, %s: ", dst, src)
 
 	// REX prefix for 64-bit operation
 	if dstReg.Size == 64 || srcReg.Size == 64 {
