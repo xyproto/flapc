@@ -292,3 +292,106 @@ func (o *Out) MovInstruction(dst, src string) {
 		}
 	}
 }
+
+// MovRegToXmm moves a general purpose register to an XMM register
+func (o *Out) MovRegToXmm(dst, src string) {
+	switch o.machine {
+	case MachineX86_64:
+		o.movX86RegToXmm(dst, src)
+	case MachineARM64:
+		o.movARM64RegToFP(dst, src)
+	case MachineRiscv64:
+		o.movRISCVRegToFP(dst, src)
+	}
+}
+
+// x86-64 MOVQ GP register to XMM register
+func (o *Out) movX86RegToXmm(dst, src string) {
+	// For x86-64, use MOVQ xmm, r64 (66 REX.W 0F 6E /r)
+	fmt.Fprintf(os.Stderr, "movq %s, %s:", dst, src)
+
+	srcReg, srcOk := GetRegister(o.machine, src)
+	if !srcOk {
+		return
+	}
+
+	// Parse XMM register number from "xmm0", "xmm1", etc.
+	var xmmNum int
+	fmt.Sscanf(dst, "xmm%d", &xmmNum)
+
+	// 66 prefix (operand size override)
+	o.Write(0x66)
+
+	// REX.W prefix (0x48 base + adjustments for registers)
+	rex := uint8(0x48)
+	if xmmNum >= 8 {
+		rex |= 0x04 // REX.R
+	}
+	if srcReg.Encoding >= 8 {
+		rex |= 0x01 // REX.B
+	}
+	o.Write(rex)
+
+	// 0F 6E - MOVQ opcode
+	o.Write(0x0F)
+	o.Write(0x6E)
+
+	// ModR/M byte
+	modrm := uint8(0xC0) | (uint8(xmmNum&7) << 3) | (srcReg.Encoding & 7)
+	o.Write(modrm)
+
+	fmt.Fprintln(os.Stderr)
+}
+
+// ARM64: Move GP register to FP register
+func (o *Out) movARM64RegToFP(dst, src string) {
+	fmt.Fprintf(os.Stderr, "fmov %s, %s:", dst, src)
+
+	srcReg, srcOk := GetRegister(o.machine, src)
+	if !srcOk {
+		return
+	}
+
+	// Parse vector register number
+	var vNum int
+	fmt.Sscanf(dst, "v%d", &vNum)
+
+	// FMOV Vd.D[0], Xn - encoding: 0x9E670000
+	instr := uint32(0x9E670000) |
+		(uint32(srcReg.Encoding&31) << 5) |
+		uint32(vNum&31)
+
+	o.Write(uint8(instr & 0xFF))
+	o.Write(uint8((instr >> 8) & 0xFF))
+	o.Write(uint8((instr >> 16) & 0xFF))
+	o.Write(uint8((instr >> 24) & 0xFF))
+
+	fmt.Fprintln(os.Stderr)
+}
+
+// RISC-V: Move GP register to FP register
+func (o *Out) movRISCVRegToFP(dst, src string) {
+	fmt.Fprintf(os.Stderr, "fmv.d.x %s, %s:", dst, src)
+
+	srcReg, srcOk := GetRegister(o.machine, src)
+	if !srcOk {
+		return
+	}
+
+	// Parse FP register number
+	var fNum int
+	fmt.Sscanf(dst, "f%d", &fNum)
+
+	// FMV.D.X fd, rs1 - encoding: 1111000 00000 rs1 000 rd 1010011
+	// funct7=1111000 (0xF0), rs2=00000, rs1, funct3=000, rd, opcode=1010011 (0x53)
+	instr := uint32(0xF0000053) |
+		(uint32(fNum&31) << 7) |
+		(uint32(srcReg.Encoding&31) << 15)
+
+	o.Write(uint8(instr & 0xFF))
+	o.Write(uint8((instr >> 8) & 0xFF))
+	o.Write(uint8((instr >> 16) & 0xFF))
+	o.Write(uint8((instr >> 24) & 0xFF))
+
+	fmt.Fprintln(os.Stderr)
+}

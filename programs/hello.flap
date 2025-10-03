@@ -1,0 +1,3 @@
+# hello.flap - print "Hello, World!" and exit
+println("Hello, World!")
+exit(0)

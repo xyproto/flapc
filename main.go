@@ -334,7 +334,13 @@ func (eb *ExecutableBuilder) Bytes() []byte {
 }
 
 func (eb *ExecutableBuilder) Define(symbol, value string) {
-	eb.consts[symbol] = &Const{value: value}
+	if c, ok := eb.consts[symbol]; ok {
+		// Symbol exists - update value but preserve address
+		c.value = value
+	} else {
+		// New symbol
+		eb.consts[symbol] = &Const{value: value}
+	}
 }
 
 func (eb *ExecutableBuilder) DefineAddr(symbol string, addr uint64) {
@@ -536,6 +542,17 @@ func main() {
 	if len(inputFiles) > 0 {
 		for _, file := range inputFiles {
 			log.Printf("source file: %s", file)
+
+			// Check if this is a Flap source file
+			if strings.HasSuffix(file, ".flap") {
+				fmt.Fprintln(os.Stderr, "-> Compiling Flap source")
+				err := CompileFlap(file, outputFile)
+				if err != nil {
+					log.Fatalf("Flap compilation error: %v", err)
+				}
+				fmt.Fprintf(os.Stderr, "-> Wrote executable: %s\n", outputFile)
+				return
+			}
 		}
 	}
 
