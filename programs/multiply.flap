@@ -1,0 +1,4 @@
+# multiply.flap - test multiplication
+result = 6 * 7
+println(result)
+exit(0)
