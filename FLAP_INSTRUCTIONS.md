@@ -219,6 +219,90 @@ The Flap language ("Float. Map. Fly.") is built on a `map[float64]float64` found
 
 ---
 
+### 10. DIV - Division and Remainder (`div.go`)
+
+**Purpose**: Division and modulo operations
+
+**Why Essential for Flap**:
+- Division expressions: `quotient / divisor`
+- Modulo operations: `n % 10`
+- Array partitioning: `size / chunk_size`
+- Ratio calculations: `total / count`
+- Remainder checks: `n % 2 == 0` (even/odd testing)
+
+**Variants**:
+- `DivRegByReg(dst, src)` - dst = dst / src (2-operand)
+- `DivRegByRegToReg(quotient, dividend, divisor)` - quotient = dividend / divisor
+- `RemRegByReg(dst, src)` - dst = dst % src (remainder/modulo)
+- `RemRegByRegToReg(remainder, dividend, divisor)` - remainder = dividend % divisor
+
+**Architecture Implementation**:
+- **x86-64**: `IDIV` (signed divide, implicit RDX:RAX usage, produces both quotient and remainder)
+- **ARM64**: `SDIV` (signed divide), remainder via `MSUB` (multiply-subtract)
+- **RISC-V**: `DIV` and `REM` instructions (requires M extension)
+
+**Notes**:
+- x86-64 division is complex: requires sign-extension (CQO), modifies RAX (quotient) and RDX (remainder)
+- ARM64 doesn't have direct remainder instruction; calculated as `remainder = dividend - (quotient * divisor)`
+- RISC-V provides separate DIV and REM instructions
+
+---
+
+### 11. Load/Store - Memory Access (`loadstore.go`)
+
+**Purpose**: Reading from and writing to memory
+
+**Why Essential for Flap**:
+- Variable access: `me.health`, `me.x`
+- Array element access: `entities[i]`
+- Map value access: `map[key]`
+- Struct field access: `player.position.x`
+- Stack variable access: local variables
+- Global variable access: `game_state`
+
+**Variants**:
+- `LoadRegFromMem(dst, base, offset)` - dst = [base + offset]
+- `StoreRegToMem(src, base, offset)` - [base + offset] = src
+
+**Architecture Implementation**:
+- **x86-64**: `MOV r64, [r64 + disp]` / `MOV [r64 + disp], r64` with 8-bit or 32-bit displacement
+- **ARM64**: `LDR Xt, [Xn, #offset]` / `STR Xt, [Xn, #offset]`, or `LDUR`/`STUR` for unscaled offsets
+- **RISC-V**: `LD rd, offset(rs1)` / `SD rs2, offset(rs1)` with 12-bit signed offset
+
+**Offset Ranges**:
+- **x86-64**: -2,147,483,648 to 2,147,483,647 (32-bit signed)
+- **ARM64**: 0 to 32,760 (scaled, 8-byte aligned) or -256 to 255 (unscaled)
+- **RISC-V**: -2,048 to 2,047 (12-bit signed)
+
+---
+
+### 12. NEG - Arithmetic Negation (`neg.go`)
+
+**Purpose**: Two's complement negation (arithmetic negative)
+
+**Why Essential for Flap**:
+- Unary minus: `-x`, `-value`
+- Direction reversal: `-velocity`
+- Sign flipping: `-balance`
+- Opposite values: `-delta`
+- Negating results: `-(a + b)`
+
+**Variants**:
+- `NegReg(dst)` - dst = -dst (2-operand)
+- `NegRegToReg(dst, src)` - dst = -src (3-operand)
+
+**Architecture Implementation**:
+- **x86-64**: `NEG r/m64` (opcode 0xF7 /3)
+- **ARM64**: `NEG Xd, Xn` (actually `SUB Xd, XZR, Xn` - subtract from zero)
+- **RISC-V**: `NEG rd, rs` (pseudo-instruction for `SUB rd, x0, rs` - subtract from zero)
+
+**Notes**:
+- ARM64 and RISC-V implement NEG as subtraction from the zero register
+- This is semantically equivalent to two's complement negation
+- More efficient than loading 0 and subtracting
+
+---
+
 ## Architecture Support
 
 All instructions are implemented for three target architectures:
@@ -273,13 +357,26 @@ Run tests with: `go test -v -run "TestCmp|TestAdd|TestSub|TestJump"`
 
 ---
 
-## Future Instructions Needed
+## Instruction Summary
 
-To fully implement Flap, additional instructions will be needed:
+The current instruction set provides a complete foundation for implementing basic Flap programs:
 
-- **DIV/MOD** - Division and modulo operations
-- **MOV variants** - Memory load/store (currently only register-to-register)
-- **Floating point** - FADD, FSUB, FMUL, FDIV for float64 operations
-- **Load/Store** - Memory access instructions for reading/writing data
-- **Shift operations** - SHL, SHR, SAR for bit shifting
-- **Negation** - NEG for arithmetic negation
+**Arithmetic**: ADD, SUB, MUL, DIV (with remainder/modulo)
+**Logical**: AND, OR, XOR, NEG
+**Comparison**: CMP
+**Control Flow**: JE, JNE, JG, JGE, JL, JLE, JA, JAE, JB, JBE, JMP
+**Functions**: CALL, RET, PUSH, POP
+**Memory**: Load/Store with base+offset addressing
+**Data Movement**: MOV (register-to-register), LEA (load effective address)
+
+## Future Instructions for Complete Flap Support
+
+To fully implement all Flap language features, additional instructions will be needed:
+
+- **Modern instructions** - SSE4.2 and/or AVX instructions, which should fit well with the Flap architecture
+- **Floating point** - FADD, FSUB, FMUL, FDIV or MMX instructions for float64 operations (core Flap type)
+- **Shift operations** - SHL, SHR, SAR for bit shifting and power-of-2 operations
+- **Conditional moves** - CMOV variants for branchless code generation
+- **Atomic operations** - For concurrent Flap programs (LOCK prefix on x86-64, LDXR/STXR on ARM64, LR/SC on RISC-V)
+- **Advanced addressing** - Indexed/scaled addressing for efficient array access
+- **Byte/word operations** - For working with smaller data types

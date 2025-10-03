@@ -211,16 +211,39 @@ func (o *Out) remARM64RegByReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "# rem %s, %s (msub %s, temp_quotient, %s, %s):", dst, src, dst, src, dst)
+	fmt.Fprintf(os.Stderr, "# rem %s, %s (sdiv x9, %s, %s; msub %s, x9, %s, %s):", dst, src, dst, src, dst, src, dst)
 
 	// ARM64 has MSUB: Xd = Xa - Xn * Xm
 	// We want: remainder = dividend - (dividend/divisor) * divisor
-	// Need temp register for quotient - using x9 (caller-saved)
-	// SDIV x9, dst, src
-	// MSUB dst, x9, src, dst  (dst = dst - x9 * src)
+	// Step 1: SDIV x9, dst, src (x9 = dst / src)
+	// Step 2: MSUB dst, x9, src, dst (dst = dst - x9 * src)
 
-	// This is complex - simplified comment for now
-	// Full implementation would need temp register management
+	// Using x9 as temp register for quotient
+	tempReg := uint32(9) // x9
+
+	// SDIV x9, dst, src
+	sdivInstr := uint32(0x9AC00C00) |
+		(uint32(srcReg.Encoding&31) << 16) | // Rm (divisor)
+		(uint32(dstReg.Encoding&31) << 5) | // Rn (dividend)
+		tempReg // Rd (quotient in x9)
+
+	o.Write(uint8(sdivInstr & 0xFF))
+	o.Write(uint8((sdivInstr >> 8) & 0xFF))
+	o.Write(uint8((sdivInstr >> 16) & 0xFF))
+	o.Write(uint8((sdivInstr >> 24) & 0xFF))
+
+	// MSUB dst, x9, src, dst  (dst = dst - x9 * src)
+	// Format: sf 0 011011 000 Rm 1 Ra Rn Rd
+	msubInstr := uint32(0x9B008000) |
+		(uint32(srcReg.Encoding&31) << 16) | // Rm (divisor)
+		(uint32(dstReg.Encoding&31) << 10) | // Ra (dividend)
+		(tempReg << 5) | // Rn (quotient)
+		uint32(dstReg.Encoding&31) // Rd (result)
+
+	o.Write(uint8(msubInstr & 0xFF))
+	o.Write(uint8((msubInstr >> 8) & 0xFF))
+	o.Write(uint8((msubInstr >> 16) & 0xFF))
+	o.Write(uint8((msubInstr >> 24) & 0xFF))
 
 	fmt.Fprintln(os.Stderr)
 }
@@ -234,11 +257,38 @@ func (o *Out) remARM64RegByRegToReg(remainder, dividend, divisor string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "# rem %s, %s, %s (msub with temp):", remainder, dividend, divisor)
+	fmt.Fprintf(os.Stderr, "# rem %s, %s, %s (sdiv x9, %s, %s; msub %s, x9, %s, %s):", remainder, dividend, divisor, dividend, divisor, remainder, divisor, dividend)
 
 	// MSUB: Xd = Xa - Xn * Xm
 	// remainder = dividend - (quotient * divisor)
-	// This needs temp register for quotient
+	// Step 1: SDIV x9, dividend, divisor (x9 = dividend / divisor)
+	// Step 2: MSUB remainder, x9, divisor, dividend (remainder = dividend - x9 * divisor)
+
+	// Using x9 as temp register for quotient
+	tempReg := uint32(9) // x9
+
+	// SDIV x9, dividend, divisor
+	sdivInstr := uint32(0x9AC00C00) |
+		(uint32(divisorReg.Encoding&31) << 16) | // Rm (divisor)
+		(uint32(dividendReg.Encoding&31) << 5) | // Rn (dividend)
+		tempReg // Rd (quotient in x9)
+
+	o.Write(uint8(sdivInstr & 0xFF))
+	o.Write(uint8((sdivInstr >> 8) & 0xFF))
+	o.Write(uint8((sdivInstr >> 16) & 0xFF))
+	o.Write(uint8((sdivInstr >> 24) & 0xFF))
+
+	// MSUB remainder, x9, divisor, dividend
+	msubInstr := uint32(0x9B008000) |
+		(uint32(divisorReg.Encoding&31) << 16) | // Rm (divisor)
+		(uint32(dividendReg.Encoding&31) << 10) | // Ra (dividend)
+		(tempReg << 5) | // Rn (quotient)
+		uint32(remainderReg.Encoding&31) // Rd (result)
+
+	o.Write(uint8(msubInstr & 0xFF))
+	o.Write(uint8((msubInstr >> 8) & 0xFF))
+	o.Write(uint8((msubInstr >> 16) & 0xFF))
+	o.Write(uint8((msubInstr >> 24) & 0xFF))
 
 	fmt.Fprintln(os.Stderr)
 }
