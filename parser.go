@@ -837,13 +837,13 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 			}
 			// It's mutable, allow reassignment
 		} else {
-			// First assignment - allocate stack space (8 bytes for float64)
-			fc.stackOffset += 8
+			// First assignment - allocate stack space (16 bytes for alignment)
+			fc.stackOffset += 16
 			offset = fc.stackOffset
 			fc.variables[s.Name] = offset
 			fc.mutableVars[s.Name] = s.Mutable
-			// Actually allocate the stack space
-			fc.out.SubImmFromReg("rsp", 8)
+			// Actually allocate the stack space (16 bytes to maintain alignment)
+			fc.out.SubImmFromReg("rsp", 16)
 		}
 
 		// Evaluate expression into xmm0
@@ -960,20 +960,20 @@ func (fc *FlapCompiler) compileLoopStatement(stmt *LoopStmt) {
 	// cvttsd2si rax, xmm0
 	fc.out.Cvttsd2si("rax", "xmm0")
 
-	// Allocate stack space for loop limit
-	fc.stackOffset += 8
+	// Allocate stack space for loop limit (16 bytes for alignment)
+	fc.stackOffset += 16
 	limitOffset := fc.stackOffset
-	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.SubImmFromReg("rsp", 16)
 
 	// Store limit: mov [rbp - limitOffset], rax
 	fc.out.MovRegToMem("rax", "rbp", -limitOffset)
 
-	// Allocate stack space for iterator variable (as float64)
-	fc.stackOffset += 8
+	// Allocate stack space for iterator variable (16 bytes for alignment)
+	fc.stackOffset += 16
 	iterOffset := fc.stackOffset
 	fc.variables[stmt.Iterator] = iterOffset
 	fc.mutableVars[stmt.Iterator] = true
-	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.SubImmFromReg("rsp", 16)
 
 	// Initialize iterator to 0.0
 	// xor rax, rax
@@ -1014,8 +1014,8 @@ func (fc *FlapCompiler) compileLoopStatement(stmt *LoopStmt) {
 	fc.out.XorRegWithReg("rax", "rax")
 	fc.out.IncReg("rax") // rax = 1
 	fc.out.Cvtsi2sd("xmm1", "rax")
-	// addpd xmm0, xmm1
-	fc.out.AddpdXmm("xmm0", "xmm1")
+	// addsd xmm0, xmm1 (scalar addition)
+	fc.out.AddsdXmm("xmm0", "xmm1")
 	// movsd [rbp - iterOffset], xmm0
 	fc.out.MovXmmToMem("xmm0", "rbp", -iterOffset)
 
@@ -1089,16 +1089,16 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		// Load left operand from stack to xmm0
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
 		fc.out.AddImmToReg("rsp", 16)
-		// Perform SIMD operation (operates on float64 values)
+		// Perform scalar floating-point operation
 		switch e.Operator {
 		case "+":
-			fc.out.AddpdXmm("xmm0", "xmm1") // addpd xmm0, xmm1
+			fc.out.AddsdXmm("xmm0", "xmm1") // addsd xmm0, xmm1
 		case "-":
-			fc.out.SubpdXmm("xmm0", "xmm1") // subpd xmm0, xmm1
+			fc.out.SubsdXmm("xmm0", "xmm1") // subsd xmm0, xmm1
 		case "*":
-			fc.out.MulpdXmm("xmm0", "xmm1") // mulpd xmm0, xmm1
+			fc.out.MulsdXmm("xmm0", "xmm1") // mulsd xmm0, xmm1
 		case "/":
-			fc.out.DivpdXmm("xmm0", "xmm1") // divpd xmm0, xmm1
+			fc.out.DivsdXmm("xmm0", "xmm1") // divsd xmm0, xmm1
 		case "<", "<=", ">", ">=", "==", "!=":
 			// Compare xmm0 with xmm1, sets flags
 			fc.out.Ucomisd("xmm0", "xmm1")
