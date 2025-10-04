@@ -27,6 +27,19 @@ const (
 	TOKEN_RPAREN
 	TOKEN_COMMA
 	TOKEN_NEWLINE
+	TOKEN_LT        // <
+	TOKEN_GT        // >
+	TOKEN_LE        // <=
+	TOKEN_GE        // >=
+	TOKEN_EQ        // ==
+	TOKEN_NE        // !=
+	TOKEN_IF        // if keyword
+	TOKEN_ELSE      // else keyword
+	TOKEN_END       // end keyword
+	TOKEN_AT        // @
+	TOKEN_IN        // in keyword
+	TOKEN_LBRACE    // {
+	TOKEN_RBRACE    // }
 )
 
 type Token struct {
@@ -106,13 +119,26 @@ func (l *Lexer) NextToken() Token {
 		return Token{Type: TOKEN_NUMBER, Value: l.input[start:l.pos], Line: l.line}
 	}
 
-	// Identifier
+	// Identifier or keyword
 	if unicode.IsLetter(rune(ch)) || ch == '_' {
 		start := l.pos
 		for l.pos < len(l.input) && (unicode.IsLetter(rune(l.input[l.pos])) || unicode.IsDigit(rune(l.input[l.pos])) || l.input[l.pos] == '_') {
 			l.pos++
 		}
 		value := l.input[start:l.pos]
+
+		// Check for keywords
+		switch value {
+		case "if":
+			return Token{Type: TOKEN_IF, Value: value, Line: l.line}
+		case "else":
+			return Token{Type: TOKEN_ELSE, Value: value, Line: l.line}
+		case "end":
+			return Token{Type: TOKEN_END, Value: value, Line: l.line}
+		case "in":
+			return Token{Type: TOKEN_IN, Value: value, Line: l.line}
+		}
+
 		return Token{Type: TOKEN_IDENT, Value: value, Line: l.line}
 	}
 
@@ -140,8 +166,38 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return l.NextToken()
 	case '=':
+		// Check for ==
+		if l.peek() == '=' {
+			l.pos += 2
+			return Token{Type: TOKEN_EQ, Value: "==", Line: l.line}
+		}
 		l.pos++
 		return Token{Type: TOKEN_EQUALS, Value: "=", Line: l.line}
+	case '<':
+		// Check for <=
+		if l.peek() == '=' {
+			l.pos += 2
+			return Token{Type: TOKEN_LE, Value: "<=", Line: l.line}
+		}
+		l.pos++
+		return Token{Type: TOKEN_LT, Value: "<", Line: l.line}
+	case '>':
+		// Check for >=
+		if l.peek() == '=' {
+			l.pos += 2
+			return Token{Type: TOKEN_GE, Value: ">=", Line: l.line}
+		}
+		l.pos++
+		return Token{Type: TOKEN_GT, Value: ">", Line: l.line}
+	case '!':
+		// Check for !=
+		if l.peek() == '=' {
+			l.pos += 2
+			return Token{Type: TOKEN_NE, Value: "!=", Line: l.line}
+		}
+		// Just ! is not supported, skip
+		l.pos++
+		return l.NextToken()
 	case '(':
 		l.pos++
 		return Token{Type: TOKEN_LPAREN, Value: "(", Line: l.line}
@@ -151,6 +207,15 @@ func (l *Lexer) NextToken() Token {
 	case ',':
 		l.pos++
 		return Token{Type: TOKEN_COMMA, Value: ",", Line: l.line}
+	case '@':
+		l.pos++
+		return Token{Type: TOKEN_AT, Value: "@", Line: l.line}
+	case '{':
+		l.pos++
+		return Token{Type: TOKEN_LBRACE, Value: "{", Line: l.line}
+	case '}':
+		l.pos++
+		return Token{Type: TOKEN_RBRACE, Value: "}", Line: l.line}
 	}
 
 	return Token{Type: TOKEN_EOF, Line: l.line}
@@ -200,6 +265,58 @@ type ExpressionStmt struct {
 
 func (e *ExpressionStmt) String() string { return e.Expr.String() }
 func (e *ExpressionStmt) statementNode() {}
+
+type IfStmt struct {
+	Condition  Expression
+	ThenBlock  []Statement
+	ElseBlock  []Statement
+}
+
+func (i *IfStmt) String() string {
+	var out strings.Builder
+	out.WriteString("if ")
+	out.WriteString(i.Condition.String())
+	out.WriteString("\n")
+	for _, stmt := range i.ThenBlock {
+		out.WriteString("  ")
+		out.WriteString(stmt.String())
+		out.WriteString("\n")
+	}
+	if len(i.ElseBlock) > 0 {
+		out.WriteString("else\n")
+		for _, stmt := range i.ElseBlock {
+			out.WriteString("  ")
+			out.WriteString(stmt.String())
+			out.WriteString("\n")
+		}
+	}
+	out.WriteString("end")
+	return out.String()
+}
+func (i *IfStmt) statementNode() {}
+
+type LoopStmt struct {
+	Iterator   string     // Variable name (e.g., "i")
+	Iterable   Expression // Expression to iterate over (e.g., range(10))
+	Body       []Statement
+}
+
+func (l *LoopStmt) String() string {
+	var out strings.Builder
+	out.WriteString("@ ")
+	out.WriteString(l.Iterator)
+	out.WriteString(" in ")
+	out.WriteString(l.Iterable.String())
+	out.WriteString(" {\n")
+	for _, stmt := range l.Body {
+		out.WriteString("  ")
+		out.WriteString(stmt.String())
+		out.WriteString("\n")
+	}
+	out.WriteString("}")
+	return out.String()
+}
+func (l *LoopStmt) statementNode() {}
 
 type Expression interface {
 	Node
@@ -294,6 +411,16 @@ func (p *Parser) ParseProgram() *Program {
 }
 
 func (p *Parser) parseStatement() Statement {
+	// Check for loop statement
+	if p.current.Type == TOKEN_AT {
+		return p.parseLoopStatement()
+	}
+
+	// Check for if statement
+	if p.current.Type == TOKEN_IF {
+		return p.parseIfStatement()
+	}
+
 	// Check for assignment (both = and :=)
 	if p.current.Type == TOKEN_IDENT && (p.peek.Type == TOKEN_EQUALS || p.peek.Type == TOKEN_COLON_EQUALS) {
 		return p.parseAssignment()
@@ -317,8 +444,148 @@ func (p *Parser) parseAssignment() *AssignStmt {
 	return &AssignStmt{Name: name, Value: value, Mutable: mutable}
 }
 
+func (p *Parser) parseIfStatement() *IfStmt {
+	p.nextToken() // skip 'if'
+
+	condition := p.parseExpression()
+
+	// Skip newlines after condition
+	for p.peek.Type == TOKEN_NEWLINE {
+		p.nextToken()
+	}
+
+	// Parse then block
+	var thenBlock []Statement
+	for p.peek.Type != TOKEN_ELSE && p.peek.Type != TOKEN_END && p.peek.Type != TOKEN_EOF {
+		p.nextToken()
+		if p.current.Type == TOKEN_NEWLINE {
+			continue
+		}
+		stmt := p.parseStatement()
+		if stmt != nil {
+			thenBlock = append(thenBlock, stmt)
+		}
+	}
+
+	// Parse else block if present
+	var elseBlock []Statement
+	if p.peek.Type == TOKEN_ELSE {
+		p.nextToken() // skip to 'else'
+
+		// Skip newlines after else keyword (check peek, not current)
+		for p.peek.Type == TOKEN_NEWLINE {
+			p.nextToken()
+		}
+
+		for p.peek.Type != TOKEN_END && p.peek.Type != TOKEN_EOF {
+			p.nextToken()
+			if p.current.Type == TOKEN_NEWLINE {
+				continue
+			}
+			stmt := p.parseStatement()
+			if stmt != nil {
+				elseBlock = append(elseBlock, stmt)
+			}
+		}
+	}
+
+	// Skip to 'end'
+	for p.peek.Type != TOKEN_END && p.peek.Type != TOKEN_EOF {
+		p.nextToken()
+	}
+	p.nextToken() // skip to 'end'
+
+	return &IfStmt{
+		Condition: condition,
+		ThenBlock: thenBlock,
+		ElseBlock: elseBlock,
+	}
+}
+
+func (p *Parser) parseLoopStatement() *LoopStmt {
+	p.nextToken() // skip '@'
+
+	// Expect identifier for iterator variable
+	if p.current.Type != TOKEN_IDENT {
+		fmt.Fprintf(os.Stderr, "Error: expected identifier after @ in loop\n")
+		return nil
+	}
+	iterator := p.current.Value
+
+	p.nextToken() // skip identifier
+
+	// Expect 'in' keyword
+	if p.current.Type != TOKEN_IN {
+		fmt.Fprintf(os.Stderr, "Error: expected 'in' in loop statement\n")
+		return nil
+	}
+
+	p.nextToken() // skip 'in'
+
+	// Parse iterable expression
+	iterable := p.parseExpression()
+
+	// Skip newlines before '{'
+	for p.peek.Type == TOKEN_NEWLINE {
+		p.nextToken()
+	}
+
+	// Expect '{'
+	if p.peek.Type != TOKEN_LBRACE {
+		fmt.Fprintf(os.Stderr, "Error: expected '{' in loop statement\n")
+		return nil
+	}
+	p.nextToken() // advance to '{'
+
+	// Skip newlines after '{'
+	for p.peek.Type == TOKEN_NEWLINE {
+		p.nextToken()
+	}
+
+	// Parse loop body
+	var body []Statement
+	for p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
+		p.nextToken()
+		if p.current.Type == TOKEN_NEWLINE {
+			continue
+		}
+		stmt := p.parseStatement()
+		if stmt != nil {
+			body = append(body, stmt)
+		}
+	}
+
+	// Skip to '}'
+	for p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
+		p.nextToken()
+	}
+	p.nextToken() // skip to '}'
+
+	return &LoopStmt{
+		Iterator: iterator,
+		Iterable: iterable,
+		Body:     body,
+	}
+}
+
 func (p *Parser) parseExpression() Expression {
-	return p.parseAdditive()
+	return p.parseComparison()
+}
+
+func (p *Parser) parseComparison() Expression {
+	left := p.parseAdditive()
+
+	for p.peek.Type == TOKEN_LT || p.peek.Type == TOKEN_GT ||
+		p.peek.Type == TOKEN_LE || p.peek.Type == TOKEN_GE ||
+		p.peek.Type == TOKEN_EQ || p.peek.Type == TOKEN_NE {
+		p.nextToken()
+		op := p.current.Value
+		p.nextToken()
+		right := p.parseAdditive()
+		left = &BinaryExpr{Left: left, Operator: op, Right: right}
+	}
+
+	return left
 }
 
 func (p *Parser) parseAdditive() Expression {
@@ -402,6 +669,8 @@ type FlapCompiler struct {
 	usedFunctions map[string]bool // Track which functions are called
 	callOrder     []string        // Track order of function calls
 	stringCounter int             // Counter for unique string labels
+	stackOffset   int             // Current stack offset for variables
+	labelCounter  int             // Counter for unique labels (if/else, loops, etc)
 }
 
 func NewFlapCompiler(machine Machine) (*FlapCompiler, error) {
@@ -439,6 +708,11 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.eb.Define("fmt_float", "%.0f\n\x00") // Print float without decimal places
 
 	// Generate code
+	// Set up stack frame
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+	fc.out.SubImmFromReg("rsp", 8) // Align stack to 16 bytes (push rbp made it 8-byte aligned)
+
 	// Initialize registers
 	fc.out.XorRegWithReg("rax", "rax")
 	fc.out.XorRegWithReg("rdi", "rdi")
@@ -508,8 +782,17 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 
 	// Regenerate code with correct addresses
 	fc.eb.text.Reset()
-	fc.callOrder = []string{} // Clear call order for recompilation
-	fc.stringCounter = 0      // Reset string counter for recompilation
+	fc.eb.pcRelocations = []PCRelocation{}  // Reset PC relocations for recompilation
+	fc.callOrder = []string{}               // Clear call order for recompilation
+	fc.stringCounter = 0                    // Reset string counter for recompilation
+	fc.labelCounter = 0                     // Reset label counter for recompilation
+	fc.variables = make(map[string]int)     // Reset variables map
+	fc.mutableVars = make(map[string]bool)  // Reset mutability tracking
+	fc.stackOffset = 0                      // Reset stack offset
+	// Set up stack frame
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+	fc.out.SubImmFromReg("rsp", 8) // Align stack to 16 bytes
 	fc.out.XorRegWithReg("rax", "rax")
 	fc.out.XorRegWithReg("rdi", "rdi")
 	fc.out.XorRegWithReg("rsi", "rsi")
@@ -544,7 +827,7 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 	switch s := stmt.(type) {
 	case *AssignStmt:
 		// Check if variable already exists
-		_, exists := fc.variables[s.Name]
+		offset, exists := fc.variables[s.Name]
 
 		if exists {
 			// Variable exists - check if it's mutable
@@ -554,18 +837,216 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 			}
 			// It's mutable, allow reassignment
 		} else {
-			// First assignment - record mutability
+			// First assignment - allocate stack space (8 bytes for float64)
+			fc.stackOffset += 8
+			offset = fc.stackOffset
+			fc.variables[s.Name] = offset
 			fc.mutableVars[s.Name] = s.Mutable
+			// Actually allocate the stack space
+			fc.out.SubImmFromReg("rsp", 8)
 		}
 
 		// Evaluate expression into xmm0
 		fc.compileExpression(s.Value)
-		// For now, keep in xmm0 (in full compiler, would push to stack)
-		fc.variables[s.Name] = 0
+		// Store xmm0 to stack at variable's offset
+		// movsd [rbp - offset], xmm0
+		fc.out.MovXmmToMem("xmm0", "rbp", -offset)
+
+	case *IfStmt:
+		fc.compileIfStatement(s)
+
+	case *LoopStmt:
+		fc.compileLoopStatement(s)
 
 	case *ExpressionStmt:
 		fc.compileExpression(s.Expr)
 	}
+}
+
+func (fc *FlapCompiler) compileIfStatement(stmt *IfStmt) {
+	// Compile condition - this will set flags via ucomisd for comparisons
+	fc.compileExpression(stmt.Condition)
+
+	// Increment label counter for uniqueness
+	fc.labelCounter++
+
+	// Extract the comparison operator from the condition
+	// For floating-point comparisons (ucomisd), use unsigned conditions
+	var jumpCond JumpCondition
+	if binExpr, ok := stmt.Condition.(*BinaryExpr); ok {
+		switch binExpr.Operator {
+		case "<":
+			jumpCond = JumpAboveOrEqual // Jump to else if NOT below (i.e., >=)
+		case "<=":
+			jumpCond = JumpAbove // Jump to else if NOT below or equal (i.e., >)
+		case ">":
+			jumpCond = JumpBelowOrEqual // Jump to else if NOT above (i.e., <=)
+		case ">=":
+			jumpCond = JumpBelow // Jump to else if NOT above or equal (i.e., <)
+		case "==":
+			jumpCond = JumpNotEqual // Jump to else if NOT equal
+		case "!=":
+			jumpCond = JumpEqual // Jump to else if equal (NOT not-equal)
+		default:
+			jumpCond = JumpEqual // Default fallback
+		}
+	} else {
+		jumpCond = JumpEqual
+	}
+
+	// Emit conditional jump with placeholder offset
+	elseJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(jumpCond, 0) // Use 0 as placeholder
+
+	// Compile then block
+	for _, s := range stmt.ThenBlock {
+		fc.compileStatement(s)
+	}
+
+	// If there's an else block, emit unconditional jump to end
+	var endJumpPos int
+	if len(stmt.ElseBlock) > 0 {
+		endJumpPos = fc.eb.text.Len()
+		fc.out.JumpUnconditional(0) // Placeholder
+	}
+
+	// Mark else label position (where we are now)
+	elseLabelPos := fc.eb.text.Len()
+
+	// NOW patch the conditional jump - we know where else starts
+	targetPos := elseLabelPos
+	if len(stmt.ElseBlock) == 0 {
+		// No else block, so conditional jump goes to end (which is here)
+		targetPos = elseLabelPos
+	}
+	elseOffset := int32(targetPos - (elseJumpPos + 6)) // 6 bytes for conditional jump
+	fmt.Fprintf(os.Stderr, "DEBUG: Patching conditional jump at %d to target %d, offset=%d\n", elseJumpPos, targetPos, elseOffset)
+	fc.patchJumpImmediate(elseJumpPos+2, elseOffset) // +2 to skip 0F 8x
+
+	// Compile else block if present
+	if len(stmt.ElseBlock) > 0 {
+		for _, s := range stmt.ElseBlock {
+			fc.compileStatement(s)
+		}
+	}
+
+	// Mark end label position
+	endLabelPos := fc.eb.text.Len()
+
+	// Patch the unconditional jump to end (if we had an else block)
+	if len(stmt.ElseBlock) > 0 {
+		endOffset := int32(endLabelPos - (endJumpPos + 5)) // 5 bytes for unconditional jump
+		fmt.Fprintf(os.Stderr, "DEBUG: Patching unconditional jump at %d to target %d, offset=%d\n", endJumpPos, endLabelPos, endOffset)
+		fc.patchJumpImmediate(endJumpPos+1, endOffset) // +1 to skip E9
+	}
+}
+
+func (fc *FlapCompiler) compileLoopStatement(stmt *LoopStmt) {
+	// For now, we only support range(n) as the iterable
+	// Extract the loop count from range function call
+	funcCall, ok := stmt.Iterable.(*CallExpr)
+	if !ok || funcCall.Function != "range" || len(funcCall.Args) != 1 {
+		fmt.Fprintf(os.Stderr, "Error: only range(n) loops are currently supported\n")
+		os.Exit(1)
+	}
+
+	// Increment label counter for uniqueness
+	fc.labelCounter++
+
+	// Evaluate the loop limit (argument to range())
+	fc.compileExpression(funcCall.Args[0])
+
+	// Convert to integer and store in a temp variable for the limit
+	// cvttsd2si rax, xmm0
+	fc.out.Cvttsd2si("rax", "xmm0")
+
+	// Allocate stack space for loop limit
+	fc.stackOffset += 8
+	limitOffset := fc.stackOffset
+	fc.out.SubImmFromReg("rsp", 8)
+
+	// Store limit: mov [rbp - limitOffset], rax
+	fc.out.MovRegToMem("rax", "rbp", -limitOffset)
+
+	// Allocate stack space for iterator variable (as float64)
+	fc.stackOffset += 8
+	iterOffset := fc.stackOffset
+	fc.variables[stmt.Iterator] = iterOffset
+	fc.mutableVars[stmt.Iterator] = true
+	fc.out.SubImmFromReg("rsp", 8)
+
+	// Initialize iterator to 0.0
+	// xor rax, rax
+	fc.out.XorRegWithReg("rax", "rax")
+	// cvtsi2sd xmm0, rax (convert 0 to float64)
+	fc.out.Cvtsi2sd("xmm0", "rax")
+	// movsd [rbp - iterOffset], xmm0
+	fc.out.MovXmmToMem("xmm0", "rbp", -iterOffset)
+
+	// Loop start label
+	loopStartPos := fc.eb.text.Len()
+
+	// Load iterator value as float: movsd xmm0, [rbp - iterOffset]
+	fc.out.MovMemToXmm("xmm0", "rbp", -iterOffset)
+
+	// Convert iterator to integer for comparison: cvttsd2si rax, xmm0
+	fc.out.Cvttsd2si("rax", "xmm0")
+
+	// Load limit value: mov rdi, [rbp - limitOffset]
+	fc.out.MovMemToReg("rdi", "rbp", -limitOffset)
+
+	// Compare iterator with limit: cmp rax, rdi
+	fc.out.CmpRegToReg("rax", "rdi")
+
+	// Jump to loop end if iterator >= limit
+	loopEndJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreaterOrEqual, 0) // Placeholder
+
+	// Compile loop body
+	for _, s := range stmt.Body {
+		fc.compileStatement(s)
+	}
+
+	// Increment iterator (add 1.0 to float64 value)
+	// movsd xmm0, [rbp - iterOffset]
+	fc.out.MovMemToXmm("xmm0", "rbp", -iterOffset)
+	// Load 1.0 into xmm1
+	fc.out.XorRegWithReg("rax", "rax")
+	fc.out.IncReg("rax") // rax = 1
+	fc.out.Cvtsi2sd("xmm1", "rax")
+	// addpd xmm0, xmm1
+	fc.out.AddpdXmm("xmm0", "xmm1")
+	// movsd [rbp - iterOffset], xmm0
+	fc.out.MovXmmToMem("xmm0", "rbp", -iterOffset)
+
+	// Jump back to loop start
+	loopBackJumpPos := fc.eb.text.Len()
+	backOffset := int32(loopStartPos - (loopBackJumpPos + 5)) // 5 bytes for unconditional jump
+	fc.out.JumpUnconditional(backOffset)
+
+	// Loop end label
+	loopEndPos := fc.eb.text.Len()
+
+	// Patch the conditional jump to loop end
+	endOffset := int32(loopEndPos - (loopEndJumpPos + 6)) // 6 bytes for conditional jump
+	fmt.Fprintf(os.Stderr, "DEBUG LOOP: Patching conditional jump at %d to target %d, offset=%d\n", loopEndJumpPos, loopEndPos, endOffset)
+	fc.patchJumpImmediate(loopEndJumpPos+2, endOffset) // +2 to skip 0F 8x
+}
+
+func (fc *FlapCompiler) patchJumpImmediate(pos int, offset int32) {
+	// Get the current bytes from buffer
+	// This is safe because we're patching backwards into already-written code
+	bytes := fc.eb.text.Bytes()
+
+	fmt.Fprintf(os.Stderr, "DEBUG PATCH: Before patching at pos %d: %02x %02x %02x %02x\n", pos, bytes[pos], bytes[pos+1], bytes[pos+2], bytes[pos+3])
+
+	// Write 32-bit little-endian offset at position
+	bytes[pos] = byte(offset)
+	bytes[pos+1] = byte(offset >> 8)
+	bytes[pos+2] = byte(offset >> 16)
+	bytes[pos+3] = byte(offset >> 24)
+
+	fmt.Fprintf(os.Stderr, "DEBUG PATCH: After patching at pos %d: %02x %02x %02x %02x (offset=%d)\n", pos, bytes[pos], bytes[pos+1], bytes[pos+2], bytes[pos+3], offset)
 }
 
 func (fc *FlapCompiler) compileExpression(expr Expression) {
@@ -586,8 +1067,14 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		fc.out.LeaSymbolToReg("rax", labelName)
 
 	case *IdentExpr:
-		// Variable is in xmm0 from previous assignment (float64)
-		// No operation needed, value already there
+		// Load variable from stack into xmm0
+		offset, exists := fc.variables[e.Name]
+		if !exists {
+			fmt.Fprintf(os.Stderr, "Error: undefined variable '%s'\n", e.Name)
+			os.Exit(1)
+		}
+		// movsd xmm0, [rbp - offset]
+		fc.out.MovMemToXmm("xmm0", "rbp", -offset)
 
 	case *BinaryExpr:
 		// Compile left into xmm0
@@ -612,6 +1099,10 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.MulpdXmm("xmm0", "xmm1") // mulpd xmm0, xmm1
 		case "/":
 			fc.out.DivpdXmm("xmm0", "xmm1") // divpd xmm0, xmm1
+		case "<", "<=", ">", ">=", "==", "!=":
+			// Compare xmm0 with xmm1, sets flags
+			fc.out.Ucomisd("xmm0", "xmm1")
+			// For now, don't convert to boolean - leave flags set for conditional jump
 		}
 
 	case *CallExpr:

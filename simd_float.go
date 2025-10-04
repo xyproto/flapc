@@ -396,3 +396,46 @@ func (o *Out) cvttsd2siX86(dst, src string) {
 
 	fmt.Fprintln(os.Stderr)
 }
+
+// Ucomisd - Compare scalar double-precision floating-point values and set EFLAGS
+// ucomisd xmm1, xmm2
+func (o *Out) Ucomisd(xmm1, xmm2 string) {
+	switch o.machine {
+	case MachineX86_64:
+		o.ucomisdX86(xmm1, xmm2)
+	}
+}
+
+func (o *Out) ucomisdX86(xmm1, xmm2 string) {
+	fmt.Fprintf(os.Stderr, "ucomisd %s, %s: ", xmm1, xmm2)
+
+	var xmm1Num, xmm2Num int
+	fmt.Sscanf(xmm1, "xmm%d", &xmm1Num)
+	fmt.Sscanf(xmm2, "xmm%d", &xmm2Num)
+
+	// 66 prefix for packed double
+	o.Write(0x66)
+
+	// REX if needed
+	rex := uint8(0)
+	if xmm1Num >= 8 || xmm2Num >= 8 {
+		rex = 0x40
+		if xmm1Num >= 8 {
+			rex |= 0x04 // REX.R
+		}
+		if xmm2Num >= 8 {
+			rex |= 0x01 // REX.B
+		}
+		o.Write(rex)
+	}
+
+	// 0F 2E - UCOMISD opcode
+	o.Write(0x0F)
+	o.Write(0x2E)
+
+	// ModR/M: 11 xmm1 xmm2
+	modrm := uint8(0xC0) | (uint8(xmm1Num&7) << 3) | uint8(xmm2Num&7)
+	o.Write(modrm)
+
+	fmt.Fprintln(os.Stderr)
+}

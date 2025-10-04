@@ -14,7 +14,7 @@ program = { statement } ;
 
 
 
-statement = assignment | match_assignment | expression ;
+statement = assignment | match_assignment | if_statement | expression ;
 
 
 
@@ -26,8 +26,12 @@ match_assignment = identifier "=~" identifier "{" { pattern "->" expression } "}
 
 
 
+if_statement = "if" comparison_expr { statement } [ "else" { statement } ] "end" ;
+
+
+
 expression = parallel_expr | reduction_expr | pipeline_expr | match_expr |
-             lambda_expr | fma_expr | primary_expr ;
+             lambda_expr | fma_expr | comparison_expr | primary_expr ;
 
 
 
@@ -266,10 +270,11 @@ digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
 
 
 
-### Keywords (15)
+### Keywords (18)
 
     in and or not yes no me return or!
     mask simd sum product max min
+    if else end
 
 
 
@@ -280,6 +285,43 @@ digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
 
 
 ### Complete Feature Set
+
+
+
+#### Conditional Control Flow
+
+Flap uses if/else/end blocks with comparison operators for branching logic.
+
+```
+// Basic if statement
+if x < y
+    println("x is less than y")
+end
+
+// If/else branches
+if score >= 90
+    grade = "A"
+else
+    grade = "B"
+end
+
+// Comparison operators: <, <=, >, >=, ==, !=
+if temperature > 100
+    status = "boiling"
+else
+    if temperature < 0
+        status = "freezing"
+    else
+        status = "normal"
+    end
+end
+
+// Comparisons use UCOMISD (unordered scalar double compare)
+// Efficient floating-point comparisons with proper NaN handling
+if distance <= threshold
+    trigger_event()
+end
+```
 
 
 

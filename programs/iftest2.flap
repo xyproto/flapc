@@ -1,0 +1,9 @@
+# iftest2.flap - simpler if test
+x := 10
+y := 20
+
+if x < y
+    println("yes")
+end
+
+exit(0)

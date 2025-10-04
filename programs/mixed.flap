@@ -1,0 +1,6 @@
+# mixed.flap - test const and mutable together
+pi = 3
+radius := 5
+area := pi * radius * radius
+println(area)
+exit(0)

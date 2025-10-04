@@ -1,0 +1,12 @@
+# iftest3.flap - test with println before if
+println("before if")
+
+x := 10
+y := 20
+
+if x < y
+    println("yes")
+end
+
+println("after if")
+exit(0)

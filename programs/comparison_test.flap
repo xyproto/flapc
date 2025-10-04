@@ -1,0 +1,48 @@
+# comparison_test.flap - test all comparison operators
+x := 10
+y := 20
+z := 10
+
+# Test <
+if x < y
+    println("10 < 20: true")
+else
+    println("10 < 20: false")
+end
+
+# Test >
+if y > x
+    println("20 > 10: true")
+else
+    println("20 > 10: false")
+end
+
+# Test ==
+if x == z
+    println("10 == 10: true")
+else
+    println("10 == 10: false")
+end
+
+# Test !=
+if x != y
+    println("10 != 20: true")
+else
+    println("10 != 20: false")
+end
+
+# Test <=
+if x <= z
+    println("10 <= 10: true")
+else
+    println("10 <= 10: false")
+end
+
+# Test >=
+if y >= x
+    println("20 >= 10: true")
+else
+    println("20 >= 10: false")
+end
+
+exit(0)
