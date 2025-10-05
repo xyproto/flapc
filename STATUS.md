@@ -13,6 +13,12 @@
 - **Loops**: `@ identifier in range(n) { }` syntax
 - **Builtin Functions**: `range(n)`, `println()`, `exit()`
 
+### Data Structures
+- **Lists**: Literal syntax `[1, 2, 3]`, stored in .rodata with length prefix
+- **List Indexing**: Access elements with `list[index]`
+- **List Iteration**: Loop over elements with `@ item in list { }`
+- **Empty Lists**: `[]` evaluates to 0 (null pointer)
+
 ### Code Generation
 - **Architectures**: x86-64 (primary), ARM64 (partial), RISC-V (partial)
 - **Instructions**: 
@@ -42,7 +48,10 @@
 - [ ] Objects `@{ }` with methods
 - [ ] Self-reference `me`
 - [ ] Error handling `or!` operator
-- [ ] List/array literals `[1, 2, 3]`
+- [x] List/array literals `[1, 2, 3]` ✅
+- [x] List indexing `list[index]` ✅
+- [x] List iteration `@ item in list { }` ✅
+- [ ] List methods (length, append, etc.)
 - [ ] Map literals `{key: value}`
 
 ### Language Constructs
@@ -59,6 +68,9 @@
 - ✅ Loops: Simple (range(5)), nested (3x3), with arithmetic
 - ✅ Conditionals: if/else branching
 - ✅ Variables: Assignment and reassignment
+- ✅ Lists: Literals [1, 2, 3], indexing list[0], multiple lists, empty lists
+- ✅ List Iteration: `@ item in list { println(item) }`
+- ✅ Loop variables: Using iterator in expressions (i * 2)
 
 ## 🐛 Known Issues
 - None currently
@@ -90,8 +102,9 @@
 
 ## 📈 Next Steps
 
-1. **Lists/Arrays**: Foundation for SIMD operations
-2. **Lambda Expressions**: Enable functional programming patterns
-3. **Parallel Operator `||`**: Core SIMD feature
-4. **Pattern Matching**: Core language feature
+1. **Lambda Expressions**: Enable functional programming patterns `(x) -> x * 2`
+2. **Function Definitions**: User-defined functions with parameters and return values
+3. **Parallel Operator `||`**: Core SIMD feature for vectorization
+4. **List Methods**: `length()`, `append()`, `map()`, `filter()`
+5. **Pattern Matching**: Core language feature `=~`
 

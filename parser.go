@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unsafe"
 )
 
 // Token types for Flap language
@@ -40,6 +41,8 @@ const (
 	TOKEN_IN        // in keyword
 	TOKEN_LBRACE    // {
 	TOKEN_RBRACE    // }
+	TOKEN_LBRACKET  // [
+	TOKEN_RBRACKET  // ]
 )
 
 type Token struct {
@@ -216,6 +219,12 @@ func (l *Lexer) NextToken() Token {
 	case '}':
 		l.pos++
 		return Token{Type: TOKEN_RBRACE, Value: "}", Line: l.line}
+	case '[':
+		l.pos++
+		return Token{Type: TOKEN_LBRACKET, Value: "[", Line: l.line}
+	case ']':
+		l.pos++
+		return Token{Type: TOKEN_RBRACKET, Value: "]", Line: l.line}
 	}
 
 	return Token{Type: TOKEN_EOF, Line: l.line}
@@ -368,6 +377,29 @@ func (c *CallExpr) String() string {
 	return c.Function + "(" + strings.Join(args, ", ") + ")"
 }
 func (c *CallExpr) expressionNode() {}
+
+type ListExpr struct {
+	Elements []Expression
+}
+
+func (l *ListExpr) String() string {
+	elements := make([]string, len(l.Elements))
+	for i, elem := range l.Elements {
+		elements[i] = elem.String()
+	}
+	return "[" + strings.Join(elements, ", ") + "]"
+}
+func (l *ListExpr) expressionNode() {}
+
+type IndexExpr struct {
+	List  Expression
+	Index Expression
+}
+
+func (i *IndexExpr) String() string {
+	return i.List.String() + "[" + i.Index.String() + "]"
+}
+func (i *IndexExpr) expressionNode() {}
 
 // Parser for Flap language
 type Parser struct {
@@ -603,17 +635,32 @@ func (p *Parser) parseAdditive() Expression {
 }
 
 func (p *Parser) parseMultiplicative() Expression {
-	left := p.parsePrimary()
+	left := p.parsePostfix()
 
 	for p.peek.Type == TOKEN_STAR || p.peek.Type == TOKEN_SLASH {
 		p.nextToken()
 		op := p.current.Value
 		p.nextToken()
-		right := p.parsePrimary()
+		right := p.parsePostfix()
 		left = &BinaryExpr{Left: left, Operator: op, Right: right}
 	}
 
 	return left
+}
+
+func (p *Parser) parsePostfix() Expression {
+	expr := p.parsePrimary()
+
+	// Handle postfix operations like indexing
+	for p.peek.Type == TOKEN_LBRACKET {
+		p.nextToken() // skip current expr
+		p.nextToken() // skip '['
+		index := p.parseExpression()
+		p.nextToken() // move to ']'
+		expr = &IndexExpr{List: expr, Index: index}
+	}
+
+	return expr
 }
 
 func (p *Parser) parsePrimary() Expression {
@@ -654,6 +701,24 @@ func (p *Parser) parsePrimary() Expression {
 		expr := p.parseExpression()
 		p.nextToken() // skip ')'
 		return expr
+
+	case TOKEN_LBRACKET:
+		p.nextToken() // skip '['
+		elements := []Expression{}
+
+		if p.current.Type != TOKEN_RBRACKET {
+			elements = append(elements, p.parseExpression())
+			for p.peek.Type == TOKEN_COMMA {
+				p.nextToken() // skip current
+				p.nextToken() // skip ','
+				elements = append(elements, p.parseExpression())
+			}
+		}
+
+		// current should be on last element or on '['
+		// peek should be ']'
+		p.nextToken() // move to ']'
+		return &ListExpr{Elements: elements}
 	}
 
 	return nil
@@ -942,14 +1007,18 @@ func (fc *FlapCompiler) compileIfStatement(stmt *IfStmt) {
 }
 
 func (fc *FlapCompiler) compileLoopStatement(stmt *LoopStmt) {
-	// For now, we only support range(n) as the iterable
-	// Extract the loop count from range function call
-	funcCall, ok := stmt.Iterable.(*CallExpr)
-	if !ok || funcCall.Function != "range" || len(funcCall.Args) != 1 {
-		fmt.Fprintf(os.Stderr, "Error: only range(n) loops are currently supported\n")
-		os.Exit(1)
+	// Check if iterating over range() or a list
+	funcCall, isRangeCall := stmt.Iterable.(*CallExpr)
+	if isRangeCall && funcCall.Function == "range" && len(funcCall.Args) == 1 {
+		// Range loop
+		fc.compileRangeLoop(stmt, funcCall)
+	} else {
+		// List iteration
+		fc.compileListLoop(stmt)
 	}
+}
 
+func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, funcCall *CallExpr) {
 	// Increment label counter for uniqueness
 	fc.labelCounter++
 
@@ -1033,6 +1102,118 @@ func (fc *FlapCompiler) compileLoopStatement(stmt *LoopStmt) {
 	fc.patchJumpImmediate(loopEndJumpPos+2, endOffset) // +2 to skip 0F 8x
 }
 
+func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
+	// Increment label counter for uniqueness
+	fc.labelCounter++
+
+	// Evaluate the list expression (returns pointer as float64 in xmm0)
+	fc.compileExpression(stmt.Iterable)
+
+	// Save list pointer to stack (16 bytes for alignment)
+	fc.stackOffset += 16
+	listPtrOffset := fc.stackOffset
+	fc.out.SubImmFromReg("rsp", 16)
+	fc.out.MovXmmToMem("xmm0", "rbp", -listPtrOffset)
+
+	// Convert pointer from float64 to integer in rax
+	fc.out.MovMemToXmm("xmm1", "rbp", -listPtrOffset)
+	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.MovXmmToMem("xmm1", "rsp", 0)
+	fc.out.MovMemToReg("rax", "rsp", 0)
+	fc.out.AddImmToReg("rsp", 8)
+
+	// Load list length from [rax] (first 8 bytes)
+	fc.out.MovMemToXmm("xmm0", "rax", 0)
+
+	// Convert length to integer
+	fc.out.Cvttsd2si("rax", "xmm0")
+
+	// Store length in stack
+	fc.stackOffset += 16
+	lengthOffset := fc.stackOffset
+	fc.out.SubImmFromReg("rsp", 16)
+	fc.out.MovRegToMem("rax", "rbp", -lengthOffset)
+
+	// Allocate stack space for index variable
+	fc.stackOffset += 16
+	indexOffset := fc.stackOffset
+	fc.out.SubImmFromReg("rsp", 16)
+
+	// Initialize index to 0
+	fc.out.XorRegWithReg("rax", "rax")
+	fc.out.MovRegToMem("rax", "rbp", -indexOffset)
+
+	// Allocate stack space for iterator variable (the actual value from the list)
+	fc.stackOffset += 16
+	iterOffset := fc.stackOffset
+	fc.variables[stmt.Iterator] = iterOffset
+	fc.mutableVars[stmt.Iterator] = true
+	fc.out.SubImmFromReg("rsp", 16)
+
+	// Loop start label
+	loopStartPos := fc.eb.text.Len()
+
+	// Load index: mov rax, [rbp - indexOffset]
+	fc.out.MovMemToReg("rax", "rbp", -indexOffset)
+
+	// Load length: mov rdi, [rbp - lengthOffset]
+	fc.out.MovMemToReg("rdi", "rbp", -lengthOffset)
+
+	// Compare index with length: cmp rax, rdi
+	fc.out.CmpRegToReg("rax", "rdi")
+
+	// Jump to loop end if index >= length
+	loopEndJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreaterOrEqual, 0) // Placeholder
+
+	// Load list pointer from stack to rbx
+	fc.out.MovMemToXmm("xmm1", "rbp", -listPtrOffset)
+	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.MovXmmToMem("xmm1", "rsp", 0)
+	fc.out.MovMemToReg("rbx", "rsp", 0)
+	fc.out.AddImmToReg("rsp", 8)
+
+	// Skip length prefix: rbx += 8
+	fc.out.AddImmToReg("rbx", 8)
+
+	// Load index into rax
+	fc.out.MovMemToReg("rax", "rbp", -indexOffset)
+
+	// Calculate offset: rax * 8
+	fc.out.MulRegWithImm("rax", 8)
+
+	// Add offset to base: rbx = rbx + rax
+	fc.out.AddRegToReg("rbx", "rax")
+
+	// Load element from list: movsd xmm0, [rbx]
+	fc.out.MovMemToXmm("xmm0", "rbx", 0)
+
+	// Store in iterator variable
+	fc.out.MovXmmToMem("xmm0", "rbp", -iterOffset)
+
+	// Compile loop body
+	for _, s := range stmt.Body {
+		fc.compileStatement(s)
+	}
+
+	// Increment index
+	fc.out.MovMemToReg("rax", "rbp", -indexOffset)
+	fc.out.IncReg("rax")
+	fc.out.MovRegToMem("rax", "rbp", -indexOffset)
+
+	// Jump back to loop start
+	loopBackJumpPos := fc.eb.text.Len()
+	backOffset := int32(loopStartPos - (loopBackJumpPos + 5)) // 5 bytes for unconditional jump
+	fc.out.JumpUnconditional(backOffset)
+
+	// Loop end label
+	loopEndPos := fc.eb.text.Len()
+
+	// Patch the conditional jump to loop end
+	endOffset := int32(loopEndPos - (loopEndJumpPos + 6)) // 6 bytes for conditional jump
+	fc.patchJumpImmediate(loopEndJumpPos+2, endOffset) // +2 to skip 0F 8x
+}
+
 func (fc *FlapCompiler) patchJumpImmediate(pos int, offset int32) {
 	// Get the current bytes from buffer
 	// This is safe because we're patching backwards into already-written code
@@ -1107,6 +1288,99 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 	case *CallExpr:
 		fc.compileCall(e)
+
+	case *ListExpr:
+		// For now, create list data in .rodata and return pointer
+		// TODO: Implement proper list representation with length/capacity
+		if len(e.Elements) == 0 {
+			// Empty list - return null pointer (0) as float64
+			fc.out.XorRegWithReg("rax", "rax")
+			fc.out.Cvtsi2sd("xmm0", "rax")
+		} else {
+			// Allocate list data in .rodata
+			labelName := fmt.Sprintf("list_%d", fc.stringCounter)
+			fc.stringCounter++
+
+			// Store list as: [length (8 bytes)] [element1] [element2] ...
+			var listData []byte
+
+			// First, add length as float64
+			length := float64(len(e.Elements))
+			lengthBits := uint64(0)
+			*(*float64)(unsafe.Pointer(&lengthBits)) = length
+			listData = append(listData, byte(lengthBits&0xFF))
+			listData = append(listData, byte((lengthBits>>8)&0xFF))
+			listData = append(listData, byte((lengthBits>>16)&0xFF))
+			listData = append(listData, byte((lengthBits>>24)&0xFF))
+			listData = append(listData, byte((lengthBits>>32)&0xFF))
+			listData = append(listData, byte((lengthBits>>40)&0xFF))
+			listData = append(listData, byte((lengthBits>>48)&0xFF))
+			listData = append(listData, byte((lengthBits>>56)&0xFF))
+
+			// Then add elements
+			for _, elem := range e.Elements {
+				// Evaluate element to get float64 value
+				// For now, only support number literals
+				if numExpr, ok := elem.(*NumberExpr); ok {
+					val := numExpr.Value
+					// Convert float64 to 8 bytes (little-endian)
+					bits := uint64(0)
+					*(*float64)(unsafe.Pointer(&bits)) = val
+					listData = append(listData, byte(bits&0xFF))
+					listData = append(listData, byte((bits>>8)&0xFF))
+					listData = append(listData, byte((bits>>16)&0xFF))
+					listData = append(listData, byte((bits>>24)&0xFF))
+					listData = append(listData, byte((bits>>32)&0xFF))
+					listData = append(listData, byte((bits>>40)&0xFF))
+					listData = append(listData, byte((bits>>48)&0xFF))
+					listData = append(listData, byte((bits>>56)&0xFF))
+				} else {
+					fmt.Fprintf(os.Stderr, "Error: list elements must be constant numbers for now\n")
+					os.Exit(1)
+				}
+			}
+
+			fc.eb.Define(labelName, string(listData))
+			fc.out.LeaSymbolToReg("rax", labelName)
+			// Convert pointer to float64: reinterpret rax as xmm0
+			// Push rax to stack, then load as float64 into xmm0
+			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.MovRegToMem("rax", "rsp", 0)
+			fc.out.MovMemToXmm("xmm0", "rsp", 0)
+			fc.out.AddImmToReg("rsp", 8)
+		}
+
+	case *IndexExpr:
+		// Compile list expression (returns pointer as float64 in xmm0)
+		fc.compileExpression(e.List)
+		// Save list pointer to stack
+		fc.out.SubImmFromReg("rsp", 16)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+		// Compile index expression (returns index as float64 in xmm0)
+		fc.compileExpression(e.Index)
+
+		// Convert index from float64 to integer in rax
+		fc.out.Cvttsd2si("rax", "xmm0") // truncate float to int
+
+		// Load list pointer from stack to rbx
+		fc.out.MovMemToXmm("xmm1", "rsp", 0)
+		// Convert pointer from float64 back to integer in rbx
+		fc.out.MovXmmToMem("xmm1", "rsp", 8)
+		fc.out.MovMemToReg("rbx", "rsp", 8)
+		fc.out.AddImmToReg("rsp", 16)
+
+		// Skip the length prefix (first 8 bytes)
+		fc.out.AddImmToReg("rbx", 8)
+
+		// Calculate offset: rax * 8 (each float64 is 8 bytes)
+		fc.out.MulRegWithImm("rax", 8) // rax = rax * 8
+
+		// Add offset to base pointer: rbx = rbx + rax
+		fc.out.AddRegToReg("rbx", "rax")
+
+		// Load float64 from [rbx] into xmm0
+		fc.out.MovMemToXmm("xmm0", "rbx", 0)
 	}
 }
 
