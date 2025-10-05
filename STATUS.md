@@ -3,21 +3,31 @@
 ## ✅ Implemented Features
 
 ### Core Language
+- **Comments**: `//` for single-line comments
 - **Variables**: Mutable (`:=`) and immutable (`=`) assignment
 - **Data Types**: Float64 foundation (all values are float64)
 - **Arithmetic**: `+`, `-`, `*`, `/` (scalar double-precision)
 - **Comparisons**: `<`, `<=`, `>`, `>=`, `==`, `!=`
+- **Length Operator**: `#list` returns the length of a list
 
 ### Control Flow
 - **Conditionals**: `if`/`else`/`end` blocks with comparison operators
 - **Loops**: `@ identifier in range(n) { }` syntax
-- **Builtin Functions**: `range(n)`, `println()`, `exit()`
+- **Builtin Functions**: `range(n)`, `println()`, `exit()`, `len()`
 
 ### Data Structures
 - **Lists**: Literal syntax `[1, 2, 3]`, stored in .rodata with length prefix
 - **List Indexing**: Access elements with `list[index]`
 - **List Iteration**: Loop over elements with `@ item in list { }`
+- **List Length**: Get list length with `len(list)`, returns 0.0 for empty lists
 - **Empty Lists**: `[]` evaluates to 0 (null pointer)
+
+### Functions & Lambdas
+- **Lambda Expressions**: `(x) -> x * 2` or `(x, y) -> x + y`
+- **First-Class Functions**: Store lambdas in variables
+- **Function Pointers**: Functions represented as addresses (reinterpreted as float64)
+- **Closures**: Lambdas capture no external state (stateless)
+- **Calling Convention**: Up to 6 parameters in xmm0-xmm5, result in xmm0
 
 ### Code Generation
 - **Architectures**: x86-64 (primary), ARM64 (partial), RISC-V (partial)
@@ -36,8 +46,8 @@
 ## 🚧 In Progress / Planned
 
 ### SIMD Features (Core Language Feature)
-- [ ] Parallel operator `||` for SIMD operations
-- [ ] Lambda expressions `(x) -> expression`
+- [ ] Parallel operator `||` for SIMD operations (parsing done, codegen needs work)
+- [x] Lambda expressions `(x) -> expression` ✅
 - [ ] Gather/scatter `@[]` for sparse access
 - [ ] Mask type for predication
 - [ ] Reductions `||>` (sum, max, min, etc.)
@@ -51,7 +61,8 @@
 - [x] List/array literals `[1, 2, 3]` ✅
 - [x] List indexing `list[index]` ✅
 - [x] List iteration `@ item in list { }` ✅
-- [ ] List methods (length, append, etc.)
+- [x] List length `len(list)` ✅
+- [ ] List methods (append, etc.)
 - [ ] Map literals `{key: value}`
 
 ### Language Constructs
@@ -69,11 +80,14 @@
 - ✅ Conditionals: if/else branching
 - ✅ Variables: Assignment and reassignment
 - ✅ Lists: Literals [1, 2, 3], indexing list[0], multiple lists, empty lists
+- ✅ List Length: `len(list)` for both empty and non-empty lists
 - ✅ List Iteration: `@ item in list { println(item) }`
 - ✅ Loop variables: Using iterator in expressions (i * 2)
+- ✅ Lambda Expressions: `(x) -> x * 2`, storage, calling, multi-argument
+- ✅ First-Class Functions: Multiple lambdas, passing results between calls
 
 ## 🐛 Known Issues
-- None currently
+- **Parallel Operator Crash**: The `||` operator for SIMD map operations is parsed correctly but crashes at runtime. All individual components (lambdas, lists, function calls) work correctly in isolation.
 
 ## 🏗️ Architecture
 
@@ -102,9 +116,9 @@
 
 ## 📈 Next Steps
 
-1. **Lambda Expressions**: Enable functional programming patterns `(x) -> x * 2`
-2. **Function Definitions**: User-defined functions with parameters and return values
-3. **Parallel Operator `||`**: Core SIMD feature for vectorization
-4. **List Methods**: `length()`, `append()`, `map()`, `filter()`
+1. **Fix Parallel Operator `||`**: Complete SIMD map operation (parsing done, codegen buggy)
+2. **List with Lambda Integration**: `list || (x) -> x * 2` for element-wise operations
+3. **User-Defined Functions**: Named function definitions with `name = (params) -> body`
+4. **Closures**: Lambda capture of outer scope variables
 5. **Pattern Matching**: Core language feature `=~`
 

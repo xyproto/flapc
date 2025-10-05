@@ -1,4 +1,4 @@
-# iftest3.flap - test with println before if
+// iftest3.flap - test with println before if
 println("before if")
 
 x := 10

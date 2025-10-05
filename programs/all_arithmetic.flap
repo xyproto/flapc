@@ -1,4 +1,4 @@
-# all_arithmetic.flap - test all arithmetic operations
+// all_arithmetic.flap - test all arithmetic operations
 a := 10
 b := 3
 

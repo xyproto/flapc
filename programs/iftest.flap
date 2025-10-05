@@ -1,4 +1,4 @@
-# iftest.flap - test if/else statements
+// iftest.flap - test if/else statements
 x := 10
 y := 20
 

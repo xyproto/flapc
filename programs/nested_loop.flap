@@ -1,4 +1,4 @@
-# nested_loop.flap - test nested loops
+// nested_loop.flap - test nested loops
 @ i in range(3) {
     @ j in range(3) {
         println(i)

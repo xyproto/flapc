@@ -1,0 +1,4 @@
+// lambda_direct_test.flap - call lambda directly without storing
+result = ((x) -> x * 2)(5)
+println(result)
+exit(0)

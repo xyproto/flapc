@@ -43,6 +43,10 @@ const (
 	TOKEN_RBRACE    // }
 	TOKEN_LBRACKET  // [
 	TOKEN_RBRACKET  // ]
+	TOKEN_ARROW     // ->
+	TOKEN_PIPE      // |
+	TOKEN_PIPEPIPE  // ||
+	TOKEN_HASH      // #
 )
 
 type Token struct {
@@ -81,8 +85,8 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 	}
 
-	// Skip comments (lines starting with #)
-	if l.pos < len(l.input) && l.input[l.pos] == '#' {
+	// Skip comments (lines starting with //)
+	if l.pos < len(l.input)-1 && l.input[l.pos] == '/' && l.input[l.pos+1] == '/' {
 		for l.pos < len(l.input) && l.input[l.pos] != '\n' {
 			l.pos++
 		}
@@ -151,6 +155,11 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_PLUS, Value: "+", Line: l.line}
 	case '-':
+		// Check for ->
+		if l.peek() == '>' {
+			l.pos += 2
+			return Token{Type: TOKEN_ARROW, Value: "->", Line: l.line}
+		}
 		l.pos++
 		return Token{Type: TOKEN_MINUS, Value: "-", Line: l.line}
 	case '*':
@@ -225,6 +234,17 @@ func (l *Lexer) NextToken() Token {
 	case ']':
 		l.pos++
 		return Token{Type: TOKEN_RBRACKET, Value: "]", Line: l.line}
+	case '|':
+		// Check for ||
+		if l.peek() == '|' {
+			l.pos += 2
+			return Token{Type: TOKEN_PIPEPIPE, Value: "||", Line: l.line}
+		}
+		l.pos++
+		return Token{Type: TOKEN_PIPE, Value: "|", Line: l.line}
+	case '#':
+		l.pos++
+		return Token{Type: TOKEN_HASH, Value: "#", Line: l.line}
 	}
 
 	return Token{Type: TOKEN_EOF, Line: l.line}
@@ -400,6 +420,35 @@ func (i *IndexExpr) String() string {
 	return i.List.String() + "[" + i.Index.String() + "]"
 }
 func (i *IndexExpr) expressionNode() {}
+
+type LambdaExpr struct {
+	Params []string
+	Body   Expression
+}
+
+func (l *LambdaExpr) String() string {
+	return "(" + strings.Join(l.Params, ", ") + ") -> " + l.Body.String()
+}
+func (l *LambdaExpr) expressionNode() {}
+
+type ParallelExpr struct {
+	List      Expression // The list/data to operate on
+	Operation Expression // The lambda or function to apply
+}
+
+func (p *ParallelExpr) String() string {
+	return p.List.String() + " || " + p.Operation.String()
+}
+func (p *ParallelExpr) expressionNode() {}
+
+type LengthExpr struct {
+	Operand Expression
+}
+
+func (l *LengthExpr) String() string {
+	return "#" + l.Operand.String()
+}
+func (l *LengthExpr) expressionNode() {}
 
 // Parser for Flap language
 type Parser struct {
@@ -601,7 +650,20 @@ func (p *Parser) parseLoopStatement() *LoopStmt {
 }
 
 func (p *Parser) parseExpression() Expression {
-	return p.parseComparison()
+	return p.parseParallel()
+}
+
+func (p *Parser) parseParallel() Expression {
+	left := p.parseComparison()
+
+	for p.peek.Type == TOKEN_PIPEPIPE {
+		p.nextToken() // skip current
+		p.nextToken() // skip '||'
+		right := p.parseComparison()
+		left = &ParallelExpr{List: left, Operation: right}
+	}
+
+	return left
 }
 
 func (p *Parser) parseComparison() Expression {
@@ -665,6 +727,12 @@ func (p *Parser) parsePostfix() Expression {
 
 func (p *Parser) parsePrimary() Expression {
 	switch p.current.Type {
+	case TOKEN_HASH:
+		// Length operator: #list
+		p.nextToken() // skip '#'
+		expr := p.parsePrimary()
+		return &LengthExpr{Operand: expr}
+
 	case TOKEN_NUMBER:
 		val, _ := strconv.ParseFloat(p.current.Value, 64)
 		return &NumberExpr{Value: val}
@@ -697,7 +765,79 @@ func (p *Parser) parsePrimary() Expression {
 		return &IdentExpr{Name: name}
 
 	case TOKEN_LPAREN:
+		// Could be lambda (params) -> expr or parenthesized expression (expr)
 		p.nextToken() // skip '('
+
+		// Check for empty parameter list: () ->
+		if p.current.Type == TOKEN_RPAREN {
+			if p.peek.Type == TOKEN_ARROW {
+				p.nextToken() // skip ')'
+				p.nextToken() // skip '->'
+				body := p.parseExpression()
+				return &LambdaExpr{Params: []string{}, Body: body}
+			}
+			// Empty parens without arrow is an error, but skip for now
+			p.nextToken()
+			return nil
+		}
+
+		// Try to parse as parameter list (identifiers separated by commas)
+		// or as an expression
+		if p.current.Type == TOKEN_IDENT {
+			// Peek ahead to determine if it's a lambda or expression
+			// If we see: ident ) -> or ident , -> it's a lambda
+			firstIdent := p.current.Value
+
+			if p.peek.Type == TOKEN_RPAREN {
+				// Could be (x) -> expr or (x)
+				p.nextToken() // move to ')'
+				if p.peek.Type == TOKEN_ARROW {
+					// It's a lambda: (x) -> expr
+					p.nextToken() // skip ')'
+					p.nextToken() // skip '->'
+					body := p.parseExpression()
+					return &LambdaExpr{Params: []string{firstIdent}, Body: body}
+				}
+				// It's (x) parenthesized identifier
+				p.nextToken() // skip ')'
+				return &IdentExpr{Name: firstIdent}
+			}
+
+			if p.peek.Type == TOKEN_COMMA {
+				// Definitely a lambda with multiple params: (x, y, ...) -> expr
+				params := []string{firstIdent}
+				p.nextToken() // skip first ident
+
+				for p.current.Type == TOKEN_COMMA {
+					p.nextToken() // skip ','
+					if p.current.Type != TOKEN_IDENT {
+						fmt.Fprintf(os.Stderr, "Error: expected parameter name in lambda\n")
+						os.Exit(1)
+					}
+					params = append(params, p.current.Value)
+					p.nextToken() // skip param
+				}
+
+				// current should be ')'
+				if p.current.Type != TOKEN_RPAREN {
+					fmt.Fprintf(os.Stderr, "Error: expected ')' after lambda parameters\n")
+					os.Exit(1)
+				}
+
+				// peek should be '->'
+				if p.peek.Type != TOKEN_ARROW {
+					fmt.Fprintf(os.Stderr, "Error: expected '->' after lambda parameters\n")
+					os.Exit(1)
+				}
+
+				p.nextToken() // skip ')'
+				p.nextToken() // skip '->'
+				body := p.parseExpression()
+				return &LambdaExpr{Params: params, Body: body}
+			}
+		}
+
+		// Not a lambda, parse as parenthesized expression
 		expr := p.parseExpression()
 		p.nextToken() // skip ')'
 		return expr
@@ -726,16 +866,25 @@ func (p *Parser) parsePrimary() Expression {
 
 // Code Generator for Flap
 type FlapCompiler struct {
-	eb            *ExecutableBuilder
-	out           *Out
-	variables     map[string]int  // variable name -> stack offset
-	mutableVars   map[string]bool // variable name -> is mutable
-	sourceCode    string          // Store source for recompilation
-	usedFunctions map[string]bool // Track which functions are called
-	callOrder     []string        // Track order of function calls
-	stringCounter int             // Counter for unique string labels
-	stackOffset   int             // Current stack offset for variables
-	labelCounter  int             // Counter for unique labels (if/else, loops, etc)
+	eb             *ExecutableBuilder
+	out            *Out
+	variables      map[string]int  // variable name -> stack offset
+	mutableVars    map[string]bool // variable name -> is mutable
+	sourceCode     string          // Store source for recompilation
+	usedFunctions  map[string]bool // Track which functions are called
+	callOrder      []string        // Track order of function calls
+	stringCounter  int             // Counter for unique string labels
+	stackOffset    int             // Current stack offset for variables
+	labelCounter   int             // Counter for unique labels (if/else, loops, etc)
+	lambdaCounter  int             // Counter for unique lambda function names
+	lambdaFuncs    []LambdaFunc    // List of lambda functions to generate
+	lambdaOffsets  map[string]int  // Lambda name -> offset in .text
+}
+
+type LambdaFunc struct {
+	Name   string
+	Params []string
+	Body   Expression
 }
 
 func NewFlapCompiler(machine Machine) (*FlapCompiler, error) {
@@ -763,6 +912,7 @@ func NewFlapCompiler(machine Machine) (*FlapCompiler, error) {
 		mutableVars:   make(map[string]bool),
 		usedFunctions: make(map[string]bool),
 		callOrder:     []string{},
+		lambdaOffsets: make(map[string]int),
 	}, nil
 }
 
@@ -786,6 +936,9 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	for _, stmt := range program.Statements {
 		fc.compileStatement(stmt)
 	}
+
+	// Generate lambda functions
+	fc.generateLambdaFunctions()
 
 	// Write ELF using existing infrastructure
 	return fc.writeELF(outputPath)
@@ -851,6 +1004,9 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 	fc.callOrder = []string{}               // Clear call order for recompilation
 	fc.stringCounter = 0                    // Reset string counter for recompilation
 	fc.labelCounter = 0                     // Reset label counter for recompilation
+	fc.lambdaCounter = 0                    // Reset lambda counter for recompilation
+	fc.lambdaFuncs = []LambdaFunc{}         // Clear lambda functions list
+	fc.lambdaOffsets = make(map[string]int) // Reset lambda offsets
 	fc.variables = make(map[string]int)     // Reset variables map
 	fc.mutableVars = make(map[string]bool)  // Reset mutability tracking
 	fc.stackOffset = 0                      // Reset stack offset
@@ -867,6 +1023,15 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 	program := parser.ParseProgram()
 	for _, stmt := range program.Statements {
 		fc.compileStatement(stmt)
+	}
+
+	// Generate lambda functions
+	fc.generateLambdaFunctions()
+
+	// Set lambda function addresses
+	for lambdaName, offset := range fc.lambdaOffsets {
+		lambdaAddr := textAddr + uint64(offset)
+		fc.eb.DefineAddr(lambdaName, lambdaAddr)
 	}
 
 	// Patch PLT calls using callOrder (actual calls) mapped to pltFunctions positions
@@ -1381,10 +1546,313 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 		// Load float64 from [rbx] into xmm0
 		fc.out.MovMemToXmm("xmm0", "rbx", 0)
+
+	case *LambdaExpr:
+		// Generate a unique function name for this lambda
+		fc.lambdaCounter++
+		funcName := fmt.Sprintf("lambda_%d", fc.lambdaCounter)
+
+		// Store lambda for later code generation
+		fc.lambdaFuncs = append(fc.lambdaFuncs, LambdaFunc{
+			Name:   funcName,
+			Params: e.Params,
+			Body:   e.Body,
+		})
+
+		// Return function pointer as float64 in xmm0
+		// Use LEA to get function address, then convert to float64
+		fc.out.LeaSymbolToReg("rax", funcName)
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovRegToMem("rax", "rsp", 0)
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 8)
+
+	case *LengthExpr:
+		// Compile the operand (should be a list, returns pointer as float64 in xmm0)
+		fc.compileExpression(e.Operand)
+
+		// Convert pointer from float64 to integer in rax
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovMemToReg("rax", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 8)
+
+		// Check if pointer is null (empty list)
+		fc.out.CmpRegToImm("rax", 0)
+		skipJumpPos := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpNotEqual, 0) // Jump if not null
+		skipJumpEnd := fc.eb.text.Len()
+
+		// Empty list case: return 0.0
+		fc.out.XorRegWithReg("rax", "rax")
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+		endJumpPos := fc.eb.text.Len()
+		fc.out.JumpUnconditional(0) // Jump to end
+		endJumpEnd := fc.eb.text.Len()
+
+		// Non-null case: load length from list
+		notNullPos := fc.eb.text.Len()
+		fc.out.MovMemToXmm("xmm0", "rax", 0)
+
+		// Patch the skip jump
+		skipOffset := int32(notNullPos - skipJumpEnd)
+		fc.patchJumpImmediate(skipJumpPos+2, skipOffset)
+
+		// Patch end jump
+		finalPos := fc.eb.text.Len()
+		endOffset := int32(finalPos - endJumpEnd)
+		fc.patchJumpImmediate(endJumpPos+1, endOffset)
+
+		// Length is now in xmm0 as float64
+
+	case *ParallelExpr:
+		fc.compileParallelExpr(e)
 	}
 }
 
+func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
+	// For now, only support: list || lambda
+	lambda, ok := expr.Operation.(*LambdaExpr)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "Error: parallel operator currently only supports lambda expressions\n")
+		os.Exit(1)
+	}
+
+	if len(lambda.Params) != 1 {
+		fmt.Fprintf(os.Stderr, "Error: parallel operator lambda must have exactly one parameter\n")
+		os.Exit(1)
+	}
+
+	// Compile the lambda to get its function pointer (result in xmm0)
+	fc.compileExpression(expr.Operation)
+
+	// Save lambda function pointer (currently in xmm0) to stack
+	fc.out.SubImmFromReg("rsp", 16)
+	fc.out.MovXmmToMem("xmm0", "rsp", 8)  // Store at rsp+8
+
+	// Compile the input list expression (returns pointer as float64 in xmm0)
+	fc.compileExpression(expr.List)
+
+	// Save list pointer to stack
+	fc.out.MovXmmToMem("xmm0", "rsp", 0)  // Store at rsp+0
+
+	// Convert list pointer from float64 to integer in r13
+	fc.out.MovMemToReg("r13", "rsp", 0)
+
+	// Load list length from [r13] into r14
+	fc.out.MovMemToXmm("xmm0", "r13", 0)
+	fc.out.Cvttsd2si("r14", "xmm0") // r14 = length as integer
+
+	// Allocate result list on stack: 8 bytes (length) + length * 8 bytes (elements)
+	// For simplicity, allocate 2064 bytes (max 257 elements)
+	// 2064 is chosen to maintain 16-byte stack alignment: 16 (ptrs) + 2064 = 2080 (divisible by 16)
+	fc.out.SubImmFromReg("rsp", 2064)
+
+	// Store result list pointer in r12
+	fc.out.MovRegToReg("r12", "rsp") // r12 = result list base
+
+	// Store length in result list
+	fc.out.MovMemToXmm("xmm0", "r13", 0)  // Reload length as float64
+	fc.out.MovXmmToMem("xmm0", "r12", 0)
+
+	// Initialize loop counter to 0
+	fc.out.XorRegWithReg("r15", "r15") // r15 = index
+
+	// Loop start
+	loopStart := fc.eb.text.Len()
+
+	// Check if index >= length
+	fc.out.CmpRegToReg("r15", "r14")
+	loopEndJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreaterOrEqual, 0)
+
+	// Load element from input list: input_list[index]
+	// Element address = r13 + 8 + (r15 * 8)
+	fc.out.MovRegToReg("rax", "r15")
+	fc.out.MulRegWithImm("rax", 8)
+	fc.out.AddImmToReg("rax", 8) // skip length
+	fc.out.AddRegToReg("rax", "r13") // rax = address of element
+
+	// Load element into xmm0 (this is the argument to the lambda)
+	fc.out.MovMemToXmm("xmm0", "rax", 0)
+
+	// Save element to stack temporarily
+	fc.out.SubImmFromReg("rsp", 16)
+	fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+	// Load lambda function pointer from stack (stored as float64)
+	// Offset calculation: original_rsp - 16 + 8 (lambda ptr offset) = r12 + 2064 + 8
+	fc.out.MovMemToXmm("xmm1", "r12", 2072)
+
+	// Convert function pointer from float64 to integer in r11
+	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.MovXmmToMem("xmm1", "rsp", 0)
+	fc.out.MovMemToReg("r11", "rsp", 0)
+	fc.out.AddImmToReg("rsp", 8)
+
+	// Restore element to xmm0
+	fc.out.MovMemToXmm("xmm0", "rsp", 0)
+	fc.out.AddImmToReg("rsp", 16)
+
+	// Call the lambda function with element in xmm0
+	fc.out.CallRegister("r11")
+
+	// Result is in xmm0, store it in output list: result_list[index]
+	fc.out.MovRegToReg("rax", "r15")
+	fc.out.MulRegWithImm("rax", 8)
+	fc.out.AddImmToReg("rax", 8) // skip length
+	fc.out.AddRegToReg("rax", "r12") // rax = address in result list
+	fc.out.MovXmmToMem("xmm0", "rax", 0)
+
+	// Increment index
+	fc.out.IncReg("r15")
+
+	// Jump back to loop start
+	loopBackJumpPos := fc.eb.text.Len()
+	backOffset := int32(loopStart - (loopBackJumpPos + 5))
+	fc.out.JumpUnconditional(backOffset)
+
+	// Loop end
+	loopEndPos := fc.eb.text.Len()
+
+	// Patch conditional jump
+	endOffset := int32(loopEndPos - (loopEndJumpPos + 6))
+	fc.patchJumpImmediate(loopEndJumpPos+2, endOffset)
+
+	// Clean up: remove lambda pointer and list pointer from stack
+	fc.out.AddImmToReg("rsp", 16)
+
+	// Return result list pointer as float64 in xmm0
+	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.MovRegToMem("r12", "rsp", 0)
+	fc.out.MovMemToXmm("xmm0", "rsp", 0)
+	fc.out.AddImmToReg("rsp", 8)
+
+	// Note: result list (2056 bytes) is left on stack
+	// This is a memory leak for now, but works for simple programs
+}
+
+func (fc *FlapCompiler) generateLambdaFunctions() {
+	for _, lambda := range fc.lambdaFuncs {
+		// Record the offset of this lambda function in .text
+		fc.lambdaOffsets[lambda.Name] = fc.eb.text.Len()
+
+		// Mark the start of the lambda function with a label
+		fc.eb.MarkLabel(lambda.Name)
+
+		// Function prologue
+		fc.out.PushReg("rbp")
+		fc.out.MovRegToReg("rbp", "rsp")
+		fc.out.SubImmFromReg("rsp", 8) // Align stack
+
+		// Save previous state
+		oldVariables := fc.variables
+		oldMutableVars := fc.mutableVars
+		oldStackOffset := fc.stackOffset
+
+		// Create new scope for lambda
+		fc.variables = make(map[string]int)
+		fc.mutableVars = make(map[string]bool)
+		fc.stackOffset = 0
+
+		// Store parameters from xmm registers to stack
+		// Parameters come in xmm0, xmm1, xmm2, ...
+		xmmRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"}
+		for i, paramName := range lambda.Params {
+			if i >= len(xmmRegs) {
+				fmt.Fprintf(os.Stderr, "Error: lambda has too many parameters (max 6)\n")
+				os.Exit(1)
+			}
+
+			// Allocate stack space for parameter
+			fc.stackOffset += 16
+			paramOffset := fc.stackOffset
+			fc.variables[paramName] = paramOffset
+			fc.mutableVars[paramName] = false
+
+			// Allocate stack space
+			fc.out.SubImmFromReg("rsp", 16)
+
+			// Store parameter from xmm register to stack
+			fc.out.MovXmmToMem(xmmRegs[i], "rbp", -paramOffset)
+		}
+
+		// Compile lambda body (result in xmm0)
+		fc.compileExpression(lambda.Body)
+
+		// Function epilogue
+		// Clean up stack
+		fc.out.MovRegToReg("rsp", "rbp")
+		fc.out.PopReg("rbp")
+		fc.out.Ret()
+
+		// Restore previous state
+		fc.variables = oldVariables
+		fc.mutableVars = oldMutableVars
+		fc.stackOffset = oldStackOffset
+	}
+}
+
+func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
+	// Load function pointer from variable
+	offset, _ := fc.variables[call.Function]
+	fc.out.MovMemToXmm("xmm0", "rbp", -offset)
+
+	// Convert function pointer from float64 to integer in rax
+	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.MovXmmToMem("xmm0", "rsp", 0)
+	fc.out.MovMemToReg("rax", "rsp", 0)
+	fc.out.AddImmToReg("rsp", 8)
+
+	// Compile arguments and put them in xmm registers
+	xmmRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"}
+	if len(call.Args) > len(xmmRegs) {
+		fmt.Fprintf(os.Stderr, "Error: too many arguments to stored function (max 6)\n")
+		os.Exit(1)
+	}
+
+	// Save function pointer to stack (rax might get clobbered)
+	fc.out.SubImmFromReg("rsp", 16)
+	fc.out.MovRegToMem("rax", "rsp", 0)
+
+	// Evaluate all arguments and save to stack
+	for _, arg := range call.Args {
+		fc.compileExpression(arg) // Result in xmm0
+		fc.out.SubImmFromReg("rsp", 16)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+	}
+
+	// Load arguments from stack into xmm registers (in reverse order)
+	for i := len(call.Args) - 1; i >= 0; i-- {
+		fc.out.MovMemToXmm(xmmRegs[i], "rsp", 0)
+		fc.out.AddImmToReg("rsp", 16)
+	}
+
+	// Load function pointer from stack to r11
+	fc.out.MovMemToReg("r11", "rsp", 0)
+	fc.out.AddImmToReg("rsp", 16)
+
+	// Ensure stack is 16-byte aligned before call
+	// After the moves above, rsp should already be aligned
+	// but let's verify: original rsp was aligned, we did SubImmFromReg 16 for func ptr
+	// then SubImmFromReg 16 for each arg, then AddImmFromReg 16 for each arg,
+	// then AddImmFromReg 16 for func ptr, so we're back to original alignment
+
+	// Call the function pointer in r11
+	fc.out.CallRegister("r11")
+
+	// Result is in xmm0
+}
+
 func (fc *FlapCompiler) compileCall(call *CallExpr) {
+	// Check if this is a stored function (variable containing function pointer)
+	if _, isVariable := fc.variables[call.Function]; isVariable {
+		fc.compileStoredFunctionCall(call)
+		return
+	}
+
+	// Otherwise, handle builtin functions
 	switch call.Function {
 	case "println":
 		if len(call.Args) == 0 {
@@ -1411,6 +1879,50 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			fc.trackFunctionCall("printf")
 			fc.eb.GenerateCallInstruction("printf")
 		}
+
+	case "len":
+		if len(call.Args) != 1 {
+			fmt.Fprintf(os.Stderr, "Error: len() requires exactly one argument\n")
+			os.Exit(1)
+		}
+
+		// Compile the list expression (returns pointer as float64 in xmm0)
+		fc.compileExpression(call.Args[0])
+
+		// Convert pointer from float64 to integer in rax
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovMemToReg("rax", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 8)
+
+		// Check if pointer is null (empty list)
+		fc.out.CmpRegToImm("rax", 0)
+		skipJumpPos := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpNotEqual, 0) // Jump if not null
+		skipJumpEnd := fc.eb.text.Len()
+
+		// Empty list case: return 0.0
+		fc.out.XorRegWithReg("rax", "rax")
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+		endJumpPos := fc.eb.text.Len()
+		fc.out.JumpUnconditional(0) // Jump to end
+		endJumpEnd := fc.eb.text.Len()
+
+		// Non-null case: load length from list
+		notNullPos := fc.eb.text.Len()
+		fc.out.MovMemToXmm("xmm0", "rax", 0)
+
+		// Patch the skip jump
+		skipOffset := int32(notNullPos - skipJumpEnd)
+		fc.patchJumpImmediate(skipJumpPos+2, skipOffset)
+
+		// Patch end jump
+		finalPos := fc.eb.text.Len()
+		endOffset := int32(finalPos - endJumpEnd)
+		fc.patchJumpImmediate(endJumpPos+1, endOffset)
+
+		// Length is now in xmm0 as float64
 
 	case "exit":
 		if len(call.Args) > 0 {

@@ -1,0 +1,4 @@
+// lambda_parse_test.flap - test lambda parsing (will error in codegen)
+// f = (x) -> x * 2
+println("Testing lambda parsing")
+exit(0)

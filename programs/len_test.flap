@@ -1,0 +1,11 @@
+// len_test.flap - test list length function
+numbers = [1, 2, 3, 4, 5]
+
+length = len(numbers)
+println(length)
+
+empty = []
+empty_len = len(empty)
+println(empty_len)
+
+exit(0)

@@ -1,4 +1,4 @@
-# iftest2.flap - simpler if test
+// iftest2.flap - simpler if test
 x := 10
 y := 20
 

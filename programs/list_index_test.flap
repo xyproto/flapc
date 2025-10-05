@@ -1,4 +1,4 @@
-# list_index_test.flap - test list indexing
+// list_index_test.flap - test list indexing
 numbers = [10, 20, 30, 40, 50]
 first = numbers[0]
 println(first)

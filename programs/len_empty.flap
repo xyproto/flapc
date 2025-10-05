@@ -1,0 +1,6 @@
+// len_empty.flap - test len with empty list
+empty = []
+length = len(empty)
+println(length)
+
+exit(0)

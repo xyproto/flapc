@@ -1,0 +1,7 @@
+// parallel_single.flap - test with single element
+numbers = [5]
+doubled = numbers || (x) -> x * 2
+
+println(doubled[0])
+
+exit(0)

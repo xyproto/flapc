@@ -1,4 +1,4 @@
-# subtract.flap - test subtraction
+// subtract.flap - test subtraction
 result = 50 - 8
 println(result)
 exit(0)

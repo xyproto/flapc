@@ -1,4 +1,4 @@
-# mixed.flap - test const and mutable together
+// mixed.flap - test const and mutable together
 pi = 3
 radius := 5
 area := pi * radius * radius

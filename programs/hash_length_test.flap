@@ -1,0 +1,13 @@
+// hash_length_test.flap - test // length operator
+numbers = [1, 2, 3, 4, 5]
+
+// Get length using // operator
+length = #numbers
+println(length)
+
+// Test with empty list
+empty = []
+empty_len = //empty
+println(empty_len)
+
+exit(0)

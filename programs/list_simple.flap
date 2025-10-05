@@ -1,0 +1,5 @@
+// list_simple.flap - just test list creation
+numbers = [10, 20, 30]
+first = numbers[0]
+println(first)
+exit(0)

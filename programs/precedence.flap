@@ -1,5 +1,5 @@
-# precedence.flap - test operator precedence
-# 2 + 3 * 4 should be 2 + 12 = 14, not 5 * 4 = 20
+// precedence.flap - test operator precedence
+// 2 + 3 * 4 should be 2 + 12 = 14, not 5 * 4 = 20
 result = 2 + 3 * 4
 println(result)
 exit(0)

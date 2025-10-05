@@ -1,4 +1,4 @@
-# iftest4.flap - test else branch
+// iftest4.flap - test else branch
 x := 20
 y := 10
 

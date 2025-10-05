@@ -1,4 +1,4 @@
-# arithmetic_test.flap - test basic arithmetic
+// arithmetic_test.flap - test basic arithmetic
 x := 5
 y := 3
 sum := x + y

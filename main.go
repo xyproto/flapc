@@ -349,6 +349,14 @@ func (eb *ExecutableBuilder) DefineAddr(symbol string, addr uint64) {
 	}
 }
 
+func (eb *ExecutableBuilder) MarkLabel(label string) {
+	// Mark a position in .text for a label (like a function)
+	// Store as empty string - address will be set later based on text position
+	if _, ok := eb.consts[label]; !ok {
+		eb.consts[label] = &Const{value: ""}
+	}
+}
+
 func (eb *ExecutableBuilder) RodataSection() map[string]string {
 	rodataSymbols := make(map[string]string)
 	for name, c := range eb.consts {

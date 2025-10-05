@@ -1,4 +1,4 @@
-# list_test.flap - test basic list literal
+// list_test.flap - test basic list literal
 numbers = [1, 2, 3]
 println("List created")
 exit(0)
