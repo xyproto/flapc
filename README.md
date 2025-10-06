@@ -1,8 +1,8 @@
 `flapc` is an experiment in creating a vibecoded compiler for the Flap programming language.
 
-`.flap` code is compiled directly to machine code.
+Flap (`.flap`) code is compiled directly to machine code.
 
-`x86_64`, 64-bit ARM and 64-bit RISC-V is supported.
+`x86_64`, `aarch64` and `riscv64` are supported.
 
 This is a work in progress!
 
