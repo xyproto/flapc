@@ -58,8 +58,8 @@ func (o *Out) incARM64Reg(reg string) {
 	// Format: sf 0 0 10001 shift(2) imm12(12) Rn(5) Rd(5)
 	// sf=1 (64-bit), shift=00, imm12=1
 	instr := uint32(0x91000000) | // ADD immediate base
-		(1 << 10) |                           // imm12 = 1
-		(uint32(regInfo.Encoding&31) << 5) |  // Rn (source)
+		(1 << 10) | // imm12 = 1
+		(uint32(regInfo.Encoding&31) << 5) | // Rn (source)
 		(uint32(regInfo.Encoding & 31)) // Rd (dest, same as source)
 
 	o.Write(uint8(instr & 0xFF))
@@ -82,7 +82,7 @@ func (o *Out) incRISCVReg(reg string) {
 	// ADDI rd, rs1, imm
 	// Format: imm[11:0] rs1 000 rd 0010011
 	instr := uint32(0x13) |
-		(1 << 20) |                           // imm[11:0] = 1
+		(1 << 20) | // imm[11:0] = 1
 		(uint32(regInfo.Encoding&31) << 15) | // rs1
 		(uint32(regInfo.Encoding&31) << 7) // rd (same as rs1)
 

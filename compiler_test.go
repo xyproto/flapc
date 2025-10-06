@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// TestBasicCompilation tests that ggg can compile and generate an executable
+// TestBasicCompilation tests that flapc can compile and generate an executable
 func TestBasicCompilation(t *testing.T) {
 	eb, err := New("x86_64")
 	if err != nil {
@@ -140,7 +140,7 @@ func TestPLTGOT(t *testing.T) {
 // TestExecutableGeneration tests full executable generation
 func TestExecutableGeneration(t *testing.T) {
 	// Only run if we have write permissions
-	tmpfile := "/tmp/ggg_test_output"
+	tmpfile := "/tmp/flapc_test_output"
 	defer os.Remove(tmpfile)
 
 	eb, err := New("x86_64")

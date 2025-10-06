@@ -1,3 +1,3 @@
-module github.com/xyproto/ggg
+module github.com/xyproto/flapc
 
 go 1.25.1

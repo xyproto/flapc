@@ -12,7 +12,7 @@ import (
 
 // A tiny compiler for x86_64, aarch64, and riscv64 ELF files for Linux
 
-const versionString = "ggg 0.0.1"
+const versionString = "flapc 0.1.0"
 
 // Machine architecture constants
 type Machine int

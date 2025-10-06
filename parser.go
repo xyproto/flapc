@@ -28,25 +28,25 @@ const (
 	TOKEN_RPAREN
 	TOKEN_COMMA
 	TOKEN_NEWLINE
-	TOKEN_LT        // <
-	TOKEN_GT        // >
-	TOKEN_LE        // <=
-	TOKEN_GE        // >=
-	TOKEN_EQ        // ==
-	TOKEN_NE        // !=
-	TOKEN_IF        // if keyword
-	TOKEN_ELSE      // else keyword
-	TOKEN_END       // end keyword
-	TOKEN_AT        // @
-	TOKEN_IN        // in keyword
-	TOKEN_LBRACE    // {
-	TOKEN_RBRACE    // }
-	TOKEN_LBRACKET  // [
-	TOKEN_RBRACKET  // ]
-	TOKEN_ARROW     // ->
-	TOKEN_PIPE      // |
-	TOKEN_PIPEPIPE  // ||
-	TOKEN_HASH      // #
+	TOKEN_LT       // <
+	TOKEN_GT       // >
+	TOKEN_LE       // <=
+	TOKEN_GE       // >=
+	TOKEN_EQ       // ==
+	TOKEN_NE       // !=
+	TOKEN_IF       // if keyword
+	TOKEN_ELSE     // else keyword
+	TOKEN_END      // end keyword
+	TOKEN_AT       // @
+	TOKEN_IN       // in keyword
+	TOKEN_LBRACE   // {
+	TOKEN_RBRACE   // }
+	TOKEN_LBRACKET // [
+	TOKEN_RBRACKET // ]
+	TOKEN_ARROW    // ->
+	TOKEN_PIPE     // |
+	TOKEN_PIPEPIPE // ||
+	TOKEN_HASH     // #
 )
 
 type Token struct {
@@ -296,9 +296,9 @@ func (e *ExpressionStmt) String() string { return e.Expr.String() }
 func (e *ExpressionStmt) statementNode() {}
 
 type IfStmt struct {
-	Condition  Expression
-	ThenBlock  []Statement
-	ElseBlock  []Statement
+	Condition Expression
+	ThenBlock []Statement
+	ElseBlock []Statement
 }
 
 func (i *IfStmt) String() string {
@@ -325,9 +325,9 @@ func (i *IfStmt) String() string {
 func (i *IfStmt) statementNode() {}
 
 type LoopStmt struct {
-	Iterator   string     // Variable name (e.g., "i")
-	Iterable   Expression // Expression to iterate over (e.g., range(10))
-	Body       []Statement
+	Iterator string     // Variable name (e.g., "i")
+	Iterable Expression // Expression to iterate over (e.g., range(10))
+	Body     []Statement
 }
 
 func (l *LoopStmt) String() string {
@@ -866,19 +866,19 @@ func (p *Parser) parsePrimary() Expression {
 
 // Code Generator for Flap
 type FlapCompiler struct {
-	eb             *ExecutableBuilder
-	out            *Out
-	variables      map[string]int  // variable name -> stack offset
-	mutableVars    map[string]bool // variable name -> is mutable
-	sourceCode     string          // Store source for recompilation
-	usedFunctions  map[string]bool // Track which functions are called
-	callOrder      []string        // Track order of function calls
-	stringCounter  int             // Counter for unique string labels
-	stackOffset    int             // Current stack offset for variables
-	labelCounter   int             // Counter for unique labels (if/else, loops, etc)
-	lambdaCounter  int             // Counter for unique lambda function names
-	lambdaFuncs    []LambdaFunc    // List of lambda functions to generate
-	lambdaOffsets  map[string]int  // Lambda name -> offset in .text
+	eb            *ExecutableBuilder
+	out           *Out
+	variables     map[string]int  // variable name -> stack offset
+	mutableVars   map[string]bool // variable name -> is mutable
+	sourceCode    string          // Store source for recompilation
+	usedFunctions map[string]bool // Track which functions are called
+	callOrder     []string        // Track order of function calls
+	stringCounter int             // Counter for unique string labels
+	stackOffset   int             // Current stack offset for variables
+	labelCounter  int             // Counter for unique labels (if/else, loops, etc)
+	lambdaCounter int             // Counter for unique lambda function names
+	lambdaFuncs   []LambdaFunc    // List of lambda functions to generate
+	lambdaOffsets map[string]int  // Lambda name -> offset in .text
 }
 
 type LambdaFunc struct {
@@ -1376,7 +1376,7 @@ func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
 
 	// Patch the conditional jump to loop end
 	endOffset := int32(loopEndPos - (loopEndJumpPos + 6)) // 6 bytes for conditional jump
-	fc.patchJumpImmediate(loopEndJumpPos+2, endOffset) // +2 to skip 0F 8x
+	fc.patchJumpImmediate(loopEndJumpPos+2, endOffset)    // +2 to skip 0F 8x
 }
 
 func (fc *FlapCompiler) patchJumpImmediate(pos int, offset int32) {
@@ -1629,13 +1629,13 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 
 	// Save lambda function pointer (currently in xmm0) to stack
 	fc.out.SubImmFromReg("rsp", 16)
-	fc.out.MovXmmToMem("xmm0", "rsp", 8)  // Store at rsp+8
+	fc.out.MovXmmToMem("xmm0", "rsp", 8) // Store at rsp+8
 
 	// Compile the input list expression (returns pointer as float64 in xmm0)
 	fc.compileExpression(expr.List)
 
 	// Save list pointer to stack
-	fc.out.MovXmmToMem("xmm0", "rsp", 0)  // Store at rsp+0
+	fc.out.MovXmmToMem("xmm0", "rsp", 0) // Store at rsp+0
 
 	// Convert list pointer from float64 to integer in r13
 	fc.out.MovMemToReg("r13", "rsp", 0)
@@ -1653,7 +1653,7 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	fc.out.MovRegToReg("r12", "rsp") // r12 = result list base
 
 	// Store length in result list
-	fc.out.MovMemToXmm("xmm0", "r13", 0)  // Reload length as float64
+	fc.out.MovMemToXmm("xmm0", "r13", 0) // Reload length as float64
 	fc.out.MovXmmToMem("xmm0", "r12", 0)
 
 	// Initialize loop counter to 0
@@ -1671,7 +1671,7 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	// Element address = r13 + 8 + (r15 * 8)
 	fc.out.MovRegToReg("rax", "r15")
 	fc.out.MulRegWithImm("rax", 8)
-	fc.out.AddImmToReg("rax", 8) // skip length
+	fc.out.AddImmToReg("rax", 8)     // skip length
 	fc.out.AddRegToReg("rax", "r13") // rax = address of element
 
 	// Load element into xmm0 (this is the argument to the lambda)
@@ -1701,7 +1701,7 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	// Result is in xmm0, store it in output list: result_list[index]
 	fc.out.MovRegToReg("rax", "r15")
 	fc.out.MulRegWithImm("rax", 8)
-	fc.out.AddImmToReg("rax", 8) // skip length
+	fc.out.AddImmToReg("rax", 8)     // skip length
 	fc.out.AddRegToReg("rax", "r12") // rax = address in result list
 	fc.out.MovXmmToMem("xmm0", "rax", 0)
 

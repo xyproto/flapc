@@ -9,7 +9,7 @@ import (
 
 // TestDynamicELFStructure tests the structure of dynamically-linked ELF
 func TestDynamicELFStructure(t *testing.T) {
-	tmpfile := "/tmp/ggg_dynamic_test"
+	tmpfile := "/tmp/flapc_dynamic_test"
 	defer os.Remove(tmpfile)
 
 	eb, err := New("x86_64")
@@ -253,7 +253,7 @@ func TestStringTableDeduplication(t *testing.T) {
 
 // TestLDDOutput tests that ldd can analyze the generated executable
 func TestLDDOutput(t *testing.T) {
-	tmpfile := "/tmp/ggg_ldd_test"
+	tmpfile := "/tmp/flapc_ldd_test"
 	defer os.Remove(tmpfile)
 
 	eb, err := New("x86_64")
