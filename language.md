@@ -1,274 +1,81 @@
-# The GGG Programming Language
+# The Flap Programming Language
 
-
-
-Float. Map. Fly.
-
-
+Tagline: Float. Map. Fly.
 
 ### ebnf
 
 
-
+```
 program = { statement } ;
-
-
-
 statement = assignment | match_assignment | if_statement | expression ;
-
-
-
 assignment = identifier [ ":" type_annotation ] ( "=" | ":=" ) expression ;
-
-
-
 match_assignment = identifier "=~" identifier "{" { pattern "->" expression } "}" ;
-
-
-
 if_statement = "if" comparison_expr { statement } [ "else" { statement } ] "end" ;
-
-
-
 expression = parallel_expr | reduction_expr | pipeline_expr | match_expr |
              lambda_expr | fma_expr | comparison_expr | primary_expr ;
-
-
-
 parallel_expr = expression "||" expression ;
-
-
-
 reduction_expr = expression "||>" reduction_op ;
-
-
-
 pipeline_expr = expression "|" expression ;
-
-
-
 match_expr = "~" expression "{" { pattern "->" expression } "}" ;
-
-
-
 lambda_expr = "(" [ param_list ] ")" "->" expression ;
-
-
-
 fma_expr = expression "*+" expression "+" expression ;
-
-
-
 pattern = literal | identifier | filtered_pattern | guard_pattern | default_pattern ;
-
-
-
 filtered_pattern = identifier "{" filter_expr "}" ;
-
-
-
 guard_pattern = identifier [ "|" ] expression ;
-
-
-
 default_pattern = "~>" ;
-
-
-
 filter_expr = comparison_expr | expression ;
-
-
-
 comparison_expr = ( ">=" | "<=" | ">" | "<" | "==" | "!=" | "=~" | "!~" ) expression ;
-
-
-
 primary_expr = identifier | literal | list_literal | map_literal |
                comprehension | loop | filtered_expr | default_expr |
                property_access | array_access | gather_access | scatter_assign |
                head_expr | tail_expr | guard_expr | early_return_expr |
                error_expr | self_ref | object_def | function_call |
                return_stmt | simd_block | "(" expression ")" ;
-
-
-
 comprehension = "[" expression "in" expression "]" [ "{" ( expression | slice_expr ) "}" ] ;
-
-
-
 loop = [ simd_annotation ] "@" identifier "in" expression "{" { statement } "}" ;
-
-
-
 filtered_expr = expression "{" ( expression | slice_expr ) "}" ;
-
-
-
 slice_expr = [ expression ] ":" [ expression ] [ ":" expression ] ;
-
-
-
 default_expr = expression "or" expression ;
-
-
-
 guard_expr = expression "or" "return" [ expression ] ;
-
-
-
 early_return_expr = expression "or!" expression ;
-
-
-
 error_expr = "!" expression ;
-
-
-
 property_access = expression "." identifier | "me" "." identifier ;
-
-
-
 array_access = expression "." "[" expression "]" ;
-
-
-
 gather_access = expression "@" "[" expression "]" ;
-
-
-
 scatter_assign = expression "@" "[" expression "]" ":=" expression ;
-
-
-
 head_expr = "^" expression ;
-
-
-
 tail_expr = "_" expression ;
-
-
-
 self_ref = "me" ;
-
-
-
 object_def = "@" "{" [ object_member { "," object_member } ] "}" ;
-
-
-
 object_member = identifier ":" ( expression | method_def ) ;
-
-
-
 method_def = "(" [ param_list ] ")" "->" expression ;
-
-
-
 function_call = identifier "(" [ arg_list ] ")" ;
-
-
-
 return_stmt = "return" [ expression ] ;
-
-
-
 simd_block = "@" simd_annotation "{" { statement } "}" ;
-
-
-
 simd_annotation = "simd" [ "(" simd_param { "," simd_param } ")" ] ;
-
-
-
 simd_param = "width" "=" ( number | "auto" ) | "aligned" "=" number ;
-
-
-
 type_annotation = "mask" | "float64" | "[" type_annotation "]" | identifier ;
-
-
-
 reduction_op = "sum" | "product" | "max" | "min" | "any" | "all" ;
-
-
-
 list_literal = "[" [ expression { "," expression } ] "]" | "no" ;
-
-
-
 map_literal = "{" [ map_entry { "," map_entry } ] "}" ;
-
-
-
 map_entry = expression ":" expression ;
-
-
-
 type_def = identifier "=" type_expr ;
-
-
-
 type_expr = identifier | map_literal | union_type | object_def ;
-
-
-
 union_type = variant { "|" variant } ;
-
-
-
 variant = identifier [ "{" field_list "}" ] ;
-
-
-
 field_list = identifier ":" type_expr { "," identifier ":" type_expr } ;
-
-
-
 literal = number | string | regex | "yes" | "no" | "me" ;
-
-
-
 regex = "/" regex_pattern "/" ;
-
-
-
 param_list = identifier { "," identifier } ;
-
-
-
 arg_list = expression { "," expression } ;
-
-
-
 identifier = letter { letter | digit | "_" } ;
-
-
-
 number = digit { digit } [ "." digit { digit } ] ;
-
-
-
 string = '"' { character } '"' ;
-
-
-
 character = printable_char | escape_sequence ;
-
-
-
 escape_sequence = "\" ( "n" | "t" | "r" | "\" | '"' ) ;
-
-
-
 letter = "a" | "b" | ... | "z" | "A" | "B" | ... | "Z" ;
-
-
-
 digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
-
-
-
-
+```
 
 ### Keywords (18)
 
