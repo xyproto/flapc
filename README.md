@@ -1,4 +1,4 @@
-`flapc` is an experiment in creating a vibecoded compiler for the Flap programming language.
+`flapc` is an experiment in creating a vibecoded compiler for the Flap programming language, for fun and for the educational process.
 
 Flap (`.flap`) code is compiled directly to machine code.
 
