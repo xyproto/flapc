@@ -523,7 +523,14 @@ func main() {
 	var machineLong = flag.String("machine", "x86_64", "target machine architecture (x86_64, amd64, arm64, aarch64, riscv64, riscv, rv64)")
 	var output = flag.String("o", "main", "output executable filename")
 	var outputLong = flag.String("output", "main", "output executable filename")
+	var version = flag.Bool("v", false, "print version information and exit")
+	var versionLong = flag.Bool("version", false, "print version information and exit")
 	flag.Parse()
+
+	if *version || *versionLong {
+		fmt.Println(versionString)
+		os.Exit(0)
+	}
 
 	// Use whichever flag was specified (prefer short form if both given)
 	targetMachine := *machine
