@@ -214,6 +214,52 @@ func TestMachineToString(t *testing.T) {
 	}
 }
 
+func TestEmitVectorMnemonics(t *testing.T) {
+	cases := []struct {
+		name string
+		asm  string
+	}{
+		{name: "VMOVUPDLoad", asm: "vmovupd zmm0, [rdi + 32]"},
+		{name: "VMOVUPDStore", asm: "vmovupd [rsi-16], zmm1"},
+		{name: "VBROADCASTSDReg", asm: "vbroadcastsd zmm2, xmm3"},
+		{name: "VBROADCASTSDMem", asm: "vbroadcastsd zmm4, [rax + 8]"},
+		{name: "VADDPD", asm: "vaddpd zmm5, zmm6, zmm7"},
+		{name: "VMULPD", asm: "vmulpd zmm8, zmm9, zmm10"},
+		{name: "VSUBPD", asm: "vsubpd zmm11, zmm12, zmm13"},
+		{name: "VDIVPD", asm: "vdivpd zmm14, zmm15, zmm16"},
+		{name: "VCMPPD", asm: "vcmppd k1, zmm17, zmm18, gt"},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			eb, err := New("x86_64")
+			if err != nil {
+				t.Fatalf("New x86_64 builder failed: %v", err)
+			}
+
+			before := eb.text.Len()
+			if err := eb.Emit(tt.asm); err != nil {
+				t.Fatalf("Emit(%q) returned error: %v", tt.asm, err)
+			}
+			after := eb.text.Len()
+			if after <= before {
+				t.Fatalf("Emit(%q) did not emit any bytes", tt.asm)
+			}
+		})
+	}
+}
+
+func TestEmitVCMPPDInvalidPredicate(t *testing.T) {
+	eb, err := New("x86_64")
+	if err != nil {
+		t.Fatalf("New x86_64 builder failed: %v", err)
+	}
+
+	if err := eb.Emit("vcmppd k1, zmm0, zmm1, invalid"); err == nil {
+		t.Fatalf("Emit with invalid predicate succeeded")
+	}
+}
+
 // TestRodataSection tests Rodata section handling
 func TestRodataSection(t *testing.T) {
 	eb, err := New("x86_64")

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -74,16 +75,20 @@ func (bw *BufferWrapper) WriteUnsigned(i uint) int {
 }
 
 func (eb *ExecutableBuilder) Emit(assembly string) error {
-	w := eb.TextWriter()
-	all := strings.Fields(assembly)
-	if len(all) == 0 {
+	trimmed := strings.TrimSpace(assembly)
+	if trimmed == "" {
 		return errNoAssembly
 	}
+
+	w := eb.TextWriter()
+	all := strings.Fields(trimmed)
 	head := strings.TrimSpace(all[0])
 	var tail []string
 	if len(all) > 1 {
 		tail = all[1:]
 	}
+	rest := strings.TrimSpace(trimmed[len(head):])
+
 	if len(all) == 1 {
 		switch head {
 		case "syscall", "ecall":
@@ -107,5 +112,222 @@ func (eb *ExecutableBuilder) Emit(assembly string) error {
 			return eb.MovInstruction(dest, val)
 		}
 	}
+
+	out := &Out{machine: eb.machine, writer: w, eb: eb}
+
+	switch head {
+	case "vmovupd":
+		if rest == "" {
+			return fmt.Errorf("vmovupd requires operands")
+		}
+		operands := splitOperands(rest)
+		if len(operands) != 2 {
+			return fmt.Errorf("vmovupd expects 2 operands, got %d", len(operands))
+		}
+
+		op0 := operands[0]
+		op1 := operands[1]
+
+		if isMemoryOperand(op1) {
+			base, offset, err := parseMemoryOperand(op1)
+			if err != nil {
+				return err
+			}
+			out.VMovupdLoadFromMem(op0, base, offset)
+			return nil
+		}
+
+		if isMemoryOperand(op0) {
+			base, offset, err := parseMemoryOperand(op0)
+			if err != nil {
+				return err
+			}
+			out.VMovupdStoreToMem(op1, base, offset)
+			return nil
+		}
+
+		return fmt.Errorf("vmovupd requires one memory operand")
+
+	case "vbroadcastsd":
+		if rest == "" {
+			return fmt.Errorf("vbroadcastsd requires operands")
+		}
+		operands := splitOperands(rest)
+		if len(operands) != 2 {
+			return fmt.Errorf("vbroadcastsd expects 2 operands, got %d", len(operands))
+		}
+
+		dst := operands[0]
+		src := operands[1]
+
+		if isMemoryOperand(src) {
+			base, offset, err := parseMemoryOperand(src)
+			if err != nil {
+				return err
+			}
+			out.VBroadcastSDMemToVector(dst, base, offset)
+			return nil
+		}
+
+		out.VBroadcastSDScalarToVector(dst, src)
+		return nil
+
+	case "vaddpd":
+		if rest == "" {
+			return fmt.Errorf("vaddpd requires operands")
+		}
+		operands := splitOperands(rest)
+		if len(operands) != 3 {
+			return fmt.Errorf("vaddpd expects 3 operands, got %d", len(operands))
+		}
+		out.VAddPDVectorToVector(operands[0], operands[1], operands[2])
+		return nil
+
+	case "vmulpd":
+		if rest == "" {
+			return fmt.Errorf("vmulpd requires operands")
+		}
+		operands := splitOperands(rest)
+		if len(operands) != 3 {
+			return fmt.Errorf("vmulpd expects 3 operands, got %d", len(operands))
+		}
+		out.VMulPDVectorToVector(operands[0], operands[1], operands[2])
+		return nil
+
+	case "vsubpd":
+		if rest == "" {
+			return fmt.Errorf("vsubpd requires operands")
+		}
+		operands := splitOperands(rest)
+		if len(operands) != 3 {
+			return fmt.Errorf("vsubpd expects 3 operands, got %d", len(operands))
+		}
+		out.VSubPDVectorToVector(operands[0], operands[1], operands[2])
+		return nil
+
+	case "vdivpd":
+		if rest == "" {
+			return fmt.Errorf("vdivpd requires operands")
+		}
+		operands := splitOperands(rest)
+		if len(operands) != 3 {
+			return fmt.Errorf("vdivpd expects 3 operands, got %d", len(operands))
+		}
+		out.VDivPDVectorToVector(operands[0], operands[1], operands[2])
+		return nil
+
+	case "vcmppd":
+		if rest == "" {
+			return fmt.Errorf("vcmppd requires operands")
+		}
+		operands := splitOperands(rest)
+		if len(operands) != 4 {
+			return fmt.Errorf("vcmppd expects 4 operands, got %d", len(operands))
+		}
+
+		predicate, err := parseComparisonPredicate(operands[3])
+		if err != nil {
+			return err
+		}
+		out.VCmpPDVectorToVector(operands[0], operands[1], operands[2], predicate)
+		return nil
+	}
 	return nil
+}
+
+func splitOperands(operands string) []string {
+	var result []string
+	currentStart := 0
+	depth := 0
+	for i, r := range operands {
+		switch r {
+		case '[':
+			depth++
+		case ']':
+			if depth > 0 {
+				depth--
+			}
+		case ',':
+			if depth == 0 {
+				part := strings.TrimSpace(operands[currentStart:i])
+				if part != "" {
+					result = append(result, part)
+				}
+				currentStart = i + 1
+			}
+		}
+	}
+
+	if currentStart < len(operands) {
+		part := strings.TrimSpace(operands[currentStart:])
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+
+	return result
+}
+
+func isMemoryOperand(op string) bool {
+	op = strings.TrimSpace(op)
+	return strings.HasPrefix(op, "[") && strings.HasSuffix(op, "]")
+}
+
+func parseMemoryOperand(op string) (string, int32, error) {
+	op = strings.TrimSpace(op)
+	if !strings.HasPrefix(op, "[") || !strings.HasSuffix(op, "]") {
+		return "", 0, fmt.Errorf("invalid memory operand %q", op)
+	}
+
+	inner := strings.TrimSpace(op[1 : len(op)-1])
+	if inner == "" {
+		return "", 0, fmt.Errorf("memory operand %q is empty", op)
+	}
+
+	inner = strings.ReplaceAll(inner, " ", "")
+
+	base := inner
+	offset := int64(0)
+	for i := 1; i < len(inner); i++ {
+		if inner[i] == '+' || inner[i] == '-' {
+			base = inner[:i]
+			displacement := inner[i:]
+			val, err := strconv.ParseInt(displacement, 10, 32)
+			if err != nil {
+				return "", 0, fmt.Errorf("invalid displacement %q", displacement)
+			}
+			offset = val
+			break
+		}
+	}
+
+	base = strings.TrimSpace(base)
+	if base == "" {
+		return "", 0, fmt.Errorf("memory operand %q missing base register", op)
+	}
+
+	return base, int32(offset), nil
+}
+
+func parseComparisonPredicate(pred string) (ComparisonPredicate, error) {
+	switch strings.ToLower(strings.TrimSpace(pred)) {
+	case "eq":
+		return CmpEQ, nil
+	case "lt":
+		return CmpLT, nil
+	case "le":
+		return CmpLE, nil
+	case "neq":
+		return CmpNE, nil
+	case "nlt":
+		return CmpNLT, nil
+	case "nle":
+		return CmpNLE, nil
+	case "gt":
+		return CmpGT, nil
+	case "ge":
+		return CmpGE, nil
+	default:
+		return 0, fmt.Errorf("unknown comparison predicate %q", pred)
+	}
 }

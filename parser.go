@@ -1627,17 +1627,17 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	// Compile the lambda to get its function pointer (result in xmm0)
 	fc.compileExpression(expr.Operation)
 
-	// Save lambda function pointer (currently in xmm0) to stack
+	// Save lambda function pointer (currently in xmm0) to stack and convert once to raw pointer bits
 	fc.out.SubImmFromReg("rsp", 16)
 	fc.out.MovXmmToMem("xmm0", "rsp", 8) // Store at rsp+8
+	fc.out.MovMemToReg("r11", "rsp", 8)  // Reinterpret float64 bits as pointer
+	fc.out.MovRegToMem("r11", "rsp", 8)  // Keep integer pointer for later loads
 
 	// Compile the input list expression (returns pointer as float64 in xmm0)
 	fc.compileExpression(expr.List)
 
-	// Save list pointer to stack
+	// Save list pointer to stack (reuse reserved slot) and load as integer pointer
 	fc.out.MovXmmToMem("xmm0", "rsp", 0) // Store at rsp+0
-
-	// Convert list pointer from float64 to integer in r13
 	fc.out.MovMemToReg("r13", "rsp", 0)
 
 	// Load list length from [r13] into r14
@@ -1677,23 +1677,8 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	// Load element into xmm0 (this is the argument to the lambda)
 	fc.out.MovMemToXmm("xmm0", "rax", 0)
 
-	// Save element to stack temporarily
-	fc.out.SubImmFromReg("rsp", 16)
-	fc.out.MovXmmToMem("xmm0", "rsp", 0)
-
-	// Load lambda function pointer from stack (stored as float64)
-	// Offset calculation: original_rsp - 16 + 8 (lambda ptr offset) = r12 + 2064 + 8
-	fc.out.MovMemToXmm("xmm1", "r12", 2072)
-
-	// Convert function pointer from float64 to integer in r11
-	fc.out.SubImmFromReg("rsp", 8)
-	fc.out.MovXmmToMem("xmm1", "rsp", 0)
-	fc.out.MovMemToReg("r11", "rsp", 0)
-	fc.out.AddImmToReg("rsp", 8)
-
-	// Restore element to xmm0
-	fc.out.MovMemToXmm("xmm0", "rsp", 0)
-	fc.out.AddImmToReg("rsp", 16)
+	// Load lambda function pointer (stored as raw pointer in spill area) and call it
+	fc.out.MovMemToReg("r11", "r12", 2072)
 
 	// Call the lambda function with element in xmm0
 	fc.out.CallRegister("r11")
