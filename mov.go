@@ -95,14 +95,17 @@ func (o *Out) movX86RegToReg(dst, src string) {
 
 	fmt.Fprintf(os.Stderr, "mov %s, %s: ", dst, src)
 
-	// REX prefix for 64-bit operation
-	if dstReg.Size == 64 || srcReg.Size == 64 {
-		rex := uint8(0x48)
-		if dstReg.Encoding >= 8 {
-			rex |= 0x04 // REX.R
+	// REX prefix for register-extension/operand width
+	if dstReg.Size == 64 || srcReg.Size == 64 || dstReg.Encoding >= 8 || srcReg.Encoding >= 8 {
+		rex := uint8(0x40)
+		if dstReg.Size == 64 || srcReg.Size == 64 {
+			rex |= 0x08 // REX.W - 64-bit operand size
 		}
 		if srcReg.Encoding >= 8 {
-			rex |= 0x01 // REX.B
+			rex |= 0x04 // REX.R extends the reg field (source)
+		}
+		if dstReg.Encoding >= 8 {
+			rex |= 0x01 // REX.B extends the r/m field (destination)
 		}
 		o.Write(rex)
 	}
