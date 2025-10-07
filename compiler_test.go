@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 )
 
@@ -203,5 +204,29 @@ func TestCTypeSize(t *testing.T) {
 				t.Errorf("Size(%s) = %d, want %d", tt.ctype, size, tt.expected)
 			}
 		})
+	}
+}
+
+func TestParallelSimpleCompiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	output := filepath.Join(tmpDir, "parallel_simple.bin")
+
+	cmd := exec.Command("go", "run", ".", "-o", output, "programs/parallel_simple.flap")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to compile parallel_simple.flap: %v\n%s", err, string(out))
+	}
+
+	info, err := os.Stat(output)
+	if err != nil {
+		t.Fatalf("compiled executable missing: %v", err)
+	}
+	if info.Size() == 0 {
+		t.Fatalf("compiled executable is empty")
+	}
+
+	runCmd := exec.Command(output)
+	runOutput, err := runCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("parallel_simple executable failed: %v\n%s", err, string(runOutput))
 	}
 }
