@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 )
 
@@ -203,5 +204,49 @@ func TestCTypeSize(t *testing.T) {
 				t.Errorf("Size(%s) = %d, want %d", tt.ctype, size, tt.expected)
 			}
 		})
+	}
+}
+
+func TestParallelSimpleCompiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	output := filepath.Join(tmpDir, "parallel_simple.bin")
+
+	cmd := exec.Command("go", "run", ".", "-o", output, "programs/parallel_simple.flap")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to compile parallel_simple.flap: %v\n%s", err, string(out))
+	}
+
+	info, err := os.Stat(output)
+	if err != nil {
+		t.Fatalf("compiled executable missing: %v", err)
+	}
+	if info.Size() == 0 {
+		t.Fatalf("compiled executable is empty")
+	}
+
+	runCmd := exec.Command(output)
+	runOutput, err := runCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("parallel_simple executable failed: %v\n%s", err, string(runOutput))
+	}
+}
+
+func TestParallelEmptyListShortCircuits(t *testing.T) {
+	tmpDir := t.TempDir()
+	output := filepath.Join(tmpDir, "parallel_empty.bin")
+
+	cmd := exec.Command("go", "run", ".", "-o", output, "programs/parallel_empty.flap")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to compile parallel_empty.flap: %v\n%s", err, string(out))
+	}
+
+	runCmd := exec.Command(output)
+	runOutput, err := runCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("parallel_empty executable failed: %v\n%s", err, string(runOutput))
+	}
+
+	if string(runOutput) != "0\n" {
+		t.Fatalf("unexpected output for parallel_empty: %q", string(runOutput))
 	}
 }
