@@ -115,11 +115,12 @@ run_grep_check() {
 for src in "$PROGRAM_DIR"/*.flap; do
     base=$(basename "$src" .flap)
     compile_log="$BUILD_ROOT/${base}.compile.log"
-    binary="$BUILD_ROOT/${base}.bin"
+    executable="$BUILD_ROOT/${base}"
     out_file="$BUILD_ROOT/${base}.out"
 
     # Compile
-    if ./flapc -o "$binary" "$src" >"$compile_log" 2>&1; then
+    echo "Compiling $src"
+    if ./flapc -o "$executable" "$src" >"$compile_log" 2>&1; then
         if [[ "${compile_expectation[$base]:-success}" == "failure" ]]; then
             failures+=("${base}: expected compilation to fail but it succeeded")
             continue
@@ -138,7 +139,8 @@ for src in "$PROGRAM_DIR"/*.flap; do
     fi
 
     # Run program
-    if "${binary}" >"$out_file" 2>&1; then
+    echo "Testing $executable"
+    if "$executable" >"$out_file" 2>&1; then
         status=0
     else
         status=$?
