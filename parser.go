@@ -43,10 +43,11 @@ const (
 	TOKEN_RBRACE   // }
 	TOKEN_LBRACKET // [
 	TOKEN_RBRACKET // ]
-	TOKEN_ARROW    // ->
-	TOKEN_PIPE     // |
-	TOKEN_PIPEPIPE // ||
-	TOKEN_HASH     // #
+	TOKEN_ARROW        // ->
+	TOKEN_PIPE         // |
+	TOKEN_PIPEPIPE     // ||
+	TOKEN_PIPEPIPEPIPE // |||
+	TOKEN_HASH         // #
 )
 
 type Token struct {
@@ -235,8 +236,12 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_RBRACKET, Value: "]", Line: l.line}
 	case '|':
-		// Check for ||
+		// Check for ||| first, then ||, then |
 		if l.peek() == '|' {
+			if l.pos+2 < len(l.input) && l.input[l.pos+2] == '|' {
+				l.pos += 3
+				return Token{Type: TOKEN_PIPEPIPEPIPE, Value: "|||", Line: l.line}
+			}
 			l.pos += 2
 			return Token{Type: TOKEN_PIPEPIPE, Value: "||", Line: l.line}
 		}
@@ -440,6 +445,26 @@ func (p *ParallelExpr) String() string {
 	return p.List.String() + " || " + p.Operation.String()
 }
 func (p *ParallelExpr) expressionNode() {}
+
+type PipeExpr struct {
+	Left  Expression // Input to the pipe
+	Right Expression // Operation to apply
+}
+
+func (p *PipeExpr) String() string {
+	return p.Left.String() + " | " + p.Right.String()
+}
+func (p *PipeExpr) expressionNode() {}
+
+type ConcurrentGatherExpr struct {
+	Left  Expression // Input to the concurrent gather
+	Right Expression // Operation to apply concurrently
+}
+
+func (c *ConcurrentGatherExpr) String() string {
+	return c.Left.String() + " ||| " + c.Right.String()
+}
+func (c *ConcurrentGatherExpr) expressionNode() {}
 
 type LengthExpr struct {
 	Operand Expression
@@ -650,7 +675,33 @@ func (p *Parser) parseLoopStatement() *LoopStmt {
 }
 
 func (p *Parser) parseExpression() Expression {
-	return p.parseParallel()
+	return p.parseConcurrentGather()
+}
+
+func (p *Parser) parseConcurrentGather() Expression {
+	left := p.parsePipe()
+
+	for p.peek.Type == TOKEN_PIPEPIPEPIPE {
+		p.nextToken() // skip current
+		p.nextToken() // skip '|||'
+		right := p.parsePipe()
+		left = &ConcurrentGatherExpr{Left: left, Right: right}
+	}
+
+	return left
+}
+
+func (p *Parser) parsePipe() Expression {
+	left := p.parseParallel()
+
+	for p.peek.Type == TOKEN_PIPE {
+		p.nextToken() // skip current
+		p.nextToken() // skip '|'
+		right := p.parseParallel()
+		left = &PipeExpr{Left: left, Right: right}
+	}
+
+	return left
 }
 
 func (p *Parser) parseParallel() Expression {
@@ -1608,6 +1659,12 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 	case *ParallelExpr:
 		fc.compileParallelExpr(e)
+
+	case *PipeExpr:
+		fc.compilePipeExpr(e)
+
+	case *ConcurrentGatherExpr:
+		fc.compileConcurrentGatherExpr(e)
 	}
 }
 
@@ -1650,10 +1707,13 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	fc.out.CmpRegToImm("r13", 0)
 	nonNullJumpPos := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpNotEqual, 0)
-	fc.out.XorRegWithReg("r12", "r12")
-	finalizeJumpPos := fc.eb.text.Len()
+	// Null case: return 0.0 as float64 and clean up stack
+	fc.out.AddImmToReg("rsp", 16) // Clean up lambda/list pointers
+	fc.out.XorRegWithReg("rax", "rax")
+	fc.out.Cvtsi2sd("xmm0", "rax")
+	nullReturnJumpPos := fc.eb.text.Len()
 	fc.out.JumpUnconditional(0)
-	finalizeJumpEnd := fc.eb.text.Len()
+	nullReturnJumpEnd := fc.eb.text.Len()
 
 	// Non-null input list continues here
 	nonNullListStart := fc.eb.text.Len()
@@ -1728,16 +1788,16 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	fc.patchJumpImmediate(loopEndJumpPos+2, endOffset)
 
 	// Finalize: remove lambda/list pointers and return the result pointer as float64
-	finalizeLabel := fc.eb.text.Len()
-
 	// Clean up: remove lambda pointer and list pointer from stack
-	fc.out.AddImmToReg("rsp", 16)
+	fc.out.AddImmToReg("rsp", parallelResultAlloc + 16)
 
 	// Return result list pointer as float64 in xmm0
-	fc.out.SubImmFromReg("rsp", 8)
-	fc.out.MovRegToMem("r12", "rsp", 0)
-	fc.out.MovMemToXmm("xmm0", "rsp", 0)
-	fc.out.AddImmToReg("rsp", 8)
+	// Use the lambda scratch space for conversion (safe since we're done with the lambda)
+	fc.out.MovRegToMem("r12", "r12", lambdaScratchOffset)
+	fc.out.MovMemToXmm("xmm0", "r12", lambdaScratchOffset)
+
+	// End of parallel operator - xmm0 contains result (either null or result list pointer)
+	endLabel := fc.eb.text.Len()
 
 	// Note: result list (parallelResultAlloc bytes) is left on stack
 	// This is a memory leak for now, but works for simple programs
@@ -1746,8 +1806,9 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	nonNullOffset := int32(nonNullListStart - (nonNullJumpPos + 6))
 	fc.patchJumpImmediate(nonNullJumpPos+2, nonNullOffset)
 
-	finalizeOffset := int32(finalizeLabel - finalizeJumpEnd)
-	fc.patchJumpImmediate(finalizeJumpPos+1, finalizeOffset)
+	// Patch jump for null-input return - skip directly to end
+	nullReturnOffset := int32(endLabel - nullReturnJumpEnd)
+	fc.patchJumpImmediate(nullReturnJumpPos+1, nullReturnOffset)
 }
 
 func (fc *FlapCompiler) generateLambdaFunctions() {
@@ -1952,6 +2013,84 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.trackFunctionCall("exit")
 		fc.eb.GenerateCallInstruction("exit")
 	}
+}
+
+func (fc *FlapCompiler) compilePipeExpr(expr *PipeExpr) {
+	// Pipe operator: left | right
+	// Semantics: Execute left, pass result to right
+	// For now, this is a simple sequential composition:
+	// 1. Evaluate left expression
+	// 2. Pass result (in xmm0) to right expression
+
+	// Compile left side (result will be in xmm0)
+	fc.compileExpression(expr.Left)
+
+	// Right side should be a function/lambda that takes the result
+	// For now, if right is a lambda or function call, we can evaluate it
+	// The result from left is already in xmm0, which is the first parameter
+
+	switch right := expr.Right.(type) {
+	case *LambdaExpr:
+		// Compile the lambda and call it with the value in xmm0
+		// First save the input value
+		fc.out.SubImmFromReg("rsp", 16)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+		// Compile the lambda to get its function pointer
+		fc.compileExpression(right)
+
+		// Convert function pointer from float64 to integer
+		fc.out.MovXmmToMem("xmm0", "rsp", 8)
+		fc.out.MovMemToReg("r11", "rsp", 8)
+
+		// Restore input value to xmm0
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 16)
+
+		// Call the lambda
+		fc.out.CallRegister("r11")
+
+	case *CallExpr:
+		// For function calls, the value in xmm0 becomes the first argument
+		// This is a simplified implementation
+		fc.compileExpression(right)
+
+	case *IdentExpr:
+		// Variable reference - could be a lambda stored in a variable
+		// Save the input value
+		fc.out.SubImmFromReg("rsp", 16)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+		// Load the variable (function pointer as float64)
+		fc.compileExpression(right)
+
+		// Convert function pointer from float64 to integer
+		fc.out.MovXmmToMem("xmm0", "rsp", 8)
+		fc.out.MovMemToReg("r11", "rsp", 8)
+
+		// Restore input value to xmm0
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 16)
+
+		// Call the lambda
+		fc.out.CallRegister("r11")
+
+	default:
+		// For other expressions, just evaluate them
+		// This may not be the correct semantics but is a placeholder
+		fc.compileExpression(expr.Right)
+	}
+}
+
+func (fc *FlapCompiler) compileConcurrentGatherExpr(expr *ConcurrentGatherExpr) {
+	// Concurrent gather operator: left ||| right
+	// Semantics: Gather results concurrently
+	// This requires goroutines or threads for true concurrency
+
+	// For now, print an error as this is not yet implemented
+	fmt.Fprintf(os.Stderr, "Error: concurrent gather operator ||| is not yet implemented\n")
+	fmt.Fprintf(os.Stderr, "This feature requires runtime support for concurrency\n")
+	os.Exit(1)
 }
 
 func (fc *FlapCompiler) trackFunctionCall(funcName string) {

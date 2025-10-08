@@ -1,0 +1,13 @@
+// parallel_test_simple.flap - Simple test for parallel operator
+// Testing basic SIMD map operation
+
+values = [1.0, 2.0, 3.0, 4.0, 5.0]
+
+// Map operation: double each value
+// This should use SIMD instructions (||) when implemented
+doubled = values || (x) -> x * 2
+
+// For now, print results
+println(doubled)
+
+exit(0)

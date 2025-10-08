@@ -1,0 +1,10 @@
+// parallel_test_print.flap - Test parallel operator with direct print
+values = [1.0, 2.0, 3.0]
+
+// Map operation: double each value
+doubled = values || (x) -> x * 2
+
+// Print the whole list
+println(doubled)
+
+exit(0)
