@@ -1,11 +1,14 @@
 # The Flap Programming Language
 
-Tagline: Float. Map. Fly.
+**Tagline**: Float. Map. Fly.
 
-### ebnf
+## Language Philosophy
 
+Flap is a functional programming language designed for high-performance numerical computing with explicit SIMD parallelism. Built on a `map[uint64]float64` foundation, it provides elegant abstractions for modern CPU architectures while maintaining simplicity and clarity.
 
-```
+## EBNF Grammar
+
+```ebnf
 program = { statement } ;
 statement = assignment | match_assignment | if_statement | expression ;
 assignment = identifier [ ":" type_annotation ] ( "=" | ":=" ) expression ;
@@ -77,29 +80,25 @@ letter = "a" | "b" | ... | "z" | "A" | "B" | ... | "Z" ;
 digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
 ```
 
-### Keywords (18)
-
-    in and or not yes no me return or!
-    mask simd sum product max min
-    if else end
-
-
-
-### Symbols (5)
-
-    ~ @ # ^ _
-
-
-
-### Complete Feature Set
-
-
-
-#### Conditional Control Flow
-
-Flap uses if/else/end blocks with comparison operators for branching logic.
+## Keywords (18)
 
 ```
+in and or not yes no me return or!
+mask simd sum product max min
+if else end
+```
+
+## Symbols (5)
+
+```
+~ @ # ^ _
+```
+
+## Complete Feature Set
+
+### Conditional Control Flow
+
+```flap
 // Basic if statement
 if x < y
     println("x is less than y")
@@ -122,21 +121,13 @@ else
         status = "normal"
     end
 end
-
-// Comparisons use UCOMISD (unordered scalar double compare)
-// Efficient floating-point comparisons with proper NaN handling
-if distance <= threshold
-    trigger_event()
-end
 ```
 
-
-
-#### SIMD-First Design
+### SIMD-First Design
 
 Flap is built for modern CPUs with explicit SIMD parallelism as a first-class language feature.
 
-```
+```flap
 // Explicit parallel operations with || (guaranteed vectorization)
 scaled = data || map(x -> x * 2.0)         // 8× parallelism on AVX-512
 
@@ -168,11 +159,9 @@ result = a *+ b + c                         // Single VFMADD (better precision)
 }
 ```
 
+### Clean Error Handling
 
-
-#### Clean Error Handling
-
-```
+```flap
 // or! for clean error exits
 validate_user = (user_data) -> {
     user_data == no or! "no user data"
@@ -192,23 +181,11 @@ process_file = (filename) -> {
 
     process_data(validated)
 }
-
-// Standalone error assertions
-allocate_memory = (size) -> {
-    size > 0 or! "invalid size"
-    size <= MAX_MEMORY or! "size too large"
-
-    ptr = malloc(size)
-    ptr != 0 or! "allocation failed"
-    ptr
-}
 ```
-
-
 
 ### Elegant Self-Reference
 
-```
+```flap
 // me for clean self-reference
 factorial =~ n {
     n <= 1 -> 1
@@ -246,11 +223,9 @@ Entity = @{
 }
 ```
 
-
-
 ### High-Performance Computing
 
-```
+```flap
 // SIMD-accelerated numerical computation
 dot_product = (a, b) -> {
     // Vectorized multiply-accumulate
@@ -281,25 +256,11 @@ compute_distances = (entities, target) -> {
     dist_sq = dxs *+ dxs + (dys *+ dys)   // VFMADD
     dist_sq || sqrt                         // VSQRTPD
 }
-
-// Matrix multiplication with FMA
-matmul = (A, B) -> {
-    @ i in range(rows) {
-        @ j in range(cols) {
-            // Vectorized dot product with FMA
-            row = A[i]
-            col = [B[k][j] for k in range(cols)]
-            result[i][j] = (row || zip(col) || map((a, b) -> a *+ b + 0.0)) ||> sum
-        }
-    }
-}
 ```
-
-
 
 ### Game Development Ready
 
-```
+```flap
 // Game loop with SIMD optimization
 GameLoop = @{
     entities: [],
@@ -335,38 +296,11 @@ GameLoop = @{
         me.entities := me.entities{entity.health > 0}
     }
 }
-
-// Particle system with parallel updates
-ParticleSystem = @{
-    positions: [],
-    velocities: [],
-    lifetimes: [],
-
-    update: (dt) -> {
-        // All arrays updated in parallel
-        @simd(width=8) {
-            // Fused multiply-add for position updates
-            me.positions := me.positions || zip(me.velocities) ||
-                           map((p, v) -> p *+ v + dt)
-
-            // Parallel lifetime decrement
-            me.lifetimes := me.lifetimes || (t -> t - dt)
-
-            // Mask-based filtering (keep alive particles)
-            alive: mask = me.lifetimes || (t -> t > 0.0)
-            me.positions := alive ? me.positions : []
-            me.velocities := alive ? me.velocities : []
-            me.lifetimes := alive ? me.lifetimes : []
-        }
-    }
-}
 ```
-
-
 
 ### OS Development Ready
 
-```
+```flap
 // Memory manager with robust error handling
 MemoryManager = @{
     heap_start: 0x100000,
@@ -388,7 +322,7 @@ MemoryManager = @{
         block = ^suitable
         me.free_list := me.free_list{b != block}
 
-        # Split block if larger than needed
+        // Split block if larger than needed
         block.size > size and {
             remainder = @{
                 address: block.address + size,
@@ -404,59 +338,48 @@ MemoryManager = @{
         address != 0 or! "null pointer free"
         address >= me.heap_start or! "address before heap"
 
-        # Add to free list and coalesce
+        // Add to free list and coalesce
         me.add_to_free_list(address)
         me.coalesce()
     }
 }
-
-// Process scheduler with vectorized priority calculation
-schedule_next = (processes) -> {
-    ready_processes = [p in processes]{p.state == "ready"}
-    ready_processes == no or return no
-
-    // Parallel priority calculation
-    priorities = ready_processes || map(p -> p.priority * p.wait_time)
-    max_priority = priorities ||> max
-
-    # Find process with max priority
-    next = ready_processes{p.priority * p.wait_time == max_priority}[0]
-    next.state := "running"
-    next.time_slice := 10  # 10ms
-
-    next
-}
 ```
 
+## SIMD Performance Characteristics
 
-
-### SIMD Performance Characteristics
-
-**Parallel Operator `||`**
+### Parallel Operator `||`
 - Guarantees vectorization (compile error if impossible)
 - Processes 8 elements on AVX-512, 4 on AVX2, 2 on SSE2
 - Automatically uses best available instruction set
 
-**Gather/Scatter `@[]`**
+### Gather/Scatter `@[]`
 - Single instruction for sparse access (VGATHER/VSCATTER)
 - 4-8× faster than serial indexed access
 - Critical for map[uint64]float64 workloads
 
-**Mask Type**
+### Mask Type
 - Maps to k registers (x86), predicates (ARM64), v0 (RISC-V)
 - Enables branchless conditional execution
 - First-class predication support
 
-**Reductions `||>`**
+### Reductions `||>`
 - Horizontal SIMD operations
 - sum, product, max, min, any, all
 - Optimal tree reduction implementation
 
-**FMA `*+`**
+### FMA `*+`
 - Fused multiply-add: single instruction, single rounding
 - 2× throughput vs separate multiply and add
 - Better numerical precision
 
-
+## Design Goals
 
 The language aims for maximum expressiveness with minimum complexity, backed by a map[uint64]float64 foundation and explicit SIMD semantics that enable both high performance and elegant abstractions.
+
+### Key Principles
+
+1. **Explicit over implicit** - SIMD operations are visible in the code
+2. **Performance by default** - Modern instructions used automatically
+3. **Simple foundation** - map[uint64]float64 + float64 + functions
+4. **Functional style** - Immutability preferred, mutation explicit
+5. **No magic** - What you see is what you get
