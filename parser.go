@@ -1624,6 +1624,12 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 		os.Exit(1)
 	}
 
+	const (
+		parallelResultAlloc    = 2080
+		lambdaScratchOffset    = parallelResultAlloc - 8
+		savedLambdaSpillOffset = parallelResultAlloc + 8
+	)
+
 	// Compile the lambda to get its function pointer (result in xmm0)
 	fc.compileExpression(expr.Operation)
 
@@ -1640,17 +1646,33 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	fc.out.MovXmmToMem("xmm0", "rsp", 0) // Store at rsp+0
 	fc.out.MovMemToReg("r13", "rsp", 0)
 
+	// Handle empty lists early (null pointer - nothing to map)
+	fc.out.CmpRegToImm("r13", 0)
+	nonNullJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpNotEqual, 0)
+	fc.out.XorRegWithReg("r12", "r12")
+	finalizeJumpPos := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0)
+	finalizeJumpEnd := fc.eb.text.Len()
+
+	// Non-null input list continues here
+	nonNullListStart := fc.eb.text.Len()
+
 	// Load list length from [r13] into r14
 	fc.out.MovMemToXmm("xmm0", "r13", 0)
 	fc.out.Cvttsd2si("r14", "xmm0") // r14 = length as integer
 
 	// Allocate result list on stack: 8 bytes (length) + length * 8 bytes (elements)
-	// For simplicity, allocate 2064 bytes (max 257 elements)
-	// 2064 is chosen to maintain 16-byte stack alignment: 16 (ptrs) + 2064 = 2080 (divisible by 16)
-	fc.out.SubImmFromReg("rsp", 2064)
+	// Reserve an extra 16 bytes at the end to keep the lambda pointer reachable for future vector paths
+	// parallelResultAlloc keeps the stack aligned once the initial 16-byte spill area is considered
+	fc.out.SubImmFromReg("rsp", parallelResultAlloc)
 
 	// Store result list pointer in r12
 	fc.out.MovRegToReg("r12", "rsp") // r12 = result list base
+
+	// Move the saved lambda pointer into the reserved scratch slot inside the result buffer
+	fc.out.MovMemToReg("r10", "r12", savedLambdaSpillOffset)
+	fc.out.MovRegToMem("r10", "r12", lambdaScratchOffset)
 
 	// Store length in result list
 	fc.out.MovMemToXmm("xmm0", "r13", 0) // Reload length as float64
@@ -1677,8 +1699,8 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	// Load element into xmm0 (this is the argument to the lambda)
 	fc.out.MovMemToXmm("xmm0", "rax", 0)
 
-	// Load lambda function pointer (stored as raw pointer in spill area) and call it
-	fc.out.MovMemToReg("r11", "r12", 2072)
+	// Load lambda function pointer (stored in the reserved scratch slot) and call it
+	fc.out.MovMemToReg("r11", "r12", lambdaScratchOffset)
 
 	// Call the lambda function with element in xmm0
 	fc.out.CallRegister("r11")
@@ -1705,6 +1727,9 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	endOffset := int32(loopEndPos - (loopEndJumpPos + 6))
 	fc.patchJumpImmediate(loopEndJumpPos+2, endOffset)
 
+	// Finalize: remove lambda/list pointers and return the result pointer as float64
+	finalizeLabel := fc.eb.text.Len()
+
 	// Clean up: remove lambda pointer and list pointer from stack
 	fc.out.AddImmToReg("rsp", 16)
 
@@ -1714,8 +1739,15 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	fc.out.MovMemToXmm("xmm0", "rsp", 0)
 	fc.out.AddImmToReg("rsp", 8)
 
-	// Note: result list (2056 bytes) is left on stack
+	// Note: result list (parallelResultAlloc bytes) is left on stack
 	// This is a memory leak for now, but works for simple programs
+
+	// Patch jumps for the null-input fast path
+	nonNullOffset := int32(nonNullListStart - (nonNullJumpPos + 6))
+	fc.patchJumpImmediate(nonNullJumpPos+2, nonNullOffset)
+
+	finalizeOffset := int32(finalizeLabel - finalizeJumpEnd)
+	fc.patchJumpImmediate(finalizeJumpPos+1, finalizeOffset)
 }
 
 func (fc *FlapCompiler) generateLambdaFunctions() {
