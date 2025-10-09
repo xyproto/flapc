@@ -1,5 +1,5 @@
 // test_null_len.flap - Test len of empty list
 numbers = []
-result = len(numbers)
+result = #numbers
 println(result)
 exit(0)

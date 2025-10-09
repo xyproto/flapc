@@ -1,0 +1,21 @@
+// Comprehensive map indexing test
+prices = {100: 5.99, 200: 12.99, 300: 19.99}
+
+// Test existing keys
+price1 := prices[100]
+printf("Price for item 100: %v\n", price1)
+
+price2 := prices[200]
+printf("Price for item 200: %v\n", price2)
+
+price3 := prices[300]
+printf("Price for item 300: %v\n", price3)
+
+// Test non-existent key (should return 0.0)
+price4 := prices[999]
+printf("Price for item 999: %v\n", price4)
+
+// Empty map test
+empty = {}
+result := empty[1]
+printf("Result from empty map: %v\n", result)

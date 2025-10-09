@@ -672,7 +672,6 @@ func foldConstantExpr(expr Expression) Expression {
 		}
 		return e
 
-
 	case *MapExpr:
 		for i := range e.Keys {
 			e.Keys[i] = foldConstantExpr(e.Keys[i])
@@ -1144,17 +1143,18 @@ func (p *Parser) parsePrimary() Expression {
 type FlapCompiler struct {
 	eb            *ExecutableBuilder
 	out           *Out
-	variables     map[string]int  // variable name -> stack offset
-	mutableVars   map[string]bool // variable name -> is mutable
-	sourceCode    string          // Store source for recompilation
-	usedFunctions map[string]bool // Track which functions are called
-	callOrder     []string        // Track order of function calls
-	stringCounter int             // Counter for unique string labels
-	stackOffset   int             // Current stack offset for variables
-	labelCounter  int             // Counter for unique labels (if/else, loops, etc)
-	lambdaCounter int             // Counter for unique lambda function names
-	lambdaFuncs   []LambdaFunc    // List of lambda functions to generate
-	lambdaOffsets map[string]int  // Lambda name -> offset in .text
+	variables     map[string]int    // variable name -> stack offset
+	mutableVars   map[string]bool   // variable name -> is mutable
+	varTypes      map[string]string // variable name -> "map" or "list"
+	sourceCode    string            // Store source for recompilation
+	usedFunctions map[string]bool   // Track which functions are called
+	callOrder     []string          // Track order of function calls
+	stringCounter int               // Counter for unique string labels
+	stackOffset   int               // Current stack offset for variables
+	labelCounter  int               // Counter for unique labels (if/else, loops, etc)
+	lambdaCounter int               // Counter for unique lambda function names
+	lambdaFuncs   []LambdaFunc      // List of lambda functions to generate
+	lambdaOffsets map[string]int    // Lambda name -> offset in .text
 }
 
 type LambdaFunc struct {
@@ -1186,6 +1186,7 @@ func NewFlapCompiler(machine Machine) (*FlapCompiler, error) {
 		out:           out,
 		variables:     make(map[string]int),
 		mutableVars:   make(map[string]bool),
+		varTypes:      make(map[string]string),
 		usedFunctions: make(map[string]bool),
 		callOrder:     []string{},
 		lambdaOffsets: make(map[string]int),
@@ -1208,6 +1209,35 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.out.XorRegWithReg("rax", "rax")
 	fc.out.XorRegWithReg("rdi", "rdi")
 	fc.out.XorRegWithReg("rsi", "rsi")
+
+	// ===== AVX-512 CPU DETECTION =====
+	// Check CPUID for AVX-512 support and store result
+	// Required for safe use of AVX-512 instructions in map lookups
+	fc.eb.Define("cpu_has_avx512", "\x00") // 1 byte: 0=no, 1=yes
+
+	// Check CPUID leaf 7, subleaf 0, EBX bit 16 (AVX512F)
+	fc.out.MovImmToReg("rax", "7")     // CPUID leaf 7
+	fc.out.XorRegWithReg("rcx", "rcx") // subleaf 0
+	fc.out.Emit([]byte{0x0f, 0xa2})    // cpuid
+
+	// Test EBX bit 16 (AVX512F - foundation)
+	fc.out.Emit([]byte{0xf6, 0xc3, 0x01}) // test bl, 1 (bit 0 after shift)
+	// Actually test bit 16 of ebx: bt ebx, 16
+	fc.out.Emit([]byte{0x0f, 0xba, 0xe3, 0x10}) // bt ebx, 16
+
+	// Set carry flag if supported
+	// setc al (set AL to 1 if carry flag set)
+	fc.out.Emit([]byte{0x0f, 0x92, 0xc0}) // setc al
+
+	// Store result to cpu_has_avx512
+	fc.out.LeaSymbolToReg("rbx", "cpu_has_avx512")
+	fc.out.MovRegToMem("rax", "rbx", 0)
+
+	// Clear registers used for CPUID
+	fc.out.XorRegWithReg("rax", "rax")
+	fc.out.XorRegWithReg("rbx", "rbx")
+	fc.out.XorRegWithReg("rcx", "rcx")
+	// ===== END AVX-512 DETECTION =====
 
 	for _, stmt := range program.Statements {
 		fc.compileStatement(stmt)
@@ -1360,6 +1390,12 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 			fc.mutableVars[s.Name] = s.Mutable
 			// Actually allocate the stack space (16 bytes to maintain alignment)
 			fc.out.SubImmFromReg("rsp", 16)
+		}
+
+		// Track type if assigning a map, list, or string
+		exprType := fc.getExprType(s.Value)
+		if exprType != "number" && exprType != "unknown" {
+			fc.varTypes[s.Name] = exprType
 		}
 
 		// Evaluate expression into xmm0
@@ -1600,6 +1636,40 @@ func (fc *FlapCompiler) patchJumpImmediate(pos int, offset int32) {
 	fmt.Fprintf(os.Stderr, "DEBUG PATCH: After patching at pos %d: %02x %02x %02x %02x (offset=%d)\n", pos, bytes[pos], bytes[pos+1], bytes[pos+2], bytes[pos+3], offset)
 }
 
+// getExprType returns the type of an expression at compile time
+// Returns: "string", "number", "list", "map", or "unknown"
+func (fc *FlapCompiler) getExprType(expr Expression) string {
+	switch e := expr.(type) {
+	case *StringExpr:
+		return "string"
+	case *NumberExpr:
+		return "number"
+	case *ListExpr:
+		return "list"
+	case *MapExpr:
+		return "map"
+	case *IdentExpr:
+		// Look up in varTypes
+		if typ, exists := fc.varTypes[e.Name]; exists {
+			return typ
+		}
+		// Default to number if not tracked (most variables are numbers)
+		return "number"
+	case *BinaryExpr:
+		// Binary expressions between strings return strings if operator is "+"
+		if e.Operator == "+" {
+			leftType := fc.getExprType(e.Left)
+			rightType := fc.getExprType(e.Right)
+			if leftType == "string" && rightType == "string" {
+				return "string"
+			}
+		}
+		return "number"
+	default:
+		return "unknown"
+	}
+}
+
 func (fc *FlapCompiler) compileExpression(expr Expression) {
 	switch e := expr.(type) {
 	case *NumberExpr:
@@ -1614,7 +1684,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			// Decimal number - store in .rodata and load
 			labelName := fmt.Sprintf("float_%d", fc.stringCounter)
 			fc.stringCounter++
-			
+
 			// Convert float64 to 8 bytes (little-endian)
 			bits := uint64(0)
 			*(*float64)(unsafe.Pointer(&bits)) = e.Value
@@ -1623,18 +1693,63 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				floatData = append(floatData, byte((bits>>(i*8))&0xFF))
 			}
 			fc.eb.Define(labelName, string(floatData))
-			
+
 			// Load from .rodata
 			fc.out.LeaSymbolToReg("rax", labelName)
 			fc.out.MovMemToXmm("xmm0", "rax", 0)
 		}
 
 	case *StringExpr:
-		// Store string and load address (strings still use pointers for now)
-		labelName := fmt.Sprintf("str_%d", fc.stringCounter)
-		fc.stringCounter++
-		fc.eb.Define(labelName, e.Value+"\x00")
-		fc.out.LeaSymbolToReg("rax", labelName)
+		// Strings are represented as map[uint64]float64 where keys are indices
+		// and values are character codes
+		// Map format: [count][key0][val0][key1][val1]...
+
+		if len(e.Value) == 0 {
+			// Empty string - return null pointer (0) as float64
+			fc.out.XorRegWithReg("rax", "rax")
+			fc.out.Cvtsi2sd("xmm0", "rax")
+		} else {
+			labelName := fmt.Sprintf("str_%d", fc.stringCounter)
+			fc.stringCounter++
+
+			// Build map data: count followed by key-value pairs
+			var mapData []byte
+
+			// Count (number of characters)
+			count := float64(len(e.Value))
+			countBits := uint64(0)
+			*(*float64)(unsafe.Pointer(&countBits)) = count
+			for i := 0; i < 8; i++ {
+				mapData = append(mapData, byte((countBits>>(i*8))&0xFF))
+			}
+
+			// Add each character as a key-value pair
+			for idx, ch := range e.Value {
+				// Key: character index as float64
+				keyVal := float64(idx)
+				keyBits := uint64(0)
+				*(*float64)(unsafe.Pointer(&keyBits)) = keyVal
+				for i := 0; i < 8; i++ {
+					mapData = append(mapData, byte((keyBits>>(i*8))&0xFF))
+				}
+
+				// Value: character code as float64
+				charVal := float64(ch)
+				charBits := uint64(0)
+				*(*float64)(unsafe.Pointer(&charBits)) = charVal
+				for i := 0; i < 8; i++ {
+					mapData = append(mapData, byte((charBits>>(i*8))&0xFF))
+				}
+			}
+
+			fc.eb.Define(labelName, string(mapData))
+			fc.out.LeaSymbolToReg("rax", labelName)
+			// Convert pointer to float64
+			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.MovRegToMem("rax", "rsp", 0)
+			fc.out.MovMemToXmm("xmm0", "rsp", 0)
+			fc.out.AddImmToReg("rsp", 8)
+		}
 
 	case *IdentExpr:
 		// Load variable from stack into xmm0
@@ -1647,6 +1762,78 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		fc.out.MovMemToXmm("xmm0", "rbp", -offset)
 
 	case *BinaryExpr:
+		// Check for string/list/map operations with + operator
+		if e.Operator == "+" {
+			leftType := fc.getExprType(e.Left)
+			rightType := fc.getExprType(e.Right)
+
+			if leftType == "string" && rightType == "string" {
+				// String concatenation (strings are maps, so merge with offset keys)
+				leftStr, leftIsLiteral := e.Left.(*StringExpr)
+				rightStr, rightIsLiteral := e.Right.(*StringExpr)
+
+				if leftIsLiteral && rightIsLiteral {
+					// Compile-time concatenation - just create new string map
+					result := leftStr.Value + rightStr.Value
+
+					// Build concatenated string map
+					labelName := fmt.Sprintf("str_%d", fc.stringCounter)
+					fc.stringCounter++
+
+					var mapData []byte
+					count := float64(len(result))
+					countBits := uint64(0)
+					*(*float64)(unsafe.Pointer(&countBits)) = count
+					for i := 0; i < 8; i++ {
+						mapData = append(mapData, byte((countBits>>(i*8))&0xFF))
+					}
+
+					for idx, ch := range result {
+						// Key: index
+						keyVal := float64(idx)
+						keyBits := uint64(0)
+						*(*float64)(unsafe.Pointer(&keyBits)) = keyVal
+						for i := 0; i < 8; i++ {
+							mapData = append(mapData, byte((keyBits>>(i*8))&0xFF))
+						}
+
+						// Value: char code
+						charVal := float64(ch)
+						charBits := uint64(0)
+						*(*float64)(unsafe.Pointer(&charBits)) = charVal
+						for i := 0; i < 8; i++ {
+							mapData = append(mapData, byte((charBits>>(i*8))&0xFF))
+						}
+					}
+
+					fc.eb.Define(labelName, string(mapData))
+					fc.out.LeaSymbolToReg("rax", labelName)
+					fc.out.SubImmFromReg("rsp", 8)
+					fc.out.MovRegToMem("rax", "rsp", 0)
+					fc.out.MovMemToXmm("xmm0", "rsp", 0)
+					fc.out.AddImmToReg("rsp", 8)
+					break
+				} else {
+					// Runtime string concatenation - TODO
+					fmt.Fprintf(os.Stderr, "Error: runtime string concatenation not yet implemented\n")
+					os.Exit(1)
+				}
+			}
+
+			if leftType == "list" && rightType == "list" {
+				// List concatenation - TODO
+				fmt.Fprintf(os.Stderr, "Error: list concatenation not yet implemented\n")
+				os.Exit(1)
+			}
+
+			if leftType == "map" && rightType == "map" {
+				// Map union - TODO
+				fmt.Fprintf(os.Stderr, "Error: map union not yet implemented\n")
+				os.Exit(1)
+			}
+		}
+
+		// Default: numeric binary operation
 		// Compile left into xmm0
 		fc.compileExpression(e.Left)
 		// Save xmm0 to stack
@@ -1739,43 +1926,42 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.AddImmToReg("rsp", 8)
 		}
 
-
 	case *InExpr:
 		// Membership testing: value in container
 		// Returns 1.0 if found, 0.0 if not found
-		
+
 		// Compile value to search for
 		fc.compileExpression(e.Value)
 		fc.out.SubImmFromReg("rsp", 16)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
-		
+
 		// Compile container
 		fc.compileExpression(e.Container)
 		fc.out.MovXmmToMem("xmm0", "rsp", 8)
 		fc.out.MovMemToReg("rbx", "rsp", 8) // rbx = container pointer
-		
+
 		// Check if null
 		fc.out.CmpRegToImm("rbx", 0)
 		fc.labelCounter++
 		notNullJump := fc.eb.text.Len()
 		fc.out.JumpConditional(JumpNotEqual, 0)
 		notNullEnd := fc.eb.text.Len()
-		
+
 		// Null: return 0.0
 		fc.out.XorRegWithReg("rax", "rax")
 		fc.out.Cvtsi2sd("xmm0", "rax")
 		endJump1 := fc.eb.text.Len()
 		fc.out.JumpUnconditional(0)
 		endJump1End := fc.eb.text.Len()
-		
+
 		// Not null: load count and search
 		notNullPos := fc.eb.text.Len()
 		fc.patchJumpImmediate(notNullJump+2, int32(notNullPos-notNullEnd))
-		
+
 		fc.out.MovMemToXmm("xmm1", "rbx", 0)
-		fc.out.Cvttsd2si("rcx", "xmm1") // rcx = count
+		fc.out.Cvttsd2si("rcx", "xmm1")      // rcx = count
 		fc.out.MovMemToXmm("xmm2", "rsp", 0) // xmm2 = search value
-		
+
 		// Loop: rdi = index
 		fc.out.XorRegWithReg("rdi", "rdi")
 		loopStart := fc.eb.text.Len()
@@ -1783,20 +1969,20 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		loopEndJump := fc.eb.text.Len()
 		fc.out.JumpConditional(JumpGreaterOrEqual, 0)
 		loopEndJumpEnd := fc.eb.text.Len()
-		
+
 		// Load element at index
 		fc.out.MovRegToReg("rax", "rdi")
 		fc.out.MulRegWithImm("rax", 8)
 		fc.out.AddImmToReg("rax", 8)
 		fc.out.AddRegToReg("rax", "rbx")
 		fc.out.MovMemToXmm("xmm3", "rax", 0)
-		
+
 		// Compare
 		fc.out.Ucomisd("xmm2", "xmm3")
 		notEqualJump := fc.eb.text.Len()
 		fc.out.JumpConditional(JumpNotEqual, 0)
 		notEqualEnd := fc.eb.text.Len()
-		
+
 		// Found! Return 1.0
 		fc.out.MovImmToReg("rax", "1")
 		fc.out.Cvtsi2sd("xmm0", "rax")
@@ -1804,20 +1990,20 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		foundJump := fc.eb.text.Len()
 		fc.out.JumpUnconditional(0)
 		foundJumpEnd := fc.eb.text.Len()
-		
+
 		// Not equal: next iteration
 		notEqualPos := fc.eb.text.Len()
 		fc.patchJumpImmediate(notEqualJump+2, int32(notEqualPos-notEqualEnd))
 		fc.out.AddImmToReg("rdi", 1)
 		fc.out.JumpUnconditional(int32(loopStart - (fc.eb.text.Len() + 5)))
-		
+
 		// Not found: return 0.0
 		loopEndPos := fc.eb.text.Len()
 		fc.patchJumpImmediate(loopEndJump+2, int32(loopEndPos-loopEndJumpEnd))
 		fc.out.XorRegWithReg("rax", "rax")
 		fc.out.Cvtsi2sd("xmm0", "rax")
 		fc.out.AddImmToReg("rsp", 16)
-		
+
 		// Patch end jumps
 		endPos := fc.eb.text.Len()
 		fc.patchJumpImmediate(endJump1+1, int32(endPos-endJump1End))
@@ -1825,78 +2011,355 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 	case *MapExpr:
 		// Map literal stored as: [count (float64)] [key1] [value1] [key2] [value2] ...
-		if len(e.Keys) == 0 {
-			fc.out.XorRegWithReg("rax", "rax")
-			fc.out.Cvtsi2sd("xmm0", "rax")
-		} else {
-			labelName := fmt.Sprintf("map_%d", fc.stringCounter)
-			fc.stringCounter++
-			var mapData []byte
-			
-			// Add count
-			count := float64(len(e.Keys))
-			countBits := uint64(0)
-			*(*float64)(unsafe.Pointer(&countBits)) = count
-			for i := 0; i < 8; i++ {
-				mapData = append(mapData, byte((countBits>>(i*8))&0xFF))
-			}
-			
-			// Add key-value pairs
-			for i := range e.Keys {
-				if keyNum, ok := e.Keys[i].(*NumberExpr); ok {
-					keyBits := uint64(0)
-					*(*float64)(unsafe.Pointer(&keyBits)) = keyNum.Value
-					for j := 0; j < 8; j++ {
-						mapData = append(mapData, byte((keyBits>>(j*8))&0xFF))
-					}
-				}
-				if valNum, ok := e.Values[i].(*NumberExpr); ok {
-					valBits := uint64(0)
-					*(*float64)(unsafe.Pointer(&valBits)) = valNum.Value
-					for j := 0; j < 8; j++ {
-						mapData = append(mapData, byte((valBits>>(j*8))&0xFF))
-					}
-				}
-			}
-			
-			fc.eb.Define(labelName, string(mapData))
-			fc.out.LeaSymbolToReg("rax", labelName)
-			fc.out.SubImmFromReg("rsp", 8)
-			fc.out.MovRegToMem("rax", "rsp", 0)
-			fc.out.MovMemToXmm("xmm0", "rsp", 0)
-			fc.out.AddImmToReg("rsp", 8)
+		// Even empty maps need a proper data structure with count = 0
+		labelName := fmt.Sprintf("map_%d", fc.stringCounter)
+		fc.stringCounter++
+		var mapData []byte
+
+		// Add count
+		count := float64(len(e.Keys))
+		countBits := uint64(0)
+		*(*float64)(unsafe.Pointer(&countBits)) = count
+		for i := 0; i < 8; i++ {
+			mapData = append(mapData, byte((countBits>>(i*8))&0xFF))
 		}
+
+		// Add key-value pairs (if any)
+		for i := range e.Keys {
+			if keyNum, ok := e.Keys[i].(*NumberExpr); ok {
+				keyBits := uint64(0)
+				*(*float64)(unsafe.Pointer(&keyBits)) = keyNum.Value
+				for j := 0; j < 8; j++ {
+					mapData = append(mapData, byte((keyBits>>(j*8))&0xFF))
+				}
+			}
+			if valNum, ok := e.Values[i].(*NumberExpr); ok {
+				valBits := uint64(0)
+				*(*float64)(unsafe.Pointer(&valBits)) = valNum.Value
+				for j := 0; j < 8; j++ {
+					mapData = append(mapData, byte((valBits>>(j*8))&0xFF))
+				}
+			}
+		}
+
+		fc.eb.Define(labelName, string(mapData))
+		fc.out.LeaSymbolToReg("rax", labelName)
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovRegToMem("rax", "rsp", 0)
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 8)
 	case *IndexExpr:
-		// Compile list expression (returns pointer as float64 in xmm0)
+		// Determine if we're indexing a map/string or list
+		// Strings are map[uint64]float64, so use map indexing
+		isMap := false
+		if identExpr, ok := e.List.(*IdentExpr); ok {
+			varType := fc.varTypes[identExpr.Name]
+			if varType == "map" || varType == "string" {
+				isMap = true
+			}
+		}
+
+		// Compile container expression (returns pointer as float64 in xmm0)
 		fc.compileExpression(e.List)
-		// Save list pointer to stack
+		// Save container pointer to stack
 		fc.out.SubImmFromReg("rsp", 16)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
 
-		// Compile index expression (returns index as float64 in xmm0)
+		// Compile index/key expression (returns value as float64 in xmm0)
 		fc.compileExpression(e.Index)
+		// Save key/index to stack
+		fc.out.MovXmmToMem("xmm0", "rsp", 8)
 
-		// Convert index from float64 to integer in rax
-		fc.out.Cvttsd2si("rax", "xmm0") // truncate float to int
-
-		// Load list pointer from stack to rbx
+		// Load container pointer from stack to rbx
 		fc.out.MovMemToXmm("xmm1", "rsp", 0)
-		// Convert pointer from float64 back to integer in rbx
-		fc.out.MovXmmToMem("xmm1", "rsp", 8)
-		fc.out.MovMemToReg("rbx", "rsp", 8)
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovXmmToMem("xmm1", "rsp", 0)
+		fc.out.MovMemToReg("rbx", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 8)
+
+		if isMap {
+			// SIMD-OPTIMIZED MAP INDEXING
+			// =============================
+			// Three-tier approach for optimal performance:
+			// 1. AVX-512: Process 8 keys/iteration (8× throughput)
+			// 2. SSE2:    Process 2 keys/iteration (2× throughput)
+			// 3. Scalar:  Process 1 key/iteration (baseline)
+			//
+			// Map format: [count (float64)][key1][value1][key2][value2]...
+			// Keys are interleaved with values at 16-byte strides
+			//
+			// Load key to search for from stack into xmm2
+			fc.out.MovMemToXmm("xmm2", "rsp", 8)
+
+			// Load count from [rbx]
+			fc.out.MovMemToXmm("xmm1", "rbx", 0)
+			fc.out.Cvttsd2si("rcx", "xmm1") // rcx = count
+
+			// Check if count is 0
+			fc.out.CmpRegToImm("rcx", 0)
+			notFoundJump := fc.eb.text.Len()
+			fc.out.JumpConditional(JumpEqual, 0)
+			notFoundEnd := fc.eb.text.Len()
+
+			// Start at first key-value pair (skip 8-byte count)
+			fc.out.AddImmToReg("rbx", 8)
+
+			// ============ AVX-512 PATH (8 keys/iteration) ============
+			// Runtime CPU detection: check if AVX-512 is supported
+			// AVX-512 is available on Intel Xeon Scalable and some high-end desktop CPUs
+			// Requires: AVX512F, AVX512DQ for VGATHERQPD and VCMPPD with k-registers
+
+			// Check cpu_has_avx512 flag
+			fc.out.LeaSymbolToReg("r15", "cpu_has_avx512")
+			fc.out.Emit([]byte{0x41, 0x80, 0x3f, 0x00}) // cmp byte [r15], 0
+			avx512NotSupportedJump := fc.eb.text.Len()
+			fc.out.JumpConditional(JumpEqual, 0) // Jump to SSE2 if not supported
+			avx512NotSupportedEnd := fc.eb.text.Len()
+
+			// Check if we can process 8 at a time (count >= 8)
+			fc.out.CmpRegToImm("rcx", 8)
+			avx512SkipJump := fc.eb.text.Len()
+			fc.out.JumpConditional(JumpLess, 0)
+			avx512SkipEnd := fc.eb.text.Len()
+
+			// Broadcast search key to all 8 lanes of zmm3
+			// vbroadcastsd zmm3, xmm2
+			fc.out.Emit([]byte{0x62, 0xf2, 0xfd, 0x48, 0x19, 0xda}) // EVEX.512.66.0F38.W1 19 /r
+
+			// Set up gather indices for keys at 16-byte strides
+			// Keys are at offsets: 0, 16, 32, 48, 64, 80, 96, 112 from rbx
+			// Store indices in ymm4 (we need 8 x 64-bit indices for VGATHERQPD)
+			// Using stack to construct index vector
+			fc.out.SubImmFromReg("rsp", 64) // Space for 8 indices
+			for i := 0; i < 8; i++ {
+				fc.out.MovImmToReg("rax", fmt.Sprintf("%d", i*16))
+				fc.out.MovRegToMem("rax", "rsp", i*8)
+			}
+			// Load indices into zmm4
+			// vmovdqu64 zmm4, [rsp]
+			fc.out.Emit([]byte{0x62, 0xf1, 0xfe, 0x48, 0x6f, 0x24, 0x24}) // EVEX.512.F3.0F.W1 6F /r
+
+			// AVX-512 loop
+			avx512LoopStart := fc.eb.text.Len()
+
+			// Gather 8 keys using VGATHERQPD
+			// vgatherqpd zmm0{k1}, [rbx + zmm4*1]
+			// First, set mask k1 to all 1s (we want all 8 values)
+			fc.out.Emit([]byte{0xc5, 0xf8, 0x92, 0xc9}) // kmovb k1, ecx (set to 0xFF)
+			// Actually, let's use kxnorb k1, k1, k1 to set all bits to 1
+			fc.out.Emit([]byte{0xc5, 0xfc, 0x46, 0xc9}) // kxnorb k1, k0, k1 -> k1 = 0xFF
+
+			// vgatherqpd zmm0{k1}, [rbx + zmm4*1]
+			// EVEX.512.66.0F38.W1 92 /r
+			// This is complex - we need rbx as base, zmm4 as index, scale=1
+			fc.out.Emit([]byte{0x62, 0xf2, 0xfd, 0x49, 0x92, 0x04, 0xe3}) // [rbx + zmm4*1]
+
+			// Compare all 8 keys with search key
+			// vcmppd k2{k1}, zmm0, zmm3, 0 (EQ_OQ)
+			fc.out.Emit([]byte{0x62, 0xf1, 0xfd, 0x49, 0xc2, 0xd3, 0x00}) // EVEX.512.66.0F.W1 C2 /r ib
+
+			// Extract mask to GPR
+			// kmovb eax, k2
+			fc.out.Emit([]byte{0xc5, 0xf9, 0x90, 0xc2}) // kmovb eax, k2
+
+			// Test if any key matched
+			fc.out.Emit([]byte{0x85, 0xc0}) // test eax, eax
+			avx512FoundJump := fc.eb.text.Len()
+			fc.out.JumpConditional(JumpNotEqual, 0)
+			avx512FoundEnd := fc.eb.text.Len()
+
+			// No match - advance by 128 bytes (8 key-value pairs)
+			fc.out.AddImmToReg("rbx", 128)
+			fc.out.SubImmFromReg("rcx", 8)
+			// Continue if count >= 8
+			fc.out.CmpRegToImm("rcx", 8)
+			fc.out.JumpConditional(JumpGreaterOrEqual, int32(avx512LoopStart-(fc.eb.text.Len()+6)))
+
+			// Clean up indices from stack and fall through to SSE2
+			fc.out.AddImmToReg("rsp", 64)
+			avx512ToSse2Jump := fc.eb.text.Len()
+			fc.out.JumpUnconditional(0)
+			avx512ToSse2End := fc.eb.text.Len()
+
+			// AVX-512 match found - determine which key matched
+			avx512FoundPos := fc.eb.text.Len()
+			fc.patchJumpImmediate(avx512FoundJump+2, int32(avx512FoundPos-avx512FoundEnd))
+
+			// Use BSF (bit scan forward) to find first set bit
+			// bsf edx, eax
+			fc.out.Emit([]byte{0x0f, 0xbc, 0xd0}) // bsf edx, eax
+
+			// edx now contains index (0-7) of matched key
+			// Calculate offset: base_rbx + (edx * 16) + 8 for value
+			// shl edx, 4  (multiply by 16)
+			fc.out.Emit([]byte{0xc1, 0xe2, 0x04}) // shl edx, 4
+			// add edx, 8 (offset to value)
+			fc.out.Emit([]byte{0x83, 0xc2, 0x08}) // add edx, 8
+			// Load value at [rbx + rdx]
+			// movsd xmm0, [rbx + rdx]
+			fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x10, 0x04, 0x13}) // movsd xmm0, [rbx+rdx]
+
+			// Clean up and jump to end
+			fc.out.AddImmToReg("rsp", 64)
+			avx512DoneJump := fc.eb.text.Len()
+			fc.out.JumpUnconditional(0)
+			avx512DoneEnd := fc.eb.text.Len()
+
+			// ============ SSE2 PATH (2 keys/iteration) ============
+			avx512SkipPos := fc.eb.text.Len()
+			fc.patchJumpImmediate(avx512NotSupportedJump+2, int32(avx512SkipPos-avx512NotSupportedEnd))
+			fc.patchJumpImmediate(avx512SkipJump+2, int32(avx512SkipPos-avx512SkipEnd))
+			fc.patchJumpImmediate(avx512ToSse2Jump+1, int32(avx512SkipPos-avx512ToSse2End))
+
+			// Broadcast search key to both lanes of xmm3 for SSE2 comparison
+			// unpcklpd xmm3, xmm2, xmm2 duplicates xmm2 into both 64-bit lanes
+			fc.out.MovXmmToXmm("xmm3", "xmm2")
+			fc.out.Emit([]byte{0x66, 0x0f, 0x14, 0xda}) // unpcklpd xmm3, xmm2
+
+			// Check if we can process 2 at a time (count >= 2)
+			fc.out.CmpRegToImm("rcx", 2)
+			scalarLoopJump := fc.eb.text.Len()
+			fc.out.JumpConditional(JumpLess, 0)
+			scalarLoopEnd := fc.eb.text.Len()
+
+			// SIMD loop: process 2 key-value pairs at a time
+			simdLoopStart := fc.eb.text.Len()
+			// Load key1 from [rbx] into low lane of xmm0
+			fc.out.MovMemToXmm("xmm0", "rbx", 0)
+			// Load key2 from [rbx+16] into low lane of xmm1
+			fc.out.MovMemToXmm("xmm1", "rbx", 16)
+			// Pack both keys into xmm0: [key1 | key2]
+			fc.out.Emit([]byte{0x66, 0x0f, 0x14, 0xc1}) // unpcklpd xmm0, xmm1
+
+			// Compare both keys with search key in parallel
+			// cmpeqpd xmm0, xmm3 (sets all bits in lane to 1 if equal)
+			fc.out.Emit([]byte{0x66, 0x0f, 0xc2, 0xc3, 0x00}) // cmpeqpd xmm0, xmm3, 0
+
+			// Extract comparison mask to eax
+			// movmskpd eax, xmm0 (bit 0 = key1 match, bit 1 = key2 match)
+			fc.out.Emit([]byte{0x66, 0x0f, 0x50, 0xc0}) // movmskpd eax, xmm0
+
+			// Test if any key matched (eax != 0)
+			fc.out.Emit([]byte{0x85, 0xc0}) // test eax, eax
+			simdFoundJump := fc.eb.text.Len()
+			fc.out.JumpConditional(JumpNotEqual, 0)
+			simdFoundEnd := fc.eb.text.Len()
+
+			// No match - advance by 32 bytes (2 key-value pairs)
+			fc.out.AddImmToReg("rbx", 32)
+			fc.out.SubImmFromReg("rcx", 2)
+			// Continue if count >= 2
+			fc.out.CmpRegToImm("rcx", 2)
+			fc.out.JumpConditional(JumpGreaterOrEqual, int32(simdLoopStart-(fc.eb.text.Len()+6)))
+
+			// Fall through to scalar loop if count < 2
+			scalarFallThrough := fc.eb.text.Len()
+			fc.out.JumpUnconditional(0)
+			scalarFallThroughEnd := fc.eb.text.Len()
+
+			// SIMD match found - determine which key matched
+			simdFoundPos := fc.eb.text.Len()
+			fc.patchJumpImmediate(simdFoundJump+2, int32(simdFoundPos-simdFoundEnd))
+
+			// Test bit 0 (key1 match)
+			fc.out.Emit([]byte{0xa8, 0x01}) // test al, 1
+			key1MatchJump := fc.eb.text.Len()
+			fc.out.JumpConditional(JumpNotEqual, 0)
+			key1MatchEnd := fc.eb.text.Len()
+
+			// Bit 0 not set, must be bit 1 (key2 match) - load value at [rbx+24]
+			fc.out.MovMemToXmm("xmm0", "rbx", 24)
+			simdDoneJump := fc.eb.text.Len()
+			fc.out.JumpUnconditional(0)
+			simdDoneEnd := fc.eb.text.Len()
+
+			// Key1 matched - load value at [rbx+8]
+			key1MatchPos := fc.eb.text.Len()
+			fc.patchJumpImmediate(key1MatchJump+2, int32(key1MatchPos-key1MatchEnd))
+			fc.out.MovMemToXmm("xmm0", "rbx", 8)
+
+			// Patch SIMD done jump to skip scalar loop
+			allDoneJump := fc.eb.text.Len()
+			fc.out.JumpUnconditional(0)
+			allDoneEnd := fc.eb.text.Len()
+
+			simdDonePos := fc.eb.text.Len()
+			fc.patchJumpImmediate(simdDoneJump+1, int32(simdDonePos-simdDoneEnd))
+			fc.out.JumpUnconditional(int32(allDoneJump - fc.eb.text.Len() - 5))
+
+			// SCALAR loop: handle remaining keys (when count < 2 or remainder)
+			scalarLoopPos := fc.eb.text.Len()
+			fc.patchJumpImmediate(scalarLoopJump+2, int32(scalarLoopPos-scalarLoopEnd))
+			fc.patchJumpImmediate(scalarFallThrough+1, int32(scalarLoopPos-scalarFallThroughEnd))
+
+			// Check if any keys remain
+			fc.out.CmpRegToImm("rcx", 0)
+			scalarDoneJump := fc.eb.text.Len()
+			fc.out.JumpConditional(JumpEqual, 0)
+			scalarDoneEnd := fc.eb.text.Len()
+
+			scalarLoopStart := fc.eb.text.Len()
+			// Load current key from [rbx] into xmm1
+			fc.out.MovMemToXmm("xmm1", "rbx", 0)
+			// Compare key with search key (xmm1 vs xmm2)
+			fc.out.Ucomisd("xmm1", "xmm2")
+
+			// If equal, jump to found
+			foundJump := fc.eb.text.Len()
+			fc.out.JumpConditional(JumpEqual, 0)
+			foundEnd := fc.eb.text.Len()
+
+			// Not equal - advance to next pair (16 bytes)
+			fc.out.AddImmToReg("rbx", 16)
+			fc.out.SubImmFromReg("rcx", 1)
+			// If counter > 0, continue loop
+			fc.out.CmpRegToImm("rcx", 0)
+			fc.out.JumpConditional(JumpNotEqual, int32(scalarLoopStart-(fc.eb.text.Len()+6)))
+
+			// Not found - return 0.0
+			scalarDonePos := fc.eb.text.Len()
+			fc.patchJumpImmediate(scalarDoneJump+2, int32(scalarDonePos-scalarDoneEnd))
+			notFoundPos := fc.eb.text.Len()
+			fc.patchJumpImmediate(notFoundJump+2, int32(notFoundPos-notFoundEnd))
+			fc.out.XorRegWithReg("rax", "rax")
+			fc.out.Cvtsi2sd("xmm0", "rax")
+			notFoundDoneJump := fc.eb.text.Len()
+			fc.out.JumpUnconditional(0)
+			notFoundDoneEnd := fc.eb.text.Len()
+
+			// Scalar found - load value at [rbx + 8]
+			foundPos := fc.eb.text.Len()
+			fc.patchJumpImmediate(foundJump+2, int32(foundPos-foundEnd))
+			fc.out.MovMemToXmm("xmm0", "rbx", 8)
+
+			// All done - patch final jumps
+			allDonePos := fc.eb.text.Len()
+			fc.patchJumpImmediate(allDoneJump+1, int32(allDonePos-allDoneEnd))
+			fc.patchJumpImmediate(avx512DoneJump+1, int32(allDonePos-avx512DoneEnd))
+			fc.patchJumpImmediate(notFoundDoneJump+1, int32(allDonePos-notFoundDoneEnd))
+
+		} else {
+			// LIST INDEXING: Position-based indexing
+			// Load index from stack
+			fc.out.MovMemToXmm("xmm0", "rsp", 8)
+			// Convert index from float64 to integer in rax
+			fc.out.Cvttsd2si("rax", "xmm0")
+
+			// Skip the length prefix (first 8 bytes)
+			fc.out.AddImmToReg("rbx", 8)
+
+			// Calculate offset: rax * 8 (each float64 is 8 bytes)
+			fc.out.MulRegWithImm("rax", 8)
+
+			// Add offset to base pointer: rbx = rbx + rax
+			fc.out.AddRegToReg("rbx", "rax")
+
+			// Load float64 from [rbx] into xmm0
+			fc.out.MovMemToXmm("xmm0", "rbx", 0)
+		}
+
+		// Clean up stack (remove saved key/index)
 		fc.out.AddImmToReg("rsp", 16)
-
-		// Skip the length prefix (first 8 bytes)
-		fc.out.AddImmToReg("rbx", 8)
-
-		// Calculate offset: rax * 8 (each float64 is 8 bytes)
-		fc.out.MulRegWithImm("rax", 8) // rax = rax * 8
-
-		// Add offset to base pointer: rbx = rbx + rax
-		fc.out.AddRegToReg("rbx", "rax")
-
-		// Load float64 from [rbx] into xmm0
-		fc.out.MovMemToXmm("xmm0", "rbx", 0)
 
 	case *LambdaExpr:
 		// Generate a unique function name for this lambda
@@ -2318,20 +2781,26 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		}
 
 		arg := call.Args[0]
+		argType := fc.getExprType(arg)
+
 		if strExpr, ok := arg.(*StringExpr); ok {
-			// Print string with newline
-			labelName := fmt.Sprintf("str_%d", fc.stringCounter)
+			// String literal - optimize by generating C string directly
+			labelName := fmt.Sprintf("cstr_%d", fc.stringCounter)
 			fc.stringCounter++
 			fc.eb.Define(labelName, strExpr.Value+"\n\x00")
 			fc.out.LeaSymbolToReg("rdi", labelName)
 			fc.out.XorRegWithReg("rax", "rax")
 			fc.trackFunctionCall("printf")
 			fc.eb.GenerateCallInstruction("printf")
+		} else if argType == "string" {
+			// String variable - need to convert map to C string at runtime
+			// TODO: implement runtime map-to-cstring conversion
+			fmt.Fprintf(os.Stderr, "Error: printing string variables not yet implemented\n")
+			os.Exit(1)
 		} else {
 			// Print number with newline
 			fc.compileExpression(arg)
 			// xmm0 contains float64 value
-			// For printf %f, float64 goes in xmm0, and rax=1 (1 vector register used)
 			fc.out.LeaSymbolToReg("rdi", "fmt_float")
 			fc.out.MovImmToReg("rax", "1") // 1 vector register used
 			fc.trackFunctionCall("printf")

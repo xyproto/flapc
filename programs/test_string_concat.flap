@@ -1,0 +1,3 @@
+// Test string concatenation with + operator
+result := "Hello, " + "World!"
+println(result)

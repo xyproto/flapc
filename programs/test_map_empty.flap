@@ -1,0 +1,4 @@
+// Test empty map
+empty = {}
+result := empty[1]
+printf("Result from empty map: %v\n", result)

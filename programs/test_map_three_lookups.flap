@@ -1,0 +1,11 @@
+// Test three lookups on same map
+prices = {100: 5.99, 200: 12.99, 300: 19.99}
+
+price1 := prices[100]
+printf("Price for item 100: %v\n", price1)
+
+price2 := prices[200]
+printf("Price for item 200: %v\n", price2)
+
+price3 := prices[300]
+printf("Price for item 300: %v\n", price3)

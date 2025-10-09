@@ -1,0 +1,8 @@
+// Debug string indexing
+s := "ABC"
+c0 := s[0]
+c1 := s[1]
+c2 := s[2]
+printf("s[0] = %v (should be 65 for 'A')\n", c0)
+printf("s[1] = %v (should be 66 for 'B')\n", c1)
+printf("s[2] = %v (should be 67 for 'C')\n", c2)

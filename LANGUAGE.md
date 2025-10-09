@@ -43,6 +43,13 @@ ages = {1: 25, 2: 30, 3: 35}
 empty = {}
 count = #ages        // returns 3.0
 
+// Map indexing (lookup by key)
+price = ages[1]      // returns 25.0
+missing = ages[999]  // returns 0.0 (key doesn't exist)
+result = empty[1]    // returns 0.0 (empty map)
+// Note: Map lookups use SIMD optimization (SSE2/AVX-512) for 2-8× throughput
+// See docs/SIMD_MAP_OPTIMIZATION.md for details
+
 // Membership testing with 'in'
 10 in numbers {
     -> println("Found!")

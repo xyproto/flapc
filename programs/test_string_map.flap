@@ -1,0 +1,5 @@
+// Test that string literals create maps correctly
+// Access a character by index
+s := "ABC"
+char := s[1]  // Should be 66.0 (ASCII 'B')
+printf("Character code: %v\n", char)

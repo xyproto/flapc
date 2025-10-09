@@ -1,0 +1,4 @@
+// Test map indexing
+ages = {1: 25, 2: 30, 3: 35}
+age := ages[2]
+printf("Age at key 2: %v\n", age)

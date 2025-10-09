@@ -1,0 +1,9 @@
+// Test to show CPU capabilities
+// Note: cpu_has_avx512 is set at program start
+printf("Program started with CPU detection\n")
+printf("If you see this, SSE2 path is working\n")
+
+// Test a simple map operation
+test = {1: 100, 2: 200}
+val := test[1]
+printf("Map test result: %v\n", val)

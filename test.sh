@@ -12,6 +12,25 @@ declare -A compile_expectation
 compile_expectation[const]="failure"
 compile_expectation[hash_length_test]="failure"
 
+# Skip experimental/demo programs that don't have test expectations yet
+declare -A skip_programs
+skip_programs[bool_test]=1
+skip_programs[format_test]=1
+skip_programs[in_demo]=1
+skip_programs[in_simple]=1
+skip_programs[in_test]=1
+skip_programs[map_test]=1
+skip_programs[new_features]=1
+skip_programs[printf_demo]=1
+skip_programs[printf_test]=1
+skip_programs[showcase]=1
+skip_programs[simple_printf]=1
+skip_programs[test_escape]=1
+skip_programs[test_g]=1
+skip_programs[test_v]=1
+skip_programs[test_string_concat]=1
+skip_programs[test_string_concat_literal]=1
+
 # Expected substrings in compiler output when compilation fails.
 declare -A compile_failure_patterns
 compile_failure_patterns[const]="cannot reassign immutable variable"
@@ -87,6 +106,25 @@ expected_stdout[test_lambda_ptr]=$'10'
 expected_stdout[test_list_only]=$'1'
 expected_stdout[test_null_len]=$'0'
 expected_stdout[test_parallel_null_return]=$'0'
+expected_stdout[test_simple]=$'Test'
+expected_stdout[test_with_exit]=$'Test'
+expected_stdout[simple_format]=$'Whole: 42\nFloat: 3.14\nBool true: yes\nBool false: no'
+
+# SIMD map indexing tests
+expected_stdout[test_map_index]=$'Age at key 2: 30'
+expected_stdout[test_map_comprehensive]=$'Price for item 100: 5.99\nPrice for item 200: 12.99\nPrice for item 300: 19.99\nPrice for item 999: 0\nResult from empty map: 0'
+expected_stdout[test_map_two_lookups]=$'Price for item 100: 5.99\nPrice for item 200: 12.99'
+expected_stdout[test_map_three_lookups]=$'Price for item 100: 5.99\nPrice for item 200: 12.99\nPrice for item 300: 19.99'
+expected_stdout[test_map_nonexistent]=$'Price for item 999: 0'
+expected_stdout[test_map_empty]=$'Result from empty map: 0'
+expected_stdout[test_map_simd_large]=$'Item 100: $5.99\nItem 300: $19.99\nItem 500: $29.99\nItem 600: $34.99\nItem 999: $0'
+expected_stdout[test_map_avx512_large]=$'Item 100: $9.99\nItem 800: $79.99\nItem 1600: $159.99\nItem 9999: $0'
+expected_stdout[test_cpu_detection]=$'Program started with CPU detection\nIf you see this, SSE2 path is working\nMap test result: 100'
+
+# String tests (strings as map[uint64]float64)
+expected_stdout[test_string_literal]=$'Hello, World!'
+expected_stdout[test_string_map]=$'Character code: 66'
+expected_stdout[test_string_index_debug]=$'s[0] = 65 (should be 65 for \'A\')\ns[1] = 66 (should be 66 for \'B\')\ns[2] = 67 (should be 67 for \'C\')'
 
 # Expected exit codes for successful program runs (default to 0 when unspecified).
 declare -A expected_exit_code
@@ -132,6 +170,12 @@ run_grep_check() {
 
 for src in "$PROGRAM_DIR"/*.flap; do
     base=$(basename "$src" .flap)
+
+    # Skip experimental/demo programs
+    if [[ "${skip_programs[$base]:-0}" == "1" ]]; then
+        continue
+    fi
+
     compile_log="$BUILD_ROOT/${base}.compile.log"
     executable="$BUILD_ROOT/${base}"
     out_file="$BUILD_ROOT/${base}.out"

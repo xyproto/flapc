@@ -1,0 +1,2 @@
+// Test compile-time string concatenation
+println("Hello, " + "World!")

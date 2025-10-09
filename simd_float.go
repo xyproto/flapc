@@ -439,3 +439,53 @@ func (o *Out) ucomisdX86(xmm1, xmm2 string) {
 
 	fmt.Fprintln(os.Stderr)
 }
+
+// Emit - Write raw bytes directly to output
+// For custom SIMD instructions not yet wrapped
+func (o *Out) Emit(bytes []byte) {
+	for _, b := range bytes {
+		o.Write(b)
+	}
+}
+
+// MovXmmToXmm - Move scalar double from one XMM register to another
+// movsd xmm1, xmm2
+func (o *Out) MovXmmToXmm(dst, src string) {
+	switch o.machine {
+	case MachineX86_64:
+		o.movX86XmmToXmm(dst, src)
+	}
+}
+
+func (o *Out) movX86XmmToXmm(dst, src string) {
+	fmt.Fprintf(os.Stderr, "movsd %s, %s: ", dst, src)
+
+	var dstNum, srcNum int
+	fmt.Sscanf(dst, "xmm%d", &dstNum)
+	fmt.Sscanf(src, "xmm%d", &srcNum)
+
+	// F2 prefix for scalar double
+	o.Write(0xF2)
+
+	// REX if needed
+	if dstNum >= 8 || srcNum >= 8 {
+		rex := uint8(0x40)
+		if dstNum >= 8 {
+			rex |= 0x04 // REX.R
+		}
+		if srcNum >= 8 {
+			rex |= 0x01 // REX.B
+		}
+		o.Write(rex)
+	}
+
+	// 0F 10 - MOVSD opcode
+	o.Write(0x0F)
+	o.Write(0x10)
+
+	// ModR/M: 11 dst src
+	modrm := uint8(0xC0) | (uint8(dstNum&7) << 3) | uint8(srcNum&7)
+	o.Write(modrm)
+
+	fmt.Fprintln(os.Stderr)
+}

@@ -1,0 +1,2 @@
+// Test string literal (now represented as map under the hood)
+println("Hello, World!")
