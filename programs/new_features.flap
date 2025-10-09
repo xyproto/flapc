@@ -1,0 +1,16 @@
+// Demonstrate new features
+
+// 1. printf with format strings
+printf("=== New Features Demo ===\n")
+printf("Printf works! Value: %f\n", 42.5)
+printf("Multiple args: %f, %f, %f\n", 10.0, 20.0, 30.0)
+
+// 2. Hash maps
+mymap = {1: 100, 2: 200, 3: 300}
+empty = {}
+
+printf("\nMap count: %f\n", #mymap)
+printf("Empty map count: %f\n", #empty)
+
+// 3. No need for explicit exit() anymore
+printf("\nProgram exits automatically!\n")

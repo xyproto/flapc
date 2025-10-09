@@ -1,0 +1,42 @@
+// Test 'in' operator for membership testing
+
+numbers = [10, 20, 30, 40, 50]
+
+// Test with values in the list
+10 in numbers {
+    -> println("10 is in the list")
+    ~> println("10 not found")
+}
+
+50 in numbers {
+    -> println("50 is in the list")
+    ~> println("50 not found")
+}
+
+// Test with value not in the list
+99 in numbers {
+    -> println("99 is in the list")
+    ~> println("99 not found")
+}
+
+// Test with empty list
+empty = []
+5 in empty {
+    -> println("Found in empty list")
+    ~> println("Empty list is empty")
+}
+
+// Test with maps
+ages = {1: 25, 2: 30, 3: 35}
+
+1 in ages {
+    -> println("Key 1 exists in ages")
+    ~> println("Key 1 not found")
+}
+
+10 in ages {
+    -> println("Key 10 exists")
+    ~> println("Key 10 not found")
+}
+
+printf("\nAll membership tests complete!\n")

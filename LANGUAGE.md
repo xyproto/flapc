@@ -6,7 +6,84 @@
 
 Flap is a functional programming language designed for high-performance numerical computing with explicit SIMD parallelism. Built on a `map[uint64]float64` foundation, it provides elegant abstractions for modern CPU architectures while maintaining simplicity and clarity.
 
-## EBNF Grammar
+## Currently Implemented Subset
+
+The following features are working in the current implementation:
+
+```flap
+// Variables (immutable and mutable)
+x = 10
+y := 20
+y := y + 5
+
+// Arithmetic
+result = 10 + 3 * 2 - 1 / 2
+
+// Comparisons (returns 1.0 for true, 0.0 for false)
+x < y, x <= y, x > y, x >= y, x == y, x != y
+
+// Match expressions (if/else replacement)
+x < y {
+    -> println("less")
+    ~> println("not less")
+}
+
+// Default case is optional (defaults to 0)
+x < y {
+    -> println("yes")
+}
+
+// Lists
+numbers = [1, 2, 3]
+first = numbers[0]
+length = #numbers    // length operator
+
+// Maps (hash maps)
+ages = {1: 25, 2: 30, 3: 35}
+empty = {}
+count = #ages        // returns 3.0
+
+// Membership testing with 'in'
+10 in numbers {
+    -> println("Found!")
+    ~> println("Not found")
+}
+
+1 in ages {
+    -> println("Key exists")
+}
+
+result = 5 in mylist  // returns 1.0 or 0.0
+
+// Loops
+@ i in range(5) {
+    println(i)
+}
+
+@ item in mylist {
+    println(item)
+}
+
+// Lambdas (up to 6 parameters)
+double = (x) -> x * 2
+add = (x, y) -> x + y
+result = double(5)
+
+// Storing and calling lambdas
+f = double
+println(f(10))
+
+// Builtin functions
+println(x)                          // Print with newline
+printf("format %f\n", value)        // Formatted print
+printf("Value: %v, Bool: %b\n", x, y)  // %v=smart number, %b=yes/no
+range(n)                            // Generate range for loops
+// Note: exit() is called automatically at program end
+```
+
+## Complete Planned Grammar
+
+The full grammar below shows both implemented and planned features:
 
 ```ebnf
 program = { statement } ;
@@ -78,10 +155,28 @@ letter = "a" | "b" | ... | "z" | "A" | "B" | ... | "Z" ;
 digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
 ```
 
-## Keywords (15)
+## Keywords (1)
 
 ```
-in and or not yes no me return or!
+in
+```
+
+## Builtin Functions (4)
+
+```
+println(x)        // Print value to stdout with newline
+printf(fmt, ...)  // Formatted print (up to 8 args)
+                  // Format specifiers: %f, %d, %s, %v, %b, %%
+                  // %v = smart value (42.0→"42", 3.14→"3.14")
+                  // %b = boolean (0.0→"no", non-zero→"yes")
+exit(code)        // Exit program with code (automatically called at end)
+range(n)          // Generate range 0..n-1 for loops
+```
+
+## Planned Keywords (Not Yet Implemented)
+
+```
+and or not yes no me return or!
 mask simd sum product max min
 ```
 

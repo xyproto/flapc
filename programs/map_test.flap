@@ -1,0 +1,6 @@
+// Test map literals
+mymap = {1: 10, 2: 20, 3: 30}
+empty_map = {}
+
+println("Map literal test complete")
+printf("Map count: %f\n", #mymap)

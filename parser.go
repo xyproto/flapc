@@ -27,6 +27,7 @@ const (
 	TOKEN_LPAREN
 	TOKEN_RPAREN
 	TOKEN_COMMA
+	TOKEN_COLON
 	TOKEN_NEWLINE
 	TOKEN_LT            // <
 	TOKEN_GT            // >
@@ -53,6 +54,35 @@ type Token struct {
 	Type  TokenType
 	Value string
 	Line  int
+}
+
+// processEscapeSequences converts escape sequences in a string to their actual characters
+func processEscapeSequences(s string) string {
+	var result strings.Builder
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			switch s[i+1] {
+			case 'n':
+				result.WriteByte('\n')
+			case 't':
+				result.WriteByte('\t')
+			case 'r':
+				result.WriteByte('\r')
+			case '\\':
+				result.WriteByte('\\')
+			case '"':
+				result.WriteByte('"')
+			default:
+				// Unknown escape sequence - keep backslash and the character
+				result.WriteByte(s[i])
+				result.WriteByte(s[i+1])
+			}
+			i++ // Skip the escaped character
+		} else {
+			result.WriteByte(s[i])
+		}
+	}
+	return result.String()
 }
 
 // Lexer for Flap language
@@ -168,9 +198,9 @@ func (l *Lexer) NextToken() Token {
 			l.pos += 2 // skip both ':' and '='
 			return Token{Type: TOKEN_COLON_EQUALS, Value: ":=", Line: l.line}
 		}
-		// Just skip standalone : (used in type annotations, not tokenized)
+		// Standalone : for map literals
 		l.pos++
-		return l.NextToken()
+		return Token{Type: TOKEN_COLON, Value: ":", Line: l.line}
 	case '=':
 		// Check for ==
 		if l.peek() == '=' {
@@ -361,6 +391,16 @@ func (b *BinaryExpr) String() string {
 }
 func (b *BinaryExpr) expressionNode() {}
 
+type InExpr struct {
+	Value     Expression // Value to search for
+	Container Expression // List or map to search in
+}
+
+func (i *InExpr) String() string {
+	return "(" + i.Value.String() + " in " + i.Container.String() + ")"
+}
+func (i *InExpr) expressionNode() {}
+
 type MatchExpr struct {
 	Condition   Expression
 	TrueExpr    Expression
@@ -398,6 +438,20 @@ func (l *ListExpr) String() string {
 	return "[" + strings.Join(elements, ", ") + "]"
 }
 func (l *ListExpr) expressionNode() {}
+
+type MapExpr struct {
+	Keys   []Expression
+	Values []Expression
+}
+
+func (m *MapExpr) String() string {
+	var pairs []string
+	for i := range m.Keys {
+		pairs = append(pairs, m.Keys[i].String()+": "+m.Values[i].String())
+	}
+	return "{" + strings.Join(pairs, ", ") + "}"
+}
+func (m *MapExpr) expressionNode() {}
 
 type IndexExpr struct {
 	List  Expression
@@ -618,6 +672,13 @@ func foldConstantExpr(expr Expression) Expression {
 		}
 		return e
 
+
+	case *MapExpr:
+		for i := range e.Keys {
+			e.Keys[i] = foldConstantExpr(e.Keys[i])
+			e.Values[i] = foldConstantExpr(e.Values[i])
+		}
+		return e
 	case *IndexExpr:
 		e.List = foldConstantExpr(e.List)
 		e.Index = foldConstantExpr(e.Index)
@@ -635,6 +696,11 @@ func foldConstantExpr(expr Expression) Expression {
 	case *PipeExpr:
 		e.Left = foldConstantExpr(e.Left)
 		e.Right = foldConstantExpr(e.Right)
+		return e
+
+	case *InExpr:
+		e.Value = foldConstantExpr(e.Value)
+		e.Container = foldConstantExpr(e.Container)
 		return e
 
 	case *LengthExpr:
@@ -828,6 +894,14 @@ func (p *Parser) parseParallel() Expression {
 func (p *Parser) parseComparison() Expression {
 	left := p.parseAdditive()
 
+	// Check for 'in' operator (membership testing)
+	if p.peek.Type == TOKEN_IN {
+		p.nextToken() // move to left expr
+		p.nextToken() // skip 'in'
+		right := p.parseAdditive()
+		return &InExpr{Value: left, Container: right}
+	}
+
 	for p.peek.Type == TOKEN_LT || p.peek.Type == TOKEN_GT ||
 		p.peek.Type == TOKEN_LE || p.peek.Type == TOKEN_GE ||
 		p.peek.Type == TOKEN_EQ || p.peek.Type == TOKEN_NE {
@@ -1015,6 +1089,52 @@ func (p *Parser) parsePrimary() Expression {
 		// peek should be ']'
 		p.nextToken() // move to ']'
 		return &ListExpr{Elements: elements}
+
+	case TOKEN_LBRACE:
+		// Map literal: {key: value, key2: value2, ...}
+		p.nextToken() // skip '{'
+		keys := []Expression{}
+		values := []Expression{}
+
+		if p.current.Type != TOKEN_RBRACE {
+			// Parse first key
+			key := p.parseExpression()
+			p.nextToken() // move past key
+
+			// Must have ':'
+			if p.current.Type != TOKEN_COLON {
+				p.error("expected ':' in map literal")
+			}
+			p.nextToken() // skip ':'
+
+			// Parse value
+			value := p.parseExpression()
+			keys = append(keys, key)
+			values = append(values, value)
+
+			// Parse additional key:value pairs
+			for p.peek.Type == TOKEN_COMMA {
+				p.nextToken() // skip current value
+				p.nextToken() // skip ','
+
+				key := p.parseExpression()
+				p.nextToken() // move past key
+
+				if p.current.Type != TOKEN_COLON {
+					p.error("expected ':' in map literal")
+				}
+				p.nextToken() // skip ':'
+
+				value := p.parseExpression()
+				keys = append(keys, key)
+				values = append(values, value)
+			}
+		}
+
+		// current should be on last value or on '{'
+		// peek should be '}'
+		p.nextToken() // move to '}'
+		return &MapExpr{Keys: keys, Values: values}
 	}
 
 	return nil
@@ -1092,6 +1212,11 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	for _, stmt := range program.Statements {
 		fc.compileStatement(stmt)
 	}
+
+	// Automatically call exit(0) at program end
+	fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
+	fc.trackFunctionCall("exit")
+	fc.eb.GenerateCallInstruction("exit")
 
 	// Generate lambda functions
 	fc.generateLambdaFunctions()
@@ -1180,6 +1305,11 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 	for _, stmt := range program.Statements {
 		fc.compileStatement(stmt)
 	}
+
+	// Automatically call exit(0) at program end
+	fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
+	fc.trackFunctionCall("exit")
+	fc.eb.GenerateCallInstruction("exit")
 
 	// Generate lambda functions
 	fc.generateLambdaFunctions()
@@ -1474,11 +1604,30 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 	switch e := expr.(type) {
 	case *NumberExpr:
 		// Flap uses float64 foundation - all values are float64
-		// Convert to int64 first, then to float64 in xmm0
-		val := int64(e.Value)
-		fc.out.MovImmToReg("rax", strconv.FormatInt(val, 10))
-		// Convert integer to float64: cvtsi2sd xmm0, rax
-		fc.out.Cvtsi2sd("xmm0", "rax")
+		// For whole numbers, use integer conversion; for decimals, load from .rodata
+		if e.Value == float64(int64(e.Value)) {
+			// Whole number - can use integer path
+			val := int64(e.Value)
+			fc.out.MovImmToReg("rax", strconv.FormatInt(val, 10))
+			fc.out.Cvtsi2sd("xmm0", "rax")
+		} else {
+			// Decimal number - store in .rodata and load
+			labelName := fmt.Sprintf("float_%d", fc.stringCounter)
+			fc.stringCounter++
+			
+			// Convert float64 to 8 bytes (little-endian)
+			bits := uint64(0)
+			*(*float64)(unsafe.Pointer(&bits)) = e.Value
+			var floatData []byte
+			for i := 0; i < 8; i++ {
+				floatData = append(floatData, byte((bits>>(i*8))&0xFF))
+			}
+			fc.eb.Define(labelName, string(floatData))
+			
+			// Load from .rodata
+			fc.out.LeaSymbolToReg("rax", labelName)
+			fc.out.MovMemToXmm("xmm0", "rax", 0)
+		}
 
 	case *StringExpr:
 		// Store string and load address (strings still use pointers for now)
@@ -1590,6 +1739,133 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.AddImmToReg("rsp", 8)
 		}
 
+
+	case *InExpr:
+		// Membership testing: value in container
+		// Returns 1.0 if found, 0.0 if not found
+		
+		// Compile value to search for
+		fc.compileExpression(e.Value)
+		fc.out.SubImmFromReg("rsp", 16)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		
+		// Compile container
+		fc.compileExpression(e.Container)
+		fc.out.MovXmmToMem("xmm0", "rsp", 8)
+		fc.out.MovMemToReg("rbx", "rsp", 8) // rbx = container pointer
+		
+		// Check if null
+		fc.out.CmpRegToImm("rbx", 0)
+		fc.labelCounter++
+		notNullJump := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpNotEqual, 0)
+		notNullEnd := fc.eb.text.Len()
+		
+		// Null: return 0.0
+		fc.out.XorRegWithReg("rax", "rax")
+		fc.out.Cvtsi2sd("xmm0", "rax")
+		endJump1 := fc.eb.text.Len()
+		fc.out.JumpUnconditional(0)
+		endJump1End := fc.eb.text.Len()
+		
+		// Not null: load count and search
+		notNullPos := fc.eb.text.Len()
+		fc.patchJumpImmediate(notNullJump+2, int32(notNullPos-notNullEnd))
+		
+		fc.out.MovMemToXmm("xmm1", "rbx", 0)
+		fc.out.Cvttsd2si("rcx", "xmm1") // rcx = count
+		fc.out.MovMemToXmm("xmm2", "rsp", 0) // xmm2 = search value
+		
+		// Loop: rdi = index
+		fc.out.XorRegWithReg("rdi", "rdi")
+		loopStart := fc.eb.text.Len()
+		fc.out.CmpRegToReg("rdi", "rcx")
+		loopEndJump := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpGreaterOrEqual, 0)
+		loopEndJumpEnd := fc.eb.text.Len()
+		
+		// Load element at index
+		fc.out.MovRegToReg("rax", "rdi")
+		fc.out.MulRegWithImm("rax", 8)
+		fc.out.AddImmToReg("rax", 8)
+		fc.out.AddRegToReg("rax", "rbx")
+		fc.out.MovMemToXmm("xmm3", "rax", 0)
+		
+		// Compare
+		fc.out.Ucomisd("xmm2", "xmm3")
+		notEqualJump := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpNotEqual, 0)
+		notEqualEnd := fc.eb.text.Len()
+		
+		// Found! Return 1.0
+		fc.out.MovImmToReg("rax", "1")
+		fc.out.Cvtsi2sd("xmm0", "rax")
+		fc.out.AddImmToReg("rsp", 16)
+		foundJump := fc.eb.text.Len()
+		fc.out.JumpUnconditional(0)
+		foundJumpEnd := fc.eb.text.Len()
+		
+		// Not equal: next iteration
+		notEqualPos := fc.eb.text.Len()
+		fc.patchJumpImmediate(notEqualJump+2, int32(notEqualPos-notEqualEnd))
+		fc.out.AddImmToReg("rdi", 1)
+		fc.out.JumpUnconditional(int32(loopStart - (fc.eb.text.Len() + 5)))
+		
+		// Not found: return 0.0
+		loopEndPos := fc.eb.text.Len()
+		fc.patchJumpImmediate(loopEndJump+2, int32(loopEndPos-loopEndJumpEnd))
+		fc.out.XorRegWithReg("rax", "rax")
+		fc.out.Cvtsi2sd("xmm0", "rax")
+		fc.out.AddImmToReg("rsp", 16)
+		
+		// Patch end jumps
+		endPos := fc.eb.text.Len()
+		fc.patchJumpImmediate(endJump1+1, int32(endPos-endJump1End))
+		fc.patchJumpImmediate(foundJump+1, int32(endPos-foundJumpEnd))
+
+	case *MapExpr:
+		// Map literal stored as: [count (float64)] [key1] [value1] [key2] [value2] ...
+		if len(e.Keys) == 0 {
+			fc.out.XorRegWithReg("rax", "rax")
+			fc.out.Cvtsi2sd("xmm0", "rax")
+		} else {
+			labelName := fmt.Sprintf("map_%d", fc.stringCounter)
+			fc.stringCounter++
+			var mapData []byte
+			
+			// Add count
+			count := float64(len(e.Keys))
+			countBits := uint64(0)
+			*(*float64)(unsafe.Pointer(&countBits)) = count
+			for i := 0; i < 8; i++ {
+				mapData = append(mapData, byte((countBits>>(i*8))&0xFF))
+			}
+			
+			// Add key-value pairs
+			for i := range e.Keys {
+				if keyNum, ok := e.Keys[i].(*NumberExpr); ok {
+					keyBits := uint64(0)
+					*(*float64)(unsafe.Pointer(&keyBits)) = keyNum.Value
+					for j := 0; j < 8; j++ {
+						mapData = append(mapData, byte((keyBits>>(j*8))&0xFF))
+					}
+				}
+				if valNum, ok := e.Values[i].(*NumberExpr); ok {
+					valBits := uint64(0)
+					*(*float64)(unsafe.Pointer(&valBits)) = valNum.Value
+					for j := 0; j < 8; j++ {
+						mapData = append(mapData, byte((valBits>>(j*8))&0xFF))
+					}
+				}
+			}
+			
+			fc.eb.Define(labelName, string(mapData))
+			fc.out.LeaSymbolToReg("rax", labelName)
+			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.MovRegToMem("rax", "rsp", 0)
+			fc.out.MovMemToXmm("xmm0", "rsp", 0)
+			fc.out.AddImmToReg("rsp", 8)
+		}
 	case *IndexExpr:
 		// Compile list expression (returns pointer as float64 in xmm0)
 		fc.compileExpression(e.List)
@@ -1704,30 +1980,43 @@ func (fc *FlapCompiler) compileMatchExpr(expr *MatchExpr) {
 
 	// Extract the comparison operator from the condition
 	var jumpCond JumpCondition
+	needsZeroCompare := false
+
 	if binExpr, ok := expr.Condition.(*BinaryExpr); ok {
 		switch binExpr.Operator {
 		case "<":
-			jumpCond = JumpAboveOrEqual // Jump to default if NOT below (i.e., >=)
+			jumpCond = JumpAboveOrEqual
 		case "<=":
-			jumpCond = JumpAbove // Jump to default if NOT below or equal (i.e., >)
+			jumpCond = JumpAbove
 		case ">":
-			jumpCond = JumpBelowOrEqual // Jump to default if NOT above (i.e., <=)
+			jumpCond = JumpBelowOrEqual
 		case ">=":
-			jumpCond = JumpBelow // Jump to default if NOT above or equal (i.e., <)
+			jumpCond = JumpBelow
 		case "==":
-			jumpCond = JumpNotEqual // Jump to default if NOT equal
+			jumpCond = JumpNotEqual
 		case "!=":
-			jumpCond = JumpEqual // Jump to default if equal (NOT not-equal)
-		default:
 			jumpCond = JumpEqual
+		default:
+			needsZeroCompare = true
 		}
 	} else {
-		jumpCond = JumpEqual
+		// For InExpr and other value-returning expressions
+		needsZeroCompare = true
 	}
 
-	// Emit conditional jump to default branch
-	defaultJumpPos := fc.eb.text.Len()
-	fc.out.JumpConditional(jumpCond, 0) // Placeholder offset
+	var defaultJumpPos int
+
+	if needsZeroCompare {
+		// Compare result in xmm0 against 0.0
+		fc.out.XorRegWithReg("rax", "rax")
+		fc.out.Cvtsi2sd("xmm1", "rax")
+		fc.out.Ucomisd("xmm0", "xmm1")
+		defaultJumpPos = fc.eb.text.Len()
+		fc.out.JumpConditional(JumpEqual, 0) // Jump to default if 0.0
+	} else {
+		defaultJumpPos = fc.eb.text.Len()
+		fc.out.JumpConditional(jumpCond, 0)
+	}
 
 	// Compile true expression (result in xmm0)
 	fc.compileExpression(expr.TrueExpr)
@@ -2005,8 +2294,8 @@ func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
 	// Ensure stack is 16-byte aligned before call
 	// After the moves above, rsp should already be aligned
 	// but let's verify: original rsp was aligned, we did SubImmFromReg 16 for func ptr
-	// then SubImmFromReg 16 for each arg, then AddImmFromReg 16 for each arg,
-	// then AddImmFromReg 16 for func ptr, so we're back to original alignment
+	// then SubImmFromReg 16 for each arg, then AddImmToReg 16 for each arg,
+	// then AddImmToReg 16 for func ptr, so we're back to original alignment
 
 	// Call the function pointer in r11
 	fc.out.CallRegister("r11")
@@ -2049,49 +2338,135 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			fc.eb.GenerateCallInstruction("printf")
 		}
 
-	case "len":
-		if len(call.Args) != 1 {
-			fmt.Fprintf(os.Stderr, "Error: len() requires exactly one argument, got %d\n", len(call.Args))
+	case "printf":
+		if len(call.Args) == 0 {
+			fmt.Fprintf(os.Stderr, "Error: printf() requires at least a format string\n")
 			os.Exit(1)
 		}
 
-		// Compile the list expression (returns pointer as float64 in xmm0)
-		fc.compileExpression(call.Args[0])
+		// First argument must be a string (format string)
+		formatArg := call.Args[0]
+		strExpr, ok := formatArg.(*StringExpr)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "Error: printf() first argument must be a string literal\n")
+			os.Exit(1)
+		}
 
-		// Convert pointer from float64 to integer in rax
-		fc.out.SubImmFromReg("rsp", 8)
-		fc.out.MovXmmToMem("xmm0", "rsp", 0)
-		fc.out.MovMemToReg("rax", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 8)
+		// Process format string: %v -> %g (smart float), %b -> %s (boolean)
+		processedFormat := processEscapeSequences(strExpr.Value)
+		boolPositions := make(map[int]bool) // Track which args are %b (boolean)
 
-		// Check if pointer is null (empty list)
-		fc.out.CmpRegToImm("rax", 0)
-		skipJumpPos := fc.eb.text.Len()
-		fc.out.JumpConditional(JumpNotEqual, 0) // Jump if not null
-		skipJumpEnd := fc.eb.text.Len()
+		argPos := 0
+		result := ""
+		i := 0
+		for i < len(processedFormat) {
+			if processedFormat[i] == '%' && i+1 < len(processedFormat) {
+				next := processedFormat[i+1]
+				if next == '%' {
+					// Escaped %% - keep as is
+					result += "%%"
+					i += 2
+					continue
+				} else if next == 'v' {
+					// %v = smart value format (uses %.15g for precision with no trailing zeros)
+					result += "%.15g"
+					argPos++
+					i += 2
+					continue
+				} else if next == 'b' {
+					// %b = boolean (yes/no)
+					result += "%s"
+					boolPositions[argPos] = true
+					argPos++
+					i += 2
+					continue
+				} else if next == 'f' || next == 'd' || next == 's' || next == 'g' {
+					argPos++
+				}
+			}
+			result += string(processedFormat[i])
+			i++
+		}
 
-		// Empty list case: return 0.0
-		fc.out.XorRegWithReg("rax", "rax")
-		fc.out.Cvtsi2sd("xmm0", "rax")
+		// Create "yes" and "no" string labels for %b
+		yesLabel := fmt.Sprintf("bool_yes_%d", fc.stringCounter)
+		noLabel := fmt.Sprintf("bool_no_%d", fc.stringCounter)
+		fc.eb.Define(yesLabel, "yes\x00")
+		fc.eb.Define(noLabel, "no\x00")
 
-		endJumpPos := fc.eb.text.Len()
-		fc.out.JumpUnconditional(0) // Jump to end
-		endJumpEnd := fc.eb.text.Len()
+		// Create label for processed format string
+		labelName := fmt.Sprintf("str_%d", fc.stringCounter)
+		fc.stringCounter++
+		fc.eb.Define(labelName, result+"\x00")
 
-		// Non-null case: load length from list
-		notNullPos := fc.eb.text.Len()
-		fc.out.MovMemToXmm("xmm0", "rax", 0)
+		numArgs := len(call.Args) - 1
+		if numArgs > 8 {
+			fmt.Fprintf(os.Stderr, "Error: printf() supports max 8 arguments (got %d)\n", numArgs)
+			os.Exit(1)
+		}
 
-		// Patch the skip jump
-		skipOffset := int32(notNullPos - skipJumpEnd)
-		fc.patchJumpImmediate(skipJumpPos+2, skipOffset)
+		// x86-64 ABI: integers/pointers in rsi,rdx,rcx,r8,r9; floats in xmm0-7
+		intRegs := []string{"rsi", "rdx", "rcx", "r8", "r9"}
+		xmmRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"}
 
-		// Patch end jump
-		finalPos := fc.eb.text.Len()
-		endOffset := int32(finalPos - endJumpEnd)
-		fc.patchJumpImmediate(endJumpPos+1, endOffset)
+		intArgCount := 0
+		xmmArgCount := 0
 
-		// Length is now in xmm0 as float64
+		// Evaluate all arguments
+		for i := 1; i < len(call.Args); i++ {
+			argIdx := i - 1
+			fc.compileExpression(call.Args[i])
+
+			if boolPositions[argIdx] {
+				// %b: Convert float to yes/no string pointer
+				fc.out.XorRegWithReg("rax", "rax")
+				fc.out.Cvtsi2sd("xmm1", "rax") // xmm1 = 0.0
+				fc.out.Ucomisd("xmm0", "xmm1") // Compare with 0.0
+
+				fc.labelCounter++
+				yesJump := fc.eb.text.Len()
+				fc.out.JumpConditional(JumpNotEqual, 0) // Jump if != 0.0
+				yesJumpEnd := fc.eb.text.Len()
+
+				// 0.0 -> "no"
+				fc.out.LeaSymbolToReg(intRegs[intArgCount], noLabel)
+				noJump := fc.eb.text.Len()
+				fc.out.JumpUnconditional(0)
+				noJumpEnd := fc.eb.text.Len()
+
+				// Non-zero -> "yes"
+				yesPos := fc.eb.text.Len()
+				fc.patchJumpImmediate(yesJump+2, int32(yesPos-yesJumpEnd))
+				fc.out.LeaSymbolToReg(intRegs[intArgCount], yesLabel)
+
+				endPos := fc.eb.text.Len()
+				fc.patchJumpImmediate(noJump+1, int32(endPos-noJumpEnd))
+
+				intArgCount++
+			} else {
+				// Regular float argument (%v, %f, %g, etc)
+				fc.out.SubImmFromReg("rsp", 16)
+				fc.out.MovXmmToMem("xmm0", "rsp", 0)
+			}
+		}
+
+		// Load float arguments from stack into xmm registers (reverse order)
+		for i := numArgs - 1; i >= 0; i-- {
+			if !boolPositions[i] {
+				fc.out.MovMemToXmm(xmmRegs[xmmArgCount], "rsp", 0)
+				fc.out.AddImmToReg("rsp", 16)
+				xmmArgCount++
+			}
+		}
+
+		// Load format string to rdi
+		fc.out.LeaSymbolToReg("rdi", labelName)
+
+		// Set rax = number of vector registers used
+		fc.out.MovImmToReg("rax", fmt.Sprintf("%d", xmmArgCount))
+
+		fc.trackFunctionCall("printf")
+		fc.eb.GenerateCallInstruction("printf")
 
 	case "exit":
 		if len(call.Args) > 0 {

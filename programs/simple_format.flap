@@ -1,0 +1,5 @@
+// Simple test
+printf("Whole: %v\n", 42.0)
+printf("Float: %v\n", 3.14)
+printf("Bool true: %b\n", 1.0)
+printf("Bool false: %b\n", 0.0)
