@@ -18,12 +18,11 @@ flapc: $(SOURCES) $(MODULE_FILES)
 	$(GO) build -mod=vendor -v $(GOFLAGS) -o $(PROGRAM) .
 
 test: flapc
-	./test_programs.sh
+	./test.sh
 
 install: flapc
 	install -d "$(DESTDIR)$(BINDIR)"
 	install -m 755 $(PROGRAM) "$(DESTDIR)$(BINDIR)/$(PROGRAM)"
 
 clean:
-	rm -f $(PROGRAM)
-	rm -rf build/test_programs
+	rm -rf $(PROGRAM) build/
