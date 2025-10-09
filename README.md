@@ -36,20 +36,20 @@ make
 
 ```bash
 # Basic compilation
-./flapc program.flap
-./main
+./flapc hello.flap
+./hello
 
 # Quiet mode
-./flapc -q program.flap
+./flapc -q hello.flap
 
 # Specify output file
-./flapc -o myprogram program.flap
+./flapc -o hello hello.flap
 ```
 
 ### Running Tests
 
 ```bash
-./test.sh
+make test
 ```
 
 ## Language Features (Current Implementation)
