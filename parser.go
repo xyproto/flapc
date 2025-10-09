@@ -28,25 +28,25 @@ const (
 	TOKEN_RPAREN
 	TOKEN_COMMA
 	TOKEN_NEWLINE
-	TOKEN_LT           // <
-	TOKEN_GT           // >
-	TOKEN_LE           // <=
-	TOKEN_GE           // >=
-	TOKEN_EQ           // ==
-	TOKEN_NE           // !=
-	TOKEN_TILDE        // ~
+	TOKEN_LT            // <
+	TOKEN_GT            // >
+	TOKEN_LE            // <=
+	TOKEN_GE            // >=
+	TOKEN_EQ            // ==
+	TOKEN_NE            // !=
+	TOKEN_TILDE         // ~
 	TOKEN_DEFAULT_ARROW // ~>
-	TOKEN_AT           // @
-	TOKEN_IN           // in keyword
-	TOKEN_LBRACE       // {
-	TOKEN_RBRACE       // }
-	TOKEN_LBRACKET     // [
-	TOKEN_RBRACKET     // ]
-	TOKEN_ARROW        // ->
-	TOKEN_PIPE         // |
-	TOKEN_PIPEPIPE     // ||
-	TOKEN_PIPEPIPEPIPE // |||
-	TOKEN_HASH         // #
+	TOKEN_AT            // @
+	TOKEN_IN            // in keyword
+	TOKEN_LBRACE        // {
+	TOKEN_RBRACE        // }
+	TOKEN_LBRACKET      // [
+	TOKEN_RBRACKET      // ]
+	TOKEN_ARROW         // ->
+	TOKEN_PIPE          // |
+	TOKEN_PIPEPIPE      // ||
+	TOKEN_PIPEPIPEPIPE  // |||
+	TOKEN_HASH          // #
 )
 
 type Token struct {
@@ -362,9 +362,9 @@ func (b *BinaryExpr) String() string {
 func (b *BinaryExpr) expressionNode() {}
 
 type MatchExpr struct {
-	Condition    Expression
-	TrueExpr     Expression
-	DefaultExpr  Expression
+	Condition   Expression
+	TrueExpr    Expression
+	DefaultExpr Expression
 }
 
 func (m *MatchExpr) String() string {

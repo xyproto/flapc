@@ -37,13 +37,10 @@ make
 ```bash
 # Basic compilation
 ./flapc program.flap
-./program
+./main
 
-# Quiet mode (suppress hex output)
+# Quiet mode
 ./flapc -q program.flap
-
-# Disassembly mode (clean assembly output)
-./flapc -S program.flap
 
 # Specify output file
 ./flapc -o myprogram program.flap
