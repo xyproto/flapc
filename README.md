@@ -1,6 +1,8 @@
 # Flap Compiler (flapc)
 
-An experiment in vibecoding a compiler and a programming language.Float.
+An experiment in vibecoding a compiler and a programming language.
+
+Not all of the following may be implemented yet:
 
 ## Overview
 
