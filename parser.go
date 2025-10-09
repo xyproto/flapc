@@ -28,21 +28,20 @@ const (
 	TOKEN_RPAREN
 	TOKEN_COMMA
 	TOKEN_NEWLINE
-	TOKEN_LT       // <
-	TOKEN_GT       // >
-	TOKEN_LE       // <=
-	TOKEN_GE       // >=
-	TOKEN_EQ       // ==
-	TOKEN_NE       // !=
-	TOKEN_IF       // if keyword
-	TOKEN_ELSE     // else keyword
-	TOKEN_END      // end keyword
-	TOKEN_AT       // @
-	TOKEN_IN       // in keyword
-	TOKEN_LBRACE   // {
-	TOKEN_RBRACE   // }
-	TOKEN_LBRACKET // [
-	TOKEN_RBRACKET // ]
+	TOKEN_LT           // <
+	TOKEN_GT           // >
+	TOKEN_LE           // <=
+	TOKEN_GE           // >=
+	TOKEN_EQ           // ==
+	TOKEN_NE           // !=
+	TOKEN_TILDE        // ~
+	TOKEN_DEFAULT_ARROW // ~>
+	TOKEN_AT           // @
+	TOKEN_IN           // in keyword
+	TOKEN_LBRACE       // {
+	TOKEN_RBRACE       // }
+	TOKEN_LBRACKET     // [
+	TOKEN_RBRACKET     // ]
 	TOKEN_ARROW        // ->
 	TOKEN_PIPE         // |
 	TOKEN_PIPEPIPE     // ||
@@ -137,12 +136,6 @@ func (l *Lexer) NextToken() Token {
 
 		// Check for keywords
 		switch value {
-		case "if":
-			return Token{Type: TOKEN_IF, Value: value, Line: l.line}
-		case "else":
-			return Token{Type: TOKEN_ELSE, Value: value, Line: l.line}
-		case "end":
-			return Token{Type: TOKEN_END, Value: value, Line: l.line}
 		case "in":
 			return Token{Type: TOKEN_IN, Value: value, Line: l.line}
 		}
@@ -175,7 +168,7 @@ func (l *Lexer) NextToken() Token {
 			l.pos += 2 // skip both ':' and '='
 			return Token{Type: TOKEN_COLON_EQUALS, Value: ":=", Line: l.line}
 		}
-		// Otherwise, just skip it (part of type annotation, handled separately)
+		// Just skip standalone : (used in type annotations, not tokenized)
 		l.pos++
 		return l.NextToken()
 	case '=':
@@ -211,6 +204,14 @@ func (l *Lexer) NextToken() Token {
 		// Just ! is not supported, skip
 		l.pos++
 		return l.NextToken()
+	case '~':
+		// Check for ~>
+		if l.peek() == '>' {
+			l.pos += 2
+			return Token{Type: TOKEN_DEFAULT_ARROW, Value: "~>", Line: l.line}
+		}
+		l.pos++
+		return Token{Type: TOKEN_TILDE, Value: "~", Line: l.line}
 	case '(':
 		l.pos++
 		return Token{Type: TOKEN_LPAREN, Value: "(", Line: l.line}
@@ -300,35 +301,6 @@ type ExpressionStmt struct {
 func (e *ExpressionStmt) String() string { return e.Expr.String() }
 func (e *ExpressionStmt) statementNode() {}
 
-type IfStmt struct {
-	Condition Expression
-	ThenBlock []Statement
-	ElseBlock []Statement
-}
-
-func (i *IfStmt) String() string {
-	var out strings.Builder
-	out.WriteString("if ")
-	out.WriteString(i.Condition.String())
-	out.WriteString("\n")
-	for _, stmt := range i.ThenBlock {
-		out.WriteString("  ")
-		out.WriteString(stmt.String())
-		out.WriteString("\n")
-	}
-	if len(i.ElseBlock) > 0 {
-		out.WriteString("else\n")
-		for _, stmt := range i.ElseBlock {
-			out.WriteString("  ")
-			out.WriteString(stmt.String())
-			out.WriteString("\n")
-		}
-	}
-	out.WriteString("end")
-	return out.String()
-}
-func (i *IfStmt) statementNode() {}
-
 type LoopStmt struct {
 	Iterator string     // Variable name (e.g., "i")
 	Iterable Expression // Expression to iterate over (e.g., range(10))
@@ -388,6 +360,17 @@ func (b *BinaryExpr) String() string {
 	return "(" + b.Left.String() + " " + b.Operator + " " + b.Right.String() + ")"
 }
 func (b *BinaryExpr) expressionNode() {}
+
+type MatchExpr struct {
+	Condition    Expression
+	TrueExpr     Expression
+	DefaultExpr  Expression
+}
+
+func (m *MatchExpr) String() string {
+	return "~(" + m.Condition.String() + ") { yes -> " + m.TrueExpr.String() + " ~> " + m.DefaultExpr.String() + " }"
+}
+func (m *MatchExpr) expressionNode() {}
 
 type CallExpr struct {
 	Function string
@@ -477,16 +460,54 @@ func (l *LengthExpr) expressionNode() {}
 
 // Parser for Flap language
 type Parser struct {
-	lexer   *Lexer
-	current Token
-	peek    Token
+	lexer    *Lexer
+	current  Token
+	peek     Token
+	filename string
+	source   string
 }
 
 func NewParser(input string) *Parser {
-	p := &Parser{lexer: NewLexer(input)}
+	p := &Parser{
+		lexer:    NewLexer(input),
+		filename: "<input>",
+		source:   input,
+	}
 	p.nextToken()
 	p.nextToken()
 	return p
+}
+
+func NewParserWithFilename(input, filename string) *Parser {
+	p := &Parser{
+		lexer:    NewLexer(input),
+		filename: filename,
+		source:   input,
+	}
+	p.nextToken()
+	p.nextToken()
+	return p
+}
+
+// formatError creates a nicely formatted error message with source context
+func (p *Parser) formatError(line int, msg string) string {
+	lines := strings.Split(p.source, "\n")
+	if line < 1 || line > len(lines) {
+		return fmt.Sprintf("%s:%d: %s", p.filename, line, msg)
+	}
+
+	sourceLine := lines[line-1]
+	lineNum := fmt.Sprintf("%4d | ", line)
+	marker := strings.Repeat(" ", len(lineNum)) + strings.Repeat("^", len(sourceLine))
+
+	return fmt.Sprintf("%s:%d: error: %s\n%s%s\n%s",
+		p.filename, line, msg, lineNum, sourceLine, marker)
+}
+
+// error prints a formatted error and exits
+func (p *Parser) error(msg string) {
+	fmt.Fprintln(os.Stderr, p.formatError(p.current.Line, msg))
+	os.Exit(1)
 }
 
 func (p *Parser) nextToken() {
@@ -513,7 +534,122 @@ func (p *Parser) ParseProgram() *Program {
 		p.skipNewlines()
 	}
 
+	// Apply optimizations
+	program = optimizeProgram(program)
+
 	return program
+}
+
+// optimizeProgram applies optimization passes to the AST
+func optimizeProgram(program *Program) *Program {
+	// Apply constant folding
+	for i, stmt := range program.Statements {
+		program.Statements[i] = foldConstants(stmt)
+	}
+	return program
+}
+
+// foldConstants performs constant folding on statements
+func foldConstants(stmt Statement) Statement {
+	switch s := stmt.(type) {
+	case *AssignStmt:
+		s.Value = foldConstantExpr(s.Value)
+		return s
+	case *ExpressionStmt:
+		s.Expr = foldConstantExpr(s.Expr)
+		return s
+	case *LoopStmt:
+		s.Iterable = foldConstantExpr(s.Iterable)
+		for i, st := range s.Body {
+			s.Body[i] = foldConstants(st)
+		}
+		return s
+	default:
+		return stmt
+	}
+}
+
+// foldConstantExpr performs constant folding on expressions
+func foldConstantExpr(expr Expression) Expression {
+	switch e := expr.(type) {
+	case *BinaryExpr:
+		// Fold left and right first
+		e.Left = foldConstantExpr(e.Left)
+		e.Right = foldConstantExpr(e.Right)
+
+		// Check if both operands are now constants
+		leftNum, leftOk := e.Left.(*NumberExpr)
+		rightNum, rightOk := e.Right.(*NumberExpr)
+
+		if leftOk && rightOk {
+			// Both are constants - fold them
+			var result float64
+			switch e.Operator {
+			case "+":
+				result = leftNum.Value + rightNum.Value
+			case "-":
+				result = leftNum.Value - rightNum.Value
+			case "*":
+				result = leftNum.Value * rightNum.Value
+			case "/":
+				if rightNum.Value != 0 {
+					result = leftNum.Value / rightNum.Value
+				} else {
+					return e // Don't fold division by zero
+				}
+			default:
+				return e // Don't fold comparisons
+			}
+			return &NumberExpr{Value: result}
+		}
+		return e
+
+	case *CallExpr:
+		// Fold arguments
+		for i, arg := range e.Args {
+			e.Args[i] = foldConstantExpr(arg)
+		}
+		return e
+
+	case *ListExpr:
+		// Fold list elements
+		for i, elem := range e.Elements {
+			e.Elements[i] = foldConstantExpr(elem)
+		}
+		return e
+
+	case *IndexExpr:
+		e.List = foldConstantExpr(e.List)
+		e.Index = foldConstantExpr(e.Index)
+		return e
+
+	case *LambdaExpr:
+		e.Body = foldConstantExpr(e.Body)
+		return e
+
+	case *ParallelExpr:
+		e.List = foldConstantExpr(e.List)
+		e.Operation = foldConstantExpr(e.Operation)
+		return e
+
+	case *PipeExpr:
+		e.Left = foldConstantExpr(e.Left)
+		e.Right = foldConstantExpr(e.Right)
+		return e
+
+	case *LengthExpr:
+		e.Operand = foldConstantExpr(e.Operand)
+		return e
+
+	case *MatchExpr:
+		e.Condition = foldConstantExpr(e.Condition)
+		e.TrueExpr = foldConstantExpr(e.TrueExpr)
+		e.DefaultExpr = foldConstantExpr(e.DefaultExpr)
+		return e
+
+	default:
+		return expr
+	}
 }
 
 func (p *Parser) parseStatement() Statement {
@@ -522,19 +658,52 @@ func (p *Parser) parseStatement() Statement {
 		return p.parseLoopStatement()
 	}
 
-	// Check for if statement
-	if p.current.Type == TOKEN_IF {
-		return p.parseIfStatement()
-	}
-
 	// Check for assignment (both = and :=)
 	if p.current.Type == TOKEN_IDENT && (p.peek.Type == TOKEN_EQUALS || p.peek.Type == TOKEN_COLON_EQUALS) {
 		return p.parseAssignment()
 	}
 
-	// Otherwise, it's an expression statement
+	// Otherwise, it's an expression statement (or match expression)
 	expr := p.parseExpression()
 	if expr != nil {
+		// Check for match syntax: CONDITION { -> ... ~> ... }
+		if p.peek.Type == TOKEN_LBRACE {
+			p.nextToken() // move to '{'
+			p.nextToken() // skip '{'
+			p.skipNewlines()
+
+			// Must start with '->' for match expression
+			if p.current.Type == TOKEN_ARROW {
+				p.nextToken() // skip '->'
+				trueExpr := p.parseExpression()
+				p.nextToken() // move past the expression
+				p.skipNewlines()
+
+				// Parse "~> expr" (optional - defaults to 0)
+				var defaultExpr Expression
+				if p.current.Type == TOKEN_DEFAULT_ARROW {
+					p.nextToken() // skip '~>'
+					defaultExpr = p.parseExpression()
+					p.nextToken() // move past the expression
+					p.skipNewlines()
+				} else {
+					// Default to 0 if no default case provided
+					defaultExpr = &NumberExpr{Value: 0}
+				}
+
+				// Should be at '}'
+				if p.current.Type != TOKEN_RBRACE {
+					p.error("expected '}' after match expression")
+				}
+
+				matchExpr := &MatchExpr{Condition: expr, TrueExpr: trueExpr, DefaultExpr: defaultExpr}
+				return &ExpressionStmt{Expr: matchExpr}
+			} else {
+				// Not a match expression - this is a syntax error
+				p.error("unexpected '{' after expression")
+			}
+		}
+
 		return &ExpressionStmt{Expr: expr}
 	}
 
@@ -550,71 +719,12 @@ func (p *Parser) parseAssignment() *AssignStmt {
 	return &AssignStmt{Name: name, Value: value, Mutable: mutable}
 }
 
-func (p *Parser) parseIfStatement() *IfStmt {
-	p.nextToken() // skip 'if'
-
-	condition := p.parseExpression()
-
-	// Skip newlines after condition
-	for p.peek.Type == TOKEN_NEWLINE {
-		p.nextToken()
-	}
-
-	// Parse then block
-	var thenBlock []Statement
-	for p.peek.Type != TOKEN_ELSE && p.peek.Type != TOKEN_END && p.peek.Type != TOKEN_EOF {
-		p.nextToken()
-		if p.current.Type == TOKEN_NEWLINE {
-			continue
-		}
-		stmt := p.parseStatement()
-		if stmt != nil {
-			thenBlock = append(thenBlock, stmt)
-		}
-	}
-
-	// Parse else block if present
-	var elseBlock []Statement
-	if p.peek.Type == TOKEN_ELSE {
-		p.nextToken() // skip to 'else'
-
-		// Skip newlines after else keyword (check peek, not current)
-		for p.peek.Type == TOKEN_NEWLINE {
-			p.nextToken()
-		}
-
-		for p.peek.Type != TOKEN_END && p.peek.Type != TOKEN_EOF {
-			p.nextToken()
-			if p.current.Type == TOKEN_NEWLINE {
-				continue
-			}
-			stmt := p.parseStatement()
-			if stmt != nil {
-				elseBlock = append(elseBlock, stmt)
-			}
-		}
-	}
-
-	// Skip to 'end'
-	for p.peek.Type != TOKEN_END && p.peek.Type != TOKEN_EOF {
-		p.nextToken()
-	}
-	p.nextToken() // skip to 'end'
-
-	return &IfStmt{
-		Condition: condition,
-		ThenBlock: thenBlock,
-		ElseBlock: elseBlock,
-	}
-}
-
 func (p *Parser) parseLoopStatement() *LoopStmt {
 	p.nextToken() // skip '@'
 
 	// Expect identifier for iterator variable
 	if p.current.Type != TOKEN_IDENT {
-		fmt.Fprintf(os.Stderr, "Error: expected identifier after @ in loop\n")
-		return nil
+		p.error("expected identifier after @ in loop")
 	}
 	iterator := p.current.Value
 
@@ -622,8 +732,7 @@ func (p *Parser) parseLoopStatement() *LoopStmt {
 
 	// Expect 'in' keyword
 	if p.current.Type != TOKEN_IN {
-		fmt.Fprintf(os.Stderr, "Error: expected 'in' in loop statement\n")
-		return nil
+		p.error("expected 'in' in loop statement")
 	}
 
 	p.nextToken() // skip 'in'
@@ -638,8 +747,7 @@ func (p *Parser) parseLoopStatement() *LoopStmt {
 
 	// Expect '{'
 	if p.peek.Type != TOKEN_LBRACE {
-		fmt.Fprintf(os.Stderr, "Error: expected '{' in loop statement\n")
-		return nil
+		p.error("expected '{' in loop statement")
 	}
 	p.nextToken() // advance to '{'
 
@@ -675,7 +783,8 @@ func (p *Parser) parseLoopStatement() *LoopStmt {
 }
 
 func (p *Parser) parseExpression() Expression {
-	return p.parseConcurrentGather()
+	expr := p.parseConcurrentGather()
+	return expr
 }
 
 func (p *Parser) parseConcurrentGather() Expression {
@@ -862,8 +971,7 @@ func (p *Parser) parsePrimary() Expression {
 				for p.current.Type == TOKEN_COMMA {
 					p.nextToken() // skip ','
 					if p.current.Type != TOKEN_IDENT {
-						fmt.Fprintf(os.Stderr, "Error: expected parameter name in lambda\n")
-						os.Exit(1)
+						p.error("expected parameter name in lambda")
 					}
 					params = append(params, p.current.Value)
 					p.nextToken() // skip param
@@ -871,14 +979,12 @@ func (p *Parser) parsePrimary() Expression {
 
 				// current should be ')'
 				if p.current.Type != TOKEN_RPAREN {
-					fmt.Fprintf(os.Stderr, "Error: expected ')' after lambda parameters\n")
-					os.Exit(1)
+					p.error("expected ')' after lambda parameters")
 				}
 
 				// peek should be '->'
 				if p.peek.Type != TOKEN_ARROW {
-					fmt.Fprintf(os.Stderr, "Error: expected '->' after lambda parameters\n")
-					os.Exit(1)
+					p.error("expected '->' after lambda parameters")
 				}
 
 				p.nextToken() // skip ')'
@@ -1113,7 +1219,7 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 		if exists {
 			// Variable exists - check if it's mutable
 			if !fc.mutableVars[s.Name] {
-				fmt.Fprintf(os.Stderr, "Error: cannot reassign const variable '%s'\n", s.Name)
+				fmt.Fprintf(os.Stderr, "Error: cannot reassign immutable variable '%s'\n", s.Name)
 				os.Exit(1)
 			}
 			// It's mutable, allow reassignment
@@ -1133,92 +1239,11 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 		// movsd [rbp - offset], xmm0
 		fc.out.MovXmmToMem("xmm0", "rbp", -offset)
 
-	case *IfStmt:
-		fc.compileIfStatement(s)
-
 	case *LoopStmt:
 		fc.compileLoopStatement(s)
 
 	case *ExpressionStmt:
 		fc.compileExpression(s.Expr)
-	}
-}
-
-func (fc *FlapCompiler) compileIfStatement(stmt *IfStmt) {
-	// Compile condition - this will set flags via ucomisd for comparisons
-	fc.compileExpression(stmt.Condition)
-
-	// Increment label counter for uniqueness
-	fc.labelCounter++
-
-	// Extract the comparison operator from the condition
-	// For floating-point comparisons (ucomisd), use unsigned conditions
-	var jumpCond JumpCondition
-	if binExpr, ok := stmt.Condition.(*BinaryExpr); ok {
-		switch binExpr.Operator {
-		case "<":
-			jumpCond = JumpAboveOrEqual // Jump to else if NOT below (i.e., >=)
-		case "<=":
-			jumpCond = JumpAbove // Jump to else if NOT below or equal (i.e., >)
-		case ">":
-			jumpCond = JumpBelowOrEqual // Jump to else if NOT above (i.e., <=)
-		case ">=":
-			jumpCond = JumpBelow // Jump to else if NOT above or equal (i.e., <)
-		case "==":
-			jumpCond = JumpNotEqual // Jump to else if NOT equal
-		case "!=":
-			jumpCond = JumpEqual // Jump to else if equal (NOT not-equal)
-		default:
-			jumpCond = JumpEqual // Default fallback
-		}
-	} else {
-		jumpCond = JumpEqual
-	}
-
-	// Emit conditional jump with placeholder offset
-	elseJumpPos := fc.eb.text.Len()
-	fc.out.JumpConditional(jumpCond, 0) // Use 0 as placeholder
-
-	// Compile then block
-	for _, s := range stmt.ThenBlock {
-		fc.compileStatement(s)
-	}
-
-	// If there's an else block, emit unconditional jump to end
-	var endJumpPos int
-	if len(stmt.ElseBlock) > 0 {
-		endJumpPos = fc.eb.text.Len()
-		fc.out.JumpUnconditional(0) // Placeholder
-	}
-
-	// Mark else label position (where we are now)
-	elseLabelPos := fc.eb.text.Len()
-
-	// NOW patch the conditional jump - we know where else starts
-	targetPos := elseLabelPos
-	if len(stmt.ElseBlock) == 0 {
-		// No else block, so conditional jump goes to end (which is here)
-		targetPos = elseLabelPos
-	}
-	elseOffset := int32(targetPos - (elseJumpPos + 6)) // 6 bytes for conditional jump
-	fmt.Fprintf(os.Stderr, "DEBUG: Patching conditional jump at %d to target %d, offset=%d\n", elseJumpPos, targetPos, elseOffset)
-	fc.patchJumpImmediate(elseJumpPos+2, elseOffset) // +2 to skip 0F 8x
-
-	// Compile else block if present
-	if len(stmt.ElseBlock) > 0 {
-		for _, s := range stmt.ElseBlock {
-			fc.compileStatement(s)
-		}
-	}
-
-	// Mark end label position
-	endLabelPos := fc.eb.text.Len()
-
-	// Patch the unconditional jump to end (if we had an else block)
-	if len(stmt.ElseBlock) > 0 {
-		endOffset := int32(endLabelPos - (endJumpPos + 5)) // 5 bytes for unconditional jump
-		fmt.Fprintf(os.Stderr, "DEBUG: Patching unconditional jump at %d to target %d, offset=%d\n", endJumpPos, endLabelPos, endOffset)
-		fc.patchJumpImmediate(endJumpPos+1, endOffset) // +1 to skip E9
 	}
 }
 
@@ -1467,7 +1492,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		// Load variable from stack into xmm0
 		offset, exists := fc.variables[e.Name]
 		if !exists {
-			fmt.Fprintf(os.Stderr, "Error: undefined variable '%s'\n", e.Name)
+			fmt.Fprintf(os.Stderr, "Error: undefined variable '%s' at line %d\n", e.Name, 0)
 			os.Exit(1)
 		}
 		// movsd xmm0, [rbp - offset]
@@ -1551,7 +1576,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 					listData = append(listData, byte((bits>>48)&0xFF))
 					listData = append(listData, byte((bits>>56)&0xFF))
 				} else {
-					fmt.Fprintf(os.Stderr, "Error: list elements must be constant numbers for now\n")
+					fmt.Fprintf(os.Stderr, "Error: list literal elements must be constant numbers\n")
 					os.Exit(1)
 				}
 			}
@@ -1657,6 +1682,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 		// Length is now in xmm0 as float64
 
+	case *MatchExpr:
+		fc.compileMatchExpr(e)
+
 	case *ParallelExpr:
 		fc.compileParallelExpr(e)
 
@@ -1668,11 +1696,70 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 	}
 }
 
+func (fc *FlapCompiler) compileMatchExpr(expr *MatchExpr) {
+	// Compile condition - this will set flags via ucomisd for comparisons
+	fc.compileExpression(expr.Condition)
+
+	// Increment label counter for uniqueness
+	fc.labelCounter++
+
+	// Extract the comparison operator from the condition
+	var jumpCond JumpCondition
+	if binExpr, ok := expr.Condition.(*BinaryExpr); ok {
+		switch binExpr.Operator {
+		case "<":
+			jumpCond = JumpAboveOrEqual // Jump to default if NOT below (i.e., >=)
+		case "<=":
+			jumpCond = JumpAbove // Jump to default if NOT below or equal (i.e., >)
+		case ">":
+			jumpCond = JumpBelowOrEqual // Jump to default if NOT above (i.e., <=)
+		case ">=":
+			jumpCond = JumpBelow // Jump to default if NOT above or equal (i.e., <)
+		case "==":
+			jumpCond = JumpNotEqual // Jump to default if NOT equal
+		case "!=":
+			jumpCond = JumpEqual // Jump to default if equal (NOT not-equal)
+		default:
+			jumpCond = JumpEqual
+		}
+	} else {
+		jumpCond = JumpEqual
+	}
+
+	// Emit conditional jump to default branch
+	defaultJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(jumpCond, 0) // Placeholder offset
+
+	// Compile true expression (result in xmm0)
+	fc.compileExpression(expr.TrueExpr)
+
+	// Jump over default expression
+	endJumpPos := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0) // Placeholder offset
+
+	// Mark default expression position
+	defaultPos := fc.eb.text.Len()
+
+	// Patch conditional jump to default
+	defaultOffset := int32(defaultPos - (defaultJumpPos + 6))
+	fc.patchJumpImmediate(defaultJumpPos+2, defaultOffset)
+
+	// Compile default expression (result in xmm0)
+	fc.compileExpression(expr.DefaultExpr)
+
+	// Mark end position
+	endPos := fc.eb.text.Len()
+
+	// Patch unconditional jump to end
+	endOffset := int32(endPos - (endJumpPos + 5))
+	fc.patchJumpImmediate(endJumpPos+1, endOffset)
+}
+
 func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	// For now, only support: list || lambda
 	lambda, ok := expr.Operation.(*LambdaExpr)
 	if !ok {
-		fmt.Fprintf(os.Stderr, "Error: parallel operator currently only supports lambda expressions\n")
+		fmt.Fprintf(os.Stderr, "Error: parallel operator (||) currently only supports lambda expressions\n")
 		os.Exit(1)
 	}
 
@@ -1787,20 +1874,25 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	endOffset := int32(loopEndPos - (loopEndJumpPos + 6))
 	fc.patchJumpImmediate(loopEndJumpPos+2, endOffset)
 
-	// Finalize: remove lambda/list pointers and return the result pointer as float64
-	// Clean up: remove lambda pointer and list pointer from stack
-	fc.out.AddImmToReg("rsp", parallelResultAlloc + 16)
+	// Clean up only the lambda/list pointer spill area (16 bytes)
+	// Leave result buffer on stack since we're returning a pointer to it
+	// Note: The result buffer (parallelResultAlloc bytes) remains on stack
+	// This trades memory for simplicity - acceptable for short programs
+	fc.out.AddImmToReg("rsp", 16) // Clean up lambda+list pointers
 
 	// Return result list pointer as float64 in xmm0
-	// Use the lambda scratch space for conversion (safe since we're done with the lambda)
-	fc.out.MovRegToMem("r12", "r12", lambdaScratchOffset)
-	fc.out.MovMemToXmm("xmm0", "r12", lambdaScratchOffset)
+	// r12 still points to the result buffer on stack
+	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.MovRegToMem("r12", "rsp", 0)
+	fc.out.MovMemToXmm("xmm0", "rsp", 0)
+	fc.out.AddImmToReg("rsp", 8)
 
-	// End of parallel operator - xmm0 contains result (either null or result list pointer)
+	// Adjust stack pointer to account for result buffer still being there
+	// The calling code must use the result before further stack operations
+	fc.out.AddImmToReg("rsp", parallelResultAlloc)
+
+	// End of parallel operator - xmm0 contains result pointer as float64
 	endLabel := fc.eb.text.Len()
-
-	// Note: result list (parallelResultAlloc bytes) is left on stack
-	// This is a memory leak for now, but works for simple programs
 
 	// Patch jumps for the null-input fast path
 	nonNullOffset := int32(nonNullListStart - (nonNullJumpPos + 6))
@@ -1960,7 +2052,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 	case "len":
 		if len(call.Args) != 1 {
-			fmt.Fprintf(os.Stderr, "Error: len() requires exactly one argument\n")
+			fmt.Fprintf(os.Stderr, "Error: len() requires exactly one argument, got %d\n", len(call.Args))
 			os.Exit(1)
 		}
 
@@ -2108,7 +2200,7 @@ func CompileFlap(inputPath string, outputPath string) error {
 	}
 
 	// Parse
-	parser := NewParser(string(content))
+	parser := NewParserWithFilename(string(content), inputPath)
 	program := parser.ParseProgram()
 
 	fmt.Fprintf(os.Stderr, "Parsed program:\n%s\n", program.String())

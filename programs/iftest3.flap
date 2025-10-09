@@ -1,12 +1,12 @@
-// iftest3.flap - test with println before if
+// iftest3.flap - test with println before match
 println("before if")
 
 x := 10
 y := 20
 
-if x < y
-    println("yes")
-end
+x < y {
+    -> println("yes")
+}
 
 println("after if")
 exit(0)

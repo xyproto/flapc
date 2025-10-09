@@ -11,6 +11,7 @@ Flap is a functional programming language built on a `map[uint64]float64` founda
 - **Direct to machine code** - `.flap` source compiles directly to native executables
 - **Multi-architecture** - Supports x86_64, aarch64, and riscv64
 - **Modern instructions** - Uses SIMD/vector instructions whenever possible
+- **Constant folding** - Compile-time optimization of constant expressions
 - **Hash map foundation** - `map[uint64]float64` is the core data type
 - **No nil** - Simplified memory model
 - **Few keywords** - Minimal syntax for maximum expressiveness
@@ -32,8 +33,18 @@ make
 ### Compiling a Flap Program
 
 ```bash
+# Basic compilation
 ./flapc program.flap
 ./program
+
+# Quiet mode (suppress hex output)
+./flapc -q program.flap
+
+# Disassembly mode (clean assembly output)
+./flapc -S program.flap
+
+# Specify output file
+./flapc -o myprogram program.flap
 ```
 
 ### Running Tests
@@ -53,7 +64,7 @@ make
 - **Length Operator**: `#list` returns the length of a list
 
 ### Control Flow
-- **Conditionals**: `if`/`else`/`end` blocks
+- **Match Expressions**: `condition { -> expr ~> expr }` syntax (default case optional)
 - **Loops**: `@ identifier in range(n) { }` syntax
 - **Builtin Functions**: `range(n)`, `println()`, `exit()`, `len()`
 

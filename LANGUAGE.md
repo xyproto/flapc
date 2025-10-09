@@ -10,16 +10,15 @@ Flap is a functional programming language designed for high-performance numerica
 
 ```ebnf
 program = { statement } ;
-statement = assignment | match_assignment | if_statement | expression ;
+statement = assignment | match_assignment | match_statement | expression ;
 assignment = identifier [ ":" type_annotation ] ( "=" | ":=" ) expression ;
 match_assignment = identifier "=~" identifier "{" { pattern "->" expression } "}" ;
-if_statement = "if" comparison_expr { statement } [ "else" { statement } ] "end" ;
-expression = parallel_expr | reduction_expr | pipeline_expr | match_expr |
+match_statement = expression "{" "->" expression [ "~>" expression ] "}" ;
+expression = parallel_expr | reduction_expr | pipeline_expr |
              lambda_expr | fma_expr | comparison_expr | primary_expr ;
 parallel_expr = expression "||" expression ;
 reduction_expr = expression "||>" reduction_op ;
 pipeline_expr = expression "|" expression ;
-match_expr = "~" expression "{" { pattern "->" expression } "}" ;
 lambda_expr = "(" [ param_list ] ")" "->" expression ;
 fma_expr = expression "*+" expression "+" expression ;
 pattern = literal | identifier | filtered_pattern | guard_pattern | default_pattern ;
@@ -80,12 +79,11 @@ letter = "a" | "b" | ... | "z" | "A" | "B" | ... | "Z" ;
 digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
 ```
 
-## Keywords (18)
+## Keywords (15)
 
 ```
 in and or not yes no me return or!
 mask simd sum product max min
-if else end
 ```
 
 ## Symbols (5)
@@ -99,28 +97,25 @@ if else end
 ### Conditional Control Flow
 
 ```flap
-// Basic if statement
-if x < y
-    println("x is less than y")
-end
+// Basic match statement (default case optional)
+x < y {
+    -> println("x is less than y")
+}
 
-// If/else branches
-if score >= 90
-    grade = "A"
-else
-    grade = "B"
-end
+// Match with both branches
+score >= 90 {
+    -> grade = "A"
+    ~> grade = "B"
+}
 
 // Comparison operators: <, <=, >, >=, ==, !=
-if temperature > 100
-    status = "boiling"
-else
-    if temperature < 0
-        status = "freezing"
-    else
-        status = "normal"
-    end
-end
+temperature > 100 {
+    -> status = "boiling"
+    ~> temperature < 0 {
+        -> status = "freezing"
+        ~> status = "normal"
+    }
+}
 ```
 
 ### SIMD-First Design

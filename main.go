@@ -518,6 +518,11 @@ func (eb *ExecutableBuilder) patchTextInELF() {
 	eb.elf.Write(elfBuf)
 }
 
+// Global flags for controlling output verbosity
+var QuietMode bool
+var VerboseMode bool
+var DisassemblyMode bool
+
 func main() {
 	var machine = flag.String("m", "x86_64", "target machine architecture (x86_64, amd64, arm64, aarch64, riscv64, riscv, rv64)")
 	var machineLong = flag.String("machine", "x86_64", "target machine architecture (x86_64, amd64, arm64, aarch64, riscv64, riscv, rv64)")
@@ -525,11 +530,25 @@ func main() {
 	var outputLong = flag.String("output", "main", "output executable filename")
 	var version = flag.Bool("v", false, "print version information and exit")
 	var versionLong = flag.Bool("version", false, "print version information and exit")
+	var quiet = flag.Bool("q", false, "quiet mode (suppress mnemonic output)")
+	var verbose = flag.Bool("verbose", false, "verbose mode (show detailed compilation info)")
+	var disasm = flag.Bool("S", false, "output assembly listing (disassembly mode)")
 	flag.Parse()
 
 	if *version || *versionLong {
 		fmt.Println(versionString)
 		os.Exit(0)
+	}
+
+	// Set global verbosity flags
+	QuietMode = *quiet
+	VerboseMode = *verbose
+	DisassemblyMode = *disasm
+	if QuietMode && VerboseMode {
+		log.Fatalln("Error: cannot use both -q (quiet) and -verbose flags")
+	}
+	if DisassemblyMode {
+		QuietMode = true // Suppress hex output in disassembly mode
 	}
 
 	// Use whichever flag was specified (prefer short form if both given)

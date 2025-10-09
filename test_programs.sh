@@ -14,7 +14,7 @@ compile_expectation[hash_length_test]="failure"
 
 # Expected substrings in compiler output when compilation fails.
 declare -A compile_failure_patterns
-compile_failure_patterns[const]="cannot reassign const variable"
+compile_failure_patterns[const]="cannot reassign immutable variable"
 compile_failure_patterns[hash_length_test]="panic: runtime error"
 
 # Expected stdout patterns for successfully compiled programs.
@@ -46,7 +46,7 @@ expected_stdout[len_test]=$'5\n0'
 expected_stdout[list_index_test]=$'10\n20\n50'
 expected_stdout[list_iter_test]=$'10\n20\n30\n40\n50'
 expected_stdout[list_simple]=$'10'
-expected_stdout[list_test]=$'List created'
+expected_stdout[list_test]=$'2\n4\n6'
 expected_stdout[list_test2]=$'Multiple lists created'
 expected_stdout[loop_mult]=$'0\n2\n4\n6\n8'
 expected_stdout[loop_test]=$'0\n1\n2\n3\n4'

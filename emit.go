@@ -14,7 +14,9 @@ var errNoAssembly = errors.New("no Assembly given")
 
 func (bw *BufferWrapper) Write(b byte) int {
 	bw.buf.Write([]byte{b})
-	fmt.Fprintf(os.Stderr, " %x", b)
+	if !QuietMode {
+		fmt.Fprintf(os.Stderr, " %x", b)
+	}
 	return 1
 }
 
@@ -27,32 +29,42 @@ func (bw *BufferWrapper) WriteN(b byte, n int) int {
 
 func (bw *BufferWrapper) Write2(b byte) int {
 	bw.buf.Write([]byte{b, 0})
-	fmt.Fprintf(os.Stderr, " %x %x", b, 0)
+	if !QuietMode {
+		fmt.Fprintf(os.Stderr, " %x %x", b, 0)
+	}
 	return 2
 }
 
 func (bw *BufferWrapper) Write4(b byte) int {
 	bw.buf.Write([]byte{b, 0, 0, 0})
-	fmt.Fprintf(os.Stderr, " %x %x %x %x", b, 0, 0, 0)
+	if !QuietMode {
+		fmt.Fprintf(os.Stderr, " %x %x %x %x", b, 0, 0, 0)
+	}
 	return 4
 }
 
 func (bw *BufferWrapper) Write8(b byte) int {
 	bw.buf.Write([]byte{b, 0, 0, 0, 0, 0, 0, 0})
-	fmt.Fprintf(os.Stderr, " %x %x %x %x %x %x %x %x", b, 0, 0, 0, 0, 0, 0, 0)
+	if !QuietMode {
+		fmt.Fprintf(os.Stderr, " %x %x %x %x %x %x %x %x", b, 0, 0, 0, 0, 0, 0, 0)
+	}
 	return 8
 }
 
 func (bw *BufferWrapper) Write8u(v uint64) int {
 	binary.Write(bw.buf, binary.LittleEndian, v)
-	fmt.Fprintf(os.Stderr, " %x", v)
+	if !QuietMode {
+		fmt.Fprintf(os.Stderr, " %x", v)
+	}
 	return 8
 }
 
 func (bw *BufferWrapper) WriteBytes(bs []byte) int {
 	bw.buf.Write(bs)
-	for _, b := range bs {
-		fmt.Fprintf(os.Stderr, " %x", b)
+	if !QuietMode {
+		for _, b := range bs {
+			fmt.Fprintf(os.Stderr, " %x", b)
+		}
 	}
 	return len(bs)
 }
@@ -70,7 +82,9 @@ func (bw *BufferWrapper) WriteUnsigned(i uint) int {
 	c := byte((i >> 16) & 0xff)
 	d := byte((i >> 24) & 0xff)
 	bw.buf.Write([]byte{a, b, c, d})
-	fmt.Fprintf(os.Stderr, " %x %x %x %x", a, b, c, d)
+	if !QuietMode {
+		fmt.Fprintf(os.Stderr, " %x %x %x %x", a, b, c, d)
+	}
 	return 4
 }
 

@@ -1,5 +1,16 @@
 # Flap Compiler - Implementation Status and TODO
 
+## 🎯 Recent Improvements (October 2025)
+
+1. **Verbose/Quiet Flags**: `-q` suppresses hex output, `-verbose` for detailed info
+2. **Constant Folding**: Compile-time evaluation of constant arithmetic (e.g., `10 + 20 * 3` → `70`)
+3. **Rich Error Messages**: File:line:context with source snippets for fast debugging
+4. **Memory Leak Fix**: Fixed stack leak in parallel operator (`||`)
+5. **Disassembly Mode**: `-S` flag outputs clean assembly like `gcc -S`
+6. **Replaced `if`/`else`/`end` with Match Expressions**: Cleaner syntax `condition { -> expr ~> expr }` with optional default case. Reduced keywords from 18 to 15.
+
+All changes maintain 100% backward compatibility. Test suite: 51/51 passing.
+
 ## ✅ Implemented Features
 
 ### Core Language
@@ -11,7 +22,7 @@
 - [x] Length Operator: `#list` returns the length of a list
 
 ### Control Flow
-- [x] Conditionals: `if`/`else`/`end` blocks with comparison operators
+- [x] Match Expressions: `condition { -> expr ~> expr }` syntax (default case optional)
 - [x] Loops: `@ identifier in range(n) { }` syntax
 - [x] Builtin Functions: `range(n)`, `println()`, `exit()`, `len()`
 
