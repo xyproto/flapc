@@ -10,9 +10,8 @@ Flap is a functional programming language designed for high-performance numerica
 
 ```ebnf
 program = { statement } ;
-statement = assignment | match_assignment | match_statement | expression ;
+statement = assignment | match_statement | expression ;
 assignment = identifier [ ":" type_annotation ] ( "=" | ":=" ) expression ;
-match_assignment = identifier "=~" identifier "{" { pattern "->" expression } "}" ;
 match_statement = expression "{" "->" expression [ "~>" expression ] "}" ;
 expression = parallel_expr | reduction_expr | pipeline_expr |
              lambda_expr | fma_expr | comparison_expr | primary_expr ;
@@ -178,26 +177,27 @@ process_file = (filename) -> {
 }
 ```
 
-### Elegant Self-Reference
+### Regular Expression Matching
 
 ```flap
-// me for clean self-reference
-factorial =~ n {
-    n <= 1 -> 1
-    ~> n * me(n - 1)
+// =~ for regex match, !~ for no match
+text = "hello123"
+text =~ "[0-9]+" {
+    -> println("contains digits")
+    ~> println("no digits")
 }
 
-quicksort =~ lst {
-    l | #l <= 1 -> l
-    ~> {
-        pivot = ^l
-        rest = _l
-        smaller = [x in rest]{x < pivot}
-        larger = [x in rest]{x >= pivot}
-        me(smaller) + [pivot] + me(larger)
-    }
+email = "user@example.com"
+email =~ "^[a-z]+@[a-z]+\\.[a-z]+$" {
+    -> println("valid email")
+    ~> println("invalid email")
 }
+```
 
+### Elegant Self-Reference (Planned)
+
+```flap
+// me for clean self-reference in recursive functions
 Entity = @{
     x: 0, y: 0,
     health: 100,
