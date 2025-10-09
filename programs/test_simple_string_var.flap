@@ -1,0 +1,3 @@
+// Test simple string variable printing
+s := "Hello"
+println(s)

@@ -8,6 +8,13 @@
 
 Flap is a functional programming language built on a `map[uint64]float64` foundation, designed for high-performance numerical computing with first-class SIMD support. The compiler generates native machine code directly, with no intermediate steps.
 
+**Core Type System:**
+- All data is either `float64` or `map[uint64]float64`
+- Strings are `map[uint64]float64` (index → character code)
+- Lists are `map[uint64]float64` (index → value)
+- Maps are `map[uint64]float64` (key → value)
+- Functions are `float64` (reinterpreted pointers)
+
 ## Main Features
 
 - **Direct to machine code** - `.flap` source compiles directly to native executables
@@ -68,10 +75,17 @@ make test
 - **Builtin Functions**: `range(n)`, `println()`, `exit()`, `len()`
 
 ### Data Structures
-- **Lists**: Literal syntax `[1, 2, 3]`
-- **List Indexing**: Access elements with `list[index]`
-- **List Iteration**: Loop over elements with `@ item in list { }`
-- **Empty Lists**: `[]` evaluates to 0 (null pointer)
+- **Strings**: Stored as `map[uint64]float64` (index → char code)
+  - `s := "Hello"` creates map `{0: 72.0, 1: 101.0, 2: 108.0, ...}`
+  - `s[1]` returns `101.0` (char code for 'e')
+  - **CString conversion**: Runtime converts string maps to null-terminated C strings
+    - Format: `[length_byte][char0][char1]...[null]`
+    - Length stored in byte before string data (clever old trick!)
+    - Enables `println(string_var)` to work seamlessly
+- **Lists**: Literal syntax `[1, 2, 3]`, stored as `map[uint64]float64`
+- **Maps**: Literal syntax `{1: 25, 2: 30}`, native `map[uint64]float64`
+- **Indexing**: Unified SIMD-optimized indexing for all container types
+- **Empty containers**: `[]`, `{}`, `""` evaluate to 0 (null pointer)
 
 ### Functions & Lambdas
 - **Lambda Expressions**: `(x) -> x * 2` or `(x, y) -> x + y`
@@ -96,6 +110,8 @@ See the `programs/` directory for examples:
 - `hello.flap` - Basic output
 - `arithmetic_test.flap` - Arithmetic operations
 - `list_test.flap` - List operations
+- `test_string_index_debug.flap` - String indexing (strings as maps)
+- `test_map_*.flap` - SIMD-optimized map operations
 - `lambda_comprehensive.flap` - Lambda expressions
 - `hash_length_test.flap` - Length operator
 
@@ -140,6 +156,9 @@ BSD-3-Clause
 ## Status
 
 This is a work in progress! See TODO.md for current status and roadmap.
+
+---
+
 # SIMD-Optimized Map Indexing
 
 ## Overview

@@ -28,8 +28,6 @@ skip_programs[simple_printf]=1
 skip_programs[test_escape]=1
 skip_programs[test_g]=1
 skip_programs[test_v]=1
-skip_programs[test_string_concat]=1
-skip_programs[test_string_concat_literal]=1
 
 # Expected substrings in compiler output when compilation fails.
 declare -A compile_failure_patterns
@@ -121,10 +119,13 @@ expected_stdout[test_map_simd_large]=$'Item 100: $5.99\nItem 300: $19.99\nItem 5
 expected_stdout[test_map_avx512_large]=$'Item 100: $9.99\nItem 800: $79.99\nItem 1600: $159.99\nItem 9999: $0'
 expected_stdout[test_cpu_detection]=$'Program started with CPU detection\nIf you see this, SSE2 path is working\nMap test result: 100'
 
-# String tests (strings as map[uint64]float64)
+# String tests (strings as map[uint64]float64, CString for output)
 expected_stdout[test_string_literal]=$'Hello, World!'
 expected_stdout[test_string_map]=$'Character code: 66'
 expected_stdout[test_string_index_debug]=$'s[0] = 65 (should be 65 for \'A\')\ns[1] = 66 (should be 66 for \'B\')\ns[2] = 67 (should be 67 for \'C\')'
+expected_stdout[test_string_concat]=$'Hello, World!'
+expected_stdout[test_string_concat_literal]=$'Hello, World!'
+expected_stdout[test_simple_string_var]=$'Hello'
 
 # Expected exit codes for successful program runs (default to 0 when unspecified).
 declare -A expected_exit_code

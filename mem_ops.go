@@ -146,3 +146,111 @@ func (o *Out) shlImmX86(dst string, imm int) {
 
 	fmt.Fprintln(os.Stderr)
 }
+
+// MovByteRegToMem - Store byte from register to memory [base+offset]
+func (o *Out) MovByteRegToMem(src, base string, offset int) {
+	switch o.machine {
+	case MachineX86_64:
+		o.movByteRegToMemX86(src, base, offset)
+	}
+}
+
+func (o *Out) movByteRegToMemX86(src, base string, offset int) {
+	fmt.Fprintf(os.Stderr, "mov byte [%s+%d], %s: ", base, offset, src)
+
+	srcReg, _ := GetRegister(o.machine, src)
+	baseReg, _ := GetRegister(o.machine, base)
+
+	// REX prefix for extended registers (no REX.W for byte operation)
+	needREX := srcReg.Encoding >= 8 || baseReg.Encoding >= 8 || srcReg.Encoding >= 4
+	if needREX {
+		rex := uint8(0x40)
+		if srcReg.Encoding >= 8 {
+			rex |= 0x04 // REX.R
+		}
+		if baseReg.Encoding >= 8 {
+			rex |= 0x01 // REX.B
+		}
+		o.Write(rex)
+	}
+
+	// 0x88 - MOV r/m8, r8
+	o.Write(0x88)
+
+	// ModR/M byte with displacement
+	if offset == 0 && (baseReg.Encoding&7) != 5 {
+		modrm := uint8(0x00) | ((srcReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+	} else if offset < 128 && offset >= -128 {
+		modrm := uint8(0x40) | ((srcReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.Write(uint8(offset))
+	} else {
+		modrm := uint8(0x80) | ((srcReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.WriteUnsigned(uint(offset))
+	}
+
+	fmt.Fprintln(os.Stderr)
+}
+
+// LeaMemToReg - Load effective address [base+offset] to register
+func (o *Out) LeaMemToReg(dst, base string, offset int) {
+	switch o.machine {
+	case MachineX86_64:
+		o.leaMemToRegX86(dst, base, offset)
+	}
+}
+
+func (o *Out) leaMemToRegX86(dst, base string, offset int) {
+	fmt.Fprintf(os.Stderr, "lea %s, [%s+%d]: ", dst, base, offset)
+
+	dstReg, _ := GetRegister(o.machine, dst)
+	baseReg, _ := GetRegister(o.machine, base)
+
+	rex := uint8(0x48) // REX.W for 64-bit
+	if dstReg.Encoding >= 8 {
+		rex |= 0x04 // REX.R
+	}
+	if baseReg.Encoding >= 8 {
+		rex |= 0x01 // REX.B
+	}
+	o.Write(rex)
+
+	// 0x8D - LEA r64, m
+	o.Write(0x8D)
+
+	// ModR/M
+	if offset == 0 && (baseReg.Encoding&7) != 5 {
+		modrm := uint8(0x00) | ((dstReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+	} else if offset < 128 && offset >= -128 {
+		modrm := uint8(0x40) | ((dstReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.Write(uint8(offset))
+	} else {
+		modrm := uint8(0x80) | ((dstReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.WriteUnsigned(uint(offset))
+	}
+
+	fmt.Fprintln(os.Stderr)
+}

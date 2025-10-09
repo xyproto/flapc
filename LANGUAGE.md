@@ -6,6 +6,15 @@
 
 Flap is a functional programming language designed for high-performance numerical computing with explicit SIMD parallelism. Built on a `map[uint64]float64` foundation, it provides elegant abstractions for modern CPU architectures while maintaining simplicity and clarity.
 
+**Core Principle:** Everything is either `float64` or `map[uint64]float64`:
+- Numbers are `float64`
+- Strings are `map[uint64]float64` (character indices → char codes)
+- Lists are `map[uint64]float64` (element indices → values)
+- Maps are `map[uint64]float64` (keys → values)
+- Functions are `float64` (pointers reinterpreted as floats)
+
+This unified type system enables consistent SIMD optimization across all data structures.
+
 ## Currently Implemented Subset
 
 The following features are working in the current implementation:
@@ -33,22 +42,29 @@ x < y {
     -> println("yes")
 }
 
-// Lists
+// Strings (stored as map[uint64]float64)
+s := "Hello"         // Creates {0: 72.0, 1: 101.0, 2: 108.0, 3: 108.0, 4: 111.0}
+char := s[1]         // returns 101.0 (ASCII code for 'e')
+println("Hello")     // String literals optimized for direct output
+result := "Hello, " + "World!"  // Compile-time concatenation
+// Note: Runtime string operations (println(string_var)) not yet implemented
+
+// Lists (stored as map[uint64]float64)
 numbers = [1, 2, 3]
 first = numbers[0]
 length = #numbers    // length operator
 
-// Maps (hash maps)
+// Maps (native map[uint64]float64)
 ages = {1: 25, 2: 30, 3: 35}
 empty = {}
 count = #ages        // returns 3.0
 
-// Map indexing (lookup by key)
+// Unified indexing (SIMD-optimized for all types)
 price = ages[1]      // returns 25.0
 missing = ages[999]  // returns 0.0 (key doesn't exist)
 result = empty[1]    // returns 0.0 (empty map)
-// Note: Map lookups use SIMD optimization (SSE2/AVX-512) for 2-8× throughput
-// See docs/SIMD_MAP_OPTIMIZATION.md for details
+// Note: All indexing operations use SIMD (SSE2/AVX-512) for 2-8× throughput
+// Strings, lists, and maps share the same optimized lookup code
 
 // Membership testing with 'in'
 10 in numbers {
@@ -81,7 +97,9 @@ f = double
 println(f(10))
 
 // Builtin functions
-println(x)                          // Print with newline
+println("text")                     // Print string literal with newline
+println(42)                         // Print number with newline
+// println(string_var)              // Not yet implemented (TODO)
 printf("format %f\n", value)        // Formatted print
 printf("Value: %v, Bool: %b\n", x, y)  // %v=smart number, %b=yes/no
 range(n)                            // Generate range for loops

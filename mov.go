@@ -52,7 +52,9 @@ func (o *Out) MovImmToReg(dst, imm string) {
 // x86_64 register-to-register move
 func (o *Out) movX86RegToReg(dst, src string) {
 	// Check if these are XMM registers
-	if (dst[:3] == "xmm" || dst[:1] == "v") && (src[:3] == "xmm" || src[:1] == "v") {
+	dstIsXMM := (len(dst) >= 3 && dst[:3] == "xmm") || (len(dst) >= 1 && dst[:1] == "v")
+	srcIsXMM := (len(src) >= 3 && src[:3] == "xmm") || (len(src) >= 1 && src[:1] == "v")
+	if dstIsXMM && srcIsXMM {
 		// XMM to XMM move using MOVSD
 		fmt.Fprintf(os.Stderr, "movsd %s, %s: ", dst, src)
 

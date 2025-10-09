@@ -2766,6 +2766,151 @@ func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
 	// Result is in xmm0
 }
 
+// compileMapToCString converts a string map (map[uint64]float64) to a CString
+// Input: mapPtr (register name) = pointer to string map
+// Output: cstrPtr (register name) = pointer to first character of CString
+// CString format: [length_byte][char0][char1]...[charn][newline][null]
+//                               ^-- returned pointer points here
+func (fc *FlapCompiler) compileMapToCString(mapPtr, cstrPtr string) {
+	// Allocate space on stack for CString (max 256 bytes + length + newline + null)
+	fc.out.SubImmFromReg("rsp", 260) // 1 (length) + 256 (chars) + 1 (newline) + 1 (null) + padding
+
+	// Check if map pointer is null
+	fc.out.CmpRegToImm(mapPtr, 0)
+	nullJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0)
+	nullEnd := fc.eb.text.Len()
+
+	// Load count from map[0]
+	fc.out.MovMemToXmm("xmm0", mapPtr, 0)
+	fc.out.Cvttsd2si("rcx", "xmm0") // rcx = character count
+
+	// Store length byte at [rsp]
+	fc.out.MovRegToMem("rcx", "rsp", 0) // Just store lower byte
+
+	// rsi = write position (starts at rsp+1, after length byte)
+	fc.out.LeaMemToReg("rsi", "rsp", 1)
+
+	// rbx = map pointer (start after count)
+	fc.out.MovRegToReg("rbx", mapPtr)
+	fc.out.AddImmToReg("rbx", 8) // Skip count field
+
+	// rdi = character index (0, 1, 2, ...)
+	fc.out.XorRegWithReg("rdi", "rdi")
+
+	// Loop through each character
+	loopStart := fc.eb.text.Len()
+
+	// Check if done (rdi >= rcx)
+	fc.out.CmpRegToReg("rdi", "rcx")
+	loopEndJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreaterOrEqual, 0)
+	loopEndEnd := fc.eb.text.Len()
+
+	// Find character at index rdi in the map
+	// For simplicity, use linear search through map pairs
+	// TODO: This is O(n²) - optimize later
+
+	// r8 = current map position
+	fc.out.MovRegToReg("r8", "rbx")
+
+	// r9 = remaining keys to check
+	fc.out.MovRegToReg("r9", "rcx")
+
+	// Inner loop: search for key == rdi
+	innerLoopStart := fc.eb.text.Len()
+
+	// Check if any keys remain
+	fc.out.CmpRegToImm("r9", 0)
+	innerLoopEndJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0)
+	innerLoopEndEnd := fc.eb.text.Len()
+
+	// Load key from [r8]
+	fc.out.MovMemToXmm("xmm1", "r8", 0)
+	fc.out.Cvttsd2si("r10", "xmm1") // r10 = key as integer
+
+	// Compare with rdi (target index)
+	fc.out.CmpRegToReg("r10", "rdi")
+	keyMatchJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0)
+	keyMatchEnd := fc.eb.text.Len()
+
+	// Not a match, advance to next pair
+	fc.out.AddImmToReg("r8", 16) // Skip key+value pair
+	fc.out.SubImmFromReg("r9", 1)
+	fc.out.JumpUnconditional(int32(innerLoopStart - (fc.eb.text.Len() + 5)))
+
+	// Key matched - load value (character code)
+	keyMatchPos := fc.eb.text.Len()
+	fc.patchJumpImmediate(keyMatchJump+2, int32(keyMatchPos-keyMatchEnd))
+
+	fc.out.MovMemToXmm("xmm2", "r8", 8) // Load value at [r8+8]
+	fc.out.Cvttsd2si("r10", "xmm2")      // r10 = character code
+
+	// Store character byte at [rsi]
+	fc.out.MovByteRegToMem("r10", "rsi", 0)
+
+	// Advance write position
+	fc.out.AddImmToReg("rsi", 1)
+
+	// Advance character index
+	fc.out.AddImmToReg("rdi", 1)
+
+	// Continue outer loop
+	fc.out.JumpUnconditional(int32(loopStart - (fc.eb.text.Len() + 5)))
+
+	// Inner loop end (key not found - shouldn't happen for valid strings)
+	innerLoopEndPos := fc.eb.text.Len()
+	fc.patchJumpImmediate(innerLoopEndJump+2, int32(innerLoopEndPos-innerLoopEndEnd))
+
+	// Store '?' for missing character (shouldn't happen)
+	fc.out.MovImmToReg("r10", "63") // ASCII '?'
+	fc.out.MovByteRegToMem("r10", "rsi", 0)
+	fc.out.AddImmToReg("rsi", 1)
+	fc.out.AddImmToReg("rdi", 1)
+	fc.out.JumpUnconditional(int32(loopStart - (fc.eb.text.Len() + 5)))
+
+	// Loop end - all characters processed
+	loopEndPos := fc.eb.text.Len()
+	fc.patchJumpImmediate(loopEndJump+2, int32(loopEndPos-loopEndEnd))
+
+	// Add newline character
+	fc.out.MovImmToReg("r10", "10") // ASCII '\n'
+	fc.out.MovByteRegToMem("r10", "rsi", 0)
+	fc.out.AddImmToReg("rsi", 1)
+
+	// Add null terminator
+	fc.out.XorRegWithReg("r10", "r10")
+	fc.out.MovByteRegToMem("r10", "rsi", 0)
+
+	// Return pointer to first character (skip length byte)
+	fc.out.LeaMemToReg(cstrPtr, "rsp", 1)
+
+	doneJump := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0)
+	doneEnd := fc.eb.text.Len()
+
+	// Null map case - return pointer to empty string
+	nullPos := fc.eb.text.Len()
+	fc.patchJumpImmediate(nullJump+2, int32(nullPos-nullEnd))
+
+	// Create empty string: length=0, newline, null
+	fc.out.XorRegWithReg("r10", "r10")
+	fc.out.MovByteRegToMem("r10", "rsp", 0) // length = 0
+	fc.out.MovImmToReg("r10", "10")         // newline
+	fc.out.MovByteRegToMem("r10", "rsp", 1)
+	fc.out.XorRegWithReg("r10", "r10") // null
+	fc.out.MovByteRegToMem("r10", "rsp", 2)
+	fc.out.LeaMemToReg(cstrPtr, "rsp", 1)
+
+	// Done
+	donePos := fc.eb.text.Len()
+	fc.patchJumpImmediate(doneJump+1, int32(donePos-doneEnd))
+
+	// Note: Stack not cleaned up here - caller must handle
+}
+
 func (fc *FlapCompiler) compileCall(call *CallExpr) {
 	// Check if this is a stored function (variable containing function pointer)
 	if _, isVariable := fc.variables[call.Function]; isVariable {
@@ -2793,10 +2938,32 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			fc.trackFunctionCall("printf")
 			fc.eb.GenerateCallInstruction("printf")
 		} else if argType == "string" {
-			// String variable - need to convert map to C string at runtime
-			// TODO: implement runtime map-to-cstring conversion
-			fmt.Fprintf(os.Stderr, "Error: printing string variables not yet implemented\n")
-			os.Exit(1)
+			// String variable - convert map[uint64]float64 to CString at runtime
+			// CString format: [length_byte] [char0] [char1] ... [newline] [null]
+			//                                ^-- returned pointer points here
+
+			// Compile the string expression (returns map pointer as float64 in xmm0)
+			fc.compileExpression(arg)
+
+			// Convert xmm0 (string map pointer) to rax
+			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.MovXmmToMem("xmm0", "rsp", 0)
+			fc.out.MovMemToReg("rax", "rsp", 0)
+			fc.out.AddImmToReg("rsp", 8)
+
+			// Call inline map-to-cstring converter
+			// This allocates 260 bytes on stack and fills in the CString
+			fc.compileMapToCString("rax", "rsi") // rax=map_ptr, returns rsi=cstr ptr (2nd arg)
+
+			// Now rsi points to the null-terminated string with newline already included
+			// Load format string "%s" into rdi (1st arg)
+			fc.out.LeaSymbolToReg("rdi", "fmt_str")
+			fc.out.XorRegWithReg("rax", "rax") // No vector registers
+			fc.trackFunctionCall("printf")
+			fc.eb.GenerateCallInstruction("printf")
+
+			// Clean up stack (260 bytes from CString conversion)
+			fc.out.AddImmToReg("rsp", 260)
 		} else {
 			// Print number with newline
 			fc.compileExpression(arg)
