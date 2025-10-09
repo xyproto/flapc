@@ -1,6 +1,6 @@
 # Flap Compiler (flapc)
 
-An experimental compiler for the Flap programming language - Float. Map. Fly.
+An experiment in vibecoding a compiler and a programming language.Float.
 
 ## Overview
 
