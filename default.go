@@ -86,5 +86,9 @@ func (eb *ExecutableBuilder) CompileDefaultProgram(outputFile string) error {
 		}
 	}
 	// Output the executable file
-	return os.WriteFile(outputFile, eb.Bytes(), 0o755)
+	if err := os.WriteFile(outputFile, eb.Bytes(), 0o755); err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "Wrote %s\n", outputFile)
+	return nil
 }
