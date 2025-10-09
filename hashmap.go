@@ -88,7 +88,7 @@ func (m *FlapHashMap) Set(key uint64, value float64) {
 
 	// Check the chain for existing key
 	current := bucket.next
-	var prev *FlapHashBucket = bucket
+	prev := bucket
 	for current != nil {
 		if current.key == key {
 			current.value = value

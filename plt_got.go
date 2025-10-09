@@ -28,7 +28,7 @@ func (ds *DynamicSections) GeneratePLT(functions []string, gotBase uint64, pltBa
 	ds.plt.Write([]byte{0x0f, 0x1f, 0x40, 0x00})
 
 	// PLT[1..n] - one per function
-	for i, _ := range functions {
+	for i := range functions {
 		pltOffset := pltBase + uint64(ds.plt.Len())
 		gotOffset := gotBase + uint64(24+i*8) // GOT[0,1,2] reserved, functions start at GOT[3]
 

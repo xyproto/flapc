@@ -698,10 +698,9 @@ func (p *Parser) parseStatement() Statement {
 
 				matchExpr := &MatchExpr{Condition: expr, TrueExpr: trueExpr, DefaultExpr: defaultExpr}
 				return &ExpressionStmt{Expr: matchExpr}
-			} else {
-				// Not a match expression - this is a syntax error
-				p.error("unexpected '{' after expression")
 			}
+			// Not a match expression - this is a syntax error
+			p.error("unexpected '{' after expression")
 		}
 
 		return &ExpressionStmt{Expr: expr}

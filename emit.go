@@ -69,11 +69,11 @@ func (bw *BufferWrapper) WriteBytes(bs []byte) int {
 	return len(bs)
 }
 
-func (o *ExecutableBuilder) PrependBytes(bs []byte) {
+func (eb *ExecutableBuilder) PrependBytes(bs []byte) {
 	var newBuf bytes.Buffer
 	newBuf.Write(bs)
-	newBuf.Write(o.text.Bytes())
-	o.text = newBuf
+	newBuf.Write(eb.text.Bytes())
+	eb.text = newBuf
 }
 
 func (bw *BufferWrapper) WriteUnsigned(i uint) int {

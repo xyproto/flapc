@@ -222,9 +222,8 @@ func TestDynamicSectionUpdate(t *testing.T) {
 			if val == newGOT {
 				foundUpdate = true
 				break
-			} else {
-				t.Errorf("DT_PLTGOT value = 0x%x, want 0x%x", val, newGOT)
 			}
+			t.Errorf("DT_PLTGOT value = 0x%x, want 0x%x", val, newGOT)
 		}
 	}
 
