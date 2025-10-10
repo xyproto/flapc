@@ -2548,6 +2548,59 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			}
 		}
 
+		// String comparison operators
+		if e.Operator == "==" || e.Operator == "!=" {
+			leftType := fc.getExprType(e.Left)
+			rightType := fc.getExprType(e.Right)
+
+			if leftType == "string" && rightType == "string" {
+				// String comparison: compare character by character
+				// Compile left string (result in xmm0)
+				fc.compileExpression(e.Left)
+				fc.out.SubImmFromReg("rsp", 16)
+				fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+				// Compile right string (result in xmm0)
+				fc.compileExpression(e.Right)
+				fc.out.SubImmFromReg("rsp", 16)
+				fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+				// Call _flap_string_eq(left_ptr, right_ptr)
+				fc.out.MovMemToReg("rdi", "rsp", 16) // left ptr
+				fc.out.MovMemToReg("rsi", "rsp", 0)  // right ptr
+				fc.out.AddImmToReg("rsp", 32)
+
+				// Align stack for call
+				fc.out.SubImmFromReg("rsp", 8)
+
+				// Call the helper function
+				fc.trackFunctionCall("_flap_string_eq")
+				fc.out.CallSymbol("_flap_string_eq")
+
+				fc.out.AddImmToReg("rsp", 8)
+
+				// Result (1.0 or 0.0) is in xmm0
+				if e.Operator == "!=" {
+					// Invert the result: result = 1.0 - result
+					labelName := fmt.Sprintf("float_const_%d", fc.stringCounter)
+					fc.stringCounter++
+					one := 1.0
+					bits := uint64(0)
+					*(*float64)(unsafe.Pointer(&bits)) = one
+					var floatData []byte
+					for i := 0; i < 8; i++ {
+						floatData = append(floatData, byte((bits>>(i*8))&0xFF))
+					}
+					fc.eb.Define(labelName, string(floatData))
+					fc.out.LeaSymbolToReg("rax", labelName)
+					fc.out.MovMemToXmm("xmm1", "rax", 0)
+					fc.out.SubsdXmm("xmm1", "xmm0") // xmm1 = 1.0 - xmm0
+					fc.out.MovRegToReg("xmm0", "xmm1")
+				}
+				return
+			}
+		}
+
 		// Default: numeric binary operation
 		// Compile left into xmm0
 		fc.compileExpression(e.Left)
@@ -3821,6 +3874,25 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("r13")
 	fc.out.PopReg("r12")
 	fc.out.PopReg("rbx")
+
+	// Function epilogue
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
+
+	// Generate _flap_string_eq(left_ptr, right_ptr) -> 1.0 or 0.0
+	// Arguments: rdi = left_ptr, rsi = right_ptr
+	// Returns: xmm0 = 1.0 if equal, 0.0 if not
+	// String format: [count (8 bytes)][key0 (8)][val0 (8)][key1 (8)][val1 (8)]...
+
+	fc.eb.MarkLabel("_flap_string_eq")
+
+	// Function prologue
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+
+	// For now, just return 1.0 (equal) to test the calling mechanism
+	fc.out.MovImmToReg("rax", "1")
+	fc.out.Cvtsi2sd("xmm0", "rax")
 
 	// Function epilogue
 	fc.out.PopReg("rbp")

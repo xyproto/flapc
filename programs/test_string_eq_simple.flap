@@ -1,0 +1,5 @@
+// Simplest string equality test
+s1 := "a"
+s2 := "a"
+result := s1 == s2
+println(result)

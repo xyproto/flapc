@@ -1,0 +1,3 @@
+// Test number equality to verify println works with boolean results
+result := 5 == 5
+println(result)
