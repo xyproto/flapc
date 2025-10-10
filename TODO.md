@@ -140,33 +140,24 @@ Release when:
 
 ## Recently Completed
 
+### I/O Functions (2025-10-10)
+- [x] `println()` syscall-based implementation ✓
+  - Direct `write(1, buf, len)` syscall instead of printf
+  - String literals: Direct write with newline
+  - Whole numbers: Integer-to-ASCII conversion via assembly
+  - String variables: Map-to-bytes conversion then syscall
+  - No external dependencies or PLT/GOT complexity
+  - Tests passing: hello, test_simple, test_println_only
+- [x] Helper functions for number formatting ✓
+  - `compileWholeNumberToString`: Handles 0, positive, negative
+  - `compilePrintMapAsString`: Converts string maps to bytes
+  - `compileFloatToString`: Framework for float printing
+
 ### Control Flow (2025-10-10)
 - [x] `break` statement exits loop early ✓
 - [x] `continue` statement skips to next iteration ✓
 - [x] Tests: for loops with break/continue working correctly ✓
 
-### Math Functions (2025-10-09)
-- [x] `sqrt(x)` using SQRTSD (SSE2) ✓
-- [x] `sin(x)`, `cos(x)`, `tan(x)` using FSIN, FCOS, FPTAN (x87 FPU) ✓
-- [x] `atan(x)` using FPATAN (x87 FPU) ✓
-- [x] `asin(x)`, `acos(x)` using FPATAN + x87 arithmetic (no libc!) ✓
-
-### Earlier (2025-10-09)
-- [x] Strings as map[uint64]float64 ✓
-- [x] String indexing `s[1]` ✓
-- [x] Compile-time string concatenation ✓
-- [x] `println(string_var)` with CString conversion ✓
-- [x] SIMD map indexing (SSE2, AVX-512) ✓
-- [x] Runtime CPU detection ✓
-- [x] Match expressions `->` and `~>` ✓
-- [x] Loops `@ identifier in collection` ✓
-- [x] Lambdas up to 6 parameters ✓
-- [x] `println(number)` and `println("literal")` ✓
-- [x] `printf(format, ...)` ✓
-- [x] `range(n)` ✓
-- [x] `#collection` length operator ✓
-- [x] List literals `[1, 2, 3]` ✓
-- [x] Map literals `{1: 10, 2: 20}` ✓
 
 ---
 
@@ -174,7 +165,7 @@ Release when:
 
 **Version**: 0.1.x (pre-alpha)
 **Platform**: x86-64 Linux only
-**Tests Passing**: 90+
+**Tests Passing**: 23/138 (17%)
 
 **Next Actions**:
 1. Pick a blocker item
@@ -188,25 +179,27 @@ Release when:
 
 ## Known Issues
 
-### println() Silent Failure (2025-10-10)
-**Status**: Under investigation
+### println() Implementation (2025-10-10)
+**Status**: ✅ RESOLVED - Implemented with syscalls
 
-The `println()` builtin currently generates structurally correct code but produces no output:
-- Assembly: Correct LEA instruction with proper RIP-relative addressing
-- Rodata: String data stored correctly with null termination
-- PLT/GOT: printf relocations appear correct
-- Binary: Executes without errors but produces no output
-- Direct printf() calls work correctly
-- strace shows no write syscalls from println-generated code
+The `println()` builtin is now implemented using direct `write` syscalls instead of printf:
+- ✅ String literals: Direct syscall write
+- ✅ Whole numbers: ASCII conversion via assembly (0, 42, -5, 100, etc.)
+- ✅ String variables: Map-to-bytes conversion then syscall
+- ⚠️ Fractional floats: Currently truncate to integers (3.14 → 3)
+- ✅ No external dependencies (auto-dependency commented out)
+- ✅ Tests passing: hello, test_simple, test_println_only
 
-**Workaround**: Use direct `printf()` calls or implement syscall-based I/O (put_cstr, put_number, put_string).
+**Future Enhancement**: Proper float-to-string conversion for fractional numbers (e.g., 3.14159 → "3.141590")
 
-**Investigation findings**:
-- Second compilation pass may have text section patching issues
-- PC relocations are patched correctly (verified with objdump)
-- String data is byte-perfect in binary (verified with xxd)
-- Call instruction offsets are correct
-- Issue appears to be in PLT call execution, not code generation
+### External Dependencies Syntax Errors
+**Status**: Blocking many tests
+
+Many tests fail during compilation due to syntax errors in external dependencies:
+- External math libraries (flap_math) have parser errors
+- Error: `expected ':' in map literal` in abs.flap:3
+- Affects: All math function tests (sin, cos, tan, abs, sqrt, etc.)
+- Workaround: Fix syntax in external repositories or inline implementations
 
 ---
 

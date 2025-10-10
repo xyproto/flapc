@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
+	"math"
 	"os"
 	"sort"
 	"strconv"
@@ -3566,6 +3568,461 @@ func (fc *FlapCompiler) compileMapToCString(mapPtr, cstrPtr string) {
 	// Note: Stack not cleaned up here - caller must handle
 }
 
+// compilePrintMapAsString converts a string map to bytes for printing via syscall
+// Input: mapPtr (register) = pointer to string map, bufPtr (register) = buffer start
+// Output: rsi = pointer to string data, rdx = length (including newline)
+func (fc *FlapCompiler) compilePrintMapAsString(mapPtr, bufPtr string) {
+	// Check if map pointer is null (empty string)
+	fc.out.CmpRegToImm(mapPtr, 0)
+	nullJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0)
+	nullEnd := fc.eb.text.Len()
+
+	// Load count from map[0] (first float64 is the count)
+	fc.out.MovMemToXmm("xmm0", mapPtr, 0)
+	fc.out.Cvttsd2si("rcx", "xmm0") // rcx = character count
+
+	// rsi = write position (buffer start)
+	fc.out.MovRegToReg("rsi", bufPtr)
+
+	// rbx = map data pointer (start after count at offset 8)
+	fc.out.MovRegToReg("rbx", mapPtr)
+	fc.out.AddImmToReg("rbx", 8)
+
+	// rdi = character index
+	fc.out.XorRegWithReg("rdi", "rdi")
+
+	// Loop through each character
+	loopStart := fc.eb.text.Len()
+
+	// Check if done (rdi >= rcx)
+	fc.out.CmpRegToReg("rdi", "rcx")
+	loopEndJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreaterOrEqual, 0)
+	loopEndEnd := fc.eb.text.Len()
+
+	// Linear search for key == rdi
+	fc.out.MovRegToReg("r8", "rbx")
+	fc.out.MovRegToReg("r9", "rcx")
+
+	innerLoopStart := fc.eb.text.Len()
+	fc.out.CmpRegToImm("r9", 0)
+	innerLoopEndJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0)
+	innerLoopEndEnd := fc.eb.text.Len()
+
+	// Load and compare key
+	fc.out.MovMemToXmm("xmm1", "r8", 0)
+	fc.out.Cvttsd2si("r10", "xmm1")
+	fc.out.CmpRegToReg("r10", "rdi")
+	keyMatchJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0)
+	keyMatchEnd := fc.eb.text.Len()
+
+	// Not a match, advance
+	fc.out.AddImmToReg("r8", 16)
+	fc.out.SubImmFromReg("r9", 1)
+	fc.out.JumpUnconditional(int32(innerLoopStart - (fc.eb.text.Len() + 5)))
+
+	// Key matched - store character
+	keyMatchPos := fc.eb.text.Len()
+	fc.patchJumpImmediate(keyMatchJump+2, int32(keyMatchPos-keyMatchEnd))
+
+	fc.out.MovMemToXmm("xmm2", "r8", 8)
+	fc.out.Cvttsd2si("r10", "xmm2")
+	fc.out.MovByteRegToMem("r10", "rsi", 0)
+	fc.out.AddImmToReg("rsi", 1)
+
+	// Inner loop end
+	innerLoopEndPos := fc.eb.text.Len()
+	fc.patchJumpImmediate(innerLoopEndJump+2, int32(innerLoopEndPos-innerLoopEndEnd))
+
+	// Advance character index
+	fc.out.AddImmToReg("rdi", 1)
+	fc.out.JumpUnconditional(int32(loopStart - (fc.eb.text.Len() + 5)))
+
+	// Loop end - add newline
+	loopEndPos := fc.eb.text.Len()
+	fc.patchJumpImmediate(loopEndJump+2, int32(loopEndPos-loopEndEnd))
+
+	// Store newline
+	fc.out.MovImmToReg("r10", "10") // '\n' = 10
+	fc.out.MovByteRegToMem("r10", "rsi", 0)
+	fc.out.AddImmToReg("rsi", 1)
+
+	// Calculate length: rsi - bufPtr
+	fc.out.MovRegToReg("rdx", "rsi")
+	fc.out.SubRegFromReg("rdx", bufPtr)
+
+	// Set rsi back to buffer start
+	fc.out.MovRegToReg("rsi", bufPtr)
+
+	// Jump to end
+	normalEndJump := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0)
+	normalEndEnd := fc.eb.text.Len()
+
+	// Null case - just print newline
+	nullPos := fc.eb.text.Len()
+	fc.patchJumpImmediate(nullJump+2, int32(nullPos-nullEnd))
+	fc.out.MovImmToReg("r10", "10") // '\n'
+	fc.out.MovByteRegToMem("r10", bufPtr, 0)
+	fc.out.MovRegToReg("rsi", bufPtr)
+	fc.out.MovImmToReg("rdx", "1")
+
+	// End
+	normalEnd := fc.eb.text.Len()
+	fc.patchJumpImmediate(normalEndJump+1, int32(normalEnd-normalEndEnd))
+}
+
+// compileFloatToString converts a float64 to ASCII string representation
+// Input: xmmReg = XMM register with float64, bufPtr = buffer pointer (register)
+// Output: rsi = string start, rdx = length (including newline)
+func (fc *FlapCompiler) compileFloatToString(xmmReg, bufPtr string) {
+	// Save the float value
+	fc.out.SubImmFromReg("rsp", 16)
+	fc.out.MovXmmToMem(xmmReg, "rsp", 0)
+
+	// Check if negative by testing sign bit
+	// We'll load 0.0 by converting integer 0
+	fc.out.XorRegWithReg("rax", "rax")
+	fc.out.Cvtsi2sd("xmm2", "rax") // xmm2 = 0.0
+	fc.out.Ucomisd(xmmReg, "xmm2")
+	negativeJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpBelow, 0)
+	negativeEnd := fc.eb.text.Len()
+
+	// Positive path
+	positiveSkipJump := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0)
+	positiveSkipEnd := fc.eb.text.Len()
+
+	// Negative path - add minus sign and negate
+	negativePos := fc.eb.text.Len()
+	fc.patchJumpImmediate(negativeJump+2, int32(negativePos-negativeEnd))
+	fc.out.MovImmToReg("r10", "45") // '-'
+	fc.out.MovByteRegToMem("r10", bufPtr, 0)
+	fc.out.LeaMemToReg("rsi", bufPtr, 1)
+
+	// Negate the float: multiply by -1
+	fc.out.MovMemToXmm("xmm0", "rsp", 0)
+	fc.loadFloatConstant("xmm3", -1.0)
+	fc.out.MulsdXmm("xmm0", "xmm3")
+	fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+	negativeSkipJump := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0)
+	negativeSkipEnd := fc.eb.text.Len()
+
+	// Positive path target
+	positiveSkip := fc.eb.text.Len()
+	fc.patchJumpImmediate(positiveSkipJump+1, int32(positiveSkip-positiveSkipEnd))
+	fc.out.MovRegToReg("rsi", bufPtr)
+
+	// Negative skip target
+	negativeSkip := fc.eb.text.Len()
+	fc.patchJumpImmediate(negativeSkipJump+1, int32(negativeSkip-negativeSkipEnd))
+
+	// Now rsi points to where we write, load the (now positive) float
+	fc.out.MovMemToXmm("xmm0", "rsp", 0)
+
+	// Check if it's a whole number
+	fc.out.Cvttsd2si("rax", "xmm0")
+	fc.out.Cvtsi2sd("xmm1", "rax")
+	fc.out.Ucomisd("xmm0", "xmm1")
+
+	notWholeJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpNotEqual, 0)
+	notWholeEnd := fc.eb.text.Len()
+
+	// Whole number path - print as integer
+	fc.compileIntToStringAtPos("rax", "rsi")
+	fc.out.AddImmToReg("rsp", 16) // cleanup
+
+	wholeEndJump := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0)
+	wholeEndEnd := fc.eb.text.Len()
+
+	// Float path - print with decimal point
+	notWholePos := fc.eb.text.Len()
+	fc.patchJumpImmediate(notWholeJump+2, int32(notWholePos-notWholeEnd))
+
+	// Extract integer part (rax already has it from above)
+	fc.out.Cvttsd2si("rax", "xmm0")
+
+	// Print integer part
+	fc.compileIntToStringAtPosNoNewline("rax", "rsi")
+	// rsi now points after the integer part
+
+	// Add decimal point
+	fc.out.MovImmToReg("r10", "46") // '.'
+	fc.out.MovByteRegToMem("r10", "rsi", 0)
+	fc.out.AddImmToReg("rsi", 1)
+
+	// Get fractional part: frac = num - int_part
+	fc.out.MovMemToXmm("xmm0", "rsp", 0)
+	fc.out.Cvtsi2sd("xmm1", "rax") // int part as float
+	fc.out.SubsdXmm("xmm0", "xmm1") // xmm0 = fractional part
+
+	// Print up to 6 decimal digits
+	fc.out.MovImmToReg("r11", "6") // digit counter
+	fc.loadFloatConstant("xmm3", 10.0)
+
+	fracLoopStart := fc.eb.text.Len()
+
+	// Check if done
+	fc.out.CmpRegToImm("r11", 0)
+	fracLoopEndJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0)
+	fracLoopEndEnd := fc.eb.text.Len()
+
+	// Multiply by 10
+	fc.out.MulsdXmm("xmm0", "xmm3")
+
+	// Extract digit (save it first before converting to ASCII)
+	fc.out.Cvttsd2si("r10", "xmm0")
+
+	// Convert integer digit back to float for subtraction
+	fc.out.Cvtsi2sd("xmm1", "r10")
+	fc.out.SubsdXmm("xmm0", "xmm1")
+
+	// Convert digit to ASCII and store
+	fc.out.AddImmToReg("r10", 48) // to ASCII
+	fc.out.MovByteRegToMem("r10", "rsi", 0)
+	fc.out.AddImmToReg("rsi", 1)
+
+	fc.out.SubImmFromReg("r11", 1)
+	fc.out.JumpUnconditional(int32(fracLoopStart - (fc.eb.text.Len() + 5)))
+
+	fracLoopEnd := fc.eb.text.Len()
+	fc.patchJumpImmediate(fracLoopEndJump+2, int32(fracLoopEnd-fracLoopEndEnd))
+
+	// Add newline
+	fc.out.MovImmToReg("r10", "10") // '\n'
+	fc.out.MovByteRegToMem("r10", "rsi", 0)
+	fc.out.AddImmToReg("rsi", 1)
+
+	// Calculate length
+	fc.out.MovRegToReg("rdx", "rsi")
+	fc.out.SubRegFromReg("rdx", bufPtr)
+	fc.out.MovRegToReg("rsi", bufPtr)
+
+	fc.out.AddImmToReg("rsp", 16) // cleanup
+
+	// End
+	wholeEnd := fc.eb.text.Len()
+	fc.patchJumpImmediate(wholeEndJump+1, int32(wholeEnd-wholeEndEnd))
+}
+
+// loadFloatConstant loads a float constant into an XMM register
+func (fc *FlapCompiler) loadFloatConstant(xmmReg string, value float64) {
+	// Create a constant label for this float value
+	labelName := fmt.Sprintf("float_const_%d", fc.stringCounter)
+	fc.stringCounter++
+
+	// Convert float64 to bytes
+	bits := math.Float64bits(value)
+	bytes := make([]byte, 8)
+	binary.LittleEndian.PutUint64(bytes, bits)
+	fc.eb.Define(labelName, string(bytes))
+
+	// Load the address into a temp register, then load the value
+	fc.out.LeaSymbolToReg("rax", labelName)
+	fc.out.MovMemToXmm(xmmReg, "rax", 0)
+}
+
+// compileIntToStringAtPos is like compileIntToString but writes at rsi position
+func (fc *FlapCompiler) compileIntToStringAtPos(intReg, posReg string) {
+	fc.compileWholeNumberToStringAtPos(intReg, posReg, true)
+}
+
+// compileIntToStringAtPosNoNewline writes integer without newline
+func (fc *FlapCompiler) compileIntToStringAtPosNoNewline(intReg, posReg string) {
+	fc.compileWholeNumberToStringAtPos(intReg, posReg, false)
+}
+
+// compileWholeNumberToStringAtPos converts a whole number to ASCII at a given position
+// Input: intReg = register with int64, posReg = write position register
+// If addNewline is true, adds '\n' and sets rsi/rdx; otherwise just updates posReg
+func (fc *FlapCompiler) compileWholeNumberToStringAtPos(intReg, posReg string, addNewline bool) {
+	// Store the starting position
+	startPosReg := "r15"
+	fc.out.MovRegToReg(startPosReg, posReg)
+
+	// Convert digits (rax = number, posReg = write position)
+	fc.out.MovRegToReg("rax", intReg)
+	fc.out.LeaMemToReg("rdi", posReg, 20) // digit storage area
+	fc.out.MovImmToReg("rcx", "10")       // divisor
+
+	digitLoopStart := fc.eb.text.Len()
+
+	// Divide rax by 10
+	fc.out.DivRegByReg("rax", "rcx")
+
+	// Convert remainder to ASCII
+	fc.out.AddImmToReg("rdx", 48) // '0' = 48
+	fc.out.MovByteRegToMem("rdx", "rdi", 0)
+	fc.out.AddImmToReg("rdi", 1)
+
+	// Continue if quotient > 0
+	fc.out.CmpRegToImm("rax", 0)
+	digitLoopJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreater, 0)
+	digitLoopEnd := fc.eb.text.Len()
+	fc.patchJumpImmediate(digitLoopJump+2, int32(digitLoopStart-(digitLoopEnd)))
+
+	// Copy digits back in reverse
+	fc.out.SubImmFromReg("rdi", 1)
+	fc.out.LeaMemToReg("r11", posReg, 20)
+
+	copyLoopStart := fc.eb.text.Len()
+	fc.out.CmpRegToReg("rdi", "r11")
+	copyLoopEndJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpLess, 0)
+	copyLoopEndEnd := fc.eb.text.Len()
+
+	fc.out.MovMemToReg("r10", "rdi", 0)
+	fc.out.MovByteRegToMem("r10", posReg, 0)
+	fc.out.AddImmToReg(posReg, 1)
+	fc.out.SubImmFromReg("rdi", 1)
+	fc.out.JumpUnconditional(int32(copyLoopStart - (fc.eb.text.Len() + 5)))
+
+	copyLoopEnd := fc.eb.text.Len()
+	fc.patchJumpImmediate(copyLoopEndJump+2, int32(copyLoopEnd-copyLoopEndEnd))
+
+	if addNewline {
+		// Add newline
+		fc.out.MovImmToReg("r10", "10")
+		fc.out.MovByteRegToMem("r10", posReg, 0)
+		fc.out.AddImmToReg(posReg, 1)
+
+		// Calculate length
+		fc.out.MovRegToReg("rdx", posReg)
+		fc.out.SubRegFromReg("rdx", startPosReg)
+		fc.out.MovRegToReg("rsi", startPosReg)
+	}
+}
+
+// compileWholeNumberToString converts a whole number (truncated float) to ASCII string
+// Input: intReg = register with int64, bufPtr = buffer pointer (register)
+// Output: rsi = string start, rdx = length (including newline)
+func (fc *FlapCompiler) compileWholeNumberToString(intReg, bufPtr string) {
+	// Special case: zero
+	fc.out.CmpRegToImm(intReg, 0)
+	zeroJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0)
+	zeroEnd := fc.eb.text.Len()
+
+	// Handle negative numbers
+	fc.out.CmpRegToImm(intReg, 0)
+	negativeJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpLess, 0)
+	negativeEnd := fc.eb.text.Len()
+
+	// Positive path
+	fc.out.MovRegToReg("rax", intReg)
+	positiveSkipJump := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0)
+	positiveSkipEnd := fc.eb.text.Len()
+
+	// Negative path
+	negativePos := fc.eb.text.Len()
+	fc.patchJumpImmediate(negativeJump+2, int32(negativePos-negativeEnd))
+	fc.out.MovRegToReg("rax", intReg)
+	fc.out.NegReg("rax")
+
+	// Store negative sign
+	fc.out.MovImmToReg("r10", "45") // '-' = 45
+	fc.out.MovByteRegToMem("r10", bufPtr, 0)
+	fc.out.LeaMemToReg("rsi", bufPtr, 1)
+
+	negativeSkipJump := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0)
+	negativeSkipEnd := fc.eb.text.Len()
+
+	// Positive skip target
+	positiveSkip := fc.eb.text.Len()
+	fc.patchJumpImmediate(positiveSkipJump+1, int32(positiveSkip-positiveSkipEnd))
+	fc.out.MovRegToReg("rsi", bufPtr)
+
+	// Negative skip target
+	negativeSkip := fc.eb.text.Len()
+	fc.patchJumpImmediate(negativeSkipJump+1, int32(negativeSkip-negativeSkipEnd))
+
+	// Convert digits (rax = number, rsi = buffer position)
+	// Store digits in reverse, then copy forward
+	fc.out.LeaMemToReg("rdi", bufPtr, 20) // digit storage area
+	fc.out.MovImmToReg("rcx", "10")       // divisor
+
+	digitLoopStart := fc.eb.text.Len()
+
+	// Divide rax by 10: rax = quotient, rdx = remainder
+	fc.out.DivRegByReg("rax", "rcx")
+
+	// Convert remainder to ASCII ('0' + digit)
+	fc.out.AddImmToReg("rdx", 48) // '0' = 48
+	fc.out.MovByteRegToMem("rdx", "rdi", 0)
+	fc.out.AddImmToReg("rdi", 1)
+
+	// Continue if quotient > 0
+	fc.out.CmpRegToImm("rax", 0)
+	digitLoopJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreater, 0)
+	digitLoopEnd := fc.eb.text.Len()
+	fc.patchJumpImmediate(digitLoopJump+2, int32(digitLoopStart-(digitLoopEnd)))
+
+	// Copy digits back in reverse order
+	fc.out.SubImmFromReg("rdi", 1) // point to last digit
+	fc.out.LeaMemToReg("r11", bufPtr, 20) // r11 = start of digit storage
+
+	copyLoopStart := fc.eb.text.Len()
+
+	// Check if done (rdi < r11 means we've copied all digits)
+	fc.out.CmpRegToReg("rdi", "r11")
+	copyLoopEndJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpLess, 0)
+	copyLoopEndEnd := fc.eb.text.Len()
+
+	// Copy byte
+	fc.out.MovMemToReg("r10", "rdi", 0)
+	fc.out.MovByteRegToMem("r10", "rsi", 0)
+	fc.out.AddImmToReg("rsi", 1)
+	fc.out.SubImmFromReg("rdi", 1)
+	fc.out.JumpUnconditional(int32(copyLoopStart - (fc.eb.text.Len() + 5)))
+
+	copyLoopEnd := fc.eb.text.Len()
+	fc.patchJumpImmediate(copyLoopEndJump+2, int32(copyLoopEnd-copyLoopEndEnd))
+
+	// Add newline
+	fc.out.MovImmToReg("r10", "10") // '\n'
+	fc.out.MovByteRegToMem("r10", "rsi", 0)
+	fc.out.AddImmToReg("rsi", 1)
+
+	// Calculate length
+	fc.out.MovRegToReg("rdx", "rsi")
+	fc.out.SubRegFromReg("rdx", bufPtr)
+	fc.out.MovRegToReg("rsi", bufPtr)
+
+	// Jump to end
+	normalEndJump := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0)
+	normalEndEnd := fc.eb.text.Len()
+
+	// Zero case
+	zeroPos := fc.eb.text.Len()
+	fc.patchJumpImmediate(zeroJump+2, int32(zeroPos-zeroEnd))
+	fc.out.MovImmToReg("r10", "48") // '0' = 48
+	fc.out.MovByteRegToMem("r10", bufPtr, 0)
+	fc.out.MovImmToReg("r10", "10") // '\n'
+	fc.out.MovByteRegToMem("r10", bufPtr, 1)
+	fc.out.MovRegToReg("rsi", bufPtr)
+	fc.out.MovImmToReg("rdx", "2") // length = 2 ("0\n")
+
+	// End
+	normalEnd := fc.eb.text.Len()
+	fc.patchJumpImmediate(normalEndJump+1, int32(normalEnd-normalEndEnd))
+}
+
 func (fc *FlapCompiler) compileTailCall(call *CallExpr) {
 	// Tail recursion optimization for "me" self-reference
 	// Instead of calling, we update parameters and jump to function start
@@ -3626,33 +4083,35 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 	// Otherwise, handle builtin functions
 	switch call.Function {
 	case "println":
-		fmt.Fprintf(os.Stderr, "DEBUG: println builtin case reached\n")
 		if len(call.Args) == 0 {
+			// Just print a newline
+			newlineLabel := fmt.Sprintf("newline_%d", fc.stringCounter)
+			fc.stringCounter++
+			fc.eb.Define(newlineLabel, "\n")
+
+			// Write newline using syscall: write(1, str, 1)
+			fc.out.LeaSymbolToReg("rsi", newlineLabel)
+			fc.out.MovImmToReg("rdx", "1") // length = 1
+			fc.eb.SysWrite("rsi", "rdx")
 			return
 		}
 
 		arg := call.Args[0]
-		fmt.Fprintf(os.Stderr, "DEBUG: println arg type: %T\n", arg)
 		argType := fc.getExprType(arg)
-		fmt.Fprintf(os.Stderr, "DEBUG: println argType: %s\n", argType)
 
 		if strExpr, ok := arg.(*StringExpr); ok {
-			// String literal - create C-compatible null-terminated string
-			// For FFI with C, we use standard C strings (null-terminated, no length prefix)
-			labelName := fmt.Sprintf("cstr_%d", fc.stringCounter)
+			// String literal - use direct syscall write
+			labelName := fmt.Sprintf("str_%d", fc.stringCounter)
 			fc.stringCounter++
-			strWithNewline := strExpr.Value + "\n\x00"
+			strWithNewline := strExpr.Value + "\n"
 			fc.eb.Define(labelName, strWithNewline)
-			// Load address and call printf
-			fc.out.LeaSymbolToReg("rdi", labelName)
-			fc.out.XorRegWithReg("rax", "rax")
-			fc.trackFunctionCall("printf")
-			fc.eb.GenerateCallInstruction("printf")
+
+			// Write using syscall: write(1, str, len)
+			fc.out.LeaSymbolToReg("rsi", labelName)
+			fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", len(strWithNewline))) // length
+			fc.eb.SysWrite("rsi", "rdx")
 		} else if argType == "string" {
-			fmt.Fprintf(os.Stderr, "DEBUG: Taking string variable branch\n")
-			// String variable - convert map[uint64]float64 to CString at runtime
-			// CString format: [length_byte] [char0] [char1] ... [newline] [null]
-			//                                ^-- returned pointer points here
+			// String variable - convert map[uint64]float64 to bytes and write with syscall
 
 			// Compile the string expression (returns map pointer as float64 in xmm0)
 			fc.compileExpression(arg)
@@ -3663,27 +4122,36 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			fc.out.MovMemToReg("rax", "rsp", 0)
 			fc.out.AddImmToReg("rsp", 8)
 
-			// Call inline map-to-cstring converter
-			// This allocates 260 bytes on stack and fills in the CString
-			fc.compileMapToCString("rax", "rsi") // rax=map_ptr, returns rsi=cstr ptr (2nd arg)
+			// Allocate buffer on stack (260 bytes: length + 256 chars + newline + null)
+			fc.out.SubImmFromReg("rsp", 260)
 
-			// Now rsi points to the null-terminated string with newline already included
-			// Load format string "%s" into rdi (1st arg)
-			fc.out.LeaSymbolToReg("rdi", "fmt_str")
-			fc.out.XorRegWithReg("rax", "rax") // No vector registers
-			fc.trackFunctionCall("printf")
-			fc.eb.GenerateCallInstruction("printf")
+			// Convert map to string buffer
+			// rax = map pointer, rsp = buffer start
+			fc.compilePrintMapAsString("rax", "rsp")
 
-			// Clean up stack (260 bytes from CString conversion)
+			// rsi now points to string start, rdx has length (including newline)
+			// Write using syscall
+			fc.eb.SysWrite("rsi", "rdx")
+
+			// Clean up stack
 			fc.out.AddImmToReg("rsp", 260)
 		} else {
-			// Print number with newline
+			// Print number - convert to string and use syscall
 			fc.compileExpression(arg)
 			// xmm0 contains float64 value
-			fc.out.LeaSymbolToReg("rdi", "fmt_float")
-			fc.out.MovImmToReg("rax", "1") // 1 vector register used
-			fc.trackFunctionCall("printf")
-			fc.eb.GenerateCallInstruction("printf")
+
+			// Allocate 32 bytes on stack for number string
+			fc.out.SubImmFromReg("rsp", 32)
+
+			// Convert float64 in xmm0 to string at rsp
+			// Result: rsi = string pointer, rdx = length
+			fc.compileFloatToString("xmm0", "rsp")
+
+			// Write using syscall
+			fc.eb.SysWrite("rsi", "rdx")
+
+			// Clean up stack
+			fc.out.AddImmToReg("rsp", 32)
 		}
 
 	case "printf":

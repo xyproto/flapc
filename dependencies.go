@@ -35,7 +35,7 @@ var FunctionRepository = map[string]string{
 	"max":   "github.com/xyproto/flap_math",
 
 	// Standard library
-	"println": "github.com/xyproto/flap_core",
+	// "println": "github.com/xyproto/flap_core",  // Commented out - println is now a builtin
 
 	// Graphics (example)
 	"InitWindow":    "github.com/xyproto/flap_raylib",

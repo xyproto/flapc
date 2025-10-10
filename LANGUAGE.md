@@ -136,13 +136,13 @@ f = double
 println(f(10))
 
 // Builtin functions
-println("text")                     // Print string literal with newline
-println(42)                         // Print number with newline
-// println(string_var)              // Not yet implemented (TODO)
-printf("format %f\n", value)        // Formatted print
+println("text")                     // Print string literal with newline (syscall-based)
+println(42)                         // Print number with newline (syscall-based)
+println(string_var)                 // Print string variable (map-to-bytes conversion)
+printf("format %f\n", value)        // Formatted print (libc-based)
 printf("Value: %v, Bool: %b\n", x, y)  // %v=smart number, %b=yes/no
 range(n)                            // Generate range for loops
-// Note: exit() is called automatically at program end
+exit(code)                          // Exit program with code
 ```
 
 ## Complete Planned Grammar
@@ -370,8 +370,11 @@ Constants use the most efficient computation method for each precision:
 ### I/O Functions (4)
 
 ```
-println(x)        // Print value to stdout with newline
-printf(fmt, ...)  // Formatted print (up to 8 args)
+println(x)        // Print value to stdout with newline (syscall-based, no libc)
+                  // - String literals: Direct write syscall
+                  // - Whole numbers: Assembly-based ASCII conversion
+                  // - String variables: Map-to-bytes conversion
+printf(fmt, ...)  // Formatted print (up to 8 args, uses libc)
                   // Format specifiers: %f, %d, %s, %v, %b, %%
                   // %v = smart value (42.0→"42", 3.14→"3.14")
                   // %b = boolean (0.0→"no", non-zero→"yes")

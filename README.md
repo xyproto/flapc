@@ -71,17 +71,17 @@ make test
 
 ### Control Flow
 - **Match Expressions**: `condition { -> expr ~> expr }` syntax (default case optional)
-- **Loops**: `@ identifier in range(n) { }` syntax
-- **Builtin Functions**: `range(n)`, `println()`, `exit()`, `len()`
+- **Loops**: `@ identifier in range(n) { }` syntax, `break`, `continue`
+- **Builtin Functions**: `range(n)`, `println()` (syscall-based), `printf()`, `exit()`
 
 ### Data Structures
 - **Strings**: Stored as `map[uint64]float64` (index → char code)
   - `s := "Hello"` creates map `{0: 72.0, 1: 101.0, 2: 108.0, ...}`
   - `s[1]` returns `101.0` (char code for 'e')
-  - **CString conversion**: Runtime converts string maps to null-terminated C strings
-    - Format: `[length_byte][char0][char1]...[null]`
-    - Length stored in byte before string data (clever old trick!)
-    - Enables `println(string_var)` to work seamlessly
+  - **Syscall printing**: `println(string_var)` converts map to bytes using direct syscalls
+    - No external dependencies (no libc printf)
+    - Assembly-based number formatting for whole numbers
+    - Efficient map-to-bytes conversion for string variables
 - **Lists**: Literal syntax `[1, 2, 3]`, stored as `map[uint64]float64`
 - **Maps**: Literal syntax `{1: 25, 2: 30}`, native `map[uint64]float64`
 - **Indexing**: Unified SIMD-optimized indexing for all container types
