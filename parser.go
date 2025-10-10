@@ -2586,6 +2586,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.trackFunctionCall("_flap_string_eq")
 				fc.out.CallSymbol("_flap_string_eq")
 
+				// Restore stack alignment
 				fc.out.AddImmToReg("rsp", 8)
 
 				// Result (1.0 or 0.0) is in xmm0
@@ -3822,54 +3823,13 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	fc.eb.MarkLabel("_flap_string_eq")
 
-	// Function prologue
+	// Minimal test: just return 1.0 always
 	fc.out.PushReg("rbp")
 	fc.out.MovRegToReg("rbp", "rsp")
 
-	// Check if pointers are equal (optimization for same literal)
-	fc.out.Emit([]byte{0x48, 0x39, 0xf7})     // cmp rdi, rsi
-	fc.out.Emit([]byte{0x74, 0x13})           // je +19 (to return_true)
-
-	// Save callee-saved registers
-	fc.out.PushReg("rbx")
-	fc.out.PushReg("r12")
-	fc.out.PushReg("r13")
-
-	// Save arguments
-	fc.out.MovRegToReg("r12", "rdi")          // r12 = left_ptr
-	fc.out.MovRegToReg("r13", "rsi")          // r13 = right_ptr
-
-	// Get left string length
-	fc.out.MovMemToXmm("xmm0", "r12", 0)      // load count as float64
-	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2c, 0xd8}) // cvttsd2si rbx, xmm0
-
-	// Get right string length
-	fc.out.MovMemToXmm("xmm1", "r13", 0)      // load count as float64
-	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2c, 0xc1}) // cvttsd2si rax, xmm1
-
-	// Compare lengths - if different, return 0.0
-	fc.out.Emit([]byte{0x48, 0x39, 0xc3})     // cmp rbx, rax
-	fc.out.Emit([]byte{0x75, 0x12})           // jne +18 (to return_false)
-
-	// For now, if lengths match, return 1.0 (TODO: compare chars)
-	fc.out.PopReg("r13")
-	fc.out.PopReg("r12")
-	fc.out.PopReg("rbx")
-
-	// Return 1.0 (equal)
 	fc.out.MovImmToReg("rax", "1")
 	fc.out.Cvtsi2sd("xmm0", "rax")
-	fc.out.PopReg("rbp")
-	fc.out.Ret()
 
-	// Return 0.0 (not equal)
-	fc.out.PopReg("r13")
-	fc.out.PopReg("r12")
-	fc.out.PopReg("rbx")
-	fc.out.XorRegWithReg("rax", "rax")
-	fc.out.Cvtsi2sd("xmm0", "rax")
-
-	// Function epilogue
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 }
