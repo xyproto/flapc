@@ -1193,22 +1193,23 @@ func (p *Parser) parsePrimary() Expression {
 
 // Code Generator for Flap
 type FlapCompiler struct {
-	eb            *ExecutableBuilder
-	out           *Out
-	variables     map[string]int    // variable name -> stack offset
-	mutableVars   map[string]bool   // variable name -> is mutable
-	varTypes      map[string]string // variable name -> "map" or "list"
-	sourceCode    string            // Store source for recompilation
-	usedFunctions map[string]bool   // Track which functions are called
-	callOrder     []string          // Track order of function calls
-	stringCounter int               // Counter for unique string labels
-	stackOffset   int               // Current stack offset for variables
-	labelCounter  int               // Counter for unique labels (if/else, loops, etc)
-	lambdaCounter   int               // Counter for unique lambda function names
-	lambdaFuncs     []LambdaFunc      // List of lambda functions to generate
-	lambdaOffsets   map[string]int    // Lambda name -> offset in .text
-	currentLambda   *LambdaFunc       // Currently compiling lambda (for "me" self-reference)
-	lambdaBodyStart int               // Offset where lambda body starts (for tail recursion)
+	eb               *ExecutableBuilder
+	out              *Out
+	variables        map[string]int    // variable name -> stack offset
+	mutableVars      map[string]bool   // variable name -> is mutable
+	varTypes         map[string]string // variable name -> "map" or "list"
+	sourceCode       string            // Store source for recompilation
+	usedFunctions    map[string]bool   // Track which functions are called
+	unknownFunctions map[string]bool   // Track functions called but not defined
+	callOrder        []string          // Track order of function calls
+	stringCounter    int               // Counter for unique string labels
+	stackOffset      int               // Current stack offset for variables
+	labelCounter     int               // Counter for unique labels (if/else, loops, etc)
+	lambdaCounter    int               // Counter for unique lambda function names
+	lambdaFuncs      []LambdaFunc      // List of lambda functions to generate
+	lambdaOffsets    map[string]int    // Lambda name -> offset in .text
+	currentLambda    *LambdaFunc       // Currently compiling lambda (for "me" self-reference)
+	lambdaBodyStart  int               // Offset where lambda body starts (for tail recursion)
 }
 
 type LambdaFunc struct {
@@ -1236,14 +1237,15 @@ func NewFlapCompiler(machine Machine) (*FlapCompiler, error) {
 	}
 
 	return &FlapCompiler{
-		eb:            eb,
-		out:           out,
-		variables:     make(map[string]int),
-		mutableVars:   make(map[string]bool),
-		varTypes:      make(map[string]string),
-		usedFunctions: make(map[string]bool),
-		callOrder:     []string{},
-		lambdaOffsets: make(map[string]int),
+		eb:               eb,
+		out:              out,
+		variables:        make(map[string]int),
+		mutableVars:      make(map[string]bool),
+		varTypes:         make(map[string]string),
+		usedFunctions:    make(map[string]bool),
+		unknownFunctions: make(map[string]bool),
+		callOrder:        []string{},
+		lambdaOffsets:    make(map[string]int),
 	}, nil
 }
 
@@ -1403,6 +1405,11 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 	fc.out.XorRegWithReg("rax", "rax")
 	fc.out.XorRegWithReg("rdi", "rdi")
 	fc.out.XorRegWithReg("rsi", "rsi")
+
+	// Re-define format strings for printf
+	fc.eb.Define("fmt_str", "%s\x00")
+	fc.eb.Define("fmt_int", "%ld\n\x00")
+	fc.eb.Define("fmt_float", "%.0f\n\x00")
 
 	// ===== AVX-512 CPU DETECTION (regenerated) =====
 	fc.eb.Define("cpu_has_avx512", "\x00") // 1 byte: 0=no, 1=yes
@@ -3235,7 +3242,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		arg := call.Args[0]
 		argType := fc.getExprType(arg)
 
-		if strExpr, ok := arg.(*StringExpr); ok {
+		if strExpr, ok := arg.(*StringExpr); ok{
 			// String literal - optimize by generating C string directly
 			labelName := fmt.Sprintf("cstr_%d", fc.stringCounter)
 			fc.stringCounter++
@@ -3829,6 +3836,36 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.FstpMem("rsp", 0)
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
 		fc.out.AddImmToReg("rsp", 16)
+
+	default:
+		// Unknown function - track it for dependency resolution
+		fc.unknownFunctions[call.Function] = true
+		fc.trackFunctionCall(call.Function)
+
+		// For now, generate a call instruction hoping it will be resolved
+		// In the future, this will be resolved by loading from dependency repos
+
+		// Arguments are passed in xmm0-xmm5 (up to 6 args)
+		// Compile arguments in order
+		for i, arg := range call.Args {
+			fc.compileExpression(arg)
+			if i < len(call.Args)-1 {
+				// Save result to stack if not the last arg
+				fc.out.SubImmFromReg("rsp", 8)
+				fc.out.MovXmmToMem("xmm0", "rsp", 0)
+			}
+		}
+
+		// Restore arguments from stack in reverse order to registers
+		// Last arg is already in xmm0
+		for i := len(call.Args) - 2; i >= 0 && i >= 0; i-- {
+			regName := fmt.Sprintf("xmm%d", i)
+			fc.out.MovMemToXmm(regName, "rsp", 0)
+			fc.out.AddImmToReg("rsp", 8)
+		}
+
+		// Generate call instruction
+		fc.eb.GenerateCallInstruction(call.Function)
 	}
 }
 
@@ -3917,6 +3954,116 @@ func (fc *FlapCompiler) trackFunctionCall(funcName string) {
 	fc.callOrder = append(fc.callOrder, funcName)
 }
 
+// collectFunctionCalls walks an expression and collects all function calls
+func collectFunctionCalls(expr Expression, calls map[string]bool) {
+	if expr == nil {
+		return
+	}
+
+	switch e := expr.(type) {
+	case *CallExpr:
+		calls[e.Function] = true
+		for _, arg := range e.Args {
+			collectFunctionCalls(arg, calls)
+		}
+	case *BinaryExpr:
+		collectFunctionCalls(e.Left, calls)
+		collectFunctionCalls(e.Right, calls)
+	case *PipeExpr:
+		collectFunctionCalls(e.Left, calls)
+		collectFunctionCalls(e.Right, calls)
+	case *ConcurrentGatherExpr:
+		collectFunctionCalls(e.Left, calls)
+		collectFunctionCalls(e.Right, calls)
+	case *MatchExpr:
+		collectFunctionCalls(e.Condition, calls)
+		collectFunctionCalls(e.TrueExpr, calls)
+		collectFunctionCalls(e.DefaultExpr, calls)
+	case *LambdaExpr:
+		collectFunctionCalls(e.Body, calls)
+	case *ListExpr:
+		for _, elem := range e.Elements {
+			collectFunctionCalls(elem, calls)
+		}
+	case *MapExpr:
+		for i := range e.Keys {
+			collectFunctionCalls(e.Keys[i], calls)
+			collectFunctionCalls(e.Values[i], calls)
+		}
+	case *IndexExpr:
+		collectFunctionCalls(e.List, calls)
+		collectFunctionCalls(e.Index, calls)
+	case *LengthExpr:
+		collectFunctionCalls(e.Operand, calls)
+	}
+}
+
+// collectFunctionCallsFromStmt walks a statement and collects all function calls
+func collectFunctionCallsFromStmt(stmt Statement, calls map[string]bool) {
+	if stmt == nil {
+		return
+	}
+
+	switch s := stmt.(type) {
+	case *AssignStmt:
+		collectFunctionCalls(s.Value, calls)
+	case *ExpressionStmt:
+		collectFunctionCalls(s.Expr, calls)
+	case *LoopStmt:
+		collectFunctionCalls(s.Iterable, calls)
+		for _, bodyStmt := range s.Body {
+			collectFunctionCallsFromStmt(bodyStmt, calls)
+		}
+	}
+}
+
+// collectDefinedFunctions returns a set of function names defined in a program
+func collectDefinedFunctions(program *Program) map[string]bool {
+	defined := make(map[string]bool)
+
+	for _, stmt := range program.Statements {
+		if assign, ok := stmt.(*AssignStmt); ok {
+			// Check if the value is a lambda (function definition)
+			if _, isLambda := assign.Value.(*LambdaExpr); isLambda {
+				defined[assign.Name] = true
+			}
+		}
+	}
+
+	return defined
+}
+
+// getUnknownFunctions determines which functions are called but not defined
+func getUnknownFunctions(program *Program) []string {
+	// Builtin functions that are always available
+	builtins := map[string]bool{
+		"println": true, "printf": true, "exit": true, "syscall": true,
+		"getpid": true, "sqrt": true, "sin": true, "cos": true, "tan": true,
+		"atan": true, "asin": true, "acos": true, "abs": true,
+		"floor": true, "ceil": true, "round": true, "log": true, "exp": true,
+		"pow": true, "range": true, "me": true,
+	}
+
+	// Collect all function calls
+	calls := make(map[string]bool)
+	for _, stmt := range program.Statements {
+		collectFunctionCallsFromStmt(stmt, calls)
+	}
+
+	// Collect all defined functions
+	defined := collectDefinedFunctions(program)
+
+	// Find unknown functions (called but not builtin and not defined)
+	var unknown []string
+	for funcName := range calls {
+		if !builtins[funcName] && !defined[funcName] {
+			unknown = append(unknown, funcName)
+		}
+	}
+
+	return unknown
+}
+
 func CompileFlap(inputPath string, outputPath string) error {
 	// Read input file
 	content, err := os.ReadFile(inputPath)
@@ -3924,11 +4071,53 @@ func CompileFlap(inputPath string, outputPath string) error {
 		return fmt.Errorf("failed to read %s: %v", inputPath, err)
 	}
 
-	// Parse
+	// Parse main file
 	parser := NewParserWithFilename(string(content), inputPath)
 	program := parser.ParseProgram()
 
 	fmt.Fprintf(os.Stderr, "Parsed program:\n%s\n", program.String())
+
+	// Check for unknown functions and resolve dependencies
+	unknownFuncs := getUnknownFunctions(program)
+	if len(unknownFuncs) > 0 {
+		fmt.Fprintf(os.Stderr, "Resolving dependencies for: %v\n", unknownFuncs)
+
+		// Resolve dependencies
+		repos := ResolveDependencies(unknownFuncs)
+		if len(repos) > 0 {
+			fmt.Fprintf(os.Stderr, "Loading dependencies from %d repositories\n", len(repos))
+
+			// Ensure all repositories are cloned/updated
+			for _, repoURL := range repos {
+				repoPath, err := EnsureRepoCloned(repoURL, UpdateDepsFlag)
+				if err != nil {
+					return fmt.Errorf("failed to fetch dependency %s: %v", repoURL, err)
+				}
+
+				// Find all .flap files in the repository
+				flapFiles, err := FindFlapFiles(repoPath)
+				if err != nil {
+					return fmt.Errorf("failed to find .flap files in %s: %v", repoPath, err)
+				}
+
+				// Parse and merge each .flap file
+				for _, flapFile := range flapFiles {
+					depContent, err := os.ReadFile(flapFile)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "Warning: failed to read %s: %v\n", flapFile, err)
+						continue
+					}
+
+					depParser := NewParserWithFilename(string(depContent), flapFile)
+					depProgram := depParser.ParseProgram()
+
+					// Merge dependency program into main program
+					program.Statements = append(program.Statements, depProgram.Statements...)
+					fmt.Fprintf(os.Stderr, "Loaded %s from %s\n", flapFile, repoURL)
+				}
+			}
+		}
+	}
 
 	// Compile
 	compiler, err := NewFlapCompiler(MachineX86_64)

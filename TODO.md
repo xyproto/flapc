@@ -170,3 +170,77 @@ Release when:
 4. Clean up code (refactor)
 5. Update this TODO
 6. Repeat until 1.0.0
+
+---
+
+## Automatic Dependency Resolution Implementation
+
+### Phase 1: Basic Infrastructure ✓ (Planned)
+- [ ] Create `dependencies.go` with function→repo map
+- [ ] Add initial mappings:
+  - `abs`, `sin`, `cos`, `tan`, `sqrt`, `pow` → `github.com/xyproto/flap_math`
+  - `println` → `github.com/xyproto/flap_stdlib`
+- [ ] Implement `~/.cache/flapc/` directory creation
+- [ ] Add `--update-deps` flag to main.go
+
+### Phase 2: Git Integration
+- [ ] Implement `gitClone(repoURL, destPath string) error`
+- [ ] Implement `gitPull(repoPath string) error`  
+- [ ] Handle HTTPS vs SSH URLs
+- [ ] Cache validation (check if repo exists, is up-to-date)
+- [ ] Error handling for network failures
+
+### Phase 3: Multi-File Compilation
+- [ ] Modify parser to track unknown function calls
+- [ ] Collect all unknown functions before compilation
+- [ ] Resolve repositories needed (deduplicate)
+- [ ] Load all `.flap` files from dependency repos
+- [ ] Parse and merge ASTs from multiple files
+- [ ] Resolve function definitions across files
+
+### Phase 4: Advanced Features
+- [ ] User-local config: `~/.config/flapc/deps.toml`
+- [ ] Per-project config: `flap.toml` in project root
+- [ ] Version pinning: `abs@v1.2.3 -> github.com/xyproto/flap_math`
+- [ ] Git tag/commit support
+- [ ] Dependency conflict resolution
+- [ ] Circular dependency detection
+
+### Implementation Notes
+
+**Key Design Decisions:**
+1. Clone entire repo, not individual files (simpler, supports library organization)
+2. Cache by full repo URL (not by function name)
+3. Include ALL `.flap` files from repo (explicit export list not needed)
+4. No dependency declaration in Flap code (zero boilerplate)
+
+**Cache Structure:**
+```
+~/.cache/flapc/
+├── github.com/
+│   └── xyproto/
+│       ├── flap_math/
+│       │   ├── abs.flap
+│       │   ├── trig.flap
+│       │   └── pow.flap
+│       └── flap_raylib/
+│           └── window.flap
+└── gitlab.com/
+    └── user/
+        └── project/
+```
+
+**Compilation Flow:**
+1. Parse main file → collect unknown functions
+2. Look up each function in hardcoded map
+3. For each unique repo: clone/update if needed
+4. Find all `.flap` files in cached repos
+5. Parse all files into single combined AST
+6. Compile as one unit (existing code handles this)
+
+**Error Handling:**
+- Unknown function with no mapping → clear error message
+- Git clone failure → suggest network check or manual clone
+- Conflicting function definitions → show file locations
+- Circular dependencies → detect and report cycle
+

@@ -592,9 +592,10 @@ func (eb *ExecutableBuilder) patchTextInELF() {
 	eb.elf.Write(elfBuf)
 }
 
-// Global flags for controlling output verbosity
+// Global flags for controlling output verbosity and dependencies
 var QuietMode bool
 var VerboseMode bool
+var UpdateDepsFlag bool
 
 func main() {
 	const defaultOutputFilename = "/tmp/main"
@@ -607,7 +608,11 @@ func main() {
 	var versionLong = flag.Bool("version", false, "print version information and exit")
 	var quiet = flag.Bool("q", false, "quiet mode (suppress mnemonic output)")
 	var verbose = flag.Bool("verbose", false, "verbose mode (show detailed compilation info)")
+	var updateDeps = flag.Bool("update-deps", false, "update all dependency repositories from Git")
 	flag.Parse()
+
+	// Set global update-deps flag
+	UpdateDepsFlag = *updateDeps
 
 	if *version || *versionLong {
 		fmt.Println(versionString)

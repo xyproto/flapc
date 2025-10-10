@@ -679,3 +679,82 @@ The language aims for maximum expressiveness with minimum complexity, backed by 
 3. **Simple foundation** - map[uint64]float64 + float64 + functions
 4. **Functional style** - Immutability preferred, mutation explicit
 5. **No magic** - What you see is what you get
+
+## Automatic Dependency Resolution
+
+Flap uses automatic dependency resolution - there are no explicit `import` statements. When the compiler encounters an unknown function, it automatically fetches and compiles the required code from predefined repositories.
+
+### How It Works
+
+The `flapc` compiler maintains a hard-coded map of function names to Git repository URLs:
+
+```
+abs       -> github.com/xyproto/flap_math
+sin       -> github.com/xyproto/flap_math
+cos       -> github.com/xyproto/flap_math
+tan       -> github.com/xyproto/flap_math
+InitWindow -> github.com/xyproto/flap_raylib
+```
+
+When compiling code that calls an unknown function:
+
+1. **Resolution**: The compiler looks up the function in its repository map
+2. **Caching**: It clones the repository to `~/.cache/flapc/<repo-url>/`
+3. **Integration**: All `.flap` files from the repository are added to the compilation
+4. **Compilation**: The combined code is compiled as a single unit
+
+### Example
+
+```flap
+// No import needed!
+x := -5
+y := abs(x)      // Compiler automatically fetches flap_math
+println(y)       // Outputs: 5
+```
+
+When this code is compiled:
+1. Compiler encounters `abs()`
+2. Looks up `abs` → `github.com/xyproto/flap_math`
+3. Clones repo to `~/.cache/flapc/github.com/xyproto/flap_math/`
+4. Includes all `.flap` files from that repo
+5. Compiles everything together
+
+### Benefits
+
+- **Zero boilerplate**: No import statements needed
+- **Automatic updates**: Repositories can be re-fetched with `--update-deps`
+- **Simple distribution**: Just write functions and push to Git
+- **Dependency isolation**: Each repo is versioned and cached separately
+
+### Cache Management
+
+```bash
+# View cached dependencies
+ls ~/.cache/flapc/
+
+# Update all dependencies
+flapc --update-deps myprogram.flap
+
+# Clear cache
+rm -rf ~/.cache/flapc/
+```
+
+### Creating a Library
+
+To create a Flap library:
+
+1. Create a Git repository
+2. Write pure Flap code defining functions
+3. Add your functions to the compiler's repository map (via PR or local config)
+4. Users can immediately use your functions without imports
+
+Example `flap_math` repository structure:
+```
+flap_math/
+├── abs.flap
+├── trig.flap
+├── pow.flap
+└── README.md
+```
+
+Each `.flap` file contains pure Flap function definitions that will be automatically included when needed.
