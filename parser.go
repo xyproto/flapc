@@ -341,6 +341,7 @@ func (e *ExpressionStmt) String() string { return e.Expr.String() }
 func (e *ExpressionStmt) statementNode() {}
 
 type LoopStmt struct {
+	Label    int        // Loop label number (e.g., 1 for @1)
 	Iterator string     // Variable name (e.g., "i")
 	Iterable Expression // Expression to iterate over (e.g., range(10))
 	Body     []Statement
@@ -348,7 +349,7 @@ type LoopStmt struct {
 
 func (l *LoopStmt) String() string {
 	var out strings.Builder
-	out.WriteString("@ ")
+	out.WriteString(fmt.Sprintf("@%d ", l.Label))
 	out.WriteString(l.Iterator)
 	out.WriteString(" in ")
 	out.WriteString(l.Iterable.String())
@@ -362,6 +363,18 @@ func (l *LoopStmt) String() string {
 	return out.String()
 }
 func (l *LoopStmt) statementNode() {}
+
+// JumpStmt represents a jump to a loop label (@N)
+// @0 = break out to outer scope
+// @N = continue/break to loop with label N
+type JumpStmt struct {
+	Label int // Target label (0 = outer scope, N = loop label)
+}
+
+func (j *JumpStmt) String() string {
+	return fmt.Sprintf("@%d", j.Label)
+}
+func (j *JumpStmt) statementNode() {}
 
 type Expression interface {
 	Node
@@ -727,9 +740,21 @@ func foldConstantExpr(expr Expression) Expression {
 }
 
 func (p *Parser) parseStatement() Statement {
-	// Check for loop statement
+	// Check for @ (either loop @N or jump @N)
 	if p.current.Type == TOKEN_AT {
-		return p.parseLoopStatement()
+		// Look ahead to distinguish loop vs jump
+		// Loop: @N identifier in ...
+		// Jump: @N (followed by newline, semicolon, or })
+		if p.peek.Type == TOKEN_NUMBER {
+			// We need to peek further to distinguish loop from jump
+			// For now, let's just parse as loop if it matches the pattern
+			// Otherwise treat as jump
+
+			// Simple heuristic: if @ NUMBER IDENTIFIER, it's a loop
+			// We can't easily look 2 tokens ahead, so we'll just try parsing as loop first
+			return p.parseLoopStatement()
+		}
+		p.error("expected number after @ (e.g., @1, @2, @0)")
 	}
 
 	// Check for assignment (both = and :=)
@@ -792,13 +817,36 @@ func (p *Parser) parseAssignment() *AssignStmt {
 	return &AssignStmt{Name: name, Value: value, Mutable: mutable}
 }
 
-func (p *Parser) parseLoopStatement() *LoopStmt {
+func (p *Parser) parseLoopStatement() Statement {
 	p.nextToken() // skip '@'
 
-	// Expect identifier for iterator variable
-	if p.current.Type != TOKEN_IDENT {
-		p.error("expected identifier after @ in loop")
+	// Expect number for loop label
+	if p.current.Type != TOKEN_NUMBER {
+		p.error("expected number after @ (e.g., @1, @2, @0)")
 	}
+
+	labelNum, err := strconv.ParseFloat(p.current.Value, 64)
+	if err != nil {
+		p.error("invalid loop label number")
+	}
+	label := int(labelNum)
+
+	p.nextToken() // skip label number
+
+	// Check if next is identifier (loop) or not (jump)
+	if p.current.Type != TOKEN_IDENT {
+		// It's a jump statement: @N
+		if label < 0 {
+			p.error("jump label must be >= 0 (use @0, @1, @2, etc.)")
+		}
+		return &JumpStmt{Label: label}
+	}
+
+	// It's a loop statement
+	if label < 1 {
+		p.error("loop label must be >= 1 (use @1, @2, @3, etc.)")
+	}
+
 	iterator := p.current.Value
 
 	p.nextToken() // skip identifier
@@ -849,6 +897,7 @@ func (p *Parser) parseLoopStatement() *LoopStmt {
 	p.nextToken() // skip to '}'
 
 	return &LoopStmt{
+		Label:    label,
 		Iterator: iterator,
 		Iterable: iterable,
 		Body:     body,
@@ -1191,6 +1240,13 @@ func (p *Parser) parsePrimary() Expression {
 	return nil
 }
 
+// LoopInfo tracks information about an active loop during compilation
+type LoopInfo struct {
+	Label      int // Loop label (@1, @2, @3, etc.)
+	StartPos   int // Code position of loop start (for continue/jump back)
+	EndPatches []int // Positions that need to be patched to jump to loop end
+}
+
 // Code Generator for Flap
 type FlapCompiler struct {
 	eb               *ExecutableBuilder
@@ -1206,6 +1262,7 @@ type FlapCompiler struct {
 	stackOffset      int               // Current stack offset for variables
 	labelCounter     int               // Counter for unique labels (if/else, loops, etc)
 	lambdaCounter    int               // Counter for unique lambda function names
+	activeLoops      []LoopInfo        // Stack of active loops (for @N jump resolution)
 	lambdaFuncs      []LambdaFunc      // List of lambda functions to generate
 	lambdaOffsets    map[string]int    // Lambda name -> offset in .text
 	currentLambda    *LambdaFunc       // Currently compiling lambda (for "me" self-reference)
@@ -1533,6 +1590,9 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 	case *LoopStmt:
 		fc.compileLoopStatement(s)
 
+	case *JumpStmt:
+		fc.compileJumpStatement(s)
+
 	case *ExpressionStmt:
 		fc.compileExpression(s.Expr)
 	}
@@ -1587,6 +1647,14 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, funcCall *CallExpr) {
 	// Loop start label
 	loopStartPos := fc.eb.text.Len()
 
+	// Register this loop on the active loop stack
+	loopInfo := LoopInfo{
+		Label:      stmt.Label,
+		StartPos:   loopStartPos,
+		EndPatches: []int{},
+	}
+	fc.activeLoops = append(fc.activeLoops, loopInfo)
+
 	// Load iterator value as float: movsd xmm0, [rbp - iterOffset]
 	fc.out.MovMemToXmm("xmm0", "rbp", -iterOffset)
 
@@ -1602,6 +1670,12 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, funcCall *CallExpr) {
 	// Jump to loop end if iterator >= limit
 	loopEndJumpPos := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpGreaterOrEqual, 0) // Placeholder
+
+	// Add this to the loop's end patches
+	fc.activeLoops[len(fc.activeLoops)-1].EndPatches = append(
+		fc.activeLoops[len(fc.activeLoops)-1].EndPatches,
+		loopEndJumpPos+2, // +2 to skip to the offset field
+	)
 
 	// Compile loop body
 	for _, s := range stmt.Body {
@@ -1628,10 +1702,14 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, funcCall *CallExpr) {
 	// Loop end label
 	loopEndPos := fc.eb.text.Len()
 
-	// Patch the conditional jump to loop end
-	endOffset := int32(loopEndPos - (loopEndJumpPos + 6)) // 6 bytes for conditional jump
-	fmt.Fprintf(os.Stderr, "DEBUG LOOP: Patching conditional jump at %d to target %d, offset=%d\n", loopEndJumpPos, loopEndPos, endOffset)
-	fc.patchJumpImmediate(loopEndJumpPos+2, endOffset) // +2 to skip 0F 8x
+	// Patch all end jumps (conditional jump + any @0 breaks)
+	for _, patchPos := range fc.activeLoops[len(fc.activeLoops)-1].EndPatches {
+		endOffset := int32(loopEndPos - (patchPos + 4)) // 4 bytes for 32-bit offset
+		fc.patchJumpImmediate(patchPos, endOffset)
+	}
+
+	// Pop loop from active stack
+	fc.activeLoops = fc.activeLoops[:len(fc.activeLoops)-1]
 }
 
 func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
@@ -1685,6 +1763,14 @@ func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
 	// Loop start label
 	loopStartPos := fc.eb.text.Len()
 
+	// Register this loop on the active loop stack
+	loopInfo := LoopInfo{
+		Label:      stmt.Label,
+		StartPos:   loopStartPos,
+		EndPatches: []int{},
+	}
+	fc.activeLoops = append(fc.activeLoops, loopInfo)
+
 	// Load index: mov rax, [rbp - indexOffset]
 	fc.out.MovMemToReg("rax", "rbp", -indexOffset)
 
@@ -1697,6 +1783,12 @@ func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
 	// Jump to loop end if index >= length
 	loopEndJumpPos := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpGreaterOrEqual, 0) // Placeholder
+
+	// Add this to the loop's end patches
+	fc.activeLoops[len(fc.activeLoops)-1].EndPatches = append(
+		fc.activeLoops[len(fc.activeLoops)-1].EndPatches,
+		loopEndJumpPos+2, // +2 to skip to the offset field
+	)
 
 	// Load list pointer from stack to rbx
 	fc.out.MovMemToXmm("xmm1", "rbp", -listPtrOffset)
@@ -1741,9 +1833,49 @@ func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
 	// Loop end label
 	loopEndPos := fc.eb.text.Len()
 
-	// Patch the conditional jump to loop end
-	endOffset := int32(loopEndPos - (loopEndJumpPos + 6)) // 6 bytes for conditional jump
-	fc.patchJumpImmediate(loopEndJumpPos+2, endOffset)    // +2 to skip 0F 8x
+	// Patch all end jumps (conditional jump + any @0 breaks)
+	for _, patchPos := range fc.activeLoops[len(fc.activeLoops)-1].EndPatches {
+		endOffset := int32(loopEndPos - (patchPos + 4)) // 4 bytes for 32-bit offset
+		fc.patchJumpImmediate(patchPos, endOffset)
+	}
+
+	// Pop loop from active stack
+	fc.activeLoops = fc.activeLoops[:len(fc.activeLoops)-1]
+}
+
+func (fc *FlapCompiler) compileJumpStatement(stmt *JumpStmt) {
+	if stmt.Label == 0 {
+		// @0 = break to outer scope (jump to end of innermost loop)
+		if len(fc.activeLoops) == 0 {
+			fmt.Fprintf(os.Stderr, "Error: @0 used outside of loop\n")
+			os.Exit(1)
+		}
+		// Add this jump position to the innermost loop's end patches
+		jumpPos := fc.eb.text.Len()
+		fc.out.JumpUnconditional(0) // Placeholder
+		fc.activeLoops[len(fc.activeLoops)-1].EndPatches = append(
+			fc.activeLoops[len(fc.activeLoops)-1].EndPatches,
+			jumpPos+1, // +1 to skip the opcode byte
+		)
+	} else {
+		// @N = jump back to loop N (continue)
+		// Find the loop with matching label
+		var targetLoop *LoopInfo
+		for i := len(fc.activeLoops) - 1; i >= 0; i-- {
+			if fc.activeLoops[i].Label == stmt.Label {
+				targetLoop = &fc.activeLoops[i]
+				break
+			}
+		}
+		if targetLoop == nil {
+			fmt.Fprintf(os.Stderr, "Error: @%d references undefined loop label\n", stmt.Label)
+			os.Exit(1)
+		}
+		// Jump back to loop start
+		jumpPos := fc.eb.text.Len()
+		backOffset := int32(targetLoop.StartPos - (jumpPos + 5)) // 5 bytes for unconditional jump
+		fc.out.JumpUnconditional(backOffset)
+	}
 }
 
 func (fc *FlapCompiler) patchJumpImmediate(pos int, offset int32) {

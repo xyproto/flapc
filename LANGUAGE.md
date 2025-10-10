@@ -94,14 +94,30 @@ result = empty[1]    // returns 0.0 (empty map)
 
 result = 5 in mylist  // returns 1.0 or 0.0
 
-// Loops
-for i in range(5) {
+// Loops with labels
+@1 i in range(5) {
     println(i)
 }
 
-for item in mylist {
+@1 item in mylist {
     println(item)
 }
+
+// Nested loops with different labels
+@1 i in range(3) {
+    @2 j in range(3) {
+        printf("%v,%v ", i, j)
+    }
+}
+
+// Jump statements
+// @0 jumps out of current loop (equivalent to "break")
+// @N jumps back to loop label N (equivalent to "continue")
+//
+// Planned convenience aliases:
+// - "for" = @(N+1) auto-increment
+// - "break" = @(N-1) jump out
+// - "continue" = @N jump to start
 
 // Lambdas (up to 6 parameters)
 double = (x) -> x * 2

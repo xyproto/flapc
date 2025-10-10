@@ -1,7 +1,7 @@
 // parallel_test.flap - test parallel operator
 numbers = [1, 2, 3, 4, 5]
 doubled = numbers || (x) -> x * 2
-@ val in doubled {
+@1 val in doubled {
     println(val)
 }
 exit(0)
