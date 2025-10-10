@@ -2977,6 +2977,86 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// Function epilogue
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
+
+	// Generate flap_string_to_cstr(flap_string_ptr) -> cstr_ptr
+	// Converts a Flap string (map format) to a null-terminated C string
+	// Argument: xmm0 = Flap string pointer (as float64)
+	// Returns: rax = C string pointer
+	fc.eb.MarkLabel("flap_string_to_cstr")
+
+	// Function prologue
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+
+	// Save callee-saved registers
+	fc.out.PushReg("rbx")
+	fc.out.PushReg("r12")
+	fc.out.PushReg("r13")
+
+	// Align stack
+	fc.out.SubImmFromReg("rsp", 8)
+
+	// Convert float64 pointer to integer pointer in r12
+	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.MovXmmToMem("xmm0", "rsp", 0)
+	fc.out.MovMemToReg("r12", "rsp", 0)
+	fc.out.AddImmToReg("rsp", 8)
+
+	// Get string length from map: count = [r12+0]
+	fc.out.MovMemToXmm("xmm0", "r12", 0)
+	fc.out.Emit([]byte{0xf2, 0x4c, 0x0f, 0x2c, 0xd8}) // cvttsd2si r11, xmm0 (r11 = count)
+
+	// Allocate memory: malloc(count + 1) for null terminator
+	fc.out.MovRegToReg("rdi", "r11")
+	fc.out.Emit([]byte{0x48, 0x83, 0xc7, 0x01}) // add rdi, 1
+	fc.trackFunctionCall("malloc")
+	fc.eb.GenerateCallInstruction("malloc")
+	fc.out.MovRegToReg("r13", "rax") // r13 = C string buffer
+
+	// Initialize: rbx = current index, r12 = map ptr, r13 = cstr ptr, r11 = count
+	fc.out.XorRegWithReg("rbx", "rbx") // rbx = 0 (current index)
+
+	// Loop through map entries to extract characters
+	fc.eb.MarkLabel("_cstr_convert_loop")
+	fc.out.Emit([]byte{0x4c, 0x39, 0xdb}) // cmp rbx, r11
+	fc.out.Emit([]byte{0x74, 0x28})       // je +40 bytes (exit loop)
+
+	// Calculate map entry offset: 8 + (rbx * 16) for [count][key0][val0][key1][val1]...
+	fc.out.MovRegToReg("rax", "rbx")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x04}) // shl rax, 4 (multiply by 16)
+	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x08}) // add rax, 8
+
+	// Load character code: xmm0 = [r12 + rax + 8] (value field)
+	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x10, 0x04, 0x04})       // movsd xmm0, [r12 + rax]
+	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x10, 0x44, 0x04, 0x08}) // movsd xmm0, [r12 + rax + 8]
+
+	// Convert character code to byte
+	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2c, 0xc0}) // cvttsd2si rax, xmm0
+
+	// Store character: [r13 + rbx] = al
+	fc.out.Emit([]byte{0x41, 0x88, 0x04, 0x1d}) // mov [r13 + rbx], al
+
+	// Increment index
+	fc.out.Emit([]byte{0x48, 0xff, 0xc3}) // inc rbx
+	fc.out.Emit([]byte{0xeb, 0xd4})       // jmp _cstr_convert_loop (-44 bytes)
+
+	// Add null terminator: [r13 + r11] = 0
+	fc.out.Emit([]byte{0x43, 0xc6, 0x04, 0x1d, 0x00}) // mov byte [r13 + r11], 0
+
+	// Return C string pointer in rax
+	fc.out.MovRegToReg("rax", "r13")
+
+	// Restore stack alignment
+	fc.out.AddImmToReg("rsp", 8)
+
+	// Restore callee-saved registers
+	fc.out.PopReg("r13")
+	fc.out.PopReg("r12")
+	fc.out.PopReg("rbx")
+
+	// Function epilogue
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
 }
 
 func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
@@ -3303,9 +3383,10 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			os.Exit(1)
 		}
 
-		// Process format string: %v -> %g (smart float), %b -> %s (boolean)
+		// Process format string: %v -> %g (smart float), %b -> %s (boolean), %s -> string
 		processedFormat := processEscapeSequences(strExpr.Value)
-		boolPositions := make(map[int]bool) // Track which args are %b (boolean)
+		boolPositions := make(map[int]bool)   // Track which args are %b (boolean)
+		stringPositions := make(map[int]bool) // Track which args are %s (string)
 
 		argPos := 0
 		result := ""
@@ -3331,7 +3412,11 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 					argPos++
 					i += 2
 					continue
-				} else if next == 'f' || next == 'd' || next == 's' || next == 'g' {
+				} else if next == 's' {
+					// %s = string pointer
+					stringPositions[argPos] = true
+					argPos++
+				} else if next == 'f' || next == 'd' || next == 'g' {
 					argPos++
 				}
 			}
@@ -3366,6 +3451,20 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Evaluate all arguments
 		for i := 1; i < len(call.Args); i++ {
 			argIdx := i - 1
+
+			// Special case: string literal arguments for %s
+			if stringPositions[argIdx] {
+				if strExpr, ok := call.Args[i].(*StringExpr); ok {
+					// String literal - load as C string pointer directly
+					labelName := fmt.Sprintf("str_%d", fc.stringCounter)
+					fc.stringCounter++
+					fc.eb.Define(labelName, strExpr.Value+"\x00")
+					fc.out.LeaSymbolToReg(intRegs[intArgCount], labelName)
+					intArgCount++
+					continue
+				}
+			}
+
 			fc.compileExpression(call.Args[i])
 
 			if boolPositions[argIdx] {
@@ -3394,6 +3493,14 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 				fc.patchJumpImmediate(noJump+1, int32(endPos-noJumpEnd))
 
 				intArgCount++
+			} else if stringPositions[argIdx] {
+				// %s: Flap string -> C string conversion
+				// xmm0 contains pointer to Flap string map [count][key0][val0][key1][val1]...
+				// Call helper function to convert to null-terminated C string
+				fc.out.CallSymbol("flap_string_to_cstr")
+				// Result in rax is C string pointer
+				fc.out.MovRegToReg(intRegs[intArgCount], "rax")
+				intArgCount++
 			} else {
 				// Regular float argument (%v, %f, %g, etc)
 				fc.out.SubImmFromReg("rsp", 16)
@@ -3403,7 +3510,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Load float arguments from stack into xmm registers (reverse order)
 		for i := numArgs - 1; i >= 0; i-- {
-			if !boolPositions[i] {
+			if !boolPositions[i] && !stringPositions[i] {
 				fc.out.MovMemToXmm(xmmRegs[xmmArgCount], "rsp", 0)
 				fc.out.AddImmToReg("rsp", 16)
 				xmmArgCount++
