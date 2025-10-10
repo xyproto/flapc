@@ -1,3 +1,30 @@
-// Test string concatenation with + operator
-result := "Hello, " + "World!"
-println(result)
+// Test runtime string concatenation
+// s1 + s2 where s1, s2 are variables
+
+// Concatenate two variables
+s1 := "Hello"
+s2 := ", World!"
+result1 := s1 + s2
+println(result1)
+
+// Empty string concatenation
+empty := ""
+s3 := "test"
+result2 := empty + s3
+println(result2)
+
+result3 := s3 + empty
+println(result3)
+
+// Multiple concatenation
+a := "The "
+b := "quick "
+c := "brown "
+d := "fox"
+result4 := a + b + c + d
+println(result4)
+
+// Self concatenation
+s4 := "ab"
+result5 := s4 + s4
+println(result5)

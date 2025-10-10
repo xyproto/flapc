@@ -2274,53 +2274,48 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		// Strings are represented as map[uint64]float64 where keys are indices
 		// and values are character codes
 		// Map format: [count][key0][val0][key1][val1]...
+		// Following Lisp philosophy: even empty strings are objects (count=0), not null
 
-		if len(e.Value) == 0 {
-			// Empty string - return null pointer (0) as float64
-			fc.out.XorRegWithReg("rax", "rax")
-			fc.out.Cvtsi2sd("xmm0", "rax")
-		} else {
-			labelName := fmt.Sprintf("str_%d", fc.stringCounter)
-			fc.stringCounter++
+		labelName := fmt.Sprintf("str_%d", fc.stringCounter)
+		fc.stringCounter++
 
-			// Build map data: count followed by key-value pairs
-			var mapData []byte
+		// Build map data: count followed by key-value pairs
+		var mapData []byte
 
-			// Count (number of characters)
-			count := float64(len(e.Value))
-			countBits := uint64(0)
-			*(*float64)(unsafe.Pointer(&countBits)) = count
-			for i := 0; i < 8; i++ {
-				mapData = append(mapData, byte((countBits>>(i*8))&0xFF))
-			}
-
-			// Add each character as a key-value pair
-			for idx, ch := range e.Value {
-				// Key: character index as float64
-				keyVal := float64(idx)
-				keyBits := uint64(0)
-				*(*float64)(unsafe.Pointer(&keyBits)) = keyVal
-				for i := 0; i < 8; i++ {
-					mapData = append(mapData, byte((keyBits>>(i*8))&0xFF))
-				}
-
-				// Value: character code as float64
-				charVal := float64(ch)
-				charBits := uint64(0)
-				*(*float64)(unsafe.Pointer(&charBits)) = charVal
-				for i := 0; i < 8; i++ {
-					mapData = append(mapData, byte((charBits>>(i*8))&0xFF))
-				}
-			}
-
-			fc.eb.Define(labelName, string(mapData))
-			fc.out.LeaSymbolToReg("rax", labelName)
-			// Convert pointer to float64
-			fc.out.SubImmFromReg("rsp", 8)
-			fc.out.MovRegToMem("rax", "rsp", 0)
-			fc.out.MovMemToXmm("xmm0", "rsp", 0)
-			fc.out.AddImmToReg("rsp", 8)
+		// Count (number of characters) - can be 0 for empty strings
+		count := float64(len(e.Value))
+		countBits := uint64(0)
+		*(*float64)(unsafe.Pointer(&countBits)) = count
+		for i := 0; i < 8; i++ {
+			mapData = append(mapData, byte((countBits>>(i*8))&0xFF))
 		}
+
+		// Add each character as a key-value pair (none for empty strings)
+		for idx, ch := range e.Value {
+			// Key: character index as float64
+			keyVal := float64(idx)
+			keyBits := uint64(0)
+			*(*float64)(unsafe.Pointer(&keyBits)) = keyVal
+			for i := 0; i < 8; i++ {
+				mapData = append(mapData, byte((keyBits>>(i*8))&0xFF))
+			}
+
+			// Value: character code as float64
+			charVal := float64(ch)
+			charBits := uint64(0)
+			*(*float64)(unsafe.Pointer(&charBits)) = charVal
+			for i := 0; i < 8; i++ {
+				mapData = append(mapData, byte((charBits>>(i*8))&0xFF))
+			}
+		}
+
+		fc.eb.Define(labelName, string(mapData))
+		fc.out.LeaSymbolToReg("rax", labelName)
+		// Convert pointer to float64
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovRegToMem("rax", "rsp", 0)
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 8)
 
 	case *IdentExpr:
 		// Load variable from stack into xmm0
