@@ -593,7 +593,6 @@ func (eb *ExecutableBuilder) patchTextInELF() {
 }
 
 // Global flags for controlling output verbosity and dependencies
-var QuietMode bool
 var VerboseMode bool
 var UpdateDepsFlag bool
 
@@ -604,27 +603,24 @@ func main() {
 	var machineLong = flag.String("machine", "x86_64", "target machine architecture (x86_64, amd64, arm64, aarch64, riscv64, riscv, rv64)")
 	var outputFilenameFlag = flag.String("o", defaultOutputFilename, "output executable filename")
 	var outputFilenameLongFlag = flag.String("output", defaultOutputFilename, "output executable filename")
-	var version = flag.Bool("v", false, "print version information and exit")
-	var versionLong = flag.Bool("version", false, "print version information and exit")
-	var quiet = flag.Bool("q", false, "quiet mode (suppress mnemonic output)")
-	var verbose = flag.Bool("verbose", false, "verbose mode (show detailed compilation info)")
-	var updateDeps = flag.Bool("update-deps", false, "update all dependency repositories from Git")
+	var version = flag.Bool("version", false, "print version information and exit")
+	var verbose = flag.Bool("v", false, "verbose mode (show detailed compilation info)")
+	var verboseLong = flag.Bool("verbose", false, "verbose mode (show detailed compilation info)")
+	var updateDeps = flag.Bool("u", false, "update all dependency repositories from Git")
+	var updateDepsLong = flag.Bool("update-deps", false, "update all dependency repositories from Git")
+	var codeFlag = flag.String("c", "", "execute Flap code from command line")
 	flag.Parse()
 
-	// Set global update-deps flag
-	UpdateDepsFlag = *updateDeps
+	// Set global update-deps flag (use whichever was specified)
+	UpdateDepsFlag = *updateDeps || *updateDepsLong
 
-	if *version || *versionLong {
+	if *version {
 		fmt.Println(versionString)
 		os.Exit(0)
 	}
 
-	// Set global verbosity flags
-	QuietMode = *quiet
-	VerboseMode = *verbose
-	if QuietMode && VerboseMode {
-		log.Fatalln("Error: cannot use both -q (quiet) and -verbose flags")
-	}
+	// Set global verbosity flag (use whichever was specified)
+	VerboseMode = *verbose || *verboseLong
 
 	// Use whichever flag was specified (prefer short form if both given)
 	targetMachine := *machine
@@ -641,11 +637,44 @@ func main() {
 	// Get input files from remaining arguments
 	inputFiles := flag.Args()
 
-	fmt.Fprintf(os.Stderr, "----=[ %s ]=----\n", versionString)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "----=[ %s ]=----\n", versionString)
+	}
 
 	eb, err := New(targetMachine)
 	if err != nil {
 		log.Fatalln(err)
+	}
+
+	// Handle -c flag for inline code execution
+	if *codeFlag != "" {
+		// Create a temporary file with the inline code
+		tmpFile, err := os.CreateTemp("", "flapc_*.flap")
+		if err != nil {
+			log.Fatalf("Failed to create temp file: %v", err)
+		}
+		tmpFilename := tmpFile.Name()
+		defer os.Remove(tmpFilename)
+
+		// Write the code to the temp file
+		if _, err := tmpFile.WriteString(*codeFlag); err != nil {
+			tmpFile.Close()
+			log.Fatalf("Failed to write to temp file: %v", err)
+		}
+		tmpFile.Close()
+
+		// Compile the temp file
+		writeToFilename := outputFilename
+		if outputFilename == defaultOutputFilename {
+			writeToFilename = "/tmp/flapc_inline"
+		}
+
+		err = CompileFlap(tmpFilename, writeToFilename)
+		if err != nil {
+			log.Fatalf("Flap compilation error: %v", err)
+		}
+		fmt.Fprintf(os.Stderr, "-> Wrote executable: %s\n", writeToFilename)
+		return
 	}
 
 	if len(inputFiles) > 0 {

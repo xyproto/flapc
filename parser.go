@@ -4036,13 +4036,10 @@ func collectDefinedFunctions(program *Program) map[string]bool {
 
 // getUnknownFunctions determines which functions are called but not defined
 func getUnknownFunctions(program *Program) []string {
-	// Builtin functions that are always available
+	// Builtin functions that are always available (implemented in compiler)
 	builtins := map[string]bool{
-		"println": true, "printf": true, "exit": true, "syscall": true,
-		"getpid": true, "sqrt": true, "sin": true, "cos": true, "tan": true,
-		"atan": true, "asin": true, "acos": true, "abs": true,
-		"floor": true, "ceil": true, "round": true, "log": true, "exp": true,
-		"pow": true, "range": true, "me": true,
+		"printf": true, "exit": true, "syscall": true,
+		"getpid": true, "range": true, "me": true,
 	}
 
 	// Collect all function calls
