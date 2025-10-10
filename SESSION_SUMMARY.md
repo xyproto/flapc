@@ -40,10 +40,25 @@
 - Basic I/O functions (readln, read_file, write_file)
 - Collection functions (map, filter, reduce)
 
-### Latest Session (2025-10-10)
-- **List Concatenation (Compile-time)**: Implemented LISP-inspired approach
+### Latest Session (2025-10-10) - Incremental Bottom-Up Progress
+
+**List Concatenation (Compile-time)** ✅
   - `[1, 2] + [3, 4]` returns `[1, 2, 3, 4]` at compile time
   - Optimizes literal list concatenations during compilation
   - Tests: test_concat_simple.flap, test_list_concat_multi.flap passing
   - Note: Runtime concatenation (for variables) still needs debugging
+  - Commit: c7502b6
+
+**String Equality Operator** ⚙️ (WIP)
+  - Code generation for == and != with string operands complete
+  - Calling mechanism verified working
+  - Runtime helper `_flap_string_eq` framework in place
+  - TODO: Debug character comparison loop logic
+  - Commits: bcf3017 (stub), ce19c6c (WIP)
+
+**Methodology**: Bottom-up and top-down incremental development
+  - Build small testable pieces
+  - Verify each layer before adding complexity
+  - Document what works, identify what needs debugging
+  - Move to other features when blocked, come back later
 
