@@ -192,14 +192,24 @@ The `println()` builtin is now implemented using direct `write` syscalls instead
 
 **Future Enhancement**: Proper float-to-string conversion for fractional numbers (e.g., 3.14159 → "3.141590")
 
-### External Dependencies Syntax Errors
+### Assignment Operator Issue (:=)
 **Status**: Blocking many tests
 
-Many tests fail during compilation due to syntax errors in external dependencies:
-- External math libraries (flap_math) have parser errors
-- Error: `expected ':' in map literal` in abs.flap:3
-- Affects: All math function tests (sin, cos, tan, abs, sqrt, etc.)
-- Workaround: Fix syntax in external repositories or inline implementations
+The `:=` operator is being treated as immutable assignment instead of mutable:
+- Test files use `result := abs(-5.0)` expecting mutable assignment
+- Compiler error: "cannot reassign immutable variable"
+- Many test files follow pattern: `x := value` then try to use/reassign
+- Affects: Most tests that use `:=` for initial assignment
+
+**Root cause**: Parser or semantic analysis treats `:=` as immutable declaration
+
+### External Dependencies
+**Status**: ✅ Fixed (flap_math)
+
+Fixed syntax errors in flap_math repository:
+- abs.flap: Changed `=>` to `->`, changed `-x` to `(0 - x)`
+- Committed and pushed to github.com/xyproto/flap_math
+- Repository now loads correctly
 
 ---
 

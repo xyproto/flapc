@@ -15,7 +15,18 @@ import (
 // and automatically fetches the repository containing the implementation
 var FunctionRepository = map[string]string{
 	// Math functions
-	"abs":   "github.com/xyproto/flap_math",
+	// Keep these as auto-dependencies (can be pure Flap implementations):
+	"abs":   "github.com/xyproto/flap_math", // Simple: x < 0 { -> -x ~> x }
+	"min":   "github.com/xyproto/flap_math",
+	"max":   "github.com/xyproto/flap_math",
+
+	// These have excellent x87 FPU instruction support - consider making builtin:
+	// sqrt: SQRTSD (SSE2)
+	// sin, cos, tan: FSIN, FCOS, FPTAN (x87)
+	// asin, acos, atan: FPATAN (x87)
+	// log, exp: FYL2X, F2XM1 (x87)
+	// pow: FYL2X + F2XM1 (x87)
+	// floor, ceil, round: FRNDINT (x87)
 	"sqrt":  "github.com/xyproto/flap_math",
 	"pow":   "github.com/xyproto/flap_math",
 	"sin":   "github.com/xyproto/flap_math",
@@ -31,8 +42,6 @@ var FunctionRepository = map[string]string{
 	"floor": "github.com/xyproto/flap_math",
 	"ceil":  "github.com/xyproto/flap_math",
 	"round": "github.com/xyproto/flap_math",
-	"min":   "github.com/xyproto/flap_math",
-	"max":   "github.com/xyproto/flap_math",
 
 	// Standard library
 	// "println": "github.com/xyproto/flap_core",  // Commented out - println is now a builtin
