@@ -1,0 +1,22 @@
+// Test logical XOR operator
+// xor returns 1.0 if exactly one operand is non-zero, 0.0 otherwise
+
+// Both non-zero (should be 0)
+result1 := 5 xor 10
+println(result1)
+
+// First zero, second non-zero (should be 1)
+result2 := 0 xor 10
+println(result2)
+
+// First non-zero, second zero (should be 1)
+result3 := 5 xor 0
+println(result3)
+
+// Both zero (should be 0)
+result4 := 0 xor 0
+println(result4)
+
+// Negative numbers, both non-zero (should be 0)
+result5 := -5 xor -10
+println(result5)

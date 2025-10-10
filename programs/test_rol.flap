@@ -1,0 +1,23 @@
+// Test ROL (rotate left) operator
+// rol operates on the integer part of float64 values
+// Bits shifted out on the left come back on the right
+
+// Rotate 1 left by 1: binary 1 -> 2
+result1 := 1 rol 1
+println(result1)
+
+// Rotate 5 (binary 101) left by 1: -> binary 1010 = 10
+result2 := 5 rol 1
+println(result2)
+
+// Rotate by 0 (no change): 10
+result3 := 10 rol 0
+println(result3)
+
+// Rotate 3 (binary 11) left by 2: -> binary 1100 = 12
+result4 := 3 rol 2
+println(result4)
+
+// Rotate with truncation: 7.5 -> 7 (binary 111) left by 1 -> binary 1110 = 14
+result5 := 7.5 rol 1
+println(result5)

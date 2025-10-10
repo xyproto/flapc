@@ -1,0 +1,22 @@
+// Test SHR (shift right) operator
+// shr operates on the integer part of float64 values
+
+// Basic shift: 8 >> 3 = 1
+result1 := 8 shr 3
+println(result1)
+
+// Shift a larger number: 20 >> 2 = 5
+result2 := 20 shr 2
+println(result2)
+
+// Shift by 0 (no change): 10 >> 0 = 10
+result3 := 10 shr 0
+println(result3)
+
+// Shift by 1: 14 >> 1 = 7
+result4 := 14 shr 1
+println(result4)
+
+// Shift with truncation: 41.9 >> 2 = 10 (41 >> 2)
+result5 := 41.9 shr 2
+println(result5)

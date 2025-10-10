@@ -223,3 +223,81 @@ func (o *Out) cmpRISCVRegToImm(reg string, imm int64) {
 
 	fmt.Fprintln(os.Stderr)
 }
+
+// Cmove - Conditional Move if Equal (ZF=1)
+// cmove dst, src
+func (o *Out) Cmove(dst, src string) {
+	switch o.machine {
+	case MachineX86_64:
+		o.cmoveX86(dst, src)
+	}
+}
+
+func (o *Out) cmoveX86(dst, src string) {
+	dstReg, dstOk := GetRegister(o.machine, dst)
+	srcReg, srcOk := GetRegister(o.machine, src)
+	if !dstOk || !srcOk {
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "cmove %s, %s: ", dst, src)
+
+	// REX prefix for 64-bit operation
+	rex := uint8(0x48)
+	if (dstReg.Encoding & 8) != 0 {
+		rex |= 0x04 // REX.R
+	}
+	if (srcReg.Encoding & 8) != 0 {
+		rex |= 0x01 // REX.B
+	}
+	o.Write(rex)
+
+	// 0F 44 - CMOVE opcode
+	o.Write(0x0F)
+	o.Write(0x44)
+
+	// ModR/M: 11 (register direct) | reg (dst) | r/m (src)
+	modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (srcReg.Encoding & 7)
+	o.Write(modrm)
+
+	fmt.Fprintln(os.Stderr)
+}
+
+// Cmovne - Conditional Move if Not Equal (ZF=0)
+// cmovne dst, src
+func (o *Out) Cmovne(dst, src string) {
+	switch o.machine {
+	case MachineX86_64:
+		o.cmovneX86(dst, src)
+	}
+}
+
+func (o *Out) cmovneX86(dst, src string) {
+	dstReg, dstOk := GetRegister(o.machine, dst)
+	srcReg, srcOk := GetRegister(o.machine, src)
+	if !dstOk || !srcOk {
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "cmovne %s, %s: ", dst, src)
+
+	// REX prefix for 64-bit operation
+	rex := uint8(0x48)
+	if (dstReg.Encoding & 8) != 0 {
+		rex |= 0x04 // REX.R
+	}
+	if (srcReg.Encoding & 8) != 0 {
+		rex |= 0x01 // REX.B
+	}
+	o.Write(rex)
+
+	// 0F 45 - CMOVNE opcode
+	o.Write(0x0F)
+	o.Write(0x45)
+
+	// ModR/M: 11 (register direct) | reg (dst) | r/m (src)
+	modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (srcReg.Encoding & 7)
+	o.Write(modrm)
+
+	fmt.Fprintln(os.Stderr)
+}

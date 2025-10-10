@@ -609,3 +609,60 @@ func (o *Out) faddScalarRISCV(dst, src string) {
 	// Implementation would go here
 	fmt.Fprintln(os.Stderr)
 }
+// XorpdXmm - XOR Packed Double (SSE2)
+// xorpd xmm, xmm - commonly used to zero a register
+func (o *Out) XorpdXmm(dst, src string) {
+	switch o.machine {
+	case MachineX86_64:
+		o.xorpdX86(dst, src)
+	case MachineARM64:
+		o.eorARM64Xmm(dst, src)
+	case MachineRiscv64:
+		o.fxorRISCV(dst, src)
+	}
+}
+
+func (o *Out) xorpdX86(dst, src string) {
+	fmt.Fprintf(os.Stderr, "xorpd %s, %s: ", dst, src)
+
+	var dstNum, srcNum int
+	fmt.Sscanf(dst, "xmm%d", &dstNum)
+	fmt.Sscanf(src, "xmm%d", &srcNum)
+
+	// 66 prefix for packed double
+	o.Write(0x66)
+
+	// REX if needed
+	if dstNum >= 8 || srcNum >= 8 {
+		rex := uint8(0x40)
+		if dstNum >= 8 {
+			rex |= 0x04 // REX.R
+		}
+		if srcNum >= 8 {
+			rex |= 0x01 // REX.B
+		}
+		o.Write(rex)
+	}
+
+	// 0F 57 - XORPD opcode
+	o.Write(0x0F)
+	o.Write(0x57)
+
+	// ModR/M
+	modrm := uint8(0xC0) | (uint8(dstNum&7) << 3) | uint8(srcNum&7)
+	o.Write(modrm)
+
+	fmt.Fprintln(os.Stderr)
+}
+
+func (o *Out) eorARM64Xmm(dst, src string) {
+	fmt.Fprintf(os.Stderr, "eor %s, %s (NEON): ", dst, src)
+	// EOR Vd.16B, Vn.16B, Vm.16B
+	fmt.Fprintln(os.Stderr)
+}
+
+func (o *Out) fxorRISCV(dst, src string) {
+	fmt.Fprintf(os.Stderr, "fxor %s, %s (RISC-V): ", dst, src)
+	// No direct floating-point XOR, use integer XOR on FP registers
+	fmt.Fprintln(os.Stderr)
+}

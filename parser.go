@@ -53,6 +53,14 @@ const (
 	TOKEN_PIPEPIPE      // ||
 	TOKEN_PIPEPIPEPIPE  // |||
 	TOKEN_HASH          // #
+	TOKEN_AND           // and keyword
+	TOKEN_OR            // or keyword
+	TOKEN_NOT           // not keyword
+	TOKEN_XOR           // xor keyword
+	TOKEN_SHL           // shl keyword
+	TOKEN_SHR           // shr keyword
+	TOKEN_ROL           // rol keyword
+	TOKEN_ROR           // ror keyword
 )
 
 type Token struct {
@@ -179,6 +187,22 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_BREAK, Value: value, Line: l.line}
 		case "continue":
 			return Token{Type: TOKEN_CONTINUE, Value: value, Line: l.line}
+		case "and":
+			return Token{Type: TOKEN_AND, Value: value, Line: l.line}
+		case "or":
+			return Token{Type: TOKEN_OR, Value: value, Line: l.line}
+		case "not":
+			return Token{Type: TOKEN_NOT, Value: value, Line: l.line}
+		case "xor":
+			return Token{Type: TOKEN_XOR, Value: value, Line: l.line}
+		case "shl":
+			return Token{Type: TOKEN_SHL, Value: value, Line: l.line}
+		case "shr":
+			return Token{Type: TOKEN_SHR, Value: value, Line: l.line}
+		case "rol":
+			return Token{Type: TOKEN_ROL, Value: value, Line: l.line}
+		case "ror":
+			return Token{Type: TOKEN_ROR, Value: value, Line: l.line}
 		}
 
 		return Token{Type: TOKEN_IDENT, Value: value, Line: l.line}
@@ -1089,13 +1113,41 @@ func (p *Parser) parsePipe() Expression {
 }
 
 func (p *Parser) parseParallel() Expression {
-	left := p.parseComparison()
+	left := p.parseLogicalOr()
 
 	for p.peek.Type == TOKEN_PIPEPIPE {
 		p.nextToken() // skip current
 		p.nextToken() // skip '||'
-		right := p.parseComparison()
+		right := p.parseLogicalOr()
 		left = &ParallelExpr{List: left, Operation: right}
+	}
+
+	return left
+}
+
+func (p *Parser) parseLogicalOr() Expression {
+	left := p.parseLogicalAnd()
+
+	for p.peek.Type == TOKEN_OR || p.peek.Type == TOKEN_XOR {
+		p.nextToken() // skip current
+		op := p.current.Value
+		p.nextToken() // skip operator
+		right := p.parseLogicalAnd()
+		left = &BinaryExpr{Left: left, Operator: op, Right: right}
+	}
+
+	return left
+}
+
+func (p *Parser) parseLogicalAnd() Expression {
+	left := p.parseComparison()
+
+	for p.peek.Type == TOKEN_AND {
+		p.nextToken() // skip current
+		op := p.current.Value
+		p.nextToken() // skip 'and'
+		right := p.parseComparison()
+		left = &BinaryExpr{Left: left, Operator: op, Right: right}
 	}
 
 	return left
@@ -1169,9 +1221,24 @@ func (p *Parser) parseLambdaBody() Expression {
 }
 
 func (p *Parser) parseAdditive() Expression {
-	left := p.parseMultiplicative()
+	left := p.parseBitwise()
 
 	for p.peek.Type == TOKEN_PLUS || p.peek.Type == TOKEN_MINUS {
+		p.nextToken()
+		op := p.current.Value
+		p.nextToken()
+		right := p.parseBitwise()
+		left = &BinaryExpr{Left: left, Operator: op, Right: right}
+	}
+
+	return left
+}
+
+func (p *Parser) parseBitwise() Expression {
+	left := p.parseMultiplicative()
+
+	for p.peek.Type == TOKEN_SHL || p.peek.Type == TOKEN_SHR ||
+		p.peek.Type == TOKEN_ROL || p.peek.Type == TOKEN_ROR {
 		p.nextToken()
 		op := p.current.Value
 		p.nextToken()
@@ -1183,17 +1250,29 @@ func (p *Parser) parseAdditive() Expression {
 }
 
 func (p *Parser) parseMultiplicative() Expression {
-	left := p.parsePostfix()
+	left := p.parseUnary()
 
 	for p.peek.Type == TOKEN_STAR || p.peek.Type == TOKEN_SLASH {
 		p.nextToken()
 		op := p.current.Value
 		p.nextToken()
-		right := p.parsePostfix()
+		right := p.parseUnary()
 		left = &BinaryExpr{Left: left, Operator: op, Right: right}
 	}
 
 	return left
+}
+
+func (p *Parser) parseUnary() Expression {
+	// Handle unary operators (not, unary minus)
+	if p.current.Type == TOKEN_NOT {
+		p.nextToken() // skip 'not'
+		operand := p.parseUnary()
+		return &UnaryExpr{Operator: "not", Operand: operand}
+	}
+
+	// Unary minus handled in parsePrimary for simplicity
+	return p.parsePostfix()
 }
 
 func (p *Parser) parsePostfix() Expression {
@@ -2257,8 +2336,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		// Compile the operand first (result in xmm0)
 		fc.compileExpression(e.Operand)
 
-		// For unary minus, negate the value
-		if e.Operator == "-" {
+		switch e.Operator {
+		case "-":
+			// Unary minus: negate the value
 			// Create -1.0 constant and multiply
 			labelName := fmt.Sprintf("negone_%d", fc.stringCounter)
 			fc.stringCounter++
@@ -2277,6 +2357,17 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.LeaSymbolToReg("rax", labelName)
 			fc.out.MovMemToXmm("xmm1", "rax", 0)
 			fc.out.MulsdXmm("xmm0", "xmm1") // xmm0 = xmm0 * -1.0
+		case "not":
+			// Logical NOT: returns 1.0 if operand is 0.0, else 0.0
+			// Compare xmm0 with 0
+			fc.out.XorpdXmm("xmm1", "xmm1") // xmm1 = 0.0
+			fc.out.Ucomisd("xmm0", "xmm1")
+			// Set rax to 1 if xmm0 == 0, else 0
+			fc.out.MovImmToReg("rax", "0")
+			fc.out.MovImmToReg("rcx", "1")
+			fc.out.Cmove("rax", "rcx") // rax = (xmm0 == 0) ? 1 : 0
+			// Convert to float64
+			fc.out.Cvtsi2sd("xmm0", "rax")
 		}
 
 	case *BinaryExpr:
@@ -2409,6 +2500,87 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			// Compare xmm0 with xmm1, sets flags
 			fc.out.Ucomisd("xmm0", "xmm1")
 			// For now, don't convert to boolean - leave flags set for conditional jump
+		case "and":
+			// Logical AND: returns 1.0 if both non-zero, else 0.0
+			// Compare xmm0 with 0
+			fc.out.XorpdXmm("xmm2", "xmm2") // xmm2 = 0.0
+			fc.out.Ucomisd("xmm0", "xmm2")
+			// Set rax to 1 if xmm0 != 0
+			fc.out.MovImmToReg("rax", "0")
+			fc.out.MovImmToReg("rcx", "1")
+			fc.out.Cmovne("rax", "rcx") // rax = (xmm0 != 0) ? 1 : 0
+			// Compare xmm1 with 0
+			fc.out.Ucomisd("xmm1", "xmm2")
+			// Set rcx to 1 if xmm1 != 0
+			fc.out.MovImmToReg("rcx", "0")
+			fc.out.MovImmToReg("rdx", "1")
+			fc.out.Cmovne("rcx", "rdx") // rcx = (xmm1 != 0) ? 1 : 0
+			// AND the results: rax = rax & rcx
+			fc.out.AndRegWithReg("rax", "rcx")
+			// Convert to float64
+			fc.out.Cvtsi2sd("xmm0", "rax")
+		case "or":
+			// Logical OR: returns 1.0 if either non-zero, else 0.0
+			// Compare xmm0 with 0
+			fc.out.XorpdXmm("xmm2", "xmm2") // xmm2 = 0.0
+			fc.out.Ucomisd("xmm0", "xmm2")
+			// Set rax to 1 if xmm0 != 0
+			fc.out.MovImmToReg("rax", "0")
+			fc.out.MovImmToReg("rcx", "1")
+			fc.out.Cmovne("rax", "rcx") // rax = (xmm0 != 0) ? 1 : 0
+			// Compare xmm1 with 0
+			fc.out.Ucomisd("xmm1", "xmm2")
+			// Set rcx to 1 if xmm1 != 0
+			fc.out.MovImmToReg("rcx", "0")
+			fc.out.MovImmToReg("rdx", "1")
+			fc.out.Cmovne("rcx", "rdx") // rcx = (xmm1 != 0) ? 1 : 0
+			// OR the results: rax = rax | rcx
+			fc.out.OrRegWithReg("rax", "rcx")
+			// Convert to float64
+			fc.out.Cvtsi2sd("xmm0", "rax")
+		case "xor":
+			// Logical XOR: returns 1.0 if exactly one non-zero, else 0.0
+			// Compare xmm0 with 0
+			fc.out.XorpdXmm("xmm2", "xmm2") // xmm2 = 0.0
+			fc.out.Ucomisd("xmm0", "xmm2")
+			// Set rax to 1 if xmm0 != 0
+			fc.out.MovImmToReg("rax", "0")
+			fc.out.MovImmToReg("rcx", "1")
+			fc.out.Cmovne("rax", "rcx") // rax = (xmm0 != 0) ? 1 : 0
+			// Compare xmm1 with 0
+			fc.out.Ucomisd("xmm1", "xmm2")
+			// Set rcx to 1 if xmm1 != 0
+			fc.out.MovImmToReg("rcx", "0")
+			fc.out.MovImmToReg("rdx", "1")
+			fc.out.Cmovne("rcx", "rdx") // rcx = (xmm1 != 0) ? 1 : 0
+			// XOR the results: rax = rax ^ rcx
+			fc.out.XorRegWithReg("rax", "rcx")
+			// Convert to float64
+			fc.out.Cvtsi2sd("xmm0", "rax")
+		case "shl":
+			// Shift left: convert to int64, shift, convert back
+			fc.out.Cvttsd2si("rax", "xmm0") // rax = int64(xmm0)
+			fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int64(xmm1)
+			fc.out.ShlClReg("rax", "cl")    // rax <<= cl
+			fc.out.Cvtsi2sd("xmm0", "rax")  // xmm0 = float64(rax)
+		case "shr":
+			// Shift right: convert to int64, shift, convert back
+			fc.out.Cvttsd2si("rax", "xmm0") // rax = int64(xmm0)
+			fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int64(xmm1)
+			fc.out.ShrClReg("rax", "cl")    // rax >>= cl
+			fc.out.Cvtsi2sd("xmm0", "rax")  // xmm0 = float64(rax)
+		case "rol":
+			// Rotate left: convert to int64, rotate, convert back
+			fc.out.Cvttsd2si("rax", "xmm0") // rax = int64(xmm0)
+			fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int64(xmm1)
+			fc.out.RolClReg("rax", "cl")    // rol rax, cl
+			fc.out.Cvtsi2sd("xmm0", "rax")  // xmm0 = float64(rax)
+		case "ror":
+			// Rotate right: convert to int64, rotate, convert back
+			fc.out.Cvttsd2si("rax", "xmm0") // rax = int64(xmm0)
+			fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int64(xmm1)
+			fc.out.RorClReg("rax", "cl")    // ror rax, cl
+			fc.out.Cvtsi2sd("xmm0", "rax")  // xmm0 = float64(rax)
 		}
 
 	case *CallExpr:

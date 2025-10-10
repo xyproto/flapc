@@ -17,6 +17,22 @@ Release when:
 - [ ] Test: Forward references work (function called before definition)
 - [ ] Implement: Two-pass compilation (symbols collected, then code generated)
 
+### Logical and Bitwise Operators
+- [ ] Implement: `or` logical OR (returns 1.0 if either operand is non-zero)
+- [ ] Implement: `and` logical AND (returns 1.0 if both operands are non-zero)
+- [ ] Implement: `xor` logical XOR (returns 1.0 if exactly one operand is non-zero)
+- [ ] Implement: `not` logical NOT (returns 1.0 if operand is 0.0, else 0.0)
+- [ ] Implement: `shl` shift left (bitwise shift on integer part)
+- [ ] Implement: `shr` shift right (bitwise shift on integer part)
+- [ ] Implement: `rol` rotate left (bitwise rotate on integer part)
+- [ ] Implement: `ror` rotate right (bitwise rotate on integer part)
+- [ ] Test: `5 and 10` returns `1.0` (both non-zero)
+- [ ] Test: `5 or 0` returns `1.0` (first is non-zero)
+- [ ] Test: `not 0` returns `1.0`, `not 5` returns `0.0`
+- [ ] Test: `8 shl 2` returns `32.0` (8 << 2)
+- [ ] Test: `32 shr 2` returns `8.0` (32 >> 2)
+- [ ] Test: `rol` and `ror` with various bit patterns
+
 ### String Operations
 - [ ] Test: Runtime string concatenation `s1 + s2` where s1, s2 are variables
 - [ ] Test: String comparison `s1 == s2`, `s1 != s2`
@@ -42,9 +58,10 @@ Release when:
 ### Control Flow
 - [x] Test: `break` exits loop early ✓
 - [x] Test: `continue` skips to next iteration ✓
-- [ ] Test: `return expr` exits function early
-- [ ] Test: Nested function with `return`
-- [ ] Test: Lambda with `return`
+- [ ] Test: `@0 value` breaks and returns value from loop
+- [ ] Test: Loops can be assigned: `x = @1 i in range(10) { @0 i * 2 }`
+- [ ] Test: Lambdas can use `@0 value` to return early
+- [ ] Test: Nested loops with value return
 
 ### I/O Functions
 - [ ] Test: `readln()` reads line from stdin

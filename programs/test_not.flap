@@ -1,0 +1,22 @@
+// Test logical NOT operator
+// not returns 1.0 if operand is 0.0, else 0.0
+
+// Non-zero positive (should be 0)
+result1 := not 5
+println(result1)
+
+// Zero (should be 1)
+result2 := not 0
+println(result2)
+
+// Non-zero negative (should be 0)
+result3 := not -5
+println(result3)
+
+// Non-zero float (should be 0)
+result4 := not 10.5
+println(result4)
+
+// Zero float (should be 1)
+result5 := not 0.0
+println(result5)

@@ -25,23 +25,6 @@ x = 10
 y := 20
 y := y + 5
 
-// Variable precision numbers
-x:b8 = 42         // 8-bit precision (faster, less accurate)
-y:b32 = 3.14159   // 32-bit precision (standard float)
-z:b64 = 3.14159265358979  // 64-bit precision (standard double)
-w:b128 = PI       // 128-bit precision (quad precision)
-
-// Precision blocks affect all variables defined within
-@precision(32) {
-    quick := 42.0      // Stored as 32-bit float
-    fast := PI * 2.0   // PI computed at 32-bit precision
-}
-
-@precision(128) {
-    accurate := 42.0   // Stored as 128-bit float
-    precise := PI * 2.0  // PI computed at 128-bit precision
-}
-
 // Arithmetic
 result = 10 + 3 * 2 - 1 / 2
 
@@ -112,6 +95,7 @@ result = 5 in mylist  // returns 1.0 or 0.0
 
 // Jump statements
 // @0 jumps out of current loop (equivalent to "break")
+// @0 value - breaks and returns value from loop
 // @N jumps back to loop label N (equivalent to "continue")
 //
 // Convenience aliases (implemented):
@@ -121,10 +105,18 @@ result = 5 in mylist  // returns 1.0 or 0.0
 //
 // Example with break/continue:
 for i in range(10) {
-    if i == 5 { break }        // Exit loop at 5
-    if i % 2 == 0 { continue } // Skip even numbers
+    i == 5 { -> break }        // Exit loop at 5
+    i % 2 == 0 { -> continue } // Skip even numbers
     println(i)                 // Prints: 1, 3
 }
+
+// Loops can return values (planned):
+result = @1 i in range(10) {
+    i == 5 {
+        -> @0 i * 2  // Break and return 10
+    }
+}
+// result is 10
 
 // Lambdas (up to 6 parameters)
 double = (x) -> x * 2
@@ -144,6 +136,97 @@ printf("Value: %v, Bool: %b\n", x, y)  // %v=smart number, %b=yes/no
 range(n)                            // Generate range for loops
 exit(code)                          // Exit program with code
 ```
+
+## 1.0.0 Blockers
+
+The following features **must** be implemented and tested before the 1.0.0 release:
+
+### Language Features
+- [ ] Multiple-lambda dispatch syntax: `f = (x) -> x, (y) -> y + 1`
+- [ ] Dispatch selects correct lambda based on argument type/pattern
+- [ ] Forward references (function called before definition)
+- [ ] Two-pass compilation (symbols collected, then code generated)
+
+### Logical and Bitwise Operators
+- [ ] `or` logical OR (returns 1.0 if either operand is non-zero)
+- [ ] `and` logical AND (returns 1.0 if both operands are non-zero)
+- [ ] `xor` logical XOR (returns 1.0 if exactly one operand is non-zero)
+- [ ] `not` logical NOT (returns 1.0 if operand is 0.0, else 0.0)
+- [ ] `shl` shift left (bitwise shift on integer part)
+- [ ] `shr` shift right (bitwise shift on integer part)
+- [ ] `rol` rotate left (bitwise rotate on integer part)
+- [ ] `ror` rotate right (bitwise rotate on integer part)
+
+### String Operations
+- [ ] Runtime string concatenation: `s1 + s2` where s1, s2 are variables
+- [ ] String comparison: `s1 == s2`, `s1 != s2`
+- [ ] String comparison: `s1 < s2`, `s1 > s2` (lexicographic)
+- [ ] String slicing: `s[1:3]` returns substring
+- [ ] String length: `#s` returns character count
+- [ ] Strings > 255 characters (multi-byte length encoding)
+
+### Polymorphic Operators
+- [ ] `[1, 2] + [3, 4]` returns `[1, 2, 3, 4]` (list concatenation)
+- [ ] `{1: 10} + {2: 20}` returns `{1: 10, 2: 20}` (map merge)
+- [ ] `list ++ 42` appends single value
+- [ ] `map ++ {key: value}` adds single entry
+- [ ] `x++` increments number by 1.0
+- [ ] `list--` removes last element
+- [ ] `map--` removes last entry
+- [ ] `x--` decrements number by 1.0
+- [ ] `s1 - s2` removes characters (string difference)
+- [ ] `list1 - list2` removes elements (set difference)
+- [ ] `map1 - map2` removes keys (set difference)
+
+### Control Flow
+- [x] `break` exits loop early ✓
+- [x] `continue` skips to next iteration ✓
+- [ ] `@0 value` breaks and returns value from loop
+- [ ] Loops can be assigned: `x = @1 i in range(10) { @0 i * 2 }`
+- [ ] Lambdas can use `@0 value` to return early
+
+### I/O Functions
+- [ ] `readln()` reads line from stdin
+- [ ] `read_file("path")` returns string
+- [ ] `write_file("path", content)` writes string
+
+### Collection Functions
+- [ ] `map(f, [1, 2, 3])` applies function to each element
+- [ ] `filter(f, [1, 2, 3])` filters by predicate
+- [ ] `reduce(f, [1, 2, 3], 0)` folds collection
+- [ ] `keys({1: 10, 2: 20})` returns `[1, 2]`
+- [ ] `values({1: 10, 2: 20})` returns `[10, 20]`
+- [ ] `sort([3, 1, 2])` returns `[1, 2, 3]`
+
+### String Functions
+- [ ] `str(42.0)` returns `"42"`
+- [ ] `str(3.14)` returns `"3.14"`
+- [ ] `num("42")` returns `42.0`
+- [ ] `num("3.14")` returns `3.14`
+- [ ] `split("a,b,c", ",")` returns `["a", "b", "c"]`
+- [ ] `join(["a", "b"], ",")` returns `"a,b"`
+- [ ] `upper("hello")` returns `"HELLO"`
+- [ ] `lower("HELLO")` returns `"hello"`
+- [ ] `trim("  hello  ")` returns `"hello"`
+
+### Vector Math Functions
+- [ ] `dot([1, 2, 3], [4, 5, 6])` returns `32.0`
+- [ ] `cross([1, 0, 0], [0, 1, 0])` returns `[0, 0, 1]`
+- [ ] `magnitude([3, 4])` returns `5.0`
+- [ ] `normalize([3, 4])` returns `[0.6, 0.8]`
+
+### ARM64 Support
+- [ ] Hello world compiles and runs on ARM64
+- [ ] All arithmetic operations work on ARM64
+- [ ] All string operations work on ARM64
+- [ ] All map operations work on ARM64
+- [ ] All x86-64 tests pass on ARM64
+
+### Error Messages
+- [ ] Syntax error shows line number
+- [ ] Type error shows line number and types involved
+- [ ] Undefined variable shows line number and name
+- [ ] Wrong argument count shows expected vs actual
 
 ## Complete Planned Grammar
 
@@ -170,16 +253,15 @@ comparison_expr = ( ">=" | "<=" | ">" | "<" | "==" | "!=" | "=~" | "!~" ) expres
 primary_expr = identifier | literal | constant_expr | list_literal | map_literal |
                comprehension | loop | filtered_expr | default_expr |
                property_access | array_access | gather_access | scatter_assign |
-               head_expr | tail_expr | guard_expr | early_return_expr |
+               head_expr | tail_expr | early_return_expr |
                error_expr | self_ref | object_def | function_call |
-               return_stmt | simd_block | precision_block | "(" expression ")" ;
+               simd_block | precision_block | "(" expression ")" ;
 precision_block = "@" "precision" "(" number ")" "{" { statement } "}" ;
 comprehension = "[" expression "for" identifier "in" expression "]" [ "{" ( expression | slice_expr ) "}" ] ;
 loop = [ simd_annotation ] "for" identifier "in" expression "{" { statement } "}" ;
 filtered_expr = expression "{" ( expression | slice_expr ) "}" ;
 slice_expr = [ expression ] ":" [ expression ] [ ":" expression ] ;
 default_expr = expression "or" expression ;
-guard_expr = expression "or" "return" [ expression ] ;
 early_return_expr = expression "or!" expression ;
 error_expr = "!" expression ;
 property_access = expression "." identifier | "me" "." identifier ;
@@ -193,7 +275,6 @@ object_def = "@" "{" [ object_member { "," object_member } ] "}" ;
 object_member = identifier ":" ( expression | method_def ) ;
 method_def = "(" [ param_list ] ")" "->" expression ;
 function_call = identifier "(" [ arg_list ] ")" ;
-return_stmt = "return" [ expression ] ;
 simd_block = "@" simd_annotation "{" { statement } "}" ;
 simd_annotation = "simd" [ "(" simd_param { "," simd_param } ")" ] ;
 simd_param = "width" "=" ( number | "auto" ) | "aligned" "=" number ;
@@ -228,9 +309,11 @@ digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
 in for
 ```
 
-## Variable Precision Numbers
+## Variable Precision Numbers (Post-1.0.0)
 
-Flap supports **variable precision** numeric types, allowing each variable to have its own precision independent of others. This enables mixing precisions for optimal performance and accuracy.
+**Note:** This feature is planned for post-1.0.0 releases.
+
+Flap will support **variable precision** numeric types, allowing each variable to have its own precision independent of others. This will enable mixing precisions for optimal performance and accuracy.
 
 ### Precision Type Syntax
 
@@ -297,9 +380,11 @@ c := x + y + z  // Result is b128 (max of all)
 d:b32 = y + z   // Forces 32-bit result (may lose precision)
 ```
 
-## Mathematical Constants (Precision-Aware)
+## Mathematical Constants (Precision-Aware, Post-1.0.0)
 
-Mathematical constants automatically adapt to the surrounding precision context:
+**Note:** Precision-aware constants are planned for post-1.0.0 releases. Basic constants (PI, E) may be added in 1.0.0 at standard double precision.
+
+Mathematical constants will automatically adapt to the surrounding precision context:
 
 ### Available Constants
 
@@ -382,34 +467,33 @@ exit(code)        // Exit program with code (automatically called at end)
 range(n)          // Generate range 0..n-1 for loops
 ```
 
-### Math Functions (13)
+### Math Functions (14)
 
-All trigonometric functions use native x87 FPU instructions (no libc dependency):
+All math functions use native x87 FPU or SSE2 instructions (no libc dependency):
 
 ```
-sqrt(x)     // Square root (SQRTSD instruction)
-sin(x)      // Sine (FSIN instruction)
-cos(x)      // Cosine (FCOS instruction)
-tan(x)      // Tangent (FPTAN instruction)
-atan(x)     // Arctangent (FPATAN instruction)
-asin(x)     // Arcsine (FPATAN + x87 arithmetic)
-acos(x)     // Arccosine (FPATAN + x87 arithmetic)
-
-// Planned (x87 FPU instructions available):
-abs(x)      // Absolute value (FABS)
-floor(x)    // Round down (FRNDINT)
-ceil(x)     // Round up (FRNDINT + adjustment)
-round(x)    // Round to nearest (FRNDINT)
-exp(x)      // e^x (F2XM1 + FSCALE)
-log(x)      // Natural logarithm (FYL2X)
-pow(x, y)   // x^y (FYL2X + F2XM1 + FSCALE)
+sqrt(x)     // Square root (SQRTSD instruction) ✓
+abs(x)      // Absolute value (FABS) ✓
+x ^ y       // Power x^y (FYL2X + F2XM1) ✓
+floor(x)    // Round down (FRNDINT) ✓
+ceil(x)     // Round up (FRNDINT + adjustment) ✓
+round(x)    // Round to nearest (FRNDINT) ✓
+sin(x)      // Sine (FSIN instruction) ✓
+cos(x)      // Cosine (FCOS instruction) ✓
+tan(x)      // Tangent (FPTAN instruction) ✓
+asin(x)     // Arcsine (FPATAN + x87 arithmetic) ✓
+acos(x)     // Arccosine (FPATAN + x87 arithmetic) ✓
+atan(x)     // Arctangent (FPATAN instruction) ✓
+log(x)      // Natural logarithm (FYL2X) ✓
+exp(x)      // e^x (F2XM1 + FSCALE) ✓
 ```
 
 ## Planned Keywords (Not Yet Implemented)
 
 ```
-and or not yes no me return or!
+and or not yes no me or!
 mask simd sum product max min
+xor shl shr rol ror
 ```
 
 ## Symbols (5)
@@ -418,7 +502,9 @@ mask simd sum product max min
 ~ @ # ^ _
 ```
 
-## Complete Feature Set
+## Post-1.0.0 Features
+
+The following features are planned for future releases (2.0.0+) and are **not** blockers for the 1.0.0 release.
 
 ### Conditional Control Flow
 
@@ -539,7 +625,7 @@ Entity = @{
     damage: (amount) -> {
         amount <= 0 or! "invalid damage"
         me.health := me.health - amount
-        me.health <= 0 and return "destroyed"
+        me.health <= 0 { -> @0 "destroyed" }
         me
     }
 }
@@ -589,7 +675,7 @@ GameLoop = @{
     running: true,
 
     update: () -> {
-        me.running or return "game stopped"
+        not me.running { -> @0 "game stopped" }
 
         // Process entities in SIMD chunks
         @simd for chunk in me.entities{health > 0} {
