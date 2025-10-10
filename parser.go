@@ -1487,9 +1487,9 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	// setc al (set AL to 1 if carry flag set)
 	fc.out.Emit([]byte{0x0f, 0x92, 0xc0}) // setc al
 
-	// Store result to cpu_has_avx512
+	// Store result to cpu_has_avx512 (only write AL, not full RAX!)
 	fc.out.LeaSymbolToReg("rbx", "cpu_has_avx512")
-	fc.out.MovRegToMem("rax", "rbx", 0)
+	fc.out.MovByteRegToMem("rax", "rbx", 0) // Write only the low byte (AL)
 
 	// Clear registers used for CPUID
 	fc.out.XorRegWithReg("rax", "rax")
@@ -1629,7 +1629,7 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 	fc.out.Emit([]byte{0x0f, 0xba, 0xe3, 0x10}) // bt ebx, 16
 	fc.out.Emit([]byte{0x0f, 0x92, 0xc0})       // setc al
 	fc.out.LeaSymbolToReg("rbx", "cpu_has_avx512")
-	fc.out.MovRegToMem("rax", "rbx", 0)
+	fc.out.MovByteRegToMem("rax", "rbx", 0) // Write only AL, not full RAX
 	fc.out.XorRegWithReg("rax", "rax")
 	fc.out.XorRegWithReg("rbx", "rbx")
 	fc.out.XorRegWithReg("rcx", "rcx")
@@ -4574,18 +4574,29 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.FstcwMem("rsp", 0)
 
 		// Load control word, modify to set RC=01 (bits 10-11)
-		fc.out.MovMemToReg("ax", "rsp", 0) // Load 16-bit control word
-		fc.out.Write(0x66)                 // 16-bit operand prefix
-		fc.out.Write(0x81)                 // OR ax, imm16
-		fc.out.Write(0xC8)                 // ModR/M for ax
-		fc.out.Write(0x00)                 // Low byte: clear bits 10-11
-		fc.out.Write(0x04)                 // High byte: 0x0400 = bit 10 set (round down)
-		fc.out.Write(0x66)                 // 16-bit operand prefix
-		fc.out.Write(0x81)                 // AND ax, imm16
-		fc.out.Write(0xE0)                 // ModR/M for ax
-		fc.out.Write(0xFF)                 // Low byte: keep all bits
-		fc.out.Write(0xF7)                 // High byte: 0xF7FF = clear bit 11, keep bit 10
-		fc.out.MovRegToMem("ax", "rsp", 2) // Store modified control word
+		// Emit 16-bit MOV manually: mov ax, [rsp]
+		fc.out.Write(0x66) // 16-bit operand prefix
+		fc.out.Write(0x8B) // MOV r16, r/m16
+		fc.out.Write(0x04) // ModR/M: [rsp]
+		fc.out.Write(0x24) // SIB: [rsp]
+		// OR ax, 0x0400 (set bit 10 for round down)
+		fc.out.Write(0x66) // 16-bit operand prefix
+		fc.out.Write(0x81) // OR r/m16, imm16
+		fc.out.Write(0xC8) // ModR/M for ax
+		fc.out.Write(0x00) // Low byte
+		fc.out.Write(0x04) // High byte: 0x0400 = bit 10 set (round down)
+		// AND ax, 0xF7FF (clear bit 11, keep bit 10)
+		fc.out.Write(0x66) // 16-bit operand prefix
+		fc.out.Write(0x81) // AND r/m16, imm16
+		fc.out.Write(0xE0) // ModR/M for ax
+		fc.out.Write(0xFF) // Low byte
+		fc.out.Write(0xF7) // High byte: 0xF7FF = clear bit 11, keep bit 10
+		// Store modified control word: mov [rsp+2], ax
+		fc.out.Write(0x66) // 16-bit operand prefix
+		fc.out.Write(0x89) // MOV r/m16, r16
+		fc.out.Write(0x44) // ModR/M: [rsp+disp8]
+		fc.out.Write(0x24) // SIB: [rsp]
+		fc.out.Write(0x02) // disp8: +2
 
 		// Load modified control word
 		fc.out.FldcwMem("rsp", 2)
@@ -4616,18 +4627,29 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.FstcwMem("rsp", 0)
 
 		// Load control word, modify to set RC=10 (bits 10-11)
-		fc.out.MovMemToReg("ax", "rsp", 0)
+		// Emit 16-bit MOV manually: mov ax, [rsp]
 		fc.out.Write(0x66) // 16-bit operand prefix
-		fc.out.Write(0x81) // OR ax, imm16
+		fc.out.Write(0x8B) // MOV r16, r/m16
+		fc.out.Write(0x04) // ModR/M: [rsp]
+		fc.out.Write(0x24) // SIB: [rsp]
+		// OR ax, 0x0800 (set bit 11 for round up)
+		fc.out.Write(0x66) // 16-bit operand prefix
+		fc.out.Write(0x81) // OR r/m16, imm16
 		fc.out.Write(0xC8) // ModR/M for ax
 		fc.out.Write(0x00) // Low byte
 		fc.out.Write(0x08) // High byte: 0x0800 = bit 11 set (round up)
+		// AND ax, 0xFBFF (clear bit 10, keep bit 11)
 		fc.out.Write(0x66) // 16-bit operand prefix
-		fc.out.Write(0x81) // AND ax, imm16
+		fc.out.Write(0x81) // AND r/m16, imm16
 		fc.out.Write(0xE0) // ModR/M for ax
 		fc.out.Write(0xFF) // Low byte
 		fc.out.Write(0xFB) // High byte: 0xFBFF = clear bit 10, keep bit 11
-		fc.out.MovRegToMem("ax", "rsp", 2)
+		// Store modified control word: mov [rsp+2], ax
+		fc.out.Write(0x66) // 16-bit operand prefix
+		fc.out.Write(0x89) // MOV r/m16, r16
+		fc.out.Write(0x44) // ModR/M: [rsp+disp8]
+		fc.out.Write(0x24) // SIB: [rsp]
+		fc.out.Write(0x02) // disp8: +2
 
 		fc.out.FldcwMem("rsp", 2)
 		fc.out.FldMem("rsp", 8)
@@ -4653,13 +4675,23 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.FstcwMem("rsp", 0)
 
 		// Load control word, modify to set RC=00 (clear bits 10-11)
-		fc.out.MovMemToReg("ax", "rsp", 0)
+		// Emit 16-bit MOV manually: mov ax, [rsp]
 		fc.out.Write(0x66) // 16-bit operand prefix
-		fc.out.Write(0x81) // AND ax, imm16
+		fc.out.Write(0x8B) // MOV r16, r/m16
+		fc.out.Write(0x04) // ModR/M: [rsp]
+		fc.out.Write(0x24) // SIB: [rsp]
+		// AND ax, 0xF3FF (clear bits 10-11 for round to nearest)
+		fc.out.Write(0x66) // 16-bit operand prefix
+		fc.out.Write(0x81) // AND r/m16, imm16
 		fc.out.Write(0xE0) // ModR/M for ax
 		fc.out.Write(0xFF) // Low byte
 		fc.out.Write(0xF3) // High byte: 0xF3FF = clear bits 10-11
-		fc.out.MovRegToMem("ax", "rsp", 2)
+		// Store modified control word: mov [rsp+2], ax
+		fc.out.Write(0x66) // 16-bit operand prefix
+		fc.out.Write(0x89) // MOV r/m16, r16
+		fc.out.Write(0x44) // ModR/M: [rsp+disp8]
+		fc.out.Write(0x24) // SIB: [rsp]
+		fc.out.Write(0x02) // disp8: +2
 
 		fc.out.FldcwMem("rsp", 2)
 		fc.out.FldMem("rsp", 8)
