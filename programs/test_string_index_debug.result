@@ -1,0 +1,3 @@
+s[0] = 65 (should be 65 for 'A')
+s[1] = 66 (should be 66 for 'B')
+s[2] = 67 (should be 67 for 'C')

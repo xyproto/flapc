@@ -1,0 +1,6 @@
+// Test automatic dependency resolution
+// This should automatically fetch abs() from github.com/xyproto/flap_math
+
+x := -42.0
+y := abs(x)
+printf("abs(-42) = %v\n", y)
