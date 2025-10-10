@@ -541,6 +541,9 @@ type IndexExpr struct {
 }
 
 func (i *IndexExpr) String() string {
+	if i.List == nil || i.Index == nil {
+		return fmt.Sprintf("IndexExpr{List=%v, Index=%v}", i.List, i.Index)
+	}
 	return i.List.String() + "[" + i.Index.String() + "]"
 }
 func (i *IndexExpr) expressionNode() {}
@@ -1283,6 +1286,12 @@ func (p *Parser) parsePostfix() Expression {
 		if p.peek.Type == TOKEN_LBRACKET {
 			p.nextToken() // skip current expr
 			p.nextToken() // skip '['
+
+			// Check for empty indexing (syntax error)
+			if p.current.Type == TOKEN_RBRACKET {
+				p.error("empty indexing [] is not allowed")
+			}
+
 			index := p.parseExpression()
 			p.nextToken() // move to ']'
 			expr = &IndexExpr{List: expr, Index: index}
@@ -1455,11 +1464,11 @@ func (p *Parser) parsePrimary() Expression {
 				p.nextToken() // skip ','
 				elements = append(elements, p.parseExpression())
 			}
+			// current should be on last element
+			// peek should be ']'
+			p.nextToken() // move to ']'
 		}
-
-		// current should be on last element or on '['
-		// peek should be ']'
-		p.nextToken() // move to ']'
+		// For empty list, current is already on ']' after first nextToken()
 		return &ListExpr{Elements: elements}
 
 	case TOKEN_LBRACE:
@@ -2718,65 +2727,61 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		fc.compileDirectCall(e)
 
 	case *ListExpr:
-		// For now, create list data in .rodata and return pointer
-		// TODO: Implement proper list representation with length/capacity
-		if len(e.Elements) == 0 {
-			// Empty list - return null pointer (0) as float64
-			fc.out.XorRegWithReg("rax", "rax")
-			fc.out.Cvtsi2sd("xmm0", "rax")
-		} else {
-			// Allocate list data in .rodata
-			labelName := fmt.Sprintf("list_%d", fc.stringCounter)
-			fc.stringCounter++
+		// Following Lisp philosophy: even empty lists are objects (length=0), not null
+		// Create list data in .rodata and return pointer
+		// List format: [length (8 bytes)] [element1] [element2] ...
 
-			// Store list as: [length (8 bytes)] [element1] [element2] ...
-			var listData []byte
+		// Allocate list data in .rodata
+		labelName := fmt.Sprintf("list_%d", fc.stringCounter)
+		fc.stringCounter++
 
-			// First, add length as float64
-			length := float64(len(e.Elements))
-			lengthBits := uint64(0)
-			*(*float64)(unsafe.Pointer(&lengthBits)) = length
-			listData = append(listData, byte(lengthBits&0xFF))
-			listData = append(listData, byte((lengthBits>>8)&0xFF))
-			listData = append(listData, byte((lengthBits>>16)&0xFF))
-			listData = append(listData, byte((lengthBits>>24)&0xFF))
-			listData = append(listData, byte((lengthBits>>32)&0xFF))
-			listData = append(listData, byte((lengthBits>>40)&0xFF))
-			listData = append(listData, byte((lengthBits>>48)&0xFF))
-			listData = append(listData, byte((lengthBits>>56)&0xFF))
+		// Store list as: [length (8 bytes)] [element1] [element2] ...
+		var listData []byte
 
-			// Then add elements
-			for _, elem := range e.Elements {
-				// Evaluate element to get float64 value
-				// For now, only support number literals
-				if numExpr, ok := elem.(*NumberExpr); ok {
-					val := numExpr.Value
-					// Convert float64 to 8 bytes (little-endian)
-					bits := uint64(0)
-					*(*float64)(unsafe.Pointer(&bits)) = val
-					listData = append(listData, byte(bits&0xFF))
-					listData = append(listData, byte((bits>>8)&0xFF))
-					listData = append(listData, byte((bits>>16)&0xFF))
-					listData = append(listData, byte((bits>>24)&0xFF))
-					listData = append(listData, byte((bits>>32)&0xFF))
-					listData = append(listData, byte((bits>>40)&0xFF))
-					listData = append(listData, byte((bits>>48)&0xFF))
-					listData = append(listData, byte((bits>>56)&0xFF))
-				} else {
-					fmt.Fprintf(os.Stderr, "Error: list literal elements must be constant numbers\n")
-					os.Exit(1)
-				}
+		// First, add length as float64
+		length := float64(len(e.Elements))
+		lengthBits := uint64(0)
+		*(*float64)(unsafe.Pointer(&lengthBits)) = length
+		listData = append(listData, byte(lengthBits&0xFF))
+		listData = append(listData, byte((lengthBits>>8)&0xFF))
+		listData = append(listData, byte((lengthBits>>16)&0xFF))
+		listData = append(listData, byte((lengthBits>>24)&0xFF))
+		listData = append(listData, byte((lengthBits>>32)&0xFF))
+		listData = append(listData, byte((lengthBits>>40)&0xFF))
+		listData = append(listData, byte((lengthBits>>48)&0xFF))
+		listData = append(listData, byte((lengthBits>>56)&0xFF))
+
+		// Then add elements
+		for _, elem := range e.Elements {
+			// Evaluate element to get float64 value
+			// For now, only support number literals
+			if numExpr, ok := elem.(*NumberExpr); ok {
+				val := numExpr.Value
+				// Convert float64 to 8 bytes (little-endian)
+				bits := uint64(0)
+				*(*float64)(unsafe.Pointer(&bits)) = val
+				listData = append(listData, byte(bits&0xFF))
+				listData = append(listData, byte((bits>>8)&0xFF))
+				listData = append(listData, byte((bits>>16)&0xFF))
+				listData = append(listData, byte((bits>>24)&0xFF))
+				listData = append(listData, byte((bits>>32)&0xFF))
+				listData = append(listData, byte((bits>>40)&0xFF))
+				listData = append(listData, byte((bits>>48)&0xFF))
+				listData = append(listData, byte((bits>>56)&0xFF))
+			} else {
+				fmt.Fprintf(os.Stderr, "Error: list literal elements must be constant numbers\n")
+				os.Exit(1)
 			}
-
-			fc.eb.Define(labelName, string(listData))
-			fc.out.LeaSymbolToReg("rax", labelName)
-			// Convert pointer to float64: reinterpret rax as xmm0
-			// Push rax to stack, then load as float64 into xmm0
-			fc.out.SubImmFromReg("rsp", 8)
-			fc.out.MovRegToMem("rax", "rsp", 0)
-			fc.out.MovMemToXmm("xmm0", "rsp", 0)
-			fc.out.AddImmToReg("rsp", 8)
 		}
+
+		fc.eb.Define(labelName, string(listData))
+		fc.out.LeaSymbolToReg("rax", labelName)
+		// Convert pointer to float64: reinterpret rax as xmm0
+		// Push rax to stack, then load as float64 into xmm0
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovRegToMem("rax", "rsp", 0)
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 8)
 
 	case *InExpr:
 		// Membership testing: value in container
@@ -2792,24 +2797,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		fc.out.MovXmmToMem("xmm0", "rsp", 8)
 		fc.out.MovMemToReg("rbx", "rsp", 8) // rbx = container pointer
 
-		// Check if null
-		fc.out.CmpRegToImm("rbx", 0)
-		fc.labelCounter++
-		notNullJump := fc.eb.text.Len()
-		fc.out.JumpConditional(JumpNotEqual, 0)
-		notNullEnd := fc.eb.text.Len()
-
-		// Null: return 0.0
-		fc.out.XorRegWithReg("rax", "rax")
-		fc.out.Cvtsi2sd("xmm0", "rax")
-		endJump1 := fc.eb.text.Len()
-		fc.out.JumpUnconditional(0)
-		endJump1End := fc.eb.text.Len()
-
-		// Not null: load count and search
-		notNullPos := fc.eb.text.Len()
-		fc.patchJumpImmediate(notNullJump+2, int32(notNullPos-notNullEnd))
-
+		// Load count from container (empty containers have count=0, not null)
 		fc.out.MovMemToXmm("xmm1", "rbx", 0)
 		fc.out.Cvttsd2si("rcx", "xmm1")      // rcx = count
 		fc.out.MovMemToXmm("xmm2", "rsp", 0) // xmm2 = search value
@@ -2856,9 +2844,8 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		fc.out.Cvtsi2sd("xmm0", "rax")
 		fc.out.AddImmToReg("rsp", 16)
 
-		// Patch end jumps
+		// Patch found jump to skip to end
 		endPos := fc.eb.text.Len()
-		fc.patchJumpImmediate(endJump1+1, int32(endPos-endJump1End))
 		fc.patchJumpImmediate(foundJump+1, int32(endPos-foundJumpEnd))
 
 	case *MapExpr:
@@ -3243,32 +3230,8 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		fc.out.MovMemToReg("rax", "rsp", 0)
 		fc.out.AddImmToReg("rsp", 8)
 
-		// Check if pointer is null (empty list)
-		fc.out.CmpRegToImm("rax", 0)
-		skipJumpPos := fc.eb.text.Len()
-		fc.out.JumpConditional(JumpNotEqual, 0) // Jump if not null
-		skipJumpEnd := fc.eb.text.Len()
-
-		// Empty list case: return 0.0
-		fc.out.XorRegWithReg("rax", "rax")
-		fc.out.Cvtsi2sd("xmm0", "rax")
-
-		endJumpPos := fc.eb.text.Len()
-		fc.out.JumpUnconditional(0) // Jump to end
-		endJumpEnd := fc.eb.text.Len()
-
-		// Non-null case: load length from list
-		notNullPos := fc.eb.text.Len()
+		// Load length from list (empty lists have length=0.0, not null)
 		fc.out.MovMemToXmm("xmm0", "rax", 0)
-
-		// Patch the skip jump
-		skipOffset := int32(notNullPos - skipJumpEnd)
-		fc.patchJumpImmediate(skipJumpPos+2, skipOffset)
-
-		// Patch end jump
-		finalPos := fc.eb.text.Len()
-		endOffset := int32(finalPos - endJumpEnd)
-		fc.patchJumpImmediate(endJumpPos+1, endOffset)
 
 		// Length is now in xmm0 as float64
 
@@ -3393,22 +3356,7 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	fc.out.MovXmmToMem("xmm0", "rsp", 0) // Store at rsp+0
 	fc.out.MovMemToReg("r13", "rsp", 0)
 
-	// Handle empty lists early (null pointer - nothing to map)
-	fc.out.CmpRegToImm("r13", 0)
-	nonNullJumpPos := fc.eb.text.Len()
-	fc.out.JumpConditional(JumpNotEqual, 0)
-	// Null case: return 0.0 as float64 and clean up stack
-	fc.out.AddImmToReg("rsp", 16) // Clean up lambda/list pointers
-	fc.out.XorRegWithReg("rax", "rax")
-	fc.out.Cvtsi2sd("xmm0", "rax")
-	nullReturnJumpPos := fc.eb.text.Len()
-	fc.out.JumpUnconditional(0)
-	nullReturnJumpEnd := fc.eb.text.Len()
-
-	// Non-null input list continues here
-	nonNullListStart := fc.eb.text.Len()
-
-	// Load list length from [r13] into r14
+	// Load list length from [r13] into r14 (empty lists have length=0, not null)
 	fc.out.MovMemToXmm("xmm0", "r13", 0)
 	fc.out.Cvttsd2si("r14", "xmm0") // r14 = length as integer
 
@@ -3495,15 +3443,6 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	fc.out.AddImmToReg("rsp", parallelResultAlloc)
 
 	// End of parallel operator - xmm0 contains result pointer as float64
-	endLabel := fc.eb.text.Len()
-
-	// Patch jumps for the null-input fast path
-	nonNullOffset := int32(nonNullListStart - (nonNullJumpPos + 6))
-	fc.patchJumpImmediate(nonNullJumpPos+2, nonNullOffset)
-
-	// Patch jump for null-input return - skip directly to end
-	nullReturnOffset := int32(endLabel - nullReturnJumpEnd)
-	fc.patchJumpImmediate(nullReturnJumpPos+1, nullReturnOffset)
 }
 
 func (fc *FlapCompiler) generateLambdaFunctions() {
@@ -4043,13 +3982,7 @@ func (fc *FlapCompiler) compileMapToCString(mapPtr, cstrPtr string) {
 	// Allocate space on stack for CString (max 256 bytes + length + newline + null)
 	fc.out.SubImmFromReg("rsp", 260) // 1 (length) + 256 (chars) + 1 (newline) + 1 (null) + padding
 
-	// Check if map pointer is null
-	fc.out.CmpRegToImm(mapPtr, 0)
-	nullJump := fc.eb.text.Len()
-	fc.out.JumpConditional(JumpEqual, 0)
-	nullEnd := fc.eb.text.Len()
-
-	// Load count from map[0]
+	// Load count from map[0] (empty strings have count=0, not null)
 	fc.out.MovMemToXmm("xmm0", mapPtr, 0)
 	fc.out.Cvttsd2si("rcx", "xmm0") // rcx = character count
 
@@ -4155,27 +4088,6 @@ func (fc *FlapCompiler) compileMapToCString(mapPtr, cstrPtr string) {
 	// Return pointer to first character (skip length byte)
 	fc.out.LeaMemToReg(cstrPtr, "rsp", 1)
 
-	doneJump := fc.eb.text.Len()
-	fc.out.JumpUnconditional(0)
-	doneEnd := fc.eb.text.Len()
-
-	// Null map case - return pointer to empty string
-	nullPos := fc.eb.text.Len()
-	fc.patchJumpImmediate(nullJump+2, int32(nullPos-nullEnd))
-
-	// Create empty string: length=0, newline, null
-	fc.out.XorRegWithReg("r10", "r10")
-	fc.out.MovByteRegToMem("r10", "rsp", 0) // length = 0
-	fc.out.MovImmToReg("r10", "10")         // newline
-	fc.out.MovByteRegToMem("r10", "rsp", 1)
-	fc.out.XorRegWithReg("r10", "r10") // null
-	fc.out.MovByteRegToMem("r10", "rsp", 2)
-	fc.out.LeaMemToReg(cstrPtr, "rsp", 1)
-
-	// Done
-	donePos := fc.eb.text.Len()
-	fc.patchJumpImmediate(doneJump+1, int32(donePos-doneEnd))
-
 	// Note: Stack not cleaned up here - caller must handle
 }
 
@@ -4183,13 +4095,7 @@ func (fc *FlapCompiler) compileMapToCString(mapPtr, cstrPtr string) {
 // Input: mapPtr (register) = pointer to string map, bufPtr (register) = buffer start
 // Output: rsi = pointer to string data, rdx = length (including newline)
 func (fc *FlapCompiler) compilePrintMapAsString(mapPtr, bufPtr string) {
-	// Check if map pointer is null (empty string)
-	fc.out.CmpRegToImm(mapPtr, 0)
-	nullJump := fc.eb.text.Len()
-	fc.out.JumpConditional(JumpEqual, 0)
-	nullEnd := fc.eb.text.Len()
-
-	// Load count from map[0] (first float64 is the count)
+	// Load count from map[0] (empty strings have count=0, not null)
 	fc.out.MovMemToXmm("xmm0", mapPtr, 0)
 	fc.out.Cvttsd2si("rcx", "xmm0") // rcx = character count
 
@@ -4267,23 +4173,6 @@ func (fc *FlapCompiler) compilePrintMapAsString(mapPtr, bufPtr string) {
 
 	// Set rsi back to buffer start
 	fc.out.MovRegToReg("rsi", bufPtr)
-
-	// Jump to end
-	normalEndJump := fc.eb.text.Len()
-	fc.out.JumpUnconditional(0)
-	normalEndEnd := fc.eb.text.Len()
-
-	// Null case - just print newline
-	nullPos := fc.eb.text.Len()
-	fc.patchJumpImmediate(nullJump+2, int32(nullPos-nullEnd))
-	fc.out.MovImmToReg("r10", "10") // '\n'
-	fc.out.MovByteRegToMem("r10", bufPtr, 0)
-	fc.out.MovRegToReg("rsi", bufPtr)
-	fc.out.MovImmToReg("rdx", "1")
-
-	// End
-	normalEnd := fc.eb.text.Len()
-	fc.patchJumpImmediate(normalEndJump+1, int32(normalEnd-normalEndEnd))
 }
 
 // compileFloatToString converts a float64 to ASCII string representation

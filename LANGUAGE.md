@@ -58,7 +58,7 @@ ages = {1: 25, 2: 30, 3: 35}
 empty = {}
 count = #ages        // returns 3.0
 
-// Unified indexing (SIMD-optimized for all types)
+// Unified indexing with {} (SIMD-optimized for all types)
 price = ages[1]      // returns 25.0
 missing = ages[999]  // returns 0.0 (key doesn't exist)
 result = empty[1]    // returns 0.0 (empty map)
@@ -252,7 +252,7 @@ filter_expr = comparison_expr | expression ;
 comparison_expr = ( ">=" | "<=" | ">" | "<" | "==" | "!=" | "=~" | "!~" ) expression ;
 primary_expr = identifier | literal | constant_expr | list_literal | map_literal |
                comprehension | loop | filtered_expr | default_expr |
-               property_access | array_access | gather_access | scatter_assign |
+               property_access | index_access | gather_access | scatter_assign |
                head_expr | tail_expr | early_return_expr |
                error_expr | self_ref | object_def | function_call |
                simd_block | precision_block | "(" expression ")" ;
@@ -265,7 +265,7 @@ default_expr = expression "or" expression ;
 early_return_expr = expression "or!" expression ;
 error_expr = "!" expression ;
 property_access = expression "." identifier | "me" "." identifier ;
-array_access = expression "." "[" expression "]" ;
+index_access = expression "{" expression "}" ;
 gather_access = expression "@" "[" expression "]" ;
 scatter_assign = expression "@" "[" expression "]" ":=" expression ;
 head_expr = "^" expression ;
@@ -678,7 +678,7 @@ GameLoop = @{
         not me.running { -> @0 "game stopped" }
 
         // Process entities in SIMD chunks
-        @simd for chunk in me.entities{health > 0} {
+        @simd for chunk in me.entities[health > 0] {
             chunk || map(e -> e.update())
         }
 
@@ -701,7 +701,7 @@ GameLoop = @{
     },
 
     cleanup_dead_entities: () -> {
-        me.entities := me.entities{entity.health > 0}
+        me.entities := me.entities[entity.health > 0]
     }
 }
 ```
@@ -728,7 +728,7 @@ MemoryManager = @{
         suitable == no or! "out of memory"
 
         block = ^suitable
-        me.free_list := me.free_list{b != block}
+        me.free_list := me.free_list[b != block]
 
         // Split block if larger than needed
         block.size > size and {
