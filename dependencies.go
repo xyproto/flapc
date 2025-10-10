@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/xyproto/env/v2"
 )
 
 // FunctionRepository maps function names to Git repository URLs
@@ -33,7 +35,7 @@ var FunctionRepository = map[string]string{
 	"max":   "github.com/xyproto/flap_math",
 
 	// Standard library
-	"println": "github.com/xyproto/flap_stdlib",
+	"println": "github.com/xyproto/flap_core",
 
 	// Graphics (example)
 	"InitWindow":    "github.com/xyproto/flap_raylib",
@@ -41,9 +43,35 @@ var FunctionRepository = map[string]string{
 	"DrawRectangle": "github.com/xyproto/flap_raylib",
 }
 
+// GetFunctionRepository returns the repository URL for a function
+// Checks environment variable FLAPC_FUNCTIONNAME first, then falls back to FunctionRepository map
+// Example: FLAPC_PRINTLN=github.com/xyproto/flap_alternative_core overrides the default
+func GetFunctionRepository(funcName string) (string, bool) {
+	// Check for environment variable override
+	// Convert function name to uppercase for env var: println -> PRINTLN
+	envVarName := "FLAPC_" + strings.ToUpper(funcName)
+	if repoURL := env.Str(envVarName); repoURL != "" {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Using environment override for %s: %s=%s\n", funcName, envVarName, repoURL)
+		}
+		return repoURL, true
+	}
+
+	// Fall back to FunctionRepository map
+	repoURL, ok := FunctionRepository[funcName]
+	return repoURL, ok
+}
+
 // GetCachePath returns the cache directory for flapc dependencies
-// Default: ~/.cache/flapc/
+// Respects XDG_CACHE_HOME environment variable
+// Default: $XDG_CACHE_HOME/flapc or ~/.cache/flapc/
 func GetCachePath() (string, error) {
+	// Check XDG_CACHE_HOME first
+	if xdgCache := env.Str("XDG_CACHE_HOME"); xdgCache != "" {
+		return filepath.Join(xdgCache, "flapc"), nil
+	}
+
+	// Fall back to ~/.cache/flapc
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("failed to get user home directory: %w", err)
@@ -294,8 +322,12 @@ func FindFlapFiles(dir string) ([]string, error) {
 
 // ResolveFunction looks up a function name and returns its repository URL
 // Returns empty string if function is not in the repository map
+// Checks environment variable FLAPC_FUNCTIONNAME first via GetFunctionRepository
 func ResolveFunction(funcName string) string {
-	return FunctionRepository[funcName]
+	if repoURL, ok := GetFunctionRepository(funcName); ok {
+		return repoURL
+	}
+	return ""
 }
 
 // ResolveDependencies takes a list of unknown functions and returns

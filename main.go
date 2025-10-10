@@ -399,10 +399,16 @@ func (eb *ExecutableBuilder) Define(symbol, value string) {
 
 func (eb *ExecutableBuilder) DefineAddr(symbol string, addr uint64) {
 	if c, ok := eb.consts[symbol]; ok {
-		if strings.HasPrefix(symbol, "str_") {
+		if strings.HasPrefix(symbol, "str_") || strings.HasPrefix(symbol, "lambda_") {
 			fmt.Fprintf(os.Stderr, "DEBUG DefineAddr: %s set to 0x%x\n", symbol, addr)
 		}
 		c.addr = addr
+	} else {
+		// Symbol doesn't exist yet - create it first
+		if strings.HasPrefix(symbol, "lambda_") {
+			fmt.Fprintf(os.Stderr, "DEBUG DefineAddr: Creating missing symbol %s with addr 0x%x\n", symbol, addr)
+		}
+		eb.consts[symbol] = &Const{value: "", addr: addr}
 	}
 }
 

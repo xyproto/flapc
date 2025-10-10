@@ -491,11 +491,11 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	fmt.Fprintf(os.Stderr, "\n=== Complete Dynamic ELF ===\n")
 	fmt.Fprintf(os.Stderr, "Entry point: 0x%x\n", entryPoint)
 	fmt.Fprintf(os.Stderr, "PLT base: 0x%x (%d bytes)\n", pltBase, ds.plt.Len())
-	fmt.Fprintf(os.Stderr, "GOT base: 0x%x (%d bytes)\n", gotBase, ds.got.Len())
+	fmt.Fprintf(os.Stderr, "GOT base: 0x%x (%d bytes)\n", gotAddr, ds.got.Len())
 	fmt.Fprintf(os.Stderr, "Rodata base: 0x%x (%d bytes)\n", layout["rodata"].addr, rodataSize)
 	fmt.Fprintf(os.Stderr, "Functions: %v\n", functions)
 
-	return gotBase, rodataAddr, textAddr, pltBase, nil
+	return gotAddr, rodataAddr, textAddr, pltBase, nil
 }
 
 func (eb *ExecutableBuilder) getInterpreterPath() string {
