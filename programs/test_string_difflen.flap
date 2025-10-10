@@ -1,0 +1,5 @@
+// Test strings with different lengths
+s1 := "hello"
+s2 := "hi"
+result := s1 == s2
+println(result)

@@ -1,0 +1,5 @@
+// Test if string lengths are accessible
+s1 := "a"
+s2 := "a"
+println(#s1)
+println(#s2)
