@@ -1638,6 +1638,11 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 	// Recompile with correct addresses
 	parser := NewParser(fc.sourceCode)
 	program := parser.ParseProgram()
+	// Collect symbols again (two-pass compilation for second regeneration)
+	for _, stmt := range program.Statements {
+		fc.collectSymbols(stmt)
+	}
+	// Generate code with symbols collected
 	for _, stmt := range program.Statements {
 		fc.compileStatement(stmt)
 	}

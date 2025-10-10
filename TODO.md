@@ -193,23 +193,26 @@ The `println()` builtin is now implemented using direct `write` syscalls instead
 **Future Enhancement**: Proper float-to-string conversion for fractional numbers (e.g., 3.14159 → "3.141590")
 
 ### Assignment Operator Issue (:=)
-**Status**: Blocking many tests
+**Status**: ✅ RESOLVED (2025-10-10)
 
-The `:=` operator is being treated as immutable assignment instead of mutable:
-- Test files use `result := abs(-5.0)` expecting mutable assignment
-- Compiler error: "cannot reassign immutable variable"
-- Many test files follow pattern: `x := value` then try to use/reassign
-- Affects: Most tests that use `:=` for initial assignment
+The `:=` operator now works correctly for mutable assignment:
+- Fixed: Added collectSymbols pass before compileStatement in second compilation pass
+- `x := 5.0` creates mutable variable x
+- `x := 10.0` successfully reassigns x (no longer errors)
+- `y = 5.0` creates immutable variable y
+- `y := 10.0` correctly errors: "cannot reassign immutable variable"
+- Tests using `:=` for mutable variables now work as expected
 
-**Root cause**: Parser or semantic analysis treats `:=` as immutable declaration
+**Root cause**: Second compilation pass was skipping collectSymbols, so mutableVars map was empty during code generation
 
 ### External Dependencies
 **Status**: ✅ Fixed (flap_math)
 
-Fixed syntax errors in flap_math repository:
-- abs.flap: Changed `=>` to `->`, changed `-x` to `(0 - x)`
+Fixed syntax errors and improved syntax in flap_math repository:
+- abs.flap: Changed `=>` to `->` (fat arrow to thin arrow)
+- abs.flap: Now uses unary minus `-x` instead of `(0 - x)` (cleaner syntax)
 - Committed and pushed to github.com/xyproto/flap_math
-- Repository now loads correctly
+- Repository now loads correctly with improved readability
 
 ---
 
