@@ -3425,22 +3425,19 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	endOffset := int32(loopEndPos - (loopEndJumpPos + 6))
 	fc.patchJumpImmediate(loopEndJumpPos+2, endOffset)
 
-	// Clean up only the lambda/list pointer spill area (16 bytes)
-	// Leave result buffer on stack since we're returning a pointer to it
-	// Note: The result buffer (parallelResultAlloc bytes) remains on stack
-	// This trades memory for simplicity - acceptable for short programs
-	fc.out.AddImmToReg("rsp", 16) // Clean up lambda+list pointers
+	// Don't clean up the lambda/list spill area yet - it's part of our memory layout
+	// The result buffer includes this space in its allocation
 
 	// Return result list pointer as float64 in xmm0
-	// r12 still points to the result buffer on stack
+	// r12 points to the result buffer on stack
 	fc.out.SubImmFromReg("rsp", 8)
 	fc.out.MovRegToMem("r12", "rsp", 0)
 	fc.out.MovMemToXmm("xmm0", "rsp", 0)
 	fc.out.AddImmToReg("rsp", 8)
 
-	// Adjust stack pointer to account for result buffer still being there
+	// Adjust stack pointer to account for result buffer AND spill area still being there
 	// The calling code must use the result before further stack operations
-	fc.out.AddImmToReg("rsp", parallelResultAlloc)
+	fc.out.AddImmToReg("rsp", parallelResultAlloc+16)
 
 	// End of parallel operator - xmm0 contains result pointer as float64
 }
