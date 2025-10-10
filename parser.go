@@ -424,6 +424,17 @@ func (b *BinaryExpr) String() string {
 }
 func (b *BinaryExpr) expressionNode() {}
 
+// UnaryExpr represents a unary operation (currently just unary minus)
+type UnaryExpr struct {
+	Operator string
+	Operand  Expression
+}
+
+func (u *UnaryExpr) String() string {
+	return "(" + u.Operator + u.Operand.String() + ")"
+}
+func (u *UnaryExpr) expressionNode() {}
+
 type InExpr struct {
 	Value     Expression // Value to search for
 	Container Expression // List or map to search in
@@ -1188,6 +1199,12 @@ func (p *Parser) parsePostfix() Expression {
 
 func (p *Parser) parsePrimary() Expression {
 	switch p.current.Type {
+	case TOKEN_MINUS:
+		// Unary minus: -expr
+		p.nextToken() // skip '-'
+		expr := p.parsePrimary()
+		return &UnaryExpr{Operator: "-", Operand: expr}
+
 	case TOKEN_HASH:
 		// Length operator: #list
 		p.nextToken() // skip '#'
@@ -2179,6 +2196,32 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		}
 		// movsd xmm0, [rbp - offset]
 		fc.out.MovMemToXmm("xmm0", "rbp", -offset)
+
+	case *UnaryExpr:
+		// Compile the operand first (result in xmm0)
+		fc.compileExpression(e.Operand)
+
+		// For unary minus, negate the value
+		if e.Operator == "-" {
+			// Create -1.0 constant and multiply
+			labelName := fmt.Sprintf("negone_%d", fc.stringCounter)
+			fc.stringCounter++
+
+			// Store -1.0 as float64 bytes
+			negOne := -1.0
+			bits := uint64(0)
+			*(*float64)(unsafe.Pointer(&bits)) = negOne
+			var floatData []byte
+			for i := 0; i < 8; i++ {
+				floatData = append(floatData, byte((bits>>(i*8))&0xFF))
+			}
+			fc.eb.Define(labelName, string(floatData))
+
+			// Load -1.0 into xmm1 and multiply
+			fc.out.LeaSymbolToReg("rax", labelName)
+			fc.out.MovMemToXmm("xmm1", "rax", 0)
+			fc.out.MulsdXmm("xmm0", "xmm1") // xmm0 = xmm0 * -1.0
+		}
 
 	case *BinaryExpr:
 		// Check for string/list/map operations with + operator
