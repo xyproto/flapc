@@ -579,7 +579,7 @@ func (eb *ExecutableBuilder) patchTextInELF() {
 	// _start is after PLT (16 bytes aligned)
 	// text starts after _start
 	pltSize := 16 + (len(eb.neededFunctions) * 16) // Dynamic PLT size based on number of functions
-	startSizeAligned := 16 // _start is 14 bytes, aligned to 16
+	startSizeAligned := 16                         // _start is 14 bytes, aligned to 16
 	textOffset := 0x2000 + pltSize + startSizeAligned
 	textSize := len(newText)
 

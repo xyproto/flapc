@@ -36,8 +36,8 @@ var FunctionRepository = map[string]string{
 	"println": "github.com/xyproto/flap_stdlib",
 
 	// Graphics (example)
-	"InitWindow":   "github.com/xyproto/flap_raylib",
-	"CloseWindow":  "github.com/xyproto/flap_raylib",
+	"InitWindow":    "github.com/xyproto/flap_raylib",
+	"CloseWindow":   "github.com/xyproto/flap_raylib",
 	"DrawRectangle": "github.com/xyproto/flap_raylib",
 }
 

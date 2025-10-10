@@ -11,7 +11,7 @@ import (
 // Returns (gotBase, rodataBase, error)
 func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functions []string) (gotBase, rodataAddr, textAddr, pltBase uint64, err error) {
 	eb.elf.Reset()
-	eb.neededFunctions = functions  // Store functions list for later use in patchTextInELF
+	eb.neededFunctions = functions // Store functions list for later use in patchTextInELF
 
 	rodataSize := eb.rodata.Len()
 	codeSize := eb.text.Len()

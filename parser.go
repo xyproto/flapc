@@ -1412,13 +1412,13 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 	fc.eb.Define("fmt_float", "%.0f\n\x00")
 
 	// ===== AVX-512 CPU DETECTION (regenerated) =====
-	fc.eb.Define("cpu_has_avx512", "\x00") // 1 byte: 0=no, 1=yes
-	fc.out.MovImmToReg("rax", "7")     // CPUID leaf 7
-	fc.out.XorRegWithReg("rcx", "rcx") // subleaf 0
-	fc.out.Emit([]byte{0x0f, 0xa2})    // cpuid
-	fc.out.Emit([]byte{0xf6, 0xc3, 0x01}) // test bl, 1
+	fc.eb.Define("cpu_has_avx512", "\x00")      // 1 byte: 0=no, 1=yes
+	fc.out.MovImmToReg("rax", "7")              // CPUID leaf 7
+	fc.out.XorRegWithReg("rcx", "rcx")          // subleaf 0
+	fc.out.Emit([]byte{0x0f, 0xa2})             // cpuid
+	fc.out.Emit([]byte{0xf6, 0xc3, 0x01})       // test bl, 1
 	fc.out.Emit([]byte{0x0f, 0xba, 0xe3, 0x10}) // bt ebx, 16
-	fc.out.Emit([]byte{0x0f, 0x92, 0xc0}) // setc al
+	fc.out.Emit([]byte{0x0f, 0x92, 0xc0})       // setc al
 	fc.out.LeaSymbolToReg("rbx", "cpu_has_avx512")
 	fc.out.MovRegToMem("rax", "rbx", 0)
 	fc.out.XorRegWithReg("rax", "rax")
@@ -2922,9 +2922,9 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Copy left string entries
 	// memcpy(r10 + 8, r12 + 8, r14 * 16)
-	fc.out.Emit([]byte{0x4d, 0x89, 0xf1}) // mov r9, r14 (counter)
+	fc.out.Emit([]byte{0x4d, 0x89, 0xf1})             // mov r9, r14 (counter)
 	fc.out.Emit([]byte{0x49, 0x8d, 0x74, 0x24, 0x08}) // lea rsi, [r12 + 8]
-	fc.out.Emit([]byte{0x49, 0x8d, 0x7a, 0x08}) // lea rdi, [r10 + 8]
+	fc.out.Emit([]byte{0x49, 0x8d, 0x7a, 0x08})       // lea rdi, [r10 + 8]
 
 	// Loop to copy left entries
 	fc.eb.MarkLabel("_concat_copy_left_loop")
@@ -2932,14 +2932,14 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// jz to skip copying if zero length - skip entire loop body (22 + 8 + 3 + 2 = 35 bytes)
 	fc.out.Emit([]byte{0x74, 0x23}) // jz +35 bytes (skip the entire loop)
 
-	fc.out.MovMemToXmm("xmm0", "rsi", 0)   // load key
-	fc.out.MovXmmToMem("xmm0", "rdi", 0)   // store key
-	fc.out.MovMemToXmm("xmm0", "rsi", 8)   // load value
-	fc.out.MovXmmToMem("xmm0", "rdi", 8)   // store value
+	fc.out.MovMemToXmm("xmm0", "rsi", 0)        // load key
+	fc.out.MovXmmToMem("xmm0", "rdi", 0)        // store key
+	fc.out.MovMemToXmm("xmm0", "rsi", 8)        // load value
+	fc.out.MovXmmToMem("xmm0", "rdi", 8)        // store value
 	fc.out.Emit([]byte{0x48, 0x83, 0xc6, 0x10}) // add rsi, 16
 	fc.out.Emit([]byte{0x48, 0x83, 0xc7, 0x10}) // add rdi, 16
-	fc.out.Emit([]byte{0x49, 0xff, 0xc9}) // dec r9
-	fc.out.Emit([]byte{0xeb, 0xd8}) // jmp back to test (-40 bytes)
+	fc.out.Emit([]byte{0x49, 0xff, 0xc9})       // dec r9
+	fc.out.Emit([]byte{0xeb, 0xd8})             // jmp back to test (-40 bytes)
 
 	// Now copy right string entries with offset keys
 	// r15 = right_len (counter), r14 = offset for keys
@@ -2948,18 +2948,18 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	fc.eb.MarkLabel("_concat_copy_right_loop")
 	fc.out.Emit([]byte{0x4d, 0x85, 0xff}) // test r15, r15
-	fc.out.Emit([]byte{0x74, 0x2c}) // jz +44 bytes (skip entire second loop)
+	fc.out.Emit([]byte{0x74, 0x2c})       // jz +44 bytes (skip entire second loop)
 
-	fc.out.MovMemToXmm("xmm0", "rsi", 0)   // load key
+	fc.out.MovMemToXmm("xmm0", "rsi", 0)              // load key
 	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x2a, 0xce}) // cvtsi2sd xmm1, r14 (offset)
-	fc.out.Emit([]byte{0xf2, 0x0f, 0x58, 0xc1}) // addsd xmm0, xmm1 (key += offset)
-	fc.out.MovXmmToMem("xmm0", "rdi", 0)   // store adjusted key
-	fc.out.MovMemToXmm("xmm0", "rsi", 8)   // load value
-	fc.out.MovXmmToMem("xmm0", "rdi", 8)   // store value
-	fc.out.Emit([]byte{0x48, 0x83, 0xc6, 0x10}) // add rsi, 16
-	fc.out.Emit([]byte{0x48, 0x83, 0xc7, 0x10}) // add rdi, 16
-	fc.out.Emit([]byte{0x49, 0xff, 0xcf}) // dec r15
-	fc.out.Emit([]byte{0xeb, 0xcf}) // jmp back to test (-49 bytes)
+	fc.out.Emit([]byte{0xf2, 0x0f, 0x58, 0xc1})       // addsd xmm0, xmm1 (key += offset)
+	fc.out.MovXmmToMem("xmm0", "rdi", 0)              // store adjusted key
+	fc.out.MovMemToXmm("xmm0", "rsi", 8)              // load value
+	fc.out.MovXmmToMem("xmm0", "rdi", 8)              // store value
+	fc.out.Emit([]byte{0x48, 0x83, 0xc6, 0x10})       // add rsi, 16
+	fc.out.Emit([]byte{0x48, 0x83, 0xc7, 0x10})       // add rdi, 16
+	fc.out.Emit([]byte{0x49, 0xff, 0xcf})             // dec r15
+	fc.out.Emit([]byte{0xeb, 0xcf})                   // jmp back to test (-49 bytes)
 
 	// Return result pointer in rax
 	fc.out.MovRegToReg("rax", "r10")
@@ -3034,7 +3034,8 @@ func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
 // Input: mapPtr (register name) = pointer to string map
 // Output: cstrPtr (register name) = pointer to first character of CString
 // CString format: [length_byte][char0][char1]...[charn][newline][null]
-//                               ^-- returned pointer points here
+//
+//	^-- returned pointer points here
 func (fc *FlapCompiler) compileMapToCString(mapPtr, cstrPtr string) {
 	// Allocate space on stack for CString (max 256 bytes + length + newline + null)
 	fc.out.SubImmFromReg("rsp", 260) // 1 (length) + 256 (chars) + 1 (newline) + 1 (null) + padding
@@ -3110,7 +3111,7 @@ func (fc *FlapCompiler) compileMapToCString(mapPtr, cstrPtr string) {
 	fc.patchJumpImmediate(keyMatchJump+2, int32(keyMatchPos-keyMatchEnd))
 
 	fc.out.MovMemToXmm("xmm2", "r8", 8) // Load value at [r8+8]
-	fc.out.Cvttsd2si("r10", "xmm2")      // r10 = character code
+	fc.out.Cvttsd2si("r10", "xmm2")     // r10 = character code
 
 	// Store character byte at [rsi]
 	fc.out.MovByteRegToMem("r10", "rsi", 0)
@@ -3242,7 +3243,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		arg := call.Args[0]
 		argType := fc.getExprType(arg)
 
-		if strExpr, ok := arg.(*StringExpr); ok{
+		if strExpr, ok := arg.(*StringExpr); ok {
 			// String literal - optimize by generating C string directly
 			labelName := fmt.Sprintf("cstr_%d", fc.stringCounter)
 			fc.stringCounter++
@@ -3545,9 +3546,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// FPATAN expects ST(1)=y, ST(0)=x, computes atan2(y,x)
 		fc.out.SubImmFromReg("rsp", 8)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
-		fc.out.FldMem("rsp", 0)    // ST(0) = x
-		fc.out.Fld1()               // ST(0) = 1.0, ST(1) = x
-		fc.out.Fpatan()             // ST(0) = atan2(x, 1.0) = atan(x)
+		fc.out.FldMem("rsp", 0) // ST(0) = x
+		fc.out.Fld1()           // ST(0) = 1.0, ST(1) = x
+		fc.out.Fpatan()         // ST(0) = atan2(x, 1.0) = atan(x)
 		fc.out.FstpMem("rsp", 0)
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
 		fc.out.AddImmToReg("rsp", 8)
@@ -3562,21 +3563,21 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// FPATAN needs ST(1)=x, ST(0)=sqrt(1-x²)
 		fc.out.SubImmFromReg("rsp", 8)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
-		fc.out.FldMem("rsp", 0)    // ST(0) = x
-		fc.out.FldSt0()             // ST(0) = x, ST(1) = x
-		fc.out.FmulSelf()           // ST(0) = x²
-		fc.out.Fld1()               // ST(0) = 1.0, ST(1) = x²
-		fc.out.Fsubrp()             // ST(0) = 1 - x²
-		fc.out.Fsqrt()              // ST(0) = sqrt(1 - x²)
-		fc.out.FldMem("rsp", 0)    // ST(0) = x, ST(1) = sqrt(1 - x²)
+		fc.out.FldMem("rsp", 0) // ST(0) = x
+		fc.out.FldSt0()         // ST(0) = x, ST(1) = x
+		fc.out.FmulSelf()       // ST(0) = x²
+		fc.out.Fld1()           // ST(0) = 1.0, ST(1) = x²
+		fc.out.Fsubrp()         // ST(0) = 1 - x²
+		fc.out.Fsqrt()          // ST(0) = sqrt(1 - x²)
+		fc.out.FldMem("rsp", 0) // ST(0) = x, ST(1) = sqrt(1 - x²)
 		// Now swap: need ST(1)=x, ST(0)=sqrt(1-x²) but have reverse
 		// Solution: save sqrt to mem, reload in reverse order
-		fc.out.FstpMem("rsp", 0)   // Store x to [rsp], pop, ST(0) = sqrt(1-x²)
+		fc.out.FstpMem("rsp", 0) // Store x to [rsp], pop, ST(0) = sqrt(1-x²)
 		fc.out.SubImmFromReg("rsp", 8)
-		fc.out.FstpMem("rsp", 0)   // Store sqrt to [rsp+0]
-		fc.out.FldMem("rsp", 8)    // Load x: ST(0) = x
-		fc.out.FldMem("rsp", 0)    // Load sqrt: ST(0) = sqrt, ST(1) = x
-		fc.out.Fpatan()             // ST(0) = atan2(x, sqrt(1-x²)) = asin(x)
+		fc.out.FstpMem("rsp", 0) // Store sqrt to [rsp+0]
+		fc.out.FldMem("rsp", 8)  // Load x: ST(0) = x
+		fc.out.FldMem("rsp", 0)  // Load sqrt: ST(0) = sqrt, ST(1) = x
+		fc.out.Fpatan()          // ST(0) = atan2(x, sqrt(1-x²)) = asin(x)
 		fc.out.FstpMem("rsp", 0)
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
 		fc.out.AddImmToReg("rsp", 16) // Restore both allocations
@@ -3591,14 +3592,14 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// FPATAN needs ST(1)=sqrt(1-x²), ST(0)=x
 		fc.out.SubImmFromReg("rsp", 8)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
-		fc.out.FldMem("rsp", 0)    // ST(0) = x
-		fc.out.FldSt0()             // ST(0) = x, ST(1) = x
-		fc.out.FmulSelf()           // ST(0) = x²
-		fc.out.Fld1()               // ST(0) = 1.0, ST(1) = x²
-		fc.out.Fsubrp()             // ST(0) = 1 - x²
-		fc.out.Fsqrt()              // ST(0) = sqrt(1 - x²)
-		fc.out.FldMem("rsp", 0)    // ST(0) = x, ST(1) = sqrt(1 - x²)
-		fc.out.Fpatan()             // ST(0) = atan2(sqrt(1-x²), x) = acos(x)
+		fc.out.FldMem("rsp", 0) // ST(0) = x
+		fc.out.FldSt0()         // ST(0) = x, ST(1) = x
+		fc.out.FmulSelf()       // ST(0) = x²
+		fc.out.Fld1()           // ST(0) = 1.0, ST(1) = x²
+		fc.out.Fsubrp()         // ST(0) = 1 - x²
+		fc.out.Fsqrt()          // ST(0) = sqrt(1 - x²)
+		fc.out.FldMem("rsp", 0) // ST(0) = x, ST(1) = sqrt(1 - x²)
+		fc.out.Fpatan()         // ST(0) = atan2(sqrt(1-x²), x) = acos(x)
 		fc.out.FstpMem("rsp", 0)
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
 		fc.out.AddImmToReg("rsp", 8)
@@ -3612,8 +3613,8 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// abs(x) using FABS
 		fc.out.SubImmFromReg("rsp", 8)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
-		fc.out.FldMem("rsp", 0)    // ST(0) = x
-		fc.out.Fabs()               // ST(0) = |x|
+		fc.out.FldMem("rsp", 0) // ST(0) = x
+		fc.out.Fabs()           // ST(0) = |x|
 		fc.out.FstpMem("rsp", 0)
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
 		fc.out.AddImmToReg("rsp", 8)
@@ -3633,18 +3634,18 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.FstcwMem("rsp", 0)
 
 		// Load control word, modify to set RC=01 (bits 10-11)
-		fc.out.MovMemToReg("ax", "rsp", 0)      // Load 16-bit control word
-		fc.out.Write(0x66) // 16-bit operand prefix
-		fc.out.Write(0x81) // OR ax, imm16
-		fc.out.Write(0xC8) // ModR/M for ax
-		fc.out.Write(0x00) // Low byte: clear bits 10-11
-		fc.out.Write(0x04) // High byte: 0x0400 = bit 10 set (round down)
-		fc.out.Write(0x66) // 16-bit operand prefix
-		fc.out.Write(0x81) // AND ax, imm16
-		fc.out.Write(0xE0) // ModR/M for ax
-		fc.out.Write(0xFF) // Low byte: keep all bits
-		fc.out.Write(0xF7) // High byte: 0xF7FF = clear bit 11, keep bit 10
-		fc.out.MovRegToMem("ax", "rsp", 2)      // Store modified control word
+		fc.out.MovMemToReg("ax", "rsp", 0) // Load 16-bit control word
+		fc.out.Write(0x66)                 // 16-bit operand prefix
+		fc.out.Write(0x81)                 // OR ax, imm16
+		fc.out.Write(0xC8)                 // ModR/M for ax
+		fc.out.Write(0x00)                 // Low byte: clear bits 10-11
+		fc.out.Write(0x04)                 // High byte: 0x0400 = bit 10 set (round down)
+		fc.out.Write(0x66)                 // 16-bit operand prefix
+		fc.out.Write(0x81)                 // AND ax, imm16
+		fc.out.Write(0xE0)                 // ModR/M for ax
+		fc.out.Write(0xFF)                 // Low byte: keep all bits
+		fc.out.Write(0xF7)                 // High byte: 0xF7FF = clear bit 11, keep bit 10
+		fc.out.MovRegToMem("ax", "rsp", 2) // Store modified control word
 
 		// Load modified control word
 		fc.out.FldcwMem("rsp", 2)
@@ -3744,9 +3745,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// So if ST(1) = ln(2) and ST(0) = x, we get: ln(2) * log2(x) = ln(x) ✓
 		fc.out.SubImmFromReg("rsp", 8)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
-		fc.out.Fldln2()             // ST(0) = ln(2)
-		fc.out.FldMem("rsp", 0)    // ST(0) = x, ST(1) = ln(2)
-		fc.out.Fyl2x()              // ST(0) = ln(2) * log2(x) = ln(x)
+		fc.out.Fldln2()         // ST(0) = ln(2)
+		fc.out.FldMem("rsp", 0) // ST(0) = x, ST(1) = ln(2)
+		fc.out.Fyl2x()          // ST(0) = ln(2) * log2(x) = ln(x)
 		fc.out.FstpMem("rsp", 0)
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
 		fc.out.AddImmToReg("rsp", 8)
@@ -3765,25 +3766,25 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// 4. Scale by 2^n using FSCALE
 		fc.out.SubImmFromReg("rsp", 8)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
-		fc.out.FldMem("rsp", 0)    // ST(0) = x
-		fc.out.Fldl2e()             // ST(0) = log2(e), ST(1) = x
-		fc.out.Fmulp()              // ST(0) = x * log2(e)
+		fc.out.FldMem("rsp", 0) // ST(0) = x
+		fc.out.Fldl2e()         // ST(0) = log2(e), ST(1) = x
+		fc.out.Fmulp()          // ST(0) = x * log2(e)
 
 		// Now split into integer and fractional parts
-		fc.out.FldSt0()             // ST(0) = x', ST(1) = x'
-		fc.out.Frndint()            // ST(0) = n (integer part)
-		fc.out.FldSt0()             // ST(0) = n, ST(1) = n, ST(2) = x'
+		fc.out.FldSt0()    // ST(0) = x', ST(1) = x'
+		fc.out.Frndint()   // ST(0) = n (integer part)
+		fc.out.FldSt0()    // ST(0) = n, ST(1) = n, ST(2) = x'
 		fc.out.Write(0xD9) // FXCH st(2) - exchange ST(0) and ST(2)
 		fc.out.Write(0xCA)
-		fc.out.Fsubrp()             // ST(0) = x' - n = f, ST(1) = n
+		fc.out.Fsubrp() // ST(0) = x' - n = f, ST(1) = n
 
 		// Compute 2^f - 1 using F2XM1
-		fc.out.F2xm1()              // ST(0) = 2^f - 1, ST(1) = n
-		fc.out.Fld1()               // ST(0) = 1, ST(1) = 2^f - 1, ST(2) = n
-		fc.out.Faddp()              // ST(0) = 2^f, ST(1) = n
+		fc.out.F2xm1() // ST(0) = 2^f - 1, ST(1) = n
+		fc.out.Fld1()  // ST(0) = 1, ST(1) = 2^f - 1, ST(2) = n
+		fc.out.Faddp() // ST(0) = 2^f, ST(1) = n
 
 		// Scale by 2^n
-		fc.out.Fscale()             // ST(0) = 2^f * 2^n = 2^(n+f) = e^x, ST(1) = n
+		fc.out.Fscale() // ST(0) = 2^f * 2^n = 2^(n+f) = e^x, ST(1) = n
 		// Discard n (ST(1)) while keeping result in ST(0)
 		fc.out.Write(0xDD) // FSTP st(1) - stores ST(0) to st(1), pops stack
 		fc.out.Write(0xD9)
@@ -3810,25 +3811,25 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// 3. Split into integer and fractional parts
 		// 4. Use F2XM1 and FSCALE like in exp
 
-		fc.out.Fld1()               // ST(0) = 1.0
-		fc.out.FldMem("rsp", 0)    // ST(0) = x, ST(1) = 1.0
-		fc.out.Fyl2x()              // ST(0) = 1 * log2(x) = log2(x)
-		fc.out.FldMem("rsp", 8)    // ST(0) = y, ST(1) = log2(x)
-		fc.out.Fmulp()              // ST(0) = y * log2(x)
+		fc.out.Fld1()           // ST(0) = 1.0
+		fc.out.FldMem("rsp", 0) // ST(0) = x, ST(1) = 1.0
+		fc.out.Fyl2x()          // ST(0) = 1 * log2(x) = log2(x)
+		fc.out.FldMem("rsp", 8) // ST(0) = y, ST(1) = log2(x)
+		fc.out.Fmulp()          // ST(0) = y * log2(x)
 
 		// Split into n + f
-		fc.out.FldSt0()             // ST(0) = y*log2(x), ST(1) = y*log2(x)
-		fc.out.Frndint()            // ST(0) = n
-		fc.out.FldSt0()             // ST(0) = n, ST(1) = n, ST(2) = y*log2(x)
+		fc.out.FldSt0()    // ST(0) = y*log2(x), ST(1) = y*log2(x)
+		fc.out.Frndint()   // ST(0) = n
+		fc.out.FldSt0()    // ST(0) = n, ST(1) = n, ST(2) = y*log2(x)
 		fc.out.Write(0xD9) // FXCH st(2)
 		fc.out.Write(0xCA)
-		fc.out.Fsubrp()             // ST(0) = f, ST(1) = n
+		fc.out.Fsubrp() // ST(0) = f, ST(1) = n
 
 		// Compute 2^f
-		fc.out.F2xm1()              // ST(0) = 2^f - 1
+		fc.out.F2xm1() // ST(0) = 2^f - 1
 		fc.out.Fld1()
-		fc.out.Faddp()              // ST(0) = 2^f, ST(1) = n
-		fc.out.Fscale()             // ST(0) = 2^f * 2^n = x^y, ST(1) = n
+		fc.out.Faddp()  // ST(0) = 2^f, ST(1) = n
+		fc.out.Fscale() // ST(0) = 2^f * 2^n = x^y, ST(1) = n
 		// Discard n (ST(1)) while keeping result in ST(0)
 		fc.out.Write(0xDD) // FSTP st(1) - stores ST(0) to st(1), pops stack
 		fc.out.Write(0xD9)
@@ -3858,7 +3859,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Restore arguments from stack in reverse order to registers
 		// Last arg is already in xmm0
-		for i := len(call.Args) - 2; i >= 0 && i >= 0; i-- {
+		for i := len(call.Args) - 2; i >= 0; i-- {
 			regName := fmt.Sprintf("xmm%d", i)
 			fc.out.MovMemToXmm(regName, "rsp", 0)
 			fc.out.AddImmToReg("rsp", 8)
