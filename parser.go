@@ -1295,6 +1295,13 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.out.XorRegWithReg("rcx", "rcx")
 	// ===== END AVX-512 DETECTION =====
 
+	// Two-pass compilation: First pass collects all variable declarations
+	// so that function/constant order doesn't matter
+	for _, stmt := range program.Statements {
+		fc.collectSymbols(stmt)
+	}
+
+	// Second pass: Generate actual code with all symbols known
 	for _, stmt := range program.Statements {
 		fc.compileStatement(stmt)
 	}
@@ -1476,39 +1483,51 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 	return nil
 }
 
-func (fc *FlapCompiler) compileStatement(stmt Statement) {
+// collectSymbols performs the first pass: collect all variable declarations
+// without generating any code. This allows forward references.
+func (fc *FlapCompiler) collectSymbols(stmt Statement) {
 	switch s := stmt.(type) {
 	case *AssignStmt:
 		// Check if variable already exists
-		offset, exists := fc.variables[s.Name]
-
-		if exists {
-			// Variable exists - check if it's mutable
-			if !fc.mutableVars[s.Name] {
-				fmt.Fprintf(os.Stderr, "Error: cannot reassign immutable variable '%s'\n", s.Name)
-				os.Exit(1)
-			}
-			// It's mutable, allow reassignment
-		} else {
+		_, exists := fc.variables[s.Name]
+		if !exists {
 			// First assignment - allocate stack space (16 bytes for alignment)
 			fc.stackOffset += 16
-			offset = fc.stackOffset
+			offset := fc.stackOffset
 			fc.variables[s.Name] = offset
 			fc.mutableVars[s.Name] = s.Mutable
-			// Actually allocate the stack space (16 bytes to maintain alignment)
-			fc.out.SubImmFromReg("rsp", 16)
+
+			// Track type if we can determine it from the expression
+			exprType := fc.getExprType(s.Value)
+			if exprType != "number" && exprType != "unknown" {
+				fc.varTypes[s.Name] = exprType
+			}
+		}
+	case *LoopStmt:
+		// No symbols to collect from loops
+	case *ExpressionStmt:
+		// No symbols to collect from expression statements
+	}
+}
+
+func (fc *FlapCompiler) compileStatement(stmt Statement) {
+	switch s := stmt.(type) {
+	case *AssignStmt:
+		// Variable already registered in collectSymbols pass
+		offset := fc.variables[s.Name]
+
+		// Check mutability on reassignment
+		if s.Mutable && !fc.mutableVars[s.Name] {
+			fmt.Fprintf(os.Stderr, "Error: cannot reassign immutable variable '%s'\n", s.Name)
+			os.Exit(1)
 		}
 
-		// Track type if assigning a map, list, or string
-		exprType := fc.getExprType(s.Value)
-		if exprType != "number" && exprType != "unknown" {
-			fc.varTypes[s.Name] = exprType
-		}
+		// Allocate actual stack space (was only registered in first pass)
+		fc.out.SubImmFromReg("rsp", 16)
 
 		// Evaluate expression into xmm0
 		fc.compileExpression(s.Value)
 		// Store xmm0 to stack at variable's offset
-		// movsd [rbp - offset], xmm0
 		fc.out.MovXmmToMem("xmm0", "rbp", -offset)
 
 	case *LoopStmt:
@@ -4216,8 +4235,8 @@ func CompileFlap(inputPath string, outputPath string) error {
 					depParser := NewParserWithFilename(string(depContent), flapFile)
 					depProgram := depParser.ParseProgram()
 
-					// Merge dependency program into main program
-					program.Statements = append(program.Statements, depProgram.Statements...)
+					// Prepend dependency program to main program (dependencies must be defined before use)
+					program.Statements = append(depProgram.Statements, program.Statements...)
 					fmt.Fprintf(os.Stderr, "Loaded %s from %s\n", flapFile, repoURL)
 				}
 			}

@@ -11,6 +11,12 @@ Release when:
 
 ## Blockers for 1.0.0
 
+### Language Features
+- [ ] Implement: Multiple-lambda dispatch syntax `f = (x) -> x, (y) -> y + 1`
+- [ ] Test: Dispatch selects correct lambda based on argument type/pattern
+- [ ] Test: Forward references work (function called before definition)
+- [ ] Implement: Two-pass compilation (symbols collected, then code generated)
+
 ### String Operations
 - [ ] Test: Runtime string concatenation `s1 + s2` where s1, s2 are variables
 - [ ] Test: String comparison `s1 == s2`, `s1 != s2`
