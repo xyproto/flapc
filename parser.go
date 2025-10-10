@@ -39,6 +39,9 @@ const (
 	TOKEN_DEFAULT_ARROW // ~>
 	TOKEN_AT            // @
 	TOKEN_IN            // in keyword
+	TOKEN_FOR           // for keyword
+	TOKEN_BREAK         // break keyword
+	TOKEN_CONTINUE      // continue keyword
 	TOKEN_LBRACE        // {
 	TOKEN_RBRACE        // }
 	TOKEN_LBRACKET      // [
@@ -168,6 +171,12 @@ func (l *Lexer) NextToken() Token {
 		switch value {
 		case "in":
 			return Token{Type: TOKEN_IN, Value: value, Line: l.line}
+		case "for":
+			return Token{Type: TOKEN_FOR, Value: value, Line: l.line}
+		case "break":
+			return Token{Type: TOKEN_BREAK, Value: value, Line: l.line}
+		case "continue":
+			return Token{Type: TOKEN_CONTINUE, Value: value, Line: l.line}
 		}
 
 		return Token{Type: TOKEN_IDENT, Value: value, Line: l.line}
@@ -536,11 +545,12 @@ func (l *LengthExpr) expressionNode() {}
 
 // Parser for Flap language
 type Parser struct {
-	lexer    *Lexer
-	current  Token
-	peek     Token
-	filename string
-	source   string
+	lexer     *Lexer
+	current   Token
+	peek      Token
+	filename  string
+	source    string
+	loopDepth int // Current loop nesting level (0 = not in loop, 1 = outer loop, etc.)
 }
 
 func NewParser(input string) *Parser {
@@ -740,6 +750,32 @@ func foldConstantExpr(expr Expression) Expression {
 }
 
 func (p *Parser) parseStatement() Statement {
+	// Check for 'for' keyword (alias for @(N+1) loop)
+	if p.current.Type == TOKEN_FOR {
+		return p.parseForLoop()
+	}
+
+	// Check for 'break' keyword (alias for @(N-1) jump out)
+	if p.current.Type == TOKEN_BREAK {
+		if p.loopDepth == 0 {
+			p.error("'break' used outside of loop")
+		}
+		p.nextToken() // skip 'break'
+		// break = @(N-1) where N is current loop label
+		// Since loop labels start at 1, loopDepth-1 gives us the outer scope or previous loop
+		return &JumpStmt{Label: p.loopDepth - 1}
+	}
+
+	// Check for 'continue' keyword (alias for @N jump to start)
+	if p.current.Type == TOKEN_CONTINUE {
+		if p.loopDepth == 0 {
+			p.error("'continue' used outside of loop")
+		}
+		p.nextToken() // skip 'continue'
+		// continue = @N where N is current loop label
+		return &JumpStmt{Label: p.loopDepth}
+	}
+
 	// Check for @ (either loop @N or jump @N)
 	if p.current.Type == TOKEN_AT {
 		// Look ahead to distinguish loop vs jump
@@ -876,6 +912,96 @@ func (p *Parser) parseLoopStatement() Statement {
 	for p.peek.Type == TOKEN_NEWLINE {
 		p.nextToken()
 	}
+
+	// Track loop depth for nested loops (for break/continue)
+	oldDepth := p.loopDepth
+	p.loopDepth = label
+	defer func() { p.loopDepth = oldDepth }()
+
+	// Parse loop body
+	var body []Statement
+	for p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
+		p.nextToken()
+		if p.current.Type == TOKEN_NEWLINE {
+			continue
+		}
+		stmt := p.parseStatement()
+		if stmt != nil {
+			body = append(body, stmt)
+		}
+	}
+
+	// Skip to '}'
+	for p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
+		p.nextToken()
+	}
+	p.nextToken() // skip to '}'
+
+	return &LoopStmt{
+		Label:    label,
+		Iterator: iterator,
+		Iterable: iterable,
+		Body:     body,
+	}
+}
+
+// parseForLoop handles 'for' keyword which is an alias for @(N+1)
+// Supports:
+// - for x in expr { ... } - normal loop with auto-increment label
+// - for x in N { ... } - loop N times (x from 0 to N-1)
+// - for { ... } - infinite loop
+func (p *Parser) parseForLoop() Statement {
+	p.nextToken() // skip 'for'
+
+	// Check for infinite loop: for { ... }
+	if p.current.Type == TOKEN_LBRACE {
+		// Infinite loop: for { ... }
+		// This is equivalent to: @(N+1) _ in range(∞) { ... }
+		// We'll implement this as a special case later
+		p.error("infinite loops (for { }) not yet implemented")
+	}
+
+	// Calculate auto-increment label: @(N+1)
+	label := p.loopDepth + 1
+
+	// Expect identifier for iterator variable
+	if p.current.Type != TOKEN_IDENT {
+		p.error("expected identifier after 'for'")
+	}
+	iterator := p.current.Value
+
+	p.nextToken() // skip identifier
+
+	// Expect 'in' keyword
+	if p.current.Type != TOKEN_IN {
+		p.error("expected 'in' in for loop")
+	}
+
+	p.nextToken() // skip 'in'
+
+	// Parse iterable expression
+	iterable := p.parseExpression()
+
+	// Skip newlines before '{'
+	for p.peek.Type == TOKEN_NEWLINE {
+		p.nextToken()
+	}
+
+	// Expect '{'
+	if p.peek.Type != TOKEN_LBRACE {
+		p.error("expected '{' in for loop")
+	}
+	p.nextToken() // advance to '{'
+
+	// Skip newlines after '{'
+	for p.peek.Type == TOKEN_NEWLINE {
+		p.nextToken()
+	}
+
+	// Track loop depth for nested loops (for break/continue)
+	oldDepth := p.loopDepth
+	p.loopDepth = label
+	defer func() { p.loopDepth = oldDepth }()
 
 	// Parse loop body
 	var body []Statement
@@ -1507,6 +1633,39 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 
 	// Generate runtime helper functions
 	fc.generateRuntimeHelpers()
+
+	// Collect rodata symbols again (lambda/runtime functions may have created new ones)
+	rodataSymbols = fc.eb.RodataSection()
+
+	// Find any NEW symbols that weren't in the original list
+	var newSymbols []string
+	for symbol := range rodataSymbols {
+		found := false
+		for _, existingSym := range symbolNames {
+			if symbol == existingSym {
+				found = true
+				break
+			}
+		}
+		if !found {
+			newSymbols = append(newSymbols, symbol)
+		}
+	}
+
+	if len(newSymbols) > 0 {
+		fmt.Fprintf(os.Stderr, "DEBUG: Found %d new rodata symbols after lambda generation: %v\n", len(newSymbols), newSymbols)
+		sort.Strings(newSymbols)
+
+		// Append new symbols to rodata and assign addresses
+		for _, symbol := range newSymbols {
+			value := rodataSymbols[symbol]
+			fc.eb.WriteRodata([]byte(value))
+			fc.eb.DefineAddr(symbol, currentAddr)
+			fmt.Fprintf(os.Stderr, "DEBUG: Added new symbol %s at 0x%x, len=%d\n", symbol, currentAddr, len(value))
+			currentAddr += uint64(len(value))
+			symbolNames = append(symbolNames, symbol)
+		}
+	}
 
 	// Set lambda function addresses
 	for lambdaName, offset := range fc.lambdaOffsets {
@@ -3467,23 +3626,30 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 	// Otherwise, handle builtin functions
 	switch call.Function {
 	case "println":
+		fmt.Fprintf(os.Stderr, "DEBUG: println builtin case reached\n")
 		if len(call.Args) == 0 {
 			return
 		}
 
 		arg := call.Args[0]
+		fmt.Fprintf(os.Stderr, "DEBUG: println arg type: %T\n", arg)
 		argType := fc.getExprType(arg)
+		fmt.Fprintf(os.Stderr, "DEBUG: println argType: %s\n", argType)
 
 		if strExpr, ok := arg.(*StringExpr); ok {
-			// String literal - optimize by generating C string directly
+			// String literal - create C-compatible null-terminated string
+			// For FFI with C, we use standard C strings (null-terminated, no length prefix)
 			labelName := fmt.Sprintf("cstr_%d", fc.stringCounter)
 			fc.stringCounter++
-			fc.eb.Define(labelName, strExpr.Value+"\n\x00")
+			strWithNewline := strExpr.Value + "\n\x00"
+			fc.eb.Define(labelName, strWithNewline)
+			// Load address and call printf
 			fc.out.LeaSymbolToReg("rdi", labelName)
 			fc.out.XorRegWithReg("rax", "rax")
 			fc.trackFunctionCall("printf")
 			fc.eb.GenerateCallInstruction("printf")
 		} else if argType == "string" {
+			fmt.Fprintf(os.Stderr, "DEBUG: Taking string variable branch\n")
 			// String variable - convert map[uint64]float64 to CString at runtime
 			// CString format: [length_byte] [char0] [char1] ... [newline] [null]
 			//                                ^-- returned pointer points here
@@ -4298,6 +4464,7 @@ func getUnknownFunctions(program *Program) []string {
 	builtins := map[string]bool{
 		"printf": true, "exit": true, "syscall": true,
 		"getpid": true, "range": true, "me": true,
+		"println": true, // println is a builtin optimization, not a dependency
 	}
 
 	// Collect all function calls
@@ -4334,6 +4501,8 @@ func CompileFlap(inputPath string, outputPath string) error {
 	fmt.Fprintf(os.Stderr, "Parsed program:\n%s\n", program.String())
 
 	// Check for unknown functions and resolve dependencies
+	// Build combined source code (dependencies + main)
+	var combinedSource string
 	unknownFuncs := getUnknownFunctions(program)
 	if len(unknownFuncs) > 0 {
 		fmt.Fprintf(os.Stderr, "Resolving dependencies for: %v\n", unknownFuncs)
@@ -4369,18 +4538,22 @@ func CompileFlap(inputPath string, outputPath string) error {
 
 					// Prepend dependency program to main program (dependencies must be defined before use)
 					program.Statements = append(depProgram.Statements, program.Statements...)
+					// Prepend dependency source to combined source
+					combinedSource = string(depContent) + "\n" + combinedSource
 					fmt.Fprintf(os.Stderr, "Loaded %s from %s\n", flapFile, repoURL)
 				}
 			}
 		}
 	}
+	// Append main file source
+	combinedSource = combinedSource + string(content)
 
 	// Compile
 	compiler, err := NewFlapCompiler(MachineX86_64)
 	if err != nil {
 		return fmt.Errorf("failed to create compiler: %v", err)
 	}
-	compiler.sourceCode = string(content)
+	compiler.sourceCode = combinedSource
 
 	err = compiler.Compile(program, outputPath)
 	if err != nil {

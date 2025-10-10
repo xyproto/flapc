@@ -114,10 +114,17 @@ result = 5 in mylist  // returns 1.0 or 0.0
 // @0 jumps out of current loop (equivalent to "break")
 // @N jumps back to loop label N (equivalent to "continue")
 //
-// Planned convenience aliases:
-// - "for" = @(N+1) auto-increment
-// - "break" = @(N-1) jump out
-// - "continue" = @N jump to start
+// Convenience aliases (implemented):
+// - "for" = alias for @ (same behavior)
+// - "break" = exits the innermost loop
+// - "continue" = skips to next iteration of innermost loop
+//
+// Example with break/continue:
+for i in range(10) {
+    if i == 5 { break }        // Exit loop at 5
+    if i % 2 == 0 { continue } // Skip even numbers
+    println(i)                 // Prints: 1, 3
+}
 
 // Lambdas (up to 6 parameters)
 double = (x) -> x * 2

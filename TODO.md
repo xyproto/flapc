@@ -40,6 +40,8 @@ Release when:
 - [ ] Test: `map1 - map2` removes keys (set difference)
 
 ### Control Flow
+- [x] Test: `break` exits loop early ✓
+- [x] Test: `continue` skips to next iteration ✓
 - [ ] Test: `return expr` exits function early
 - [ ] Test: Nested function with `return`
 - [ ] Test: Lambda with `return`
@@ -136,9 +138,14 @@ Release when:
 
 ---
 
-## Recently Completed (2025-10-09)
+## Recently Completed
 
-### Math Functions (Today)
+### Control Flow (2025-10-10)
+- [x] `break` statement exits loop early ✓
+- [x] `continue` statement skips to next iteration ✓
+- [x] Tests: for loops with break/continue working correctly ✓
+
+### Math Functions (2025-10-09)
 - [x] `sqrt(x)` using SQRTSD (SSE2) ✓
 - [x] `sin(x)`, `cos(x)`, `tan(x)` using FSIN, FCOS, FPTAN (x87 FPU) ✓
 - [x] `atan(x)` using FPATAN (x87 FPU) ✓
@@ -176,6 +183,30 @@ Release when:
 4. Clean up code (refactor)
 5. Update this TODO
 6. Repeat until 1.0.0
+
+---
+
+## Known Issues
+
+### println() Silent Failure (2025-10-10)
+**Status**: Under investigation
+
+The `println()` builtin currently generates structurally correct code but produces no output:
+- Assembly: Correct LEA instruction with proper RIP-relative addressing
+- Rodata: String data stored correctly with null termination
+- PLT/GOT: printf relocations appear correct
+- Binary: Executes without errors but produces no output
+- Direct printf() calls work correctly
+- strace shows no write syscalls from println-generated code
+
+**Workaround**: Use direct `printf()` calls or implement syscall-based I/O (put_cstr, put_number, put_string).
+
+**Investigation findings**:
+- Second compilation pass may have text section patching issues
+- PC relocations are patched correctly (verified with objdump)
+- String data is byte-perfect in binary (verified with xxd)
+- Call instruction offsets are correct
+- Issue appears to be in PLT call execution, not code generation
 
 ---
 

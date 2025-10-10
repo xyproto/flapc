@@ -1,0 +1,16 @@
+// test_for_break.flap - test for/break/continue keywords
+printf("Testing for loop:\n")
+for i in range(5) {
+    printf("%.0f ", i)
+}
+printf("\n")
+
+printf("Testing nested for:\n")
+for i in range(2) {
+    for j in range(3) {
+        printf("(%v,%v) ", i, j)
+    }
+    printf("\n")
+}
+
+exit(0)
