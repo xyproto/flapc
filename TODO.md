@@ -18,27 +18,27 @@ Release when:
 - [ ] Implement: Two-pass compilation (symbols collected, then code generated)
 
 ### Logical and Bitwise Operators
-- [ ] Implement: `or` logical OR (returns 1.0 if either operand is non-zero)
-- [ ] Implement: `and` logical AND (returns 1.0 if both operands are non-zero)
-- [ ] Implement: `xor` logical XOR (returns 1.0 if exactly one operand is non-zero)
-- [ ] Implement: `not` logical NOT (returns 1.0 if operand is 0.0, else 0.0)
-- [ ] Implement: `shl` shift left (bitwise shift on integer part)
-- [ ] Implement: `shr` shift right (bitwise shift on integer part)
-- [ ] Implement: `rol` rotate left (bitwise rotate on integer part)
-- [ ] Implement: `ror` rotate right (bitwise rotate on integer part)
-- [ ] Test: `5 and 10` returns `1.0` (both non-zero)
-- [ ] Test: `5 or 0` returns `1.0` (first is non-zero)
-- [ ] Test: `not 0` returns `1.0`, `not 5` returns `0.0`
-- [ ] Test: `8 shl 2` returns `32.0` (8 << 2)
-- [ ] Test: `32 shr 2` returns `8.0` (32 >> 2)
-- [ ] Test: `rol` and `ror` with various bit patterns
+- [x] Implement: `or` logical OR (returns 1.0 if either operand is non-zero) ✓
+- [x] Implement: `and` logical AND (returns 1.0 if both operands are non-zero) ✓
+- [x] Implement: `xor` logical XOR (returns 1.0 if exactly one operand is non-zero) ✓
+- [x] Implement: `not` logical NOT (returns 1.0 if operand is 0.0, else 0.0) ✓
+- [x] Implement: `shl` shift left (bitwise shift on integer part) ✓
+- [x] Implement: `shr` shift right (bitwise shift on integer part) ✓
+- [x] Implement: `rol` rotate left (bitwise rotate on integer part) ✓
+- [x] Implement: `ror` rotate right (bitwise rotate on integer part) ✓
+- [x] Test: `5 and 10` returns `1.0` (both non-zero) ✓
+- [x] Test: `5 or 0` returns `1.0` (first is non-zero) ✓
+- [x] Test: `not 0` returns `1.0`, `not 5` returns `0.0` ✓
+- [x] Test: `8 shl 2` returns `32.0` (8 << 2) ✓
+- [x] Test: `32 shr 2` returns `8.0` (32 >> 2) ✓
+- [x] Test: `rol` and `ror` with various bit patterns ✓
 
 ### String Operations
-- [ ] Test: Runtime string concatenation `s1 + s2` where s1, s2 are variables
+- [x] Test: Runtime string concatenation `s1 + s2` where s1, s2 are variables ✓
+- [x] Test: String length `#s` returns character count ✓
 - [ ] Test: String comparison `s1 == s2`, `s1 != s2`
 - [ ] Test: String comparison `s1 < s2`, `s1 > s2` (lexicographic)
-- [ ] Test: String slicing `s[1:3]` returns substring
-- [ ] Test: String length `#s` returns character count
+- [ ] Test: String slicing `s{0:5}` returns substring (attachable filter syntax)
 - [ ] Optimize: CString conversion from O(n²) to O(n)
 - [ ] Test: Strings > 255 characters (multi-byte length encoding)
 
