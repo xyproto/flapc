@@ -4289,6 +4289,14 @@ func (fc *FlapCompiler) compileFloatToString(xmmReg, bufPtr string) {
 	// xmm1 already has int part as float from above
 	fc.out.SubsdXmm("xmm0", "xmm1") // xmm0 = fractional part
 
+	// Check if fractional part is zero
+	fc.out.XorRegWithReg("rax", "rax")
+	fc.out.Cvtsi2sd("xmm2", "rax") // xmm2 = 0.0
+	fc.out.Ucomisd("xmm0", "xmm2")
+	fracZeroJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0) // Jump if frac == 0
+	fracZeroEnd := fc.eb.text.Len()
+
 	// Print up to 6 decimal digits
 	fc.out.MovImmToReg("r11", "6") // digit counter
 	fc.loadFloatConstant("xmm3", 10.0)
@@ -4321,6 +4329,11 @@ func (fc *FlapCompiler) compileFloatToString(xmmReg, bufPtr string) {
 
 	fracLoopEnd := fc.eb.text.Len()
 	fc.patchJumpImmediate(fracLoopEndJump+2, int32(fracLoopEnd-fracLoopEndEnd))
+
+	// Fractional part was zero - remove the decimal point we added
+	fracZeroPos := fc.eb.text.Len()
+	fc.patchJumpImmediate(fracZeroJump+2, int32(fracZeroPos-fracZeroEnd))
+	fc.out.SubImmFromReg("rsi", 1) // Remove the '.' we added
 
 	// Add newline
 	fc.out.MovImmToReg("r10", "10") // '\n'
