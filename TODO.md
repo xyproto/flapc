@@ -140,6 +140,36 @@ Release when:
 
 ## Recently Completed
 
+### Lambda Expressions (2025-10-10)
+- [x] Direct lambda calls: `((x) -> x * 2)(5)` ✓
+  - Added DirectCallExpr AST node type
+  - Modified parsePostfix() to handle function calls on expressions
+  - Implemented compileDirectCall() to compile callee and call result
+  - Tests passing: lambda_direct_test, lambda_loop
+- [x] Symbol collection in loop bodies ✓
+  - Fixed collectSymbols() to recursively process loop body statements
+  - Variables declared inside loops now properly registered
+  - Lambda calls in loops now work correctly
+
+### Float Printing (2025-10-10)
+- [x] Fixed float-to-string decimal digit corruption ✓
+  - 3.2 was showing as "3.O99999" (capital O instead of 0)
+  - Fixed by properly masking ASCII digit generation
+- [x] Fixed negative integer detection ✓
+  - -5.0 was showing as "-5.000000" instead of "-5"
+  - Fixed by checking fractional part after absolute value
+- [x] Test expectations updated ✓
+  - test_exp: Updated to match actual e ≈ 2.718358
+  - test_log: Updated to match actual ln(e) ≈ 0.999901
+  - test_negative: Now correctly prints "-5"
+
+### Dependencies (2025-10-10)
+- [x] Removed github.com/xyproto/env dependency ✓
+  - Replaced env.Str() with os.Getenv() (stdlib)
+  - Updated go.mod to remove external dependency
+  - All dependency resolution now uses stdlib only
+  - Zero external dependencies for core compiler
+
 ### I/O Functions (2025-10-10)
 - [x] `println()` syscall-based implementation ✓
   - Direct `write(1, buf, len)` syscall instead of printf

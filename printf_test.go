@@ -3,11 +3,44 @@ package main
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 )
 
+// findFlapc tries to find the flapc binary
+func findFlapc(t *testing.T) string {
+	// Try current directory first
+	if _, err := os.Stat("./flapc"); err == nil {
+		abs, _ := filepath.Abs("./flapc")
+		return abs
+	}
+
+	// Get the directory where the test file is located
+	// When go test runs, it may change directory, so we need to find
+	// the source directory
+	if wd, err := os.Getwd(); err == nil {
+		// If we're in a Go test temp directory, go back to find the source
+		for dir := wd; dir != "/" && dir != "."; dir = filepath.Dir(dir) {
+			flapPath := filepath.Join(dir, "flapc")
+			if info, err := os.Stat(flapPath); err == nil && !info.IsDir() {
+				return flapPath
+			}
+		}
+	}
+
+	// Try in PATH
+	if path, err := exec.LookPath("flapc"); err == nil {
+		return path
+	}
+
+	t.Skip("flapc binary not found - run 'make flapc' first")
+	return ""
+}
+
 // TestPrintfWithStringLiteral tests printf with string literals
 func TestPrintfWithStringLiteral(t *testing.T) {
+	flapcPath := findFlapc(t)
+
 	tests := []struct {
 		name     string
 		code     string
@@ -38,7 +71,7 @@ func TestPrintfWithStringLiteral(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Compile the code
-			cmd := exec.Command("./flapc", "-c", tt.code)
+			cmd := exec.Command(flapcPath, "-c", tt.code)
 			cmd.Stderr = os.Stderr
 			if err := cmd.Run(); err != nil {
 				t.Fatalf("Compilation failed: %v", err)

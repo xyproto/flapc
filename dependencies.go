@@ -6,8 +6,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-
-	"github.com/xyproto/env/v2"
 )
 
 // FunctionRepository maps function names to Git repository URLs
@@ -16,9 +14,9 @@ import (
 var FunctionRepository = map[string]string{
 	// Math functions
 	// Keep these as auto-dependencies (can be pure Flap implementations):
-	"abs":   "github.com/xyproto/flap_math", // Simple: x < 0 { -> -x ~> x }
-	"min":   "github.com/xyproto/flap_math",
-	"max":   "github.com/xyproto/flap_math",
+	"abs": "github.com/xyproto/flap_math", // Simple: x < 0 { -> -x ~> x }
+	"min": "github.com/xyproto/flap_math",
+	"max": "github.com/xyproto/flap_math",
 
 	// These have excellent x87 FPU instruction support - consider making builtin:
 	// sqrt: SQRTSD (SSE2)
@@ -59,7 +57,7 @@ func GetFunctionRepository(funcName string) (string, bool) {
 	// Check for environment variable override
 	// Convert function name to uppercase for env var: println -> PRINTLN
 	envVarName := "FLAPC_" + strings.ToUpper(funcName)
-	if repoURL := env.Str(envVarName); repoURL != "" {
+	if repoURL := os.Getenv(envVarName); repoURL != "" {
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "Using environment override for %s: %s=%s\n", funcName, envVarName, repoURL)
 		}
@@ -76,7 +74,7 @@ func GetFunctionRepository(funcName string) (string, bool) {
 // Default: $XDG_CACHE_HOME/flapc or ~/.cache/flapc/
 func GetCachePath() (string, error) {
 	// Check XDG_CACHE_HOME first
-	if xdgCache := env.Str("XDG_CACHE_HOME"); xdgCache != "" {
+	if xdgCache := os.Getenv("XDG_CACHE_HOME"); xdgCache != "" {
 		return filepath.Join(xdgCache, "flapc"), nil
 	}
 

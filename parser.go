@@ -470,6 +470,20 @@ func (c *CallExpr) String() string {
 }
 func (c *CallExpr) expressionNode() {}
 
+type DirectCallExpr struct {
+	Callee Expression // The expression being called (e.g., a lambda)
+	Args   []Expression
+}
+
+func (d *DirectCallExpr) String() string {
+	args := make([]string, len(d.Args))
+	for i, arg := range d.Args {
+		args[i] = arg.String()
+	}
+	return "(" + d.Callee.String() + ")(" + strings.Join(args, ", ") + ")"
+}
+func (d *DirectCallExpr) expressionNode() {}
+
 type ListExpr struct {
 	Elements []Expression
 }
@@ -1185,13 +1199,47 @@ func (p *Parser) parseMultiplicative() Expression {
 func (p *Parser) parsePostfix() Expression {
 	expr := p.parsePrimary()
 
-	// Handle postfix operations like indexing
-	for p.peek.Type == TOKEN_LBRACKET {
-		p.nextToken() // skip current expr
-		p.nextToken() // skip '['
-		index := p.parseExpression()
-		p.nextToken() // move to ']'
-		expr = &IndexExpr{List: expr, Index: index}
+	// Handle postfix operations like indexing and function calls
+	for {
+		if p.peek.Type == TOKEN_LBRACKET {
+			p.nextToken() // skip current expr
+			p.nextToken() // skip '['
+			index := p.parseExpression()
+			p.nextToken() // move to ']'
+			expr = &IndexExpr{List: expr, Index: index}
+		} else if p.peek.Type == TOKEN_LPAREN {
+			// Handle direct lambda calls: ((x) -> x * 2)(5)
+			// or chained calls: f(1)(2)
+			p.nextToken() // skip current expr
+			p.nextToken() // skip '('
+			args := []Expression{}
+
+			if p.current.Type != TOKEN_RPAREN {
+				args = append(args, p.parseExpression())
+				for p.peek.Type == TOKEN_COMMA {
+					p.nextToken() // skip current
+					p.nextToken() // skip ','
+					args = append(args, p.parseExpression())
+				}
+			}
+
+			// current should be on last arg or on '('
+			// peek should be ')'
+			p.nextToken() // move to ')'
+
+			// Wrap the expression in a CallExpr
+			// If expr is a LambdaExpr, it will be compiled and called
+			// If expr is an IdentExpr, it will be looked up and called
+			if ident, ok := expr.(*IdentExpr); ok {
+				expr = &CallExpr{Function: ident.Name, Args: args}
+			} else {
+				// For lambda expressions or other callable expressions,
+				// create a special call expression that compiles the lambda inline
+				expr = &DirectCallExpr{Callee: expr, Args: args}
+			}
+		} else {
+			break
+		}
 	}
 
 	return expr
@@ -1387,8 +1435,8 @@ func (p *Parser) parsePrimary() Expression {
 
 // LoopInfo tracks information about an active loop during compilation
 type LoopInfo struct {
-	Label      int // Loop label (@1, @2, @3, etc.)
-	StartPos   int // Code position of loop start (for continue/jump back)
+	Label      int   // Loop label (@1, @2, @3, etc.)
+	StartPos   int   // Code position of loop start (for continue/jump back)
 	EndPatches []int // Positions that need to be patched to jump to loop end
 }
 
@@ -1744,7 +1792,10 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) {
 			}
 		}
 	case *LoopStmt:
-		// No symbols to collect from loops
+		// Recursively collect symbols from loop body
+		for _, bodyStmt := range s.Body {
+			fc.collectSymbols(bodyStmt)
+		}
 	case *ExpressionStmt:
 		// No symbols to collect from expression statements
 	}
@@ -2362,6 +2413,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 	case *CallExpr:
 		fc.compileCall(e)
+
+	case *DirectCallExpr:
+		fc.compileDirectCall(e)
 
 	case *ListExpr:
 		// For now, create list data in .rodata and return pointer
@@ -3470,6 +3524,50 @@ func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
 	// Result is in xmm0
 }
 
+func (fc *FlapCompiler) compileDirectCall(call *DirectCallExpr) {
+	// Compile the callee expression (e.g., a lambda) to get function pointer
+	fc.compileExpression(call.Callee) // Result in xmm0 (function pointer as float64)
+
+	// Convert function pointer from float64 to integer in rax
+	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.MovXmmToMem("xmm0", "rsp", 0)
+	fc.out.MovMemToReg("rax", "rsp", 0)
+	fc.out.AddImmToReg("rsp", 8)
+
+	// Compile arguments and put them in xmm registers
+	xmmRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"}
+	if len(call.Args) > len(xmmRegs) {
+		fmt.Fprintf(os.Stderr, "Error: too many arguments to direct call (max 6)\n")
+		os.Exit(1)
+	}
+
+	// Save function pointer to stack (rax might get clobbered)
+	fc.out.SubImmFromReg("rsp", 16)
+	fc.out.MovRegToMem("rax", "rsp", 0)
+
+	// Evaluate all arguments and save to stack
+	for _, arg := range call.Args {
+		fc.compileExpression(arg) // Result in xmm0
+		fc.out.SubImmFromReg("rsp", 16)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+	}
+
+	// Load arguments from stack into xmm registers (in reverse order)
+	for i := len(call.Args) - 1; i >= 0; i-- {
+		fc.out.MovMemToXmm(xmmRegs[i], "rsp", 0)
+		fc.out.AddImmToReg("rsp", 16)
+	}
+
+	// Load function pointer from stack to r11
+	fc.out.MovMemToReg("r11", "rsp", 0)
+	fc.out.AddImmToReg("rsp", 16)
+
+	// Call the function pointer in r11
+	fc.out.CallRegister("r11")
+
+	// Result is in xmm0
+}
+
 // compileMapToCString converts a string map (map[uint64]float64) to a CString
 // Input: mapPtr (register name) = pointer to string map
 // Output: cstrPtr (register name) = pointer to first character of CString
@@ -4048,7 +4146,7 @@ func (fc *FlapCompiler) compileWholeNumberToString(intReg, bufPtr string) {
 	fc.patchJumpImmediate(digitLoopJump+2, int32(digitLoopStart-(digitLoopEnd)))
 
 	// Copy digits back in reverse order
-	fc.out.SubImmFromReg("rdi", 1) // point to last digit
+	fc.out.SubImmFromReg("rdi", 1)        // point to last digit
 	fc.out.LeaMemToReg("r11", bufPtr, 20) // r11 = start of digit storage
 
 	copyLoopStart := fc.eb.text.Len()
