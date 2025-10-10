@@ -3727,9 +3727,10 @@ func (fc *FlapCompiler) compilePrintMapAsString(mapPtr, bufPtr string) {
 // Input: xmmReg = XMM register with float64, bufPtr = buffer pointer (register)
 // Output: rsi = string start, rdx = length (including newline)
 func (fc *FlapCompiler) compileFloatToString(xmmReg, bufPtr string) {
-	// Save the float value
-	fc.out.SubImmFromReg("rsp", 16)
-	fc.out.MovXmmToMem(xmmReg, "rsp", 0)
+	// Allocate stack space: 16 bytes for float + 32 bytes for output buffer
+	fc.out.SubImmFromReg("rsp", 32)
+	// Save the float value at rsp+16 (above the output buffer)
+	fc.out.MovXmmToMem(xmmReg, "rsp", 16)
 
 	// Check if negative by testing sign bit
 	// We'll load 0.0 by converting integer 0
@@ -3753,10 +3754,10 @@ func (fc *FlapCompiler) compileFloatToString(xmmReg, bufPtr string) {
 	fc.out.LeaMemToReg("rsi", bufPtr, 1)
 
 	// Negate the float: multiply by -1
-	fc.out.MovMemToXmm("xmm0", "rsp", 0)
+	fc.out.MovMemToXmm("xmm0", "rsp", 16)
 	fc.loadFloatConstant("xmm3", -1.0)
 	fc.out.MulsdXmm("xmm0", "xmm3")
-	fc.out.MovXmmToMem("xmm0", "rsp", 0)
+	fc.out.MovXmmToMem("xmm0", "rsp", 16)
 
 	negativeSkipJump := fc.eb.text.Len()
 	fc.out.JumpUnconditional(0)
@@ -3772,7 +3773,7 @@ func (fc *FlapCompiler) compileFloatToString(xmmReg, bufPtr string) {
 	fc.patchJumpImmediate(negativeSkipJump+1, int32(negativeSkip-negativeSkipEnd))
 
 	// Now rsi points to where we write, load the (now positive) float
-	fc.out.MovMemToXmm("xmm0", "rsp", 0)
+	fc.out.MovMemToXmm("xmm0", "rsp", 16)
 
 	// Check if it's a whole number
 	fc.out.Cvttsd2si("rax", "xmm0")
@@ -3785,7 +3786,31 @@ func (fc *FlapCompiler) compileFloatToString(xmmReg, bufPtr string) {
 
 	// Whole number path - print as integer
 	fc.compileIntToStringAtPos("rax", "rsi")
-	fc.out.AddImmToReg("rsp", 16) // cleanup
+
+	// If we wrote a '-' sign, we need to adjust rsi to include it
+	// Check if byte [bufPtr] == '-' (ASCII 45)
+	fc.out.MovMemToReg("r10", bufPtr, 0) // load 8 bytes from bufPtr
+	// Emit AND r10, 0xFF manually to mask to low byte
+	fc.out.Write(0x49) // REX.W prefix for r10
+	fc.out.Write(0x81) // AND r/m64, imm32
+	fc.out.Write(0xE2) // ModR/M byte for r10 (11 100 010)
+	fc.out.Write(0xFF) // immediate value (low byte)
+	fc.out.Write(0x00) // immediate value (next 3 bytes)
+	fc.out.Write(0x00)
+	fc.out.Write(0x00)
+	fc.out.CmpRegToImm("r10", 45) // compare with '-'
+	noMinusJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpNotEqual, 0)
+	noMinusEnd := fc.eb.text.Len()
+
+	// Has minus sign - adjust rsi and rdx
+	fc.out.MovRegToReg("rsi", bufPtr)
+	fc.out.AddImmToReg("rdx", 1) // include the '-' in length
+
+	noMinusPos := fc.eb.text.Len()
+	fc.patchJumpImmediate(noMinusJump+2, int32(noMinusPos-noMinusEnd))
+
+	fc.out.AddImmToReg("rsp", 32) // cleanup
 
 	wholeEndJump := fc.eb.text.Len()
 	fc.out.JumpUnconditional(0)
@@ -3798,6 +3823,9 @@ func (fc *FlapCompiler) compileFloatToString(xmmReg, bufPtr string) {
 	// Extract integer part (rax already has it from above)
 	fc.out.Cvttsd2si("rax", "xmm0")
 
+	// Save int part as float in xmm1 BEFORE printing (printing will clobber rax)
+	fc.out.Cvtsi2sd("xmm1", "rax")
+
 	// Print integer part
 	fc.compileIntToStringAtPosNoNewline("rax", "rsi")
 	// rsi now points after the integer part
@@ -3808,8 +3836,8 @@ func (fc *FlapCompiler) compileFloatToString(xmmReg, bufPtr string) {
 	fc.out.AddImmToReg("rsi", 1)
 
 	// Get fractional part: frac = num - int_part
-	fc.out.MovMemToXmm("xmm0", "rsp", 0)
-	fc.out.Cvtsi2sd("xmm1", "rax") // int part as float
+	fc.out.MovMemToXmm("xmm0", "rsp", 16)
+	// xmm1 already has int part as float from above
 	fc.out.SubsdXmm("xmm0", "xmm1") // xmm0 = fractional part
 
 	// Print up to 6 decimal digits
@@ -3855,7 +3883,7 @@ func (fc *FlapCompiler) compileFloatToString(xmmReg, bufPtr string) {
 	fc.out.SubRegFromReg("rdx", bufPtr)
 	fc.out.MovRegToReg("rsi", bufPtr)
 
-	fc.out.AddImmToReg("rsp", 16) // cleanup
+	fc.out.AddImmToReg("rsp", 32) // cleanup
 
 	// End
 	wholeEnd := fc.eb.text.Len()
