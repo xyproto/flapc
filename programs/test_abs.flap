@@ -1,0 +1,3 @@
+// Test builtin abs function using FABS x87 instruction
+result := abs(-5.0)
+println(result)

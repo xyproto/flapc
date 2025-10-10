@@ -1,0 +1,4 @@
+// Test asin function
+// asin(0) should be 0
+result := asin(0.0)
+println(result)

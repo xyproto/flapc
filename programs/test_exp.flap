@@ -1,0 +1,2 @@
+x := exp(1.0)
+println(x)

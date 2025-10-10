@@ -11,6 +11,7 @@ import (
 // Returns (gotBase, rodataBase, error)
 func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functions []string) (gotBase, rodataAddr, textAddr, pltBase uint64, err error) {
 	eb.elf.Reset()
+	eb.neededFunctions = functions  // Store functions list for later use in patchTextInELF
 
 	rodataSize := eb.rodata.Len()
 	codeSize := eb.text.Len()
@@ -203,10 +204,9 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 		size   int
 	}{textOffset, textAddr, layout["text"].size}
 
-	// Patch call instructions in .text to use correct PLT offsets
-	fmt.Fprintf(os.Stderr, "\n=== Patching PLT calls ===\n")
-	fmt.Fprintf(os.Stderr, "Text addr: 0x%x, PLT base: 0x%x\n", layout["text"].addr, pltBase)
-	eb.patchPLTCalls(ds, layout["text"].addr, pltBase, functions)
+	// Note: We don't patch PLT calls here because the code will be regenerated
+	// and patched later by the caller (see parser.go:1448 and default.go:59)
+	// The initial .text is just used to determine section sizes and addresses
 
 	layout["got"] = struct {
 		offset uint64
@@ -423,7 +423,10 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	}
 
 	// PLT and text
+	fmt.Fprintf(os.Stderr, "About to write PLT: expected offset=0x%x, actual buffer position=0x%x, PLT size=%d bytes\n",
+		layout["plt"].offset, eb.elf.Len(), ds.plt.Len())
 	w.WriteBytes(ds.plt.Bytes())
+	fmt.Fprintf(os.Stderr, "After PLT, about to write _start\n")
 
 	// _start function (minimal entry point that clears registers and jumps to user code)
 	// xor rax, rax   ; clear rax
@@ -452,12 +455,20 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	for i := startActualSize; i < ((startSize + 7) & ^7); i++ {
 		w.Write(0)
 	}
+	fmt.Fprintf(os.Stderr, "Finished writing _start (%d bytes padded to %d), about to write text\n", startActualSize, ((startSize + 7) & ^7))
 
 	// Patch PC-relative relocations before writing text section
 	fmt.Fprintf(os.Stderr, "\n=== Patching PC-relative relocations ===\n")
 	eb.PatchPCRelocations(layout["text"].addr, layout["rodata"].addr, rodataSize)
 
+	// Patch direct function calls
+	fmt.Fprintf(os.Stderr, "\n=== Patching function calls ===\n")
+	eb.PatchCallSites(layout["text"].addr)
+
+	fmt.Fprintf(os.Stderr, "About to write text: expected offset=0x%x, actual buffer position=0x%x, text size=%d bytes\n",
+		layout["text"].offset, eb.elf.Len(), eb.text.Len())
 	w.WriteBytes(eb.text.Bytes())
+	fmt.Fprintf(os.Stderr, "Finished writing text section\n")
 	for i := codeSize; i < (codeSize+7)&^7; i++ {
 		w.Write(0)
 	}

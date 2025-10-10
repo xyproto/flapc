@@ -1,0 +1,6 @@
+// Test concatenation then println
+s1 := "A"
+s2 := "B"
+s3 := s1 + s2
+println("Done")
+exit(0)

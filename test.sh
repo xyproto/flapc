@@ -126,6 +126,29 @@ expected_stdout[test_string_index_debug]=$'s[0] = 65 (should be 65 for \'A\')\ns
 expected_stdout[test_string_concat]=$'Hello, World!'
 expected_stdout[test_string_concat_literal]=$'Hello, World!'
 expected_stdout[test_simple_string_var]=$'Hello'
+expected_stdout[test_string_length]=$'5'
+expected_stdout[test_negative]=$'-5'
+expected_stdout[test_tail_recursion]=$'120'
+expected_stdout[test_tail_recursion_sum]=$'55'
+expected_stdout[test_tail_recursion_fibonacci]=$'55'
+expected_stdout[test_tail_recursion_countdown]=$'0'
+
+# Math function tests
+expected_stdout[test_abs]=$'5'
+expected_stdout[test_abs_simple]=$'5'
+expected_stdout[test_sqrt]=$'2'
+expected_stdout[test_sin]=$'0'
+expected_stdout[test_cos]=$'1'
+expected_stdout[test_tan]=$'0'
+expected_stdout[test_atan]=$'0'
+expected_stdout[test_asin]=$'0'
+expected_stdout[test_acos]=$'0'
+expected_stdout[test_floor]=$'3'
+expected_stdout[test_ceil]=$'4'
+expected_stdout[test_round]=$'4'
+expected_stdout[test_log]=$'1'
+expected_stdout[test_exp]=$'3'
+expected_stdout[test_pow]=$'8'
 
 # Expected exit codes for successful program runs (default to 0 when unspecified).
 declare -A expected_exit_code

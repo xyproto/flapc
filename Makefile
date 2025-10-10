@@ -46,4 +46,4 @@ install: flapc
 	install -m 755 $(PROGRAM) "$(DESTDIR)$(BINDIR)/$(PROGRAM)"
 
 clean:
-	rm -rf $(PROGRAM) build/
+	rm -rf $(PROGRAM) build/ test_*

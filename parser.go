@@ -179,6 +179,15 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_PLUS, Value: "+", Line: l.line}
 	case '-':
+		// Check for negative number literal
+		if l.peek() != '>' && l.pos+1 < len(l.input) && unicode.IsDigit(rune(l.peek())) {
+			start := l.pos
+			l.pos++ // skip '-'
+			for l.pos < len(l.input) && (unicode.IsDigit(rune(l.input[l.pos])) || l.input[l.pos] == '.') {
+				l.pos++
+			}
+			return Token{Type: TOKEN_NUMBER, Value: l.input[start:l.pos], Line: l.line}
+		}
 		// Check for ->
 		if l.peek() == '>' {
 			l.pos += 2
@@ -914,6 +923,49 @@ func (p *Parser) parseComparison() Expression {
 	return left
 }
 
+func (p *Parser) parseLambdaBody() Expression {
+	// Parse the body expression
+	expr := p.parseExpression()
+
+	// Check if it's followed by a match block: { -> ... ~> ... }
+	if p.peek.Type == TOKEN_LBRACE {
+		p.nextToken() // move to '{'
+		p.nextToken() // skip '{'
+		p.skipNewlines()
+
+		// Check if it starts with '->' (match expression)
+		if p.current.Type == TOKEN_ARROW {
+			p.nextToken() // skip '->'
+			trueExpr := p.parseExpression()
+			p.nextToken() // move past the expression
+			p.skipNewlines()
+
+			// Parse "~> expr" (optional - defaults to 0)
+			var defaultExpr Expression
+			if p.current.Type == TOKEN_DEFAULT_ARROW {
+				p.nextToken() // skip '~>'
+				defaultExpr = p.parseExpression()
+				p.nextToken() // move past the expression
+				p.skipNewlines()
+			} else {
+				// Default to 0 if no default case provided
+				defaultExpr = &NumberExpr{Value: 0}
+			}
+
+			// Should be at '}'
+			if p.current.Type != TOKEN_RBRACE {
+				p.error("expected '}' after match expression")
+			}
+
+			return &MatchExpr{Condition: expr, TrueExpr: trueExpr, DefaultExpr: defaultExpr}
+		}
+		// Not a match, backtrack is not possible, this is an error
+		p.error("unexpected '{' after lambda body expression")
+	}
+
+	return expr
+}
+
 func (p *Parser) parseAdditive() Expression {
 	left := p.parseMultiplicative()
 
@@ -1005,7 +1057,7 @@ func (p *Parser) parsePrimary() Expression {
 			if p.peek.Type == TOKEN_ARROW {
 				p.nextToken() // skip ')'
 				p.nextToken() // skip '->'
-				body := p.parseExpression()
+				body := p.parseLambdaBody()
 				return &LambdaExpr{Params: []string{}, Body: body}
 			}
 			// Empty parens without arrow is an error, but skip for now
@@ -1027,7 +1079,7 @@ func (p *Parser) parsePrimary() Expression {
 					// It's a lambda: (x) -> expr
 					p.nextToken() // skip ')'
 					p.nextToken() // skip '->'
-					body := p.parseExpression()
+					body := p.parseLambdaBody()
 					return &LambdaExpr{Params: []string{firstIdent}, Body: body}
 				}
 				// It's (x) parenthesized identifier
@@ -1061,7 +1113,7 @@ func (p *Parser) parsePrimary() Expression {
 
 				p.nextToken() // skip ')'
 				p.nextToken() // skip '->'
-				body := p.parseExpression()
+				body := p.parseLambdaBody()
 				return &LambdaExpr{Params: params, Body: body}
 			}
 		}
@@ -1152,9 +1204,11 @@ type FlapCompiler struct {
 	stringCounter int               // Counter for unique string labels
 	stackOffset   int               // Current stack offset for variables
 	labelCounter  int               // Counter for unique labels (if/else, loops, etc)
-	lambdaCounter int               // Counter for unique lambda function names
-	lambdaFuncs   []LambdaFunc      // List of lambda functions to generate
-	lambdaOffsets map[string]int    // Lambda name -> offset in .text
+	lambdaCounter   int               // Counter for unique lambda function names
+	lambdaFuncs     []LambdaFunc      // List of lambda functions to generate
+	lambdaOffsets   map[string]int    // Lambda name -> offset in .text
+	currentLambda   *LambdaFunc       // Currently compiling lambda (for "me" self-reference)
+	lambdaBodyStart int               // Offset where lambda body starts (for tail recursion)
 }
 
 type LambdaFunc struct {
@@ -1251,6 +1305,9 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	// Generate lambda functions
 	fc.generateLambdaFunctions()
 
+	// Generate runtime helper functions
+	fc.generateRuntimeHelpers()
+
 	// Write ELF using existing infrastructure
 	return fc.writeELF(outputPath)
 }
@@ -1259,7 +1316,12 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 	// WORKAROUND: Always use printf and exit in fixed order for PLT
 	// to maintain consistent PLT size and avoid _start jump offset bugs
 	// We'll generate the correct calls based on callOrder
-	pltFunctions := []string{"printf", "exit"}
+	// All trig functions use x87 hardware instructions:
+	// sin/cos/tan: FSIN, FCOS, FPTAN
+	// atan: FPATAN, asin/acos: FPATAN + Fsqrt + x87 arithmetic
+	// malloc is needed for runtime string concatenation
+	// Always include malloc since runtime helpers (_flap_string_concat) need it
+	pltFunctions := []string{"printf", "exit", "malloc"}
 
 	// Build mapping from actual calls to PLT indices
 	callToPLT := make(map[string]int)
@@ -1270,6 +1332,7 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 	// Set up dynamic sections
 	ds := NewDynamicSections()
 	ds.AddNeeded("libc.so.6")
+	// Note: libm.so.6 not needed - all math functions use x87 FPU instructions
 
 	// Add symbols for PLT functions
 	for _, funcName := range pltFunctions {
@@ -1286,16 +1349,24 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 	}
 	sort.Strings(symbolNames)
 
+	// DEBUG: Print what symbols we're writing
+	fmt.Fprintf(os.Stderr, "DEBUG: rodataSymbols contains %d symbols: %v\n", len(symbolNames), symbolNames)
+
 	estimatedRodataAddr := uint64(0x403000 + 0x100)
 	currentAddr := estimatedRodataAddr
 	for _, symbol := range symbolNames {
 		value := rodataSymbols[symbol]
 		fc.eb.WriteRodata([]byte(value))
 		fc.eb.DefineAddr(symbol, currentAddr)
+		fmt.Fprintf(os.Stderr, "DEBUG: Writing %s at 0x%x, len=%d\n", symbol, currentAddr, len(value))
 		currentAddr += uint64(len(value))
 	}
 
-	// Write complete dynamic ELF with fixed PLT functions
+	// Write complete dynamic ELF with unique PLT functions
+	// Note: We pass pltFunctions (unique) for building PLT/GOT structure
+	// We'll use fc.callOrder (with duplicates) later for patching actual call sites
+	fmt.Fprintf(os.Stderr, "\n=== First compilation callOrder: %v ===\n", fc.callOrder)
+	fmt.Fprintf(os.Stderr, "=== pltFunctions (unique): %v ===\n", pltFunctions)
 	gotBase, rodataBaseAddr, textAddr, pltBase, err := fc.eb.WriteCompleteDynamicELF(ds, pltFunctions)
 	if err != nil {
 		return err
@@ -1303,15 +1374,19 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 
 	// Update rodata addresses using same sorted order
 	currentAddr = rodataBaseAddr
+	fmt.Fprintf(os.Stderr, "DEBUG: Updating addresses with actual rodata base=0x%x\n", rodataBaseAddr)
 	for _, symbol := range symbolNames {
 		value := rodataSymbols[symbol]
 		fc.eb.DefineAddr(symbol, currentAddr)
+		fmt.Fprintf(os.Stderr, "DEBUG: Updated %s to 0x%x, len=%d\n", symbol, currentAddr, len(value))
 		currentAddr += uint64(len(value))
 	}
 
 	// Regenerate code with correct addresses
 	fc.eb.text.Reset()
 	fc.eb.pcRelocations = []PCRelocation{}  // Reset PC relocations for recompilation
+	fc.eb.callPatches = []CallPatch{}       // Reset call patches for recompilation
+	fc.eb.labels = make(map[string]int)     // Reset labels for recompilation
 	fc.callOrder = []string{}               // Clear call order for recompilation
 	fc.stringCounter = 0                    // Reset string counter for recompilation
 	fc.labelCounter = 0                     // Reset label counter for recompilation
@@ -1329,6 +1404,21 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 	fc.out.XorRegWithReg("rdi", "rdi")
 	fc.out.XorRegWithReg("rsi", "rsi")
 
+	// ===== AVX-512 CPU DETECTION (regenerated) =====
+	fc.eb.Define("cpu_has_avx512", "\x00") // 1 byte: 0=no, 1=yes
+	fc.out.MovImmToReg("rax", "7")     // CPUID leaf 7
+	fc.out.XorRegWithReg("rcx", "rcx") // subleaf 0
+	fc.out.Emit([]byte{0x0f, 0xa2})    // cpuid
+	fc.out.Emit([]byte{0xf6, 0xc3, 0x01}) // test bl, 1
+	fc.out.Emit([]byte{0x0f, 0xba, 0xe3, 0x10}) // bt ebx, 16
+	fc.out.Emit([]byte{0x0f, 0x92, 0xc0}) // setc al
+	fc.out.LeaSymbolToReg("rbx", "cpu_has_avx512")
+	fc.out.MovRegToMem("rax", "rbx", 0)
+	fc.out.XorRegWithReg("rax", "rax")
+	fc.out.XorRegWithReg("rbx", "rbx")
+	fc.out.XorRegWithReg("rcx", "rcx")
+	// ===== END AVX-512 DETECTION =====
+
 	// Recompile with correct addresses
 	parser := NewParser(fc.sourceCode)
 	program := parser.ParseProgram()
@@ -1344,18 +1434,28 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 	// Generate lambda functions
 	fc.generateLambdaFunctions()
 
+	// Generate runtime helper functions
+	fc.generateRuntimeHelpers()
+
 	// Set lambda function addresses
 	for lambdaName, offset := range fc.lambdaOffsets {
 		lambdaAddr := textAddr + uint64(offset)
 		fc.eb.DefineAddr(lambdaName, lambdaAddr)
 	}
 
-	// Patch PLT calls using callOrder (actual calls) mapped to pltFunctions positions
+	// Patch PLT calls using callOrder (actual sequence of calls)
+	// patchPLTCalls will look up each function name in the PLT to get its offset
+	// This handles duplicate calls (e.g., two calls to exit) correctly
+	fmt.Fprintf(os.Stderr, "\n=== Second compilation callOrder: %v ===\n", fc.callOrder)
 	fc.eb.patchPLTCalls(ds, textAddr, pltBase, fc.callOrder)
 
 	// Patch PC-relative relocations
 	rodataSize := fc.eb.rodata.Len()
 	fc.eb.PatchPCRelocations(textAddr, rodataBaseAddr, rodataSize)
+
+	// Patch function calls in regenerated code
+	fmt.Fprintf(os.Stderr, "\n=== Patching function calls (regenerated code) ===\n")
+	fc.eb.PatchCallSites(textAddr)
 
 	// Update ELF with regenerated code
 	fc.eb.patchTextInELF()
@@ -1814,9 +1914,40 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 					fc.out.AddImmToReg("rsp", 8)
 					break
 				} else {
-					// Runtime string concatenation - TODO
-					fmt.Fprintf(os.Stderr, "Error: runtime string concatenation not yet implemented\n")
-					os.Exit(1)
+					// Runtime string concatenation
+					// Evaluate left string (result pointer in xmm0)
+					fc.compileExpression(e.Left)
+					// Save left pointer to stack
+					fc.out.SubImmFromReg("rsp", 16)
+					fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+					// Evaluate right string (result pointer in xmm0)
+					fc.compileExpression(e.Right)
+					// Save right pointer to stack
+					fc.out.SubImmFromReg("rsp", 16)
+					fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+					// Call _flap_string_concat(left_ptr, right_ptr)
+					// Load arguments into registers following x86-64 calling convention
+					fc.out.MovMemToReg("rdi", "rsp", 16) // left ptr (first arg)
+					fc.out.MovMemToReg("rsi", "rsp", 0)  // right ptr (second arg)
+					fc.out.AddImmToReg("rsp", 32)        // clean up stack
+
+					// Align stack for call (must be at 16n+8 before CALL)
+					fc.out.SubImmFromReg("rsp", 8)
+
+					// Call the helper function (direct call, not through PLT)
+					fc.out.CallSymbol("_flap_string_concat")
+
+					// Restore stack alignment
+					fc.out.AddImmToReg("rsp", 8)
+
+					// Result pointer is in rax, convert to xmm0
+					fc.out.SubImmFromReg("rsp", 8)
+					fc.out.MovRegToMem("rax", "rsp", 0)
+					fc.out.MovMemToXmm("xmm0", "rsp", 0)
+					fc.out.AddImmToReg("rsp", 8)
+					break
 				}
 			}
 
@@ -2699,8 +2830,15 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 			fc.out.MovXmmToMem(xmmRegs[i], "rbp", -paramOffset)
 		}
 
+		// Set current lambda context for "me" self-reference and tail recursion
+		fc.currentLambda = &lambda
+		fc.lambdaBodyStart = fc.eb.text.Len()
+
 		// Compile lambda body (result in xmm0)
 		fc.compileExpression(lambda.Body)
+
+		// Clear lambda context
+		fc.currentLambda = nil
 
 		// Function epilogue
 		// Clean up stack
@@ -2713,6 +2851,125 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 		fc.mutableVars = oldMutableVars
 		fc.stackOffset = oldStackOffset
 	}
+}
+
+func (fc *FlapCompiler) generateRuntimeHelpers() {
+	// Generate _flap_string_concat(left_ptr, right_ptr) -> new_ptr
+	// Arguments: rdi = left_ptr, rsi = right_ptr
+	// Returns: rax = pointer to new concatenated string
+
+	fc.eb.MarkLabel("_flap_string_concat")
+
+	// Function prologue
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+
+	// Save callee-saved registers
+	fc.out.PushReg("rbx")
+	fc.out.PushReg("r12")
+	fc.out.PushReg("r13")
+	fc.out.PushReg("r14")
+	fc.out.PushReg("r15")
+
+	// Align stack to 16 bytes for malloc call
+	// After call (8) + push rbp (8) + push 5 regs (40) = 56 bytes
+	// We need to subtract 8 more to get 16-byte alignment
+	fc.out.SubImmFromReg("rsp", 8)
+
+	// Save arguments
+	fc.out.MovRegToReg("r12", "rdi") // r12 = left_ptr
+	fc.out.MovRegToReg("r13", "rsi") // r13 = right_ptr
+
+	// Get left string length
+	fc.out.MovMemToXmm("xmm0", "r12", 0) // load count as float64
+	// Convert float64 to integer using cvttsd2si
+	fc.out.Emit([]byte{0xf2, 0x4c, 0x0f, 0x2c, 0xf0}) // cvttsd2si r14, xmm0
+
+	// Get right string length
+	fc.out.MovMemToXmm("xmm0", "r13", 0) // load count as float64
+	// Convert float64 to integer
+	fc.out.Emit([]byte{0xf2, 0x4c, 0x0f, 0x2c, 0xf8}) // cvttsd2si r15, xmm0
+
+	// Calculate total length: rbx = r14 + r15
+	fc.out.MovRegToReg("rbx", "r14")
+	fc.out.Emit([]byte{0x4c, 0x01, 0xfb}) // add rbx, r15
+
+	// Calculate allocation size: rax = 8 + rbx * 16
+	fc.out.MovRegToReg("rax", "rbx")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x04}) // shl rax, 4 (multiply by 16)
+	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x08}) // add rax, 8
+
+	// Align to 16 bytes for safety
+	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x0f}) // add rax, 15
+	fc.out.Emit([]byte{0x48, 0x83, 0xe0, 0xf0}) // and rax, ~15
+
+	// Call malloc(rax)
+	fc.out.MovRegToReg("rdi", "rax")
+	fc.trackFunctionCall("malloc") // Track for PLT patching
+	fc.eb.GenerateCallInstruction("malloc")
+	fc.out.MovRegToReg("r10", "rax") // r10 = result pointer
+
+	// Write total count to result
+	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2a, 0xc3}) // cvtsi2sd xmm0, rbx
+	fc.out.MovXmmToMem("xmm0", "r10", 0)
+
+	// Copy left string entries
+	// memcpy(r10 + 8, r12 + 8, r14 * 16)
+	fc.out.Emit([]byte{0x4d, 0x89, 0xf1}) // mov r9, r14 (counter)
+	fc.out.Emit([]byte{0x49, 0x8d, 0x74, 0x24, 0x08}) // lea rsi, [r12 + 8]
+	fc.out.Emit([]byte{0x49, 0x8d, 0x7a, 0x08}) // lea rdi, [r10 + 8]
+
+	// Loop to copy left entries
+	fc.eb.MarkLabel("_concat_copy_left_loop")
+	fc.out.Emit([]byte{0x4d, 0x85, 0xc9}) // test r9, r9
+	// jz to skip copying if zero length - skip entire loop body (22 + 8 + 3 + 2 = 35 bytes)
+	fc.out.Emit([]byte{0x74, 0x23}) // jz +35 bytes (skip the entire loop)
+
+	fc.out.MovMemToXmm("xmm0", "rsi", 0)   // load key
+	fc.out.MovXmmToMem("xmm0", "rdi", 0)   // store key
+	fc.out.MovMemToXmm("xmm0", "rsi", 8)   // load value
+	fc.out.MovXmmToMem("xmm0", "rdi", 8)   // store value
+	fc.out.Emit([]byte{0x48, 0x83, 0xc6, 0x10}) // add rsi, 16
+	fc.out.Emit([]byte{0x48, 0x83, 0xc7, 0x10}) // add rdi, 16
+	fc.out.Emit([]byte{0x49, 0xff, 0xc9}) // dec r9
+	fc.out.Emit([]byte{0xeb, 0xd8}) // jmp back to test (-40 bytes)
+
+	// Now copy right string entries with offset keys
+	// r15 = right_len (counter), r14 = offset for keys
+	fc.out.Emit([]byte{0x49, 0x8d, 0x75, 0x08}) // lea rsi, [r13 + 8]
+	// rdi already points to correct position
+
+	fc.eb.MarkLabel("_concat_copy_right_loop")
+	fc.out.Emit([]byte{0x4d, 0x85, 0xff}) // test r15, r15
+	fc.out.Emit([]byte{0x74, 0x2c}) // jz +44 bytes (skip entire second loop)
+
+	fc.out.MovMemToXmm("xmm0", "rsi", 0)   // load key
+	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x2a, 0xce}) // cvtsi2sd xmm1, r14 (offset)
+	fc.out.Emit([]byte{0xf2, 0x0f, 0x58, 0xc1}) // addsd xmm0, xmm1 (key += offset)
+	fc.out.MovXmmToMem("xmm0", "rdi", 0)   // store adjusted key
+	fc.out.MovMemToXmm("xmm0", "rsi", 8)   // load value
+	fc.out.MovXmmToMem("xmm0", "rdi", 8)   // store value
+	fc.out.Emit([]byte{0x48, 0x83, 0xc6, 0x10}) // add rsi, 16
+	fc.out.Emit([]byte{0x48, 0x83, 0xc7, 0x10}) // add rdi, 16
+	fc.out.Emit([]byte{0x49, 0xff, 0xcf}) // dec r15
+	fc.out.Emit([]byte{0xeb, 0xcf}) // jmp back to test (-49 bytes)
+
+	// Return result pointer in rax
+	fc.out.MovRegToReg("rax", "r10")
+
+	// Restore stack alignment
+	fc.out.AddImmToReg("rsp", 8)
+
+	// Restore callee-saved registers
+	fc.out.PopReg("r15")
+	fc.out.PopReg("r14")
+	fc.out.PopReg("r13")
+	fc.out.PopReg("r12")
+	fc.out.PopReg("rbx")
+
+	// Function epilogue
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
 }
 
 func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
@@ -2911,7 +3168,57 @@ func (fc *FlapCompiler) compileMapToCString(mapPtr, cstrPtr string) {
 	// Note: Stack not cleaned up here - caller must handle
 }
 
+func (fc *FlapCompiler) compileTailCall(call *CallExpr) {
+	// Tail recursion optimization for "me" self-reference
+	// Instead of calling, we update parameters and jump to function start
+
+	if len(call.Args) != len(fc.currentLambda.Params) {
+		fmt.Fprintf(os.Stderr, "Error: tail call to 'me' has %d args but function has %d params\n",
+			len(call.Args), len(fc.currentLambda.Params))
+		os.Exit(1)
+	}
+
+	// Step 1: Evaluate all arguments and save to temporary stack locations
+	// We need temporaries because arguments may reference current parameters
+	tempOffsets := make([]int, len(call.Args))
+	for i, arg := range call.Args {
+		// Evaluate argument
+		fc.compileExpression(arg) // Result in xmm0
+
+		// Save to temporary stack location
+		fc.out.SubImmFromReg("rsp", 16)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		tempOffsets[i] = fc.stackOffset + 16*(i+1)
+	}
+
+	// Step 2: Copy temporary values to parameter locations
+	// Parameters are at [rbp - offset] where offset is in fc.variables
+	for i, paramName := range fc.currentLambda.Params {
+		paramOffset := fc.variables[paramName]
+		tempStackPos := 16 * (len(call.Args) - 1 - i)
+
+		// Load from temporary location
+		fc.out.MovMemToXmm("xmm0", "rsp", tempStackPos)
+
+		// Store to parameter location
+		fc.out.MovXmmToMem("xmm0", "rbp", -paramOffset)
+	}
+
+	// Step 3: Clean up temporary stack space
+	fc.out.AddImmToReg("rsp", int64(16*len(call.Args)))
+
+	// Step 4: Jump back to lambda body start (tail recursion!)
+	jumpOffset := int32(fc.lambdaBodyStart - (fc.eb.text.Len() + 5))
+	fc.out.JumpUnconditional(jumpOffset)
+}
+
 func (fc *FlapCompiler) compileCall(call *CallExpr) {
+	// Check for "me" self-reference (tail recursion candidate)
+	if call.Function == "me" && fc.currentLambda != nil {
+		fc.compileTailCall(call)
+		return
+	}
+
 	// Check if this is a stored function (variable containing function pointer)
 	if _, isVariable := fc.variables[call.Function]; isVariable {
 		fc.compileStoredFunctionCall(call)
@@ -3114,6 +3421,414 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		}
 		fc.trackFunctionCall("exit")
 		fc.eb.GenerateCallInstruction("exit")
+
+	case "syscall":
+		// Raw Linux syscall: syscall(number, arg1, arg2, arg3, arg4, arg5, arg6)
+		// x86-64 syscall convention: rax=number, rdi, rsi, rdx, r10, r8, r9
+		if len(call.Args) < 1 || len(call.Args) > 7 {
+			fmt.Fprintf(os.Stderr, "Error: syscall() requires 1-7 arguments (syscall number + up to 6 args)\n")
+			os.Exit(1)
+		}
+
+		// Syscall registers in x86-64: rdi, rsi, rdx, r10, r8, r9
+		// Note: r10 is used instead of rcx for syscalls
+		argRegs := []string{"rdi", "rsi", "rdx", "r10", "r8", "r9"}
+
+		// Evaluate all arguments and save to stack (in reverse order)
+		for i := len(call.Args) - 1; i >= 0; i-- {
+			fc.compileExpression(call.Args[i]) // Result in xmm0
+			// Convert float64 to int64 and save
+			fc.out.Cvttsd2si("rax", "xmm0")
+			fc.out.PushReg("rax")
+		}
+
+		// Pop syscall number into rax
+		fc.out.PopReg("rax")
+
+		// Pop arguments into registers
+		numArgs := len(call.Args) - 1 // Exclude syscall number
+		for i := 0; i < numArgs && i < 6; i++ {
+			fc.out.PopReg(argRegs[i])
+		}
+
+		// Execute syscall instruction (0x0f 0x05 for x86-64)
+		fc.out.Emit([]byte{0x0f, 0x05})
+
+		// Convert result from rax (int64) to xmm0 (float64)
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "getpid":
+		// Call getpid() from libc via PLT
+		// getpid() takes no arguments and returns pid_t in rax
+		if len(call.Args) != 0 {
+			fmt.Fprintf(os.Stderr, "Error: getpid() takes no arguments\n")
+			os.Exit(1)
+		}
+		fc.trackFunctionCall("getpid")
+		fc.eb.GenerateCallInstruction("getpid")
+		// Convert result from rax to xmm0
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "sqrt":
+		if len(call.Args) != 1 {
+			fmt.Fprintf(os.Stderr, "Error: sqrt() requires exactly 1 argument\n")
+			os.Exit(1)
+		}
+		// Compile argument (result in xmm0)
+		fc.compileExpression(call.Args[0])
+		// Use x86-64 SQRTSD instruction (hardware sqrt)
+		// sqrtsd xmm0, xmm0 - sqrt of xmm0, result in xmm0
+		fc.out.Sqrtsd("xmm0", "xmm0")
+
+	case "sin":
+		if len(call.Args) != 1 {
+			fmt.Fprintf(os.Stderr, "Error: sin() requires exactly 1 argument\n")
+			os.Exit(1)
+		}
+		fc.compileExpression(call.Args[0])
+		// Use x87 FPU FSIN instruction
+		// xmm0 -> memory -> ST(0) -> FSIN -> memory -> xmm0
+		fc.out.SubImmFromReg("rsp", 8) // Allocate 8 bytes on stack
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.FldMem("rsp", 0)
+		fc.out.Fsin()
+		fc.out.FstpMem("rsp", 0)
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 8) // Restore stack
+
+	case "cos":
+		if len(call.Args) != 1 {
+			fmt.Fprintf(os.Stderr, "Error: cos() requires exactly 1 argument\n")
+			os.Exit(1)
+		}
+		fc.compileExpression(call.Args[0])
+		// Use x87 FPU FCOS instruction
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.FldMem("rsp", 0)
+		fc.out.Fcos()
+		fc.out.FstpMem("rsp", 0)
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 8)
+
+	case "tan":
+		if len(call.Args) != 1 {
+			fmt.Fprintf(os.Stderr, "Error: tan() requires exactly 1 argument\n")
+			os.Exit(1)
+		}
+		fc.compileExpression(call.Args[0])
+		// Use x87 FPU FPTAN instruction
+		// FPTAN computes tan and pushes 1.0, so we need to pop the 1.0
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.FldMem("rsp", 0)
+		fc.out.Fptan()
+		fc.out.Fpop() // Pop the 1.0 that FPTAN pushes
+		fc.out.FstpMem("rsp", 0)
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 8)
+
+	case "atan":
+		if len(call.Args) != 1 {
+			fmt.Fprintf(os.Stderr, "Error: atan() requires exactly 1 argument\n")
+			os.Exit(1)
+		}
+		fc.compileExpression(call.Args[0])
+		// Use x87 FPU FPATAN: atan(x) = atan2(x, 1.0)
+		// FPATAN expects ST(1)=y, ST(0)=x, computes atan2(y,x)
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.FldMem("rsp", 0)    // ST(0) = x
+		fc.out.Fld1()               // ST(0) = 1.0, ST(1) = x
+		fc.out.Fpatan()             // ST(0) = atan2(x, 1.0) = atan(x)
+		fc.out.FstpMem("rsp", 0)
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 8)
+
+	case "asin":
+		if len(call.Args) != 1 {
+			fmt.Fprintf(os.Stderr, "Error: asin() requires exactly 1 argument\n")
+			os.Exit(1)
+		}
+		fc.compileExpression(call.Args[0])
+		// asin(x) = atan2(x, sqrt(1 - x²))
+		// FPATAN needs ST(1)=x, ST(0)=sqrt(1-x²)
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.FldMem("rsp", 0)    // ST(0) = x
+		fc.out.FldSt0()             // ST(0) = x, ST(1) = x
+		fc.out.FmulSelf()           // ST(0) = x²
+		fc.out.Fld1()               // ST(0) = 1.0, ST(1) = x²
+		fc.out.Fsubrp()             // ST(0) = 1 - x²
+		fc.out.Fsqrt()              // ST(0) = sqrt(1 - x²)
+		fc.out.FldMem("rsp", 0)    // ST(0) = x, ST(1) = sqrt(1 - x²)
+		// Now swap: need ST(1)=x, ST(0)=sqrt(1-x²) but have reverse
+		// Solution: save sqrt to mem, reload in reverse order
+		fc.out.FstpMem("rsp", 0)   // Store x to [rsp], pop, ST(0) = sqrt(1-x²)
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.FstpMem("rsp", 0)   // Store sqrt to [rsp+0]
+		fc.out.FldMem("rsp", 8)    // Load x: ST(0) = x
+		fc.out.FldMem("rsp", 0)    // Load sqrt: ST(0) = sqrt, ST(1) = x
+		fc.out.Fpatan()             // ST(0) = atan2(x, sqrt(1-x²)) = asin(x)
+		fc.out.FstpMem("rsp", 0)
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 16) // Restore both allocations
+
+	case "acos":
+		if len(call.Args) != 1 {
+			fmt.Fprintf(os.Stderr, "Error: acos() requires exactly 1 argument\n")
+			os.Exit(1)
+		}
+		fc.compileExpression(call.Args[0])
+		// acos(x) = atan2(sqrt(1-x²), x)
+		// FPATAN needs ST(1)=sqrt(1-x²), ST(0)=x
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.FldMem("rsp", 0)    // ST(0) = x
+		fc.out.FldSt0()             // ST(0) = x, ST(1) = x
+		fc.out.FmulSelf()           // ST(0) = x²
+		fc.out.Fld1()               // ST(0) = 1.0, ST(1) = x²
+		fc.out.Fsubrp()             // ST(0) = 1 - x²
+		fc.out.Fsqrt()              // ST(0) = sqrt(1 - x²)
+		fc.out.FldMem("rsp", 0)    // ST(0) = x, ST(1) = sqrt(1 - x²)
+		fc.out.Fpatan()             // ST(0) = atan2(sqrt(1-x²), x) = acos(x)
+		fc.out.FstpMem("rsp", 0)
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 8)
+
+	case "abs":
+		if len(call.Args) != 1 {
+			fmt.Fprintf(os.Stderr, "Error: abs() requires exactly 1 argument\n")
+			os.Exit(1)
+		}
+		fc.compileExpression(call.Args[0])
+		// abs(x) using FABS
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.FldMem("rsp", 0)    // ST(0) = x
+		fc.out.Fabs()               // ST(0) = |x|
+		fc.out.FstpMem("rsp", 0)
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 8)
+
+	case "floor":
+		if len(call.Args) != 1 {
+			fmt.Fprintf(os.Stderr, "Error: floor() requires exactly 1 argument\n")
+			os.Exit(1)
+		}
+		fc.compileExpression(call.Args[0])
+		// floor(x): round toward -∞
+		// FPU control word: set rounding mode to 01 (round down)
+		fc.out.SubImmFromReg("rsp", 16) // Need space for control word + value
+		fc.out.MovXmmToMem("xmm0", "rsp", 8)
+
+		// Save current FPU control word
+		fc.out.FstcwMem("rsp", 0)
+
+		// Load control word, modify to set RC=01 (bits 10-11)
+		fc.out.MovMemToReg("ax", "rsp", 0)      // Load 16-bit control word
+		fc.out.Write(0x66) // 16-bit operand prefix
+		fc.out.Write(0x81) // OR ax, imm16
+		fc.out.Write(0xC8) // ModR/M for ax
+		fc.out.Write(0x00) // Low byte: clear bits 10-11
+		fc.out.Write(0x04) // High byte: 0x0400 = bit 10 set (round down)
+		fc.out.Write(0x66) // 16-bit operand prefix
+		fc.out.Write(0x81) // AND ax, imm16
+		fc.out.Write(0xE0) // ModR/M for ax
+		fc.out.Write(0xFF) // Low byte: keep all bits
+		fc.out.Write(0xF7) // High byte: 0xF7FF = clear bit 11, keep bit 10
+		fc.out.MovRegToMem("ax", "rsp", 2)      // Store modified control word
+
+		// Load modified control word
+		fc.out.FldcwMem("rsp", 2)
+
+		// Perform rounding
+		fc.out.FldMem("rsp", 8)
+		fc.out.Frndint()
+		fc.out.FstpMem("rsp", 8)
+
+		// Restore original control word
+		fc.out.FldcwMem("rsp", 0)
+
+		fc.out.MovMemToXmm("xmm0", "rsp", 8)
+		fc.out.AddImmToReg("rsp", 16)
+
+	case "ceil":
+		if len(call.Args) != 1 {
+			fmt.Fprintf(os.Stderr, "Error: ceil() requires exactly 1 argument\n")
+			os.Exit(1)
+		}
+		fc.compileExpression(call.Args[0])
+		// ceil(x): round toward +∞
+		// FPU control word: set rounding mode to 10 (round up)
+		fc.out.SubImmFromReg("rsp", 16)
+		fc.out.MovXmmToMem("xmm0", "rsp", 8)
+
+		// Save current FPU control word
+		fc.out.FstcwMem("rsp", 0)
+
+		// Load control word, modify to set RC=10 (bits 10-11)
+		fc.out.MovMemToReg("ax", "rsp", 0)
+		fc.out.Write(0x66) // 16-bit operand prefix
+		fc.out.Write(0x81) // OR ax, imm16
+		fc.out.Write(0xC8) // ModR/M for ax
+		fc.out.Write(0x00) // Low byte
+		fc.out.Write(0x08) // High byte: 0x0800 = bit 11 set (round up)
+		fc.out.Write(0x66) // 16-bit operand prefix
+		fc.out.Write(0x81) // AND ax, imm16
+		fc.out.Write(0xE0) // ModR/M for ax
+		fc.out.Write(0xFF) // Low byte
+		fc.out.Write(0xFB) // High byte: 0xFBFF = clear bit 10, keep bit 11
+		fc.out.MovRegToMem("ax", "rsp", 2)
+
+		fc.out.FldcwMem("rsp", 2)
+		fc.out.FldMem("rsp", 8)
+		fc.out.Frndint()
+		fc.out.FstpMem("rsp", 8)
+		fc.out.FldcwMem("rsp", 0) // Restore
+
+		fc.out.MovMemToXmm("xmm0", "rsp", 8)
+		fc.out.AddImmToReg("rsp", 16)
+
+	case "round":
+		if len(call.Args) != 1 {
+			fmt.Fprintf(os.Stderr, "Error: round() requires exactly 1 argument\n")
+			os.Exit(1)
+		}
+		fc.compileExpression(call.Args[0])
+		// round(x): round to nearest (even)
+		// FPU control word: set rounding mode to 00 (round to nearest)
+		fc.out.SubImmFromReg("rsp", 16)
+		fc.out.MovXmmToMem("xmm0", "rsp", 8)
+
+		// Save current FPU control word
+		fc.out.FstcwMem("rsp", 0)
+
+		// Load control word, modify to set RC=00 (clear bits 10-11)
+		fc.out.MovMemToReg("ax", "rsp", 0)
+		fc.out.Write(0x66) // 16-bit operand prefix
+		fc.out.Write(0x81) // AND ax, imm16
+		fc.out.Write(0xE0) // ModR/M for ax
+		fc.out.Write(0xFF) // Low byte
+		fc.out.Write(0xF3) // High byte: 0xF3FF = clear bits 10-11
+		fc.out.MovRegToMem("ax", "rsp", 2)
+
+		fc.out.FldcwMem("rsp", 2)
+		fc.out.FldMem("rsp", 8)
+		fc.out.Frndint()
+		fc.out.FstpMem("rsp", 8)
+		fc.out.FldcwMem("rsp", 0) // Restore
+
+		fc.out.MovMemToXmm("xmm0", "rsp", 8)
+		fc.out.AddImmToReg("rsp", 16)
+
+	case "log":
+		if len(call.Args) != 1 {
+			fmt.Fprintf(os.Stderr, "Error: log() requires exactly 1 argument\n")
+			os.Exit(1)
+		}
+		fc.compileExpression(call.Args[0])
+		// log(x) = ln(x) = log2(x) / log2(e) = log2(x) * ln(2) / (ln(2) / ln(e))
+		// FYL2X computes ST(1) * log2(ST(0))
+		// So: log(x) = ln(2) * log2(x) = FYL2X with ST(1)=ln(2), ST(0)=x
+		// But we want ln(x), not log2(x)
+		// ln(x) = log2(x) * ln(2)
+		// Actually: FYL2X gives us: ST(1) * log2(ST(0))
+		// So if ST(1) = ln(2) and ST(0) = x, we get: ln(2) * log2(x) = ln(x) ✓
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.Fldln2()             // ST(0) = ln(2)
+		fc.out.FldMem("rsp", 0)    // ST(0) = x, ST(1) = ln(2)
+		fc.out.Fyl2x()              // ST(0) = ln(2) * log2(x) = ln(x)
+		fc.out.FstpMem("rsp", 0)
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 8)
+
+	case "exp":
+		if len(call.Args) != 1 {
+			fmt.Fprintf(os.Stderr, "Error: exp() requires exactly 1 argument\n")
+			os.Exit(1)
+		}
+		fc.compileExpression(call.Args[0])
+		// exp(x) = e^x = 2^(x * log2(e))
+		// Steps:
+		// 1. Multiply x by log2(e): x' = x * log2(e)
+		// 2. Split x' = n + f where n is integer, -1 <= f <= 1
+		// 3. Compute 2^f using F2XM1: 2^f = 1 + F2XM1(f)
+		// 4. Scale by 2^n using FSCALE
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.FldMem("rsp", 0)    // ST(0) = x
+		fc.out.Fldl2e()             // ST(0) = log2(e), ST(1) = x
+		fc.out.Fmulp()              // ST(0) = x * log2(e)
+
+		// Now split into integer and fractional parts
+		fc.out.FldSt0()             // ST(0) = x', ST(1) = x'
+		fc.out.Frndint()            // ST(0) = n (integer part)
+		fc.out.FldSt0()             // ST(0) = n, ST(1) = n, ST(2) = x'
+		fc.out.Write(0xD9) // FXCH st(2) - exchange ST(0) and ST(2)
+		fc.out.Write(0xCA)
+		fc.out.Fsubrp()             // ST(0) = x' - n = f, ST(1) = n
+
+		// Compute 2^f - 1 using F2XM1
+		fc.out.F2xm1()              // ST(0) = 2^f - 1, ST(1) = n
+		fc.out.Fld1()               // ST(0) = 1, ST(1) = 2^f - 1, ST(2) = n
+		fc.out.Faddp()              // ST(0) = 2^f, ST(1) = n
+
+		// Scale by 2^n
+		fc.out.Fscale()             // ST(0) = 2^f * 2^n = 2^(n+f) = e^x, ST(1) = n
+		// Discard n (ST(1)) while keeping result in ST(0)
+		fc.out.Write(0xDD) // FSTP st(1) - stores ST(0) to st(1), pops stack
+		fc.out.Write(0xD9)
+
+		fc.out.FstpMem("rsp", 0)
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 8)
+
+	case "pow":
+		if len(call.Args) != 2 {
+			fmt.Fprintf(os.Stderr, "Error: pow() requires exactly 2 arguments\n")
+			os.Exit(1)
+		}
+		fc.compileExpression(call.Args[0]) // x in xmm0
+		fc.out.SubImmFromReg("rsp", 16)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.compileExpression(call.Args[1]) // y in xmm0
+		fc.out.MovXmmToMem("xmm0", "rsp", 8)
+
+		// pow(x, y) = x^y = 2^(y * log2(x))
+		// Steps:
+		// 1. Compute log2(x) using FYL2X
+		// 2. Multiply by y
+		// 3. Split into integer and fractional parts
+		// 4. Use F2XM1 and FSCALE like in exp
+
+		fc.out.Fld1()               // ST(0) = 1.0
+		fc.out.FldMem("rsp", 0)    // ST(0) = x, ST(1) = 1.0
+		fc.out.Fyl2x()              // ST(0) = 1 * log2(x) = log2(x)
+		fc.out.FldMem("rsp", 8)    // ST(0) = y, ST(1) = log2(x)
+		fc.out.Fmulp()              // ST(0) = y * log2(x)
+
+		// Split into n + f
+		fc.out.FldSt0()             // ST(0) = y*log2(x), ST(1) = y*log2(x)
+		fc.out.Frndint()            // ST(0) = n
+		fc.out.FldSt0()             // ST(0) = n, ST(1) = n, ST(2) = y*log2(x)
+		fc.out.Write(0xD9) // FXCH st(2)
+		fc.out.Write(0xCA)
+		fc.out.Fsubrp()             // ST(0) = f, ST(1) = n
+
+		// Compute 2^f
+		fc.out.F2xm1()              // ST(0) = 2^f - 1
+		fc.out.Fld1()
+		fc.out.Faddp()              // ST(0) = 2^f, ST(1) = n
+		fc.out.Fscale()             // ST(0) = 2^f * 2^n = x^y, ST(1) = n
+		// Discard n (ST(1)) while keeping result in ST(0)
+		fc.out.Write(0xDD) // FSTP st(1) - stores ST(0) to st(1), pops stack
+		fc.out.Write(0xD9)
+
+		fc.out.FstpMem("rsp", 0)
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 16)
 	}
 }
 

@@ -1,0 +1,4 @@
+// Test atan function
+// atan(0) should be 0
+result := atan(0.0)
+println(result)

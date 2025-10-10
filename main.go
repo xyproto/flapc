@@ -73,6 +73,11 @@ type PCRelocation struct {
 	symbolName string // Name of symbol being referenced
 }
 
+type CallPatch struct {
+	position   int    // Position in text section where the rel32 offset starts
+	targetName string // Name of the target symbol
+}
+
 type BufferWrapper struct {
 	buf *bytes.Buffer
 }
@@ -81,10 +86,12 @@ type ExecutableBuilder struct {
 	machine                 Machine
 	arch                    Architecture
 	consts                  map[string]*Const
+	labels                  map[string]int // Maps label names to their offsets in .text
 	dynlinker               *DynamicLinker
 	useDynamicLinking       bool
 	neededFunctions         []string
 	pcRelocations           []PCRelocation
+	callPatches             []CallPatch
 	elf, rodata, data, text bytes.Buffer
 }
 
@@ -113,6 +120,9 @@ func (eb *ExecutableBuilder) PatchPCRelocations(textAddr, rodataAddr uint64, rod
 		var targetAddr uint64
 		if c, ok := eb.consts[reloc.symbolName]; ok {
 			targetAddr = c.addr
+			if strings.HasPrefix(reloc.symbolName, "str_") {
+				fmt.Fprintf(os.Stderr, "DEBUG PatchPCRelocations: %s using address 0x%x\n", reloc.symbolName, targetAddr)
+			}
 		} else {
 			fmt.Fprintf(os.Stderr, "Warning: Symbol %s not found for PC relocation\n", reloc.symbolName)
 			continue
@@ -312,6 +322,41 @@ func getSyscallNumbers(machine Machine) map[string]string {
 	}
 }
 
+// PatchCallSites patches all direct function calls with correct relative offsets
+func (eb *ExecutableBuilder) PatchCallSites(textAddr uint64) {
+	textBytes := eb.text.Bytes()
+
+	for _, patch := range eb.callPatches {
+		// Find the target symbol address (should be a label in the text section)
+		targetOffset := eb.LabelOffset(patch.targetName)
+		if targetOffset < 0 {
+			fmt.Fprintf(os.Stderr, "Warning: Label %s not found for call patch\n", patch.targetName)
+			continue
+		}
+
+		// Calculate addresses
+		// patch.position points to the 4-byte rel32 offset (after the 0xE8 CALL opcode)
+		ripAddr := textAddr + uint64(patch.position) + 4 // RIP points after the rel32
+		targetAddr := textAddr + uint64(targetOffset)
+		displacement := int64(targetAddr) - int64(ripAddr)
+
+		if displacement < -0x80000000 || displacement > 0x7FFFFFFF {
+			fmt.Fprintf(os.Stderr, "Warning: Call displacement too large: %d\n", displacement)
+			continue
+		}
+
+		// Patch the 4-byte rel32 offset
+		disp32 := uint32(displacement)
+		textBytes[patch.position] = byte(disp32 & 0xFF)
+		textBytes[patch.position+1] = byte((disp32 >> 8) & 0xFF)
+		textBytes[patch.position+2] = byte((disp32 >> 16) & 0xFF)
+		textBytes[patch.position+3] = byte((disp32 >> 24) & 0xFF)
+
+		fmt.Fprintf(os.Stderr, "Patched call to %s at position 0x%x: target offset 0x%x, displacement %d\n",
+			patch.targetName, patch.position, targetOffset, displacement)
+	}
+}
+
 func (eb *ExecutableBuilder) Lookup(what string) string {
 	// Check architecture-specific syscall numbers first
 	syscalls := getSyscallNumbers(eb.machine)
@@ -326,6 +371,14 @@ func (eb *ExecutableBuilder) Lookup(what string) string {
 }
 
 func (eb *ExecutableBuilder) Bytes() []byte {
+	// For dynamic ELFs, everything is already in eb.elf
+	if eb.useDynamicLinking {
+		fmt.Fprintf(os.Stderr, "DEBUG Bytes(): Using dynamic ELF, returning eb.elf only (size=%d)\n", eb.elf.Len())
+		return eb.elf.Bytes()
+	}
+
+	// For static ELFs, concatenate sections
+	fmt.Fprintf(os.Stderr, "DEBUG Bytes(): Using static ELF, concatenating sections\n")
 	var result bytes.Buffer
 	result.Write(eb.elf.Bytes())
 	result.Write(eb.rodata.Bytes())
@@ -346,6 +399,9 @@ func (eb *ExecutableBuilder) Define(symbol, value string) {
 
 func (eb *ExecutableBuilder) DefineAddr(symbol string, addr uint64) {
 	if c, ok := eb.consts[symbol]; ok {
+		if strings.HasPrefix(symbol, "str_") {
+			fmt.Fprintf(os.Stderr, "DEBUG DefineAddr: %s set to 0x%x\n", symbol, addr)
+		}
 		c.addr = addr
 	}
 }
@@ -356,12 +412,29 @@ func (eb *ExecutableBuilder) MarkLabel(label string) {
 	if _, ok := eb.consts[label]; !ok {
 		eb.consts[label] = &Const{value: ""}
 	}
+
+	// Also record the current offset in the text section
+	if eb.labels == nil {
+		eb.labels = make(map[string]int)
+	}
+	eb.labels[label] = eb.text.Len()
+}
+
+func (eb *ExecutableBuilder) LabelOffset(label string) int {
+	// Get the offset of a label in the text section
+	if offset, ok := eb.labels[label]; ok {
+		return offset
+	}
+	return -1 // Label not found
 }
 
 func (eb *ExecutableBuilder) RodataSection() map[string]string {
 	rodataSymbols := make(map[string]string)
 	for name, c := range eb.consts {
-		rodataSymbols[name] = c.value
+		// Skip code labels (they have empty values)
+		if c.value != "" {
+			rodataSymbols[name] = c.value
+		}
 	}
 	return rodataSymbols
 }
@@ -501,17 +574,17 @@ func (eb *ExecutableBuilder) patchTextInELF() {
 	newText := eb.text.Bytes()
 
 	// Find the text section in the ELF buffer
-	// PLT is at offset 0x2000 (48 bytes)
-	// _start is at offset 0x2030 (16 bytes aligned)
+	// PLT is at offset 0x2000
+	// PLT size = 16 bytes (PLT[0]) + 16 bytes per function
+	// _start is after PLT (16 bytes aligned)
 	// text starts after _start
-	pltSize := 48
+	pltSize := 16 + (len(eb.neededFunctions) * 16) // Dynamic PLT size based on number of functions
 	startSizeAligned := 16 // _start is 14 bytes, aligned to 16
 	textOffset := 0x2000 + pltSize + startSizeAligned
 	textSize := len(newText)
 
-	fmt.Fprintf(os.Stderr, "  Patching text at offset 0x%x, size %d bytes\n", textOffset, textSize)
-
 	// Replace the text section
+	fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: Copying %d bytes of regenerated code at ELF offset 0x%x\n", textSize, textOffset)
 	copy(elfBuf[textOffset:textOffset+textSize], newText)
 
 	// Rebuild the ELF buffer

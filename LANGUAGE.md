@@ -25,6 +25,23 @@ x = 10
 y := 20
 y := y + 5
 
+// Variable precision numbers
+x:b8 = 42         // 8-bit precision (faster, less accurate)
+y:b32 = 3.14159   // 32-bit precision (standard float)
+z:b64 = 3.14159265358979  // 64-bit precision (standard double)
+w:b128 = PI       // 128-bit precision (quad precision)
+
+// Precision blocks affect all variables defined within
+@precision(32) {
+    quick := 42.0      // Stored as 32-bit float
+    fast := PI * 2.0   // PI computed at 32-bit precision
+}
+
+@precision(128) {
+    accurate := 42.0   // Stored as 128-bit float
+    precise := PI * 2.0  // PI computed at 128-bit precision
+}
+
 // Arithmetic
 result = 10 + 3 * 2 - 1 / 2
 
@@ -47,7 +64,6 @@ s := "Hello"         // Creates {0: 72.0, 1: 101.0, 2: 108.0, 3: 108.0, 4: 111.0
 char := s[1]         // returns 101.0 (ASCII code for 'e')
 println("Hello")     // String literals optimized for direct output
 result := "Hello, " + "World!"  // Compile-time concatenation
-// Note: Runtime string operations (println(string_var)) not yet implemented
 
 // Lists (stored as map[uint64]float64)
 numbers = [1, 2, 3]
@@ -79,11 +95,11 @@ result = empty[1]    // returns 0.0 (empty map)
 result = 5 in mylist  // returns 1.0 or 0.0
 
 // Loops
-@ i in range(5) {
+for i in range(5) {
     println(i)
 }
 
-@ item in mylist {
+for item in mylist {
     println(item)
 }
 
@@ -128,14 +144,15 @@ guard_pattern = identifier [ "|" ] expression ;
 default_pattern = "~>" ;
 filter_expr = comparison_expr | expression ;
 comparison_expr = ( ">=" | "<=" | ">" | "<" | "==" | "!=" | "=~" | "!~" ) expression ;
-primary_expr = identifier | literal | list_literal | map_literal |
+primary_expr = identifier | literal | constant_expr | list_literal | map_literal |
                comprehension | loop | filtered_expr | default_expr |
                property_access | array_access | gather_access | scatter_assign |
                head_expr | tail_expr | guard_expr | early_return_expr |
                error_expr | self_ref | object_def | function_call |
-               return_stmt | simd_block | "(" expression ")" ;
-comprehension = "[" expression "in" expression "]" [ "{" ( expression | slice_expr ) "}" ] ;
-loop = [ simd_annotation ] "@" identifier "in" expression "{" { statement } "}" ;
+               return_stmt | simd_block | precision_block | "(" expression ")" ;
+precision_block = "@" "precision" "(" number ")" "{" { statement } "}" ;
+comprehension = "[" expression "for" identifier "in" expression "]" [ "{" ( expression | slice_expr ) "}" ] ;
+loop = [ simd_annotation ] "for" identifier "in" expression "{" { statement } "}" ;
 filtered_expr = expression "{" ( expression | slice_expr ) "}" ;
 slice_expr = [ expression ] ":" [ expression ] [ ":" expression ] ;
 default_expr = expression "or" expression ;
@@ -157,7 +174,8 @@ return_stmt = "return" [ expression ] ;
 simd_block = "@" simd_annotation "{" { statement } "}" ;
 simd_annotation = "simd" [ "(" simd_param { "," simd_param } ")" ] ;
 simd_param = "width" "=" ( number | "auto" ) | "aligned" "=" number ;
-type_annotation = "mask" | "float64" | "[" type_annotation "]" | identifier ;
+type_annotation = precision_type | "mask" | "[" type_annotation "]" | identifier ;
+precision_type = "b" digit { digit } | "f" digit { digit } ;
 reduction_op = "sum" | "product" | "max" | "min" | "any" | "all" ;
 list_literal = "[" [ expression { "," expression } ] "]" | "no" ;
 map_literal = "{" [ map_entry { "," map_entry } ] "}" ;
@@ -168,11 +186,12 @@ union_type = variant { "|" variant } ;
 variant = identifier [ "{" field_list "}" ] ;
 field_list = identifier ":" type_expr { "," identifier ":" type_expr } ;
 literal = number | string | regex | "yes" | "no" | "me" ;
+constant_expr = "PI" | "E" | "SQRT2" | "LN2" | "LN10" ;
 regex = "/" regex_pattern "/" ;
 param_list = identifier { "," identifier } ;
 arg_list = expression { "," expression } ;
 identifier = letter { letter | digit | "_" } ;
-number = digit { digit } [ "." digit { digit } ] ;
+number = [ "-" ] digit { digit } [ "." digit { digit } ] ;
 string = '"' { character } '"' ;
 character = printable_char | escape_sequence ;
 escape_sequence = "\" ( "n" | "t" | "r" | "\" | '"' ) ;
@@ -180,13 +199,152 @@ letter = "a" | "b" | ... | "z" | "A" | "B" | ... | "Z" ;
 digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
 ```
 
-## Keywords (1)
+## Keywords (2)
 
 ```
-in
+in for
 ```
 
-## Builtin Functions (4)
+## Variable Precision Numbers
+
+Flap supports **variable precision** numeric types, allowing each variable to have its own precision independent of others. This enables mixing precisions for optimal performance and accuracy.
+
+### Precision Type Syntax
+
+Variables can be declared with explicit precision using the `b` (bits) or `f` (float) prefix:
+
+```flap
+// Explicit precision types
+x:b8 = 42           // 8-bit integer-like precision
+y:b16 = 3.14        // 16-bit half-precision float
+z:b32 = 3.14159     // 32-bit single-precision float (IEEE 754 binary32)
+w:b64 = 3.14159265358979  // 64-bit double-precision float (IEEE 754 binary64)
+q:b128 = PI         // 128-bit quad-precision float (IEEE 754 binary128)
+
+// Alternative "f" notation (same as "b")
+a:f32 = 1.5         // Same as b32
+b:f64 = 2.5         // Same as b64
+c:f128 = 3.5        // Same as b128
+
+// Arbitrary precision (multiples of 64)
+high:b256 = PI      // 256-bit precision
+ultra:b512 = E      // 512-bit precision
+extreme:b1024 = SQRT2  // 1024-bit precision
+```
+
+### Precision Blocks
+
+The `@precision` annotation sets the default precision for all variables defined within a block:
+
+```flap
+// Default precision (64-bit)
+x := 42.0           // 64-bit by default
+
+@precision(32) {
+    // All variables here default to 32-bit
+    fast := 3.14    // 32-bit float
+    quick := PI     // PI computed at 32-bit precision
+
+    // Can still override with explicit types
+    accurate:b64 = 3.14159265358979  // 64-bit despite block
+}
+
+@precision(128) {
+    // All variables here default to 128-bit
+    precise := E * 2.0   // E computed at 128-bit
+    result := sin(x)     // sin() uses 128-bit arithmetic
+}
+```
+
+### Mixed Precision Arithmetic
+
+Variables of different precisions can be mixed in expressions. The result precision follows these rules:
+
+```flap
+x:b32 = 1.5
+y:b64 = 2.5
+z:b128 = 3.5
+
+// Result precision = max(operand precisions)
+a := x + y      // Result is b64 (max of b32, b64)
+b := y * z      // Result is b128 (max of b64, b128)
+c := x + y + z  // Result is b128 (max of all)
+
+// Explicit result precision
+d:b32 = y + z   // Forces 32-bit result (may lose precision)
+```
+
+## Mathematical Constants (Precision-Aware)
+
+Mathematical constants automatically adapt to the surrounding precision context:
+
+### Available Constants
+
+```
+PI        // π (3.141592653589793...)
+E         // e (2.718281828459045...)
+SQRT2     // √2 (1.414213562373095...)
+LN2       // ln(2) (0.693147180559945...)
+LN10      // ln(10) (2.302585092994046...)
+```
+
+### Constant Precision Behavior
+
+Constants inherit precision from context:
+
+```flap
+// Default 64-bit precision
+area := PI * radius * radius  // PI at 64-bit
+
+// Explicit precision
+area:b128 = PI * radius * radius  // PI computed at 128-bit
+
+// Block precision
+@precision(32) {
+    quick := PI * 2.0   // PI at 32-bit
+}
+
+@precision(256) {
+    ultra := PI * radius * radius  // PI at 256-bit
+}
+```
+
+### Implementation Strategy
+
+Constants use the most efficient computation method for each precision:
+
+| Precision | Method |
+|-----------|--------|
+| **8-16 bit** | Precomputed lookup table |
+| **32-bit** | x87 FPU (FLDPI, etc.) + round to float32 |
+| **64-bit** | x87 FPU instructions (FLDPI, FLDLN2, etc.) |
+| **80-bit** | x87 FPU extended precision registers |
+| **128-bit** | Double-double arithmetic or quad-precision |
+| **256-bit+** | Taylor series, Machin's formula, or other algorithms |
+
+### Precision Inheritance
+
+```flap
+@precision(128) {
+    // All variables and constants use 128-bit
+    circumference := 2.0 * PI * radius
+
+    @precision(64) {
+        // Nested block: 64-bit precision
+        approx := PI * 2.0
+
+        // Can still access outer scope variables
+        result := circumference * 0.5  // Mixed: 128-bit * 64-bit = 128-bit
+    }
+
+    // Back to 128-bit
+    area := PI * radius * radius
+}
+```
+
+## Builtin Functions
+
+### I/O Functions (4)
 
 ```
 println(x)        // Print value to stdout with newline
@@ -196,6 +354,29 @@ printf(fmt, ...)  // Formatted print (up to 8 args)
                   // %b = boolean (0.0→"no", non-zero→"yes")
 exit(code)        // Exit program with code (automatically called at end)
 range(n)          // Generate range 0..n-1 for loops
+```
+
+### Math Functions (13)
+
+All trigonometric functions use native x87 FPU instructions (no libc dependency):
+
+```
+sqrt(x)     // Square root (SQRTSD instruction)
+sin(x)      // Sine (FSIN instruction)
+cos(x)      // Cosine (FCOS instruction)
+tan(x)      // Tangent (FPTAN instruction)
+atan(x)     // Arctangent (FPATAN instruction)
+asin(x)     // Arcsine (FPATAN + x87 arithmetic)
+acos(x)     // Arccosine (FPATAN + x87 arithmetic)
+
+// Planned (x87 FPU instructions available):
+abs(x)      // Absolute value (FABS)
+floor(x)    // Round down (FRNDINT)
+ceil(x)     // Round up (FRNDINT + adjustment)
+round(x)    // Round to nearest (FRNDINT)
+exp(x)      // e^x (F2XM1 + FSCALE)
+log(x)      // Natural logarithm (FYL2X)
+pow(x, y)   // x^y (FYL2X + F2XM1 + FSCALE)
 ```
 
 ## Planned Keywords (Not Yet Implemented)
@@ -395,13 +576,13 @@ GameLoop = @{
     },
 
     check_collisions: () -> {
-        @ entity in me.entities {
-            nearby = [other in me.entities]{
+        for entity in me.entities {
+            nearby = [other for other in me.entities]{
                 other != entity and
                 entity.distance_to(other) < 32
             }
 
-            @ other in nearby {
+            for other in nearby {
                 handle_collision(entity, other)
             }
         }

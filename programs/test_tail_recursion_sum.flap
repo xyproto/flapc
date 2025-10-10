@@ -1,0 +1,10 @@
+// Test tail recursion - sum from 1 to n
+// This would stack overflow without tail recursion for large n
+sum := (n, acc) -> n <= 0.0 {
+    -> acc
+    ~> me(n - 1.0, acc + n)
+}
+
+result := sum(10.0, 0.0)
+println(result)  // Should print 55 (1+2+3+...+10)
+exit(0)

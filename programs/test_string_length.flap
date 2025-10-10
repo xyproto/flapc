@@ -1,0 +1,4 @@
+// Test string length operator
+s := "Hello"
+len := #s
+println(len)

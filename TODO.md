@@ -63,16 +63,26 @@ Release when:
 - [ ] Test: `trim("  hello  ")` returns `"hello"`
 
 ### Math Functions
-- [ ] Test: `sqrt(4.0)` returns `2.0`
-- [ ] Test: `pow(2.0, 3.0)` returns `8.0`
-- [ ] Test: `abs(-5.0)` returns `5.0`
-- [ ] Test: `floor(3.7)` returns `3.0`
-- [ ] Test: `ceil(3.2)` returns `4.0`
-- [ ] Test: `round(3.5)` returns `4.0`
-- [ ] Test: `sin(0.0)` returns `0.0`
-- [ ] Test: `cos(0.0)` returns `1.0`
-- [ ] Test: `log(2.718281828)` returns `~1.0`
-- [ ] Test: `exp(1.0)` returns `~2.718281828`
+- [x] Test: `sqrt(4.0)` returns `2.0` (SQRTSD instruction)
+- [x] Test: `pow(2.0, 3.0)` returns `8.0` ✓
+- [x] Test: `abs(-5.0)` returns `5.0` ✓
+- [x] Test: `floor(3.7)` returns `3.0` ✓
+- [x] Test: `ceil(3.2)` returns `4.0` ✓
+- [x] Test: `round(3.5)` returns `4.0` ✓
+- [x] Test: `sin(0.0)` returns `0.0` (FSIN instruction)
+- [x] Test: `cos(0.0)` returns `1.0` (FCOS instruction)
+- [x] Test: `tan(0.0)` returns `0.0` (FPTAN instruction)
+- [x] Test: `asin(0.0)` returns `0.0` (FPATAN + x87 math)
+- [x] Test: `acos(1.0)` returns `0.0` (FPATAN + x87 math)
+- [x] Test: `atan(0.0)` returns `0.0` (FPATAN instruction)
+- [x] Test: `log(2.718281828)` returns `~1.0` ✓
+- [x] Test: `exp(1.0)` returns `~2.718281828` ✓
+
+### Vector Math Functions
+- [ ] Test: `dot([1, 2, 3], [4, 5, 6])` returns `32.0` (1*4 + 2*5 + 3*6)
+- [ ] Test: `cross([1, 0, 0], [0, 1, 0])` returns `[0, 0, 1]`
+- [ ] Test: `magnitude([3, 4])` returns `5.0`
+- [ ] Test: `normalize([3, 4])` returns `[0.6, 0.8]`
 
 ### ARM64 Support
 - [ ] Test: Hello world compiles and runs on ARM64
@@ -105,7 +115,11 @@ Release when:
 ### Advanced Features (2.0.0)
 - [ ] Test: `text =~ /[0-9]+/` matches regex
 - [ ] Test: `x or! "error"` exits with error message
-- [ ] Test: `me.x` self-reference in recursive function
+- [x] Implementation: `me()` self-reference with tail recursion optimization ✓
+  - Compiler detects `me()` calls in lambda bodies
+  - Tail calls optimized to jumps instead of function calls
+  - Match expressions in lambda bodies supported via parseLambdaBody()
+  - Tests: factorial, sum, fibonacci, countdown all passing
 - [ ] Test: Pattern matching in match expressions
 - [ ] Test: `@{x: 1, y: 2}` object definition
 - [ ] Test: `@simd { }` explicit SIMD block
@@ -118,6 +132,13 @@ Release when:
 
 ## Recently Completed (2025-10-09)
 
+### Math Functions (Today)
+- [x] `sqrt(x)` using SQRTSD (SSE2) ✓
+- [x] `sin(x)`, `cos(x)`, `tan(x)` using FSIN, FCOS, FPTAN (x87 FPU) ✓
+- [x] `atan(x)` using FPATAN (x87 FPU) ✓
+- [x] `asin(x)`, `acos(x)` using FPATAN + x87 arithmetic (no libc!) ✓
+
+### Earlier (2025-10-09)
 - [x] Strings as map[uint64]float64 ✓
 - [x] String indexing `s[1]` ✓
 - [x] Compile-time string concatenation ✓

@@ -1,0 +1,2 @@
+x := ceil(3.2)
+println(x)

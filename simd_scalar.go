@@ -174,6 +174,426 @@ func (o *Out) divsdX86(dst, src string) {
 	fmt.Fprintln(os.Stderr)
 }
 
+// Sqrtsd - Square Root Scalar Double (SSE2)
+// sqrtsd xmm, xmm
+func (o *Out) Sqrtsd(dst, src string) {
+	switch o.machine {
+	case MachineX86_64:
+		o.sqrtsdX86(dst, src)
+	}
+}
+
+func (o *Out) sqrtsdX86(dst, src string) {
+	fmt.Fprintf(os.Stderr, "sqrtsd %s, %s: ", dst, src)
+
+	var dstNum, srcNum int
+	fmt.Sscanf(dst, "xmm%d", &dstNum)
+	fmt.Sscanf(src, "xmm%d", &srcNum)
+
+	// F2 prefix for scalar double
+	o.Write(0xF2)
+
+	// REX if needed
+	if dstNum >= 8 || srcNum >= 8 {
+		rex := uint8(0x40)
+		if dstNum >= 8 {
+			rex |= 0x04 // REX.R
+		}
+		if srcNum >= 8 {
+			rex |= 0x01 // REX.B
+		}
+		o.Write(rex)
+	}
+
+	// 0F 51 - SQRTSD opcode
+	o.Write(0x0F)
+	o.Write(0x51)
+
+	modrm := uint8(0xC0) | (uint8(dstNum&7) << 3) | uint8(srcNum&7)
+	o.Write(modrm)
+
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fsin - x87 FPU sine (operates on ST(0))
+// fsin
+func (o *Out) Fsin() {
+	fmt.Fprintf(os.Stderr, "fsin: ")
+	o.Write(0xD9)
+	o.Write(0xFE)
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fcos - x87 FPU cosine (operates on ST(0))
+// fcos
+func (o *Out) Fcos() {
+	fmt.Fprintf(os.Stderr, "fcos: ")
+	o.Write(0xD9)
+	o.Write(0xFF)
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fptan - x87 FPU partial tangent (operates on ST(0), pushes 1.0 after)
+// fptan
+func (o *Out) Fptan() {
+	fmt.Fprintf(os.Stderr, "fptan: ")
+	o.Write(0xD9)
+	o.Write(0xF2)
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fld - Load double from memory to ST(0)
+// fld qword [reg+offset]
+func (o *Out) FldMem(reg string, offset int) {
+	fmt.Fprintf(os.Stderr, "fld qword [%s%+d]: ", reg, offset)
+	o.Write(0xDD) // FLD m64
+
+	var rmBits uint8
+	switch reg {
+	case "rsp":
+		rmBits = 4
+	case "rbp":
+		rmBits = 5
+	default:
+		rmBits = 0
+	}
+
+	// ModR/M encoding
+	if offset == 0 && rmBits != 5 { // rbp needs displacement
+		modrm := uint8(0x00) | rmBits // mod=00, no displacement
+		o.Write(modrm)
+		if rmBits == 4 { // rsp needs SIB
+			o.Write(0x24)
+		}
+	} else if offset >= -128 && offset < 128 {
+		modrm := uint8(0x40) | rmBits // mod=01, disp8
+		o.Write(modrm)
+		if rmBits == 4 { // rsp needs SIB
+			o.Write(0x24)
+		}
+		o.Write(uint8(offset))
+	} else {
+		modrm := uint8(0x80) | rmBits // mod=10, disp32
+		o.Write(modrm)
+		if rmBits == 4 { // rsp needs SIB
+			o.Write(0x24)
+		}
+		// Write 32-bit displacement
+		o.Write(uint8(offset))
+		o.Write(uint8(offset >> 8))
+		o.Write(uint8(offset >> 16))
+		o.Write(uint8(offset >> 24))
+	}
+
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fstp - Store ST(0) to memory and pop
+// fstp qword [reg+offset]
+func (o *Out) FstpMem(reg string, offset int) {
+	fmt.Fprintf(os.Stderr, "fstp qword [%s%+d]: ", reg, offset)
+	o.Write(0xDD) // FSTP m64
+
+	var rmBits uint8
+	switch reg {
+	case "rsp":
+		rmBits = 4
+	case "rbp":
+		rmBits = 5
+	default:
+		rmBits = 0
+	}
+
+	// ModR/M encoding (reg field = 011 for FSTP)
+	if offset == 0 && rmBits != 5 { // rbp needs displacement
+		modrm := uint8(0x00) | (3 << 3) | rmBits // mod=00
+		o.Write(modrm)
+		if rmBits == 4 { // rsp needs SIB
+			o.Write(0x24)
+		}
+	} else if offset >= -128 && offset < 128 {
+		modrm := uint8(0x40) | (3 << 3) | rmBits // mod=01, disp8
+		o.Write(modrm)
+		if rmBits == 4 { // rsp needs SIB
+			o.Write(0x24)
+		}
+		o.Write(uint8(offset))
+	} else {
+		modrm := uint8(0x80) | (3 << 3) | rmBits // mod=10, disp32
+		o.Write(modrm)
+		if rmBits == 4 { // rsp needs SIB
+			o.Write(0x24)
+		}
+		o.Write(uint8(offset))
+		o.Write(uint8(offset >> 8))
+		o.Write(uint8(offset >> 16))
+		o.Write(uint8(offset >> 24))
+	}
+
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fpop - Pop x87 stack (FSTP ST(0) - discard top)
+func (o *Out) Fpop() {
+	fmt.Fprintf(os.Stderr, "fstp st(0): ")
+	o.Write(0xDD)
+	o.Write(0xD8) // FSTP ST(0)
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fpatan - x87 FPU partial arctangent: ST(1) = atan2(ST(1), ST(0)), then pop
+// Computes atan(ST(1)/ST(0)) with proper quadrant handling
+func (o *Out) Fpatan() {
+	fmt.Fprintf(os.Stderr, "fpatan: ")
+	o.Write(0xD9)
+	o.Write(0xF3)
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fld1 - Load 1.0 onto ST(0)
+func (o *Out) Fld1() {
+	fmt.Fprintf(os.Stderr, "fld1: ")
+	o.Write(0xD9)
+	o.Write(0xE8)
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fldpi - Load π onto ST(0)
+func (o *Out) Fldpi() {
+	fmt.Fprintf(os.Stderr, "fldpi: ")
+	o.Write(0xD9)
+	o.Write(0xEB)
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fmul - Multiply ST(0) by ST(1), pop, result in ST(0)
+// fmulp st(1), st(0)
+func (o *Out) Fmulp() {
+	fmt.Fprintf(os.Stderr, "fmulp: ")
+	o.Write(0xDE)
+	o.Write(0xC9)
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fdiv - Divide ST(1) by ST(0), pop, result in ST(0)
+// fdivp st(1), st(0)  -> ST(1) / ST(0)
+func (o *Out) Fdivp() {
+	fmt.Fprintf(os.Stderr, "fdivp: ")
+	o.Write(0xDE)
+	o.Write(0xF9)
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fdivrp - Divide ST(0) by ST(1), pop, result in ST(0)
+// fdivrp st(1), st(0)  -> ST(0) / ST(1)
+func (o *Out) Fdivrp() {
+	fmt.Fprintf(os.Stderr, "fdivrp: ")
+	o.Write(0xDE)
+	o.Write(0xF1)
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fadd - Add ST(0) to ST(1), pop, result in ST(0)
+// faddp st(1), st(0)
+func (o *Out) Faddp() {
+	fmt.Fprintf(os.Stderr, "faddp: ")
+	o.Write(0xDE)
+	o.Write(0xC1)
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fsub - Subtract ST(0) from ST(1), pop, result in ST(0)
+// fsubp st(1), st(0)  -> ST(1) - ST(0)
+func (o *Out) Fsubp() {
+	fmt.Fprintf(os.Stderr, "fsubp: ")
+	o.Write(0xDE)
+	o.Write(0xE9)
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fsubrp - Subtract ST(1) from ST(0), pop, result in ST(0)
+// fsubrp st(1), st(0)  -> ST(0) - ST(1)
+func (o *Out) Fsubrp() {
+	fmt.Fprintf(os.Stderr, "fsubrp: ")
+	o.Write(0xDE)
+	o.Write(0xE1)
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fsqrt - Square root of ST(0), result in ST(0)
+func (o *Out) Fsqrt() {
+	fmt.Fprintf(os.Stderr, "fsqrt: ")
+	o.Write(0xD9)
+	o.Write(0xFA)
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fchs - Change sign of ST(0)
+func (o *Out) Fchs() {
+	fmt.Fprintf(os.Stderr, "fchs: ")
+	o.Write(0xD9)
+	o.Write(0xE0)
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fmul_st0_st0 - Multiply ST(0) by itself: ST(0) = ST(0) * ST(0)
+// fmul st(0), st(0)
+func (o *Out) FmulSelf() {
+	fmt.Fprintf(os.Stderr, "fmul st(0), st(0): ")
+	o.Write(0xD8)
+	o.Write(0xC8)
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fld_st0 - Duplicate ST(0): push ST(0) onto stack
+// fld st(0)
+func (o *Out) FldSt0() {
+	fmt.Fprintf(os.Stderr, "fld st(0): ")
+	o.Write(0xD9)
+	o.Write(0xC0)
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fabs computes abs(ST(0))
+func (o *Out) Fabs() {
+	fmt.Fprintf(os.Stderr, "fabs: ")
+	o.Write(0xD9)
+	o.Write(0xE1)
+	fmt.Fprintln(os.Stderr)
+}
+
+// Frndint rounds ST(0) to integer according to rounding mode
+func (o *Out) Frndint() {
+	fmt.Fprintf(os.Stderr, "frndint: ")
+	o.Write(0xD9)
+	o.Write(0xFC)
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fldcw loads FPU control word from memory
+func (o *Out) FldcwMem(reg string, offset int) {
+	fmt.Fprintf(os.Stderr, "fldcw [%s+%d]: ", reg, offset)
+	o.Write(0xD9) // FLDCW m16
+
+	var rmBits uint8
+	switch reg {
+	case "rsp":
+		rmBits = 4
+	case "rbp":
+		rmBits = 5
+	default:
+		rmBits = 0
+	}
+
+	if offset == 0 && rmBits != 5 {
+		modrm := uint8(0x28) | rmBits // reg=5 for FLDCW
+		o.Write(modrm)
+		if rmBits == 4 {
+			o.Write(0x24) // SIB for rsp
+		}
+	} else if offset >= -128 && offset < 128 {
+		modrm := uint8(0x68) | rmBits
+		o.Write(modrm)
+		if rmBits == 4 {
+			o.Write(0x24)
+		}
+		o.Write(uint8(offset))
+	} else {
+		modrm := uint8(0xA8) | rmBits
+		o.Write(modrm)
+		if rmBits == 4 {
+			o.Write(0x24)
+		}
+		o.Write(uint8(offset))
+		o.Write(uint8(offset >> 8))
+		o.Write(uint8(offset >> 16))
+		o.Write(uint8(offset >> 24))
+	}
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fstcw stores FPU control word to memory
+func (o *Out) FstcwMem(reg string, offset int) {
+	fmt.Fprintf(os.Stderr, "fstcw [%s+%d]: ", reg, offset)
+	o.Write(0xD9) // FSTCW m16
+
+	var rmBits uint8
+	switch reg {
+	case "rsp":
+		rmBits = 4
+	case "rbp":
+		rmBits = 5
+	default:
+		rmBits = 0
+	}
+
+	if offset == 0 && rmBits != 5 {
+		modrm := uint8(0x38) | rmBits // reg=7 for FSTCW
+		o.Write(modrm)
+		if rmBits == 4 {
+			o.Write(0x24)
+		}
+	} else if offset >= -128 && offset < 128 {
+		modrm := uint8(0x78) | rmBits
+		o.Write(modrm)
+		if rmBits == 4 {
+			o.Write(0x24)
+		}
+		o.Write(uint8(offset))
+	} else {
+		modrm := uint8(0xB8) | rmBits
+		o.Write(modrm)
+		if rmBits == 4 {
+			o.Write(0x24)
+		}
+		o.Write(uint8(offset))
+		o.Write(uint8(offset >> 8))
+		o.Write(uint8(offset >> 16))
+		o.Write(uint8(offset >> 24))
+	}
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fyl2x computes ST(1) * log2(ST(0)), pops both, pushes result
+func (o *Out) Fyl2x() {
+	fmt.Fprintf(os.Stderr, "fyl2x: ")
+	o.Write(0xD9)
+	o.Write(0xF1)
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fldln2 pushes ln(2) onto FPU stack
+func (o *Out) Fldln2() {
+	fmt.Fprintf(os.Stderr, "fldln2: ")
+	o.Write(0xD9)
+	o.Write(0xED)
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fldl2e pushes log2(e) onto FPU stack
+func (o *Out) Fldl2e() {
+	fmt.Fprintf(os.Stderr, "fldl2e: ")
+	o.Write(0xD9)
+	o.Write(0xEA)
+	fmt.Fprintln(os.Stderr)
+}
+
+// F2xm1 computes 2^ST(0) - 1 (for -1 <= ST(0) <= 1)
+func (o *Out) F2xm1() {
+	fmt.Fprintf(os.Stderr, "f2xm1: ")
+	o.Write(0xD9)
+	o.Write(0xF0)
+	fmt.Fprintln(os.Stderr)
+}
+
+// Fscale scales ST(0) by 2^ST(1) (ST(0) = ST(0) * 2^ST(1))
+func (o *Out) Fscale() {
+	fmt.Fprintf(os.Stderr, "fscale: ")
+	o.Write(0xD9)
+	o.Write(0xFD)
+	fmt.Fprintln(os.Stderr)
+}
+
 // ARM64 scalar floating-point operations
 func (o *Out) faddScalarARM64(dst, src string) {
 	fmt.Fprintf(os.Stderr, "fadd %s, %s (scalar): ", dst, src)

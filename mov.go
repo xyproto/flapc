@@ -132,9 +132,12 @@ func (o *Out) movX86ImmToReg(dst, imm string) {
 
 	fmt.Fprintf(os.Stderr, "mov %s, %s:", dst, imm)
 
-	// Parse immediate value
+	// Parse immediate value (support both signed and unsigned)
 	var immVal uint64
-	if val, err := strconv.ParseUint(imm, 0, 64); err == nil {
+	if val, err := strconv.ParseInt(imm, 0, 64); err == nil {
+		// Signed integer - convert to uint64 (preserves two's complement representation)
+		immVal = uint64(val)
+	} else if val, err := strconv.ParseUint(imm, 0, 64); err == nil {
 		immVal = val
 	} else if addr := o.Lookup(imm); addr != "0" {
 		if val, err := strconv.ParseUint(addr, 10, 64); err == nil {
@@ -204,9 +207,12 @@ func (o *Out) movARM64ImmToReg(dst, imm string) {
 
 	fmt.Fprintf(os.Stderr, "mov %s, %s:", dst, imm)
 
-	// Parse immediate value
+	// Parse immediate value (support both signed and unsigned)
 	var immVal uint64
-	if val, err := strconv.ParseUint(imm, 0, 64); err == nil {
+	if val, err := strconv.ParseInt(imm, 0, 64); err == nil {
+		// Signed integer - convert to uint64 (preserves two's complement representation)
+		immVal = uint64(val)
+	} else if val, err := strconv.ParseUint(imm, 0, 64); err == nil {
 		immVal = val
 	} else if addr := o.Lookup(imm); addr != "0" {
 		if val, err := strconv.ParseUint(addr, 10, 64); err == nil {
@@ -433,6 +439,33 @@ func (o *Out) movRISCVRegToFP(dst, src string) {
 	o.Write(uint8((instr >> 8) & 0xFF))
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
+
+	fmt.Fprintln(os.Stderr)
+}
+
+// CallSymbol generates a relative CALL instruction to a labeled symbol
+func (o *Out) CallSymbol(symbol string) {
+	switch o.machine {
+	case MachineX86_64:
+		o.callSymbolX86(symbol)
+	}
+}
+
+func (o *Out) callSymbolX86(symbol string) {
+	fmt.Fprintf(os.Stderr, "call %s: ", symbol)
+
+	// Emit CALL rel32 instruction (E8)
+	o.Write(0xE8)
+
+	// Reserve 4 bytes for the relative offset (will be patched later)
+	callPos := o.eb.text.Len()
+	o.WriteUnsigned(0x00000000)
+
+	// Register this call site for patching
+	o.eb.callPatches = append(o.eb.callPatches, CallPatch{
+		position:   callPos,
+		targetName: symbol,
+	})
 
 	fmt.Fprintln(os.Stderr)
 }
