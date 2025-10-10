@@ -1,0 +1,12 @@
+// Test compile-time list concatenation edge cases
+empty_left := [] + [1, 2]
+println(#empty_left)
+
+empty_right := [1, 2] + []
+println(#empty_right)
+
+both_empty := [] + []
+println(#both_empty)
+
+large := [1, 2, 3] + [4, 5, 6]
+println(#large)

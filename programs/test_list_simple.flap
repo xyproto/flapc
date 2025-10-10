@@ -1,0 +1,3 @@
+// Test simple list creation and length
+list1 := [1, 2]
+println(#list1)

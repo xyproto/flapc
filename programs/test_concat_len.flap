@@ -1,0 +1,6 @@
+// Test concatenation result length
+empty := ""
+s := "test"
+result := empty + s
+len1 := #result
+println(len1)

@@ -43,7 +43,7 @@ Release when:
 - [ ] Test: Strings > 255 characters (multi-byte length encoding)
 
 ### Polymorphic Operators
-- [ ] Test: `[1, 2] + [3, 4]` returns `[1, 2, 3, 4]`
+- [x] Test: `[1, 2] + [3, 4]` returns `[1, 2, 3, 4]` ✓ (compile-time only)
 - [ ] Test: `{1: 10} + {2: 20}` returns `{1: 10, 2: 20}`
 - [ ] Test: `list ++ 42` appends single value
 - [ ] Test: `map ++ {key: value}` adds single entry

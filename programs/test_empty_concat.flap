@@ -1,0 +1,7 @@
+// Test concatenation with empty strings
+empty := ""
+s := "test"
+
+// Empty + non-empty
+result1 := empty + s
+println(result1)

@@ -2456,9 +2456,89 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			}
 
 			if leftType == "list" && rightType == "list" {
-				// List concatenation - TODO
-				fmt.Fprintf(os.Stderr, "Error: list concatenation not yet implemented\n")
-				os.Exit(1)
+				// List concatenation: [1, 2] + [3, 4] -> [1, 2, 3, 4]
+				leftList, leftIsLiteral := e.Left.(*ListExpr)
+				rightList, rightIsLiteral := e.Right.(*ListExpr)
+
+				if leftIsLiteral && rightIsLiteral {
+					// Compile-time concatenation
+					labelName := fmt.Sprintf("list_%d", fc.stringCounter)
+					fc.stringCounter++
+
+					var listData []byte
+
+					// Calculate total length
+					totalLen := float64(len(leftList.Elements) + len(rightList.Elements))
+					lengthBits := uint64(0)
+					*(*float64)(unsafe.Pointer(&lengthBits)) = totalLen
+					for i := 0; i < 8; i++ {
+						listData = append(listData, byte((lengthBits>>(i*8))&0xFF))
+					}
+
+					// Add all elements from left list
+					for _, elem := range leftList.Elements {
+						if numExpr, ok := elem.(*NumberExpr); ok {
+							elemBits := uint64(0)
+							*(*float64)(unsafe.Pointer(&elemBits)) = numExpr.Value
+							for i := 0; i < 8; i++ {
+								listData = append(listData, byte((elemBits>>(i*8))&0xFF))
+							}
+						}
+					}
+
+					// Add all elements from right list
+					for _, elem := range rightList.Elements {
+						if numExpr, ok := elem.(*NumberExpr); ok {
+							elemBits := uint64(0)
+							*(*float64)(unsafe.Pointer(&elemBits)) = numExpr.Value
+							for i := 0; i < 8; i++ {
+								listData = append(listData, byte((elemBits>>(i*8))&0xFF))
+							}
+						}
+					}
+
+					fc.eb.Define(labelName, string(listData))
+					fc.out.LeaSymbolToReg("rax", labelName)
+					fc.out.SubImmFromReg("rsp", 8)
+					fc.out.MovRegToMem("rax", "rsp", 0)
+					fc.out.MovMemToXmm("xmm0", "rsp", 0)
+					fc.out.AddImmToReg("rsp", 8)
+					return
+				}
+
+				// Runtime concatenation
+				// Compile left list (result in xmm0)
+				fc.compileExpression(e.Left)
+				fc.out.SubImmFromReg("rsp", 16)
+				fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+				// Compile right list (result in xmm0)
+				fc.compileExpression(e.Right)
+				fc.out.SubImmFromReg("rsp", 16)
+				fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+				// Call _flap_list_concat(left_ptr, right_ptr)
+				fc.out.MovMemToReg("rdi", "rsp", 16) // left ptr
+				fc.out.MovMemToReg("rsi", "rsp", 0)  // right ptr
+				fc.out.AddImmToReg("rsp", 32)
+
+				// Align stack for call
+				fc.out.SubImmFromReg("rsp", 8)
+
+				// Call the helper function
+				fc.trackFunctionCall("_flap_list_concat")
+				fc.out.CallSymbol("_flap_list_concat")
+
+				fc.out.AddImmToReg("rsp", 8)
+
+				// Result pointer is in rax, convert to xmm0
+				fc.out.SubImmFromReg("rsp", 8)
+				fc.out.MovRegToMem("rax", "rsp", 0)
+				fc.out.MovMemToXmm("xmm0", "rsp", 0)
+				fc.out.AddImmToReg("rsp", 8)
+
+				// Return early - don't do numeric operation
+				return
 			}
 
 			if leftType == "map" && rightType == "map" {
@@ -3631,6 +3711,113 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.AddImmToReg("rsp", 8)
 
 	// Restore callee-saved registers
+	fc.out.PopReg("r13")
+	fc.out.PopReg("r12")
+	fc.out.PopReg("rbx")
+
+	// Function epilogue
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
+
+	// Generate _flap_list_concat(left_ptr, right_ptr) -> new_ptr
+	// Arguments: rdi = left_ptr, rsi = right_ptr
+	// Returns: rax = pointer to new concatenated list
+	// List format: [length (8 bytes)][elem0 (8 bytes)][elem1 (8 bytes)]...
+
+	fc.eb.MarkLabel("_flap_list_concat")
+
+	// Function prologue
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+
+	// Save callee-saved registers
+	fc.out.PushReg("rbx")
+	fc.out.PushReg("r12")
+	fc.out.PushReg("r13")
+	fc.out.PushReg("r14")
+	fc.out.PushReg("r15")
+
+	// Align stack to 16 bytes for malloc call
+	fc.out.SubImmFromReg("rsp", 8)
+
+	// Save arguments
+	fc.out.MovRegToReg("r12", "rdi") // r12 = left_ptr
+	fc.out.MovRegToReg("r13", "rsi") // r13 = right_ptr
+
+	// Get left list length
+	fc.out.MovMemToXmm("xmm0", "r12", 0) // load length as float64
+	fc.out.Emit([]byte{0xf2, 0x4c, 0x0f, 0x2c, 0xf0}) // cvttsd2si r14, xmm0
+
+	// Get right list length
+	fc.out.MovMemToXmm("xmm0", "r13", 0) // load length as float64
+	fc.out.Emit([]byte{0xf2, 0x4c, 0x0f, 0x2c, 0xf8}) // cvttsd2si r15, xmm0
+
+	// Calculate total length: rbx = r14 + r15
+	fc.out.MovRegToReg("rbx", "r14")
+	fc.out.Emit([]byte{0x4c, 0x01, 0xfb}) // add rbx, r15
+
+	// Calculate allocation size: rax = 8 + rbx * 8
+	fc.out.MovRegToReg("rax", "rbx")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x03}) // shl rax, 3 (multiply by 8)
+	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x08}) // add rax, 8
+
+	// Align to 16 bytes for safety
+	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x0f}) // add rax, 15
+	fc.out.Emit([]byte{0x48, 0x83, 0xe0, 0xf0}) // and rax, ~15
+
+	// Call malloc(rax)
+	fc.out.MovRegToReg("rdi", "rax")
+	fc.trackFunctionCall("malloc")
+	fc.eb.GenerateCallInstruction("malloc")
+	fc.out.MovRegToReg("r10", "rax") // r10 = result pointer
+
+	// Write total length to result
+	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2a, 0xc3}) // cvtsi2sd xmm0, rbx
+	fc.out.MovXmmToMem("xmm0", "r10", 0)
+
+	// Copy left list elements
+	// memcpy(r10 + 8, r12 + 8, r14 * 8)
+	fc.out.Emit([]byte{0x4d, 0x89, 0xf1})             // mov r9, r14 (counter)
+	fc.out.Emit([]byte{0x49, 0x8d, 0x74, 0x24, 0x08}) // lea rsi, [r12 + 8]
+	fc.out.Emit([]byte{0x49, 0x8d, 0x7a, 0x08})       // lea rdi, [r10 + 8]
+
+	// Loop to copy left elements
+	fc.eb.MarkLabel("_list_concat_copy_left_loop")
+	fc.out.Emit([]byte{0x4d, 0x85, 0xc9}) // test r9, r9
+	fc.out.Emit([]byte{0x74, 0x15})       // jz +21 bytes (skip loop body)
+
+	fc.out.MovMemToXmm("xmm0", "rsi", 0)        // load element (4 bytes)
+	fc.out.MovXmmToMem("xmm0", "rdi", 0)        // store element (4 bytes)
+	fc.out.Emit([]byte{0x48, 0x83, 0xc6, 0x08}) // add rsi, 8 (4 bytes)
+	fc.out.Emit([]byte{0x48, 0x83, 0xc7, 0x08}) // add rdi, 8 (4 bytes)
+	fc.out.Emit([]byte{0x49, 0xff, 0xc9})       // dec r9 (3 bytes)
+	fc.out.Emit([]byte{0xeb, 0xe6})             // jmp back -26 bytes (2 bytes)
+
+	// Copy right list elements
+	// memcpy(r10 + 8 + r14*8, r13 + 8, r15 * 8)
+	fc.out.Emit([]byte{0x49, 0x8d, 0x75, 0x08}) // lea rsi, [r13 + 8]
+	// rdi already points to correct position
+
+	fc.eb.MarkLabel("_list_concat_copy_right_loop")
+	fc.out.Emit([]byte{0x4d, 0x85, 0xff}) // test r15, r15
+	fc.out.Emit([]byte{0x74, 0x15})       // jz +21 bytes (skip loop body)
+
+	fc.out.MovMemToXmm("xmm0", "rsi", 0)        // load element (4 bytes)
+	fc.out.MovXmmToMem("xmm0", "rdi", 0)        // store element (4 bytes)
+	fc.out.Emit([]byte{0x48, 0x83, 0xc6, 0x08}) // add rsi, 8 (4 bytes)
+	fc.out.Emit([]byte{0x48, 0x83, 0xc7, 0x08}) // add rdi, 8 (4 bytes)
+	fc.out.Emit([]byte{0x49, 0xff, 0xcf})       // dec r15 (3 bytes)
+	fc.out.Emit([]byte{0xeb, 0xe6})             // jmp back -26 bytes (2 bytes)
+
+	// Return result pointer in rax
+	fc.out.MovRegToReg("rax", "r10")
+
+	// Restore stack alignment
+	fc.out.AddImmToReg("rsp", 8)
+
+	// Restore callee-saved registers
+	fc.out.PopReg("r15")
+	fc.out.PopReg("r14")
 	fc.out.PopReg("r13")
 	fc.out.PopReg("r12")
 	fc.out.PopReg("rbx")

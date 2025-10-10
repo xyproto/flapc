@@ -1,0 +1,11 @@
+// Simple test for runtime string concatenation
+s1 := "Hello"
+s2 := ", World!"
+result := s1 + s2
+println(result)
+
+// Test with another pair
+a := "foo"
+b := "bar"
+result2 := a + b
+println(result2)

@@ -1,0 +1,8 @@
+// Test concatenation without printing
+empty := ""
+s := "test"
+result := empty + s
+
+// Don't print, just make sure it compiles and runs
+x := 0
+println(x)

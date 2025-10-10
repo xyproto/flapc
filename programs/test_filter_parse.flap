@@ -1,0 +1,4 @@
+// Test filter parsing
+s := "Hello"
+filtered := s{0:2}
+println(filtered)
