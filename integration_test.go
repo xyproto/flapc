@@ -12,8 +12,7 @@ import (
 
 // Programs that are expected to fail compilation
 var compileExpectations = map[string]string{
-	"const":            "cannot reassign immutable variable",
-	"hash_length_test": "panic: runtime error",
+	"const": "cannot reassign immutable variable",
 }
 
 // Programs to skip - none, we want to see all failures

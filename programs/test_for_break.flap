@@ -1,14 +1,14 @@
-// test_for_break.flap - test for/break/continue keywords
-printf("Testing for loop:\n")
-for i in range(5) {
+// test_for_break.flap - test @ syntax for loops
+printf("Testing @+ loop:\n")
+@+ i in range(5) {
     printf("%.0f ", i)
 }
 printf("\n")
 
-printf("Testing nested for:\n")
-for i in range(2) {
-    for j in range(3) {
-        printf("(%v,%v) ", i, j)
+printf("Testing nested @+:\n")
+@1 i in range(2) {
+    @+ j in range(3) {
+        printf("(%.0f,%.0f) ", i, j)
     }
     printf("\n")
 }

@@ -134,6 +134,8 @@ func (l *Lexer) NextToken() Token {
 		for l.pos < len(l.input) && l.input[l.pos] != '\n' {
 			l.pos++
 		}
+		// Recursively get the next token after the comment
+		return l.NextToken()
 	}
 
 	if l.pos >= len(l.input) {
@@ -373,6 +375,9 @@ func (a *AssignStmt) String() string {
 	op := "="
 	if a.Mutable {
 		op = ":="
+	}
+	if a.Value == nil {
+		return a.Name + " " + op + " <nil>"
 	}
 	return a.Name + " " + op + " " + a.Value.String()
 }
