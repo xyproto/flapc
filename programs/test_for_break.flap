@@ -6,7 +6,7 @@ printf("Testing @+ loop:\n")
 printf("\n")
 
 printf("Testing nested @+:\n")
-@1 i in range(2) {
+@+ i in range(2) {
     @+ j in range(3) {
         printf("(%.0f,%.0f) ", i, j)
     }
