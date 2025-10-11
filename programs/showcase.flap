@@ -40,20 +40,20 @@ printf("  13 in primes: %b\n", not_found)
 key_exists := 1.0 in ages
 printf("  Key 1 in ages: %b\n\n", key_exists)
 
-// 6. Loops
+// 6. Lambdas
+printf("→ Lambdas\n")
+square := (x) -> x * x
+cube := (x) -> x * x * x
+printf("  square(4) = %v\n", square(4.0))
+printf("  cube(3) = %v\n\n", cube(3.0))
+
+// 7. Loops
 printf("→ Loops\n")
 printf("  First 3 primes: ")
 @+ p in [2.0, 3.0, 5.0] {
     printf("%v ", p)
 }
 printf("\n\n")
-
-// 7. Lambdas
-printf("→ Lambdas\n")
-square := (x) -> x * x
-cube := (x) -> x * x * x
-printf("  square(4) = %v\n", square(4.0))
-printf("  cube(3) = %v\n\n", cube(3.0))
 
 // 8. Format specifiers
 printf("→ Format Specifiers\n")
@@ -66,3 +66,5 @@ printf("  %%b: %b (boolean yes/no)\n\n", 0.0)
 printf("╔════════════════════════════════════╗\n")
 printf("║     All features working! 🚀       ║\n")
 printf("╚════════════════════════════════════╝\n")
+
+exit(0)
