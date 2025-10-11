@@ -1816,6 +1816,7 @@ type FlapCompiler struct {
 	lambdaOffsets    map[string]int    // Lambda name -> offset in .text
 	currentLambda    *LambdaFunc       // Currently compiling lambda (for "me" self-reference)
 	lambdaBodyStart  int               // Offset where lambda body starts (for tail recursion)
+	hasExplicitExit  bool              // Track if program contains explicit exit() call
 }
 
 type LambdaFunc struct {
@@ -1904,7 +1905,9 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	// Two-pass compilation: First pass collects all variable declarations
 	// so that function/constant order doesn't matter
 	for _, stmt := range program.Statements {
-		fc.collectSymbols(stmt)
+		if err := fc.collectSymbols(stmt); err != nil {
+			return err
+		}
 	}
 
 	// Second pass: Generate actual code with all symbols known
@@ -1912,10 +1915,16 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 		fc.compileStatement(stmt)
 	}
 
-	// Automatically call exit(0) at program end
-	fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
-	fc.trackFunctionCall("exit")
-	fc.eb.GenerateCallInstruction("exit")
+	// Automatically exit if no explicit exit() was called
+	// Use libc's exit(0) to ensure proper cleanup (flushes printf buffers, etc.)
+	if !fc.hasExplicitExit {
+		fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
+		// Restore stack pointer to frame pointer (rsp % 16 == 8 for proper call alignment)
+		// Don't pop rbp since exit() never returns
+		fc.out.MovRegToReg("rsp", "rbp")
+		fc.trackFunctionCall("exit")
+		fc.eb.GenerateCallInstruction("exit")
+	}
 
 	// Generate lambda functions
 	fc.generateLambdaFunctions()
@@ -1966,6 +1975,12 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 
 	// DEBUG: Print what symbols we're writing
 	fmt.Fprintf(os.Stderr, "DEBUG: rodataSymbols contains %d symbols: %v\n", len(symbolNames), symbolNames)
+	fmt.Fprintf(os.Stderr, "DEBUG: rodata buffer size before reset: %d bytes\n", fc.eb.rodata.Len())
+
+	// Clear rodata buffer before writing sorted symbols
+	// (in case any data was written during code generation)
+	fc.eb.rodata.Reset()
+	fmt.Fprintf(os.Stderr, "DEBUG: rodata buffer size after reset: %d bytes\n", fc.eb.rodata.Len())
 
 	estimatedRodataAddr := uint64(0x403000 + 0x100)
 	currentAddr := estimatedRodataAddr
@@ -1975,6 +1990,14 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 		fc.eb.DefineAddr(symbol, currentAddr)
 		fmt.Fprintf(os.Stderr, "DEBUG: Writing %s at 0x%x, len=%d\n", symbol, currentAddr, len(value))
 		currentAddr += uint64(len(value))
+	}
+	fmt.Fprintf(os.Stderr, "DEBUG: rodata buffer size after writing all symbols: %d bytes\n", fc.eb.rodata.Len())
+	if fc.eb.rodata.Len() > 0 {
+		previewLen := 32
+		if fc.eb.rodata.Len() < previewLen {
+			previewLen = fc.eb.rodata.Len()
+		}
+		fmt.Fprintf(os.Stderr, "DEBUG: rodata buffer first %d bytes: %q\n", previewLen, fc.eb.rodata.Bytes()[:previewLen])
 	}
 
 	// Write complete dynamic ELF with unique PLT functions
@@ -2044,17 +2067,25 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 	program := parser.ParseProgram()
 	// Collect symbols again (two-pass compilation for second regeneration)
 	for _, stmt := range program.Statements {
-		fc.collectSymbols(stmt)
+		if err := fc.collectSymbols(stmt); err != nil {
+			return err
+		}
 	}
 	// Generate code with symbols collected
 	for _, stmt := range program.Statements {
 		fc.compileStatement(stmt)
 	}
 
-	// Automatically call exit(0) at program end
-	fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
-	fc.trackFunctionCall("exit")
-	fc.eb.GenerateCallInstruction("exit")
+	// Automatically exit if no explicit exit() was called
+	// Use libc's exit(0) to ensure proper cleanup (flushes printf buffers, etc.)
+	if !fc.hasExplicitExit {
+		fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
+		// Restore stack pointer to frame pointer (rsp % 16 == 8 for proper call alignment)
+		// Don't pop rbp since exit() never returns
+		fc.out.MovRegToReg("rsp", "rbp")
+		fc.trackFunctionCall("exit")
+		fc.eb.GenerateCallInstruction("exit")
+	}
 
 	// Generate lambda functions
 	fc.generateLambdaFunctions()
@@ -2118,8 +2149,18 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 	// Update ELF with regenerated code
 	fc.eb.patchTextInELF()
 
+	// DEBUG: Check what's actually in the ELF before writing to file
+	elfBytes := fc.eb.Bytes()
+	fmt.Fprintf(os.Stderr, "DEBUG: Final ELF size: %d bytes\n", len(elfBytes))
+	// Rodata is at file offset 0x30f0
+	rodataFileOffset := 0x30f0
+	if len(elfBytes) > rodataFileOffset+32 {
+		fmt.Fprintf(os.Stderr, "DEBUG: Final ELF rodata section (first 32 bytes at offset 0x%x): %q\n",
+			rodataFileOffset, elfBytes[rodataFileOffset:rodataFileOffset+32])
+	}
+
 	// Output the executable file
-	if err := os.WriteFile(outputPath, fc.eb.Bytes(), 0o755); err != nil {
+	if err := os.WriteFile(outputPath, elfBytes, 0o755); err != nil {
 		return err
 	}
 
@@ -2129,7 +2170,7 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 
 // collectSymbols performs the first pass: collect all variable declarations
 // without generating any code. This allows forward references.
-func (fc *FlapCompiler) collectSymbols(stmt Statement) {
+func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 	switch s := stmt.(type) {
 	case *AssignStmt:
 		// Check if variable already exists
@@ -2146,15 +2187,23 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) {
 			if exprType != "number" && exprType != "unknown" {
 				fc.varTypes[s.Name] = exprType
 			}
+		} else {
+			// Variable already exists - check if trying to reassign immutable variable
+			if !fc.mutableVars[s.Name] {
+				return fmt.Errorf("cannot reassign immutable variable '%s'", s.Name)
+			}
 		}
 	case *LoopStmt:
 		// Recursively collect symbols from loop body
 		for _, bodyStmt := range s.Body {
-			fc.collectSymbols(bodyStmt)
+			if err := fc.collectSymbols(bodyStmt); err != nil {
+				return err
+			}
 		}
 	case *ExpressionStmt:
 		// No symbols to collect from expression statements
 	}
+	return nil
 }
 
 func (fc *FlapCompiler) compileStatement(stmt Statement) {
@@ -2162,12 +2211,6 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 	case *AssignStmt:
 		// Variable already registered in collectSymbols pass
 		offset := fc.variables[s.Name]
-
-		// Check mutability on reassignment
-		if s.Mutable && !fc.mutableVars[s.Name] {
-			fmt.Fprintf(os.Stderr, "Error: cannot reassign immutable variable '%s'\n", s.Name)
-			os.Exit(1)
-		}
 
 		// Allocate actual stack space (was only registered in first pass)
 		fc.out.SubImmFromReg("rsp", 16)
@@ -2536,6 +2579,13 @@ func (fc *FlapCompiler) getExprType(expr Expression) string {
 			}
 		}
 		return "number"
+	case *CallExpr:
+		// Function calls - check if function returns a string
+		if e.Function == "str" {
+			return "string"
+		}
+		// Other functions return numbers by default
+		return "number"
 	default:
 		return "unknown"
 	}
@@ -2826,7 +2876,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.SubImmFromReg("rsp", 8)
 
 				// Call the helper function
-				fc.trackFunctionCall("_flap_list_concat")
+				// Note: Don't track internal function calls (see comment at _flap_string_eq call)
 				fc.out.CallSymbol("_flap_list_concat")
 
 				fc.out.AddImmToReg("rsp", 8)
@@ -2874,7 +2924,8 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.SubImmFromReg("rsp", 8)
 
 				// Call the helper function
-				fc.trackFunctionCall("_flap_string_eq")
+				// Note: Don't track internal function calls - they use CallSymbol (0x00000000 placeholder)
+				// not GenerateCallInstruction (0x12345678 placeholder), so they shouldn't be in callOrder
 				fc.out.CallSymbol("_flap_string_eq")
 
 				// Restore stack alignment
@@ -4185,14 +4236,14 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// Loop to copy left elements
 	fc.eb.MarkLabel("_list_concat_copy_left_loop")
 	fc.out.Emit([]byte{0x4d, 0x85, 0xc9}) // test r9, r9
-	fc.out.Emit([]byte{0x74, 0x15})       // jz +21 bytes (skip loop body)
+	fc.out.Emit([]byte{0x74, 0x17})       // jz +23 bytes (skip loop body)
 
 	fc.out.MovMemToXmm("xmm0", "rsi", 0)        // load element (4 bytes)
 	fc.out.MovXmmToMem("xmm0", "rdi", 0)        // store element (4 bytes)
 	fc.out.Emit([]byte{0x48, 0x83, 0xc6, 0x08}) // add rsi, 8 (4 bytes)
 	fc.out.Emit([]byte{0x48, 0x83, 0xc7, 0x08}) // add rdi, 8 (4 bytes)
 	fc.out.Emit([]byte{0x49, 0xff, 0xc9})       // dec r9 (3 bytes)
-	fc.out.Emit([]byte{0xeb, 0xe6})             // jmp back -26 bytes (2 bytes)
+	fc.out.Emit([]byte{0xeb, 0xe4})             // jmp back -28 bytes (2 bytes)
 
 	// Copy right list elements
 	// memcpy(r10 + 8 + r14*8, r13 + 8, r15 * 8)
@@ -4201,14 +4252,14 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	fc.eb.MarkLabel("_list_concat_copy_right_loop")
 	fc.out.Emit([]byte{0x4d, 0x85, 0xff}) // test r15, r15
-	fc.out.Emit([]byte{0x74, 0x15})       // jz +21 bytes (skip loop body)
+	fc.out.Emit([]byte{0x74, 0x17})       // jz +23 bytes (skip loop body)
 
 	fc.out.MovMemToXmm("xmm0", "rsi", 0)        // load element (4 bytes)
 	fc.out.MovXmmToMem("xmm0", "rdi", 0)        // store element (4 bytes)
 	fc.out.Emit([]byte{0x48, 0x83, 0xc6, 0x08}) // add rsi, 8 (4 bytes)
 	fc.out.Emit([]byte{0x48, 0x83, 0xc7, 0x08}) // add rdi, 8 (4 bytes)
 	fc.out.Emit([]byte{0x49, 0xff, 0xcf})       // dec r15 (3 bytes)
-	fc.out.Emit([]byte{0xeb, 0xe6})             // jmp back -26 bytes (2 bytes)
+	fc.out.Emit([]byte{0xeb, 0xe4})             // jmp back -28 bytes (2 bytes)
 
 	// Return result pointer in rax
 	fc.out.MovRegToReg("rax", "r10")
@@ -4234,13 +4285,129 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	fc.eb.MarkLabel("_flap_string_eq")
 
-	// Minimal test: just return 1.0 always
 	fc.out.PushReg("rbp")
 	fc.out.MovRegToReg("rbp", "rsp")
+	fc.out.PushReg("rbx")
+	fc.out.PushReg("r12")
+	fc.out.PushReg("r13")
 
+	// rdi = left_ptr, rsi = right_ptr
+	// Check if both are null (empty strings)
+	fc.out.MovRegToReg("rax", "rdi")
+	fc.out.OrRegToReg("rax", "rsi")
+	fc.out.TestRegReg("rax", "rax")
+	eqNullJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0) // If both null, they're equal
+
+	// Check if only one is null
+	fc.out.TestRegReg("rdi", "rdi")
+	neqJumpPos1 := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0) // left is null but right isn't
+
+	fc.out.TestRegReg("rsi", "rsi")
+	neqJumpPos2 := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0) // right is null but left isn't
+
+	// Both non-null, load counts
+	fc.out.MovMemToXmm("xmm0", "rdi", 0) // left count
+	fc.out.MovMemToXmm("xmm1", "rsi", 0) // right count
+
+	// Convert counts to integers for comparison
+	fc.out.Cvttsd2si("r12", "xmm0") // left count in r12
+	fc.out.Cvttsd2si("r13", "xmm1") // right count in r13
+
+	// Compare counts
+	fc.out.CmpRegToReg("r12", "r13")
+	neqJumpPos3 := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpNotEqual, 0) // If counts differ, not equal
+
+	// Counts are equal, compare each character
+	// rbx = index counter
+	fc.out.XorRegWithReg("rbx", "rbx")
+
+	loopStart := fc.eb.text.Len()
+
+	// Check if we've compared all characters
+	fc.out.CmpRegToReg("rbx", "r12")
+	endLoopJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreaterOrEqual, 0)
+
+	// Calculate offset: 8 + rbx * 16 (count is 8 bytes, each key-value pair is 16 bytes)
+	// Actually, format is [count][key0][val0][key1][val1]...
+	// So to get value at index i: offset = 8 + i*16 + 8 = 16 + i*16
+	fc.out.MovRegToReg("rax", "rbx")
+	fc.out.ShlRegImm("rax", "4") // multiply by 16
+	fc.out.AddImmToReg("rax", 16) // skip count (8) and key (8)
+
+	// Load characters
+	fc.out.Comment("Load left[rbx] and right[rbx]")
+	fc.out.MovRegToReg("r8", "rdi")
+	fc.out.AddRegToReg("r8", "rax")
+	fc.out.MovMemToXmm("xmm2", "r8", 0)
+
+	fc.out.MovRegToReg("r9", "rsi")
+	fc.out.AddRegToReg("r9", "rax")
+	fc.out.MovMemToXmm("xmm3", "r9", 0)
+
+	// Compare characters
+	fc.out.Ucomisd("xmm2", "xmm3")
+	neqJumpPos4 := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpNotEqual, 0)
+
+	// Increment index and continue
+	fc.out.AddImmToReg("rbx", 1)
+	loopJumpPos := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0) // jump back to loop start
+
+	// Patch loop jump
+	offset := int32(loopStart - (loopJumpPos + 5))
+	fc.patchJumpImmediate(loopJumpPos+1, offset)
+
+	// All characters matched - return 1.0
+	endLoopLabel := fc.eb.text.Len()
+	eqNullLabel := fc.eb.text.Len() // Same position as endLoopLabel
 	fc.out.MovImmToReg("rax", "1")
 	fc.out.Cvtsi2sd("xmm0", "rax")
+	doneJumpPos := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0)
 
+	// Not equal - return 0.0
+	neqLabel := fc.eb.text.Len()
+	fc.out.XorRegWithReg("rax", "rax")
+	fc.out.Cvtsi2sd("xmm0", "rax")
+
+	// Done label
+	doneLabel := fc.eb.text.Len()
+
+	// Patch all jumps
+	// Patch eqNull jump to eqNullLabel
+	offset = int32(eqNullLabel - (eqNullJumpPos + 6))
+	fc.patchJumpImmediate(eqNullJumpPos+2, offset)
+
+	// Patch neq jumps to neqLabel
+	offset = int32(neqLabel - (neqJumpPos1 + 6))
+	fc.patchJumpImmediate(neqJumpPos1+2, offset)
+
+	offset = int32(neqLabel - (neqJumpPos2 + 6))
+	fc.patchJumpImmediate(neqJumpPos2+2, offset)
+
+	offset = int32(neqLabel - (neqJumpPos3 + 6))
+	fc.patchJumpImmediate(neqJumpPos3+2, offset)
+
+	offset = int32(neqLabel - (neqJumpPos4 + 6))
+	fc.patchJumpImmediate(neqJumpPos4+2, offset)
+
+	// Patch endLoop jump to endLoopLabel
+	offset = int32(endLoopLabel - (endLoopJumpPos + 6))
+	fc.patchJumpImmediate(endLoopJumpPos+2, offset)
+
+	// Patch done jump to doneLabel
+	offset = int32(doneLabel - (doneJumpPos + 5))
+	fc.patchJumpImmediate(doneJumpPos+1, offset)
+
+	fc.out.PopReg("r13")
+	fc.out.PopReg("r12")
+	fc.out.PopReg("rbx")
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 }
@@ -5221,6 +5388,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.eb.GenerateCallInstruction("printf")
 
 	case "exit":
+		fc.hasExplicitExit = true // Mark that program has explicit exit
 		if len(call.Args) > 0 {
 			fc.compileExpression(call.Args[0])
 			// Convert float64 in xmm0 to int64 in rdi
@@ -5228,6 +5396,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		} else {
 			fc.out.XorRegWithReg("rdi", "rdi")
 		}
+		// Restore stack pointer to frame pointer (rsp % 16 == 8 for proper call alignment)
+		// Don't pop rbp since exit() never returns
+		fc.out.MovRegToReg("rsp", "rbp")
 		fc.trackFunctionCall("exit")
 		fc.eb.GenerateCallInstruction("exit")
 
@@ -5670,6 +5841,119 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.FstpMem("rsp", 0)
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
 		fc.out.AddImmToReg("rsp", 16)
+
+	case "str":
+		// Convert number to string
+		// str(x) converts a number to a Flap string (map[uint64]float64)
+		if len(call.Args) != 1 {
+			fmt.Fprintf(os.Stderr, "Error: str() requires exactly 1 argument\n")
+			os.Exit(1)
+		}
+
+		// Compile argument (result in xmm0)
+		fc.compileExpression(call.Args[0])
+
+		// Allocate 32 bytes for ASCII conversion buffer
+		fc.out.SubImmFromReg("rsp", 32)
+		// Save buffer address before compileFloatToString changes rsp
+		fc.out.MovRegToReg("r15", "rsp")
+
+		// Convert float64 in xmm0 to ASCII string at r15
+		// Result: rsi = string start, rdx = length
+		fc.compileFloatToString("xmm0", "r15")
+
+		// Check if last char is newline and adjust length
+		// rax = rdx - 1
+		fc.out.MovRegToReg("rax", "rdx")
+		fc.out.SubImmFromReg("rax", 1)
+		// r10 = rsi + rax (pointer to last char)
+		fc.out.MovRegToReg("r10", "rsi")
+		fc.out.AddRegToReg("r10", "rax")
+		// Load byte at r10
+		fc.out.Emit([]byte{0x45, 0x0f, 0xb6, 0x12}) // movzx r10d, byte [r10]
+		// Compare r10 with 10 (newline)
+		fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x0a}) // cmp r10, 10
+		skipNewlineLabel := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpNotEqual, 0)
+		skipNewlineEnd := fc.eb.text.Len()
+
+		// Has newline - decrement length
+		fc.out.SubImmFromReg("rdx", 1)
+
+		// Skip target
+		skipNewline := fc.eb.text.Len()
+		fc.patchJumpImmediate(skipNewlineLabel+2, int32(skipNewline-skipNewlineEnd))
+
+		// Calculate map size: 8 + length * 16
+		// rdi = rdx * 16
+		fc.out.MovRegToReg("rdi", "rdx")
+		fc.out.Emit([]byte{0x48, 0xc1, 0xe7, 0x04}) // shl rdi, 4
+		fc.out.AddImmToReg("rdi", 8)
+
+		// Save rsi and rdx before malloc
+		fc.out.PushReg("rsi")
+		fc.out.PushReg("rdx")
+
+		// Call malloc
+		fc.trackFunctionCall("malloc")
+		fc.eb.GenerateCallInstruction("malloc")
+
+		// Restore
+		fc.out.PopReg("rdx")
+		fc.out.PopReg("rsi")
+
+		// Write count
+		fc.out.Cvtsi2sd("xmm1", "rdx")
+		fc.out.MovXmmToMem("xmm1", "rax", 0)
+
+		// Save map pointer
+		fc.out.MovRegToReg("r11", "rax")
+
+		// Loop to build map
+		fc.out.XorRegWithReg("rcx", "rcx")
+		fc.out.MovRegToReg("rdi", "rax")
+		fc.out.AddImmToReg("rdi", 8)
+
+		loopStart := fc.eb.text.Len()
+
+		// cmp rcx, rdx
+		fc.out.Emit([]byte{0x48, 0x39, 0xd1}) // cmp rcx, rdx
+		loopEndJump := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpGreaterOrEqual, 0)
+		loopEndJumpEnd := fc.eb.text.Len()
+
+		// Write key
+		fc.out.Cvtsi2sd("xmm1", "rcx")
+		fc.out.MovXmmToMem("xmm1", "rdi", 0)
+		fc.out.AddImmToReg("rdi", 8)
+
+		// Load char and write value
+		fc.out.Emit([]byte{0x4c, 0x0f, 0xb6, 0x16}) // movzx r10, byte [rsi]
+		fc.out.Cvtsi2sd("xmm1", "r10")
+		fc.out.MovXmmToMem("xmm1", "rdi", 0)
+		fc.out.AddImmToReg("rdi", 8)
+
+		// Increment
+		fc.out.AddImmToReg("rcx", 1)
+		fc.out.AddImmToReg("rsi", 1)
+
+		// Jump back
+		loopEnd := fc.eb.text.Len()
+		offset := loopStart - (loopEnd + 2)
+		fc.out.Emit([]byte{0xeb, byte(offset)})
+
+		// Loop done
+		loopDone := fc.eb.text.Len()
+		fc.patchJumpImmediate(loopEndJump+2, int32(loopDone-loopEndJumpEnd))
+
+		// Return map pointer as float64 (move bits directly, don't convert)
+		// Use movq xmm0, r11 to transfer pointer bits without conversion
+		// movq xmm0, r11 = 66 49 0f 6e c3
+		fc.out.Emit([]byte{0x66, 0x49, 0x0f, 0x6e, 0xc3})
+
+		// Clean up
+		fc.out.AddImmToReg("rsp", 32)
+
 
 	default:
 		// Unknown function - track it for dependency resolution

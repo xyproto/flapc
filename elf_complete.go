@@ -13,6 +13,15 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	eb.elf.Reset()
 	eb.neededFunctions = functions // Store functions list for later use in patchTextInELF
 
+	fmt.Fprintf(os.Stderr, "DEBUG [WriteCompleteDynamicELF start]: rodata buffer size: %d bytes\n", eb.rodata.Len())
+	if eb.rodata.Len() > 0 {
+		previewLen := 32
+		if eb.rodata.Len() < previewLen {
+			previewLen = eb.rodata.Len()
+		}
+		fmt.Fprintf(os.Stderr, "DEBUG [WriteCompleteDynamicELF start]: rodata buffer first %d bytes: %q\n", previewLen, eb.rodata.Bytes()[:previewLen])
+	}
+
 	rodataSize := eb.rodata.Len()
 	codeSize := eb.text.Len()
 
@@ -487,6 +496,15 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	writePadded(&ds.got, (ds.got.Len()+7)&^7)
 
 	w.WriteBytes(eb.rodata.Bytes())
+
+	fmt.Fprintf(os.Stderr, "DEBUG [after writing rodata to ELF]: rodata buffer size: %d bytes\n", eb.rodata.Len())
+	if eb.rodata.Len() > 0 {
+		previewLen := 32
+		if eb.rodata.Len() < previewLen {
+			previewLen = eb.rodata.Len()
+		}
+		fmt.Fprintf(os.Stderr, "DEBUG [after writing rodata to ELF]: rodata buffer first %d bytes: %q\n", previewLen, eb.rodata.Bytes()[:previewLen])
+	}
 
 	fmt.Fprintf(os.Stderr, "\n=== Complete Dynamic ELF ===\n")
 	fmt.Fprintf(os.Stderr, "Entry point: 0x%x\n", entryPoint)

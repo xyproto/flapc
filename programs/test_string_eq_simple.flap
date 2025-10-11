@@ -1,7 +1,7 @@
-// Simplest string equality test with debug
+// Simplest string equality test
 s1 := "a"
 s2 := "a"
-printf("s1=%v s2=%v\n", s1, s2)
+// printf("s1=%v s2=%v\n", s1, s2)  // debug line
 result := s1 == s2
 println(result)
 exit(0)
