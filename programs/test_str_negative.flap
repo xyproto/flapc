@@ -1,0 +1,4 @@
+// Test str() with negative number
+result := str(-42)
+println(result)
+exit(0)

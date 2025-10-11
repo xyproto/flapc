@@ -4922,7 +4922,7 @@ func (fc *FlapCompiler) compileIntToStringAtPosNoNewline(intReg, posReg string) 
 // If addNewline is true, adds '\n' and sets rsi/rdx; otherwise just updates posReg
 func (fc *FlapCompiler) compileWholeNumberToStringAtPos(intReg, posReg string, addNewline bool) {
 	// Store the starting position
-	startPosReg := "r15"
+	startPosReg := "r14"
 	fc.out.MovRegToReg(startPosReg, posReg)
 
 	// Convert digits (rax = number, posReg = write position)
