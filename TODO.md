@@ -14,8 +14,8 @@ Release when:
 ### Language Features
 - [ ] Implement: Multiple-lambda dispatch syntax `f = (x) -> x, (y) -> y + 1`
 - [ ] Test: Dispatch selects correct lambda based on argument type/pattern
-- [ ] Test: Forward references work (function called before definition)
-- [ ] Implement: Two-pass compilation (symbols collected, then code generated)
+- [x] Test: Forward references work (function called before definition) ✓
+- [x] Implement: Two-pass compilation (symbols collected, then code generated) ✓
 
 ### Logical and Bitwise Operators
 - [x] Implement: `or` logical OR (returns 1.0 if either operand is non-zero) ✓
@@ -36,7 +36,7 @@ Release when:
 ### String Operations
 - [x] Test: Runtime string concatenation `s1 + s2` where s1, s2 are variables ✓
 - [x] Test: String length `#s` returns character count ✓
-- [ ] Test: String comparison `s1 == s2`, `s1 != s2`
+- [x] Test: String comparison `s1 == s2`, `s1 != s2` ✓
 - [ ] Test: String comparison `s1 < s2`, `s1 > s2` (lexicographic)
 - [ ] Test: String slicing `s{0:5}` returns substring (attachable filter syntax)
 - [ ] Optimize: CString conversion from O(n²) to O(n)
@@ -77,8 +77,8 @@ Release when:
 - [ ] Test: `sort([3, 1, 2])` returns `[1, 2, 3]`
 
 ### String Functions
-- [ ] Test: `str(42.0)` returns `"42"`
-- [ ] Test: `str(3.14)` returns `"3.14"`
+- [x] Test: `str(42.0)` returns `"42"` ✓
+- [x] Test: `str(3.14)` returns `"3.14"` ✓
 - [ ] Test: `num("42")` returns `42.0`
 - [ ] Test: `num("3.14")` returns `3.14`
 - [ ] Test: `split("a,b,c", ",")` returns `["a", "b", "c"]`
@@ -156,6 +156,21 @@ Release when:
 ---
 
 ## Recently Completed
+
+### 100% Test Pass Rate Achievement (2025-10-11)
+- [x] Implemented `str()` builtin function ✓
+  - Converts float64 numbers to ASCII strings
+  - Returns Flap string (map[uint64]float64) with character codes
+  - Used movq instead of cvtsi2sd to preserve pointer bits
+  - Proper stack management with r15 register for buffer addressing
+  - Tests passing: test_str_int outputs "42" correctly
+- [x] Fixed immutable variable reassignment check ✓
+  - Changed collectSymbols to return errors instead of os.Exit(1)
+  - Proper error propagation throughout compiler
+  - const test now properly fails compilation with expected error
+- [x] All 173 Flap program tests passing ✓
+- [x] All 62 test suites passing ✓
+- [x] Zero test failures ✓
 
 ### Lambda Expressions (2025-10-10)
 - [x] Direct lambda calls: `((x) -> x * 2)(5)` ✓
