@@ -1,6 +1,6 @@
 // loop_with_arithmetic.flap - test loops with arithmetic
 sum := 0
-@1 i in range(5) {
+@+ i in range(5) {
     sum := sum + i
 }
 println(sum)

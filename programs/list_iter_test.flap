@@ -1,6 +1,6 @@
 // list_iter_test.flap - test list iteration
 numbers = [10, 20, 30, 40, 50]
-@1 num in numbers {
+@+ num in numbers {
     println(num)
 }
 exit(0)

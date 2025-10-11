@@ -1,6 +1,6 @@
 // nested_loop.flap - test nested loops
-@1 i in range(3) {
-    @2 j in range(3) {
+@+ i in range(3) {
+    @+ j in range(3) {
         println(i)
         println(j)
     }

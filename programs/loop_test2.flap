@@ -1,5 +1,5 @@
 // loop_test2.flap - test loop with 10 iterations
-@1 i in range(10) {
+@+ i in range(10) {
     println(i)
-}
+    }
 exit(0)

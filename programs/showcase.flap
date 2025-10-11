@@ -43,7 +43,7 @@ printf("  Key 1 in ages: %b\n\n", key_exists)
 // 6. Loops
 printf("→ Loops\n")
 printf("  First 3 primes: ")
-@1 p in [2.0, 3.0, 5.0] {
+@+ p in [2.0, 3.0, 5.0] {
     printf("%v ", p)
 }
 printf("\n\n")

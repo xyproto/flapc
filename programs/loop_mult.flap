@@ -1,5 +1,5 @@
 // loop_mult.flap - test loop variable in expression
-@1 i in range(5) {
+@+ i in range(5) {
     x := i * 2
     println(x)
 }
