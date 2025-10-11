@@ -27,13 +27,6 @@ var expectedExitCodes = map[string]int{
 // TestFlapPrograms is an integration test that compiles and runs all .flap programs
 // and compares their output against .result files
 func TestFlapPrograms(t *testing.T) {
-	// Build flapc first
-	buildCmd := exec.Command("go", "build", "-o", "flapc", ".")
-	if output, err := buildCmd.CombinedOutput(); err != nil {
-		t.Fatalf("Failed to build flapc: %v\n%s", err, string(output))
-	}
-	defer os.Remove("flapc")
-
 	// Find all .flap files
 	matches, err := filepath.Glob("programs/*.flap")
 	if err != nil {
@@ -70,18 +63,17 @@ func testFlapProgram(t *testing.T, name, srcPath, buildDir string) {
 	executable := filepath.Join(buildDir, name)
 	expectedPattern, shouldFailCompile := compileExpectations[name]
 
-	// Compile the program
-	compileCmd := exec.Command("./flapc", "-o", executable, srcPath)
-	compileOutput, compileErr := compileCmd.CombinedOutput()
+	// Compile the program using Go API directly
+	compileErr := CompileFlap(srcPath, executable)
 
 	// Check compilation result
 	if compileErr != nil {
 		if !shouldFailCompile {
-			t.Fatalf("Compilation failed unexpectedly: %v\nOutput: %s", compileErr, string(compileOutput))
+			t.Fatalf("Compilation failed unexpectedly: %v", compileErr)
 		}
 		// Compilation was expected to fail - check for expected error pattern
-		if expectedPattern != "" && !strings.Contains(string(compileOutput), expectedPattern) {
-			t.Errorf("Expected error pattern %q not found in output: %s", expectedPattern, string(compileOutput))
+		if expectedPattern != "" && !strings.Contains(compileErr.Error(), expectedPattern) {
+			t.Errorf("Expected error pattern %q not found in error: %v", expectedPattern, compileErr)
 		}
 		return // Don't try to run if compilation failed
 	}
