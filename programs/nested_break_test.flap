@@ -4,7 +4,7 @@ printf("Nested loop with @0 (break inner loop):\n")
 @1 i in range(3) {
     printf("i=%.0f: ", i)
     @2 j in range(5) {
-        match j == 3 {
+        j == 3 {
             -> @0 ~> 0
         }
         printf("%.0f ", j)
@@ -16,7 +16,7 @@ printf("\nNested loop with @2 (continue inner loop):\n")
 @1 i in range(3) {
     printf("i=%.0f: ", i)
     @2 j in range(5) {
-        match j == 2 {
+        j == 2 {
             -> @2 ~> 0
         }
         printf("%.0f ", j)
