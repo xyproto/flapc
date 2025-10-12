@@ -228,85 +228,108 @@ The following features **must** be implemented and tested before the 1.0.0 relea
 - [ ] Undefined variable shows line number and name
 - [ ] Wrong argument count shows expected vs actual
 
-## Complete Planned Grammar
+## Current Grammar (as implemented)
 
-The full grammar below shows both implemented and planned features:
+The hand-written recursive-descent parser in `parser.go` accepts the following grammar. Newlines separate statements, but are otherwise insignificant, and `//` starts a line comment. Escape sequences permitted inside string literals are `\n`, `\t`, `\r`, `\\`, and `\"`.
 
 ```ebnf
-program = { statement } ;
-statement = assignment | match_statement | expression ;
-assignment = identifier [ ":" type_annotation ] ( "=" | ":=" ) expression ;
-match_statement = expression "{" "->" expression [ "~>" expression ] "}" ;
-expression = parallel_expr | reduction_expr | pipeline_expr |
-             lambda_expr | fma_expr | comparison_expr | primary_expr ;
-parallel_expr = expression "||" expression ;
-reduction_expr = expression "||>" reduction_op ;
-pipeline_expr = expression "|" expression ;
-lambda_expr = "(" [ param_list ] ")" "->" expression ;
-fma_expr = expression "*+" expression "+" expression ;
-pattern = literal | identifier | filtered_pattern | guard_pattern | default_pattern ;
-filtered_pattern = identifier "{" filter_expr "}" ;
-guard_pattern = identifier [ "|" ] expression ;
-default_pattern = "~>" ;
-filter_expr = comparison_expr | expression ;
-comparison_expr = ( ">=" | "<=" | ">" | "<" | "==" | "!=" | "=~" | "!~" ) expression ;
-primary_expr = identifier | literal | constant_expr | list_literal | map_literal |
-               comprehension | loop | filtered_expr | default_expr |
-               property_access | index_access | gather_access | scatter_assign |
-               head_expr | tail_expr | early_return_expr |
-               error_expr | self_ref | object_def | function_call |
-               simd_block | precision_block | "(" expression ")" ;
-precision_block = "@" "precision" "(" number ")" "{" { statement } "}" ;
-comprehension = "[" expression "for" identifier "in" expression "]" [ "{" ( expression | slice_expr ) "}" ] ;
-loop = [ simd_annotation ] "for" identifier "in" expression "{" { statement } "}" ;
-filtered_expr = expression "{" ( expression | slice_expr ) "}" ;
-slice_expr = [ expression ] ":" [ expression ] [ ":" expression ] ;
-default_expr = expression "or" expression ;
-early_return_expr = expression "or!" expression ;
-error_expr = "!" expression ;
-property_access = expression "." identifier | "me" "." identifier ;
-index_access = expression "{" expression "}" ;
-gather_access = expression "@" "[" expression "]" ;
-scatter_assign = expression "@" "[" expression "]" ":=" expression ;
-head_expr = "^" expression ;
-tail_expr = "_" expression ;
-self_ref = "me" ;
-object_def = "@" "{" [ object_member { "," object_member } ] "}" ;
-object_member = identifier ":" ( expression | method_def ) ;
-method_def = "(" [ param_list ] ")" "->" expression ;
-function_call = identifier "(" [ arg_list ] ")" ;
-simd_block = "@" simd_annotation "{" { statement } "}" ;
-simd_annotation = "simd" [ "(" simd_param { "," simd_param } ")" ] ;
-simd_param = "width" "=" ( number | "auto" ) | "aligned" "=" number ;
-type_annotation = precision_type | "mask" | "[" type_annotation "]" | identifier ;
-precision_type = "b" digit { digit } | "f" digit { digit } ;
-reduction_op = "sum" | "product" | "max" | "min" | "any" | "all" ;
-list_literal = "[" [ expression { "," expression } ] "]" | "no" ;
-map_literal = "{" [ map_entry { "," map_entry } ] "}" ;
-map_entry = expression ":" expression ;
-type_def = identifier "=" type_expr ;
-type_expr = identifier | map_literal | union_type | object_def ;
-union_type = variant { "|" variant } ;
-variant = identifier [ "{" field_list "}" ] ;
-field_list = identifier ":" type_expr { "," identifier ":" type_expr } ;
-literal = number | string | regex | "yes" | "no" | "me" ;
-constant_expr = "PI" | "E" | "SQRT2" | "LN2" | "LN10" ;
-regex = "/" regex_pattern "/" ;
-param_list = identifier { "," identifier } ;
-arg_list = expression { "," expression } ;
-identifier = letter { letter | digit | "_" } ;
-number = [ "-" ] digit { digit } [ "." digit { digit } ] ;
-string = '"' { character } '"' ;
-character = printable_char | escape_sequence ;
-escape_sequence = "\" ( "n" | "t" | "r" | "\" | '"' ) ;
-letter = "a" | "b" | ... | "z" | "A" | "B" | ... | "Z" ;
-digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+program         = { newline } { statement { newline } } ;
+
+statement       = loop_statement
+                | jump_statement
+                | assignment
+                | expression_statement ;
+
+loop_statement  = "@+" identifier "in" expression block
+                | "@" number identifier "in" expression block ;
+
+jump_statement  = "@-" | "@=" | "@" number ;
+
+assignment      = identifier ("=" | ":=") expression ;
+
+expression_statement = expression [ match_block ] ;
+
+match_block     = "{" "->" match_target [ "~>" match_target ] "}" ;
+
+match_target    = jump_target | expression ;
+
+jump_target     = "@-" | "@=" | "@" number ;
+
+block           = "{" { statement { newline } } "}" ;
+
+expression              = concurrent_gather_expr ;
+
+concurrent_gather_expr  = pipe_expr { "|||" pipe_expr } ;
+
+pipe_expr               = parallel_expr { "|" parallel_expr } ;
+
+parallel_expr           = logical_or_expr { "||" logical_or_expr } ;
+
+logical_or_expr         = logical_and_expr { ("or" | "xor") logical_and_expr } ;
+
+logical_and_expr        = comparison_expr { "and" comparison_expr } ;
+
+comparison_expr         = additive_expr [ (rel_op additive_expr) | ("in" additive_expr) ] ;
+
+rel_op                  = "<" | "<=" | ">" | ">=" | "==" | "!=" ;
+
+additive_expr           = bitwise_expr { ("+" | "-") bitwise_expr } ;
+
+bitwise_expr            = multiplicative_expr { ("shl" | "shr" | "rol" | "ror") multiplicative_expr } ;
+
+multiplicative_expr     = unary_expr { ("*" | "/" | "mod") unary_expr } ;
+
+unary_expr              = "not" unary_expr
+                        | "-" unary_expr
+                        | "#" unary_expr
+                        | postfix_expr ;
+
+postfix_expr            = primary_expr { "[" expression "]" | "(" [ argument_list ] ")" } ;
+
+primary_expr            = number
+                        | string
+                        | identifier
+                        | "(" expression ")"
+                        | lambda_expr
+                        | list_literal
+                        | map_literal ;
+
+lambda_expr             = "(" [ parameter_list ] ")" "->" lambda_body ;
+
+lambda_body             = expression [ match_block ] ;
+
+parameter_list          = identifier { "," identifier } ;
+
+argument_list           = expression { "," expression } ;
+
+list_literal            = "[" [ expression { "," expression } ] "]" ;
+
+map_literal             = "{" [ map_entry { "," map_entry } ] "}" ;
+
+map_entry               = expression ":" expression ;
+
+identifier              = letter { letter | digit | "_" } ;
+
+number                  = [ "-" ] digit { digit } [ "." digit { digit } ] ;
+
+string                  = '"' { character } '"' ;
+
+character               = printable_char | escape_sequence ;
+
+escape_sequence         = "\\" ( "n" | "t" | "r" | "\\" | '"' ) ;
 ```
 
-## Keywords (2)
+### Notes on the grammar
+
+* `@+` introduces a loop whose label is the current loop depth plus one. `@-` jumps to the immediately outer loop and therefore requires nesting depth ≥ 2, while `@=` continues the current loop and requires depth ≥ 1.
+* `@N` used as a statement is a jump; used before a loop variable (`@N i in …`) it introduces a labelled loop. Labels are parsed as floating-point literals and truncated to integers.
+* The optional `match_block` attaches to the preceding expression both at statement level and inside lambda bodies. When omitted, the implicit default branch yields `0`.
+* Postfix calls work for identifiers and general expressions, enabling direct invocation of lambdas like `(x) -> x + 1` immediately followed by an argument list.
+
+## Keywords
 
 ```
-in for
+and in mod not or rol ror shl shr xor
 ```
 
 ## Variable Precision Numbers (Post-1.0.0)
