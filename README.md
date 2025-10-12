@@ -1,343 +1,105 @@
 # Flapc
 
-[![Go CI](https://github.com/xyproto/flapc/actions/workflows/ci.yml/badge.svg)](https://github.com/xyproto/flapc/actions/workflows/ci.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/xyproto/flapc.svg)](https://pkg.go.dev/github.com/xyproto/flapc) [![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause) [![Go Report Card](https://goreportcard.com/badge/github.com/xyproto/flapc)](https://goreportcard.com/report/github.com/xyproto/flapc)
+[![Go CI](https://github.com/xyproto/flapc/actions/workflows/ci.yml/badge.svg)](https://github.com/xyproto/flapc/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/xyproto/flapc.svg)](https://pkg.go.dev/github.com/xyproto/flapc)
+[![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
+[![Go Report Card](https://goreportcard.com/badge/github.com/xyproto/flapc)](https://goreportcard.com/report/github.com/xyproto/flapc)
 
-`flapc` is an experiment in vibecoding a compiler.
+Flapc is a tiny self-hosted experiment in compiling the Flap language straight to native ELF binaries with no intermediate representation. Every value in Flap is backed by the same `map[uint64]float64` layout, then lowered to SIMD-heavy machine code for x86-64, ARM64 and RISC-V 64-bit targets.【F:flap_runtime.go†L7-L135】【F:vaddpd.go†L8-L176】【F:arch.go†L5-L42】
 
-## Overview
+## Highlights
 
-Flap is a functional programming language built on a `map[uint64]float64` foundation, designed for high-performance numerical computing with first-class SIMD support. The compiler generates native machine code directly, with no intermediate steps.
+* **Single runtime type** – integers, strings, lists and maps all share the same hash-map backing, enabling uniform code generation and simplified calling conventions.【F:flap_runtime.go†L7-L135】【F:hashmap.go†L8-L137】
+* **Direct ELF emission** – the compiler writes program headers, sections, PLT/GOT tables and relocations itself for dynamically linked executables.【F:elf_complete.go†L10-L159】【F:parser.go†L1939-L2057】
+* **Multi-architecture SIMD** – AVX-512, AVX2/SSE2, ARM SVE/NEON and RISC-V V instructions are all emitted from the same vector operations, guarded by runtime CPUID detection.【F:vaddpd.go†L8-L176】【F:parser.go†L1876-L1903】【F:parser.go†L2050-L2063】
+* **Hash-map first** – the compiler ships a specialised hash map for `uint64 → float64`, complete with resizing, deletion and iteration support.【F:hashmap.go†L8-L194】
+* **Pipelines and parallelism** – the language provides `|` pipes, `||` parallel list application and (reserved) `|||` concurrent gather operators for staged data processing.【F:parser.go†L584-L606】【F:parser.go†L1353-L1394】【F:parser.go†L3787-L3906】【F:parser.go†L5990-L6054】【F:parser.go†L6057-L6065】
+* **Dependency-aware build** – unknown symbols trigger automatic cloning and parsing of external `.flap` libraries before compilation continues.【F:parser.go†L6183-L6256】
 
-**Core Type System:**
-- All data is either `float64` or `map[uint64]float64`
-- Strings are `map[uint64]float64` (index → character code)
-- Lists are `map[uint64]float64` (index → value)
-- Maps are `map[uint64]float64` (key → value)
-- Functions are `float64` (reinterpreted pointers)
+## Target platforms
 
-## Main Features
+* **Architectures:** x86_64, aarch64/arm64, riscv64.【F:arch.go†L5-L42】
+* **Operating system:** Linux (ELF output).
 
-- **Direct to machine code** - `.flap` source compiles directly to native executables
-- **Multi-architecture** - Supports x86_64, aarch64, and riscv64
-- **Modern instructions** - Uses SIMD/vector instructions whenever possible
-- **Constant folding** - Compile-time optimization of constant expressions
-- **Hash map foundation** - `map[uint64]float64` is the core data type
-- **No nil** - Simplified memory model
-- **Few keywords** - Minimal syntax for maximum expressiveness
-- **Suckless philosophy** - Simple, clear, maintainable
-
-## Supported Platforms
-
-- **Operating Systems**: Linux only (ELF executables)
-- **Architectures**: x86_64, ARM64 (aarch64), RISC-V 64-bit
-
-## Quick Start
-
-### Building the Compiler
+## Building
 
 ```bash
 make
 ```
-
-### Compiling a Flap Program
-
-```bash
-# Basic compilation
-./flapc hello.flap
-./hello
-
-# Quiet mode
-./flapc -q hello.flap
-
-# Specify output file
-./flapc -o hello hello.flap
-```
-
-### Running Tests
+This runs `go build` for all Go sources and produces the `flapc` binary.【F:Makefile†L15-L27】
 
 ```bash
 make test
 ```
+Runs the Go test suite for the compiler and runtime helpers.【F:Makefile†L20-L23】
 
-## Language Features (Current Implementation)
+## Usage
 
-### Core Language
-- **Comments**: `//` for single-line comments
-- **Variables**: Mutable (`:=`) and immutable (`=`) assignment
-- **Data Types**: Float64 foundation (all numeric values are float64)
-- **Arithmetic**: `+`, `-`, `*`, `/` (scalar double-precision)
-- **Comparisons**: `<`, `<=`, `>`, `>=`, `==`, `!=`
-- **Length Operator**: `#list` returns the length of a list
+Compile a program:
 
-### Control Flow
-- **Match Expressions**: `condition { -> expr ~> expr }` syntax (default case optional)
-- **Loops**: `@ identifier in range(n) { }` syntax, `break`, `continue`
-- **Builtin Functions**: `range(n)`, `println()` (syscall-based), `printf()`, `exit()`
-
-### Data Structures
-- **Strings**: Stored as `map[uint64]float64` (index → char code)
-  - `s := "Hello"` creates map `{0: 72.0, 1: 101.0, 2: 108.0, ...}`
-  - `s[1]` returns `101.0` (char code for 'e')
-  - **Syscall printing**: `println(string_var)` converts map to bytes using direct syscalls
-    - No external dependencies (no libc printf)
-    - Assembly-based number formatting for whole numbers
-    - Efficient map-to-bytes conversion for string variables
-- **Lists**: Literal syntax `[1, 2, 3]`, stored as `map[uint64]float64`
-- **Maps**: Literal syntax `{1: 25, 2: 30}`, native `map[uint64]float64`
-- **Indexing**: Unified SIMD-optimized indexing for all container types
-- **Empty containers**: `[]`, `{}`, `""` evaluate to 0 (null pointer)
-
-### Functions & Lambdas
-- **Lambda Expressions**: `(x) -> x * 2` or `(x, y) -> x + y`
-- **First-Class Functions**: Store lambdas in variables
-- **Function Pointers**: Functions as float64-reinterpreted addresses
-
-### Code Generation
-- **Scalar FP**: ADDSD, SUBSD, MULSD, DIVSD, CVTSI2SD, CVTTSD2SI
-- **Comparisons**: UCOMISD with conditional jumps
-- **Stack operations**: Proper 16-byte alignment
-- **Memory**: MOVSD for XMM register loads/stores
-
-### Binary Format
-- **Format**: ELF64 with dynamic linking
-- **Sections**: .text, .rodata, .data, .bss, .dynamic, .got, .plt
-- **Relocations**: PC-relative for data, PLT for external functions
-- **ABI**: x86-64 calling convention with stack alignment
-
-## Example Programs
-
-See the `programs/` directory for examples:
-- `hello.flap` - Basic output
-- `arithmetic_test.flap` - Arithmetic operations
-- `list_test.flap` - List operations
-- `test_string_index_debug.flap` - String indexing (strings as maps)
-- `test_map_*.flap` - SIMD-optimized map operations
-- `lambda_comprehensive.flap` - Lambda expressions
-- `hash_length_test.flap` - Length operator
-
-## Documentation
-
-- **LANGUAGE.md** - Complete language specification with EBNF grammar
-- **TODO.md** - Implementation status, known issues, and roadmap
-
-## Architecture
-
-### Compilation Pipeline
-1. **Lexer**: Tokenization with keyword recognition
-2. **Parser**: Recursive descent parser producing AST
-3. **Code Generator**: Direct machine code emission
-4. **ELF Builder**: Complete ELF64 file generation
-5. **Two-pass**: Initial codegen → address resolution → final codegen
-
-### Stack Frame Layout
-```
-[rbp + 0]     = saved rbp
-[rbp - 8]     = alignment padding
-[rbp - 24]    = first variable (16-byte aligned)
-[rbp - 40]    = second variable (16-byte aligned)
-...
+```bash
+./flapc hello.flap
+./hello
 ```
 
-### Calling Convention
-- Float64 arguments/returns: xmm0
-- Integer arguments: rdi, rsi, rdx, rcx, r8, r9
-- Return address: rax (integers), xmm0 (floats)
-- Stack: 16-byte aligned before CALL
-- XMM registers: Used for all float64 operations
+Compile with explicit output filename or architecture:
 
-## Contributing
+```bash
+./flapc -o app -m aarch64 hello.flap
+```
 
-This is an experimental educational project. Feel free to explore, learn, and experiment.
+Evaluate inline code without touching the filesystem:
+
+```bash
+./flapc -c 'println("hi")'
+```
+
+Useful flags:
+
+* `-m`, `-machine` – choose target architecture (`x86_64`, `arm64/aarch64`, `riscv64`).
+* `-o`, `-output` – select the output executable name.
+* `-v`, `-verbose` – emit compilation progress and debug information.
+* `-u`, `-update-deps` – refresh imported Flap libraries from their Git remotes.
+* `-c` – compile and run inline source stored in a temporary file.【F:main.go†L605-L705】
+
+## Language outline
+
+### Data foundation
+
+* Everything is a `map[uint64]float64` with a shared memory layout: a header followed by key/value pairs. Scalar values are stored as `{0: value}` maps, lists become sequential indices, and strings are maps of byte indices to character codes.【F:flap_runtime.go†L7-L161】
+* The bundled hash map includes insertion, lookup, resizing and deletion, mirroring how the runtime treats user-level collections.【F:hashmap.go†L8-L194】
+
+### Expressions and control flow
+
+* Comments use `//`, and the lexer recognises identifiers, numbers, strings and a compact set of arithmetic and logical operators.【F:parser.go†L15-L104】
+* Loops are labelled with `@` prefixes (`@1 i in range(10) { ... }`) with shortcuts such as `@+` to open the next label, `@=` to continue the current loop and `@-` to jump outward. A `for` keyword expands to the same mechanism.【F:parser.go†L1089-L1320】
+* `match` expressions use `{ -> expr ~> default }` blocks to branch without introducing new keywords.【F:parser.go†L1085-L1086】【F:parser.go†L873-L1082】
+
+### Functional tools
+
+* Lambda expressions are first-class, parsed as `(x, y) -> body`, with list literals, map literals and index expressions built on top of them.【F:parser.go†L534-L582】
+* The pipe operator `|` forwards values into lambdas or function calls in sequence.【F:parser.go†L1353-L1382】【F:parser.go†L5990-L6054】
+* The parallel operator `||` maps a lambda across a list by compiling a dedicated loop that calls the captured function for each element.【F:parser.go†L1384-L1394】【F:parser.go†L3787-L3906】
+* The concurrent gather operator `|||` is parsed but deliberately aborts at compile time until runtime support for concurrency lands.【F:parser.go†L1358-L1366】【F:parser.go†L6057-L6065】
+
+### Hash maps, SIMD and math
+
+* CPU feature probing stores an `AVX-512` flag at startup, letting map lookups fall back to AVX2/SSE2 when necessary.【F:parser.go†L1876-L1903】【F:parser.go†L2050-L2063】
+* Vector operations are implemented once and specialised per architecture (e.g. AVX-512 `VADDPD`, ARM SVE `FADD`, RISC-V `vfadd`).【F:vaddpd.go†L8-L200】
+
+## Code generation pipeline
+
+1. Parse the main source file, augment it with any missing functions from discovered repositories, and build an AST.【F:parser.go†L6183-L6256】
+2. Collect symbols, emit SIMD-aware machine code, and patch in runtime helpers and lambda bodies.【F:parser.go†L1876-L1934】【F:parser.go†L3787-L3906】
+3. Assemble dynamic sections, PLT/GOT tables and relocation entries, then write a fully formed ELF binary for the chosen architecture.【F:elf_complete.go†L10-L159】【F:parser.go†L1939-L2057】
+
+Dynamic library calls are described through explicit type signatures and dispatched with architecture-specific calling conventions, so compiled programs can call into shared objects without depending on an external linker.【F:dynlib.go†L3-L192】
+
+## Roadmap
+
+* Flesh out the `|||` concurrent gather operator with real threading support.【F:parser.go†L6057-L6065】
+* Broaden architecture-specific vector instruction coverage beyond the current arithmetic focus.【F:vaddpd.go†L8-L200】
 
 ## License
 
-BSD-3-Clause
-
-## Status
-
-This is a work in progress! See TODO.md for current status and roadmap.
-
----
-
-# SIMD-Optimized Map Indexing
-
-## Overview
-
-Flap's map indexing uses **automatic runtime SIMD selection** for optimal performance on any CPU:
-
-1. **AVX-512**: 8 keys/iteration (8× throughput) - *auto-enabled on supported CPUs*
-2. **SSE2**: 2 keys/iteration (2× throughput) - *fallback for all x86-64 CPUs*
-3. **Scalar**: 1 key/iteration (baseline)
-
-Every executable includes **CPUID detection at startup** - no recompilation needed!
-
-## Current Implementation: Runtime SIMD Selection
-
-### Automatic CPU Detection
-
-Every Flap program starts with a **CPUID check** that detects AVX-512 support:
-
-```x86asm
-; At program startup
-mov eax, 7          ; CPUID leaf 7
-xor ecx, ecx        ; subleaf 0
-cpuid               ; Execute CPUID
-bt  ebx, 16         ; Test bit 16 (AVX512F)
-setc al             ; Set AL=1 if supported
-mov [cpu_has_avx512], al  ; Store result
-```
-
-### Runtime Path Selection
-
-Map lookups check the `cpu_has_avx512` flag and automatically select:
-- **AVX-512**: 8 keys/iteration (8× throughput) - *if CPU supports it*
-- **SSE2**: 2 keys/iteration (2× throughput) - *fallback for all x86-64 CPUs*
-- **Scalar**: 1 key/iteration (baseline)
-
-### Performance
-
-- **SSE2**: 2× throughput compared to scalar (available on **all x86-64 CPUs**)
-- **AVX-512**: 8× throughput compared to scalar (available on Xeon, high-end desktop)
-- Zero overhead for small maps (1 key falls through to scalar)
-
-### Instructions Used
-
-```x86asm
-unpcklpd xmm0, xmm1    ; Pack 2 keys into one register [key1 | key2]
-cmpeqpd  xmm0, xmm3    ; Compare both with search key in parallel
-movmskpd eax, xmm0     ; Extract 2-bit comparison mask
-test     al, 1         ; Determine which key matched
-```
-
-### Algorithm
-
-```
-Map format: [count][key1][value1][key2][value2]...
-
-if count >= 2:
-    broadcast search_key to both lanes of xmm3
-    while count >= 2:
-        load keys at [rbx], [rbx+16] into xmm0
-        compare both with search_key -> mask
-        if mask != 0:
-            return value at matched position
-        advance rbx by 32 bytes (2 pairs)
-        count -= 2
-
-if count == 1:  # Handle remainder
-    scalar comparison
-```
-
-### Performance Example
-
-**Map with 6 keys:**
-- SSE2: 3 iterations (process 2 keys each)
-- Scalar: 6 iterations (process 1 key each)
-- **Speedup: 2×**
-
-## AVX-512 Path (Automatic)
-
-### Why AVX-512?
-
-- **8× throughput** compared to scalar
-- **4× better than SSE2**
-- Ideal for large maps (8+ keys)
-- **Automatically enabled** when CPU supports it
-
-### Requirements
-
-1. **CPU Support**: Intel Xeon Scalable (Skylake-SP+), AMD Zen 4+, Intel Core 12th gen+
-2. **Instruction Sets**: AVX512F, AVX512DQ
-3. **Runtime Detection**: ✅ **Automatic** via CPUID at program startup
-
-### Planned Instructions
-
-```x86asm
-vbroadcastsd zmm3, xmm2                ; Broadcast key to 8 lanes
-vgatherqpd   zmm0{k1}, [rbx+zmm4*1]   ; Gather 8 keys in one instruction
-vcmppd       k2{k1}, zmm0, zmm3, 0    ; Compare all 8 -> k-register mask
-kmovb        eax, k2                   ; Extract mask to GPR
-bsf          edx, eax                  ; Find first match
-```
-
-### How It Works
-
-Every Flap executable includes runtime CPU detection:
-
-1. **Program startup**: CPUID checks for AVX512F support
-2. **Result stored**: `cpu_has_avx512` flag (1 byte in .data)
-3. **Map lookups**: Check flag before entering AVX-512 path
-4. **Fallback**: Use SSE2 if AVX-512 not available
-
-**Benefit**: Write once, runs optimally everywhere - no recompilation needed!
-
-## Performance Comparison
-
-### Theoretical Throughput
-
-| Map Size | Scalar | SSE2 | AVX-512 |
-|----------|--------|------|---------|
-| 1 key    | 1 iter | 1 iter | 1 iter |
-| 2 keys   | 2 iter | 1 iter | 1 iter |
-| 6 keys   | 6 iter | 3 iter | 1 iter |
-| 16 keys  | 16 iter | 8 iter | 2 iter |
-| 100 keys | 100 iter | 50 iter | 13 iter |
-
-### Cache Efficiency
-
-- **Sequential access pattern** through key-value pairs
-- **Predictable branches** (loop condition)
-- **Minimal register pressure** (xmm0-xmm4 for SSE2)
-
-## Testing
-
-All tests pass with SSE2 implementation:
-
-```bash
-# Small maps (2-3 keys)
-./test_map_comprehensive
-
-# Medium maps (6 keys)
-./test_map_simd_large
-
-# Large maps (16 keys)
-./test_map_avx512_large
-```
-
-## Implementation Notes
-
-### Why Gather for AVX-512?
-
-Keys are interleaved with values in memory:
-```
-[key1][value1][key2][value2]...
-  ^      +8      ^16     +24
-```
-
-VGATHERQPD loads keys at indices [0, 16, 32, 48, 64, 80, 96, 112] in a single instruction, avoiding manual unpacking.
-
-### SSE2 vs AVX2
-
-AVX2 could process 4 keys/iteration but:
-- Requires explicit CPU detection (not baseline)
-- Diminishing returns (2× vs SSE2 for ~10% real-world gain)
-- SSE2 is universal on x86-64
-
-For Flap's philosophy of "performance by default," SSE2 provides the best balance.
-
-## Future Enhancements
-
-1. **ARM64 NEON**: Use ARM's Advanced SIMD for 2-4 keys/iteration
-2. **RISC-V Vector**: Use RVV for scalable vector processing
-3. **CPUID Detection**: Safe runtime selection of best SIMD path
-4. **Perfect Hashing**: For compile-time constant maps, generate perfect hash
-5. **Binary Search**: For maps with 32+ sorted keys
-
----
-
-**Status**:
-- ✅ SSE2 optimization active and tested
-- ✅ AVX-512 with automatic CPU detection
-- ✅ Runtime SIMD selection (no recompilation needed)
-
-**Tested on**: x86-64 without AVX-512 (falls back to SSE2 correctly)
+BSD 3-Clause.
