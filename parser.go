@@ -492,14 +492,31 @@ func (i *InExpr) String() string {
 }
 func (i *InExpr) expressionNode() {}
 
+type MatchClause struct {
+	Guard  Expression
+	Result Expression
+}
+
 type MatchExpr struct {
-	Condition   Expression
-	TrueExpr    Expression
-	DefaultExpr Expression
+	Condition       Expression
+	Clauses         []*MatchClause
+	DefaultExpr     Expression
+	DefaultExplicit bool
 }
 
 func (m *MatchExpr) String() string {
-	return "~(" + m.Condition.String() + ") { yes -> " + m.TrueExpr.String() + " ~> " + m.DefaultExpr.String() + " }"
+	var parts []string
+	for _, clause := range m.Clauses {
+		if clause.Guard != nil {
+			parts = append(parts, clause.Guard.String()+" -> "+clause.Result.String())
+		} else {
+			parts = append(parts, "-> "+clause.Result.String())
+		}
+	}
+	if m.DefaultExpr != nil && (m.DefaultExplicit || len(m.Clauses) == 0) {
+		parts = append(parts, "~> "+m.DefaultExpr.String())
+	}
+	return m.Condition.String() + " { " + strings.Join(parts, " ") + " }"
 }
 func (m *MatchExpr) expressionNode() {}
 
@@ -823,8 +840,15 @@ func foldConstantExpr(expr Expression) Expression {
 
 	case *MatchExpr:
 		e.Condition = foldConstantExpr(e.Condition)
-		e.TrueExpr = foldConstantExpr(e.TrueExpr)
-		e.DefaultExpr = foldConstantExpr(e.DefaultExpr)
+		for _, clause := range e.Clauses {
+			if clause.Guard != nil {
+				clause.Guard = foldConstantExpr(clause.Guard)
+			}
+			clause.Result = foldConstantExpr(clause.Result)
+		}
+		if e.DefaultExpr != nil {
+			e.DefaultExpr = foldConstantExpr(e.DefaultExpr)
+		}
 		return e
 
 	default:
@@ -873,102 +897,12 @@ func (p *Parser) parseStatement() Statement {
 	// Otherwise, it's an expression statement (or match expression)
 	expr := p.parseExpression()
 	if expr != nil {
-		// Check for match syntax: CONDITION { -> ... ~> ... }
 		if p.peek.Type == TOKEN_LBRACE {
 			p.nextToken() // move to '{'
 			p.nextToken() // skip '{'
 			p.skipNewlines()
-
-			// Must start with '->' for match expression
-			if p.current.Type == TOKEN_ARROW {
-				p.nextToken() // skip '->'
-				p.skipNewlines()
-
-				// Parse true expression (could be @N, @-, or @= label jump)
-				var trueExpr Expression
-				if p.current.Type == TOKEN_AT_MINUS {
-					// @- means jump to @(N-1) where N is current loop depth
-					if p.loopDepth < 2 {
-						p.error("@- requires at least 2 nested loops")
-					}
-					trueExpr = &JumpExpr{Label: p.loopDepth - 1}
-					p.nextToken() // skip '@-'
-				} else if p.current.Type == TOKEN_AT_EQUALS {
-					// @= means continue current loop (jump to @N where N is current loop depth)
-					if p.loopDepth < 1 {
-						p.error("@= requires at least 1 loop")
-					}
-					trueExpr = &JumpExpr{Label: p.loopDepth}
-					p.nextToken() // skip '@='
-				} else if p.current.Type == TOKEN_AT {
-					p.nextToken() // skip '@'
-					if p.current.Type != TOKEN_NUMBER {
-						p.error("expected number after @ in match expression")
-					}
-					labelNum, err := strconv.ParseFloat(p.current.Value, 64)
-					if err != nil {
-						p.error("invalid label number")
-					}
-					trueExpr = &JumpExpr{Label: int(labelNum)}
-					p.nextToken() // skip label number
-				} else {
-					trueExpr = p.parseExpression()
-					p.nextToken() // move past the expression
-				}
-				p.skipNewlines()
-
-				// Parse "~> expr" (optional - defaults to 0)
-				var defaultExpr Expression
-				if p.current.Type == TOKEN_DEFAULT_ARROW {
-					p.nextToken() // skip '~>'
-					p.skipNewlines()
-
-					// Default could also be @N, @-, or @= label jump
-					if p.current.Type == TOKEN_AT_MINUS {
-						// @- means jump to @(N-1) where N is current loop depth
-						if p.loopDepth < 2 {
-							p.error("@- requires at least 2 nested loops")
-						}
-						defaultExpr = &JumpExpr{Label: p.loopDepth - 1}
-						p.nextToken() // skip '@-'
-					} else if p.current.Type == TOKEN_AT_EQUALS {
-						// @= means continue current loop (jump to @N where N is current loop depth)
-						if p.loopDepth < 1 {
-							p.error("@= requires at least 1 loop")
-						}
-						defaultExpr = &JumpExpr{Label: p.loopDepth}
-						p.nextToken() // skip '@='
-					} else if p.current.Type == TOKEN_AT {
-						p.nextToken() // skip '@'
-						if p.current.Type != TOKEN_NUMBER {
-							p.error("expected number after @ in match expression")
-						}
-						labelNum, err := strconv.ParseFloat(p.current.Value, 64)
-						if err != nil {
-							p.error("invalid label number")
-						}
-						defaultExpr = &JumpExpr{Label: int(labelNum)}
-						p.nextToken() // skip label number
-					} else {
-						defaultExpr = p.parseExpression()
-						p.nextToken() // move past the expression
-					}
-					p.skipNewlines()
-				} else {
-					// Default to 0 if no default case provided
-					defaultExpr = &NumberExpr{Value: 0}
-				}
-
-				// Should be at '}'
-				if p.current.Type != TOKEN_RBRACE {
-					p.error("expected '}' after match expression")
-				}
-
-				matchExpr := &MatchExpr{Condition: expr, TrueExpr: trueExpr, DefaultExpr: defaultExpr}
-				return &ExpressionStmt{Expr: matchExpr}
-			}
-			// Not a match expression - this is a syntax error
-			p.error("unexpected '{' after expression")
+			matchExpr := p.parseMatchBlock(expr)
+			return &ExpressionStmt{Expr: matchExpr}
 		}
 
 		return &ExpressionStmt{Expr: expr}
@@ -986,104 +920,116 @@ func (p *Parser) parseAssignment() *AssignStmt {
 	return &AssignStmt{Name: name, Value: value, Mutable: mutable}
 }
 
-func (p *Parser) parseMatchStatement() Statement {
-	// Parse: match CONDITION { -> EXPR ~> EXPR }
-	condition := p.parseExpression()
+func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
+	clauses := []*MatchClause{}
+	defaultExpr := Expression(&NumberExpr{Value: 0})
+	defaultExplicit := false
+	sawBareClause := false
+
+	for {
+		p.skipNewlines()
+
+		if p.current.Type == TOKEN_RBRACE {
+			break
+		}
+
+		if p.current.Type == TOKEN_DEFAULT_ARROW {
+			if defaultExplicit {
+				p.error("duplicate default clause in match block")
+			}
+			defaultExplicit = true
+			p.nextToken() // skip '~>'
+			p.skipNewlines()
+			defaultExpr = p.parseMatchTarget()
+			p.skipNewlines()
+			continue
+		}
+
+		clause, bare := p.parseMatchClause()
+		if bare {
+			if sawBareClause || len(clauses) > 0 || defaultExplicit {
+				p.error("bare match clause must be the only entry in the block")
+			}
+			sawBareClause = true
+		}
+		clauses = append(clauses, clause)
+	}
+
+	if p.current.Type != TOKEN_RBRACE {
+		p.error("expected '}' after match block")
+	}
+
+	if len(clauses) == 0 && !defaultExplicit {
+		p.error("match block must contain a clause or default")
+	}
+
+	return &MatchExpr{
+		Condition:       condition,
+		Clauses:         clauses,
+		DefaultExpr:     defaultExpr,
+		DefaultExplicit: defaultExplicit,
+	}
+}
+
+func (p *Parser) parseMatchClause() (*MatchClause, bool) {
+	// Guardless clause starting with '->'
+	if p.current.Type == TOKEN_ARROW {
+		p.nextToken() // skip '->'
+		p.skipNewlines()
+		result := p.parseMatchTarget()
+		p.skipNewlines()
+		return &MatchClause{Result: result}, false
+	}
+
+	guard := p.parseExpression()
 	p.nextToken()
 	p.skipNewlines()
 
-	if p.current.Type != TOKEN_LBRACE {
-		p.error("expected '{' after match condition")
+	if p.current.Type == TOKEN_ARROW {
+		p.nextToken() // skip '->'
+		p.skipNewlines()
+		result := p.parseMatchTarget()
+		p.skipNewlines()
+		return &MatchClause{Guard: guard, Result: result}, false
 	}
-	p.nextToken() // skip '{'
-	p.skipNewlines()
 
-	if p.current.Type != TOKEN_ARROW {
-		p.error("expected '->' in match block")
-	}
-	p.nextToken() // skip '->'
-	p.skipNewlines()
+	// Bare expression clause (sugar for '-> expr')
+	return &MatchClause{Result: guard}, true
+}
 
-	// Parse true expression (could be @N, @-, or @= label jump)
-	var trueExpr Expression
-	if p.current.Type == TOKEN_AT_MINUS {
-		// @- means jump to @(N-1) where N is current loop depth
+func (p *Parser) parseMatchTarget() Expression {
+	switch p.current.Type {
+	case TOKEN_AT_MINUS:
 		if p.loopDepth < 2 {
 			p.error("@- requires at least 2 nested loops")
 		}
-		trueExpr = &JumpExpr{Label: p.loopDepth - 1}
+		target := &JumpExpr{Label: p.loopDepth - 1}
 		p.nextToken() // skip '@-'
-	} else if p.current.Type == TOKEN_AT_EQUALS {
-		// @= means continue current loop (jump to @N where N is current loop depth)
+		return target
+	case TOKEN_AT_EQUALS:
 		if p.loopDepth < 1 {
 			p.error("@= requires at least 1 loop")
 		}
-		trueExpr = &JumpExpr{Label: p.loopDepth}
+		target := &JumpExpr{Label: p.loopDepth}
 		p.nextToken() // skip '@='
-	} else if p.current.Type == TOKEN_AT {
+		return target
+	case TOKEN_AT:
 		p.nextToken() // skip '@'
 		if p.current.Type != TOKEN_NUMBER {
-			p.error("expected number after @ in match expression")
+			p.error("expected number after @ in match block")
 		}
 		labelNum, err := strconv.ParseFloat(p.current.Value, 64)
 		if err != nil {
 			p.error("invalid label number")
 		}
-		trueExpr = &JumpExpr{Label: int(labelNum)}
+		target := &JumpExpr{Label: int(labelNum)}
 		p.nextToken() // skip label number
-	} else {
-		trueExpr = p.parseExpression()
+		return target
+	default:
+		expr := p.parseExpression()
 		p.nextToken()
+		return expr
 	}
-	p.skipNewlines()
-
-	// Parse default expression (optional)
-	var defaultExpr Expression
-	if p.current.Type == TOKEN_DEFAULT_ARROW {
-		p.nextToken() // skip '~>'
-		p.skipNewlines()
-
-		// Default could also be @N, @-, or @= label jump
-		if p.current.Type == TOKEN_AT_MINUS {
-			// @- means jump to @(N-1) where N is current loop depth
-			if p.loopDepth < 2 {
-				p.error("@- requires at least 2 nested loops")
-			}
-			defaultExpr = &JumpExpr{Label: p.loopDepth - 1}
-			p.nextToken() // skip '@-'
-		} else if p.current.Type == TOKEN_AT_EQUALS {
-			// @= means continue current loop (jump to @N where N is current loop depth)
-			if p.loopDepth < 1 {
-				p.error("@= requires at least 1 loop")
-			}
-			defaultExpr = &JumpExpr{Label: p.loopDepth}
-			p.nextToken() // skip '@='
-		} else if p.current.Type == TOKEN_AT {
-			p.nextToken() // skip '@'
-			if p.current.Type != TOKEN_NUMBER {
-				p.error("expected number after @ in match expression")
-			}
-			labelNum, err := strconv.ParseFloat(p.current.Value, 64)
-			if err != nil {
-				p.error("invalid label number")
-			}
-			defaultExpr = &JumpExpr{Label: int(labelNum)}
-			p.nextToken() // skip label number
-		} else {
-			defaultExpr = p.parseExpression()
-			p.nextToken()
-		}
-		p.skipNewlines()
-	} else {
-		defaultExpr = &NumberExpr{Value: 0}
-	}
-
-	if p.current.Type != TOKEN_RBRACE {
-		p.error("expected '}' after match expression")
-	}
-
-	matchExpr := &MatchExpr{Condition: condition, TrueExpr: trueExpr, DefaultExpr: defaultExpr}
-	return &ExpressionStmt{Expr: matchExpr}
 }
 
 func (p *Parser) parseLoopStatement() Statement {
@@ -1450,40 +1396,11 @@ func (p *Parser) parseLambdaBody() Expression {
 	// Parse the body expression
 	expr := p.parseExpression()
 
-	// Check if it's followed by a match block: { -> ... ~> ... }
 	if p.peek.Type == TOKEN_LBRACE {
 		p.nextToken() // move to '{'
 		p.nextToken() // skip '{'
 		p.skipNewlines()
-
-		// Check if it starts with '->' (match expression)
-		if p.current.Type == TOKEN_ARROW {
-			p.nextToken() // skip '->'
-			trueExpr := p.parseExpression()
-			p.nextToken() // move past the expression
-			p.skipNewlines()
-
-			// Parse "~> expr" (optional - defaults to 0)
-			var defaultExpr Expression
-			if p.current.Type == TOKEN_DEFAULT_ARROW {
-				p.nextToken() // skip '~>'
-				defaultExpr = p.parseExpression()
-				p.nextToken() // move past the expression
-				p.skipNewlines()
-			} else {
-				// Default to 0 if no default case provided
-				defaultExpr = &NumberExpr{Value: 0}
-			}
-
-			// Should be at '}'
-			if p.current.Type != TOKEN_RBRACE {
-				p.error("expected '}' after match expression")
-			}
-
-			return &MatchExpr{Condition: expr, TrueExpr: trueExpr, DefaultExpr: defaultExpr}
-		}
-		// Not a match, backtrack is not possible, this is an error
-		p.error("unexpected '{' after lambda body expression")
+		return p.parseMatchBlock(expr)
 	}
 
 	return expr
@@ -2983,10 +2900,10 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.MovXmmToXmm("xmm3", "xmm1") // Save divisor in xmm3
 			fc.out.DivsdXmm("xmm0", "xmm1")    // xmm0 = a / b
 			// Floor: convert to int64 and back
-			fc.out.Cvttsd2si("rax", "xmm0")  // rax = floor(a / b) as int
-			fc.out.Cvtsi2sd("xmm0", "rax")   // xmm0 = floor(a / b) as float
-			fc.out.MulsdXmm("xmm0", "xmm3")  // xmm0 = floor(a / b) * b
-			fc.out.SubsdXmm("xmm2", "xmm0")  // xmm2 = a - floor(a / b) * b
+			fc.out.Cvttsd2si("rax", "xmm0")    // rax = floor(a / b) as int
+			fc.out.Cvtsi2sd("xmm0", "rax")     // xmm0 = floor(a / b) as float
+			fc.out.MulsdXmm("xmm0", "xmm3")    // xmm0 = floor(a / b) * b
+			fc.out.SubsdXmm("xmm2", "xmm0")    // xmm2 = a - floor(a / b) * b
 			fc.out.MovXmmToXmm("xmm0", "xmm2") // Result in xmm0
 		case "<", "<=", ">", ">=", "==", "!=":
 			// Compare xmm0 with xmm1, sets flags
@@ -3605,13 +3522,10 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 }
 
 func (fc *FlapCompiler) compileMatchExpr(expr *MatchExpr) {
-	// Compile condition - this will set flags via ucomisd for comparisons
 	fc.compileExpression(expr.Condition)
 
-	// Increment label counter for uniqueness
 	fc.labelCounter++
 
-	// Extract the comparison operator from the condition
 	var jumpCond JumpCondition
 	needsZeroCompare := false
 
@@ -3633,155 +3547,126 @@ func (fc *FlapCompiler) compileMatchExpr(expr *MatchExpr) {
 			needsZeroCompare = true
 		}
 	} else {
-		// For InExpr and other value-returning expressions
 		needsZeroCompare = true
 	}
 
 	var defaultJumpPos int
-
 	if needsZeroCompare {
-		// Compare result in xmm0 against 0.0
 		fc.out.XorRegWithReg("rax", "rax")
 		fc.out.Cvtsi2sd("xmm1", "rax")
 		fc.out.Ucomisd("xmm0", "xmm1")
 		defaultJumpPos = fc.eb.text.Len()
-		fc.out.JumpConditional(JumpEqual, 0) // Jump to default if 0.0
+		fc.out.JumpConditional(JumpEqual, 0)
 	} else {
 		defaultJumpPos = fc.eb.text.Len()
 		fc.out.JumpConditional(jumpCond, 0)
 	}
 
-	// Compile true expression (result in xmm0 or jump)
-	if jumpExpr, isJump := expr.TrueExpr.(*JumpExpr); isJump {
-		// Handle label jump in true branch
-		if jumpExpr.Label == 0 {
-			// @0 = break to outer scope
-			if len(fc.activeLoops) == 0 {
-				fmt.Fprintf(os.Stderr, "Error: @0 used outside of loop in match expression\n")
-				os.Exit(1)
-			}
-			jumpPos := fc.eb.text.Len()
-			fc.out.JumpUnconditional(0) // Placeholder
-			fc.activeLoops[len(fc.activeLoops)-1].EndPatches = append(
-				fc.activeLoops[len(fc.activeLoops)-1].EndPatches,
-				jumpPos+1,
-			)
-		} else {
-			// @N = jump back to loop N (continue to increment step)
-			var targetLoopIndex int = -1
-			for i := len(fc.activeLoops) - 1; i >= 0; i-- {
-				if fc.activeLoops[i].Label == jumpExpr.Label {
-					targetLoopIndex = i
-					break
-				}
-			}
-			if targetLoopIndex == -1 {
-				fmt.Fprintf(os.Stderr, "Error: @%d references undefined loop label in match expression\n", jumpExpr.Label)
-				os.Exit(1)
-			}
-			// Add placeholder jump and record position for later patching
-			jumpPos := fc.eb.text.Len()
-			fc.out.JumpUnconditional(0) // Placeholder
-			fc.activeLoops[targetLoopIndex].ContinuePatches = append(
-				fc.activeLoops[targetLoopIndex].ContinuePatches,
-				jumpPos+1, // +1 to skip the opcode byte
-			)
-		}
-		// Mark default expression position (fallthrough when condition is false)
-		defaultPos := fc.eb.text.Len()
-		// Patch conditional jump to default
-		defaultOffset := int32(defaultPos - (defaultJumpPos + 6))
-		fc.patchJumpImmediate(defaultJumpPos+2, defaultOffset)
-		// Compile default expression
-		if jumpExpr, isJump := expr.DefaultExpr.(*JumpExpr); isJump {
-			// Handle label jump in default branch
-			if jumpExpr.Label == 0 {
-				if len(fc.activeLoops) == 0 {
-					fmt.Fprintf(os.Stderr, "Error: @0 used outside of loop in match expression\n")
-					os.Exit(1)
-				}
-				jumpPos := fc.eb.text.Len()
-				fc.out.JumpUnconditional(0)
-				fc.activeLoops[len(fc.activeLoops)-1].EndPatches = append(
-					fc.activeLoops[len(fc.activeLoops)-1].EndPatches,
-					jumpPos+1,
-				)
-			} else {
-				var targetLoopIndex int = -1
-				for i := len(fc.activeLoops) - 1; i >= 0; i-- {
-					if fc.activeLoops[i].Label == jumpExpr.Label {
-						targetLoopIndex = i
-						break
-					}
-				}
-				if targetLoopIndex == -1 {
-					fmt.Fprintf(os.Stderr, "Error: @%d references undefined loop label in match expression\n", jumpExpr.Label)
-					os.Exit(1)
-				}
-				// Add placeholder jump and record position for later patching
-				jumpPos := fc.eb.text.Len()
-				fc.out.JumpUnconditional(0) // Placeholder
-				fc.activeLoops[targetLoopIndex].ContinuePatches = append(
-					fc.activeLoops[targetLoopIndex].ContinuePatches,
-					jumpPos+1, // +1 to skip the opcode byte
-				)
-			}
-		} else {
-			fc.compileExpression(expr.DefaultExpr)
-		}
+	endJumpPositions := []int{}
+	pendingGuardJumps := []int{}
+
+	if len(expr.Clauses) == 0 {
+		// Preserve the condition's value when the block only specifies a default
+		jumpPos := fc.eb.text.Len()
+		fc.out.JumpUnconditional(0)
+		endJumpPositions = append(endJumpPositions, jumpPos)
 	} else {
-		fc.compileExpression(expr.TrueExpr)
-		// Jump over default expression
-		endJumpPos := fc.eb.text.Len()
-		fc.out.JumpUnconditional(0) // Placeholder offset
-		// Mark default expression position
-		defaultPos := fc.eb.text.Len()
-		// Patch conditional jump to default
-		defaultOffset := int32(defaultPos - (defaultJumpPos + 6))
-		fc.patchJumpImmediate(defaultJumpPos+2, defaultOffset)
-		// Compile default expression (result in xmm0 or jump)
-		if jumpExpr, isJump := expr.DefaultExpr.(*JumpExpr); isJump {
-			// Handle label jump in default branch
-			if jumpExpr.Label == 0 {
-				if len(fc.activeLoops) == 0 {
-					fmt.Fprintf(os.Stderr, "Error: @0 used outside of loop in match expression\n")
-					os.Exit(1)
-				}
-				jumpPos := fc.eb.text.Len()
-				fc.out.JumpUnconditional(0)
-				fc.activeLoops[len(fc.activeLoops)-1].EndPatches = append(
-					fc.activeLoops[len(fc.activeLoops)-1].EndPatches,
-					jumpPos+1,
-				)
-			} else {
-				var targetLoopIndex int = -1
-				for i := len(fc.activeLoops) - 1; i >= 0; i-- {
-					if fc.activeLoops[i].Label == jumpExpr.Label {
-						targetLoopIndex = i
-						break
-					}
-				}
-				if targetLoopIndex == -1 {
-					fmt.Fprintf(os.Stderr, "Error: @%d references undefined loop label in match expression\n", jumpExpr.Label)
-					os.Exit(1)
-				}
-				// Add placeholder jump and record position for later patching
-				jumpPos := fc.eb.text.Len()
-				fc.out.JumpUnconditional(0) // Placeholder
-				fc.activeLoops[targetLoopIndex].ContinuePatches = append(
-					fc.activeLoops[targetLoopIndex].ContinuePatches,
-					jumpPos+1, // +1 to skip the opcode byte
-				)
+		for _, clause := range expr.Clauses {
+			// Patch any guards that should skip to this clause
+			for _, pos := range pendingGuardJumps {
+				offset := int32(fc.eb.text.Len() - (pos + 6))
+				fc.patchJumpImmediate(pos+2, offset)
 			}
-		} else {
-			fc.compileExpression(expr.DefaultExpr)
+			pendingGuardJumps = pendingGuardJumps[:0]
+
+			if clause.Guard != nil {
+				fc.compileExpression(clause.Guard)
+				fc.out.XorRegWithReg("rax", "rax")
+				fc.out.Cvtsi2sd("xmm1", "rax")
+				fc.out.Ucomisd("xmm0", "xmm1")
+				guardJump := fc.eb.text.Len()
+				fc.out.JumpConditional(JumpEqual, 0)
+				pendingGuardJumps = append(pendingGuardJumps, guardJump)
+			}
+
+			fc.compileMatchClauseResult(clause.Result, &endJumpPositions)
 		}
-		// Mark end position
-		endPos := fc.eb.text.Len()
-		// Patch unconditional jump to end
-		endOffset := int32(endPos - (endJumpPos + 5))
-		fc.patchJumpImmediate(endJumpPos+1, endOffset)
 	}
+
+	defaultPos := fc.eb.text.Len()
+
+	for _, pos := range pendingGuardJumps {
+		offset := int32(defaultPos - (pos + 6))
+		fc.patchJumpImmediate(pos+2, offset)
+	}
+
+	defaultOffset := int32(defaultPos - (defaultJumpPos + 6))
+	fc.patchJumpImmediate(defaultJumpPos+2, defaultOffset)
+
+	fc.compileMatchDefault(expr.DefaultExpr)
+
+	endPos := fc.eb.text.Len()
+	for _, jumpPos := range endJumpPositions {
+		endOffset := int32(endPos - (jumpPos + 5))
+		fc.patchJumpImmediate(jumpPos+1, endOffset)
+	}
+}
+
+func (fc *FlapCompiler) compileMatchClauseResult(result Expression, endJumps *[]int) {
+	if jumpExpr, isJump := result.(*JumpExpr); isJump {
+		fc.compileMatchJump(jumpExpr)
+		return
+	}
+
+	fc.compileExpression(result)
+	jumpPos := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0)
+	*endJumps = append(*endJumps, jumpPos)
+}
+
+func (fc *FlapCompiler) compileMatchDefault(result Expression) {
+	if jumpExpr, isJump := result.(*JumpExpr); isJump {
+		fc.compileMatchJump(jumpExpr)
+		return
+	}
+
+	fc.compileExpression(result)
+}
+
+func (fc *FlapCompiler) compileMatchJump(jumpExpr *JumpExpr) {
+	if jumpExpr.Label == 0 {
+		if len(fc.activeLoops) == 0 {
+			fmt.Fprintf(os.Stderr, "Error: @0 used outside of loop in match expression\n")
+			os.Exit(1)
+		}
+		jumpPos := fc.eb.text.Len()
+		fc.out.JumpUnconditional(0)
+		fc.activeLoops[len(fc.activeLoops)-1].EndPatches = append(
+			fc.activeLoops[len(fc.activeLoops)-1].EndPatches,
+			jumpPos+1,
+		)
+		return
+	}
+
+	targetLoopIndex := -1
+	for i := len(fc.activeLoops) - 1; i >= 0; i-- {
+		if fc.activeLoops[i].Label == jumpExpr.Label {
+			targetLoopIndex = i
+			break
+		}
+	}
+
+	if targetLoopIndex == -1 {
+		fmt.Fprintf(os.Stderr, "Error: @%d references undefined loop label in match expression\n", jumpExpr.Label)
+		os.Exit(1)
+	}
+
+	jumpPos := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0)
+	fc.activeLoops[targetLoopIndex].ContinuePatches = append(
+		fc.activeLoops[targetLoopIndex].ContinuePatches,
+		jumpPos+1,
+	)
 }
 
 func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
@@ -4197,11 +4082,11 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovRegToReg("r13", "rsi") // r13 = right_ptr
 
 	// Get left list length
-	fc.out.MovMemToXmm("xmm0", "r12", 0) // load length as float64
+	fc.out.MovMemToXmm("xmm0", "r12", 0)              // load length as float64
 	fc.out.Emit([]byte{0xf2, 0x4c, 0x0f, 0x2c, 0xf0}) // cvttsd2si r14, xmm0
 
 	// Get right list length
-	fc.out.MovMemToXmm("xmm0", "r13", 0) // load length as float64
+	fc.out.MovMemToXmm("xmm0", "r13", 0)              // load length as float64
 	fc.out.Emit([]byte{0xf2, 0x4c, 0x0f, 0x2c, 0xf8}) // cvttsd2si r15, xmm0
 
 	// Calculate total length: rbx = r14 + r15
@@ -4336,7 +4221,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// Actually, format is [count][key0][val0][key1][val1]...
 	// So to get value at index i: offset = 8 + i*16 + 8 = 16 + i*16
 	fc.out.MovRegToReg("rax", "rbx")
-	fc.out.ShlRegImm("rax", "4") // multiply by 16
+	fc.out.ShlRegImm("rax", "4")  // multiply by 16
 	fc.out.AddImmToReg("rax", 16) // skip count (8) and key (8)
 
 	// Load characters
@@ -5954,7 +5839,6 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Clean up
 		fc.out.AddImmToReg("rsp", 32)
 
-
 	default:
 		// Unknown function - track it for dependency resolution
 		fc.unknownFunctions[call.Function] = true
@@ -6095,8 +5979,15 @@ func collectFunctionCalls(expr Expression, calls map[string]bool) {
 		collectFunctionCalls(e.Right, calls)
 	case *MatchExpr:
 		collectFunctionCalls(e.Condition, calls)
-		collectFunctionCalls(e.TrueExpr, calls)
-		collectFunctionCalls(e.DefaultExpr, calls)
+		for _, clause := range e.Clauses {
+			if clause.Guard != nil {
+				collectFunctionCalls(clause.Guard, calls)
+			}
+			collectFunctionCalls(clause.Result, calls)
+		}
+		if e.DefaultExpr != nil {
+			collectFunctionCalls(e.DefaultExpr, calls)
+		}
 	case *LambdaExpr:
 		collectFunctionCalls(e.Body, calls)
 	case *ListExpr:

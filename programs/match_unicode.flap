@@ -1,0 +1,19 @@
+program_tokens := [43, 43, 42, 128515, 45, 47]
+program_string := "+ + * 😃 - /"
+
+update := (value, token) -> token {
+    43     -> value + 1
+    45     -> value - 1
+    42     -> value * 2
+    47     -> value / 2
+    128515 -> value * value
+    ~> value
+}
+
+accumulator := 0
+
+@+ token in program_tokens {
+    accumulator = update(accumulator, token)
+}
+
+printf("The program \"%s\" calculates the value %v\n", program_string, accumulator)

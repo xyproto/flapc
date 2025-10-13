@@ -32,14 +32,26 @@ result = 10 + 3 * 2 - 1 / 2
 x < y, x <= y, x > y, x >= y, x == y, x != y
 
 // Match expressions (if/else replacement)
-x < y {
-    -> println("less")
-    ~> println("not less")
+x > 42 {
+    123           // sugar for "-> 123"
 }
 
-// Default case is optional (defaults to 0)
-x < y {
-    -> println("yes")
+// Default-only blocks preserve the condition's value when true
+x > 42 {
+    ~> 123        // yields 1 when true, 123 when false
+}
+
+// Guards stay flat without extra indentation
+x > 42 {
+    yes -> 7
+    ~> 42
+}
+
+// Subject/guard matching across multiple clauses
+x {
+    x < 10 -> 0
+    x < 20 -> 1
+    ~> 2
 }
 
 // Strings (stored as map[uint64]float64)
@@ -249,7 +261,13 @@ assignment      = identifier ("=" | ":=") expression ;
 
 expression_statement = expression [ match_block ] ;
 
-match_block     = "{" "->" match_target [ "~>" match_target ] "}" ;
+match_block     = "{" ( default_arm
+                      | match_clause { match_clause } [ default_arm ] ) "}" ;
+
+match_clause    = "->" match_target
+                | expression [ "->" match_target ] ;
+
+default_arm     = "~>" match_target ;
 
 match_target    = jump_target | expression ;
 
@@ -324,6 +342,9 @@ escape_sequence         = "\\" ( "n" | "t" | "r" | "\\" | '"' ) ;
 * `@+` introduces a loop whose label is the current loop depth plus one. `@-` jumps to the immediately outer loop and therefore requires nesting depth ≥ 2, while `@=` continues the current loop and requires depth ≥ 1.
 * `@N` used as a statement is a jump; used before a loop variable (`@N i in …`) it introduces a labelled loop. Labels are parsed as floating-point literals and truncated to integers.
 * The optional `match_block` attaches to the preceding expression both at statement level and inside lambda bodies. When omitted, the implicit default branch yields `0`.
+* A single bare expression inside the braces is shorthand for `-> expression`, enabling forms like `x > 42 { 123 }`.
+* A block that only supplies `~> expr` leaves the condition's own result untouched when it evaluates true and substitutes the default when it evaluates false.
+* When the first clause starts with an expression before `->`, that expression is treated as a guard against the subject value, so successive clauses such as `x < 10 -> 0` and `x < 20 -> 1` stay flat.
 * Postfix calls work for identifiers and general expressions, enabling direct invocation of lambdas like `(x) -> x + 1` immediately followed by an argument list.
 
 ## Keywords

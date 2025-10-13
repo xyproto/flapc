@@ -138,6 +138,7 @@ Release when:
 - [ ] Test: RVV vector map lookup on hardware with RVV
 
 ### Advanced Features (2.0.0)
+- [ ] Design: call-sugar `receiver.fn(args...)` desugars to `fn(receiver, args...)`
 - [ ] Test: `text =~ /[0-9]+/` matches regex
 - [ ] Test: `x or! "error"` exits with error message
 - [x] Implementation: `me()` self-reference with tail recursion optimization ✓
