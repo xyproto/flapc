@@ -28,8 +28,23 @@ Flap is a functional programming language built on a `map[uint64]float64` founda
 
 ## Supported Platforms
 
-- **Operating Systems**: Linux only (ELF executables)
-- **Architectures**: x86_64, ARM64 (aarch64), RISC-V 64-bit
+- **Operating Systems**: Linux (ELF), macOS (Mach-O)
+- **Architectures**:
+  - ✅ x86-64: Full support (Linux/macOS)
+  - ⚠️ ARM64 (aarch64): Partial (instruction encoders ready, code generation needs work)
+  - ⚠️ RISC-V 64-bit: Partial (instruction encoders ready, code generation needs work)
+
+### macOS Support
+
+Flap now supports macOS via Mach-O executable format:
+```bash
+# Auto-detects Mach-O on macOS, ELF on Linux
+./flapc -m x86_64 -o program program.flap
+
+# Force specific format
+./flapc --format macho -o program program.flap  # macOS
+./flapc --format elf -o program program.flap    # Linux
+```
 
 ## Quick Start
 

@@ -110,13 +110,52 @@ Release when:
 - [ ] Test: `normalize([3, 4])` returns `[0.6, 0.8]`
 
 ### ARM64 Support
+
+**Current Status**: ⚠️ Instruction encoders ready, but parser.go still emits x86-64 code
+
+**Problem**: The compiler in parser.go (~7000 lines) directly emits x86-64 machine code:
+- All floating-point operations use x86-64 SSE/AVX instructions (xmm0-xmm15, zmm0-zmm31)
+- All register usage assumes x86-64 GP registers (rax, rbx, rcx, rdx, rsi, rdi, r8-r15)
+- All memory addressing uses x86-64 syntax and encoding
+- All function calls use x86-64 calling conventions
+
+**Foundation Complete**:
+- ✅ arm64_instructions.go: ADD, SUB, MOV, MOVZ, MOVK, LDR, STR, B, BL, RET, CBZ, CBNZ
+- ✅ Full register mapping (x0-x30, v0-v31, d0-d31)
+- ✅ Mach-O format support for macOS ARM64
+- ✅ ELF ARM64 machine type (0xB7) in arch.go
+
+**What's Needed** (Phases for full support):
+
+**Phase 1: Architecture Abstraction Layer**
+- [ ] Create CodeGenerator interface for architecture-neutral code emission
+- [ ] Implement X86_64CodeGen backend using existing parser.go code
+- [ ] Implement ARM64CodeGen backend using arm64_instructions.go
+- [ ] Refactor parser.go to use CodeGenerator instead of direct emission
+
+**Phase 2: Register Allocation**
+- [ ] Abstract register usage (GP vs Float, caller-saved vs callee-saved)
+- [ ] ARM64: Use x0-x30 (GP), v0-v31 (NEON) instead of x86-64 registers
+- [ ] Map common operations to architecture-specific registers
+
+**Phase 3: Calling Conventions**
+- [ ] x86-64 System V ABI: args in rdi/rsi/rdx/rcx/r8/r9, floats in xmm0-xmm7
+- [ ] ARM64 AAPCS64: args in x0-x7, floats in v0-v7
+- [ ] Abstract parameter passing and return values
+
+**Phase 4: Instruction Selection**
+- [ ] Map high-level operations to architecture-specific instructions
+- [ ] ARM64 floating-point: FADD, FSUB, FMUL, FDIV, FCVT instead of SSE
+- [ ] ARM64 NEON for SIMD map operations (2-4 keys/iteration)
+
+**Tests** (After implementation):
 - [ ] Test: Hello world compiles and runs on ARM64
 - [ ] Test: All arithmetic operations work on ARM64
 - [ ] Test: All string operations work on ARM64
 - [ ] Test: All map operations work on ARM64
 - [ ] Test: NEON SIMD map lookup (2 keys/iteration)
 - [ ] Test: NEON SIMD map lookup (4 keys/iteration)
-- [ ] Test: All 200+ x86-64 tests pass on ARM64
+- [ ] Test: All 173 x86-64 tests pass on ARM64
 
 ### Error Messages
 - [ ] Test: Syntax error shows line number
@@ -134,6 +173,24 @@ Release when:
 - [ ] Benchmark: Binary search for 32+ sorted keys vs linear SIMD
 
 ### RISC-V Support
+
+**Current Status**: ⚠️ Instruction encoders ready, but parser.go still emits x86-64 code
+
+**Foundation Complete**:
+- ✅ riscv64_instructions.go: ADD, ADDI, SUB, MV, LI, LD, SD, JAL, JALR, BEQ, BNE, RET, ECALL
+- ✅ Full register mapping (x0-x31, f0-f31, ABI names: a0-a7, t0-t6, s0-s11)
+- ✅ ELF RISC-V machine type (0xF3) in arch.go
+- ✅ R-type, I-type, S-type, B-type, U-type, J-type instruction encoding
+
+**What's Needed**: Same 4-phase approach as ARM64 above
+
+**RISC-V Specifics**:
+- Calling convention: args in a0-a7 (x10-x17), floats in fa0-fa7 (f10-f17)
+- FP instructions: FADD.D, FSUB.D, FMUL.D, FDIV.D, FCVT.D.L, FCVT.L.D
+- RVV (RISC-V Vector) for SIMD map operations (scalable vector length)
+- Compressed instructions (16-bit) for code density
+
+**Tests** (After implementation):
 - [ ] Test: Hello world compiles and runs on RISC-V
 - [ ] Test: RVV vector map lookup on hardware with RVV
 

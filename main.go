@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -89,6 +90,7 @@ type ExecutableBuilder struct {
 	labels                  map[string]int // Maps label names to their offsets in .text
 	dynlinker               *DynamicLinker
 	useDynamicLinking       bool
+	useMachO                bool   // Use Mach-O format (macOS) instead of ELF
 	neededFunctions         []string
 	pcRelocations           []PCRelocation
 	callPatches             []CallPatch
@@ -371,6 +373,17 @@ func (eb *ExecutableBuilder) Lookup(what string) string {
 }
 
 func (eb *ExecutableBuilder) Bytes() []byte {
+	// For Mach-O format (macOS)
+	if eb.useMachO {
+		if err := eb.WriteMachO(); err != nil {
+			fmt.Fprintf(os.Stderr, "ERROR: Failed to write Mach-O: %v\n", err)
+			// Fallback to ELF
+		} else {
+			fmt.Fprintf(os.Stderr, "DEBUG Bytes(): Using Mach-O format (size=%d)\n", eb.elf.Len())
+			return eb.elf.Bytes()
+		}
+	}
+
 	// For dynamic ELFs, everything is already in eb.elf
 	if eb.useDynamicLinking {
 		fmt.Fprintf(os.Stderr, "DEBUG Bytes(): Using dynamic ELF, returning eb.elf only (size=%d)\n", eb.elf.Len())
@@ -609,6 +622,7 @@ func main() {
 	var machineLong = flag.String("machine", "x86_64", "target machine architecture (x86_64, amd64, arm64, aarch64, riscv64, riscv, rv64)")
 	var outputFilenameFlag = flag.String("o", defaultOutputFilename, "output executable filename")
 	var outputFilenameLongFlag = flag.String("output", defaultOutputFilename, "output executable filename")
+	var formatFlag = flag.String("format", "auto", "output format: auto, elf, macho (auto detects based on OS)")
 	var version = flag.Bool("version", false, "print version information and exit")
 	var verbose = flag.Bool("v", false, "verbose mode (show detailed compilation info)")
 	var verboseLong = flag.Bool("verbose", false, "verbose mode (show detailed compilation info)")
@@ -647,10 +661,25 @@ func main() {
 		fmt.Fprintf(os.Stderr, "----=[ %s ]=----\n", versionString)
 	}
 
+	// Determine output format
+	useMachO := false
+	switch *formatFlag {
+	case "auto":
+		// Auto-detect based on OS
+		useMachO = (runtime.GOOS == "darwin")
+	case "macho":
+		useMachO = true
+	case "elf":
+		useMachO = false
+	default:
+		log.Fatalf("Unknown format: %s (use auto, elf, or macho)", *formatFlag)
+	}
+
 	eb, err := New(targetMachine)
 	if err != nil {
 		log.Fatalln(err)
 	}
+	eb.useMachO = useMachO
 
 	// Handle -c flag for inline code execution
 	if *codeFlag != "" {
