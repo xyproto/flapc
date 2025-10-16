@@ -102,6 +102,19 @@ const (
 	TOKEN_LIST_TYPE   // list (type)
 )
 
+// Code generation constants
+const (
+	// Jump instruction sizes on x86-64
+	UnconditionalJumpSize = 5 // Size of JumpUnconditional (0xe9 + 4-byte offset)
+	ConditionalJumpSize   = 6 // Size of JumpConditional (0x0f 0x8X + 4-byte offset)
+
+	// Stack layout
+	StackSlotSize = 8 // Size of a stack slot (8 bytes for float64/pointer)
+
+	// Byte manipulation
+	ByteMask = 0xFF // Mask for extracting a single byte
+)
+
 type Token struct {
 	Type  TokenType
 	Value string
@@ -2365,7 +2378,7 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	// Set up stack frame
 	fc.out.PushReg("rbp")
 	fc.out.MovRegToReg("rbp", "rsp")
-	fc.out.SubImmFromReg("rsp", 8) // Align stack to 16 bytes (push rbp made it 8-byte aligned)
+	fc.out.SubImmFromReg("rsp", StackSlotSize) // Align stack to 16 bytes (push rbp made it 8-byte aligned)
 
 	// Initialize registers
 	fc.out.XorRegWithReg("rax", "rax")
@@ -2559,7 +2572,7 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 	// Set up stack frame
 	fc.out.PushReg("rbp")
 	fc.out.MovRegToReg("rbp", "rsp")
-	fc.out.SubImmFromReg("rsp", 8) // Align stack to 16 bytes
+	fc.out.SubImmFromReg("rsp", StackSlotSize) // Align stack to 16 bytes
 	fc.out.XorRegWithReg("rax", "rax")
 	fc.out.XorRegWithReg("rdi", "rdi")
 	fc.out.XorRegWithReg("rsi", "rsi")
@@ -2866,7 +2879,7 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, funcCall *CallExpr) {
 
 	// Jump back to loop start
 	loopBackJumpPos := fc.eb.text.Len()
-	backOffset := int32(loopStartPos - (loopBackJumpPos + 5)) // 5 bytes for unconditional jump
+	backOffset := int32(loopStartPos - (loopBackJumpPos + UnconditionalJumpSize)) // 5 bytes for unconditional jump
 	fc.out.JumpUnconditional(backOffset)
 
 	// Loop end label
@@ -2897,10 +2910,10 @@ func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
 
 	// Convert pointer from float64 to integer in rax
 	fc.out.MovMemToXmm("xmm1", "rbp", -listPtrOffset)
-	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.SubImmFromReg("rsp", StackSlotSize)
 	fc.out.MovXmmToMem("xmm1", "rsp", 0)
 	fc.out.MovMemToReg("rax", "rsp", 0)
-	fc.out.AddImmToReg("rsp", 8)
+	fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	// Load list length from [rax] (first 8 bytes)
 	fc.out.MovMemToXmm("xmm0", "rax", 0)
@@ -2969,10 +2982,10 @@ func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
 
 	// Load list pointer from stack to rbx
 	fc.out.MovMemToXmm("xmm1", "rbp", -listPtrOffset)
-	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.SubImmFromReg("rsp", StackSlotSize)
 	fc.out.MovXmmToMem("xmm1", "rsp", 0)
 	fc.out.MovMemToReg("rbx", "rsp", 0)
-	fc.out.AddImmToReg("rsp", 8)
+	fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	// Skip length prefix: rbx += 8
 	fc.out.AddImmToReg("rbx", 8)
@@ -3014,7 +3027,7 @@ func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
 
 	// Jump back to loop start
 	loopBackJumpPos := fc.eb.text.Len()
-	backOffset := int32(loopStartPos - (loopBackJumpPos + 5)) // 5 bytes for unconditional jump
+	backOffset := int32(loopStartPos - (loopBackJumpPos + UnconditionalJumpSize)) // 5 bytes for unconditional jump
 	fc.out.JumpUnconditional(backOffset)
 
 	// Loop end label
@@ -3183,7 +3196,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			*(*float64)(unsafe.Pointer(&bits)) = e.Value
 			var floatData []byte
 			for i := 0; i < 8; i++ {
-				floatData = append(floatData, byte((bits>>(i*8))&0xFF))
+				floatData = append(floatData, byte((bits>>(i*8))&ByteMask))
 			}
 			fc.eb.Define(labelName, string(floatData))
 
@@ -3209,7 +3222,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		countBits := uint64(0)
 		*(*float64)(unsafe.Pointer(&countBits)) = count
 		for i := 0; i < 8; i++ {
-			mapData = append(mapData, byte((countBits>>(i*8))&0xFF))
+			mapData = append(mapData, byte((countBits>>(i*8))&ByteMask))
 		}
 
 		// Add each character as a key-value pair (none for empty strings)
@@ -3219,7 +3232,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			keyBits := uint64(0)
 			*(*float64)(unsafe.Pointer(&keyBits)) = keyVal
 			for i := 0; i < 8; i++ {
-				mapData = append(mapData, byte((keyBits>>(i*8))&0xFF))
+				mapData = append(mapData, byte((keyBits>>(i*8))&ByteMask))
 			}
 
 			// Value: character code as float64
@@ -3227,17 +3240,17 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			charBits := uint64(0)
 			*(*float64)(unsafe.Pointer(&charBits)) = charVal
 			for i := 0; i < 8; i++ {
-				mapData = append(mapData, byte((charBits>>(i*8))&0xFF))
+				mapData = append(mapData, byte((charBits>>(i*8))&ByteMask))
 			}
 		}
 
 		fc.eb.Define(labelName, string(mapData))
 		fc.out.LeaSymbolToReg("rax", labelName)
 		// Convert pointer to float64
-		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
 		fc.out.MovRegToMem("rax", "rsp", 0)
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 8)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	case *IdentExpr:
 		// Load variable from stack into xmm0
@@ -3345,7 +3358,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			*(*float64)(unsafe.Pointer(&bits)) = negOne
 			var floatData []byte
 			for i := 0; i < 8; i++ {
-				floatData = append(floatData, byte((bits>>(i*8))&0xFF))
+				floatData = append(floatData, byte((bits>>(i*8))&ByteMask))
 			}
 			fc.eb.Define(labelName, string(floatData))
 
@@ -3374,10 +3387,10 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			// xmm0 contains list pointer (as float64)
 			// List format: [length (8 bytes)] [element0] [element1] ...
 			// Convert pointer from xmm0 to rax
-			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.SubImmFromReg("rsp", StackSlotSize)
 			fc.out.MovXmmToMem("xmm0", "rsp", 0)
 			fc.out.MovMemToReg("rax", "rsp", 0)
-			fc.out.AddImmToReg("rsp", 8)
+			fc.out.AddImmToReg("rsp", StackSlotSize)
 			// Skip past length (8 bytes) to get to first element
 			fc.out.AddImmToReg("rax", 8)
 			// Load first element into xmm0
@@ -3388,14 +3401,14 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			// We need to create a new list starting from element 1
 			// For now, just adjust the pointer by 8 bytes (skip first element)
 			// Note: This is a simplified implementation
-			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.SubImmFromReg("rsp", StackSlotSize)
 			fc.out.MovXmmToMem("xmm0", "rsp", 0)
 			fc.out.MovMemToReg("rax", "rsp", 0)
-			fc.out.AddImmToReg("rsp", 8)
+			fc.out.AddImmToReg("rsp", StackSlotSize)
 			// Load current length
 			fc.out.MovMemToReg("rcx", "rax", 0)
 			// Decrement length (convert to int, subtract 1, convert back)
-			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.SubImmFromReg("rsp", StackSlotSize)
 			fc.out.MovRegToMem("rcx", "rsp", 0)
 			fc.out.MovMemToXmm("xmm1", "rsp", 0)
 			fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int(length)
@@ -3403,16 +3416,16 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.Cvtsi2sd("xmm1", "rcx")  // xmm1 = float(length - 1)
 			fc.out.MovXmmToMem("xmm1", "rsp", 0)
 			fc.out.MovMemToReg("rcx", "rsp", 0)
-			fc.out.AddImmToReg("rsp", 8)
+			fc.out.AddImmToReg("rsp", StackSlotSize)
 			// Store new length
 			fc.out.MovRegToMem("rcx", "rax", 0)
 			// Skip first element (advance by 8 bytes)
 			fc.out.AddImmToReg("rax", 8)
 			// Return adjusted pointer in xmm0
-			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.SubImmFromReg("rsp", StackSlotSize)
 			fc.out.MovRegToMem("rax", "rsp", 0)
 			fc.out.MovMemToXmm("xmm0", "rsp", 0)
-			fc.out.AddImmToReg("rsp", 8)
+			fc.out.AddImmToReg("rsp", StackSlotSize)
 		}
 
 	case *BinaryExpr:
@@ -3494,7 +3507,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 					countBits := uint64(0)
 					*(*float64)(unsafe.Pointer(&countBits)) = count
 					for i := 0; i < 8; i++ {
-						mapData = append(mapData, byte((countBits>>(i*8))&0xFF))
+						mapData = append(mapData, byte((countBits>>(i*8))&ByteMask))
 					}
 
 					for idx, ch := range result {
@@ -3503,7 +3516,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 						keyBits := uint64(0)
 						*(*float64)(unsafe.Pointer(&keyBits)) = keyVal
 						for i := 0; i < 8; i++ {
-							mapData = append(mapData, byte((keyBits>>(i*8))&0xFF))
+							mapData = append(mapData, byte((keyBits>>(i*8))&ByteMask))
 						}
 
 						// Value: char code
@@ -3511,16 +3524,16 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 						charBits := uint64(0)
 						*(*float64)(unsafe.Pointer(&charBits)) = charVal
 						for i := 0; i < 8; i++ {
-							mapData = append(mapData, byte((charBits>>(i*8))&0xFF))
+							mapData = append(mapData, byte((charBits>>(i*8))&ByteMask))
 						}
 					}
 
 					fc.eb.Define(labelName, string(mapData))
 					fc.out.LeaSymbolToReg("rax", labelName)
-					fc.out.SubImmFromReg("rsp", 8)
+					fc.out.SubImmFromReg("rsp", StackSlotSize)
 					fc.out.MovRegToMem("rax", "rsp", 0)
 					fc.out.MovMemToXmm("xmm0", "rsp", 0)
-					fc.out.AddImmToReg("rsp", 8)
+					fc.out.AddImmToReg("rsp", StackSlotSize)
 					break
 				} else {
 					// Runtime string concatenation
@@ -3543,19 +3556,19 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 					fc.out.AddImmToReg("rsp", 32)        // clean up stack
 
 					// Align stack for call (must be at 16n+8 before CALL)
-					fc.out.SubImmFromReg("rsp", 8)
+					fc.out.SubImmFromReg("rsp", StackSlotSize)
 
 					// Call the helper function (direct call, not through PLT)
 					fc.out.CallSymbol("_flap_string_concat")
 
 					// Restore stack alignment
-					fc.out.AddImmToReg("rsp", 8)
+					fc.out.AddImmToReg("rsp", StackSlotSize)
 
 					// Result pointer is in rax, convert to xmm0
-					fc.out.SubImmFromReg("rsp", 8)
+					fc.out.SubImmFromReg("rsp", StackSlotSize)
 					fc.out.MovRegToMem("rax", "rsp", 0)
 					fc.out.MovMemToXmm("xmm0", "rsp", 0)
-					fc.out.AddImmToReg("rsp", 8)
+					fc.out.AddImmToReg("rsp", StackSlotSize)
 					break
 				}
 			}
@@ -3577,7 +3590,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 					lengthBits := uint64(0)
 					*(*float64)(unsafe.Pointer(&lengthBits)) = totalLen
 					for i := 0; i < 8; i++ {
-						listData = append(listData, byte((lengthBits>>(i*8))&0xFF))
+						listData = append(listData, byte((lengthBits>>(i*8))&ByteMask))
 					}
 
 					// Add all elements from left list
@@ -3586,7 +3599,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 							elemBits := uint64(0)
 							*(*float64)(unsafe.Pointer(&elemBits)) = numExpr.Value
 							for i := 0; i < 8; i++ {
-								listData = append(listData, byte((elemBits>>(i*8))&0xFF))
+								listData = append(listData, byte((elemBits>>(i*8))&ByteMask))
 							}
 						}
 					}
@@ -3597,17 +3610,17 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 							elemBits := uint64(0)
 							*(*float64)(unsafe.Pointer(&elemBits)) = numExpr.Value
 							for i := 0; i < 8; i++ {
-								listData = append(listData, byte((elemBits>>(i*8))&0xFF))
+								listData = append(listData, byte((elemBits>>(i*8))&ByteMask))
 							}
 						}
 					}
 
 					fc.eb.Define(labelName, string(listData))
 					fc.out.LeaSymbolToReg("rax", labelName)
-					fc.out.SubImmFromReg("rsp", 8)
+					fc.out.SubImmFromReg("rsp", StackSlotSize)
 					fc.out.MovRegToMem("rax", "rsp", 0)
 					fc.out.MovMemToXmm("xmm0", "rsp", 0)
-					fc.out.AddImmToReg("rsp", 8)
+					fc.out.AddImmToReg("rsp", StackSlotSize)
 					return
 				}
 
@@ -3628,19 +3641,19 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.AddImmToReg("rsp", 32)
 
 				// Align stack for call
-				fc.out.SubImmFromReg("rsp", 8)
+				fc.out.SubImmFromReg("rsp", StackSlotSize)
 
 				// Call the helper function
 				// Note: Don't track internal function calls (see comment at _flap_string_eq call)
 				fc.out.CallSymbol("_flap_list_concat")
 
-				fc.out.AddImmToReg("rsp", 8)
+				fc.out.AddImmToReg("rsp", StackSlotSize)
 
 				// Result pointer is in rax, convert to xmm0
-				fc.out.SubImmFromReg("rsp", 8)
+				fc.out.SubImmFromReg("rsp", StackSlotSize)
 				fc.out.MovRegToMem("rax", "rsp", 0)
 				fc.out.MovMemToXmm("xmm0", "rsp", 0)
-				fc.out.AddImmToReg("rsp", 8)
+				fc.out.AddImmToReg("rsp", StackSlotSize)
 
 				// Return early - don't do numeric operation
 				return
@@ -3676,7 +3689,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.AddImmToReg("rsp", 32)
 
 				// Align stack for call
-				fc.out.SubImmFromReg("rsp", 8)
+				fc.out.SubImmFromReg("rsp", StackSlotSize)
 
 				// Call the helper function
 				// Note: Don't track internal function calls - they use CallSymbol (0x00000000 placeholder)
@@ -3684,7 +3697,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.CallSymbol("_flap_string_eq")
 
 				// Restore stack alignment
-				fc.out.AddImmToReg("rsp", 8)
+				fc.out.AddImmToReg("rsp", StackSlotSize)
 
 				// Result (1.0 or 0.0) is in xmm0
 				if e.Operator == "!=" {
@@ -3696,7 +3709,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 					*(*float64)(unsafe.Pointer(&bits)) = one
 					var floatData []byte
 					for i := 0; i < 8; i++ {
-						floatData = append(floatData, byte((bits>>(i*8))&0xFF))
+						floatData = append(floatData, byte((bits>>(i*8))&ByteMask))
 					}
 					fc.eb.Define(labelName, string(floatData))
 					fc.out.LeaSymbolToReg("rax", labelName)
@@ -3913,14 +3926,14 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		length := float64(len(e.Elements))
 		lengthBits := uint64(0)
 		*(*float64)(unsafe.Pointer(&lengthBits)) = length
-		listData = append(listData, byte(lengthBits&0xFF))
-		listData = append(listData, byte((lengthBits>>8)&0xFF))
-		listData = append(listData, byte((lengthBits>>16)&0xFF))
-		listData = append(listData, byte((lengthBits>>24)&0xFF))
-		listData = append(listData, byte((lengthBits>>32)&0xFF))
-		listData = append(listData, byte((lengthBits>>40)&0xFF))
-		listData = append(listData, byte((lengthBits>>48)&0xFF))
-		listData = append(listData, byte((lengthBits>>56)&0xFF))
+		listData = append(listData, byte(lengthBits&ByteMask))
+		listData = append(listData, byte((lengthBits>>8)&ByteMask))
+		listData = append(listData, byte((lengthBits>>16)&ByteMask))
+		listData = append(listData, byte((lengthBits>>24)&ByteMask))
+		listData = append(listData, byte((lengthBits>>32)&ByteMask))
+		listData = append(listData, byte((lengthBits>>40)&ByteMask))
+		listData = append(listData, byte((lengthBits>>48)&ByteMask))
+		listData = append(listData, byte((lengthBits>>56)&ByteMask))
 
 		// Then add elements
 		for _, elem := range e.Elements {
@@ -3931,14 +3944,14 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				// Convert float64 to 8 bytes (little-endian)
 				bits := uint64(0)
 				*(*float64)(unsafe.Pointer(&bits)) = val
-				listData = append(listData, byte(bits&0xFF))
-				listData = append(listData, byte((bits>>8)&0xFF))
-				listData = append(listData, byte((bits>>16)&0xFF))
-				listData = append(listData, byte((bits>>24)&0xFF))
-				listData = append(listData, byte((bits>>32)&0xFF))
-				listData = append(listData, byte((bits>>40)&0xFF))
-				listData = append(listData, byte((bits>>48)&0xFF))
-				listData = append(listData, byte((bits>>56)&0xFF))
+				listData = append(listData, byte(bits&ByteMask))
+				listData = append(listData, byte((bits>>8)&ByteMask))
+				listData = append(listData, byte((bits>>16)&ByteMask))
+				listData = append(listData, byte((bits>>24)&ByteMask))
+				listData = append(listData, byte((bits>>32)&ByteMask))
+				listData = append(listData, byte((bits>>40)&ByteMask))
+				listData = append(listData, byte((bits>>48)&ByteMask))
+				listData = append(listData, byte((bits>>56)&ByteMask))
 			} else {
 				fmt.Fprintf(os.Stderr, "Error: list literal elements must be constant numbers\n")
 				os.Exit(1)
@@ -3949,10 +3962,10 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		fc.out.LeaSymbolToReg("rax", labelName)
 		// Convert pointer to float64: reinterpret rax as xmm0
 		// Push rax to stack, then load as float64 into xmm0
-		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
 		fc.out.MovRegToMem("rax", "rsp", 0)
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 8)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	case *InExpr:
 		// Membership testing: value in container
@@ -3965,8 +3978,8 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 		// Compile container
 		fc.compileExpression(e.Container)
-		fc.out.MovXmmToMem("xmm0", "rsp", 8)
-		fc.out.MovMemToReg("rbx", "rsp", 8) // rbx = container pointer
+		fc.out.MovXmmToMem("xmm0", "rsp", StackSlotSize)
+		fc.out.MovMemToReg("rbx", "rsp", StackSlotSize) // rbx = container pointer
 
 		// Load count from container (empty containers have count=0, not null)
 		fc.out.MovMemToXmm("xmm1", "rbx", 0)
@@ -4031,7 +4044,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		countBits := uint64(0)
 		*(*float64)(unsafe.Pointer(&countBits)) = count
 		for i := 0; i < 8; i++ {
-			mapData = append(mapData, byte((countBits>>(i*8))&0xFF))
+			mapData = append(mapData, byte((countBits>>(i*8))&ByteMask))
 		}
 
 		// Add key-value pairs (if any)
@@ -4040,24 +4053,24 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				keyBits := uint64(0)
 				*(*float64)(unsafe.Pointer(&keyBits)) = keyNum.Value
 				for j := 0; j < 8; j++ {
-					mapData = append(mapData, byte((keyBits>>(j*8))&0xFF))
+					mapData = append(mapData, byte((keyBits>>(j*8))&ByteMask))
 				}
 			}
 			if valNum, ok := e.Values[i].(*NumberExpr); ok {
 				valBits := uint64(0)
 				*(*float64)(unsafe.Pointer(&valBits)) = valNum.Value
 				for j := 0; j < 8; j++ {
-					mapData = append(mapData, byte((valBits>>(j*8))&0xFF))
+					mapData = append(mapData, byte((valBits>>(j*8))&ByteMask))
 				}
 			}
 		}
 
 		fc.eb.Define(labelName, string(mapData))
 		fc.out.LeaSymbolToReg("rax", labelName)
-		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
 		fc.out.MovRegToMem("rax", "rsp", 0)
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 8)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
 	case *IndexExpr:
 		// Determine if we're indexing a map/string or list
 		// Strings are map[uint64]float64, so use map indexing
@@ -4078,14 +4091,14 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		// Compile index/key expression (returns value as float64 in xmm0)
 		fc.compileExpression(e.Index)
 		// Save key/index to stack
-		fc.out.MovXmmToMem("xmm0", "rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", StackSlotSize)
 
 		// Load container pointer from stack to rbx
 		fc.out.MovMemToXmm("xmm1", "rsp", 0)
-		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
 		fc.out.MovXmmToMem("xmm1", "rsp", 0)
 		fc.out.MovMemToReg("rbx", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 8)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
 
 		if isMap {
 			// SIMD-OPTIMIZED MAP INDEXING
@@ -4099,7 +4112,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			// Keys are interleaved with values at 16-byte strides
 			//
 			// Load key to search for from stack into xmm2
-			fc.out.MovMemToXmm("xmm2", "rsp", 8)
+			fc.out.MovMemToXmm("xmm2", "rsp", StackSlotSize)
 
 			// Load count from [rbx]
 			fc.out.MovMemToXmm("xmm1", "rbx", 0)
@@ -4351,7 +4364,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		} else {
 			// LIST INDEXING: Position-based indexing
 			// Load index from stack
-			fc.out.MovMemToXmm("xmm0", "rsp", 8)
+			fc.out.MovMemToXmm("xmm0", "rsp", StackSlotSize)
 			// Convert index from float64 to integer in rax
 			fc.out.Cvttsd2si("rax", "xmm0")
 
@@ -4386,20 +4399,20 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		// Return function pointer as float64 in xmm0
 		// Use LEA to get function address, then convert to float64
 		fc.out.LeaSymbolToReg("rax", funcName)
-		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
 		fc.out.MovRegToMem("rax", "rsp", 0)
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 8)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	case *LengthExpr:
 		// Compile the operand (should be a list, returns pointer as float64 in xmm0)
 		fc.compileExpression(e.Operand)
 
 		// Convert pointer from float64 to integer in rax
-		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
 		fc.out.MovMemToReg("rax", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 8)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
 
 		// Load length from list (empty lists have length=0.0, not null)
 		fc.out.MovMemToXmm("xmm0", "rax", 0)
@@ -4505,7 +4518,7 @@ func (fc *FlapCompiler) compileMatchExpr(expr *MatchExpr) {
 		fc.patchJumpImmediate(pos+2, offset)
 	}
 
-	defaultOffset := int32(defaultPos - (defaultJumpPos + 6))
+	defaultOffset := int32(defaultPos - (defaultJumpPos + ConditionalJumpSize))
 	fc.patchJumpImmediate(defaultJumpPos+2, defaultOffset)
 
 	fc.compileMatchDefault(expr.DefaultExpr)
@@ -4646,10 +4659,10 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 		// Call runtime function: flap_string_to_cstr(xmm0) -> rax
 		fc.out.CallSymbol("flap_string_to_cstr")
 		// Convert C string pointer (rax) back to float64 in xmm0
-		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
 		fc.out.MovRegToMem("rax", "rsp", 0)
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 8)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	case "string":
 		// Convert C char* to Flap string
@@ -4679,7 +4692,7 @@ func (fc *FlapCompiler) compileSliceExpr(expr *SliceExpr) {
 	fc.compileExpression(expr.List)
 
 	// Save collection pointer on stack
-	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.SubImmFromReg("rsp", StackSlotSize)
 	fc.out.MovXmmToMem("xmm0", "rsp", 0)
 
 	// Compile step parameter first to know if we need special defaults
@@ -4692,7 +4705,7 @@ func (fc *FlapCompiler) compileSliceExpr(expr *SliceExpr) {
 		fc.out.Cvtsi2sd("xmm0", "rax")
 	}
 	// Save step on stack temporarily
-	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.SubImmFromReg("rsp", StackSlotSize)
 	fc.out.MovXmmToMem("xmm0", "rsp", 0)
 
 	// Compile start index (default depends on step sign)
@@ -4717,21 +4730,21 @@ func (fc *FlapCompiler) compileSliceExpr(expr *SliceExpr) {
 
 		// Negative step: default start = length - 1
 		negStepStartPos := fc.eb.text.Len()
-		negStepStartOffset := int32(negStepStartPos - (negStepStartJumpPos + 6))
+		negStepStartOffset := int32(negStepStartPos - (negStepStartJumpPos + ConditionalJumpSize))
 		fc.patchJumpImmediate(negStepStartJumpPos+2, negStepStartOffset)
 
-		fc.out.MovMemToReg("rax", "rsp", 8) // Load collection pointer
+		fc.out.MovMemToReg("rax", "rsp", StackSlotSize) // Load collection pointer
 		fc.out.MovMemToXmm("xmm0", "rax", 0) // Load length
 		fc.out.MovImmToReg("rax", "1")
 		fc.out.Cvtsi2sd("xmm1", "rax")
 		fc.out.SubsdXmm("xmm0", "xmm1") // xmm0 = length - 1
 
 		negStepStartEndPos := fc.eb.text.Len()
-		negStepStartEndOffset := int32(negStepStartEndPos - (negStepStartEndJumpPos + 5))
+		negStepStartEndOffset := int32(negStepStartEndPos - (negStepStartEndJumpPos + UnconditionalJumpSize))
 		fc.patchJumpImmediate(negStepStartEndJumpPos+1, negStepStartEndOffset)
 	}
 	// Save start on stack
-	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.SubImmFromReg("rsp", StackSlotSize)
 	fc.out.MovXmmToMem("xmm0", "rsp", 0)
 
 	// Compile end index (default depends on step sign)
@@ -4740,7 +4753,7 @@ func (fc *FlapCompiler) compileSliceExpr(expr *SliceExpr) {
 		// end is now in xmm0
 	} else {
 		// Check if step is negative (convert to integer first)
-		fc.out.MovMemToXmm("xmm0", "rsp", 8) // load step (now 8 bytes back from start)
+		fc.out.MovMemToXmm("xmm0", "rsp", StackSlotSize) // load step (now 8 bytes back from start)
 		fc.out.Cvttsd2si("rax", "xmm0")      // convert to integer
 		fc.out.XorRegWithReg("rbx", "rbx")
 		fc.out.CmpRegToReg("rax", "rbx")     // compare with 0
@@ -4757,7 +4770,7 @@ func (fc *FlapCompiler) compileSliceExpr(expr *SliceExpr) {
 
 		// Negative step: default end = -1
 		negStepEndPos := fc.eb.text.Len()
-		negStepEndOffset := int32(negStepEndPos - (negStepEndJumpPos + 6))
+		negStepEndOffset := int32(negStepEndPos - (negStepEndJumpPos + ConditionalJumpSize))
 		fc.patchJumpImmediate(negStepEndJumpPos+2, negStepEndOffset)
 
 		fc.out.XorRegWithReg("rax", "rax") // rax = 0
@@ -4765,12 +4778,12 @@ func (fc *FlapCompiler) compileSliceExpr(expr *SliceExpr) {
 		fc.out.Cvtsi2sd("xmm0", "rax")     // xmm0 = -1
 
 		negStepEndEndPos := fc.eb.text.Len()
-		negStepEndEndOffset := int32(negStepEndEndPos - (negStepEndEndJumpPos + 5))
+		negStepEndEndOffset := int32(negStepEndEndPos - (negStepEndEndJumpPos + UnconditionalJumpSize))
 		fc.patchJumpImmediate(negStepEndEndJumpPos+1, negStepEndEndOffset)
 	}
 	// end is in xmm0
 	// Save end on stack
-	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.SubImmFromReg("rsp", StackSlotSize)
 	fc.out.MovXmmToMem("xmm0", "rsp", 0)
 
 	// Stack layout: [collection_ptr][step][start][end] (rsp points to end)
@@ -4785,7 +4798,7 @@ func (fc *FlapCompiler) compileSliceExpr(expr *SliceExpr) {
 	fc.out.Cvttsd2si("rdx", "xmm0") // rdx = end (as integer)
 
 	// Load start into rsi (arg2)
-	fc.out.MovMemToXmm("xmm0", "rsp", 8)
+	fc.out.MovMemToXmm("xmm0", "rsp", StackSlotSize)
 	fc.out.Cvttsd2si("rsi", "xmm0") // rsi = start (as integer)
 
 	// Load collection pointer into rdi (arg1)
@@ -4798,10 +4811,10 @@ func (fc *FlapCompiler) compileSliceExpr(expr *SliceExpr) {
 	fc.out.CallSymbol("flap_slice_string")
 
 	// Result (new string pointer) is in rax, convert to float64 in xmm0
-	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.SubImmFromReg("rsp", StackSlotSize)
 	fc.out.MovRegToMem("rax", "rsp", 0)
 	fc.out.MovMemToXmm("xmm0", "rsp", 0)
-	fc.out.AddImmToReg("rsp", 8)
+	fc.out.AddImmToReg("rsp", StackSlotSize)
 }
 
 func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
@@ -4828,9 +4841,9 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 
 	// Save lambda function pointer (currently in xmm0) to stack and convert once to raw pointer bits
 	fc.out.SubImmFromReg("rsp", 16)
-	fc.out.MovXmmToMem("xmm0", "rsp", 8) // Store at rsp+8
-	fc.out.MovMemToReg("r11", "rsp", 8)  // Reinterpret float64 bits as pointer
-	fc.out.MovRegToMem("r11", "rsp", 8)  // Keep integer pointer for later loads
+	fc.out.MovXmmToMem("xmm0", "rsp", StackSlotSize) // Store at rsp+8
+	fc.out.MovMemToReg("r11", "rsp", StackSlotSize)  // Reinterpret float64 bits as pointer
+	fc.out.MovRegToMem("r11", "rsp", StackSlotSize)  // Keep integer pointer for later loads
 
 	// Compile the input list expression (returns pointer as float64 in xmm0)
 	fc.compileExpression(expr.List)
@@ -4898,14 +4911,14 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 
 	// Jump back to loop start
 	loopBackJumpPos := fc.eb.text.Len()
-	backOffset := int32(loopStart - (loopBackJumpPos + 5))
+	backOffset := int32(loopStart - (loopBackJumpPos + UnconditionalJumpSize))
 	fc.out.JumpUnconditional(backOffset)
 
 	// Loop end
 	loopEndPos := fc.eb.text.Len()
 
 	// Patch conditional jump
-	endOffset := int32(loopEndPos - (loopEndJumpPos + 6))
+	endOffset := int32(loopEndPos - (loopEndJumpPos + ConditionalJumpSize))
 	fc.patchJumpImmediate(loopEndJumpPos+2, endOffset)
 
 	// Don't clean up the lambda/list spill area yet - it's part of our memory layout
@@ -4913,10 +4926,10 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 
 	// Return result list pointer as float64 in xmm0
 	// r12 points to the result buffer on stack
-	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.SubImmFromReg("rsp", StackSlotSize)
 	fc.out.MovRegToMem("r12", "rsp", 0)
 	fc.out.MovMemToXmm("xmm0", "rsp", 0)
-	fc.out.AddImmToReg("rsp", 8)
+	fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	// Adjust stack pointer to account for result buffer AND spill area still being there
 	// The calling code must use the result before further stack operations
@@ -4936,7 +4949,7 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 		// Function prologue
 		fc.out.PushReg("rbp")
 		fc.out.MovRegToReg("rbp", "rsp")
-		fc.out.SubImmFromReg("rsp", 8) // Align stack
+		fc.out.SubImmFromReg("rsp", StackSlotSize) // Align stack
 
 		// Save previous state
 		oldVariables := fc.variables
@@ -5014,7 +5027,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// Align stack to 16 bytes for malloc call
 	// After call (8) + push rbp (8) + push 5 regs (40) = 56 bytes
 	// We need to subtract 8 more to get 16-byte alignment
-	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.SubImmFromReg("rsp", StackSlotSize)
 
 	// Save arguments
 	fc.out.MovRegToReg("r12", "rdi") // r12 = left_ptr
@@ -5098,7 +5111,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovRegToReg("rax", "r10")
 
 	// Restore stack alignment
-	fc.out.AddImmToReg("rsp", 8)
+	fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	// Restore callee-saved registers
 	fc.out.PopReg("r15")
@@ -5129,13 +5142,13 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Still need alignment: 5 pushes + rbp = 6 pushes = 48 bytes
 	// Need to align to 16 bytes before calls, so add 8 bytes
-	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.SubImmFromReg("rsp", StackSlotSize)
 
 	// Convert float64 pointer to integer pointer in r12
-	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.SubImmFromReg("rsp", StackSlotSize)
 	fc.out.MovXmmToMem("xmm0", "rsp", 0)
 	fc.out.MovMemToReg("r12", "rsp", 0)
-	fc.out.AddImmToReg("rsp", 8)
+	fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	// Get string length from map: count = [r12+0]
 	fc.out.MovMemToXmm("xmm0", "r12", 0)
@@ -5184,7 +5197,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovRegToReg("rax", "r13")
 
 	// Restore stack alignment
-	fc.out.AddImmToReg("rsp", 8)
+	fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	// Restore callee-saved registers
 	fc.out.PopReg("r14")
@@ -5252,7 +5265,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Patch step == 1 jump to here
 	stepOnePos := fc.eb.text.Len()
-	stepOneOffset := int32(stepOnePos - (stepOneJumpPos + 6))
+	stepOneOffset := int32(stepOnePos - (stepOneJumpPos + ConditionalJumpSize))
 	fc.patchJumpImmediate(stepOneJumpPos+2, stepOneOffset)
 
 	// Step == 1 simple path: length = end - start
@@ -5264,7 +5277,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Patch negative step jump to here
 	stepNegativePos := fc.eb.text.Len()
-	stepNegativeOffset := int32(stepNegativePos - (stepNegativeJumpPos + 6))
+	stepNegativeOffset := int32(stepNegativePos - (stepNegativeJumpPos + ConditionalJumpSize))
 	fc.patchJumpImmediate(stepNegativeJumpPos+2, stepNegativeOffset)
 
 	// Negative step path: length = ((start - end - step - 1) / (-step))
@@ -5283,10 +5296,10 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Patch end jumps
 	stepEndPos := fc.eb.text.Len()
-	stepEndOffset := int32(stepEndPos - (stepEndJumpPos + 5))
+	stepEndOffset := int32(stepEndPos - (stepEndJumpPos + UnconditionalJumpSize))
 	fc.patchJumpImmediate(stepEndJumpPos+1, stepEndOffset)
 
-	stepPosEndOffset := int32(stepEndPos - (stepPosEndJumpPos + 5))
+	stepPosEndOffset := int32(stepEndPos - (stepPosEndJumpPos + UnconditionalJumpSize))
 	fc.patchJumpImmediate(stepPosEndJumpPos+1, stepPosEndOffset)
 
 	// Allocate memory for new string: 8 + (length * 16) bytes
@@ -5362,12 +5375,12 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Patch exit jump: JumpConditional emits 6 bytes (0x0f 0x83 + 4-byte offset)
 	// Offset is from end of jump instruction to loop exit
-	loopExitOffset := int32(loopExitPos - (loopExitJumpPos + 6))
+	loopExitOffset := int32(loopExitPos - (loopExitJumpPos + ConditionalJumpSize))
 	fc.patchJumpImmediate(loopExitJumpPos+2, loopExitOffset) // +2 to skip 0x0f 0x83 opcode bytes
 
 	// Patch back jump: JumpUnconditional emits 5 bytes (0xe9 + 4-byte offset)
 	// Offset is from end of jump instruction back to loop start
-	loopBackOffset := int32(sliceLoopStart - (loopBackJumpPos + 5))
+	loopBackOffset := int32(sliceLoopStart - (loopBackJumpPos + UnconditionalJumpSize))
 	fc.patchJumpImmediate(loopBackJumpPos+1, loopBackOffset) // +1 to skip 0xe9 opcode byte
 
 	// Return new string pointer in rax
@@ -5403,7 +5416,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PushReg("r15")
 
 	// Align stack to 16 bytes for malloc call
-	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.SubImmFromReg("rsp", StackSlotSize)
 
 	// Save arguments
 	fc.out.MovRegToReg("r12", "rdi") // r12 = left_ptr
@@ -5478,7 +5491,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovRegToReg("rax", "r10")
 
 	// Restore stack alignment
-	fc.out.AddImmToReg("rsp", 8)
+	fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	// Restore callee-saved registers
 	fc.out.PopReg("r15")
@@ -5573,7 +5586,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.JumpUnconditional(0) // jump back to loop start
 
 	// Patch loop jump
-	offset := int32(loopStart - (loopJumpPos + 5))
+	offset := int32(loopStart - (loopJumpPos + UnconditionalJumpSize))
 	fc.patchJumpImmediate(loopJumpPos+1, offset)
 
 	// All characters matched - return 1.0
@@ -5594,7 +5607,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Patch all jumps
 	// Patch eqNull jump to eqNullLabel
-	offset = int32(eqNullLabel - (eqNullJumpPos + 6))
+	offset = int32(eqNullLabel - (eqNullJumpPos + ConditionalJumpSize))
 	fc.patchJumpImmediate(eqNullJumpPos+2, offset)
 
 	// Patch neq jumps to neqLabel
@@ -5611,11 +5624,11 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.patchJumpImmediate(neqJumpPos4+2, offset)
 
 	// Patch endLoop jump to endLoopLabel
-	offset = int32(endLoopLabel - (endLoopJumpPos + 6))
+	offset = int32(endLoopLabel - (endLoopJumpPos + ConditionalJumpSize))
 	fc.patchJumpImmediate(endLoopJumpPos+2, offset)
 
 	// Patch done jump to doneLabel
-	offset = int32(doneLabel - (doneJumpPos + 5))
+	offset = int32(doneLabel - (doneJumpPos + UnconditionalJumpSize))
 	fc.patchJumpImmediate(doneJumpPos+1, offset)
 
 	fc.out.PopReg("r13")
@@ -5631,10 +5644,10 @@ func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
 	fc.out.MovMemToXmm("xmm0", "rbp", -offset)
 
 	// Convert function pointer from float64 to integer in rax
-	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.SubImmFromReg("rsp", StackSlotSize)
 	fc.out.MovXmmToMem("xmm0", "rsp", 0)
 	fc.out.MovMemToReg("rax", "rsp", 0)
-	fc.out.AddImmToReg("rsp", 8)
+	fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	// Compile arguments and put them in xmm registers
 	xmmRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"}
@@ -5681,10 +5694,10 @@ func (fc *FlapCompiler) compileDirectCall(call *DirectCallExpr) {
 	fc.compileExpression(call.Callee) // Result in xmm0 (function pointer as float64)
 
 	// Convert function pointer from float64 to integer in rax
-	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.SubImmFromReg("rsp", StackSlotSize)
 	fc.out.MovXmmToMem("xmm0", "rsp", 0)
 	fc.out.MovMemToReg("rax", "rsp", 0)
-	fc.out.AddImmToReg("rsp", 8)
+	fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	// Compile arguments and put them in xmm registers
 	xmmRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"}
@@ -6406,10 +6419,10 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			fc.compileExpression(arg)
 
 			// Convert xmm0 (string map pointer) to rax
-			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.SubImmFromReg("rsp", StackSlotSize)
 			fc.out.MovXmmToMem("xmm0", "rsp", 0)
 			fc.out.MovMemToReg("rax", "rsp", 0)
-			fc.out.AddImmToReg("rsp", 8)
+			fc.out.AddImmToReg("rsp", StackSlotSize)
 
 			// Allocate buffer on stack (260 bytes: length + 256 chars + newline + null)
 			fc.out.SubImmFromReg("rsp", 260)
@@ -6681,13 +6694,13 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.compileExpression(call.Args[0])
 		// Use x87 FPU FSIN instruction
 		// xmm0 -> memory -> ST(0) -> FSIN -> memory -> xmm0
-		fc.out.SubImmFromReg("rsp", 8) // Allocate 8 bytes on stack
+		fc.out.SubImmFromReg("rsp", StackSlotSize) // Allocate 8 bytes on stack
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
 		fc.out.FldMem("rsp", 0)
 		fc.out.Fsin()
 		fc.out.FstpMem("rsp", 0)
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 8) // Restore stack
+		fc.out.AddImmToReg("rsp", StackSlotSize) // Restore stack
 
 	case "cos":
 		if len(call.Args) != 1 {
@@ -6696,13 +6709,13 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		}
 		fc.compileExpression(call.Args[0])
 		// Use x87 FPU FCOS instruction
-		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
 		fc.out.FldMem("rsp", 0)
 		fc.out.Fcos()
 		fc.out.FstpMem("rsp", 0)
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 8)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	case "tan":
 		if len(call.Args) != 1 {
@@ -6712,14 +6725,14 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.compileExpression(call.Args[0])
 		// Use x87 FPU FPTAN instruction
 		// FPTAN computes tan and pushes 1.0, so we need to pop the 1.0
-		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
 		fc.out.FldMem("rsp", 0)
 		fc.out.Fptan()
 		fc.out.Fpop() // Pop the 1.0 that FPTAN pushes
 		fc.out.FstpMem("rsp", 0)
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 8)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	case "atan":
 		if len(call.Args) != 1 {
@@ -6729,14 +6742,14 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.compileExpression(call.Args[0])
 		// Use x87 FPU FPATAN: atan(x) = atan2(x, 1.0)
 		// FPATAN expects ST(1)=y, ST(0)=x, computes atan2(y,x)
-		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
 		fc.out.FldMem("rsp", 0) // ST(0) = x
 		fc.out.Fld1()           // ST(0) = 1.0, ST(1) = x
 		fc.out.Fpatan()         // ST(0) = atan2(x, 1.0) = atan(x)
 		fc.out.FstpMem("rsp", 0)
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 8)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	case "asin":
 		if len(call.Args) != 1 {
@@ -6746,7 +6759,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.compileExpression(call.Args[0])
 		// asin(x) = atan2(x, sqrt(1 - x²))
 		// FPATAN needs ST(1)=x, ST(0)=sqrt(1-x²)
-		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
 		fc.out.FldMem("rsp", 0) // ST(0) = x
 		fc.out.FldSt0()         // ST(0) = x, ST(1) = x
@@ -6758,9 +6771,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Now swap: need ST(1)=x, ST(0)=sqrt(1-x²) but have reverse
 		// Solution: save sqrt to mem, reload in reverse order
 		fc.out.FstpMem("rsp", 0) // Store x to [rsp], pop, ST(0) = sqrt(1-x²)
-		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
 		fc.out.FstpMem("rsp", 0) // Store sqrt to [rsp+0]
-		fc.out.FldMem("rsp", 8)  // Load x: ST(0) = x
+		fc.out.FldMem("rsp", StackSlotSize)  // Load x: ST(0) = x
 		fc.out.FldMem("rsp", 0)  // Load sqrt: ST(0) = sqrt, ST(1) = x
 		fc.out.Fpatan()          // ST(0) = atan2(x, sqrt(1-x²)) = asin(x)
 		fc.out.FstpMem("rsp", 0)
@@ -6775,7 +6788,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.compileExpression(call.Args[0])
 		// acos(x) = atan2(sqrt(1-x²), x)
 		// FPATAN needs ST(1)=sqrt(1-x²), ST(0)=x
-		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
 		fc.out.FldMem("rsp", 0) // ST(0) = x
 		fc.out.FldSt0()         // ST(0) = x, ST(1) = x
@@ -6787,7 +6800,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.Fpatan()         // ST(0) = atan2(sqrt(1-x²), x) = acos(x)
 		fc.out.FstpMem("rsp", 0)
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 8)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	case "abs":
 		if len(call.Args) != 1 {
@@ -6796,13 +6809,13 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		}
 		fc.compileExpression(call.Args[0])
 		// abs(x) using FABS
-		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
 		fc.out.FldMem("rsp", 0) // ST(0) = x
 		fc.out.Fabs()           // ST(0) = |x|
 		fc.out.FstpMem("rsp", 0)
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 8)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	case "floor":
 		if len(call.Args) != 1 {
@@ -6813,7 +6826,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// floor(x): round toward -∞
 		// FPU control word: set rounding mode to 01 (round down)
 		fc.out.SubImmFromReg("rsp", 16) // Need space for control word + value
-		fc.out.MovXmmToMem("xmm0", "rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", StackSlotSize)
 
 		// Save current FPU control word
 		fc.out.FstcwMem("rsp", 0)
@@ -6847,14 +6860,14 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.FldcwMem("rsp", 2)
 
 		// Perform rounding
-		fc.out.FldMem("rsp", 8)
+		fc.out.FldMem("rsp", StackSlotSize)
 		fc.out.Frndint()
-		fc.out.FstpMem("rsp", 8)
+		fc.out.FstpMem("rsp", StackSlotSize)
 
 		// Restore original control word
 		fc.out.FldcwMem("rsp", 0)
 
-		fc.out.MovMemToXmm("xmm0", "rsp", 8)
+		fc.out.MovMemToXmm("xmm0", "rsp", StackSlotSize)
 		fc.out.AddImmToReg("rsp", 16)
 
 	case "ceil":
@@ -6866,7 +6879,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// ceil(x): round toward +∞
 		// FPU control word: set rounding mode to 10 (round up)
 		fc.out.SubImmFromReg("rsp", 16)
-		fc.out.MovXmmToMem("xmm0", "rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", StackSlotSize)
 
 		// Save current FPU control word
 		fc.out.FstcwMem("rsp", 0)
@@ -6897,12 +6910,12 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.Write(0x02) // disp8: +2
 
 		fc.out.FldcwMem("rsp", 2)
-		fc.out.FldMem("rsp", 8)
+		fc.out.FldMem("rsp", StackSlotSize)
 		fc.out.Frndint()
-		fc.out.FstpMem("rsp", 8)
+		fc.out.FstpMem("rsp", StackSlotSize)
 		fc.out.FldcwMem("rsp", 0) // Restore
 
-		fc.out.MovMemToXmm("xmm0", "rsp", 8)
+		fc.out.MovMemToXmm("xmm0", "rsp", StackSlotSize)
 		fc.out.AddImmToReg("rsp", 16)
 
 	case "round":
@@ -6914,7 +6927,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// round(x): round to nearest (even)
 		// FPU control word: set rounding mode to 00 (round to nearest)
 		fc.out.SubImmFromReg("rsp", 16)
-		fc.out.MovXmmToMem("xmm0", "rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", StackSlotSize)
 
 		// Save current FPU control word
 		fc.out.FstcwMem("rsp", 0)
@@ -6939,12 +6952,12 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.Write(0x02) // disp8: +2
 
 		fc.out.FldcwMem("rsp", 2)
-		fc.out.FldMem("rsp", 8)
+		fc.out.FldMem("rsp", StackSlotSize)
 		fc.out.Frndint()
-		fc.out.FstpMem("rsp", 8)
+		fc.out.FstpMem("rsp", StackSlotSize)
 		fc.out.FldcwMem("rsp", 0) // Restore
 
-		fc.out.MovMemToXmm("xmm0", "rsp", 8)
+		fc.out.MovMemToXmm("xmm0", "rsp", StackSlotSize)
 		fc.out.AddImmToReg("rsp", 16)
 
 	case "log":
@@ -6960,14 +6973,14 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// ln(x) = log2(x) * ln(2)
 		// Actually: FYL2X gives us: ST(1) * log2(ST(0))
 		// So if ST(1) = ln(2) and ST(0) = x, we get: ln(2) * log2(x) = ln(x) ✓
-		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
 		fc.out.Fldln2()         // ST(0) = ln(2)
 		fc.out.FldMem("rsp", 0) // ST(0) = x, ST(1) = ln(2)
 		fc.out.Fyl2x()          // ST(0) = ln(2) * log2(x) = ln(x)
 		fc.out.FstpMem("rsp", 0)
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 8)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	case "exp":
 		if len(call.Args) != 1 {
@@ -6981,7 +6994,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// 2. Split x' = n + f where n is integer, -1 <= f <= 1
 		// 3. Compute 2^f using F2XM1: 2^f = 1 + F2XM1(f)
 		// 4. Scale by 2^n using FSCALE
-		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
 		fc.out.FldMem("rsp", 0) // ST(0) = x
 		fc.out.Fldl2e()         // ST(0) = log2(e), ST(1) = x
@@ -7008,7 +7021,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		fc.out.FstpMem("rsp", 0)
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 8)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	case "pow":
 		if len(call.Args) != 2 {
@@ -7019,7 +7032,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.SubImmFromReg("rsp", 16)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
 		fc.compileExpression(call.Args[1]) // y in xmm0
-		fc.out.MovXmmToMem("xmm0", "rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", StackSlotSize)
 
 		// pow(x, y) = x^y = 2^(y * log2(x))
 		// Steps:
@@ -7031,7 +7044,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.Fld1()           // ST(0) = 1.0
 		fc.out.FldMem("rsp", 0) // ST(0) = x, ST(1) = 1.0
 		fc.out.Fyl2x()          // ST(0) = 1 * log2(x) = log2(x)
-		fc.out.FldMem("rsp", 8) // ST(0) = y, ST(1) = log2(x)
+		fc.out.FldMem("rsp", StackSlotSize) // ST(0) = y, ST(1) = log2(x)
 		fc.out.Fmulp()          // ST(0) = y * log2(x)
 
 		// Split into n + f
@@ -7414,7 +7427,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Evaluate all arguments and save to stack
 		for i := 0; i < numArgs; i++ {
 			fc.compileExpression(call.Args[i+1])
-			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.SubImmFromReg("rsp", StackSlotSize)
 			fc.out.MovXmmToMem("xmm0", "rsp", 0)
 		}
 
@@ -7435,7 +7448,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			}
 
 			fc.out.MovMemToXmm("xmm0", "rsp", 0)
-			fc.out.AddImmToReg("rsp", 8)
+			fc.out.AddImmToReg("rsp", StackSlotSize)
 
 			if isIntArg {
 				// Integer/pointer argument
@@ -7444,10 +7457,10 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 					// For integers, convert from float64 to integer
 					if argType == "cstr" {
 						// cstr is already a pointer - just transfer bits
-						fc.out.SubImmFromReg("rsp", 8)
+						fc.out.SubImmFromReg("rsp", StackSlotSize)
 						fc.out.MovXmmToMem("xmm0", "rsp", 0)
 						fc.out.MovMemToReg(intRegs[intArgCount], "rsp", 0)
-						fc.out.AddImmToReg("rsp", 8)
+						fc.out.AddImmToReg("rsp", StackSlotSize)
 					} else {
 						// Convert float64 to integer
 						fc.out.Cvttsd2si(intRegs[intArgCount], "xmm0")
@@ -7462,10 +7475,10 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 				if xmmArgCount < len(xmmRegs) {
 					if xmmArgCount != 0 {
 						// Move to appropriate xmm register
-						fc.out.SubImmFromReg("rsp", 8)
+						fc.out.SubImmFromReg("rsp", StackSlotSize)
 						fc.out.MovXmmToMem("xmm0", "rsp", 0)
 						fc.out.MovMemToXmm(xmmRegs[xmmArgCount], "rsp", 0)
-						fc.out.AddImmToReg("rsp", 8)
+						fc.out.AddImmToReg("rsp", StackSlotSize)
 					}
 					// else: already in xmm0
 					xmmArgCount++
@@ -7516,7 +7529,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			fc.compileExpression(arg)
 			if i < len(call.Args)-1 {
 				// Save result to stack if not the last arg
-				fc.out.SubImmFromReg("rsp", 8)
+				fc.out.SubImmFromReg("rsp", StackSlotSize)
 				fc.out.MovXmmToMem("xmm0", "rsp", 0)
 			}
 		}
@@ -7526,7 +7539,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		for i := len(call.Args) - 2; i >= 0; i-- {
 			regName := fmt.Sprintf("xmm%d", i)
 			fc.out.MovMemToXmm(regName, "rsp", 0)
-			fc.out.AddImmToReg("rsp", 8)
+			fc.out.AddImmToReg("rsp", StackSlotSize)
 		}
 
 		// Generate call instruction
@@ -7559,8 +7572,8 @@ func (fc *FlapCompiler) compilePipeExpr(expr *PipeExpr) {
 		fc.compileExpression(right)
 
 		// Convert function pointer from float64 to integer
-		fc.out.MovXmmToMem("xmm0", "rsp", 8)
-		fc.out.MovMemToReg("r11", "rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", StackSlotSize)
+		fc.out.MovMemToReg("r11", "rsp", StackSlotSize)
 
 		// Restore input value to xmm0
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
@@ -7584,8 +7597,8 @@ func (fc *FlapCompiler) compilePipeExpr(expr *PipeExpr) {
 		fc.compileExpression(right)
 
 		// Convert function pointer from float64 to integer
-		fc.out.MovXmmToMem("xmm0", "rsp", 8)
-		fc.out.MovMemToReg("r11", "rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", StackSlotSize)
+		fc.out.MovMemToReg("r11", "rsp", StackSlotSize)
 
 		// Restore input value to xmm0
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
