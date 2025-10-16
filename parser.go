@@ -762,7 +762,11 @@ type CallExpr struct {
 func (c *CallExpr) String() string {
 	args := make([]string, len(c.Args))
 	for i, arg := range c.Args {
-		args[i] = arg.String()
+		if arg == nil {
+			args[i] = "<nil>"
+		} else {
+			args[i] = arg.String()
+		}
 	}
 	return c.Function + "(" + strings.Join(args, ", ") + ")"
 }
@@ -911,6 +915,19 @@ func (l *LengthExpr) String() string {
 	return "#" + l.Operand.String()
 }
 func (l *LengthExpr) expressionNode() {}
+
+type CastExpr struct {
+	Expr Expression
+	Type string // "i8", "i32", "u64", "f32", "f64", "cstr", "ptr", "number", "string", "list"
+}
+
+func (c *CastExpr) String() string {
+	if c.Expr == nil {
+		return "<nil> as " + c.Type
+	}
+	return c.Expr.String() + " as " + c.Type
+}
+func (c *CastExpr) expressionNode() {}
 
 // Parser for Flap language
 type Parser struct {
@@ -1943,6 +1960,29 @@ func (p *Parser) parsePostfix() Expression {
 			p.nextToken() // skip current expr
 			op := p.current.Value
 			expr = &PostfixExpr{Operator: op, Operand: expr}
+		} else if p.peek.Type == TOKEN_AS {
+			// Handle type cast: expr as type
+			p.nextToken() // skip current expr
+			p.nextToken() // skip 'as'
+
+			// Parse the cast type
+			var castType string
+			switch p.current.Type {
+			case TOKEN_I8, TOKEN_I16, TOKEN_I32, TOKEN_I64:
+				castType = p.current.Value
+			case TOKEN_U8, TOKEN_U16, TOKEN_U32, TOKEN_U64:
+				castType = p.current.Value
+			case TOKEN_F32, TOKEN_F64:
+				castType = p.current.Value
+			case TOKEN_CSTR, TOKEN_PTR:
+				castType = p.current.Value
+			case TOKEN_NUMBER_TYPE, TOKEN_STRING_TYPE, TOKEN_LIST_TYPE:
+				castType = p.current.Value
+			default:
+				p.error("expected type after 'as'")
+			}
+
+			expr = &CastExpr{Expr: expr, Type: castType}
 		} else {
 			break
 		}
