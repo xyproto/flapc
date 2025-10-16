@@ -4705,29 +4705,40 @@ func (fc *FlapCompiler) compileSliceExpr(expr *SliceExpr) {
 		fc.out.MovMemToXmm("xmm0", "rax", 0) // load length
 	}
 	// end is in xmm0
+	// Save end on stack
+	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.MovXmmToMem("xmm0", "rsp", 0)
 
-	// TODO: Handle step parameter (for now, assume step=1)
+	// Compile step parameter (or default to 1)
 	if expr.Step != nil {
-		fmt.Fprintf(os.Stderr, "Error: slice step parameter not yet implemented\n")
-		os.Exit(1)
+		fc.compileExpression(expr.Step)
+		// step is now in xmm0
+	} else {
+		// Default step = 1
+		fc.out.MovImmToReg("rax", "1")
+		fc.out.Cvtsi2sd("xmm0", "rax")
 	}
+	// step is in xmm0
 
-	// Stack layout: [collection_ptr][start][current_rsp -> end in xmm0]
-	// Call runtime function: flap_slice(collection_ptr, start, end) -> new_collection_ptr
-	// For now, convert to simple substring copy
+	// Stack layout: [collection_ptr][start][end][current_rsp -> step in xmm0]
+	// Call runtime function: flap_slice_string(collection_ptr, start, end, step) -> new_collection_ptr
 
-	// Load end into rdi (arg3)
+	// Load step into rcx (arg4)
+	fc.out.Cvttsd2si("rcx", "xmm0") // rcx = step (as integer)
+
+	// Load end into rdx (arg3)
+	fc.out.MovMemToXmm("xmm0", "rsp", 0)
 	fc.out.Cvttsd2si("rdx", "xmm0") // rdx = end (as integer)
 
 	// Load start into rsi (arg2)
-	fc.out.MovMemToXmm("xmm0", "rsp", 0)
+	fc.out.MovMemToXmm("xmm0", "rsp", 8)
 	fc.out.Cvttsd2si("rsi", "xmm0") // rsi = start (as integer)
 
 	// Load collection pointer into rdi (arg1)
-	fc.out.MovMemToReg("rdi", "rsp", 8) // rdi = collection pointer
+	fc.out.MovMemToReg("rdi", "rsp", 16) // rdi = collection pointer
 
 	// Clean up stack before call
-	fc.out.AddImmToReg("rsp", 16)
+	fc.out.AddImmToReg("rsp", 24)
 
 	// Call runtime function
 	fc.out.CallSymbol("flap_slice_string")
@@ -5131,10 +5142,11 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
-	// Generate flap_slice_string(str_ptr, start, end) -> new_str_ptr
-	// Arguments: rdi = string_ptr, rsi = start_index (int64), rdx = end_index (int64)
+	// Generate flap_slice_string(str_ptr, start, end, step) -> new_str_ptr
+	// Arguments: rdi = string_ptr, rsi = start_index (int64), rdx = end_index (int64), rcx = step (int64)
 	// Returns: rax = pointer to new sliced string
 	// String format (map): [count (float64)][key0 (float64)][val0 (float64)]...
+	// Note: Currently only step == 1 is fully supported
 
 	fc.eb.MarkLabel("flap_slice_string")
 
@@ -5153,6 +5165,11 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovRegToReg("r12", "rdi") // r12 = original string pointer
 	fc.out.MovRegToReg("r13", "rsi") // r13 = start index
 	fc.out.MovRegToReg("r14", "rdx") // r14 = end index
+	// rcx = step (not saved to register yet, will use directly if needed)
+
+	// TODO: Handle step parameter (currently in rcx)
+	// For now, we only support step == 1
+	// Future: implement step < 0 (reverse), step > 1 (stride)
 
 	// Calculate slice length: length = end - start
 	fc.out.MovRegToReg("r15", "r14")
