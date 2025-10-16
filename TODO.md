@@ -12,7 +12,7 @@
 
 ### 1. Core Compiler Fixes (Highest Priority - BLOCKING)
 
-- [ ] **Remove debug output**: Clean up DEBUG print statements in parser.go loop code
+All core compiler fixes complete! ✓
 
 ### 2. Parser Completeness (Complete for 1.0.0 Spec)
 
@@ -145,6 +145,13 @@ All parser features complete! ✓
 ---
 
 ## Recently Completed (2025-10-17)
+
+### Debug Output Cleanup (2025-10-17)
+- [x] **Made debug output conditional on DEBUG_FLAP environment variable**:
+  - Added debug field to FlapCompiler struct
+  - Gated useful debug output behind DEBUG_FLAP=1
+  - Removed obsolete commented-out debug statements
+  - Clean output by default, detailed debug when needed
 
 ### Python-Style Slice Syntax Implementation (2025-10-17)
 - [x] **Implemented full SliceExpr codegen with step parameter**:
