@@ -13,9 +13,9 @@
 ### 1. Builtin Functions (Standard Library)
 
 **I/O Functions:**
-- [ ] **Implement readln()**: Read line from stdin, return as Flap string (WIP - stack management issues)
-- [ ] **Implement read_file(path)**: Read entire file, return as Flap string (WIP - fclose segfault)
-- [x] **Implement write_file(path, content)**: Write string to file ✓ (Working!)
+- [x] **Implement write_file(path, content)**: Write string to file ✓ (Production-ready!)
+- [ ] **Fix read_file(path)**: Files read successfully with syscalls, but cstr_to_flap_string has bug when printing
+- [ ] **Implement readln()**: Read line from stdin with syscall approach
 
 **String Functions:**
 - [ ] **Implement num(string)**: Parse string to float64 ("42" → 42.0)
@@ -121,7 +121,7 @@
 - ✓ All comparison operators (<, <=, >, >=, ==, !=)
 - ✓ All logical operators (and, or, xor, not)
 - ✓ All bitwise operators (&b, |b, ^b, ~b, <b, >b, <<b, >>b)
-- ✓ Postfix operators (x++, x-- as statements only)
+- ✓ Postfix operators (x++, x-- as statements only, Go-style)
 - ✓ FMA operator (*+ for fused multiply-add)
 - ✓ String operations (concatenation, length, indexing, comparison)
 - ✓ List operations (indexing, length, concatenation)
@@ -131,8 +131,10 @@
 - ✓ Match expressions (with guards, defaults, nested)
 - ✓ Lambda expressions (single/multiple params, closures)
 - ✓ Math functions (sqrt, sin, cos, tan, log, exp, abs, floor, ceil, round)
-- ✓ FFI (call(), read_TYPE, write_TYPE, string-to-C conversion)
+- ✓ FFI (call(), read_TYPE, write_TYPE, string-to-C conversion, dlopen/dlsym/dlclose)
 - ✓ Type casting (i8-i64, u8-u64, f32-f64, cstr, ptr, number)
+- ✓ sizeof_TYPE builtins (compile-time type size queries)
+- ✓ write_file(path, content) - File I/O
 
 ---
 

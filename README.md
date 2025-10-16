@@ -88,7 +88,13 @@ make test
 ### Control Flow
 - **Match Expressions**: `condition { -> expr ~> expr }` syntax (default case optional)
 - **Loops**: `@ identifier in range(n) { }` syntax, `break`, `continue`
+- **Postfix Operators**: `x++`, `x--` (statements only, Go-style)
 - **Builtin Functions**: `range(n)`, `println()` (syscall-based), `printf()`, `exit()`
+
+### I/O and File Operations
+- **File Writing**: `write_file(path, content)` - Write strings to files (production-ready)
+- **File Reading**: `read_file(path)` - Read entire files as strings (uses Linux syscalls)
+- **Console I/O**: `println()`, `printf()` - Syscall-based output (no libc dependencies)
 
 ### Data Structures
 - **Strings**: Stored as `map[uint64]float64` (index → char code)
@@ -107,6 +113,13 @@ make test
 - **Lambda Expressions**: `(x) -> x * 2` or `(x, y) -> x + y`
 - **First-Class Functions**: Store lambdas in variables
 - **Function Pointers**: Functions as float64-reinterpreted addresses
+
+### Foreign Function Interface (FFI)
+- **Dynamic Libraries**: `dlopen()`, `dlsym()`, `dlclose()` for loading shared libraries
+- **C Function Calls**: `call(name, args...)` - Call C functions from loaded libraries
+- **Memory Operations**: `read_i8()`, `write_u64()`, etc. - Direct memory access
+- **Type Conversions**: `i8()`, `u64()`, `f32()`, `ptr()`, `cstr()` - Type casting for FFI
+- **Size Queries**: `sizeof_i8()`, `sizeof_ptr()`, etc. - Compile-time type sizes
 
 ### Code Generation
 - **Scalar FP**: ADDSD, SUBSD, MULSD, DIVSD, CVTSI2SD, CVTTSD2SI
