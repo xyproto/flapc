@@ -367,6 +367,20 @@ i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 cstr ptr
 number string list
 ```
 
+**Note:** Type keywords (`i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32`, `f64`, `cstr`, `ptr`, `number`, `string`, `list`) are **contextual keywords** - they are only reserved when used after `as` in type casting expressions. They can be used as variable names in other contexts:
+
+```flap
+// Valid: using type keywords as variable names
+i32 = 100.0
+ptr = call("malloc", 64 as u64)
+string = "hello"
+
+// Also valid: using them as type keywords in casts
+x = 42 as i32
+address = pointer_value as ptr
+text = c_string as string
+```
+
 ## Examples
 
 ### Factorial

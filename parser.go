@@ -251,38 +251,10 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_MOD, Value: value, Line: l.line}
 		case "as":
 			return Token{Type: TOKEN_AS, Value: value, Line: l.line}
-		// C type keywords
-		case "i8":
-			return Token{Type: TOKEN_I8, Value: value, Line: l.line}
-		case "i16":
-			return Token{Type: TOKEN_I16, Value: value, Line: l.line}
-		case "i32":
-			return Token{Type: TOKEN_I32, Value: value, Line: l.line}
-		case "i64":
-			return Token{Type: TOKEN_I64, Value: value, Line: l.line}
-		case "u8":
-			return Token{Type: TOKEN_U8, Value: value, Line: l.line}
-		case "u16":
-			return Token{Type: TOKEN_U16, Value: value, Line: l.line}
-		case "u32":
-			return Token{Type: TOKEN_U32, Value: value, Line: l.line}
-		case "u64":
-			return Token{Type: TOKEN_U64, Value: value, Line: l.line}
-		case "f32":
-			return Token{Type: TOKEN_F32, Value: value, Line: l.line}
-		case "f64":
-			return Token{Type: TOKEN_F64, Value: value, Line: l.line}
-		case "cstr":
-			return Token{Type: TOKEN_CSTR, Value: value, Line: l.line}
-		case "ptr":
-			return Token{Type: TOKEN_PTR, Value: value, Line: l.line}
-		// Flap type keywords
-		case "number":
-			return Token{Type: TOKEN_NUMBER_TYPE, Value: value, Line: l.line}
-		case "string":
-			return Token{Type: TOKEN_STRING_TYPE, Value: value, Line: l.line}
-		case "list":
-			return Token{Type: TOKEN_LIST_TYPE, Value: value, Line: l.line}
+		// Note: All type keywords (i8, i16, i32, i64, u8, u16, u32, u64, f32, f64,
+		// cstr, ptr, number, string, list) are contextual keywords.
+		// They are only treated as type keywords after "as" in cast expressions.
+		// Otherwise they can be used as identifiers.
 		}
 
 		return Token{Type: TOKEN_IDENT, Value: value, Line: l.line}
@@ -1967,18 +1939,20 @@ func (p *Parser) parsePostfix() Expression {
 
 			// Parse the cast type
 			var castType string
-			switch p.current.Type {
-			case TOKEN_I8, TOKEN_I16, TOKEN_I32, TOKEN_I64:
-				castType = p.current.Value
-			case TOKEN_U8, TOKEN_U16, TOKEN_U32, TOKEN_U64:
-				castType = p.current.Value
-			case TOKEN_F32, TOKEN_F64:
-				castType = p.current.Value
-			case TOKEN_CSTR, TOKEN_PTR:
-				castType = p.current.Value
-			case TOKEN_NUMBER_TYPE, TOKEN_STRING_TYPE, TOKEN_LIST_TYPE:
-				castType = p.current.Value
-			default:
+			if p.current.Type == TOKEN_IDENT {
+				// All type keywords are contextual - check if this identifier is a valid type name
+				validTypes := map[string]bool{
+					"i8": true, "i16": true, "i32": true, "i64": true,
+					"u8": true, "u16": true, "u32": true, "u64": true,
+					"f32": true, "f64": true, "cstr": true, "ptr": true,
+					"number": true, "string": true, "list": true,
+				}
+				if validTypes[p.current.Value] {
+					castType = p.current.Value
+				} else {
+					p.error("expected type after 'as'")
+				}
+			} else {
 				p.error("expected type after 'as'")
 			}
 
@@ -6867,14 +6841,26 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Compile pointer (arg 0) - result in xmm0
 		fc.compileExpression(call.Args[0])
-		// Convert pointer bits to integer in r10 using movq
-		// movq r10, xmm0 = 66 49 0f 7e c2
-		fc.out.Emit([]byte{0x66, 0x49, 0x0f, 0x7e, 0xc2})
+		// Convert pointer from float64 to integer in r10
+		fc.out.Cvttsd2si("r10", "xmm0")
+		// Save pointer on stack (push r10)
+		fc.out.Emit([]byte{0x41, 0x52}) // push r10
 
 		// Compile index (arg 1) - result in xmm0
 		fc.compileExpression(call.Args[1])
 		// Convert index to integer in r11
 		fc.out.Cvttsd2si("r11", "xmm0")
+		// Save index on stack (push r11)
+		fc.out.Emit([]byte{0x41, 0x53}) // push r11
+
+		// Compile value (arg 2) - result in xmm0
+		fc.compileExpression(call.Args[2])
+		// Save value in xmm1
+		fc.out.MovXmmToXmm("xmm1", "xmm0")
+
+		// Restore index and pointer (pop r11, pop r10)
+		fc.out.Emit([]byte{0x41, 0x5b}) // pop r11
+		fc.out.Emit([]byte{0x41, 0x5a}) // pop r10
 
 		// Calculate address: r10 + (r11 * typeSize)
 		if typeSize > 1 {
@@ -6888,8 +6874,8 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			fc.out.Emit([]byte{0x4d, 0x01, 0xda}) // add r10, r11
 		}
 
-		// Compile value (arg 2) - result in xmm0
-		fc.compileExpression(call.Args[2])
+		// Restore value from xmm1 to xmm0
+		fc.out.MovXmmToXmm("xmm0", "xmm1")
 
 		// Write value to memory
 		if call.Function == "write_f64" {
@@ -6948,14 +6934,18 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Compile pointer (arg 0) - result in xmm0
 		fc.compileExpression(call.Args[0])
-		// Convert pointer bits to integer in r10 using movq
-		// movq r10, xmm0 = 66 49 0f 7e c2
-		fc.out.Emit([]byte{0x66, 0x49, 0x0f, 0x7e, 0xc2})
+		// Convert pointer from float64 to integer in r10
+		fc.out.Cvttsd2si("r10", "xmm0")
+		// Save pointer on stack (push r10)
+		fc.out.Emit([]byte{0x41, 0x52}) // push r10
 
 		// Compile index (arg 1) - result in xmm0
 		fc.compileExpression(call.Args[1])
 		// Convert index to integer in r11
 		fc.out.Cvttsd2si("r11", "xmm0")
+
+		// Restore pointer (pop r10)
+		fc.out.Emit([]byte{0x41, 0x5a}) // pop r10
 
 		// Calculate address: r10 + (r11 * typeSize)
 		if typeSize > 1 {
