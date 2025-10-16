@@ -29,10 +29,6 @@ All parser features complete! ✓
   - Use AVX2 VFMADD213SD for scalar operations
   - Better precision than separate multiply + add
 
-- [ ] **Implement or! codegen**: Generate conditional exit for `condition or! "msg"`
-  - If condition is false/zero, print message to stderr and exit(1)
-  - If condition is true/non-zero, continue execution
-
 ### 4. FFI Implementation (Enable Foreign Function Interface)
 
 - [ ] **Implement dlopen/dlsym/dlclose**: Dynamic library loading
@@ -145,6 +141,14 @@ All parser features complete! ✓
 ---
 
 ## Recently Completed (2025-10-17)
+
+### Error Handling Documentation (2025-10-17)
+- [x] **Documented or! operator as railway-oriented programming**:
+  - Added comprehensive Error Handling section to LANGUAGE.md
+  - Convention: 0.0 = error, non-zero = success
+  - Clean error propagation without nested if/else
+  - Examples showing file operations with error handling
+  - Verified implementation with test cases
 
 ### Debug Output Cleanup (2025-10-17)
 - [x] **Made debug output conditional on DEBUG_FLAP environment variable**:
