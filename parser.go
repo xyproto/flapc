@@ -611,11 +611,12 @@ func (i *IndexExpr) String() string {
 }
 func (i *IndexExpr) expressionNode() {}
 
-// SliceExpr: list[start:end] or string[start:end] (Python-style slicing)
+// SliceExpr: list[start:end:step] or string[start:end:step] (Python-style slicing)
 type SliceExpr struct {
 	List  Expression
 	Start Expression // nil means start from beginning
 	End   Expression // nil means go to end
+	Step  Expression // nil means step of 1, negative means reverse
 }
 
 func (s *SliceExpr) String() string {
@@ -627,7 +628,12 @@ func (s *SliceExpr) String() string {
 	if s.End != nil {
 		end = s.End.String()
 	}
-	return s.List.String() + "[" + start + ":" + end + "]"
+	result := s.List.String() + "[" + start + ":" + end
+	if s.Step != nil {
+		result += ":" + s.Step.String()
+	}
+	result += "]"
+	return result
 }
 func (s *SliceExpr) expressionNode() {}
 
@@ -1545,12 +1551,32 @@ func (p *Parser) parsePostfix() Expression {
 				if p.current.Type == TOKEN_RBRACKET {
 					// Case: [start:] or [:]
 					endExpr = nil
+				} else if p.current.Type == TOKEN_COLON {
+					// Case: [start::step] or [::step]
+					endExpr = nil
 				} else {
 					endExpr = p.parseExpression()
-					p.nextToken() // move to ']'
 				}
 
-				expr = &SliceExpr{List: expr, Start: firstExpr, End: endExpr}
+				// Check for step parameter (second colon)
+				var stepExpr Expression
+				if p.peek.Type == TOKEN_COLON {
+					p.nextToken() // move to second colon
+					p.nextToken() // skip ':'
+
+					if p.current.Type == TOKEN_RBRACKET {
+						// Case: [start:end:] - step is nil
+						stepExpr = nil
+					} else {
+						stepExpr = p.parseExpression()
+						p.nextToken() // move to ']'
+					}
+				} else if endExpr != nil {
+					// We parsed an end expression, need to move to ']'
+					p.nextToken()
+				}
+
+				expr = &SliceExpr{List: expr, Start: firstExpr, End: endExpr, Step: stepExpr}
 			} else {
 				// Regular indexing
 				p.nextToken() // move to ']'
