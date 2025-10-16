@@ -97,6 +97,13 @@ s := "Hello"         // Creates {0: 72.0, 1: 101.0, ...}
 char := s[1]         // returns 101.0 (ASCII 'e')
 println("Hello")     // String literals optimized for direct output
 result := "Hello, " + "World!"  // Compile-time concatenation
+
+// Slicing (Python-style with start:end:step)
+s[0:2]               // "He" (indices 0, 1)
+s[1:4]               // "ell" (indices 1, 2, 3)
+s[::2]               // "Hlo" (every other character)
+s[::-1]              // "olleH" (reversed)
+s[1:5:2]             // Characters at indices 1, 3
 ```
 
 ### Lists
@@ -107,6 +114,11 @@ first = numbers[0]
 length = #numbers    // length operator
 head = ^numbers      // first element
 tail = &numbers      // all but first
+
+// Slicing works on lists too
+numbers[0:2]         // [1, 2] (first two elements)
+numbers[::2]         // [1, 3] (every other element)
+numbers[::-1]        // [3, 2, 1] (reversed)
 ```
 
 ### Maps
