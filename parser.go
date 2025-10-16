@@ -1376,6 +1376,39 @@ func (p *Parser) parseMatchClause() (*MatchClause, bool) {
 
 func (p *Parser) parseMatchTarget() Expression {
 	switch p.current.Type {
+	case TOKEN_RET:
+		// ret or ret @N or ret value or ret @N value
+		p.nextToken() // skip 'ret'
+
+		label := 0 // 0 means return from function
+		var value Expression
+
+		// Check for optional @N
+		if p.current.Type == TOKEN_AT {
+			p.nextToken() // skip '@'
+			if p.current.Type != TOKEN_NUMBER {
+				p.error("expected number after @ in ret statement")
+			}
+			labelNum, err := strconv.ParseFloat(p.current.Value, 64)
+			if err != nil {
+				p.error("invalid loop label number")
+			}
+			label = int(labelNum)
+			if label < 1 {
+				p.error("loop label must be >= 1 (use @1, @2, @3, etc.)")
+			}
+			p.nextToken() // skip number
+		}
+
+		// Check for optional value
+		if p.current.Type != TOKEN_NEWLINE && p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF && p.current.Type != TOKEN_DEFAULT_ARROW {
+			value = p.parseExpression()
+			p.nextToken()
+		}
+
+		// Return a JumpExpr with IsBreak semantics
+		// Note: JumpExpr doesn't have IsBreak field, but it should behave like ret
+		return &JumpExpr{Label: label, Value: value}
 	case TOKEN_AT_MINUS:
 		if p.loopDepth < 2 {
 			p.error("@- requires at least 2 nested loops")
@@ -4455,54 +4488,47 @@ func (fc *FlapCompiler) compileMatchDefault(result Expression) {
 }
 
 func (fc *FlapCompiler) compileMatchJump(jumpExpr *JumpExpr) {
+	// Handle ret (Label=0) - return from function
+	if jumpExpr.Label == 0 {
+		// Return from function
+		if jumpExpr.Value != nil {
+			fc.compileExpression(jumpExpr.Value)
+			// xmm0 now contains return value
+		}
+		fc.out.MovRegToReg("rsp", "rbp")
+		fc.out.PopReg("rbp")
+		fc.out.Ret()
+		return
+	}
+
+	// Handle ret @N or @N - loop control
 	if len(fc.activeLoops) == 0 {
-		fmt.Fprintf(os.Stderr, "Error: @%d used outside of loop in match expression\n", jumpExpr.Label)
+		fmt.Fprintf(os.Stderr, "Error: ret @%d used outside of loop in match expression\n", jumpExpr.Label)
 		os.Exit(1)
 	}
 
-	currentLoopLabel := fc.activeLoops[len(fc.activeLoops)-1].Label
-
-	// Semantics:
-	// @N where N < current loop label = break to scope N (exit to after loop N)
-	// @N where N == current loop label = continue current loop (jump to top)
-	// @N where N > current loop label = error
-
-	if jumpExpr.Label < currentLoopLabel {
-		// Break to scope N: jump to end of loop N+1 (exits to scope N)
-		targetLabel := jumpExpr.Label + 1
-		targetLoopIndex := -1
-		for i := 0; i < len(fc.activeLoops); i++ {
-			if fc.activeLoops[i].Label == targetLabel {
-				targetLoopIndex = i
-				break
-			}
+	// Find the loop with the specified label
+	targetLoopIndex := -1
+	for i := 0; i < len(fc.activeLoops); i++ {
+		if fc.activeLoops[i].Label == jumpExpr.Label {
+			targetLoopIndex = i
+			break
 		}
+	}
 
-		if targetLoopIndex == -1 {
-			fmt.Fprintf(os.Stderr, "Error: @%d cannot break to scope %d (loop %d not found)\n",
-				jumpExpr.Label, jumpExpr.Label, targetLabel)
-			os.Exit(1)
-		}
-
-		jumpPos := fc.eb.text.Len()
-		fc.out.JumpUnconditional(0)
-		fc.activeLoops[targetLoopIndex].EndPatches = append(
-			fc.activeLoops[targetLoopIndex].EndPatches,
-			jumpPos+1,
-		)
-	} else if jumpExpr.Label == currentLoopLabel {
-		// Continue current loop: jump to top
-		jumpPos := fc.eb.text.Len()
-		fc.out.JumpUnconditional(0)
-		fc.activeLoops[len(fc.activeLoops)-1].ContinuePatches = append(
-			fc.activeLoops[len(fc.activeLoops)-1].ContinuePatches,
-			jumpPos+1,
-		)
-	} else {
-		fmt.Fprintf(os.Stderr, "Error: @%d references loop %d which is not active (current loop is %d)\n",
-			jumpExpr.Label, jumpExpr.Label, currentLoopLabel)
+	if targetLoopIndex == -1 {
+		fmt.Fprintf(os.Stderr, "Error: ret @%d references loop @%d which is not active\n",
+			jumpExpr.Label, jumpExpr.Label)
 		os.Exit(1)
 	}
+
+	// ret @N - exit loop N and all inner loops
+	jumpPos := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0)
+	fc.activeLoops[targetLoopIndex].EndPatches = append(
+		fc.activeLoops[targetLoopIndex].EndPatches,
+		jumpPos+1,
+	)
 }
 
 func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
