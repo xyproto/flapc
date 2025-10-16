@@ -1774,10 +1774,17 @@ func NewFlapCompiler(machine Machine) (*FlapCompiler, error) {
 }
 
 func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
-	// Use RISC-V64 code generator if target is RISC-V64
+	// Use ARM64 code generator if target is ARM64
 	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG: Machine type = %v (MachineRiscv64 = %v)\n", fc.eb.machine, MachineRiscv64)
+		fmt.Fprintf(os.Stderr, "DEBUG: Machine type = %v\n", fc.eb.machine)
 	}
+	if fc.eb.machine == MachineARM64 {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "-> Using ARM64 code generator\n")
+		}
+		return fc.compileARM64(program, outputPath)
+	}
+	// Use RISC-V64 code generator if target is RISC-V64
 	if fc.eb.machine == MachineRiscv64 {
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "-> Using RISC-V64 code generator\n")
@@ -6158,6 +6165,20 @@ func CompileFlap(inputPath string, outputPath string, machine Machine) error {
 	return nil
 }
 
+// compileARM64 compiles a program for ARM64 architecture (macOS)
+func (fc *FlapCompiler) compileARM64(program *Program, outputPath string) error {
+	// Create ARM64 code generator
+	acg := NewARM64CodeGen(fc.eb)
+
+	// Generate code
+	if err := acg.CompileProgram(program); err != nil {
+		return err
+	}
+
+	// Write Mach-O file
+	return fc.writeMachOARM64(outputPath)
+}
+
 // compileRiscv64 compiles a program for RISC-V64 architecture
 func (fc *FlapCompiler) compileRiscv64(program *Program, outputPath string) error {
 	// Create RISC-V64 code generator
@@ -6170,6 +6191,31 @@ func (fc *FlapCompiler) compileRiscv64(program *Program, outputPath string) erro
 
 	// Write ELF file
 	return fc.writeELFRiscv64(outputPath)
+}
+
+// writeMachOARM64 writes an ARM64 Mach-O executable for macOS
+func (fc *FlapCompiler) writeMachOARM64(outputPath string) error {
+	textBytes := fc.eb.text.Bytes()
+	rodataBytes := fc.eb.rodata.Bytes()
+
+	// Use the existing Mach-O writer infrastructure
+	if err := fc.eb.WriteMachO(); err != nil {
+		return fmt.Errorf("failed to write Mach-O: %v", err)
+	}
+
+	// Write the executable
+	machoBytes := fc.eb.elf.Bytes() // Note: elf buffer is reused for Mach-O
+	if err := os.WriteFile(outputPath, machoBytes, 0755); err != nil {
+		return fmt.Errorf("failed to write executable: %v", err)
+	}
+
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "-> Wrote ARM64 Mach-O executable: %s\n", outputPath)
+		fmt.Fprintf(os.Stderr, "   Text size: %d bytes\n", len(textBytes))
+		fmt.Fprintf(os.Stderr, "   Rodata size: %d bytes\n", len(rodataBytes))
+	}
+
+	return nil
 }
 
 // writeELFRiscv64 writes a RISC-V64 ELF executable
