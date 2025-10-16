@@ -301,3 +301,147 @@ func (o *Out) cmovneX86(dst, src string) {
 
 	fmt.Fprintln(os.Stderr)
 }
+
+// Cmova - Conditional Move if Above (CF=0 and ZF=0) - for unsigned >
+// Used for float comparison result >
+func (o *Out) Cmova(dst, src string) {
+	switch o.machine {
+	case MachineX86_64:
+		o.cmovaX86(dst, src)
+	}
+}
+
+func (o *Out) cmovaX86(dst, src string) {
+	dstReg, dstOk := GetRegister(o.machine, dst)
+	srcReg, srcOk := GetRegister(o.machine, src)
+	if !dstOk || !srcOk {
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "cmova %s, %s: ", dst, src)
+
+	rex := uint8(0x48)
+	if (dstReg.Encoding & 8) != 0 {
+		rex |= 0x04
+	}
+	if (srcReg.Encoding & 8) != 0 {
+		rex |= 0x01
+	}
+	o.Write(rex)
+
+	o.Write(0x0F)
+	o.Write(0x47) // CMOVA opcode
+
+	modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (srcReg.Encoding & 7)
+	o.Write(modrm)
+
+	fmt.Fprintln(os.Stderr)
+}
+
+// Cmovae - Conditional Move if Above or Equal (CF=0) - for unsigned >=
+// Used for float comparison result >=
+func (o *Out) Cmovae(dst, src string) {
+	switch o.machine {
+	case MachineX86_64:
+		o.cmovaeX86(dst, src)
+	}
+}
+
+func (o *Out) cmovaeX86(dst, src string) {
+	dstReg, dstOk := GetRegister(o.machine, dst)
+	srcReg, srcOk := GetRegister(o.machine, src)
+	if !dstOk || !srcOk {
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "cmovae %s, %s: ", dst, src)
+
+	rex := uint8(0x48)
+	if (dstReg.Encoding & 8) != 0 {
+		rex |= 0x04
+	}
+	if (srcReg.Encoding & 8) != 0 {
+		rex |= 0x01
+	}
+	o.Write(rex)
+
+	o.Write(0x0F)
+	o.Write(0x43) // CMOVAE opcode
+
+	modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (srcReg.Encoding & 7)
+	o.Write(modrm)
+
+	fmt.Fprintln(os.Stderr)
+}
+
+// Cmovb - Conditional Move if Below (CF=1) - for unsigned <
+// Used for float comparison result <
+func (o *Out) Cmovb(dst, src string) {
+	switch o.machine {
+	case MachineX86_64:
+		o.cmovbX86(dst, src)
+	}
+}
+
+func (o *Out) cmovbX86(dst, src string) {
+	dstReg, dstOk := GetRegister(o.machine, dst)
+	srcReg, srcOk := GetRegister(o.machine, src)
+	if !dstOk || !srcOk {
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "cmovb %s, %s: ", dst, src)
+
+	rex := uint8(0x48)
+	if (dstReg.Encoding & 8) != 0 {
+		rex |= 0x04
+	}
+	if (srcReg.Encoding & 8) != 0 {
+		rex |= 0x01
+	}
+	o.Write(rex)
+
+	o.Write(0x0F)
+	o.Write(0x42) // CMOVB opcode
+
+	modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (srcReg.Encoding & 7)
+	o.Write(modrm)
+
+	fmt.Fprintln(os.Stderr)
+}
+
+// Cmovbe - Conditional Move if Below or Equal (CF=1 or ZF=1) - for unsigned <=
+// Used for float comparison result <=
+func (o *Out) Cmovbe(dst, src string) {
+	switch o.machine {
+	case MachineX86_64:
+		o.cmovbeX86(dst, src)
+	}
+}
+
+func (o *Out) cmovbeX86(dst, src string) {
+	dstReg, dstOk := GetRegister(o.machine, dst)
+	srcReg, srcOk := GetRegister(o.machine, src)
+	if !dstOk || !srcOk {
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "cmovbe %s, %s: ", dst, src)
+
+	rex := uint8(0x48)
+	if (dstReg.Encoding & 8) != 0 {
+		rex |= 0x04
+	}
+	if (srcReg.Encoding & 8) != 0 {
+		rex |= 0x01
+	}
+	o.Write(rex)
+
+	o.Write(0x0F)
+	o.Write(0x46) // CMOVBE opcode
+
+	modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (srcReg.Encoding & 7)
+	o.Write(modrm)
+
+	fmt.Fprintln(os.Stderr)
+}

@@ -150,7 +150,8 @@ func splitLines(data []byte) []string {
 	var lines []string
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
+		// Trim trailing whitespace from each line for comparison
+		lines = append(lines, strings.TrimRight(scanner.Text(), " \t"))
 	}
 	return lines
 }

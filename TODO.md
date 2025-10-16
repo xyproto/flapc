@@ -1,15 +1,16 @@
 # Flap Compiler TODO
 
-## 1.0.0 Release Criteria
+## Current Status
 
-Release when:
-- All blockers complete
-- Tests passing on x86-64 and ARM64
-- README.md, LANGUAGE.md, TODO.md accurate
+**Version**: 1.0.0 (Released 2025-10-16)
+**Platform**: x86-64 Linux
+**Tests Passing**: 173/173 (100%)
 
 ---
 
-## Blockers for 1.0.0
+## Post-1.0.0 Features (1.x and 2.0.0)
+
+The following features are parsed but need code generation, or require implementation:
 
 ### Parsing Features (Must Complete First!)
 

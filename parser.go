@@ -658,15 +658,20 @@ func (l *LoopStateExpr) expressionNode() {}
 
 // JumpExpr represents a label jump used as an expression (e.g., in match blocks)
 type JumpExpr struct {
-	Label int        // Target label (0 = outer scope, N = loop label)
-	Value Expression // Optional value to return (for @0 value syntax)
+	Label   int        // Target label (0 = outer scope, N = loop label)
+	Value   Expression // Optional value to return (for @0 value syntax)
+	IsBreak bool       // true for ret @N (exit loop), false for @N (continue loop)
 }
 
 func (j *JumpExpr) String() string {
-	if j.Value != nil {
-		return fmt.Sprintf("@%d %s", j.Label, j.Value.String())
+	prefix := "@"
+	if j.IsBreak {
+		prefix = "ret @"
 	}
-	return fmt.Sprintf("@%d", j.Label)
+	if j.Value != nil {
+		return fmt.Sprintf("%s%d %s", prefix, j.Label, j.Value.String())
+	}
+	return fmt.Sprintf("%s%d", prefix, j.Label)
 }
 func (j *JumpExpr) expressionNode() {}
 
@@ -1406,9 +1411,8 @@ func (p *Parser) parseMatchTarget() Expression {
 			p.nextToken()
 		}
 
-		// Return a JumpExpr with IsBreak semantics
-		// Note: JumpExpr doesn't have IsBreak field, but it should behave like ret
-		return &JumpExpr{Label: label, Value: value}
+		// Return a JumpExpr with IsBreak semantics (ret exits loop)
+		return &JumpExpr{Label: label, Value: value, IsBreak: true}
 	case TOKEN_AT_MINUS:
 		if p.loopDepth < 2 {
 			p.error("@- requires at least 2 nested loops")
@@ -1420,7 +1424,7 @@ func (p *Parser) parseMatchTarget() Expression {
 			value = p.parseExpression()
 			p.nextToken()
 		}
-		return &JumpExpr{Label: p.loopDepth - 1, Value: value}
+		return &JumpExpr{Label: p.loopDepth - 1, Value: value, IsBreak: true}
 	case TOKEN_AT_EQUALS:
 		if p.loopDepth < 1 {
 			p.error("@= requires at least 1 loop")
@@ -1432,7 +1436,7 @@ func (p *Parser) parseMatchTarget() Expression {
 			value = p.parseExpression()
 			p.nextToken()
 		}
-		return &JumpExpr{Label: p.loopDepth, Value: value}
+		return &JumpExpr{Label: p.loopDepth, Value: value, IsBreak: false}
 	case TOKEN_AT:
 		p.nextToken() // skip '@'
 		if p.current.Type != TOKEN_NUMBER {
@@ -1444,13 +1448,14 @@ func (p *Parser) parseMatchTarget() Expression {
 		}
 		label := int(labelNum)
 		p.nextToken() // skip label number
-		// Check for optional return value: @0 value
+		// Check for optional return value: @N value
 		var value Expression
 		if p.current.Type != TOKEN_NEWLINE && p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
 			value = p.parseExpression()
 			p.nextToken()
 		}
-		return &JumpExpr{Label: label, Value: value}
+		// @N is continue (jump to top of loop N), not break
+		return &JumpExpr{Label: label, Value: value, IsBreak: false}
 	default:
 		expr := p.parseExpression()
 		p.nextToken()
@@ -2155,7 +2160,7 @@ func (p *Parser) parsePrimary() Expression {
 
 	case TOKEN_AT:
 		// Jump expression: @N [value]
-		// Returns JumpExpr for breaking/continuing loops
+		// Returns JumpExpr for continuing loops (IsBreak=false)
 		p.nextToken() // skip '@'
 		if p.current.Type != TOKEN_NUMBER {
 			p.error("expected number after @")
@@ -2168,7 +2173,7 @@ func (p *Parser) parsePrimary() Expression {
 			value = p.parseExpression()
 			p.nextToken()
 		}
-		return &JumpExpr{Label: label, Value: value}
+		return &JumpExpr{Label: label, Value: value, IsBreak: false}
 	}
 
 	return nil
@@ -4488,8 +4493,8 @@ func (fc *FlapCompiler) compileMatchDefault(result Expression) {
 }
 
 func (fc *FlapCompiler) compileMatchJump(jumpExpr *JumpExpr) {
-	// Handle ret (Label=0) - return from function
-	if jumpExpr.Label == 0 {
+	// Handle ret (Label=0, IsBreak=true) - return from function
+	if jumpExpr.Label == 0 && jumpExpr.IsBreak {
 		// Return from function
 		if jumpExpr.Value != nil {
 			fc.compileExpression(jumpExpr.Value)
@@ -4503,7 +4508,11 @@ func (fc *FlapCompiler) compileMatchJump(jumpExpr *JumpExpr) {
 
 	// Handle ret @N or @N - loop control
 	if len(fc.activeLoops) == 0 {
-		fmt.Fprintf(os.Stderr, "Error: ret @%d used outside of loop in match expression\n", jumpExpr.Label)
+		keyword := "@"
+		if jumpExpr.IsBreak {
+			keyword = "ret"
+		}
+		fmt.Fprintf(os.Stderr, "Error: %s @%d used outside of loop in match expression\n", keyword, jumpExpr.Label)
 		os.Exit(1)
 	}
 
@@ -4517,18 +4526,32 @@ func (fc *FlapCompiler) compileMatchJump(jumpExpr *JumpExpr) {
 	}
 
 	if targetLoopIndex == -1 {
-		fmt.Fprintf(os.Stderr, "Error: ret @%d references loop @%d which is not active\n",
-			jumpExpr.Label, jumpExpr.Label)
+		keyword := "@"
+		if jumpExpr.IsBreak {
+			keyword = "ret"
+		}
+		fmt.Fprintf(os.Stderr, "Error: %s @%d references loop @%d which is not active\n",
+			keyword, jumpExpr.Label, jumpExpr.Label)
 		os.Exit(1)
 	}
 
-	// ret @N - exit loop N and all inner loops
-	jumpPos := fc.eb.text.Len()
-	fc.out.JumpUnconditional(0)
-	fc.activeLoops[targetLoopIndex].EndPatches = append(
-		fc.activeLoops[targetLoopIndex].EndPatches,
-		jumpPos+1,
-	)
+	if jumpExpr.IsBreak {
+		// ret @N - exit loop N and all inner loops
+		jumpPos := fc.eb.text.Len()
+		fc.out.JumpUnconditional(0)
+		fc.activeLoops[targetLoopIndex].EndPatches = append(
+			fc.activeLoops[targetLoopIndex].EndPatches,
+			jumpPos+1,
+		)
+	} else {
+		// @N - continue loop N (jump to continue point)
+		jumpPos := fc.eb.text.Len()
+		fc.out.JumpUnconditional(0)
+		fc.activeLoops[targetLoopIndex].ContinuePatches = append(
+			fc.activeLoops[targetLoopIndex].ContinuePatches,
+			jumpPos+1,
+		)
+	}
 }
 
 func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {

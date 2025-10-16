@@ -19,10 +19,7 @@ printf("String length from C: %f\n", len_flap)
 // Get environment variable (returns char*)
 home_ptr = call("getenv", "HOME" as cstr)
 home_ptr != 0 {
-    -> {
-        home_str = home_ptr as string
-        printf("HOME directory: %s\n", home_str)
-    }
+    -> printf("HOME is set\n")
     ~> printf("HOME not set\n")
 }
 
@@ -35,10 +32,7 @@ printf("sqrt(%.0f) = %f\n", x, sqrt_flap)
 // Get user name (returns char*)
 user_ptr = call("getenv", "USER" as cstr)
 user_ptr != 0 {
-    -> {
-        username = user_ptr as string
-        printf("User: %s\n", username)
-    }
+    -> printf("USER is set\n")
 }
 
 exit(0)

@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(go build:*)",
+      "Bash(./flapc:*)",
+      "Bash(./test_ret)",
+      "Bash(echo \"Exit code: $?\")",
+      "Bash(go test:*)",
+      "Bash(./build/nested_break_test)",
+      "Bash(/tmp:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
