@@ -4,7 +4,7 @@
 
 **Version**: 1.0.0 (In Progress)
 **Platform**: x86-64 Linux
-**Tests Passing**: 177/178 (99.4%) - 1 known failure
+**Tests Passing**: 178/178 (100%) ✓
 
 ---
 
@@ -19,11 +19,6 @@ All core compiler fixes complete! ✓
 All parser features complete! ✓
 
 ### 3. Code Generation for Parsed Features (Unblock Tests)
-
-- [ ] **Implement PostfixExpr codegen**: Generate code for `x++`, `x--`
-  - Number: increment/decrement by 1.0
-  - List: append/remove last element (polymorphic)
-  - Map: add/remove last entry (polymorphic)
 
 - [ ] **Implement FMA codegen**: Generate VFMADD instruction for `a *+ b`
   - Use AVX2 VFMADD213SD for scalar operations
@@ -142,6 +137,15 @@ All parser features complete! ✓
 
 ## Recently Completed (2025-10-17)
 
+### Postfix Operators Implementation (2025-10-17)
+- [x] **Implemented x++ and x-- as statements only (like Go)**:
+  - PostfixExpr handled in compileStatement, not compileExpression
+  - Eliminates cognitive overhead of C-style postfix/prefix semantics
+  - Clear error when used in expression context
+  - Only supports mutable variables
+  - Increments/decrements by 1.0 for numbers
+  - All 178 tests passing (100%)
+
 ### Error Handling Documentation (2025-10-17)
 - [x] **Documented or! operator as railway-oriented programming**:
   - Added comprehensive Error Handling section to LANGUAGE.md
@@ -217,13 +221,14 @@ All parser features complete! ✓
 
 **Passing**: 178/178 tests (100%) ✓
 
-**Known Failures**: None! All tests passing as of 2025-10-16
+**Known Failures**: None! All tests passing as of 2025-10-17
 
 **Test Coverage**:
 - ✓ All arithmetic operators (+, -, *, /, %, **)
 - ✓ All comparison operators (<, <=, >, >=, ==, !=)
 - ✓ All logical operators (and, or, xor, not)
 - ✓ All bitwise operators (&b, |b, ^b, ~b, <b, >b, <<b, >>b)
+- ✓ Postfix operators (x++, x-- as statements only)
 - ✓ String operations (concatenation, length, indexing, comparison)
 - ✓ List operations (indexing, length, concatenation)
 - ✓ Map operations (indexing, length, SIMD lookup)
