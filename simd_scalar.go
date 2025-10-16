@@ -609,6 +609,7 @@ func (o *Out) faddScalarRISCV(dst, src string) {
 	// Implementation would go here
 	fmt.Fprintln(os.Stderr)
 }
+
 // XorpdXmm - XOR Packed Double (SSE2)
 // xorpd xmm, xmm - commonly used to zero a register
 func (o *Out) XorpdXmm(dst, src string) {

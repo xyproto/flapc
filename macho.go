@@ -8,10 +8,10 @@ import (
 
 // Mach-O constants
 const (
-	MH_MAGIC_64       = 0xfeedfacf // 64-bit magic number
-	MH_CIGAM_64       = 0xcffaedfe // NXSwapInt(MH_MAGIC_64)
-	CPU_TYPE_X86_64   = 0x01000007 // x86_64
-	CPU_TYPE_ARM64    = 0x0100000c // ARM64
+	MH_MAGIC_64            = 0xfeedfacf // 64-bit magic number
+	MH_CIGAM_64            = 0xcffaedfe // NXSwapInt(MH_MAGIC_64)
+	CPU_TYPE_X86_64        = 0x01000007 // x86_64
+	CPU_TYPE_ARM64         = 0x0100000c // ARM64
 	CPU_SUBTYPE_X86_64_ALL = 0x00000003
 	CPU_SUBTYPE_ARM64_ALL  = 0x00000000
 
@@ -19,23 +19,23 @@ const (
 	MH_EXECUTE = 0x2 // Executable file
 
 	// Flags
-	MH_NOUNDEFS                = 0x1
-	MH_DYLDLINK                = 0x4
-	MH_PIE                     = 0x200000
-	MH_TWOLEVEL                = 0x80
+	MH_NOUNDEFS = 0x1
+	MH_DYLDLINK = 0x4
+	MH_PIE      = 0x200000
+	MH_TWOLEVEL = 0x80
 
 	// Load commands
-	LC_SEGMENT_64     = 0x19
-	LC_SYMTAB         = 0x2
-	LC_DYSYMTAB       = 0xb
-	LC_LOAD_DYLINKER  = 0xe
-	LC_UUID           = 0x1b
+	LC_SEGMENT_64         = 0x19
+	LC_SYMTAB             = 0x2
+	LC_DYSYMTAB           = 0xb
+	LC_LOAD_DYLINKER      = 0xe
+	LC_UUID               = 0x1b
 	LC_VERSION_MIN_MACOSX = 0x24
-	LC_SOURCE_VERSION = 0x2A
-	LC_MAIN           = 0x80000028
-	LC_LOAD_DYLIB     = 0xc
-	LC_FUNCTION_STARTS = 0x26
-	LC_DATA_IN_CODE   = 0x29
+	LC_SOURCE_VERSION     = 0x2A
+	LC_MAIN               = 0x80000028
+	LC_LOAD_DYLIB         = 0xc
+	LC_FUNCTION_STARTS    = 0x26
+	LC_DATA_IN_CODE       = 0x29
 
 	// Protection flags
 	VM_PROT_NONE    = 0x00
@@ -44,12 +44,12 @@ const (
 	VM_PROT_EXECUTE = 0x04
 
 	// Section types
-	S_REGULAR              = 0x0
-	S_ZEROFILL             = 0x1
-	S_CSTRING_LITERALS     = 0x2
-	S_4BYTE_LITERALS       = 0x3
-	S_8BYTE_LITERALS       = 0x4
-	S_LITERAL_POINTERS     = 0x5
+	S_REGULAR          = 0x0
+	S_ZEROFILL         = 0x1
+	S_CSTRING_LITERALS = 0x2
+	S_4BYTE_LITERALS   = 0x3
+	S_8BYTE_LITERALS   = 0x4
+	S_LITERAL_POINTERS = 0x5
 
 	// Section attributes
 	S_ATTR_PURE_INSTRUCTIONS = 0x80000000
@@ -190,9 +190,9 @@ type SourceVersionCommand struct {
 
 // LinkEditDataCommand represents function starts / data in code load command
 type LinkEditDataCommand struct {
-	Cmd     uint32
-	CmdSize uint32
-	DataOff uint32
+	Cmd      uint32
+	CmdSize  uint32
+	DataOff  uint32
 	DataSize uint32
 }
 
@@ -225,10 +225,10 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	rodataSizeAligned := (rodataSize + pageSize - 1) &^ (pageSize - 1)
 
 	// Calculate addresses
-	textAddr := pageSize                    // __TEXT segment starts at one page
-	textSectAddr := textAddr               // __text section
+	textAddr := pageSize     // __TEXT segment starts at one page
+	textSectAddr := textAddr // __text section
 	rodataAddr := textAddr + textSizeAligned
-	rodataSectAddr := rodataAddr           // __rodata section
+	rodataSectAddr := rodataAddr // __rodata section
 
 	// Build load commands in a temporary buffer
 	var loadCmdsBuf bytes.Buffer

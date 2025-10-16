@@ -123,15 +123,15 @@ func (a *ARM64Out) MovImm64(dest string, imm uint64) error {
 	a.encodeInstr(instr)
 
 	// MOVK for each subsequent 16-bit chunk
-	if (imm >> 16) & 0xffff != 0 {
+	if (imm>>16)&0xffff != 0 {
 		instr = uint32(0xf2a00000) | (uint32((imm>>16)&0xffff) << 5) | rd
 		a.encodeInstr(instr)
 	}
-	if (imm >> 32) & 0xffff != 0 {
+	if (imm>>32)&0xffff != 0 {
 		instr = uint32(0xf2c00000) | (uint32((imm>>32)&0xffff) << 5) | rd
 		a.encodeInstr(instr)
 	}
-	if (imm >> 48) & 0xffff != 0 {
+	if (imm>>48)&0xffff != 0 {
 		instr = uint32(0xf2e00000) | (uint32((imm>>48)&0xffff) << 5) | rd
 		a.encodeInstr(instr)
 	}

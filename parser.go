@@ -538,7 +538,7 @@ func (u *UnaryExpr) expressionNode() {}
 
 // PostfixExpr: expr++, expr-- (increment/decrement after evaluation)
 type PostfixExpr struct {
-	Operator string     // "++", "--"
+	Operator string // "++", "--"
 	Operand  Expression
 }
 
@@ -1393,8 +1393,8 @@ func (p *Parser) parseErrorHandling() Expression {
 
 	// or! is right-associative and very low precedence
 	if p.peek.Type == TOKEN_OR_BANG {
-		p.nextToken() // move to left
-		p.nextToken() // skip 'or!'
+		p.nextToken()                   // move to left
+		p.nextToken()                   // skip 'or!'
 		right := p.parseErrorHandling() // right-associative recursion
 		return &BinaryExpr{Left: left, Operator: "or!", Right: right}
 	}

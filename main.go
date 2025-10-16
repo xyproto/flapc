@@ -90,7 +90,7 @@ type ExecutableBuilder struct {
 	labels                  map[string]int // Maps label names to their offsets in .text
 	dynlinker               *DynamicLinker
 	useDynamicLinking       bool
-	useMachO                bool   // Use Mach-O format (macOS) instead of ELF
+	useMachO                bool // Use Mach-O format (macOS) instead of ELF
 	neededFunctions         []string
 	pcRelocations           []PCRelocation
 	callPatches             []CallPatch

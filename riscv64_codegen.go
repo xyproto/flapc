@@ -6,10 +6,10 @@ import (
 
 // RiscvCodeGen handles RISC-V64 code generation
 type RiscvCodeGen struct {
-	out        *RiscvOut
-	eb         *ExecutableBuilder
-	stackVars  map[string]int  // variable name -> stack offset from fp
-	stackSize  int             // current stack size
+	out       *RiscvOut
+	eb        *ExecutableBuilder
+	stackVars map[string]int // variable name -> stack offset from fp
+	stackSize int            // current stack size
 }
 
 // NewRiscvCodeGen creates a new RISC-V64 code generator
