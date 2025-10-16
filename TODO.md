@@ -29,10 +29,12 @@
 
 ### 3. Code Generation for Parsed Features (Unblock Tests)
 
-- [ ] **Implement CastExpr codegen**: Generate code for `x as i32`, `ptr as ptr`, etc.
-  - Support all cast types: i8-i64, u8-u64, f32-f64, cstr, ptr
-  - Support conversions: number, string, list
-  - Test with test_ffi_from_c.flap and test_ffi_malloc.flap
+- [x] **Implement CastExpr codegen**: Generate code for `x as i32`, `ptr as ptr`, etc. (2025-10-16) ✓
+  - Support all cast types: i8-i64, u8-u64, f32-f64, cstr, ptr, number
+  - Integer casts: truncate float64 to integer
+  - cstr conversion: flap_string_to_cstr runtime function
+  - Tested with test_ffi_from_c.flap and test_ffi_malloc.flap
+  - Note: 'as string' and 'as list' (C→Flap) not yet needed
 
 - [ ] **Implement SliceExpr codegen**: Generate code for `list[start:end:step]`
   - Support all slice variants: [start:], [:end], [::step], [start:end:step]
@@ -249,7 +251,7 @@
 - ✓ Lambda expressions (single/multiple params, closures)
 - ✓ Math functions (sqrt, sin, cos, tan, log, exp, abs, floor, ceil, round)
 - ✓ FFI (call(), read_TYPE, write_TYPE, string-to-C conversion)
-- ⚠️ Type casting (parsing complete, codegen pending)
+- ✓ Type casting (i8-i64, u8-u64, f32-f64, cstr, ptr, number)
 
 ---
 
