@@ -7750,6 +7750,43 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// rax = return code (0 on success)
 		fc.out.Cvtsi2sd("xmm0", "rax")
 
+	case "sizeof_i8", "sizeof_u8":
+		// sizeof_i8() / sizeof_u8() - Return size of 8-bit integer (1 byte)
+		if len(call.Args) != 0 {
+			fmt.Fprintf(os.Stderr, "Error: %s() takes no arguments\n", call.Function)
+			os.Exit(1)
+		}
+		// Load 1.0 into xmm0
+		fc.out.MovImmToReg("rax", "1")
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "sizeof_i16", "sizeof_u16":
+		// sizeof_i16() / sizeof_u16() - Return size of 16-bit integer (2 bytes)
+		if len(call.Args) != 0 {
+			fmt.Fprintf(os.Stderr, "Error: %s() takes no arguments\n", call.Function)
+			os.Exit(1)
+		}
+		fc.out.MovImmToReg("rax", "2")
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "sizeof_i32", "sizeof_u32", "sizeof_f32":
+		// sizeof_i32() / sizeof_u32() / sizeof_f32() - Return size (4 bytes)
+		if len(call.Args) != 0 {
+			fmt.Fprintf(os.Stderr, "Error: %s() takes no arguments\n", call.Function)
+			os.Exit(1)
+		}
+		fc.out.MovImmToReg("rax", "4")
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "sizeof_i64", "sizeof_u64", "sizeof_f64", "sizeof_ptr":
+		// sizeof_i64() / sizeof_u64() / sizeof_f64() / sizeof_ptr() - Return size (8 bytes)
+		if len(call.Args) != 0 {
+			fmt.Fprintf(os.Stderr, "Error: %s() takes no arguments\n", call.Function)
+			os.Exit(1)
+		}
+		fc.out.MovImmToReg("rax", "8")
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
 	default:
 		// Unknown function - track it for dependency resolution
 		fc.unknownFunctions[call.Function] = true
