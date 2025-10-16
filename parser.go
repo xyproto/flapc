@@ -6867,11 +6867,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Compile pointer (arg 0) - result in xmm0
 		fc.compileExpression(call.Args[0])
-		// Convert pointer bits to integer in r10
-		fc.out.SubImmFromReg("rsp", 8)
-		fc.out.MovXmmToMem("xmm0", "rsp", 0)
-		fc.out.MovMemToReg("r10", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 8)
+		// Convert pointer bits to integer in r10 using movq
+		// movq r10, xmm0 = 66 49 0f 7e c2
+		fc.out.Emit([]byte{0x66, 0x49, 0x0f, 0x7e, 0xc2})
 
 		// Compile index (arg 1) - result in xmm0
 		fc.compileExpression(call.Args[1])
@@ -6950,11 +6948,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Compile pointer (arg 0) - result in xmm0
 		fc.compileExpression(call.Args[0])
-		// Convert pointer bits to integer in r10
-		fc.out.SubImmFromReg("rsp", 8)
-		fc.out.MovXmmToMem("xmm0", "rsp", 0)
-		fc.out.MovMemToReg("r10", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 8)
+		// Convert pointer bits to integer in r10 using movq
+		// movq r10, xmm0 = 66 49 0f 7e c2
+		fc.out.Emit([]byte{0x66, 0x49, 0x0f, 0x7e, 0xc2})
 
 		// Compile index (arg 1) - result in xmm0
 		fc.compileExpression(call.Args[1])
