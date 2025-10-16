@@ -662,6 +662,21 @@ func (l *LambdaExpr) String() string {
 }
 func (l *LambdaExpr) expressionNode() {}
 
+// MultiLambdaExpr: multiple lambda dispatch based on argument count
+// Example: f = (x) -> x, (x, y) -> x + y
+type MultiLambdaExpr struct {
+	Lambdas []*LambdaExpr
+}
+
+func (m *MultiLambdaExpr) String() string {
+	parts := make([]string, len(m.Lambdas))
+	for i, lambda := range m.Lambdas {
+		parts[i] = lambda.String()
+	}
+	return strings.Join(parts, ", ")
+}
+func (m *MultiLambdaExpr) expressionNode() {}
+
 type ParallelExpr struct {
 	List      Expression // The list/data to operate on
 	Operation Expression // The lambda or function to apply
@@ -981,6 +996,27 @@ func (p *Parser) parseAssignment() *AssignStmt {
 	mutable := p.current.Type == TOKEN_COLON_EQUALS
 	p.nextToken() // skip '=' or ':='
 	value := p.parseExpression()
+
+	// Check for multiple lambda dispatch: f = (x) -> x, (y) -> y + 1
+	if lambda, ok := value.(*LambdaExpr); ok && p.peek.Type == TOKEN_COMMA {
+		lambdas := []*LambdaExpr{lambda}
+
+		for p.peek.Type == TOKEN_COMMA {
+			p.nextToken() // move to comma
+			p.nextToken() // skip comma
+
+			nextExpr := p.parseExpression()
+			if nextLambda, ok := nextExpr.(*LambdaExpr); ok {
+				lambdas = append(lambdas, nextLambda)
+			} else {
+				p.error("expected lambda expression after comma in multiple lambda dispatch")
+			}
+		}
+
+		// Wrap in MultiLambdaExpr
+		value = &MultiLambdaExpr{Lambdas: lambdas}
+	}
+
 	return &AssignStmt{Name: name, Value: value, Mutable: mutable}
 }
 
