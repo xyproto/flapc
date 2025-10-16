@@ -393,9 +393,10 @@ type Statement interface {
 }
 
 type AssignStmt struct {
-	Name    string
-	Value   Expression
-	Mutable bool // true for :=, false for =
+	Name      string
+	Value     Expression
+	Mutable   bool   // true for :=, false for =
+	Precision string // Type annotation: "b64", "f32", etc. (empty if none)
 }
 
 func (a *AssignStmt) String() string {
@@ -403,10 +404,14 @@ func (a *AssignStmt) String() string {
 	if a.Mutable {
 		op = ":="
 	}
-	if a.Value == nil {
-		return a.Name + " " + op + " <nil>"
+	result := a.Name
+	if a.Precision != "" {
+		result += ":" + a.Precision
 	}
-	return a.Name + " " + op + " " + a.Value.String()
+	if a.Value == nil {
+		return result + " " + op + " <nil>"
+	}
+	return result + " " + op + " " + a.Value.String()
 }
 func (a *AssignStmt) statementNode() {}
 
@@ -1003,6 +1008,19 @@ func (p *Parser) parseStatement() Statement {
 func (p *Parser) parseAssignment() *AssignStmt {
 	name := p.current.Value
 	p.nextToken() // skip identifier
+
+	// Check for type annotation: name:bNN or name:fNN
+	var precision string
+	if p.current.Type == TOKEN_COLON && p.peek.Type == TOKEN_IDENT {
+		p.nextToken() // skip ':'
+		precision = p.current.Value
+		// Validate precision format (bNN or fNN where NN is a number)
+		if len(precision) < 2 || (precision[0] != 'b' && precision[0] != 'f') {
+			p.error("invalid precision format: expected bNN or fNN (e.g., b64, f32)")
+		}
+		p.nextToken() // skip precision identifier
+	}
+
 	mutable := p.current.Type == TOKEN_COLON_EQUALS
 	p.nextToken() // skip '=' or ':='
 	value := p.parseExpression()
@@ -1027,7 +1045,7 @@ func (p *Parser) parseAssignment() *AssignStmt {
 		value = &MultiLambdaExpr{Lambdas: lambdas}
 	}
 
-	return &AssignStmt{Name: name, Value: value, Mutable: mutable}
+	return &AssignStmt{Name: name, Value: value, Mutable: mutable, Precision: precision}
 }
 
 func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
