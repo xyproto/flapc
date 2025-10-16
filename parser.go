@@ -6844,6 +6844,196 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Clean up
 		fc.out.AddImmToReg("rsp", 32)
 
+	case "write_i8", "write_i16", "write_i32", "write_i64",
+		"write_u8", "write_u16", "write_u32", "write_u64", "write_f64":
+		// FFI memory write: write_TYPE(ptr, index, value)
+		if len(call.Args) != 3 {
+			fmt.Fprintf(os.Stderr, "Error: %s() requires exactly 3 arguments (ptr, index, value)\n", call.Function)
+			os.Exit(1)
+		}
+
+		// Determine type size
+		var typeSize int
+		switch call.Function {
+		case "write_i8", "write_u8":
+			typeSize = 1
+		case "write_i16", "write_u16":
+			typeSize = 2
+		case "write_i32", "write_u32":
+			typeSize = 4
+		case "write_i64", "write_u64", "write_f64":
+			typeSize = 8
+		}
+
+		// Compile pointer (arg 0) - result in xmm0
+		fc.compileExpression(call.Args[0])
+		// Convert pointer bits to integer in r10
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovMemToReg("r10", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 8)
+
+		// Compile index (arg 1) - result in xmm0
+		fc.compileExpression(call.Args[1])
+		// Convert index to integer in r11
+		fc.out.Cvttsd2si("r11", "xmm0")
+
+		// Calculate address: r10 + (r11 * typeSize)
+		if typeSize > 1 {
+			// Multiply index by type size: rax = r11 * typeSize
+			fc.out.MovImmToReg("rax", fmt.Sprintf("%d", typeSize))
+			fc.out.Emit([]byte{0x49, 0x0f, 0xaf, 0xc3}) // imul rax, r11 (rax = rax * r11)
+			// Add to base pointer: r10 = r10 + rax
+			fc.out.Emit([]byte{0x49, 0x01, 0xc2}) // add r10, rax
+		} else {
+			// If typeSize == 1, r10 = r10 + r11 directly
+			fc.out.Emit([]byte{0x4d, 0x01, 0xda}) // add r10, r11
+		}
+
+		// Compile value (arg 2) - result in xmm0
+		fc.compileExpression(call.Args[2])
+
+		// Write value to memory
+		if call.Function == "write_f64" {
+			// Write float64 directly
+			fc.out.MovXmmToMem("xmm0", "r10", 0)
+		} else {
+			// Convert to integer and write
+			fc.out.Cvttsd2si("rax", "xmm0")
+			switch typeSize {
+			case 1:
+				fc.out.MovByteRegToMem("rax", "r10", 0)
+			case 2:
+				// mov word [r10], ax
+				fc.out.Write(0x66)       // 16-bit operand prefix
+				fc.out.Write(0x41)       // REX prefix for r10
+				fc.out.Write(0x89)       // mov r/m16, r16
+				fc.out.Write(0x02)       // ModR/M: [r10]
+			case 4:
+				// mov dword [r10], eax
+				fc.out.Write(0x41)       // REX prefix for r10
+				fc.out.Write(0x89)       // mov r/m32, r32
+				fc.out.Write(0x02)       // ModR/M: [r10]
+			case 8:
+				// mov qword [r10], rax
+				fc.out.MovRegToMem("rax", "r10", 0)
+			}
+		}
+
+		// Return 0 (these functions don't return values)
+		fc.out.XorRegWithReg("rax", "rax")
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "read_i8", "read_i16", "read_i32", "read_i64",
+		"read_u8", "read_u16", "read_u32", "read_u64", "read_f64":
+		// FFI memory read: read_TYPE(ptr, index) -> value
+		if len(call.Args) != 2 {
+			fmt.Fprintf(os.Stderr, "Error: %s() requires exactly 2 arguments (ptr, index)\n", call.Function)
+			os.Exit(1)
+		}
+
+		// Determine type size and signed/unsigned
+		var typeSize int
+		isSigned := strings.HasPrefix(call.Function, "read_i")
+		isFloat := call.Function == "read_f64"
+
+		switch call.Function {
+		case "read_i8", "read_u8":
+			typeSize = 1
+		case "read_i16", "read_u16":
+			typeSize = 2
+		case "read_i32", "read_u32":
+			typeSize = 4
+		case "read_i64", "read_u64", "read_f64":
+			typeSize = 8
+		}
+
+		// Compile pointer (arg 0) - result in xmm0
+		fc.compileExpression(call.Args[0])
+		// Convert pointer bits to integer in r10
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovMemToReg("r10", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 8)
+
+		// Compile index (arg 1) - result in xmm0
+		fc.compileExpression(call.Args[1])
+		// Convert index to integer in r11
+		fc.out.Cvttsd2si("r11", "xmm0")
+
+		// Calculate address: r10 + (r11 * typeSize)
+		if typeSize > 1 {
+			// Multiply index by type size: rax = r11 * typeSize
+			fc.out.MovImmToReg("rax", fmt.Sprintf("%d", typeSize))
+			fc.out.Emit([]byte{0x49, 0x0f, 0xaf, 0xc3}) // imul rax, r11 (rax = rax * r11)
+			// Add to base pointer: r10 = r10 + rax
+			fc.out.Emit([]byte{0x49, 0x01, 0xc2}) // add r10, rax
+		} else {
+			// If typeSize == 1, r10 = r10 + r11 directly
+			fc.out.Emit([]byte{0x4d, 0x01, 0xda}) // add r10, r11
+		}
+
+		// Read value from memory
+		if isFloat {
+			// Read float64 directly
+			fc.out.MovMemToXmm("xmm0", "r10", 0)
+		} else {
+			// Read integer and convert
+			switch typeSize {
+			case 1:
+				if isSigned {
+					// movsx rax, byte [r10]
+					fc.out.Write(0x49)       // REX.W + REX.B
+					fc.out.Write(0x0f)       // Two-byte opcode
+					fc.out.Write(0xbe)       // movsx
+					fc.out.Write(0x02)       // ModR/M: [r10]
+				} else {
+					// movzx rax, byte [r10]
+					fc.out.Write(0x49)       // REX.W + REX.B
+					fc.out.Write(0x0f)       // Two-byte opcode
+					fc.out.Write(0xb6)       // movzx
+					fc.out.Write(0x02)       // ModR/M: [r10]
+				}
+			case 2:
+				if isSigned {
+					// movsx rax, word [r10]
+					fc.out.Write(0x49)       // REX.W + REX.B
+					fc.out.Write(0x0f)       // Two-byte opcode
+					fc.out.Write(0xbf)       // movsx
+					fc.out.Write(0x02)       // ModR/M: [r10]
+				} else {
+					// movzx rax, word [r10]
+					fc.out.Write(0x49)       // REX.W + REX.B
+					fc.out.Write(0x0f)       // Two-byte opcode
+					fc.out.Write(0xb7)       // movzx
+					fc.out.Write(0x02)       // ModR/M: [r10]
+				}
+			case 4:
+				if isSigned {
+					// movsxd rax, dword [r10]
+					fc.out.Write(0x49)       // REX.W + REX.B
+					fc.out.Write(0x63)       // movsxd
+					fc.out.Write(0x02)       // ModR/M: [r10]
+				} else {
+					// mov eax, dword [r10] (zero extends to rax)
+					fc.out.Write(0x41)       // REX.B for r10
+					fc.out.Write(0x8b)       // mov
+					fc.out.Write(0x02)       // ModR/M: [r10]
+				}
+			case 8:
+				// mov rax, qword [r10]
+				fc.out.MovMemToReg("rax", "r10", 0)
+			}
+			// Convert integer to float64
+			if isSigned {
+				fc.out.Cvtsi2sd("xmm0", "rax")
+			} else {
+				// For unsigned, need special handling for large values
+				// For simplicity, just use signed conversion (works for values < 2^63)
+				fc.out.Cvtsi2sd("xmm0", "rax")
+			}
+		}
+
 	case "call":
 		// FFI: call(function_name, args...)
 		// First argument must be a string literal (function name)
