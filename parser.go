@@ -1005,6 +1005,54 @@ func (p *Parser) parseStatement() Statement {
 	return nil
 }
 
+// tryParseNonParenLambda attempts to parse a lambda without parentheses: x -> expr or x y -> expr
+// Returns nil if current position doesn't look like a lambda
+func (p *Parser) tryParseNonParenLambda() Expression {
+	if p.current.Type != TOKEN_IDENT {
+		return nil
+	}
+
+	// Single param: x ->
+	firstParam := p.current.Value
+	if p.peek.Type == TOKEN_ARROW {
+		p.nextToken() // skip param
+		p.nextToken() // skip '->'
+		body := p.parseLambdaBody()
+		return &LambdaExpr{Params: []string{firstParam}, Body: body}
+	}
+
+	// Multi param: x y z ->
+	// We need to check if peek is identifier and look for -> further ahead
+	if p.peek.Type != TOKEN_IDENT {
+		return nil
+	}
+
+	// Collect parameters until we find -> or something else
+	params := []string{firstParam}
+	p.nextToken() // move to second param
+
+	for p.current.Type == TOKEN_IDENT {
+		params = append(params, p.current.Value)
+		if p.peek.Type == TOKEN_ARROW {
+			// Found the arrow! This is a lambda
+			p.nextToken() // skip last param
+			p.nextToken() // skip '->'
+			body := p.parseLambdaBody()
+			return &LambdaExpr{Params: params, Body: body}
+		}
+		if p.peek.Type != TOKEN_IDENT {
+			// We have multiple identifiers but no arrow following
+			// This is ambiguous syntax - error out
+			p.error(fmt.Sprintf("expected '->' after lambda parameters (%s), got %v", strings.Join(params, " "), p.peek.Type))
+		}
+		p.nextToken()
+	}
+
+	// Shouldn't reach here
+	p.error("unexpected end of lambda parameter list")
+	return nil
+}
+
 func (p *Parser) parseAssignment() *AssignStmt {
 	name := p.current.Value
 	p.nextToken() // skip identifier
@@ -1023,7 +1071,17 @@ func (p *Parser) parseAssignment() *AssignStmt {
 
 	mutable := p.current.Type == TOKEN_COLON_EQUALS
 	p.nextToken() // skip '=' or ':='
-	value := p.parseExpression()
+
+	// Check for non-parenthesized lambda: x -> expr or x y -> expr
+	var value Expression
+	if p.current.Type == TOKEN_IDENT {
+		value = p.tryParseNonParenLambda()
+		if value == nil {
+			value = p.parseExpression()
+		}
+	} else {
+		value = p.parseExpression()
+	}
 
 	// Check for multiple lambda dispatch: f = (x) -> x, (y) -> y + 1
 	if lambda, ok := value.(*LambdaExpr); ok && p.peek.Type == TOKEN_COMMA {
@@ -1033,7 +1091,17 @@ func (p *Parser) parseAssignment() *AssignStmt {
 			p.nextToken() // move to comma
 			p.nextToken() // skip comma
 
-			nextExpr := p.parseExpression()
+			// Try non-parenthesized lambda first
+			var nextExpr Expression
+			if p.current.Type == TOKEN_IDENT {
+				nextExpr = p.tryParseNonParenLambda()
+				if nextExpr == nil {
+					nextExpr = p.parseExpression()
+				}
+			} else {
+				nextExpr = p.parseExpression()
+			}
+
 			if nextLambda, ok := nextExpr.(*LambdaExpr); ok {
 				lambdas = append(lambdas, nextLambda)
 			} else {
