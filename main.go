@@ -603,12 +603,10 @@ func (eb *ExecutableBuilder) patchTextInELF() {
 	textSize := len(newText)
 
 	// Replace the text section
-	fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: Copying %d bytes of regenerated code at ELF offset 0x%x\n", textSize, textOffset)
 	copy(elfBuf[textOffset:textOffset+textSize], newText)
 
-	// Rebuild the ELF buffer
-	eb.elf.Reset()
-	eb.elf.Write(elfBuf)
+	// No need to rebuild - elfBuf is a slice of eb.elf's internal buffer,
+	// so modifications to elfBuf are already reflected in eb.elf
 }
 
 // Global flags for controlling output verbosity and dependencies

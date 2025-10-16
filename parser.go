@@ -3155,6 +3155,9 @@ func (fc *FlapCompiler) getExprType(expr Expression) string {
 		}
 		// Other functions return numbers by default
 		return "number"
+	case *SliceExpr:
+		// Slicing preserves the type of the list
+		return fc.getExprType(e.List)
 	default:
 		return "unknown"
 	}
@@ -5157,8 +5160,8 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Allocate memory for new string: 8 + (length * 16) bytes
 	fc.out.MovRegToReg("rax", "r15")
-	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x04}) // shl rax, 4 (multiply by 16)
-	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x08}) // add rax, 8
+	fc.out.ShlRegImm("rax", "4") // shl rax, 4 (multiply by 16)
+	fc.out.AddImmToReg("rax", 8)  // add rax, 8
 	fc.out.MovRegToReg("rdi", "rax")
 	fc.trackFunctionCall("malloc")
 	fc.eb.GenerateCallInstruction("malloc")
@@ -5174,44 +5177,59 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	fc.eb.MarkLabel("_slice_copy_loop")
 	sliceLoopStart := fc.eb.text.Len() // Track actual loop start position
-	// Check if rcx < length
+
+	// Check if rcx >= length (exit loop if true)
 	fc.out.CmpRegToReg("rcx", "r15")
-	fc.out.Emit([]byte{0x73, 0x00}) // jae +X (will patch)
-	loopExitPatchPos := fc.eb.text.Len() - 1
+	loopExitJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpAboveOrEqual, 0) // Placeholder, will patch later
 
 	// Calculate source index: source_idx = start + rcx
 	fc.out.MovRegToReg("rax", "r13")
 	fc.out.AddRegToReg("rax", "rcx") // rax = start + i
 
-	// Load key from original string: [r12 + 8 + (source_idx * 16)]
-	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x04}) // shl rax, 4
-	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x08}) // add rax, 8
-	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x10, 0x04, 0x04}) // movsd xmm0, [r12 + rax] (key)
-	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x10, 0x4c, 0x04, 0x08}) // movsd xmm1, [r12 + rax + 8] (value)
+	// Calculate source address: r11 = r12 + 8 + (source_idx * 16)
+	fc.out.ShlRegImm("rax", "4") // rax = source_idx * 16
+	fc.out.AddImmToReg("rax", 8)  // rax = source_idx * 16 + 8
+	fc.out.MovRegToReg("r11", "r12")
+	fc.out.AddRegToReg("r11", "rax") // r11 = r12 + rax
 
-	// Store in new string at index rcx: [rbx + 8 + (rcx * 16)]
+	// Load key and value from source string
+	fc.out.MovMemToXmm("xmm0", "r11", 0)  // xmm0 = [r11] (key)
+	fc.out.MovMemToXmm("xmm1", "r11", 8)  // xmm1 = [r11 + 8] (value)
+
+	// Calculate destination address: rdx = 8 + (rcx * 16)
 	fc.out.MovRegToReg("rdx", "rcx")
-	fc.out.Emit([]byte{0x48, 0xc1, 0xe2, 0x04}) // shl rdx, 4
-	fc.out.Emit([]byte{0x48, 0x83, 0xc2, 0x08}) // add rdx, 8
+	fc.out.ShlRegImm("rdx", "4") // rdx = rcx * 16
+	fc.out.AddImmToReg("rdx", 8)  // rdx = rcx * 16 + 8
 
-	// Store key as rcx (new index), not the original key
+	// Calculate full destination address: r11 = rbx + rdx
+	fc.out.MovRegToReg("r11", "rbx")
+	fc.out.AddRegToReg("r11", "rdx") // r11 = rbx + rdx
+
+	// Store key as rcx (new index), and value
 	fc.out.Cvtsi2sd("xmm0", "rcx") // xmm0 = rcx as float64 (new key)
-	fc.out.Emit([]byte{0xf2, 0x0f, 0x11, 0x04, 0x13}) // movsd [rbx + rdx], xmm0
-	fc.out.Emit([]byte{0xf2, 0x0f, 0x11, 0x4c, 0x13, 0x08}) // movsd [rbx + rdx + 8], xmm1
+	fc.out.MovXmmToMem("xmm0", "r11", 0)  // [r11] = xmm0 (key)
+	fc.out.MovXmmToMem("xmm1", "r11", 8)  // [r11 + 8] = xmm1 (value)
 
 	// Increment loop counter
-	fc.out.Emit([]byte{0x48, 0xff, 0xc1}) // inc rcx
-	fc.out.Emit([]byte{0xeb, 0x00}) // jmp _slice_copy_loop (will patch)
-	loopBackPatchPos := fc.eb.text.Len() - 1
+	fc.out.IncReg("rcx")
+
+	// Jump back to loop start
+	loopBackJumpPos := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0) // Placeholder, will patch later
 
 	// Patch loop jumps
-	sliceLoopBodyStart := fc.eb.text.Len()
-	// Patch exit jump
-	sliceExitOffset := sliceLoopBodyStart - (loopExitPatchPos + 1)
-	fc.eb.text.Bytes()[loopExitPatchPos] = byte(sliceExitOffset)
-	// Patch back jump (jump from loopBackPatchPos to sliceLoopStart)
-	sliceBackOffset := sliceLoopStart - loopBackPatchPos - 1
-	fc.eb.text.Bytes()[loopBackPatchPos] = byte(sliceBackOffset)
+	loopExitPos := fc.eb.text.Len()
+
+	// Patch exit jump: JumpConditional emits 6 bytes (0x0f 0x83 + 4-byte offset)
+	// Offset is from end of jump instruction to loop exit
+	loopExitOffset := int32(loopExitPos - (loopExitJumpPos + 6))
+	fc.patchJumpImmediate(loopExitJumpPos+2, loopExitOffset) // +2 to skip 0x0f 0x83 opcode bytes
+
+	// Patch back jump: JumpUnconditional emits 5 bytes (0xe9 + 4-byte offset)
+	// Offset is from end of jump instruction back to loop start
+	loopBackOffset := int32(sliceLoopStart - (loopBackJumpPos + 5))
+	fc.patchJumpImmediate(loopBackJumpPos+1, loopBackOffset) // +1 to skip 0xe9 opcode byte
 
 	// Return new string pointer in rax
 	fc.out.MovRegToReg("rax", "rbx")

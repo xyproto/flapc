@@ -452,8 +452,6 @@ func (o *Out) CallSymbol(symbol string) {
 }
 
 func (o *Out) callSymbolX86(symbol string) {
-	fmt.Fprintf(os.Stderr, "call %s: ", symbol)
-
 	// Emit CALL rel32 instruction (E8)
 	o.Write(0xE8)
 
@@ -466,6 +464,4 @@ func (o *Out) callSymbolX86(symbol string) {
 		position:   callPos,
 		targetName: symbol,
 	})
-
-	fmt.Fprintln(os.Stderr)
 }
