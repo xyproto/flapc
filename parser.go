@@ -2461,7 +2461,7 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 	// Set up dynamic sections
 	ds := NewDynamicSections()
 	ds.AddNeeded("libc.so.6")
-	// Note: libm.so.6 not needed - all math functions use x87 FPU instructions
+	ds.AddNeeded("libm.so.6") // Needed for FFI calls to math functions (sqrt, etc.)
 
 	// Add symbols for PLT functions
 	for _, funcName := range pltFunctions {
@@ -2491,6 +2491,16 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 	currentAddr := estimatedRodataAddr
 	for _, symbol := range symbolNames {
 		value := rodataSymbols[symbol]
+
+		// Align string literals to 8-byte boundaries for proper float64 access
+		if strings.HasPrefix(symbol, "str_") {
+			padding := (8 - (currentAddr % 8)) % 8
+			if padding > 0 {
+				fc.eb.WriteRodata(make([]byte, padding))
+				currentAddr += padding
+			}
+		}
+
 		fc.eb.WriteRodata([]byte(value))
 		fc.eb.DefineAddr(symbol, currentAddr)
 		// fmt.Fprintf(os.Stderr, "DEBUG: Writing %s at 0x%x, len=%d\n", symbol, currentAddr, len(value))
@@ -2520,6 +2530,13 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 	// fmt.Fprintf(os.Stderr, "DEBUG: Updating addresses with actual rodata base=0x%x\n", rodataBaseAddr)
 	for _, symbol := range symbolNames {
 		value := rodataSymbols[symbol]
+
+		// Apply same alignment as when writing rodata
+		if strings.HasPrefix(symbol, "str_") {
+			padding := (8 - (currentAddr % 8)) % 8
+			currentAddr += padding
+		}
+
 		fc.eb.DefineAddr(symbol, currentAddr)
 		// fmt.Fprintf(os.Stderr, "DEBUG: Updated %s to 0x%x, len=%d\n", symbol, currentAddr, len(value))
 		currentAddr += uint64(len(value))
@@ -4969,8 +4986,10 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PushReg("rbx")
 	fc.out.PushReg("r12")
 	fc.out.PushReg("r13")
+	fc.out.PushReg("r14") // Save r14 for count (callee-saved, won't be clobbered by malloc)
 
-	// Align stack
+	// Still need alignment: 5 pushes + rbp = 6 pushes = 48 bytes
+	// Need to align to 16 bytes before calls, so add 8 bytes
 	fc.out.SubImmFromReg("rsp", 8)
 
 	// Convert float64 pointer to integer pointer in r12
@@ -4981,22 +5000,22 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Get string length from map: count = [r12+0]
 	fc.out.MovMemToXmm("xmm0", "r12", 0)
-	fc.out.Emit([]byte{0xf2, 0x4c, 0x0f, 0x2c, 0xd8}) // cvttsd2si r11, xmm0 (r11 = count)
+	fc.out.Emit([]byte{0xf2, 0x4c, 0x0f, 0x2c, 0xf0}) // cvttsd2si r14, xmm0 (r14 = count, callee-saved)
 
 	// Allocate memory: malloc(count + 1) for null terminator
-	fc.out.MovRegToReg("rdi", "r11")
+	fc.out.MovRegToReg("rdi", "r14")
 	fc.out.Emit([]byte{0x48, 0x83, 0xc7, 0x01}) // add rdi, 1
 	fc.trackFunctionCall("malloc")
 	fc.eb.GenerateCallInstruction("malloc")
 	fc.out.MovRegToReg("r13", "rax") // r13 = C string buffer
 
-	// Initialize: rbx = current index, r12 = map ptr, r13 = cstr ptr, r11 = count
+	// Initialize: rbx = current index, r12 = map ptr, r13 = cstr ptr, r14 = count
 	fc.out.XorRegWithReg("rbx", "rbx") // rbx = 0 (current index)
 
 	// Loop through map entries to extract characters
 	fc.eb.MarkLabel("_cstr_convert_loop")
-	fc.out.Emit([]byte{0x4c, 0x39, 0xdb}) // cmp rbx, r11
-	fc.out.Emit([]byte{0x74, 0x28})       // je +40 bytes (exit loop)
+	fc.out.Emit([]byte{0x4c, 0x39, 0xf3}) // cmp rbx, r14
+	fc.out.Emit([]byte{0x74, 0x27})       // je +39 bytes (adjusted for r14: skip loop body)
 
 	// Calculate map entry offset: 8 + (rbx * 16) for [count][key0][val0][key1][val1]...
 	fc.out.MovRegToReg("rax", "rbx")
@@ -5011,14 +5030,16 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2c, 0xc0}) // cvttsd2si rax, xmm0
 
 	// Store character: [r13 + rbx] = al
-	fc.out.Emit([]byte{0x41, 0x88, 0x04, 0x1d}) // mov [r13 + rbx], al
+	// r13 requires special handling - use mod=01 with disp8=0
+	fc.out.Emit([]byte{0x41, 0x88, 0x44, 0x1d, 0x00}) // mov [r13 + rbx + 0], al
 
 	// Increment index
 	fc.out.Emit([]byte{0x48, 0xff, 0xc3}) // inc rbx
-	fc.out.Emit([]byte{0xeb, 0xd4})       // jmp _cstr_convert_loop (-44 bytes)
+	fc.out.Emit([]byte{0xeb, 0xd4})       // jmp _cstr_convert_loop (-44 bytes, adjusted for r14)
 
-	// Add null terminator: [r13 + r11] = 0
-	fc.out.Emit([]byte{0x43, 0xc6, 0x04, 0x1d, 0x00}) // mov byte [r13 + r11], 0
+	// Add null terminator: [r13 + r14] = 0
+	// r13 requires mod=01 with disp8=0, r14 as index register
+	fc.out.Emit([]byte{0x43, 0xc6, 0x44, 0x35, 0x00, 0x00}) // mov byte [r13 + r14 + 0], 0
 
 	// Return C string pointer in rax
 	fc.out.MovRegToReg("rax", "r13")
@@ -5027,6 +5048,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.AddImmToReg("rsp", 8)
 
 	// Restore callee-saved registers
+	fc.out.PopReg("r14")
 	fc.out.PopReg("r13")
 	fc.out.PopReg("r12")
 	fc.out.PopReg("rbx")
