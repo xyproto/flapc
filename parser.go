@@ -5325,8 +5325,8 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PushReg("r13")
 	fc.out.PushReg("r14")
 
-	// Align stack (4 pushes + rbp = 5 pushes = 40 bytes, need 8 more for 16-byte alignment)
-	fc.out.SubImmFromReg("rsp", StackSlotSize)
+	// Stack is now 16-byte aligned (call pushed 8, then 5 pushes = 48 bytes total)
+	// No additional alignment needed
 
 	// Save C string pointer
 	fc.out.MovRegToReg("r12", "rdi") // r12 = C string pointer
@@ -5403,10 +5403,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovRegToReg("rax", "r13")
 	fc.out.Cvtsi2sd("xmm0", "rax")
 
-	// Restore stack alignment
-	fc.out.AddImmToReg("rsp", StackSlotSize)
-
-	// Restore callee-saved registers
+	// Restore callee-saved registers (no stack adjustment needed)
 	fc.out.PopReg("r14")
 	fc.out.PopReg("r13")
 	fc.out.PopReg("r12")
