@@ -6159,6 +6159,28 @@ func (fc *FlapCompiler) compileFloatToString(xmmReg, bufPtr string) {
 	fracLoopEnd := fc.eb.text.Len()
 	fc.patchJumpImmediate(fracLoopEndJump+2, int32(fracLoopEnd-fracLoopEndEnd))
 
+	// Strip trailing zeros by walking backwards
+	// rsi points one past the last digit
+	stripLoopStart := fc.eb.text.Len()
+	// Go back one byte
+	fc.out.SubImmFromReg("rsi", 1)
+	// Load the byte
+	fc.out.MovMemToReg("r10", "rsi", 0)
+	// Mask to low byte: AND r10, 0xFF
+	fc.out.Write(0x49) // REX.W for r10
+	fc.out.Write(0x81) // AND r/m64, imm32
+	fc.out.Write(0xE2) // ModR/M for r10
+	fc.out.Write(0xFF) // imm = 0xFF
+	fc.out.Write(0x00)
+	fc.out.Write(0x00)
+	fc.out.Write(0x00)
+	// Compare with '0' (48)
+	fc.out.CmpRegToImm("r10", 48)
+	// If equal to '0', continue stripping
+	fc.out.JumpConditional(JumpEqual, int32(stripLoopStart-(fc.eb.text.Len()+6)))
+	// Not a '0', so advance back to position after this character
+	fc.out.AddImmToReg("rsi", 1)
+
 	// Fractional part was zero - remove the decimal point we added
 	fracZeroPos := fc.eb.text.Len()
 	fc.patchJumpImmediate(fracZeroJump+2, int32(fracZeroPos-fracZeroEnd))
