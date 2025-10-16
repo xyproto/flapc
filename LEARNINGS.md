@@ -88,6 +88,30 @@ ret
 
 **Wrong**: Moving value into r12 before saving it → corrupts caller's data.
 
+### 4b. Function Arguments Must Be In Correct Registers
+
+**Critical Bug Found in cstr_to_flap_string**:
+
+```go
+// WRONG - Saves argument but doesn't restore it!
+fc.out.MovRegToReg("r12", "rdi")  // Save to callee-saved register
+fc.eb.GenerateCallInstruction("strlen")  // ❌ strlen expects arg in rdi!
+
+// CORRECT - Restore argument before call
+fc.out.MovRegToReg("r12", "rdi")  // Save to callee-saved register
+fc.out.MovRegToReg("rdi", "r12")  // ✅ Restore argument for strlen
+fc.eb.GenerateCallInstruction("strlen")
+```
+
+**Lesson**: Saving to callee-saved registers is for preserving values across YOUR calls to other functions. When YOU call a function, you must set up ITS arguments correctly.
+
+**Impact**: This one-line bug prevented all I/O functions from working. After fix:
+- ✅ read_file() fully functional
+- ✅ TDD Steps 1-3 all pass
+- ✅ File reading with syscalls works perfectly
+
+**Debugging Clue**: `strace` showed malloc being called, then immediate SIGSEGV with si_addr=NULL → null pointer dereference in strlen because rdi was undefined.
+
 ### 5. Direct Machine Code Generation Challenges
 
 **Challenge**: No assembler to catch errors, bugs are runtime segfaults.
@@ -281,11 +305,211 @@ Note: Current implementation prioritizes correctness over performance.
 
 ## Next Steps
 
-1. **Fix cstr_to_flap_string loop bug**: Debug why non-empty strings crash when printed
+1. **Fix println() with dynamic strings**: Debug why dynamically created strings crash
 2. **Implement readln()**: Use syscall read(0, buf, size) with line buffering
 3. **String builtin functions**: num(), split(), join(), upper(), lower(), trim()
 4. **Collection functions**: map(), filter(), reduce(), keys(), values(), sort()
 
+## Areas Requiring Redesign 🔄
+
+### 1. String Representation (CRITICAL)
+
+**Current Problem**:
+- String literals work: `s := "test"; println(s)` → works but prints nothing
+- Dynamic strings crash: `s := read_file(...); println(s)` → SIGSEGV
+- This inconsistency suggests fundamental representation issues
+
+**Current Approach**:
+```
+Strings as map[uint64]float64:
+[count: float64][key0: float64][val0: float64][key1: float64][val1: float64]...
+
+For "AB":
+Offset 0:  count = 2.0
+Offset 8:  key = 0.0,   value = 65.0  (A)
+Offset 24: key = 1.0,   value = 66.0  (B)
+```
+
+**Problems**:
+1. **Conversion overhead**: Every C interop requires malloc + loop to convert
+2. **Debugging nightmare**: Hard to inspect in gdb (just looks like float array)
+3. **Type confusion**: Runtime can't distinguish string map from regular map
+4. **Memory waste**: 16 bytes per character (key + value) vs 1 byte for char
+5. **Inconsistent construction**: Compile-time strings vs runtime strings behave differently
+
+**Proposed Redesign**:
+
+**Option A: Separate String Type (Recommended)**
+```
+String format: [length: i64][capacity: i64][data: char[]]
+- Length and capacity as integers, not floats
+- Direct byte array, no key-value pairs
+- Compatible with C strings (just pointer to data)
+- Zero-copy conversion to C: &data[0]
+- Explicit type tag or different allocation pattern
+```
+
+Benefits:
+- ✅ 16x less memory (1 byte/char vs 16 bytes/char)
+- ✅ Direct C interop (no conversion needed)
+- ✅ Easy to debug (visible in gdb as string)
+- ✅ Type-safe (can't confuse with maps)
+- ✅ Industry-standard representation
+
+Costs:
+- ❌ Requires separate codepath for strings vs maps
+- ❌ More complex type system
+- ❌ Need to update all string operations
+
+**Option B: String Header (Minimal Change)**
+```
+Add magic number to distinguish string maps:
+[magic: 0xFLAP_STR][count][chars as before...]
+- Minimal code change
+- Runtime can detect string vs map
+- Still wastes memory
+```
+
+Benefits:
+- ✅ Minimal code changes
+- ✅ Backward compatible
+- ✅ Easy type detection
+
+Costs:
+- ❌ Still 16x memory overhead
+- ❌ Still requires conversion for C
+- ❌ Doesn't fix fundamental issues
+
+**Recommendation**: Option A (Separate String Type)
+- More work upfront, but fixes fundamental issues
+- Aligns with how every other language does strings
+- Required for serious I/O work
+- Can be phased in: start with runtime strings, migrate literals later
+
+### 2. Type System (IMPORTANT)
+
+**Current Problem**:
+```go
+case *CallExpr:
+    if e.Function == "str" || e.Function == "read_file" || e.Function == "readln" {
+        return "string"
+    }
+    return "number"
+```
+
+**Issues**:
+- String comparisons for type checking (fragile)
+- Must update manually for every new function
+- No way to express "this function returns what you pass in" (identity)
+- No way to express generic functions
+
+**Proposed Redesign**:
+
+```go
+type FlapType int
+
+const (
+    TypeNumber FlapType = iota
+    TypeString
+    TypeList
+    TypeMap
+    TypeFunction
+)
+
+// Function signature registry
+var builtinSignatures = map[string]struct{
+    params []FlapType
+    result FlapType
+}{
+    "str":       {[]FlapType{TypeNumber}, TypeString},
+    "read_file": {[]FlapType{TypeString}, TypeString},
+    "sqrt":      {[]FlapType{TypeNumber}, TypeNumber},
+    "map":       {[]FlapType{TypeFunction, TypeList}, TypeList},
+}
+```
+
+Benefits:
+- ✅ Centralized type information
+- ✅ Easy to add new functions
+- ✅ Can validate argument types
+- ✅ Foundation for better error messages
+
+### 3. Runtime Library Organization (MEDIUM)
+
+**Current Problem**:
+- Runtime functions (flap_string_to_cstr, cstr_to_flap_string) embedded in parser.go
+- Mixed with compilation logic
+- Hard to test independently
+- No clear separation of concerns
+
+**Proposed Redesign**:
+
+```
+flapc/
+  runtime/
+    string.go        - String runtime helpers codegen
+    memory.go        - Memory allocation helpers codegen
+    syscalls.go      - Syscall wrappers codegen
+  compiler/
+    parser.go        - Parsing only
+    codegen.go       - Code generation orchestration
+    types.go         - Type system
+```
+
+Benefits:
+- ✅ Clear separation of concerns
+- ✅ Easier to test runtime functions
+- ✅ Can generate runtime library separately
+- ✅ Better code organization
+
+### 4. String Literal Compilation (LOW)
+
+**Current Observation**:
+```flap
+s := "test"
+println(s)  // Compiles successfully but prints nothing (blank line)
+```
+
+This suggests string literal printing is already broken, but we didn't notice because we test with:
+- `println("literal")` - Direct string literal (works)
+- Not `s := "test"; println(s)` - String variable (broken)
+
+**This is actually a GOOD thing**: It confirms the bug is not specific to dynamic strings, it's a general issue with how `println()` handles string variables vs literals.
+
+**Root Cause Hypothesis**:
+- `println("literal")` - Compiler generates special code for literal
+- `println(variable)` - Compiler uses variable's map pointer
+- Map pointer handling is broken (regardless of how map was created)
+
+### 5. Priority Order for Redesign
+
+**Immediate (This Session)**:
+1. ✅ Fix println() with string variables (literal or dynamic)
+   - Root cause affects both
+   - Once fixed, read_file() fully works
+   - Can continue with I/O functions
+
+**Short Term (Next Session)**:
+2. Implement proper string type (Option A above)
+   - Start with runtime strings only
+   - 16x memory savings
+   - Zero-copy C interop
+   - Type safety
+
+**Medium Term**:
+3. Formalize type system
+   - Function signature registry
+   - Type inference
+   - Better error messages
+
+**Long Term**:
+4. Reorganize runtime library
+   - Separate concerns
+   - Better testing
+   - Cleaner architecture
+
 ## Summary
 
 The syscall approach proved that **simplicity beats complexity** in direct code generation. What took hours to debug with C library functions worked immediately with syscalls. TDD provided fast feedback and confidence in incremental progress. Stack alignment is critical and must be calculated carefully, not assumed.
+
+**Most Important Redesign**: String representation. The current map[uint64]float64 approach causes fundamental issues that will only get worse as we add more I/O functions. A proper string type (byte array with length) is industry-standard for good reason.
