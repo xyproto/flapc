@@ -80,6 +80,7 @@ make test
 - **Comments**: `//` for single-line comments
 - **Variables**: Mutable (`:=`) and immutable (`=`) assignment
 - **Data Types**: Float64 foundation (all numeric values are float64)
+- **Literals**: Strings are available, but there is currently no rune/character literal syntax (represent single code points via numeric values)
 - **Arithmetic**: `+`, `-`, `*`, `/` (scalar double-precision)
 - **Comparisons**: `<`, `<=`, `>`, `>=`, `==`, `!=`
 - **Length Operator**: `#list` returns the length of a list
