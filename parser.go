@@ -983,8 +983,8 @@ func (p *Parser) parseStatement() Statement {
 		p.error("expected number after @ (e.g., @1, @2, @0)")
 	}
 
-	// Check for assignment (both = and :=)
-	if p.current.Type == TOKEN_IDENT && (p.peek.Type == TOKEN_EQUALS || p.peek.Type == TOKEN_COLON_EQUALS) {
+	// Check for assignment (both = and :=, with optional type annotation)
+	if p.current.Type == TOKEN_IDENT && (p.peek.Type == TOKEN_EQUALS || p.peek.Type == TOKEN_COLON_EQUALS || p.peek.Type == TOKEN_COLON) {
 		return p.parseAssignment()
 	}
 
