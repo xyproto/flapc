@@ -44,7 +44,7 @@ y := y + 5
 
 **List:** `^` (head), `&` (tail), `#` (length), `::` (cons)
 
-**Error handling:** `or!` (conditional exit with error message)
+**Error handling:** `or!` (railway-oriented programming / error propagation)
 
 **Control flow:** `ret` (break loop / return value)
 
@@ -187,6 +187,40 @@ Loops use `@+` for auto-labeling by nesting depth (would be "for" in other langu
 }
 // Output: [a, b, c]
 ```
+
+### Error Handling (Railway-Oriented Programming)
+
+The `or!` operator enables clean error handling using railway-oriented programming:
+
+```flap
+// Convention: functions return 0.0 on error, non-zero on success
+// or! checks the left side and either continues (success) or exits (error)
+
+// Example: file operations with error handling
+file = open("data.txt") or! "Failed to open file"
+data = read(file) or! "Failed to read data"
+result = process(data) or! "Failed to process data"
+
+// Each operation either succeeds (continues with value) or fails (exits with message)
+// This creates a "railway" where success stays on the main track
+// and errors branch off to the error handling track (exit)
+
+// Equivalent verbose version without or!:
+file = open("data.txt")
+file == 0 {
+    -> println("Failed to open file") :: exit(1)
+}
+data = read(file)
+data == 0 {
+    -> println("Failed to read data") :: exit(1)
+}
+```
+
+**Benefits:**
+- No nested if/else for error checking
+- Errors propagate automatically with clear messages
+- Success path remains clean and readable
+- Similar to Rust's `?` operator or Haskell's Either monad
 
 ### Lambdas
 
