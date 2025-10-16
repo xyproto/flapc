@@ -138,17 +138,18 @@ func TestDynamicELFExecutable(t *testing.T) {
 	}
 
 	eb.useDynamicLinking = true
-	eb.neededFunctions = []string{"exit"}
+	eb.neededFunctions = []string{} // No C library functions needed
 
 	ds := NewDynamicSections()
 	ds.AddNeeded("libc.so.6")
-	ds.AddSymbol("exit", STB_GLOBAL, STT_FUNC)
 
-	// Exit with code 42
-	eb.Emit("mov rdi, 42")
-	eb.Emit("call exit@plt")
+	// Exit with code 42 using syscall (no C library call)
+	// exit syscall number is 60 on x86_64
+	eb.Emit("mov rax, 60")  // syscall number for exit
+	eb.Emit("mov rdi, 42")  // exit code
+	eb.Emit("syscall")      // invoke syscall
 
-	_, _, _, _, err = eb.WriteCompleteDynamicELF(ds, []string{"exit"})
+	_, _, _, _, err = eb.WriteCompleteDynamicELF(ds, []string{})
 	if err != nil {
 		t.Fatalf("Failed to write dynamic ELF: %v", err)
 	}

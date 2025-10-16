@@ -1,6 +1,6 @@
-// loop_break_test.flap - test @N loop labels and jumps
-printf("Simple loop with @1:\n")
-@1 i in range(5) {
+// loop_break_test.flap - test @+ loop syntax and @N jumps
+printf("Simple loop with @+:\n")
+@+ i in range(5) {
     printf("%.0f ", i)
 }
 printf("\n")

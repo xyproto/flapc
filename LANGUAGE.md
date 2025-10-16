@@ -89,46 +89,104 @@ result = empty[1]    // returns 0.0 (empty map)
 
 result = 5 in mylist  // returns 1.0 or 0.0
 
-// Loops with labels
-@1 i in range(5) {
+// Loops with implicit labels (by nesting depth)
+// Loops use @+ and get implicit labels by nesting depth
+@+ i in range(5) {    // Implicitly labeled @1
     println(i)
 }
 
-@1 item in mylist {
-    println(item)
-}
 
-// Nested loops with different labels
-@1 i in range(3) {
-    @2 j in range(3) {
+// Nested loops get sequential labels @1, @2, @3, etc.
+@+ i in range(3) {       // Implicitly @1 (outermost)
+    @+ j in range(3) {   // Implicitly @2
         printf("%v,%v ", i, j)
     }
 }
 
-// Jump statements
-// @0 jumps out of current loop (equivalent to "break")
-// @0 value - breaks and returns value from loop
-// @N jumps back to loop label N (equivalent to "continue")
-//
-// Convenience aliases (implemented):
-// - "for" = alias for @ (same behavior)
-// - "break" = exits the innermost loop
-// - "continue" = skips to next iteration of innermost loop
-//
-// Example with break/continue:
-for i in range(10) {
+// Loop control flow with break and continue
+// break [<@N>] [<value>] - exit loop(s) with optional return value
+// continue [<@N>] - jump to top of loop
+
+// Basic break/continue (innermost loop)
+@+ i in range(10) {
     i == 5 { -> break }        // Exit loop at 5
     i % 2 == 0 { -> continue } // Skip even numbers
     println(i)                 // Prints: 1, 3
 }
 
-// Loops can return values (planned):
-result = @1 i in range(10) {
-    i == 5 {
-        -> @0 i * 2  // Break and return 10
+// Multi-level break with label
+@+ i in range(3) {           // @1
+    @+ j in range(3) {       // @2
+        @+ k in range(3) {   // @3
+            k == 2 {
+                -> break @1   // Break out of all three loops
+            }
+        }
     }
 }
-// result is 10
+
+// Multi-level continue with label
+@+ i in range(3) {           // @1
+    @+ j in range(3) {       // @2
+        j == 1 {
+            -> continue @1    // Skip to next iteration of outer loop
+        }
+        printf("%v,%v ", i, j)
+    }
+}
+
+// Loops are expressions that return values
+// Each loop has an implicit "acc" variable initialized to 0
+// You can modify "acc" inside the loop
+// The loop returns "acc" by default, or the value from "break"
+
+result = @+ i in range(10) {
+    acc := acc + i        // Accumulate sum
+    i == 5 {
+        -> break acc * 2  // Break early and return doubled accumulator
+    }
+}
+// result is (0+1+2+3+4+5) * 2 = 30
+
+// Loop returning default accumulator
+sum = @+ i in range(5) {
+    acc := acc + i        // acc starts at 0
+}
+// sum is 0+1+2+3+4 = 10
+
+// Breaking with explicit value
+first_even = @+ i in range(10) {
+    i % 2 == 0 {
+        -> break i        // Return first even number
+    }
+}
+// first_even is 0
+
+// Special loop variables
+// @first - true on the first iteration
+// @last - true on the last iteration
+// @counter - the loop iteration counter (starts at 0)
+// @i - the current element (same as loop variable for lists, key for maps)
+
+@+ item in ["a", "b", "c"] {
+    @first { println("First!") }     // Prints on first iteration
+    @last { println("Last!") }       // Prints on last iteration
+    printf("@counter=%v @i=%v\n", @counter, @i)
+}
+// Output:
+// First!
+// @counter=0 @i=a
+// @counter=1 @i=b
+// @counter=2 @i=c
+// Last!
+
+// Using @first and @last for formatting
+@+ i in range(5) {
+    @first { printf("[") }
+    printf("%v", i)
+    @last { printf("]") ~> printf(", ") }
+}
+// Prints: [0, 1, 2, 3, 4]
 
 // Lambdas (up to 6 parameters)
 double = (x) -> x * 2
@@ -191,11 +249,15 @@ The following features **must** be implemented and tested before the 1.0.0 relea
 - [ ] `map1 - map2` removes keys (set difference)
 
 ### Control Flow
-- [x] `break` exits loop early ✓
-- [x] `continue` skips to next iteration ✓
-- [ ] `@0 value` breaks and returns value from loop
-- [ ] Loops can be assigned: `x = @1 i in range(10) { @0 i * 2 }`
-- [ ] Lambdas can use `@0 value` to return early
+- [x] `break` exits innermost loop ✓
+- [x] `break @N` exits loop N and all inner loops ✓
+- [x] `break value` exits loop and returns value ✓
+- [x] `break @N value` exits loop N and returns value ✓
+- [x] `continue` jumps to top of innermost loop ✓
+- [x] `continue @N` exits inner loops and continues loop N ✓
+- [x] Loops are expressions with implicit `acc` variable ✓
+- [x] Loops return `acc` by default, or value from `break` ✓
+- [ ] Lambdas can use `break value` to return early
 
 ### I/O Functions
 - [ ] `readln()` reads line from stdin
@@ -255,7 +317,8 @@ statement       = loop_statement
 loop_statement  = "@+" identifier "in" expression block
                 | "@" number identifier "in" expression block ;
 
-jump_statement  = "@-" | "@=" | "@" number ;
+jump_statement  = "break" [ "@" number ] [ expression ]
+                | "continue" [ "@" number ] ;
 
 assignment      = identifier ("=" | ":=") expression ;
 
@@ -271,7 +334,8 @@ default_arm     = "~>" match_target ;
 
 match_target    = jump_target | expression ;
 
-jump_target     = "@-" | "@=" | "@" number ;
+jump_target     = "break" [ "@" number ] [ expression ]
+                | "continue" [ "@" number ] ;
 
 block           = "{" { statement { newline } } "}" ;
 
@@ -307,10 +371,13 @@ postfix_expr            = primary_expr { "[" expression "]" | "(" [ argument_lis
 primary_expr            = number
                         | string
                         | identifier
+                        | loop_state_var
                         | "(" expression ")"
                         | lambda_expr
                         | list_literal
                         | map_literal ;
+
+loop_state_var          = "@first" | "@last" | "@counter" | "@i" ;
 
 lambda_expr             = "(" [ parameter_list ] ")" "->" lambda_body ;
 
@@ -339,8 +406,12 @@ escape_sequence         = "\\" ( "n" | "t" | "r" | "\\" | '"' ) ;
 
 ### Notes on the grammar
 
-* `@+` introduces a loop whose label is the current loop depth plus one. `@-` jumps to the immediately outer loop and therefore requires nesting depth ≥ 2, while `@=` continues the current loop and requires depth ≥ 1.
-* `@N` used as a statement is a jump; used before a loop variable (`@N i in …`) it introduces a labelled loop. Labels are parsed as floating-point literals and truncated to integers.
+* `@+` introduces auto-labeled loops. The loop label is the current nesting depth: @1 for the outermost loop, @2 for a loop inside it, etc.
+* `@N` used before a loop variable (`@N i in …`) explicitly labels that loop with number N (for compatibility).
+* `break` exits the innermost loop and returns 0 (or the loop's `acc` value). `break @N` exits loop N and all inner loops. `break value` or `break @N value` exits and returns the specified value.
+* `continue` jumps to the top of the innermost loop. `continue @N` exits all loops from the current depth up to N, then continues loop N.
+* Each loop has an implicit mutable variable `acc` initialized to 0. The loop returns `acc` by default, or the value from `break`.
+* Loops have special variables: `@first` (true on first iteration), `@last` (true on last iteration), `@counter` (iteration count starting at 0), and `@i` (current element or key).
 * The optional `match_block` attaches to the preceding expression both at statement level and inside lambda bodies. When omitted, the implicit default branch yields `0`.
 * A single bare expression inside the braces is shorthand for `-> expression`, enabling forms like `x > 42 { 123 }`.
 * A block that only supplies `~> expr` leaves the condition's own result untouched when it evaluates true and substitutes the default when it evaluates false.
@@ -350,7 +421,7 @@ escape_sequence         = "\\" ( "n" | "t" | "r" | "\\" | '"' ) ;
 ## Keywords
 
 ```
-and in mod not or rol ror shl shr xor
+and break continue in mod not or rol ror shl shr xor
 ```
 
 ## Variable Precision Numbers (Post-1.0.0)

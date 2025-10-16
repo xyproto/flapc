@@ -67,6 +67,12 @@ const (
 	TOKEN_FMA           // *+ (fused multiply-add)
 	TOKEN_OR_BANG       // or! (error handling)
 	TOKEN_ME            // me (self-reference)
+	TOKEN_BREAK         // break keyword
+	TOKEN_CONTINUE      // continue keyword
+	TOKEN_AT_FIRST      // @first (first iteration)
+	TOKEN_AT_LAST       // @last (last iteration)
+	TOKEN_AT_COUNTER    // @counter (iteration counter)
+	TOKEN_AT_I          // @i (current element/key)
 )
 
 type Token struct {
@@ -202,6 +208,10 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_NOT, Value: value, Line: l.line}
 		case "me":
 			return Token{Type: TOKEN_ME, Value: value, Line: l.line}
+		case "break":
+			return Token{Type: TOKEN_BREAK, Value: value, Line: l.line}
+		case "continue":
+			return Token{Type: TOKEN_CONTINUE, Value: value, Line: l.line}
 		case "xor":
 			return Token{Type: TOKEN_XOR, Value: value, Line: l.line}
 		case "shl":
@@ -322,7 +332,30 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_COMMA, Value: ",", Line: l.line}
 	case '@':
-		// Check for @-, @+, @=
+		// Check for @first, @last, @-, @+, @=
+		if l.peek() >= 'a' && l.peek() <= 'z' {
+			start := l.pos
+			l.pos++ // skip @
+			for l.pos < len(l.input) && ((l.input[l.pos] >= 'a' && l.input[l.pos] <= 'z') || (l.input[l.pos] >= 'A' && l.input[l.pos] <= 'Z')) {
+				l.pos++
+			}
+			value := l.input[start:l.pos]
+			if value == "@first" {
+				return Token{Type: TOKEN_AT_FIRST, Value: value, Line: l.line}
+			}
+			if value == "@last" {
+				return Token{Type: TOKEN_AT_LAST, Value: value, Line: l.line}
+			}
+			if value == "@counter" {
+				return Token{Type: TOKEN_AT_COUNTER, Value: value, Line: l.line}
+			}
+			if value == "@i" {
+				return Token{Type: TOKEN_AT_I, Value: value, Line: l.line}
+			}
+			// Unknown @identifier, treat as error or identifier
+			l.pos = start + 1
+			return Token{Type: TOKEN_AT, Value: "@", Line: l.line}
+		}
 		if l.peek() == '-' {
 			l.pos += 2
 			return Token{Type: TOKEN_AT_MINUS, Value: "@-", Line: l.line}
@@ -462,15 +495,28 @@ func (l *LoopStmt) statementNode() {}
 // @0 = break out to outer scope
 // @N = continue/break to loop with label N
 type JumpStmt struct {
-	Label int        // Target label (0 = outer scope, N = loop label)
-	Value Expression // Optional value to return (for @0 value syntax)
+	IsBreak bool       // true for break, false for continue
+	Label   int        // Target loop label (0 for implicit innermost, N for explicit @N)
+	Value   Expression // Optional value to return (for break value syntax)
 }
 
 func (j *JumpStmt) String() string {
-	if j.Value != nil {
-		return fmt.Sprintf("@%d %s", j.Label, j.Value.String())
+	keyword := "continue"
+	if j.IsBreak {
+		keyword = "break"
 	}
-	return fmt.Sprintf("@%d", j.Label)
+
+	if j.Label > 0 {
+		if j.Value != nil {
+			return fmt.Sprintf("%s @%d %s", keyword, j.Label, j.Value.String())
+		}
+		return fmt.Sprintf("%s @%d", keyword, j.Label)
+	}
+
+	if j.Value != nil {
+		return fmt.Sprintf("%s %s", keyword, j.Value.String())
+	}
+	return keyword
 }
 func (j *JumpStmt) statementNode() {}
 
@@ -499,6 +545,16 @@ type IdentExpr struct {
 
 func (i *IdentExpr) String() string  { return i.Name }
 func (i *IdentExpr) expressionNode() {}
+
+// LoopStateExpr represents special loop variables: @first, @last, @counter, @i
+type LoopStateExpr struct {
+	Type string // "first", "last", "counter", "i"
+}
+
+func (l *LoopStateExpr) String() string {
+	return "@" + l.Type
+}
+func (l *LoopStateExpr) expressionNode() {}
 
 // JumpExpr represents a label jump used as an expression (e.g., in match blocks)
 type JumpExpr struct {
@@ -573,9 +629,17 @@ func (m *MatchExpr) String() string {
 	var parts []string
 	for _, clause := range m.Clauses {
 		if clause.Guard != nil {
-			parts = append(parts, clause.Guard.String()+" -> "+clause.Result.String())
+			if clause.Result != nil {
+				parts = append(parts, clause.Guard.String()+" -> "+clause.Result.String())
+			} else {
+				parts = append(parts, clause.Guard.String()+" -> <statement>")
+			}
 		} else {
-			parts = append(parts, "-> "+clause.Result.String())
+			if clause.Result != nil {
+				parts = append(parts, "-> "+clause.Result.String())
+			} else {
+				parts = append(parts, "-> <statement>")
+			}
 		}
 	}
 	if m.DefaultExpr != nil && (m.DefaultExplicit || len(m.Clauses) == 0) {
@@ -963,6 +1027,11 @@ func foldConstantExpr(expr Expression) Expression {
 }
 
 func (p *Parser) parseStatement() Statement {
+	// Check for break/continue keywords
+	if p.current.Type == TOKEN_BREAK || p.current.Type == TOKEN_CONTINUE {
+		return p.parseJumpStatement()
+	}
+
 	// Check for @- (jump to @(N-1))
 	if p.current.Type == TOKEN_AT_MINUS {
 		return p.parseLoopStatement()
@@ -1259,7 +1328,7 @@ func (p *Parser) parseMatchTarget() Expression {
 func (p *Parser) parseLoopStatement() Statement {
 	// Handle @- token (jump to outer loop)
 	if p.current.Type == TOKEN_AT_MINUS {
-		// @- means jump to @(N-1) where N is current loop depth
+		// @- means jump to @(N-1) where N is current loop depth (break semantics)
 		if p.loopDepth < 2 {
 			p.error("@- requires at least 2 nested loops")
 		}
@@ -1269,7 +1338,7 @@ func (p *Parser) parseLoopStatement() Statement {
 			p.nextToken() // move to value
 			value = p.parseExpression()
 		}
-		return &JumpStmt{Label: p.loopDepth - 1, Value: value}
+		return &JumpStmt{IsBreak: true, Label: p.loopDepth - 1, Value: value}
 	}
 
 	// Handle @= token (continue current loop)
@@ -1278,13 +1347,8 @@ func (p *Parser) parseLoopStatement() Statement {
 		if p.loopDepth < 1 {
 			p.error("@= requires at least 1 loop")
 		}
-		// Check for optional return value: @= value
-		var value Expression
-		if p.peek.Type != TOKEN_NEWLINE && p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
-			p.nextToken() // move to value
-			value = p.parseExpression()
-		}
-		return &JumpStmt{Label: p.loopDepth, Value: value}
+		// @= is continue semantics (not break)
+		return &JumpStmt{IsBreak: false, Label: p.loopDepth, Value: nil}
 	}
 
 	// Handle @+ token (start loop at @(N+1))
@@ -1334,6 +1398,7 @@ func (p *Parser) parseLoopStatement() Statement {
 		var body []Statement
 		for p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
 			p.nextToken()
+			fmt.Fprintf(os.Stderr, "DEBUG: Parsing loop body, current=%v, peek=%v\n", p.current.Type, p.peek.Type)
 			if p.current.Type == TOKEN_NEWLINE {
 				continue
 			}
@@ -1343,10 +1408,11 @@ func (p *Parser) parseLoopStatement() Statement {
 			}
 		}
 
-		// Expect '}'
+		// Expect and consume '}'
 		if p.peek.Type != TOKEN_RBRACE {
 			p.error("expected '}' at end of loop body")
 		}
+		p.nextToken() // consume the '}'
 
 		return &LoopStmt{
 			Iterator: iterator,
@@ -1380,7 +1446,47 @@ func (p *Parser) parseLoopStatement() Statement {
 	if p.current.Type != TOKEN_NEWLINE && p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
 		value = p.parseExpression()
 	}
-	return &JumpStmt{Label: label, Value: value}
+	return &JumpStmt{IsBreak: true, Label: label, Value: value}
+}
+
+// parseJumpStatement parses break and continue statements
+// break [<@N>] [<value>] - exit loop(s) with optional return value
+// continue [<@N>] - jump to top of loop
+func (p *Parser) parseJumpStatement() Statement {
+	isBreak := p.current.Type == TOKEN_BREAK
+	p.nextToken() // skip 'break' or 'continue'
+
+	label := 0 // 0 means innermost loop (implicit)
+	var value Expression
+
+	// Check for optional @N label
+	if p.current.Type == TOKEN_AT {
+		p.nextToken() // skip '@'
+		if p.current.Type != TOKEN_NUMBER {
+			p.error("expected number after @ in break/continue statement")
+		}
+		labelNum, err := strconv.ParseFloat(p.current.Value, 64)
+		if err != nil {
+			p.error("invalid loop label number")
+		}
+		label = int(labelNum)
+		if label < 1 {
+			p.error("loop label must be >= 1 (use @1, @2, @3, etc.)")
+		}
+		p.nextToken() // skip number
+	}
+
+	// Check for optional value (only valid for break)
+	if isBreak && p.current.Type != TOKEN_NEWLINE && p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+		value = p.parseExpression()
+	}
+
+	// Continue cannot have a value
+	if !isBreak && value != nil {
+		p.error("continue statement cannot have a return value")
+	}
+
+	return &JumpStmt{IsBreak: isBreak, Label: label, Value: value}
 }
 
 func (p *Parser) parseExpression() Expression {
@@ -1732,6 +1838,22 @@ func (p *Parser) parsePrimary() Expression {
 		// "me" is a special identifier for self-reference
 		return &IdentExpr{Name: "me"}
 
+	case TOKEN_AT_FIRST:
+		// @first is true on the first iteration of a loop
+		return &LoopStateExpr{Type: "first"}
+
+	case TOKEN_AT_LAST:
+		// @last is true on the last iteration of a loop
+		return &LoopStateExpr{Type: "last"}
+
+	case TOKEN_AT_COUNTER:
+		// @counter is the loop iteration counter
+		return &LoopStateExpr{Type: "counter"}
+
+	case TOKEN_AT_I:
+		// @i is the current element (or key for maps)
+		return &LoopStateExpr{Type: "i"}
+
 	case TOKEN_LPAREN:
 		// Could be lambda (params) -> expr or parenthesized expression (expr)
 		p.nextToken() // skip '('
@@ -1971,6 +2093,13 @@ type LoopInfo struct {
 	ContinuePos     int   // Code position for continue (increment step)
 	EndPatches      []int // Positions that need to be patched to jump to loop end
 	ContinuePatches []int // Positions that need to be patched to jump to continue position
+
+	// Special loop variables support
+	IteratorOffset   int  // Stack offset for iterator variable (loop variable)
+	IndexOffset      int  // Stack offset for index counter (list loops only)
+	UpperBoundOffset int  // Stack offset for limit (range) or length (list)
+	ListPtrOffset    int  // Stack offset for list pointer (list loops only)
+	IsRangeLoop      bool // True for range loops, false for list loops
 }
 
 // Code Generator for Flap
@@ -2479,9 +2608,12 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, funcCall *CallExpr) {
 	// Label is determined by loop depth (1-indexed)
 	loopLabel := len(fc.activeLoops) + 1
 	loopInfo := LoopInfo{
-		Label:      loopLabel,
-		StartPos:   loopStartPos,
-		EndPatches: []int{},
+		Label:            loopLabel,
+		StartPos:         loopStartPos,
+		EndPatches:       []int{},
+		IteratorOffset:   iterOffset,
+		UpperBoundOffset: limitOffset,
+		IsRangeLoop:      true,
 	}
 	fc.activeLoops = append(fc.activeLoops, loopInfo)
 
@@ -2607,9 +2739,14 @@ func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
 	// Label is determined by loop depth (1-indexed)
 	loopLabel := len(fc.activeLoops) + 1
 	loopInfo := LoopInfo{
-		Label:      loopLabel,
-		StartPos:   loopStartPos,
-		EndPatches: []int{},
+		Label:            loopLabel,
+		StartPos:         loopStartPos,
+		EndPatches:       []int{},
+		IteratorOffset:   iterOffset,
+		IndexOffset:      indexOffset,
+		UpperBoundOffset: lengthOffset,
+		ListPtrOffset:    listPtrOffset,
+		IsRangeLoop:      false,
 	}
 	fc.activeLoops = append(fc.activeLoops, loopInfo)
 
@@ -2696,34 +2833,56 @@ func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
 }
 
 func (fc *FlapCompiler) compileJumpStatement(stmt *JumpStmt) {
-	if stmt.Label == 0 {
-		// @0 = break to outer scope (jump to end of innermost loop)
-		if len(fc.activeLoops) == 0 {
-			fmt.Fprintf(os.Stderr, "Error: @0 used outside of loop\n")
-			os.Exit(1)
+	if len(fc.activeLoops) == 0 {
+		keyword := "continue"
+		if stmt.IsBreak {
+			keyword = "break"
 		}
-		// Add this jump position to the innermost loop's end patches
-		jumpPos := fc.eb.text.Len()
-		fc.out.JumpUnconditional(0) // Placeholder
-		fc.activeLoops[len(fc.activeLoops)-1].EndPatches = append(
-			fc.activeLoops[len(fc.activeLoops)-1].EndPatches,
-			jumpPos+1, // +1 to skip the opcode byte
-		)
+		fmt.Fprintf(os.Stderr, "Error: %s used outside of loop\n", keyword)
+		os.Exit(1)
+	}
+
+	// New semantics with explicit IsBreak field:
+	// break (Label=0): exit innermost loop
+	// break @N (Label=N): exit loop N and all inner loops
+	// continue (Label=0): jump to continue point of innermost loop
+	// continue @N (Label=N): exit inner loops and continue at loop N
+
+	targetLoopIndex := -1
+
+	if stmt.Label == 0 {
+		// Label 0 means innermost loop
+		targetLoopIndex = len(fc.activeLoops) - 1
 	} else {
-		// @N = jump back to loop N (continue to increment step)
-		// Find the loop with matching label
-		var targetLoopIndex int = -1
-		for i := len(fc.activeLoops) - 1; i >= 0; i-- {
+		// Find loop with specified label
+		for i := 0; i < len(fc.activeLoops); i++ {
 			if fc.activeLoops[i].Label == stmt.Label {
 				targetLoopIndex = i
 				break
 			}
 		}
+
 		if targetLoopIndex == -1 {
-			fmt.Fprintf(os.Stderr, "Error: @%d references undefined loop label\n", stmt.Label)
+			keyword := "continue"
+			if stmt.IsBreak {
+				keyword = "break"
+			}
+			fmt.Fprintf(os.Stderr, "Error: %s @%d references loop @%d which is not active\n",
+				keyword, stmt.Label, stmt.Label)
 			os.Exit(1)
 		}
-		// Add placeholder jump and record position for later patching
+	}
+
+	if stmt.IsBreak {
+		// Break: jump to end of target loop
+		jumpPos := fc.eb.text.Len()
+		fc.out.JumpUnconditional(0) // Placeholder
+		fc.activeLoops[targetLoopIndex].EndPatches = append(
+			fc.activeLoops[targetLoopIndex].EndPatches,
+			jumpPos+1, // +1 to skip the opcode byte
+		)
+	} else {
+		// Continue: jump to continue point of target loop
 		jumpPos := fc.eb.text.Len()
 		fc.out.JumpUnconditional(0) // Placeholder
 		fc.activeLoops[targetLoopIndex].ContinuePatches = append(
@@ -2875,6 +3034,85 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		}
 		// movsd xmm0, [rbp - offset]
 		fc.out.MovMemToXmm("xmm0", "rbp", -offset)
+
+	case *LoopStateExpr:
+		// @first, @last, @counter, @i are special loop state variables
+		if len(fc.activeLoops) == 0 {
+			fmt.Fprintf(os.Stderr, "Error: @%s used outside of loop\n", e.Type)
+			os.Exit(1)
+		}
+
+		currentLoop := fc.activeLoops[len(fc.activeLoops)-1]
+
+		switch e.Type {
+		case "first":
+			// @first: check if counter == 0
+			var counterOffset int
+			if currentLoop.IsRangeLoop {
+				counterOffset = currentLoop.IteratorOffset
+				// Load iterator as float, convert to int
+				fc.out.MovMemToXmm("xmm0", "rbp", -counterOffset)
+				fc.out.Cvttsd2si("rax", "xmm0")
+			} else {
+				counterOffset = currentLoop.IndexOffset
+				// Load index as integer
+				fc.out.MovMemToReg("rax", "rbp", -counterOffset)
+			}
+			// Compare with 0
+			fc.out.CmpRegToImm("rax", 0)
+			// Set rax to 1 if equal, 0 if not
+			fc.out.MovImmToReg("rax", "0")
+			fc.out.MovImmToReg("rcx", "1")
+			fc.out.Cmove("rax", "rcx") // rax = (counter == 0) ? 1 : 0
+			// Convert to float64
+			fc.out.Cvtsi2sd("xmm0", "rax")
+
+		case "last":
+			// @last: check if counter == upper_bound - 1
+			var counterOffset int
+			if currentLoop.IsRangeLoop {
+				counterOffset = currentLoop.IteratorOffset
+				// Load iterator as float, convert to int
+				fc.out.MovMemToXmm("xmm0", "rbp", -counterOffset)
+				fc.out.Cvttsd2si("rax", "xmm0")
+			} else {
+				counterOffset = currentLoop.IndexOffset
+				// Load index as integer
+				fc.out.MovMemToReg("rax", "rbp", -counterOffset)
+			}
+			// Load upper bound
+			fc.out.MovMemToReg("rdi", "rbp", -currentLoop.UpperBoundOffset)
+			// Subtract 1 from upper bound: rdi = upper_bound - 1
+			fc.out.SubImmFromReg("rdi", 1)
+			// Compare counter with upper_bound - 1
+			fc.out.CmpRegToReg("rax", "rdi")
+			// Set rax to 1 if equal, 0 if not
+			fc.out.MovImmToReg("rax", "0")
+			fc.out.MovImmToReg("rcx", "1")
+			fc.out.Cmove("rax", "rcx") // rax = (counter == upper_bound - 1) ? 1 : 0
+			// Convert to float64
+			fc.out.Cvtsi2sd("xmm0", "rax")
+
+		case "counter":
+			// @counter: return the iteration counter (starting at 0)
+			if currentLoop.IsRangeLoop {
+				// For range loops, iterator is the counter
+				fc.out.MovMemToXmm("xmm0", "rbp", -currentLoop.IteratorOffset)
+			} else {
+				// For list loops, index is the counter
+				fc.out.MovMemToReg("rax", "rbp", -currentLoop.IndexOffset)
+				fc.out.Cvtsi2sd("xmm0", "rax")
+			}
+
+		case "i":
+			// @i: return the current element/key
+			// For both range and list loops, this is the iterator variable
+			fc.out.MovMemToXmm("xmm0", "rbp", -currentLoop.IteratorOffset)
+
+		default:
+			fmt.Fprintf(os.Stderr, "Error: unknown loop state variable @%s\n", e.Type)
+			os.Exit(1)
+		}
 
 	case *UnaryExpr:
 		// Compile the operand first (result in xmm0)
@@ -3916,39 +4154,54 @@ func (fc *FlapCompiler) compileMatchDefault(result Expression) {
 }
 
 func (fc *FlapCompiler) compileMatchJump(jumpExpr *JumpExpr) {
-	if jumpExpr.Label == 0 {
-		if len(fc.activeLoops) == 0 {
-			fmt.Fprintf(os.Stderr, "Error: @0 used outside of loop in match expression\n")
-			os.Exit(1)
-		}
-		jumpPos := fc.eb.text.Len()
-		fc.out.JumpUnconditional(0)
-		fc.activeLoops[len(fc.activeLoops)-1].EndPatches = append(
-			fc.activeLoops[len(fc.activeLoops)-1].EndPatches,
-			jumpPos+1,
-		)
-		return
-	}
-
-	targetLoopIndex := -1
-	for i := len(fc.activeLoops) - 1; i >= 0; i-- {
-		if fc.activeLoops[i].Label == jumpExpr.Label {
-			targetLoopIndex = i
-			break
-		}
-	}
-
-	if targetLoopIndex == -1 {
-		fmt.Fprintf(os.Stderr, "Error: @%d references undefined loop label in match expression\n", jumpExpr.Label)
+	if len(fc.activeLoops) == 0 {
+		fmt.Fprintf(os.Stderr, "Error: @%d used outside of loop in match expression\n", jumpExpr.Label)
 		os.Exit(1)
 	}
 
-	jumpPos := fc.eb.text.Len()
-	fc.out.JumpUnconditional(0)
-	fc.activeLoops[targetLoopIndex].ContinuePatches = append(
-		fc.activeLoops[targetLoopIndex].ContinuePatches,
-		jumpPos+1,
-	)
+	currentLoopLabel := fc.activeLoops[len(fc.activeLoops)-1].Label
+
+	// Semantics:
+	// @N where N < current loop label = break to scope N (exit to after loop N)
+	// @N where N == current loop label = continue current loop (jump to top)
+	// @N where N > current loop label = error
+
+	if jumpExpr.Label < currentLoopLabel {
+		// Break to scope N: jump to end of loop N+1 (exits to scope N)
+		targetLabel := jumpExpr.Label + 1
+		targetLoopIndex := -1
+		for i := 0; i < len(fc.activeLoops); i++ {
+			if fc.activeLoops[i].Label == targetLabel {
+				targetLoopIndex = i
+				break
+			}
+		}
+
+		if targetLoopIndex == -1 {
+			fmt.Fprintf(os.Stderr, "Error: @%d cannot break to scope %d (loop %d not found)\n",
+				jumpExpr.Label, jumpExpr.Label, targetLabel)
+			os.Exit(1)
+		}
+
+		jumpPos := fc.eb.text.Len()
+		fc.out.JumpUnconditional(0)
+		fc.activeLoops[targetLoopIndex].EndPatches = append(
+			fc.activeLoops[targetLoopIndex].EndPatches,
+			jumpPos+1,
+		)
+	} else if jumpExpr.Label == currentLoopLabel {
+		// Continue current loop: jump to top
+		jumpPos := fc.eb.text.Len()
+		fc.out.JumpUnconditional(0)
+		fc.activeLoops[len(fc.activeLoops)-1].ContinuePatches = append(
+			fc.activeLoops[len(fc.activeLoops)-1].ContinuePatches,
+			jumpPos+1,
+		)
+	} else {
+		fmt.Fprintf(os.Stderr, "Error: @%d references loop %d which is not active (current loop is %d)\n",
+			jumpExpr.Label, jumpExpr.Label, currentLoopLabel)
+		os.Exit(1)
+	}
 }
 
 func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
