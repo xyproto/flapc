@@ -1,0 +1,7 @@
+Allocated 0 bytes at pointer: 98189868888848.000000
+Data written to memory
+Read i32: 16711722.000000
+Read f64: 3.141590
+Read u8: 255.000000
+Read i64: 9999999.000000
+Memory freed

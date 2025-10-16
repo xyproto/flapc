@@ -68,6 +68,8 @@ flapc
 
 # Test executables (compiled from programs/*.flap)
 test_*
+!test_*.result
+!programs/test_*.result
 debug_*
 simple_*
 nested_*
