@@ -5309,6 +5309,113 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
+	// Generate cstr_to_flap_string(cstr_ptr) -> flap_string_ptr
+	// Converts a null-terminated C string to a Flap string (map format)
+	// Argument: rdi = C string pointer
+	// Returns: xmm0 = Flap string pointer (as float64)
+	fc.eb.MarkLabel("cstr_to_flap_string")
+
+	// Function prologue
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+
+	// Save callee-saved registers
+	fc.out.PushReg("rbx")
+	fc.out.PushReg("r12")
+	fc.out.PushReg("r13")
+	fc.out.PushReg("r14")
+
+	// Align stack (4 pushes + rbp = 5 pushes = 40 bytes, need 8 more for 16-byte alignment)
+	fc.out.SubImmFromReg("rsp", StackSlotSize)
+
+	// Save C string pointer
+	fc.out.MovRegToReg("r12", "rdi") // r12 = C string pointer
+
+	// Calculate string length using strlen
+	fc.trackFunctionCall("strlen")
+	fc.eb.GenerateCallInstruction("strlen")
+	fc.out.MovRegToReg("r14", "rax") // r14 = string length
+
+	// Allocate Flap string map: 8 + (length * 16) bytes
+	// count (8 bytes) + (key, value) pairs (16 bytes each)
+	fc.out.MovRegToReg("rdi", "r14")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe7, 0x04}) // shl rdi, 4 (multiply by 16)
+	fc.out.Emit([]byte{0x48, 0x83, 0xc7, 0x08}) // add rdi, 8
+	fc.trackFunctionCall("malloc")
+	fc.eb.GenerateCallInstruction("malloc")
+	fc.out.MovRegToReg("r13", "rax") // r13 = Flap string map pointer
+
+	// Store count in map[0]
+	fc.out.MovRegToReg("rax", "r14")
+	fc.out.Cvtsi2sd("xmm0", "rax")
+	fc.out.MovXmmToMem("xmm0", "r13", 0)
+
+	// Fill map with character data
+	fc.out.XorRegWithReg("rbx", "rbx") // rbx = index
+
+	// Loop: for each character
+	cstrLoopStart := fc.eb.text.Len()
+	fc.eb.MarkLabel("_cstr_to_flap_loop")
+
+	// Compare index with length
+	fc.out.Emit([]byte{0x4c, 0x39, 0xf3}) // cmp rbx, r14
+	cstrExitJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0) // je to exit (will patch later)
+
+	// Load character from C string: al = [r12 + rbx]
+	fc.out.Emit([]byte{0x41, 0x8a, 0x04, 0x1c}) // mov al, [r12 + rbx]
+
+	// Convert character to float64
+	fc.out.Emit([]byte{0x48, 0x0f, 0xb6, 0xc0}) // movzx rax, al
+	fc.out.Cvtsi2sd("xmm0", "rax")
+
+	// Convert index to float64 for key
+	fc.out.MovRegToReg("rdx", "rbx")
+	fc.out.Cvtsi2sd("xmm1", "rdx")
+
+	// Calculate offset for entry: 8 + (rbx * 16)
+	fc.out.MovRegToReg("rax", "rbx")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x04}) // shl rax, 4
+	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x08}) // add rax, 8
+
+	// Add offset to base pointer: rax = r13 + rax
+	fc.out.Emit([]byte{0x4c, 0x01, 0xe8}) // add rax, r13
+
+	// Store key (index): [rax] = xmm1
+	fc.out.Emit([]byte{0xf2, 0x0f, 0x11, 0x08}) // movsd [rax], xmm1
+
+	// Store value (character): [rax + 8] = xmm0
+	fc.out.Emit([]byte{0xf2, 0x0f, 0x11, 0x40, 0x08}) // movsd [rax + 8], xmm0
+
+	// Increment index
+	fc.out.Emit([]byte{0x48, 0xff, 0xc3}) // inc rbx
+
+	// Jump back to loop start
+	cstrLoopEnd := fc.eb.text.Len()
+	cstrOffset := int32(cstrLoopStart - (cstrLoopEnd + 2))
+	fc.out.Emit([]byte{0xeb, byte(cstrOffset)}) // jmp rel8
+
+	// Patch the exit jump
+	cstrExitPos := fc.eb.text.Len()
+	fc.patchJumpImmediate(cstrExitJumpPos+2, int32(cstrExitPos-(cstrExitJumpPos+6)))
+
+	// Return Flap string pointer in xmm0
+	fc.out.MovRegToReg("rax", "r13")
+	fc.out.Cvtsi2sd("xmm0", "rax")
+
+	// Restore stack alignment
+	fc.out.AddImmToReg("rsp", StackSlotSize)
+
+	// Restore callee-saved registers
+	fc.out.PopReg("r14")
+	fc.out.PopReg("r13")
+	fc.out.PopReg("r12")
+	fc.out.PopReg("rbx")
+
+	// Function epilogue
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
+
 	// Generate flap_slice_string(str_ptr, start, end, step) -> new_str_ptr
 	// Arguments: rdi = string_ptr, rsi = start_index (int64), rdx = end_index (int64), rcx = step (int64)
 	// Returns: rax = pointer to new sliced string
@@ -7749,6 +7856,316 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// rax = return code (0 on success)
 		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "readln":
+		// readln() - Read a line from stdin, return as Flap string
+		if len(call.Args) != 0 {
+			fmt.Fprintf(os.Stderr, "Error: readln() takes no arguments\n")
+			os.Exit(1)
+		}
+
+		// Allocate space on stack for getline parameters
+		// getline(&lineptr, &n, stdin)
+		// lineptr will be allocated by getline
+		fc.out.SubImmFromReg("rsp", 16) // 8 bytes for lineptr, 8 for n
+
+		// Initialize lineptr = NULL, n = 0
+		fc.out.XorRegWithReg("rax", "rax")
+		fc.out.MovRegToMem("rax", "rsp", 0)  // lineptr = NULL
+		fc.out.MovRegToMem("rax", "rsp", 8)  // n = 0
+
+		// Load stdin from libc
+		// stdin is at stdin@@GLIBC_2.2.5
+		fc.out.LeaSymbolToReg("rdx", "stdin")
+		fc.out.MovMemToReg("rdx", "rdx", 0) // dereference stdin pointer
+
+		// Set up getline arguments
+		fc.out.MovRegToReg("rdi", "rsp")        // &lineptr
+		fc.out.LeaMemToReg("rsi", "rsp", 8)     // &n
+		// rdx already has stdin
+
+		// Call getline
+		fc.trackFunctionCall("getline")
+		fc.trackFunctionCall("stdin")
+		fc.eb.GenerateCallInstruction("getline")
+
+		// getline returns number of characters read (or -1 on error)
+		// lineptr now points to allocated buffer with the line
+
+		// Load lineptr from stack
+		fc.out.MovMemToReg("rdi", "rsp", 0)
+
+		// Check if lineptr is NULL (error case)
+		fc.out.TestRegReg("rdi", "rdi")
+		errorJumpPos := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpEqual, 0) // Jump if NULL
+
+		// Strip newline if present (getline includes \n)
+		// Check if rax > 0 (characters read)
+		fc.out.TestRegReg("rax", "rax")
+		emptyJumpPos := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpLessOrEqual, 0) // Jump if no characters
+
+		// Check if last character is newline: byte [rdi + rax - 1] == '\n'
+		fc.out.Emit([]byte{0x80, 0x7c, 0x07, 0xff, 0x0a}) // cmp byte [rdi + rax - 1], '\n'
+		noNewlineJumpPos := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpNotEqual, 0) // Jump if not newline
+
+		// Replace newline with null terminator
+		fc.out.Emit([]byte{0xc6, 0x44, 0x07, 0xff, 0x00}) // mov byte [rdi + rax - 1], 0
+
+		// Patch no-newline jump to here
+		noNewlinePos := fc.eb.text.Len()
+		fc.patchJumpImmediate(noNewlineJumpPos+2, int32(noNewlinePos-(noNewlineJumpPos+6)))
+
+		// Patch empty jump to here
+		emptyPos := fc.eb.text.Len()
+		fc.patchJumpImmediate(emptyJumpPos+2, int32(emptyPos-(emptyJumpPos+6)))
+
+		// Convert C string to Flap string
+		// rdi already has lineptr
+		fc.out.CallSymbol("cstr_to_flap_string")
+		// Result in xmm0
+
+		// Save result
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 16) // Save above the getline locals
+
+		// Free the lineptr buffer
+		fc.out.MovMemToReg("rdi", "rsp", StackSlotSize) // Load lineptr from original position
+		fc.trackFunctionCall("free")
+		fc.eb.GenerateCallInstruction("free")
+
+		// Restore result
+		fc.out.MovMemToXmm("xmm0", "rsp", 16)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+		// Clean up stack
+		fc.out.AddImmToReg("rsp", 16)
+
+		// Jump to end
+		endJumpPos := fc.eb.text.Len()
+		fc.out.JumpUnconditional(0)
+
+		// Error case: return empty string
+		errorPos := fc.eb.text.Len()
+		fc.patchJumpImmediate(errorJumpPos+2, int32(errorPos-(errorJumpPos+6)))
+
+		// Clean up stack
+		fc.out.AddImmToReg("rsp", 16)
+
+		// Create empty Flap string (count = 0)
+		fc.out.MovImmToReg("rdi", "8") // Allocate 8 bytes for count
+		fc.trackFunctionCall("malloc")
+		fc.eb.GenerateCallInstruction("malloc")
+		fc.out.XorRegWithReg("rdx", "rdx")
+		fc.out.Cvtsi2sd("xmm0", "rdx") // xmm0 = 0.0
+		fc.out.MovXmmToMem("xmm0", "rax", 0) // [map] = 0.0
+		fc.out.Cvtsi2sd("xmm0", "rax") // Return map pointer
+
+		// Patch end jump
+		endPos := fc.eb.text.Len()
+		fc.patchJumpImmediate(endJumpPos+1, int32(endPos-(endJumpPos+5)))
+
+	case "read_file":
+		// read_file(path) - Read entire file, return as Flap string
+		if len(call.Args) != 1 {
+			fmt.Fprintf(os.Stderr, "Error: read_file() requires 1 argument (path)\n")
+			os.Exit(1)
+		}
+
+		// Evaluate path argument (Flap string)
+		fc.compileExpression(call.Args[0])
+
+		// Convert Flap string to C string
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovMemToReg("rdi", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+		fc.out.CallSymbol("flap_string_to_cstr")
+
+		// Open file: fopen(path, "r")
+		fc.out.MovRegToReg("rdi", "rax") // path
+		labelName := fmt.Sprintf("read_mode_%d", fc.stringCounter)
+		fc.stringCounter++
+		fc.eb.Define(labelName, "r\x00")
+		fc.out.LeaSymbolToReg("rsi", labelName) // mode = "r"
+		fc.trackFunctionCall("fopen")
+		fc.eb.GenerateCallInstruction("fopen")
+
+		// Check if fopen succeeded
+		fc.out.TestRegReg("rax", "rax")
+		errorJumpPos := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpEqual, 0) // Jump if NULL
+
+		// Save FILE* pointer
+		fc.out.PushReg("rax") // FILE* on stack
+
+		// Get file size: fseek(file, 0, SEEK_END)
+		fc.out.MovRegToReg("rdi", "rax") // FILE*
+		fc.out.XorRegWithReg("rsi", "rsi") // offset = 0
+		fc.out.MovImmToReg("rdx", "2") // SEEK_END = 2
+		fc.trackFunctionCall("fseek")
+		fc.eb.GenerateCallInstruction("fseek")
+
+		// ftell(file) to get size
+		fc.out.MovMemToReg("rdi", "rsp", 0) // FILE* from stack
+		fc.trackFunctionCall("ftell")
+		fc.eb.GenerateCallInstruction("ftell")
+		fc.out.PushReg("rax") // Save file size
+
+		// Rewind: fseek(file, 0, SEEK_SET)
+		fc.out.MovMemToReg("rdi", "rsp", StackSlotSize) // FILE*
+		fc.out.XorRegWithReg("rsi", "rsi") // offset = 0
+		fc.out.XorRegWithReg("rdx", "rdx") // SEEK_SET = 0
+		fc.eb.GenerateCallInstruction("fseek")
+
+		// Allocate buffer: malloc(size + 1) for null terminator
+		fc.out.MovMemToReg("rdi", "rsp", 0) // size
+		fc.out.AddImmToReg("rdi", 1) // +1 for null
+		fc.trackFunctionCall("malloc")
+		fc.eb.GenerateCallInstruction("malloc")
+		fc.out.PushReg("rax") // Save buffer pointer
+
+		// Read file: fread(buffer, 1, size, file)
+		fc.out.MovRegToReg("rdi", "rax") // buffer
+		fc.out.MovImmToReg("rsi", "1") // element size = 1
+		fc.out.MovMemToReg("rdx", "rsp", StackSlotSize) // size
+		fc.out.MovMemToReg("rcx", "rsp", StackSlotSize*2) // FILE*
+		fc.trackFunctionCall("fread")
+		fc.eb.GenerateCallInstruction("fread")
+
+		// Add null terminator: buffer[size] = 0
+		fc.out.MovMemToReg("rdi", "rsp", 0) // buffer
+		fc.out.MovMemToReg("rdx", "rsp", StackSlotSize) // size
+		fc.out.Emit([]byte{0xc6, 0x04, 0x17, 0x00}) // mov byte [rdi + rdx], 0
+
+		// Close file: fclose(file)
+		fc.out.MovMemToReg("rdi", "rsp", StackSlotSize*2) // FILE*
+		fc.trackFunctionCall("fclose")
+		fc.eb.GenerateCallInstruction("fclose")
+
+		// Convert buffer to Flap string
+		fc.out.MovMemToReg("rdi", "rsp", 0) // buffer
+		fc.out.CallSymbol("cstr_to_flap_string")
+		// Result in xmm0
+
+		// Save result
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+		// Free buffer
+		fc.out.MovMemToReg("rdi", "rsp", StackSlotSize) // buffer
+		fc.eb.GenerateCallInstruction("free")
+
+		// Restore result and clean up stack
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize + StackSlotSize*3) // result + buffer + size + FILE*
+
+		// Jump to end
+		endJumpPos := fc.eb.text.Len()
+		fc.out.JumpUnconditional(0)
+
+		// Error case: return empty string
+		errorPos := fc.eb.text.Len()
+		fc.patchJumpImmediate(errorJumpPos+2, int32(errorPos-(errorJumpPos+6)))
+
+		fc.out.MovImmToReg("rdi", "8")
+		fc.eb.GenerateCallInstruction("malloc")
+		fc.out.XorRegWithReg("rdx", "rdx")
+		fc.out.Cvtsi2sd("xmm0", "rdx")
+		fc.out.MovXmmToMem("xmm0", "rax", 0)
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+		// Patch end jump
+		endPos := fc.eb.text.Len()
+		fc.patchJumpImmediate(endJumpPos+1, int32(endPos-(endJumpPos+5)))
+
+	case "write_file":
+		// write_file(path, content) - Write string to file
+		if len(call.Args) != 2 {
+			fmt.Fprintf(os.Stderr, "Error: write_file() requires 2 arguments (path, content)\n")
+			os.Exit(1)
+		}
+
+		// Evaluate and convert content first
+		fc.compileExpression(call.Args[1])
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovMemToReg("rdi", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+		fc.out.CallSymbol("flap_string_to_cstr")
+		fc.out.PushReg("rax") // Save content C string
+
+		// Evaluate and convert path
+		fc.compileExpression(call.Args[0])
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovMemToReg("rdi", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+		fc.out.CallSymbol("flap_string_to_cstr")
+
+		// Open file: fopen(path, "w")
+		fc.out.MovRegToReg("rdi", "rax") // path
+		labelName := fmt.Sprintf("write_mode_%d", fc.stringCounter)
+		fc.stringCounter++
+		fc.eb.Define(labelName, "w\x00")
+		fc.out.LeaSymbolToReg("rsi", labelName) // mode = "w"
+		fc.trackFunctionCall("fopen")
+		fc.eb.GenerateCallInstruction("fopen")
+
+		// Check if fopen succeeded
+		fc.out.TestRegReg("rax", "rax")
+		errorJumpPos := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpEqual, 0) // Jump if NULL
+
+		// Save FILE* pointer
+		fc.out.PushReg("rax")
+
+		// Get content length using strlen
+		fc.out.MovMemToReg("rdi", "rsp", StackSlotSize) // content
+		fc.trackFunctionCall("strlen")
+		fc.eb.GenerateCallInstruction("strlen")
+		fc.out.PushReg("rax") // Save length
+
+		// Write file: fwrite(content, 1, length, file)
+		fc.out.MovMemToReg("rdi", "rsp", StackSlotSize*2) // content
+		fc.out.MovImmToReg("rsi", "1") // element size = 1
+		fc.out.MovMemToReg("rdx", "rsp", 0) // length
+		fc.out.MovMemToReg("rcx", "rsp", StackSlotSize) // FILE*
+		fc.trackFunctionCall("fwrite")
+		fc.eb.GenerateCallInstruction("fwrite")
+
+		// Close file: fclose(file)
+		fc.out.MovMemToReg("rdi", "rsp", StackSlotSize) // FILE*
+		fc.trackFunctionCall("fclose")
+		fc.eb.GenerateCallInstruction("fclose")
+
+		// Clean up stack (length + FILE* + content)
+		fc.out.AddImmToReg("rsp", StackSlotSize*3)
+
+		// Return 0 (success)
+		fc.out.XorRegWithReg("rax", "rax")
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+		// Jump to end
+		endJumpPos := fc.eb.text.Len()
+		fc.out.JumpUnconditional(0)
+
+		// Error case: clean up and return -1
+		errorPos := fc.eb.text.Len()
+		fc.patchJumpImmediate(errorJumpPos+2, int32(errorPos-(errorJumpPos+6)))
+
+		// Clean up content from stack
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+		// Return -1 (error)
+		fc.out.MovImmToReg("rax", "-1")
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+		// Patch end jump
+		endPos := fc.eb.text.Len()
+		fc.patchJumpImmediate(endJumpPos+1, int32(endPos-(endJumpPos+5)))
 
 	case "sizeof_i8", "sizeof_u8":
 		// sizeof_i8() / sizeof_u8() - Return size of 8-bit integer (1 byte)
