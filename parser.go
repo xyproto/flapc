@@ -2761,7 +2761,64 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 		fc.compileJumpStatement(s)
 
 	case *ExpressionStmt:
-		fc.compileExpression(s.Expr)
+		// Handle PostfixExpr as a statement (like Go)
+		if postfix, ok := s.Expr.(*PostfixExpr); ok {
+			// x++ and x-- are statements only, not expressions
+			identExpr, ok := postfix.Operand.(*IdentExpr)
+			if !ok {
+				fmt.Fprintf(os.Stderr, "Error: postfix operator %s requires a variable operand\n", postfix.Operator)
+				os.Exit(1)
+			}
+
+			// Get the variable's stack offset
+			offset, exists := fc.variables[identExpr.Name]
+			if !exists {
+				fmt.Fprintf(os.Stderr, "Error: undefined variable '%s'\n", identExpr.Name)
+				os.Exit(1)
+			}
+
+			// Check if variable is mutable
+			if !fc.mutableVars[identExpr.Name] {
+				fmt.Fprintf(os.Stderr, "Error: cannot modify immutable variable '%s'\n", identExpr.Name)
+				os.Exit(1)
+			}
+
+			// Load current value into xmm0
+			fc.out.MovMemToXmm("xmm0", "rbp", -offset)
+
+			// Create 1.0 constant
+			labelName := fmt.Sprintf("one_%d", fc.stringCounter)
+			fc.stringCounter++
+
+			one := 1.0
+			bits := uint64(0)
+			*(*float64)(unsafe.Pointer(&bits)) = one
+			var floatData []byte
+			for i := 0; i < 8; i++ {
+				floatData = append(floatData, byte((bits>>(i*8))&ByteMask))
+			}
+			fc.eb.Define(labelName, string(floatData))
+
+			// Load 1.0 into xmm1
+			fc.out.LeaSymbolToReg("rax", labelName)
+			fc.out.MovMemToXmm("xmm1", "rax", 0)
+
+			// Apply the operation
+			switch postfix.Operator {
+			case "++":
+				fc.out.AddsdXmm("xmm0", "xmm1") // xmm0 = xmm0 + 1.0
+			case "--":
+				fc.out.SubsdXmm("xmm0", "xmm1") // xmm0 = xmm0 - 1.0
+			default:
+				fmt.Fprintf(os.Stderr, "Error: unknown postfix operator '%s'\n", postfix.Operator)
+				os.Exit(1)
+			}
+
+			// Store the modified value back to the variable
+			fc.out.MovXmmToMem("xmm0", "rbp", -offset)
+		} else {
+			fc.compileExpression(s.Expr)
+		}
 	}
 }
 
@@ -3430,6 +3487,11 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.MovMemToXmm("xmm0", "rsp", 0)
 			fc.out.AddImmToReg("rsp", StackSlotSize)
 		}
+
+	case *PostfixExpr:
+		// PostfixExpr (x++, x--) can only be used as statements, not expressions
+		fmt.Fprintf(os.Stderr, "Error: %s can only be used as a statement, not in an expression (like Go)\n", e.Operator)
+		os.Exit(1)
 
 	case *BinaryExpr:
 		// Handle or! error handling operator (special case: short-circuit)
