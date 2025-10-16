@@ -4417,6 +4417,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 	case *CastExpr:
 		fc.compileCastExpr(e)
+
+	case *SliceExpr:
+		fc.compileSliceExpr(e)
 	}
 }
 
@@ -4663,6 +4666,74 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 		fmt.Fprintf(os.Stderr, "Error: unknown cast type '%s'\n", expr.Type)
 		os.Exit(1)
 	}
+}
+
+func (fc *FlapCompiler) compileSliceExpr(expr *SliceExpr) {
+	// Slice syntax: list[start:end:step] or string[start:end:step]
+	// For now, implement simple case: string/list[start:end] (step=1, forward)
+
+	// Compile the collection expression (result in xmm0 as pointer)
+	fc.compileExpression(expr.List)
+
+	// Save collection pointer on stack
+	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+	// Compile start index (or 0 if nil)
+	if expr.Start != nil {
+		fc.compileExpression(expr.Start)
+	} else {
+		// Default start = 0
+		fc.out.XorRegWithReg("rax", "rax")
+		fc.out.Cvtsi2sd("xmm0", "rax")
+	}
+	// Save start on stack
+	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+	// Compile end index (or length if nil)
+	if expr.End != nil {
+		fc.compileExpression(expr.End)
+		// end is now in xmm0
+	} else {
+		// Default end = length of collection
+		// Load collection pointer and get its length (first 8 bytes)
+		fc.out.MovMemToReg("rax", "rsp", 8) // collection pointer is 16 bytes back
+		fc.out.MovMemToXmm("xmm0", "rax", 0) // load length
+	}
+	// end is in xmm0
+
+	// TODO: Handle step parameter (for now, assume step=1)
+	if expr.Step != nil {
+		fmt.Fprintf(os.Stderr, "Error: slice step parameter not yet implemented\n")
+		os.Exit(1)
+	}
+
+	// Stack layout: [collection_ptr][start][current_rsp -> end in xmm0]
+	// Call runtime function: flap_slice(collection_ptr, start, end) -> new_collection_ptr
+	// For now, convert to simple substring copy
+
+	// Load end into rdi (arg3)
+	fc.out.Cvttsd2si("rdx", "xmm0") // rdx = end (as integer)
+
+	// Load start into rsi (arg2)
+	fc.out.MovMemToXmm("xmm0", "rsp", 0)
+	fc.out.Cvttsd2si("rsi", "xmm0") // rsi = start (as integer)
+
+	// Load collection pointer into rdi (arg1)
+	fc.out.MovMemToReg("rdi", "rsp", 8) // rdi = collection pointer
+
+	// Clean up stack before call
+	fc.out.AddImmToReg("rsp", 16)
+
+	// Call runtime function
+	fc.out.CallSymbol("flap_slice_string")
+
+	// Result (new string pointer) is in rax, convert to float64 in xmm0
+	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.MovRegToMem("rax", "rsp", 0)
+	fc.out.MovMemToXmm("xmm0", "rsp", 0)
+	fc.out.AddImmToReg("rsp", 8)
 }
 
 func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
@@ -5048,6 +5119,105 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.AddImmToReg("rsp", 8)
 
 	// Restore callee-saved registers
+	fc.out.PopReg("r14")
+	fc.out.PopReg("r13")
+	fc.out.PopReg("r12")
+	fc.out.PopReg("rbx")
+
+	// Function epilogue
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
+
+	// Generate flap_slice_string(str_ptr, start, end) -> new_str_ptr
+	// Arguments: rdi = string_ptr, rsi = start_index (int64), rdx = end_index (int64)
+	// Returns: rax = pointer to new sliced string
+	// String format (map): [count (float64)][key0 (float64)][val0 (float64)]...
+
+	fc.eb.MarkLabel("flap_slice_string")
+
+	// Function prologue
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+
+	// Save callee-saved registers
+	fc.out.PushReg("rbx")
+	fc.out.PushReg("r12")
+	fc.out.PushReg("r13")
+	fc.out.PushReg("r14")
+	fc.out.PushReg("r15")
+
+	// Save arguments
+	fc.out.MovRegToReg("r12", "rdi") // r12 = original string pointer
+	fc.out.MovRegToReg("r13", "rsi") // r13 = start index
+	fc.out.MovRegToReg("r14", "rdx") // r14 = end index
+
+	// Calculate slice length: length = end - start
+	fc.out.MovRegToReg("r15", "r14")
+	fc.out.SubRegFromReg("r15", "r13") // r15 = length
+
+	// Allocate memory for new string: 8 + (length * 16) bytes
+	fc.out.MovRegToReg("rax", "r15")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x04}) // shl rax, 4 (multiply by 16)
+	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x08}) // add rax, 8
+	fc.out.MovRegToReg("rdi", "rax")
+	fc.trackFunctionCall("malloc")
+	fc.eb.GenerateCallInstruction("malloc")
+	fc.out.MovRegToReg("rbx", "rax") // rbx = new string pointer
+
+	// Store count (length) as float64 in first 8 bytes
+	fc.out.Cvtsi2sd("xmm0", "r15")   // xmm0 = length as float64
+	fc.out.MovXmmToMem("xmm0", "rbx", 0)
+
+	// Copy characters from original string
+	// Initialize loop counter: rcx = 0
+	fc.out.XorRegWithReg("rcx", "rcx")
+
+	fc.eb.MarkLabel("_slice_copy_loop")
+	sliceLoopStart := fc.eb.text.Len() // Track actual loop start position
+	// Check if rcx < length
+	fc.out.CmpRegToReg("rcx", "r15")
+	fc.out.Emit([]byte{0x73, 0x00}) // jae +X (will patch)
+	loopExitPatchPos := fc.eb.text.Len() - 1
+
+	// Calculate source index: source_idx = start + rcx
+	fc.out.MovRegToReg("rax", "r13")
+	fc.out.AddRegToReg("rax", "rcx") // rax = start + i
+
+	// Load key from original string: [r12 + 8 + (source_idx * 16)]
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x04}) // shl rax, 4
+	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x08}) // add rax, 8
+	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x10, 0x04, 0x04}) // movsd xmm0, [r12 + rax] (key)
+	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x10, 0x4c, 0x04, 0x08}) // movsd xmm1, [r12 + rax + 8] (value)
+
+	// Store in new string at index rcx: [rbx + 8 + (rcx * 16)]
+	fc.out.MovRegToReg("rdx", "rcx")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe2, 0x04}) // shl rdx, 4
+	fc.out.Emit([]byte{0x48, 0x83, 0xc2, 0x08}) // add rdx, 8
+
+	// Store key as rcx (new index), not the original key
+	fc.out.Cvtsi2sd("xmm0", "rcx") // xmm0 = rcx as float64 (new key)
+	fc.out.Emit([]byte{0xf2, 0x0f, 0x11, 0x04, 0x13}) // movsd [rbx + rdx], xmm0
+	fc.out.Emit([]byte{0xf2, 0x0f, 0x11, 0x4c, 0x13, 0x08}) // movsd [rbx + rdx + 8], xmm1
+
+	// Increment loop counter
+	fc.out.Emit([]byte{0x48, 0xff, 0xc1}) // inc rcx
+	fc.out.Emit([]byte{0xeb, 0x00}) // jmp _slice_copy_loop (will patch)
+	loopBackPatchPos := fc.eb.text.Len() - 1
+
+	// Patch loop jumps
+	sliceLoopBodyStart := fc.eb.text.Len()
+	// Patch exit jump
+	sliceExitOffset := sliceLoopBodyStart - (loopExitPatchPos + 1)
+	fc.eb.text.Bytes()[loopExitPatchPos] = byte(sliceExitOffset)
+	// Patch back jump (jump from loopBackPatchPos to sliceLoopStart)
+	sliceBackOffset := sliceLoopStart - loopBackPatchPos - 1
+	fc.eb.text.Bytes()[loopBackPatchPos] = byte(sliceBackOffset)
+
+	// Return new string pointer in rax
+	fc.out.MovRegToReg("rax", "rbx")
+
+	// Restore callee-saved registers
+	fc.out.PopReg("r15")
 	fc.out.PopReg("r14")
 	fc.out.PopReg("r13")
 	fc.out.PopReg("r12")
