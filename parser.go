@@ -84,18 +84,18 @@ const (
 	TOKEN_GTGT_B        // >>b (rotate right)
 	TOKEN_AS            // as (type casting)
 	// C type keywords
-	TOKEN_I8    // i8
-	TOKEN_I16   // i16
-	TOKEN_I32   // i32
-	TOKEN_I64   // i64
-	TOKEN_U8    // u8
-	TOKEN_U16   // u16
-	TOKEN_U32   // u32
-	TOKEN_U64   // u64
-	TOKEN_F32   // f32
-	TOKEN_F64   // f64
-	TOKEN_CSTR  // cstr
-	TOKEN_PTR   // ptr
+	TOKEN_I8   // i8
+	TOKEN_I16  // i16
+	TOKEN_I32  // i32
+	TOKEN_I64  // i64
+	TOKEN_U8   // u8
+	TOKEN_U16  // u16
+	TOKEN_U32  // u32
+	TOKEN_U64  // u64
+	TOKEN_F32  // f32
+	TOKEN_F64  // f64
+	TOKEN_CSTR // cstr
+	TOKEN_PTR  // ptr
 	// Flap type keywords
 	TOKEN_NUMBER_TYPE // number
 	TOKEN_STRING_TYPE // string (type)
@@ -264,10 +264,10 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_MOD, Value: value, Line: l.line}
 		case "as":
 			return Token{Type: TOKEN_AS, Value: value, Line: l.line}
-		// Note: All type keywords (i8, i16, i32, i64, u8, u16, u32, u64, f32, f64,
-		// cstr, ptr, number, string, list) are contextual keywords.
-		// They are only treated as type keywords after "as" in cast expressions.
-		// Otherwise they can be used as identifiers.
+			// Note: All type keywords (i8, i16, i32, i64, u8, u16, u32, u64, f32, f64,
+			// cstr, ptr, number, string, list) are contextual keywords.
+			// They are only treated as type keywords after "as" in cast expressions.
+			// Otherwise they can be used as identifiers.
 		}
 
 		return Token{Type: TOKEN_IDENT, Value: value, Line: l.line}
@@ -3807,6 +3807,15 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.SubsdXmm("xmm0", "xmm1") // subsd xmm0, xmm1
 		case "*":
 			fc.out.MulsdXmm("xmm0", "xmm1") // mulsd xmm0, xmm1
+		case "*+":
+			// FMA: a *+ b = a * a + b (square and add, using fused multiply-add)
+			// Use VFMADD213SD xmm0, xmm0, xmm1 => xmm0 = xmm0 * xmm0 + xmm1
+			// Encoding: C4 E2 F9 A9 C1 (VFMADD213SD xmm0, xmm0, xmm1)
+			fc.out.Write(0xC4) // VEX 3-byte prefix
+			fc.out.Write(0xE2) // VEX byte 1: R=1, X=1, B=1, m=00010 (0F38)
+			fc.out.Write(0xF9) // VEX byte 2: W=1, vvvv=0000 (xmm0), L=0, pp=01 (66)
+			fc.out.Write(0xA9) // Opcode: VFMADD213SD
+			fc.out.Write(0xC1) // ModR/M: 11 000 001 (xmm0, xmm0, xmm1)
 		case "/":
 			fc.out.DivsdXmm("xmm0", "xmm1") // divsd xmm0, xmm1
 		case "mod":
@@ -4781,7 +4790,7 @@ func (fc *FlapCompiler) compileSliceExpr(expr *SliceExpr) {
 		fc.out.MovMemToXmm("xmm0", "rsp", 0) // load step
 		fc.out.Cvttsd2si("rax", "xmm0")      // convert to integer
 		fc.out.XorRegWithReg("rbx", "rbx")
-		fc.out.CmpRegToReg("rax", "rbx")     // compare with 0
+		fc.out.CmpRegToReg("rax", "rbx") // compare with 0
 
 		negStepStartJumpPos := fc.eb.text.Len()
 		fc.out.JumpConditional(JumpLess, 0) // If step < 0, jump to negative step path
@@ -4799,7 +4808,7 @@ func (fc *FlapCompiler) compileSliceExpr(expr *SliceExpr) {
 		fc.patchJumpImmediate(negStepStartJumpPos+2, negStepStartOffset)
 
 		fc.out.MovMemToReg("rax", "rsp", StackSlotSize) // Load collection pointer
-		fc.out.MovMemToXmm("xmm0", "rax", 0) // Load length
+		fc.out.MovMemToXmm("xmm0", "rax", 0)            // Load length
 		fc.out.MovImmToReg("rax", "1")
 		fc.out.Cvtsi2sd("xmm1", "rax")
 		fc.out.SubsdXmm("xmm0", "xmm1") // xmm0 = length - 1
@@ -4819,9 +4828,9 @@ func (fc *FlapCompiler) compileSliceExpr(expr *SliceExpr) {
 	} else {
 		// Check if step is negative (convert to integer first)
 		fc.out.MovMemToXmm("xmm0", "rsp", StackSlotSize) // load step (now 8 bytes back from start)
-		fc.out.Cvttsd2si("rax", "xmm0")      // convert to integer
+		fc.out.Cvttsd2si("rax", "xmm0")                  // convert to integer
 		fc.out.XorRegWithReg("rbx", "rbx")
-		fc.out.CmpRegToReg("rax", "rbx")     // compare with 0
+		fc.out.CmpRegToReg("rax", "rbx") // compare with 0
 
 		negStepEndJumpPos := fc.eb.text.Len()
 		fc.out.JumpConditional(JumpLess, 0) // If step < 0, jump to negative step path
@@ -5317,9 +5326,9 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Step > 1 path: length = ((end - start + step - 1) / step)
 	fc.out.MovRegToReg("r15", "r14")
-	fc.out.SubRegFromReg("r15", "r13")    // r15 = end - start
-	fc.out.AddRegToReg("r15", "r8")       // r15 = end - start + step
-	fc.out.SubImmFromReg("r15", 1)        // r15 = end - start + step - 1
+	fc.out.SubRegFromReg("r15", "r13") // r15 = end - start
+	fc.out.AddRegToReg("r15", "r8")    // r15 = end - start + step
+	fc.out.SubImmFromReg("r15", 1)     // r15 = end - start + step - 1
 	fc.out.MovRegToReg("rax", "r15")
 	fc.out.XorRegWithReg("rdx", "rdx")    // Clear rdx for division
 	fc.out.Emit([]byte{0x49, 0xF7, 0xF8}) // idiv r8
@@ -5346,18 +5355,18 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.patchJumpImmediate(stepNegativeJumpPos+2, stepNegativeOffset)
 
 	// Negative step path: length = ((start - end - step - 1) / (-step))
-	fc.out.MovRegToReg("r15", "r13")      // r15 = start
-	fc.out.SubRegFromReg("r15", "r14")    // r15 = start - end
-	fc.out.SubRegFromReg("r15", "r8")     // r15 = start - end - step
-	fc.out.SubImmFromReg("r15", 1)        // r15 = start - end - step - 1
+	fc.out.MovRegToReg("r15", "r13")   // r15 = start
+	fc.out.SubRegFromReg("r15", "r14") // r15 = start - end
+	fc.out.SubRegFromReg("r15", "r8")  // r15 = start - end - step
+	fc.out.SubImmFromReg("r15", 1)     // r15 = start - end - step - 1
 	// Divide by -step, so negate r8, divide, then restore r8
-	fc.out.MovRegToReg("r10", "r8")        // Save r8
+	fc.out.MovRegToReg("r10", "r8")       // Save r8
 	fc.out.Emit([]byte{0x49, 0xF7, 0xD8}) // neg r8 (r8 = -r8)
 	fc.out.MovRegToReg("rax", "r15")
-	fc.out.XorRegWithReg("rdx", "rdx")     // Clear rdx for division
+	fc.out.XorRegWithReg("rdx", "rdx")    // Clear rdx for division
 	fc.out.Emit([]byte{0x49, 0xF7, 0xF8}) // idiv r8
-	fc.out.MovRegToReg("r15", "rax")       // r15 = result length
-	fc.out.MovRegToReg("r8", "r10")        // Restore r8
+	fc.out.MovRegToReg("r15", "rax")      // r15 = result length
+	fc.out.MovRegToReg("r8", "r10")       // Restore r8
 
 	// Patch end jumps
 	stepEndPos := fc.eb.text.Len()
@@ -5370,7 +5379,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// Allocate memory for new string: 8 + (length * 16) bytes
 	fc.out.MovRegToReg("rax", "r15")
 	fc.out.ShlRegImm("rax", "4") // shl rax, 4 (multiply by 16)
-	fc.out.AddImmToReg("rax", 8)  // add rax, 8
+	fc.out.AddImmToReg("rax", 8) // add rax, 8
 	fc.out.MovRegToReg("rdi", "rax")
 	// Save r8 (step) before malloc since it's caller-saved
 	fc.out.PushReg("r8")
@@ -5381,7 +5390,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("r8")
 
 	// Store count (length) as float64 in first 8 bytes
-	fc.out.Cvtsi2sd("xmm0", "r15")   // xmm0 = length as float64
+	fc.out.Cvtsi2sd("xmm0", "r15") // xmm0 = length as float64
 	fc.out.MovXmmToMem("xmm0", "rbx", 0)
 
 	// Copy characters from original string
@@ -5403,27 +5412,27 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Calculate source address: r11 = r12 + 8 + (source_idx * 16)
 	fc.out.ShlRegImm("rax", "4") // rax = source_idx * 16
-	fc.out.AddImmToReg("rax", 8)  // rax = source_idx * 16 + 8
+	fc.out.AddImmToReg("rax", 8) // rax = source_idx * 16 + 8
 	fc.out.MovRegToReg("r11", "r12")
 	fc.out.AddRegToReg("r11", "rax") // r11 = r12 + rax
 
 	// Load key and value from source string
-	fc.out.MovMemToXmm("xmm0", "r11", 0)  // xmm0 = [r11] (key)
-	fc.out.MovMemToXmm("xmm1", "r11", 8)  // xmm1 = [r11 + 8] (value)
+	fc.out.MovMemToXmm("xmm0", "r11", 0) // xmm0 = [r11] (key)
+	fc.out.MovMemToXmm("xmm1", "r11", 8) // xmm1 = [r11 + 8] (value)
 
 	// Calculate destination address: rdx = 8 + (rcx * 16)
 	fc.out.MovRegToReg("rdx", "rcx")
 	fc.out.ShlRegImm("rdx", "4") // rdx = rcx * 16
-	fc.out.AddImmToReg("rdx", 8)  // rdx = rcx * 16 + 8
+	fc.out.AddImmToReg("rdx", 8) // rdx = rcx * 16 + 8
 
 	// Calculate full destination address: r11 = rbx + rdx
 	fc.out.MovRegToReg("r11", "rbx")
 	fc.out.AddRegToReg("r11", "rdx") // r11 = rbx + rdx
 
 	// Store key as rcx (new index), and value
-	fc.out.Cvtsi2sd("xmm0", "rcx") // xmm0 = rcx as float64 (new key)
-	fc.out.MovXmmToMem("xmm0", "r11", 0)  // [r11] = xmm0 (key)
-	fc.out.MovXmmToMem("xmm1", "r11", 8)  // [r11 + 8] = xmm1 (value)
+	fc.out.Cvtsi2sd("xmm0", "rcx")       // xmm0 = rcx as float64 (new key)
+	fc.out.MovXmmToMem("xmm0", "r11", 0) // [r11] = xmm0 (key)
+	fc.out.MovXmmToMem("xmm1", "r11", 8) // [r11 + 8] = xmm1 (value)
 
 	// Increment loop counter
 	fc.out.IncReg("rcx")
@@ -6859,10 +6868,10 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Solution: save sqrt to mem, reload in reverse order
 		fc.out.FstpMem("rsp", 0) // Store x to [rsp], pop, ST(0) = sqrt(1-x²)
 		fc.out.SubImmFromReg("rsp", StackSlotSize)
-		fc.out.FstpMem("rsp", 0) // Store sqrt to [rsp+0]
-		fc.out.FldMem("rsp", StackSlotSize)  // Load x: ST(0) = x
-		fc.out.FldMem("rsp", 0)  // Load sqrt: ST(0) = sqrt, ST(1) = x
-		fc.out.Fpatan()          // ST(0) = atan2(x, sqrt(1-x²)) = asin(x)
+		fc.out.FstpMem("rsp", 0)            // Store sqrt to [rsp+0]
+		fc.out.FldMem("rsp", StackSlotSize) // Load x: ST(0) = x
+		fc.out.FldMem("rsp", 0)             // Load sqrt: ST(0) = sqrt, ST(1) = x
+		fc.out.Fpatan()                     // ST(0) = atan2(x, sqrt(1-x²)) = asin(x)
 		fc.out.FstpMem("rsp", 0)
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
 		fc.out.AddImmToReg("rsp", 16) // Restore both allocations
@@ -7128,11 +7137,11 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// 3. Split into integer and fractional parts
 		// 4. Use F2XM1 and FSCALE like in exp
 
-		fc.out.Fld1()           // ST(0) = 1.0
-		fc.out.FldMem("rsp", 0) // ST(0) = x, ST(1) = 1.0
-		fc.out.Fyl2x()          // ST(0) = 1 * log2(x) = log2(x)
+		fc.out.Fld1()                       // ST(0) = 1.0
+		fc.out.FldMem("rsp", 0)             // ST(0) = x, ST(1) = 1.0
+		fc.out.Fyl2x()                      // ST(0) = 1 * log2(x) = log2(x)
 		fc.out.FldMem("rsp", StackSlotSize) // ST(0) = y, ST(1) = log2(x)
-		fc.out.Fmulp()          // ST(0) = y * log2(x)
+		fc.out.Fmulp()                      // ST(0) = y * log2(x)
 
 		// Split into n + f
 		fc.out.FldSt0()    // ST(0) = y*log2(x), ST(1) = y*log2(x)
@@ -7338,15 +7347,15 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 				fc.out.MovByteRegToMem("rax", "r10", 0)
 			case 2:
 				// mov word [r10], ax
-				fc.out.Write(0x66)       // 16-bit operand prefix
-				fc.out.Write(0x41)       // REX prefix for r10
-				fc.out.Write(0x89)       // mov r/m16, r16
-				fc.out.Write(0x02)       // ModR/M: [r10]
+				fc.out.Write(0x66) // 16-bit operand prefix
+				fc.out.Write(0x41) // REX prefix for r10
+				fc.out.Write(0x89) // mov r/m16, r16
+				fc.out.Write(0x02) // ModR/M: [r10]
 			case 4:
 				// mov dword [r10], eax
-				fc.out.Write(0x41)       // REX prefix for r10
-				fc.out.Write(0x89)       // mov r/m32, r32
-				fc.out.Write(0x02)       // ModR/M: [r10]
+				fc.out.Write(0x41) // REX prefix for r10
+				fc.out.Write(0x89) // mov r/m32, r32
+				fc.out.Write(0x02) // ModR/M: [r10]
 			case 8:
 				// mov qword [r10], rax
 				fc.out.MovRegToMem("rax", "r10", 0)
@@ -7418,42 +7427,42 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			case 1:
 				if isSigned {
 					// movsx rax, byte [r10]
-					fc.out.Write(0x49)       // REX.W + REX.B
-					fc.out.Write(0x0f)       // Two-byte opcode
-					fc.out.Write(0xbe)       // movsx
-					fc.out.Write(0x02)       // ModR/M: [r10]
+					fc.out.Write(0x49) // REX.W + REX.B
+					fc.out.Write(0x0f) // Two-byte opcode
+					fc.out.Write(0xbe) // movsx
+					fc.out.Write(0x02) // ModR/M: [r10]
 				} else {
 					// movzx rax, byte [r10]
-					fc.out.Write(0x49)       // REX.W + REX.B
-					fc.out.Write(0x0f)       // Two-byte opcode
-					fc.out.Write(0xb6)       // movzx
-					fc.out.Write(0x02)       // ModR/M: [r10]
+					fc.out.Write(0x49) // REX.W + REX.B
+					fc.out.Write(0x0f) // Two-byte opcode
+					fc.out.Write(0xb6) // movzx
+					fc.out.Write(0x02) // ModR/M: [r10]
 				}
 			case 2:
 				if isSigned {
 					// movsx rax, word [r10]
-					fc.out.Write(0x49)       // REX.W + REX.B
-					fc.out.Write(0x0f)       // Two-byte opcode
-					fc.out.Write(0xbf)       // movsx
-					fc.out.Write(0x02)       // ModR/M: [r10]
+					fc.out.Write(0x49) // REX.W + REX.B
+					fc.out.Write(0x0f) // Two-byte opcode
+					fc.out.Write(0xbf) // movsx
+					fc.out.Write(0x02) // ModR/M: [r10]
 				} else {
 					// movzx rax, word [r10]
-					fc.out.Write(0x49)       // REX.W + REX.B
-					fc.out.Write(0x0f)       // Two-byte opcode
-					fc.out.Write(0xb7)       // movzx
-					fc.out.Write(0x02)       // ModR/M: [r10]
+					fc.out.Write(0x49) // REX.W + REX.B
+					fc.out.Write(0x0f) // Two-byte opcode
+					fc.out.Write(0xb7) // movzx
+					fc.out.Write(0x02) // ModR/M: [r10]
 				}
 			case 4:
 				if isSigned {
 					// movsxd rax, dword [r10]
-					fc.out.Write(0x49)       // REX.W + REX.B
-					fc.out.Write(0x63)       // movsxd
-					fc.out.Write(0x02)       // ModR/M: [r10]
+					fc.out.Write(0x49) // REX.W + REX.B
+					fc.out.Write(0x63) // movsxd
+					fc.out.Write(0x02) // ModR/M: [r10]
 				} else {
 					// mov eax, dword [r10] (zero extends to rax)
-					fc.out.Write(0x41)       // REX.B for r10
-					fc.out.Write(0x8b)       // mov
-					fc.out.Write(0x02)       // ModR/M: [r10]
+					fc.out.Write(0x41) // REX.B for r10
+					fc.out.Write(0x8b) // mov
+					fc.out.Write(0x02) // ModR/M: [r10]
 				}
 			case 8:
 				// mov rax, qword [r10]

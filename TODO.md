@@ -140,7 +140,6 @@ All parser features complete! ✓
 ### Postfix Operators Implementation (2025-10-17)
 - [x] **Implemented x++ and x-- as statements only (like Go)**:
   - PostfixExpr handled in compileStatement, not compileExpression
-  - Eliminates cognitive overhead of C-style postfix/prefix semantics
   - Clear error when used in expression context
   - Only supports mutable variables
   - Increments/decrements by 1.0 for numbers
