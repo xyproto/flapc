@@ -4,7 +4,7 @@
 
 **Version**: 1.0.0 (In Progress)
 **Platform**: x86-64 Linux
-**Tests Passing**: ~170/173 (98%+)
+**Tests Passing**: 178/178 (100%)
 
 ---
 
@@ -12,8 +12,8 @@
 
 ### 1. Core Compiler Fixes (Highest Priority)
 
-- [ ] **Fix test_ffi_malloc crash**: Investigate why CastExpr arguments are nil after parsing
-- [ ] **Fix remaining 3 failing tests**: Debug and resolve test failures
+- [x] **Fix test_ffi_malloc crash**: Fixed by using r14 (callee-saved) instead of r11 (2025-10-16) ✓
+- [x] **Fix test_ffi_from_c**: Added libm.so.6 for FFI math function calls (2025-10-16) ✓
 - [ ] **Remove debug output**: Clean up DEBUG print statements in parser.go loop code
 - [ ] **Add .gitignore for executables**: Prevent compiled test binaries from being committed
 
@@ -80,9 +80,10 @@
   - sizeof_i8() through sizeof_f64()
   - Return size in bytes as float64
 
-- [ ] **Fix flap_string_to_cstr bug**: Debug crash when converting strings for C FFI
-  - String literals are stored as Flap maps in rodata (correct)
-  - Need to fix conversion logic or investigate segfault cause
+- [x] **Fix flap_string_to_cstr bug**: Fixed register usage and alignment (2025-10-16) ✓
+  - Used r14 (callee-saved) instead of r11 to avoid malloc clobbering
+  - Added 8-byte alignment for string literals in rodata
+  - Fixed instruction encoding for r13 memory access
 
 ### 5. Builtin Functions (Standard Library)
 
@@ -186,6 +187,13 @@
 
 ## Recently Completed (2025-10-16)
 
+### FFI String Conversion Bug Fix (2025-10-16)
+- [x] **Fixed flap_string_to_cstr crashes**: Used r14 instead of r11 to avoid malloc clobbering
+- [x] **Added string literal alignment**: 8-byte alignment for proper float64 access
+- [x] **Fixed r13 instruction encoding**: Corrected memory access instruction generation
+- [x] **Added libm.so.6 linking**: Required for FFI calls to math functions (sqrt, etc.)
+- [x] **All tests passing**: 178/178 tests now pass (100%)
+
 ### FFI Memory Access Implementation
 - [x] **Implemented write_TYPE builtins**: All variants (i8-i64, u8-u64, f32, f64)
 - [x] **Implemented read_TYPE builtins**: All variants with proper sign/zero extension
@@ -223,10 +231,9 @@
 
 ## Test Status Summary
 
-**Passing**: 171/173 tests (98.8%)
+**Passing**: 178/178 tests (100%) ✓
 
-**Known Failures**:
-1. `test_ffi_from_c` - flap_string_to_cstr crashes (string conversion bug)
+**Known Failures**: None! All tests passing as of 2025-10-16
 
 **Test Coverage**:
 - ✓ All arithmetic operators (+, -, *, /, %, **)
@@ -241,7 +248,7 @@
 - ✓ Match expressions (with guards, defaults, nested)
 - ✓ Lambda expressions (single/multiple params, closures)
 - ✓ Math functions (sqrt, sin, cos, tan, log, exp, abs, floor, ceil, round)
-- ⚠️ FFI (parsing complete, codegen pending)
+- ✓ FFI (call(), read_TYPE, write_TYPE, string-to-C conversion)
 - ⚠️ Type casting (parsing complete, codegen pending)
 
 ---
