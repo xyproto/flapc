@@ -1,0 +1,37 @@
+ââââââââââââââââââââââââââââââââââââââ
+â   Flap Compiler Showcase v0.1.0   â
+ââââââââââââââââââââââââââââââââââââââ
+
+â Variables & Math
+  32.986695 Ã 3.14159 = 10.5
+
+â Match Expressions
+  Score 95: Excellent!
+
+â Lists
+  Primes: count=5, first=2, third=5
+
+â Maps
+  Ages map: count=3
+
+â Membership Testing ('in' keyword)
+  5 in primes: yes
+  13 in primes: no
+  Key 1 in ages: yes
+
+â Lambdas
+  square(4) = 16
+  cube(3) = 27
+
+â Loops
+  First 3 primes: 2 3 5 
+
+â Format Specifiers
+  %f: 3.141593 (full precision)
+  %v: 3.14159265359 (smart format)
+  %b: yes (boolean yes/no)
+  %b: no (boolean yes/no)
+
+ââââââââââââââââââââââââââââââââââââââ
+â     All features working! ð       â
+ââââââââââââââââââââââââââââââââââââââ

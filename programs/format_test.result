@@ -1,0 +1,27 @@
+=== %v Format (Smart Value) ===
+Whole number: 42
+Float: 3.14159
+Zero: 0
+Large whole: 1000
+Small decimal: 0.001
+
+=== %b Format (Boolean) ===
+True (1.0): yes
+False (0.0): no
+Non-zero (42.5): yes
+Negative (-5.0): yes
+
+=== With 'in' Operator ===
+10 in numbers: yes (value: 1)
+99 in numbers: no (value: 0)
+
+=== Mixed Formats ===
+Float: 42.000000, Value: 42, Bool: yes
+Pi approx: 3.141590 vs 3.14159
+
+=== Edge Cases ===
+Very small: 0.0001
+Scientific: 1000000
+Negative zero: no
+
+All format tests complete!

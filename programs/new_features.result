@@ -1,0 +1,8 @@
+=== New Features Demo ===
+Printf works! Value: 42.500000
+Multiple args: 30.000000, 20.000000, 10.000000
+
+Map count: 3.000000
+Empty map count: 0.000000
+
+Program exits automatically!
