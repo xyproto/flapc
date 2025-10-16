@@ -445,10 +445,14 @@ func (l *LoopStmt) statementNode() {}
 // @0 = break out to outer scope
 // @N = continue/break to loop with label N
 type JumpStmt struct {
-	Label int // Target label (0 = outer scope, N = loop label)
+	Label int        // Target label (0 = outer scope, N = loop label)
+	Value Expression // Optional value to return (for @0 value syntax)
 }
 
 func (j *JumpStmt) String() string {
+	if j.Value != nil {
+		return fmt.Sprintf("@%d %s", j.Label, j.Value.String())
+	}
 	return fmt.Sprintf("@%d", j.Label)
 }
 func (j *JumpStmt) statementNode() {}
@@ -481,10 +485,16 @@ func (i *IdentExpr) expressionNode() {}
 
 // JumpExpr represents a label jump used as an expression (e.g., in match blocks)
 type JumpExpr struct {
-	Label int // Target label (0 = outer scope, N = loop label)
+	Label int        // Target label (0 = outer scope, N = loop label)
+	Value Expression // Optional value to return (for @0 value syntax)
 }
 
-func (j *JumpExpr) String() string  { return fmt.Sprintf("@%d", j.Label) }
+func (j *JumpExpr) String() string {
+	if j.Value != nil {
+		return fmt.Sprintf("@%d %s", j.Label, j.Value.String())
+	}
+	return fmt.Sprintf("@%d", j.Label)
+}
 func (j *JumpExpr) expressionNode() {}
 
 type BinaryExpr struct {
@@ -1103,16 +1113,26 @@ func (p *Parser) parseMatchTarget() Expression {
 		if p.loopDepth < 2 {
 			p.error("@- requires at least 2 nested loops")
 		}
-		target := &JumpExpr{Label: p.loopDepth - 1}
 		p.nextToken() // skip '@-'
-		return target
+		// Check for optional return value: @- value
+		var value Expression
+		if p.current.Type != TOKEN_NEWLINE && p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+			value = p.parseExpression()
+			p.nextToken()
+		}
+		return &JumpExpr{Label: p.loopDepth - 1, Value: value}
 	case TOKEN_AT_EQUALS:
 		if p.loopDepth < 1 {
 			p.error("@= requires at least 1 loop")
 		}
-		target := &JumpExpr{Label: p.loopDepth}
 		p.nextToken() // skip '@='
-		return target
+		// Check for optional return value: @= value
+		var value Expression
+		if p.current.Type != TOKEN_NEWLINE && p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+			value = p.parseExpression()
+			p.nextToken()
+		}
+		return &JumpExpr{Label: p.loopDepth, Value: value}
 	case TOKEN_AT:
 		p.nextToken() // skip '@'
 		if p.current.Type != TOKEN_NUMBER {
@@ -1122,9 +1142,15 @@ func (p *Parser) parseMatchTarget() Expression {
 		if err != nil {
 			p.error("invalid label number")
 		}
-		target := &JumpExpr{Label: int(labelNum)}
+		label := int(labelNum)
 		p.nextToken() // skip label number
-		return target
+		// Check for optional return value: @0 value
+		var value Expression
+		if p.current.Type != TOKEN_NEWLINE && p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+			value = p.parseExpression()
+			p.nextToken()
+		}
+		return &JumpExpr{Label: label, Value: value}
 	default:
 		expr := p.parseExpression()
 		p.nextToken()
@@ -1139,7 +1165,13 @@ func (p *Parser) parseLoopStatement() Statement {
 		if p.loopDepth < 2 {
 			p.error("@- requires at least 2 nested loops")
 		}
-		return &JumpStmt{Label: p.loopDepth - 1}
+		// Check for optional return value: @- value
+		var value Expression
+		if p.peek.Type != TOKEN_NEWLINE && p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
+			p.nextToken() // move to value
+			value = p.parseExpression()
+		}
+		return &JumpStmt{Label: p.loopDepth - 1, Value: value}
 	}
 
 	// Handle @= token (continue current loop)
@@ -1148,7 +1180,13 @@ func (p *Parser) parseLoopStatement() Statement {
 		if p.loopDepth < 1 {
 			p.error("@= requires at least 1 loop")
 		}
-		return &JumpStmt{Label: p.loopDepth}
+		// Check for optional return value: @= value
+		var value Expression
+		if p.peek.Type != TOKEN_NEWLINE && p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
+			p.nextToken() // move to value
+			value = p.parseExpression()
+		}
+		return &JumpStmt{Label: p.loopDepth, Value: value}
 	}
 
 	// Handle @+ token (start loop at @(N+1))
@@ -1237,11 +1275,16 @@ func (p *Parser) parseLoopStatement() Statement {
 
 	// Check if next is identifier (loop) or not (jump)
 	if p.current.Type != TOKEN_IDENT {
-		// It's a jump statement: @N
+		// It's a jump statement: @N or @N value
 		if label < 0 {
 			p.error("jump label must be >= 0 (use @0, @1, @2, etc.)")
 		}
-		return &JumpStmt{Label: label}
+		// Check for optional return value: @0 value
+		var value Expression
+		if p.current.Type != TOKEN_NEWLINE && p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+			value = p.parseExpression()
+		}
+		return &JumpStmt{Label: label, Value: value}
 	}
 
 	// It's a loop statement
