@@ -588,6 +588,26 @@ func (i *IndexExpr) String() string {
 }
 func (i *IndexExpr) expressionNode() {}
 
+// SliceExpr: list[start:end] or string[start:end] (Python-style slicing)
+type SliceExpr struct {
+	List  Expression
+	Start Expression // nil means start from beginning
+	End   Expression // nil means go to end
+}
+
+func (s *SliceExpr) String() string {
+	start := ""
+	if s.Start != nil {
+		start = s.Start.String()
+	}
+	end := ""
+	if s.End != nil {
+		end = s.End.String()
+	}
+	return s.List.String() + "[" + start + ":" + end + "]"
+}
+func (s *SliceExpr) expressionNode() {}
+
 type LambdaExpr struct {
 	Params []string
 	Body   Expression
@@ -1475,9 +1495,36 @@ func (p *Parser) parsePostfix() Expression {
 				p.error("empty indexing [] is not allowed")
 			}
 
-			index := p.parseExpression()
-			p.nextToken() // move to ']'
-			expr = &IndexExpr{List: expr, Index: index}
+			// Check for slice syntax: [start:end], [:end], [start:], [:]
+			// Parse the first expression (could be start or index)
+			var firstExpr Expression
+			if p.current.Type == TOKEN_COLON {
+				// Case: [:end]
+				firstExpr = nil
+			} else {
+				firstExpr = p.parseExpression()
+			}
+
+			// Check if this is a slice (has colon)
+			if p.peek.Type == TOKEN_COLON {
+				p.nextToken() // move to colon
+				p.nextToken() // skip ':'
+
+				var endExpr Expression
+				if p.current.Type == TOKEN_RBRACKET {
+					// Case: [start:] or [:]
+					endExpr = nil
+				} else {
+					endExpr = p.parseExpression()
+					p.nextToken() // move to ']'
+				}
+
+				expr = &SliceExpr{List: expr, Start: firstExpr, End: endExpr}
+			} else {
+				// Regular indexing
+				p.nextToken() // move to ']'
+				expr = &IndexExpr{List: expr, Index: firstExpr}
+			}
 		} else if p.peek.Type == TOKEN_LPAREN {
 			// Handle direct lambda calls: ((x) -> x * 2)(5)
 			// or chained calls: f(1)(2)
