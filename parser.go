@@ -1661,18 +1661,23 @@ func (p *Parser) parsePostfix() Expression {
 			// Check for slice syntax: [start:end], [:end], [start:], [:]
 			// Parse the first expression (could be start or index)
 			var firstExpr Expression
+			var isSlice bool
 			if p.current.Type == TOKEN_COLON {
-				// Case: [:end]
+				// Case: [:end] or [::step]
 				firstExpr = nil
+				isSlice = true
+				p.nextToken() // skip ':'
 			} else {
 				firstExpr = p.parseExpression()
+				// Check if this is a slice (has colon)
+				isSlice = p.peek.Type == TOKEN_COLON
+				if isSlice {
+					p.nextToken() // move to colon
+					p.nextToken() // skip ':'
+				}
 			}
 
-			// Check if this is a slice (has colon)
-			if p.peek.Type == TOKEN_COLON {
-				p.nextToken() // move to colon
-				p.nextToken() // skip ':'
-
+			if isSlice {
 				var endExpr Expression
 				if p.current.Type == TOKEN_RBRACKET {
 					// Case: [start:] or [:]
@@ -1680,14 +1685,17 @@ func (p *Parser) parsePostfix() Expression {
 				} else if p.current.Type == TOKEN_COLON {
 					// Case: [start::step] or [::step]
 					endExpr = nil
+					// Don't skip the colon yet - let step handling do it
 				} else {
 					endExpr = p.parseExpression()
 				}
 
 				// Check for step parameter (second colon)
 				var stepExpr Expression
-				if p.peek.Type == TOKEN_COLON {
-					p.nextToken() // move to second colon
+				if p.peek.Type == TOKEN_COLON || p.current.Type == TOKEN_COLON {
+					if p.current.Type != TOKEN_COLON {
+						p.nextToken() // move to second colon
+					}
 					p.nextToken() // skip ':'
 
 					if p.current.Type == TOKEN_RBRACKET {
