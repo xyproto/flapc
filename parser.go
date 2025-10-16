@@ -2462,15 +2462,21 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 }
 
 func (fc *FlapCompiler) writeELF(outputPath string) error {
-	// WORKAROUND: Always use printf and exit in fixed order for PLT
-	// to maintain consistent PLT size and avoid _start jump offset bugs
-	// We'll generate the correct calls based on callOrder
-	// All trig functions use x87 hardware instructions:
-	// sin/cos/tan: FSIN, FCOS, FPTAN
-	// atan: FPATAN, asin/acos: FPATAN + Fsqrt + x87 arithmetic
-	// malloc is needed for runtime string concatenation
-	// Always include malloc since runtime helpers (_flap_string_concat) need it
+	// Build pltFunctions list from all called functions
+	// Start with essential functions that runtime helpers need
 	pltFunctions := []string{"printf", "exit", "malloc"}
+
+	// Add all functions from usedFunctions (includes call() dynamic calls)
+	pltSet := make(map[string]bool)
+	for _, f := range pltFunctions {
+		pltSet[f] = true
+	}
+	for funcName := range fc.usedFunctions {
+		if !pltSet[funcName] {
+			pltFunctions = append(pltFunctions, funcName)
+			pltSet[funcName] = true
+		}
+	}
 
 	// Build mapping from actual calls to PLT indices
 	callToPLT := make(map[string]int)
