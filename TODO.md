@@ -4,16 +4,30 @@
 
 **Version**: 1.0.0 (In Progress)
 **Platform**: x86-64 Linux
-**Tests Passing**: 178/178 (100%)
+**Tests Passing**: 177/178 (99.4%) - 1 known failure
 
 ---
 
 ## Active Work Items (Sorted by Priority)
 
-### 1. Core Compiler Fixes (Highest Priority)
+### 1. Core Compiler Fixes (Highest Priority - BLOCKING)
+
+- [ ] **Fix flap_slice_string code generation bug** (CRITICAL):
+  - Bug: Raw Emit() calls in loop body (lines 5187-5203) don't appear in regenerated assembly
+  - Symptom: test_slice_forward outputs "0.00000" instead of "He" for s[0:2]
+  - Root cause: Code regeneration doesn't track/replay Emit() instructions
+  - Fix: Rewrite using proper Out methods:
+    - Line 5187: Replace with ShlRegImm("rax", "4")
+    - Line 5188: Replace with AddImmToReg("rax", 8)
+    - Line 5194: Replace with ShlRegImm("rdx", "4")
+    - Line 5195: Replace with AddImmToReg("rdx", 8)
+    - Line 5203: Replace with IncReg("rcx")
+    - Lines 5189-5190, 5199-5200: Complex addressing may still need Emit()
+  - Test: programs/test_slice_forward.flap (has .result file)
 
 - [x] **Fix test_ffi_malloc crash**: Fixed by using r14 (callee-saved) instead of r11 (2025-10-16) ✓
 - [x] **Fix test_ffi_from_c**: Added libm.so.6 for FFI math function calls (2025-10-16) ✓
+- [ ] **Create .result files for all programs/**: Test validation was silently skipped
 - [ ] **Remove debug output**: Clean up DEBUG print statements in parser.go loop code
 - [ ] **Add .gitignore for executables**: Prevent compiled test binaries from being committed
 
