@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -127,13 +128,30 @@ func compareOutputs(t *testing.T, expected, actual []byte, programName string) {
 	actualLines := splitLines(actual)
 
 	// Check each expected line appears in actual output
+	// Support wildcard * for matching floating point numbers (e.g., pointer addresses)
 	actualMap := make(map[string]bool)
 	for _, line := range actualLines {
 		actualMap[line] = true
 	}
 
 	for _, expectedLine := range expectedLines {
-		if !actualMap[expectedLine] {
+		found := false
+		if strings.Contains(expectedLine, "*") {
+			// Pattern matching: * matches any floating point number
+			pattern := regexp.QuoteMeta(expectedLine)
+			pattern = strings.ReplaceAll(pattern, "\\*", "[0-9]+\\.[0-9]+")
+			re := regexp.MustCompile("^" + pattern + "$")
+			for actualLine := range actualMap {
+				if re.MatchString(actualLine) {
+					found = true
+					break
+				}
+			}
+		} else {
+			found = actualMap[expectedLine]
+		}
+
+		if !found {
 			t.Errorf("Missing expected line: %q\nExpected output:\n%s\nActual output:\n%s",
 				expectedLine, string(expected), string(actual))
 		}
