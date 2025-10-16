@@ -67,8 +67,7 @@ const (
 	TOKEN_FMA           // *+ (fused multiply-add)
 	TOKEN_OR_BANG       // or! (error handling)
 	TOKEN_ME            // me (self-reference)
-	TOKEN_BREAK         // break keyword
-	TOKEN_CONTINUE      // continue keyword
+	TOKEN_RET           // ret keyword (return/break)
 	TOKEN_AT_FIRST      // @first (first iteration)
 	TOKEN_AT_LAST       // @last (last iteration)
 	TOKEN_AT_COUNTER    // @counter (iteration counter)
@@ -83,6 +82,24 @@ const (
 	TOKEN_GT_B          // >b (shift right)
 	TOKEN_LTLT_B        // <<b (rotate left)
 	TOKEN_GTGT_B        // >>b (rotate right)
+	TOKEN_AS            // as (type casting)
+	// C type keywords
+	TOKEN_I8    // i8
+	TOKEN_I16   // i16
+	TOKEN_I32   // i32
+	TOKEN_I64   // i64
+	TOKEN_U8    // u8
+	TOKEN_U16   // u16
+	TOKEN_U32   // u32
+	TOKEN_U64   // u64
+	TOKEN_F32   // f32
+	TOKEN_F64   // f64
+	TOKEN_CSTR  // cstr
+	TOKEN_PTR   // ptr
+	// Flap type keywords
+	TOKEN_NUMBER_TYPE // number
+	TOKEN_STRING_TYPE // string (type)
+	TOKEN_LIST_TYPE   // list (type)
 )
 
 type Token struct {
@@ -218,10 +235,8 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_NOT, Value: value, Line: l.line}
 		case "me":
 			return Token{Type: TOKEN_ME, Value: value, Line: l.line}
-		case "break":
-			return Token{Type: TOKEN_BREAK, Value: value, Line: l.line}
-		case "continue":
-			return Token{Type: TOKEN_CONTINUE, Value: value, Line: l.line}
+		case "ret":
+			return Token{Type: TOKEN_RET, Value: value, Line: l.line}
 		case "xor":
 			return Token{Type: TOKEN_XOR, Value: value, Line: l.line}
 		case "shl":
@@ -234,6 +249,40 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_ROR, Value: value, Line: l.line}
 		case "mod":
 			return Token{Type: TOKEN_MOD, Value: value, Line: l.line}
+		case "as":
+			return Token{Type: TOKEN_AS, Value: value, Line: l.line}
+		// C type keywords
+		case "i8":
+			return Token{Type: TOKEN_I8, Value: value, Line: l.line}
+		case "i16":
+			return Token{Type: TOKEN_I16, Value: value, Line: l.line}
+		case "i32":
+			return Token{Type: TOKEN_I32, Value: value, Line: l.line}
+		case "i64":
+			return Token{Type: TOKEN_I64, Value: value, Line: l.line}
+		case "u8":
+			return Token{Type: TOKEN_U8, Value: value, Line: l.line}
+		case "u16":
+			return Token{Type: TOKEN_U16, Value: value, Line: l.line}
+		case "u32":
+			return Token{Type: TOKEN_U32, Value: value, Line: l.line}
+		case "u64":
+			return Token{Type: TOKEN_U64, Value: value, Line: l.line}
+		case "f32":
+			return Token{Type: TOKEN_F32, Value: value, Line: l.line}
+		case "f64":
+			return Token{Type: TOKEN_F64, Value: value, Line: l.line}
+		case "cstr":
+			return Token{Type: TOKEN_CSTR, Value: value, Line: l.line}
+		case "ptr":
+			return Token{Type: TOKEN_PTR, Value: value, Line: l.line}
+		// Flap type keywords
+		case "number":
+			return Token{Type: TOKEN_NUMBER_TYPE, Value: value, Line: l.line}
+		case "string":
+			return Token{Type: TOKEN_STRING_TYPE, Value: value, Line: l.line}
+		case "list":
+			return Token{Type: TOKEN_LIST_TYPE, Value: value, Line: l.line}
 		}
 
 		return Token{Type: TOKEN_IDENT, Value: value, Line: l.line}
@@ -541,19 +590,20 @@ func (l *LoopStmt) String() string {
 }
 func (l *LoopStmt) statementNode() {}
 
-// JumpStmt represents a jump to a loop label (@N)
-// @0 = break out to outer scope
-// @N = continue/break to loop with label N
+// JumpStmt represents a ret statement or loop continue
+// ret (Label=0) = return from function
+// ret @N (Label=N) = exit loop N and all inner loops
+// @N (without ret) = continue loop N (IsBreak=false)
 type JumpStmt struct {
-	IsBreak bool       // true for break, false for continue
-	Label   int        // Target loop label (0 for implicit innermost, N for explicit @N)
-	Value   Expression // Optional value to return (for break value syntax)
+	IsBreak bool       // true for ret (return/exit loop), false for continue (@N without ret)
+	Label   int        // 0 for function return, N for loop label
+	Value   Expression // Optional value to return
 }
 
 func (j *JumpStmt) String() string {
-	keyword := "continue"
+	keyword := "@"
 	if j.IsBreak {
-		keyword = "break"
+		keyword = "ret"
 	}
 
 	if j.Label > 0 {
@@ -1077,8 +1127,8 @@ func foldConstantExpr(expr Expression) Expression {
 }
 
 func (p *Parser) parseStatement() Statement {
-	// Check for break/continue keywords
-	if p.current.Type == TOKEN_BREAK || p.current.Type == TOKEN_CONTINUE {
+	// Check for ret keyword
+	if p.current.Type == TOKEN_RET {
 		return p.parseJumpStatement()
 	}
 
@@ -1499,21 +1549,22 @@ func (p *Parser) parseLoopStatement() Statement {
 	return &JumpStmt{IsBreak: true, Label: label, Value: value}
 }
 
-// parseJumpStatement parses break and continue statements
-// break [<@N>] [<value>] - exit loop(s) with optional return value
-// continue [<@N>] - jump to top of loop
+// parseJumpStatement parses ret statements
+// ret - return from function
+// ret value - return value from function
+// ret @N - exit loop N and all inner loops
+// ret @N value - exit loop N and return value
 func (p *Parser) parseJumpStatement() Statement {
-	isBreak := p.current.Type == TOKEN_BREAK
-	p.nextToken() // skip 'break' or 'continue'
+	p.nextToken() // skip 'ret'
 
-	label := 0 // 0 means innermost loop (implicit)
+	label := 0 // 0 means return from function
 	var value Expression
 
-	// Check for optional @N label
+	// Check for optional @N label (for loop exit)
 	if p.current.Type == TOKEN_AT {
 		p.nextToken() // skip '@'
 		if p.current.Type != TOKEN_NUMBER {
-			p.error("expected number after @ in break/continue statement")
+			p.error("expected number after @ in ret statement")
 		}
 		labelNum, err := strconv.ParseFloat(p.current.Value, 64)
 		if err != nil {
@@ -1526,17 +1577,14 @@ func (p *Parser) parseJumpStatement() Statement {
 		p.nextToken() // skip number
 	}
 
-	// Check for optional value (only valid for break)
-	if isBreak && p.current.Type != TOKEN_NEWLINE && p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+	// Check for optional value
+	if p.current.Type != TOKEN_NEWLINE && p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
 		value = p.parseExpression()
 	}
 
-	// Continue cannot have a value
-	if !isBreak && value != nil {
-		p.error("continue statement cannot have a return value")
-	}
-
-	return &JumpStmt{IsBreak: isBreak, Label: label, Value: value}
+	// ret is always a break/return (IsBreak=true)
+	// label=0 means return from function, label>0 means exit loop N
+	return &JumpStmt{IsBreak: true, Label: label, Value: value}
 }
 
 func (p *Parser) parseExpression() Expression {
@@ -2908,25 +2956,38 @@ func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
 }
 
 func (fc *FlapCompiler) compileJumpStatement(stmt *JumpStmt) {
+	// New semantics with ret keyword:
+	// ret (Label=0, IsBreak=true): return from function
+	// ret @N (Label=N, IsBreak=true): exit loop N and all inner loops
+	// @N (Label=N, IsBreak=false): continue loop N
+
+	// Handle function return: ret with Label=0
+	if stmt.Label == 0 && stmt.IsBreak {
+		// Return from function
+		if stmt.Value != nil {
+			fc.compileExpression(stmt.Value)
+			// xmm0 now contains return value
+		}
+		fc.out.MovRegToReg("rsp", "rbp")
+		fc.out.PopReg("rbp")
+		fc.out.Ret()
+		return
+	}
+
+	// All other cases require being inside a loop
 	if len(fc.activeLoops) == 0 {
-		keyword := "continue"
+		keyword := "@"
 		if stmt.IsBreak {
-			keyword = "break"
+			keyword = "ret"
 		}
 		fmt.Fprintf(os.Stderr, "Error: %s used outside of loop\n", keyword)
 		os.Exit(1)
 	}
 
-	// New semantics with explicit IsBreak field:
-	// break (Label=0): exit innermost loop
-	// break @N (Label=N): exit loop N and all inner loops
-	// continue (Label=0): jump to continue point of innermost loop
-	// continue @N (Label=N): exit inner loops and continue at loop N
-
 	targetLoopIndex := -1
 
 	if stmt.Label == 0 {
-		// Label 0 means innermost loop
+		// Label 0 with IsBreak=false means innermost loop continue
 		targetLoopIndex = len(fc.activeLoops) - 1
 	} else {
 		// Find loop with specified label
@@ -2938,9 +2999,9 @@ func (fc *FlapCompiler) compileJumpStatement(stmt *JumpStmt) {
 		}
 
 		if targetLoopIndex == -1 {
-			keyword := "continue"
+			keyword := "@"
 			if stmt.IsBreak {
-				keyword = "break"
+				keyword = "ret"
 			}
 			fmt.Fprintf(os.Stderr, "Error: %s @%d references loop @%d which is not active\n",
 				keyword, stmt.Label, stmt.Label)
@@ -3279,51 +3340,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 	case *BinaryExpr:
 		// Handle or! error handling operator (special case: short-circuit)
 		if e.Operator == "or!" {
-			var jumpPos int
-			var jumpCond JumpCondition
-
-			// Check if left side is a comparison (which only sets flags)
-			if leftBinary, ok := e.Left.(*BinaryExpr); ok {
-				switch leftBinary.Operator {
-				case "<", "<=", ">", ">=", "==", "!=":
-					// It's a comparison - evaluate it (sets CPU flags)
-					// Compile left operand into xmm0
-					fc.compileExpression(leftBinary.Left)
-					fc.out.SubImmFromReg("rsp", 16)
-					fc.out.MovXmmToMem("xmm0", "rsp", 0)
-					// Compile right operand into xmm0
-					fc.compileExpression(leftBinary.Right)
-					fc.out.MovRegToReg("xmm1", "xmm0")
-					fc.out.MovMemToXmm("xmm0", "rsp", 0)
-					fc.out.AddImmToReg("rsp", 16)
-					// Compare (sets flags)
-					fc.out.Ucomisd("xmm0", "xmm1")
-
-					// Now jump based on the comparison result
-					// We want to jump to success if the condition is TRUE
-					switch leftBinary.Operator {
-					case ">":
-						jumpCond = JumpGreater
-					case ">=":
-						jumpCond = JumpGreaterOrEqual
-					case "<":
-						jumpCond = JumpLess
-					case "<=":
-						jumpCond = JumpLessOrEqual
-					case "==":
-						jumpCond = JumpEqual
-					case "!=":
-						jumpCond = JumpNotEqual
-					}
-					jumpPos = fc.eb.text.Len()
-					fc.out.JumpConditional(jumpCond, 0) // Placeholder, will patch later
-
-					// Fall through to error handling below
-					goto handleError
-				}
-			}
-
-			// Not a comparison - evaluate as a general expression
+			// Evaluate the condition expression (comparisons now return 0.0/1.0)
 			fc.compileExpression(e.Left)
 			// xmm0 contains the condition result
 
@@ -3333,10 +3350,8 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 			// Jump to success label if condition is non-zero (true)
 			// Save position for jump patching
-			jumpPos = fc.eb.text.Len()
+			jumpPos := fc.eb.text.Len()
 			fc.out.JumpConditional(JumpNotEqual, 0) // Placeholder, will patch later
-
-		handleError:
 
 			// Condition is false (zero): print error message and exit
 			// Right side should be a string literal
@@ -3653,7 +3668,26 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		case "<", "<=", ">", ">=", "==", "!=":
 			// Compare xmm0 with xmm1, sets flags
 			fc.out.Ucomisd("xmm0", "xmm1")
-			// For now, don't convert to boolean - leave flags set for conditional jump
+			// Convert comparison result to boolean (0.0 or 1.0)
+			fc.out.MovImmToReg("rax", "0")
+			fc.out.MovImmToReg("rcx", "1")
+			// Use conditional move based on comparison operator
+			switch e.Operator {
+			case "<":
+				fc.out.Cmovb("rax", "rcx") // rax = (xmm0 < xmm1) ? 1 : 0
+			case "<=":
+				fc.out.Cmovbe("rax", "rcx") // rax = (xmm0 <= xmm1) ? 1 : 0
+			case ">":
+				fc.out.Cmova("rax", "rcx") // rax = (xmm0 > xmm1) ? 1 : 0
+			case ">=":
+				fc.out.Cmovae("rax", "rcx") // rax = (xmm0 >= xmm1) ? 1 : 0
+			case "==":
+				fc.out.Cmove("rax", "rcx") // rax = (xmm0 == xmm1) ? 1 : 0
+			case "!=":
+				fc.out.Cmovne("rax", "rcx") // rax = (xmm0 != xmm1) ? 1 : 0
+			}
+			// Convert integer result to float64
+			fc.out.Cvtsi2sd("xmm0", "rax")
 		case "and":
 			// Logical AND: returns 1.0 if both non-zero, else 0.0
 			// Compare xmm0 with 0
