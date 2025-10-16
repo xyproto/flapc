@@ -6971,12 +6971,10 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			// Float return - result already in xmm0
 			// Nothing to do
 		} else {
-			// Integer/pointer return - result in rax, need to convert to xmm0
-			// Transfer bits without conversion (for pointers)
-			fc.out.SubImmFromReg("rsp", 8)
-			fc.out.MovRegToMem("rax", "rsp", 0)
-			fc.out.MovMemToXmm("xmm0", "rsp", 0)
-			fc.out.AddImmToReg("rsp", 8)
+			// Integer/pointer return - result in rax
+			// For most functions, we want to preserve the value semantics (convert int to float)
+			// For pointer returns (getenv, malloc, etc), "as number" will be used to get the pointer bits
+			fc.out.Cvtsi2sd("xmm0", "rax")
 		}
 
 	default:
