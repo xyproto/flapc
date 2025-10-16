@@ -4682,34 +4682,7 @@ func (fc *FlapCompiler) compileSliceExpr(expr *SliceExpr) {
 	fc.out.SubImmFromReg("rsp", 8)
 	fc.out.MovXmmToMem("xmm0", "rsp", 0)
 
-	// Compile start index (or 0 if nil)
-	if expr.Start != nil {
-		fc.compileExpression(expr.Start)
-	} else {
-		// Default start = 0
-		fc.out.XorRegWithReg("rax", "rax")
-		fc.out.Cvtsi2sd("xmm0", "rax")
-	}
-	// Save start on stack
-	fc.out.SubImmFromReg("rsp", 8)
-	fc.out.MovXmmToMem("xmm0", "rsp", 0)
-
-	// Compile end index (or length if nil)
-	if expr.End != nil {
-		fc.compileExpression(expr.End)
-		// end is now in xmm0
-	} else {
-		// Default end = length of collection
-		// Load collection pointer and get its length (first 8 bytes)
-		fc.out.MovMemToReg("rax", "rsp", 8) // collection pointer is 16 bytes back
-		fc.out.MovMemToXmm("xmm0", "rax", 0) // load length
-	}
-	// end is in xmm0
-	// Save end on stack
-	fc.out.SubImmFromReg("rsp", 8)
-	fc.out.MovXmmToMem("xmm0", "rsp", 0)
-
-	// Compile step parameter (or default to 1)
+	// Compile step parameter first to know if we need special defaults
 	if expr.Step != nil {
 		fc.compileExpression(expr.Step)
 		// step is now in xmm0
@@ -4718,12 +4691,93 @@ func (fc *FlapCompiler) compileSliceExpr(expr *SliceExpr) {
 		fc.out.MovImmToReg("rax", "1")
 		fc.out.Cvtsi2sd("xmm0", "rax")
 	}
-	// step is in xmm0
+	// Save step on stack temporarily
+	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.MovXmmToMem("xmm0", "rsp", 0)
 
-	// Stack layout: [collection_ptr][start][end][current_rsp -> step in xmm0]
+	// Compile start index (default depends on step sign)
+	if expr.Start != nil {
+		fc.compileExpression(expr.Start)
+	} else {
+		// Check if step is negative (convert to integer first)
+		fc.out.MovMemToXmm("xmm0", "rsp", 0) // load step
+		fc.out.Cvttsd2si("rax", "xmm0")      // convert to integer
+		fc.out.XorRegWithReg("rbx", "rbx")
+		fc.out.CmpRegToReg("rax", "rbx")     // compare with 0
+
+		negStepStartJumpPos := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpLess, 0) // If step < 0, jump to negative step path
+
+		// Positive step: default start = 0
+		fc.out.XorRegWithReg("rax", "rax")
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+		negStepStartEndJumpPos := fc.eb.text.Len()
+		fc.out.JumpUnconditional(0) // Skip negative step path
+
+		// Negative step: default start = length - 1
+		negStepStartPos := fc.eb.text.Len()
+		negStepStartOffset := int32(negStepStartPos - (negStepStartJumpPos + 6))
+		fc.patchJumpImmediate(negStepStartJumpPos+2, negStepStartOffset)
+
+		fc.out.MovMemToReg("rax", "rsp", 8) // Load collection pointer
+		fc.out.MovMemToXmm("xmm0", "rax", 0) // Load length
+		fc.out.MovImmToReg("rax", "1")
+		fc.out.Cvtsi2sd("xmm1", "rax")
+		fc.out.SubsdXmm("xmm0", "xmm1") // xmm0 = length - 1
+
+		negStepStartEndPos := fc.eb.text.Len()
+		negStepStartEndOffset := int32(negStepStartEndPos - (negStepStartEndJumpPos + 5))
+		fc.patchJumpImmediate(negStepStartEndJumpPos+1, negStepStartEndOffset)
+	}
+	// Save start on stack
+	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+	// Compile end index (default depends on step sign)
+	if expr.End != nil {
+		fc.compileExpression(expr.End)
+		// end is now in xmm0
+	} else {
+		// Check if step is negative (convert to integer first)
+		fc.out.MovMemToXmm("xmm0", "rsp", 8) // load step (now 8 bytes back from start)
+		fc.out.Cvttsd2si("rax", "xmm0")      // convert to integer
+		fc.out.XorRegWithReg("rbx", "rbx")
+		fc.out.CmpRegToReg("rax", "rbx")     // compare with 0
+
+		negStepEndJumpPos := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpLess, 0) // If step < 0, jump to negative step path
+
+		// Positive step: default end = length
+		fc.out.MovMemToReg("rax", "rsp", 16) // Load collection pointer
+		fc.out.MovMemToXmm("xmm0", "rax", 0) // Load length
+
+		negStepEndEndJumpPos := fc.eb.text.Len()
+		fc.out.JumpUnconditional(0) // Skip negative step path
+
+		// Negative step: default end = -1
+		negStepEndPos := fc.eb.text.Len()
+		negStepEndOffset := int32(negStepEndPos - (negStepEndJumpPos + 6))
+		fc.patchJumpImmediate(negStepEndJumpPos+2, negStepEndOffset)
+
+		fc.out.XorRegWithReg("rax", "rax") // rax = 0
+		fc.out.SubImmFromReg("rax", 1)     // rax = -1
+		fc.out.Cvtsi2sd("xmm0", "rax")     // xmm0 = -1
+
+		negStepEndEndPos := fc.eb.text.Len()
+		negStepEndEndOffset := int32(negStepEndEndPos - (negStepEndEndJumpPos + 5))
+		fc.patchJumpImmediate(negStepEndEndJumpPos+1, negStepEndEndOffset)
+	}
+	// end is in xmm0
+	// Save end on stack
+	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+	// Stack layout: [collection_ptr][step][start][end] (rsp points to end)
 	// Call runtime function: flap_slice_string(collection_ptr, start, end, step) -> new_collection_ptr
 
 	// Load step into rcx (arg4)
+	fc.out.MovMemToXmm("xmm0", "rsp", 16)
 	fc.out.Cvttsd2si("rcx", "xmm0") // rcx = step (as integer)
 
 	// Load end into rdx (arg3)
@@ -4735,10 +4789,10 @@ func (fc *FlapCompiler) compileSliceExpr(expr *SliceExpr) {
 	fc.out.Cvttsd2si("rsi", "xmm0") // rsi = start (as integer)
 
 	// Load collection pointer into rdi (arg1)
-	fc.out.MovMemToReg("rdi", "rsp", 16) // rdi = collection pointer
+	fc.out.MovMemToReg("rdi", "rsp", 24) // rdi = collection pointer
 
-	// Clean up stack before call
-	fc.out.AddImmToReg("rsp", 24)
+	// Clean up stack before call (4 values * 8 bytes = 32)
+	fc.out.AddImmToReg("rsp", 32)
 
 	// Call runtime function
 	fc.out.CallSymbol("flap_slice_string")
@@ -5165,32 +5219,98 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovRegToReg("r12", "rdi") // r12 = original string pointer
 	fc.out.MovRegToReg("r13", "rsi") // r13 = start index
 	fc.out.MovRegToReg("r14", "rdx") // r14 = end index
-	// rcx = step (not saved to register yet, will use directly if needed)
+	fc.out.MovRegToReg("r8", "rcx")  // r8 = step
 
-	// TODO: Handle step parameter (currently in rcx)
-	// For now, we only support step == 1
-	// Future: implement step < 0 (reverse), step > 1 (stride)
+	// Calculate result length based on step
+	// For step == 1: length = end - start
+	// For step > 1: length = ((end - start + step - 1) / step)
+	// For step < 0: length = ((start - end - step - 1) / (-step))
 
-	// Calculate slice length: length = end - start
+	fc.out.XorRegWithReg("rax", "rax")
+	fc.out.CmpRegToReg("r8", "rax")
+	stepNegativeJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpLess, 0) // If step < 0, jump to negative path
+
+	// Positive step path
+	fc.out.MovImmToReg("rax", "1")
+	fc.out.CmpRegToReg("r8", "rax")
+	stepOneJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0) // If step == 1, use simple path
+
+	// Step > 1 path: length = ((end - start + step - 1) / step)
+	fc.out.MovRegToReg("r15", "r14")
+	fc.out.SubRegFromReg("r15", "r13")    // r15 = end - start
+	fc.out.AddRegToReg("r15", "r8")       // r15 = end - start + step
+	fc.out.SubImmFromReg("r15", 1)        // r15 = end - start + step - 1
+	fc.out.MovRegToReg("rax", "r15")
+	fc.out.XorRegWithReg("rdx", "rdx")    // Clear rdx for division
+	fc.out.Emit([]byte{0x49, 0xF7, 0xF8}) // idiv r8
+	fc.out.MovRegToReg("r15", "rax")      // r15 = result length
+
+	stepEndJumpPos := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0) // Jump to end
+
+	// Patch step == 1 jump to here
+	stepOnePos := fc.eb.text.Len()
+	stepOneOffset := int32(stepOnePos - (stepOneJumpPos + 6))
+	fc.patchJumpImmediate(stepOneJumpPos+2, stepOneOffset)
+
+	// Step == 1 simple path: length = end - start
 	fc.out.MovRegToReg("r15", "r14")
 	fc.out.SubRegFromReg("r15", "r13") // r15 = length
+
+	stepPosEndJumpPos := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0) // Jump to end
+
+	// Patch negative step jump to here
+	stepNegativePos := fc.eb.text.Len()
+	stepNegativeOffset := int32(stepNegativePos - (stepNegativeJumpPos + 6))
+	fc.patchJumpImmediate(stepNegativeJumpPos+2, stepNegativeOffset)
+
+	// Negative step path: length = ((start - end - step - 1) / (-step))
+	fc.out.MovRegToReg("r15", "r13")      // r15 = start
+	fc.out.SubRegFromReg("r15", "r14")    // r15 = start - end
+	fc.out.SubRegFromReg("r15", "r8")     // r15 = start - end - step
+	fc.out.SubImmFromReg("r15", 1)        // r15 = start - end - step - 1
+	// Divide by -step, so negate r8, divide, then restore r8
+	fc.out.MovRegToReg("r10", "r8")        // Save r8
+	fc.out.Emit([]byte{0x49, 0xF7, 0xD8}) // neg r8 (r8 = -r8)
+	fc.out.MovRegToReg("rax", "r15")
+	fc.out.XorRegWithReg("rdx", "rdx")     // Clear rdx for division
+	fc.out.Emit([]byte{0x49, 0xF7, 0xF8}) // idiv r8
+	fc.out.MovRegToReg("r15", "rax")       // r15 = result length
+	fc.out.MovRegToReg("r8", "r10")        // Restore r8
+
+	// Patch end jumps
+	stepEndPos := fc.eb.text.Len()
+	stepEndOffset := int32(stepEndPos - (stepEndJumpPos + 5))
+	fc.patchJumpImmediate(stepEndJumpPos+1, stepEndOffset)
+
+	stepPosEndOffset := int32(stepEndPos - (stepPosEndJumpPos + 5))
+	fc.patchJumpImmediate(stepPosEndJumpPos+1, stepPosEndOffset)
 
 	// Allocate memory for new string: 8 + (length * 16) bytes
 	fc.out.MovRegToReg("rax", "r15")
 	fc.out.ShlRegImm("rax", "4") // shl rax, 4 (multiply by 16)
 	fc.out.AddImmToReg("rax", 8)  // add rax, 8
 	fc.out.MovRegToReg("rdi", "rax")
+	// Save r8 (step) before malloc since it's caller-saved
+	fc.out.PushReg("r8")
 	fc.trackFunctionCall("malloc")
 	fc.eb.GenerateCallInstruction("malloc")
 	fc.out.MovRegToReg("rbx", "rax") // rbx = new string pointer
+	// Restore r8 (step)
+	fc.out.PopReg("r8")
 
 	// Store count (length) as float64 in first 8 bytes
 	fc.out.Cvtsi2sd("xmm0", "r15")   // xmm0 = length as float64
 	fc.out.MovXmmToMem("xmm0", "rbx", 0)
 
 	// Copy characters from original string
-	// Initialize loop counter: rcx = 0
+	// Initialize loop counter (output index): rcx = 0
 	fc.out.XorRegWithReg("rcx", "rcx")
+	// Initialize source index: r9 = start
+	fc.out.MovRegToReg("r9", "r13")
 
 	fc.eb.MarkLabel("_slice_copy_loop")
 	sliceLoopStart := fc.eb.text.Len() // Track actual loop start position
@@ -5200,9 +5320,8 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	loopExitJumpPos := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpAboveOrEqual, 0) // Placeholder, will patch later
 
-	// Calculate source index: source_idx = start + rcx
-	fc.out.MovRegToReg("rax", "r13")
-	fc.out.AddRegToReg("rax", "rcx") // rax = start + i
+	// Use source index from r9
+	fc.out.MovRegToReg("rax", "r9")
 
 	// Calculate source address: r11 = r12 + 8 + (source_idx * 16)
 	fc.out.ShlRegImm("rax", "4") // rax = source_idx * 16
@@ -5230,6 +5349,9 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Increment loop counter
 	fc.out.IncReg("rcx")
+
+	// Increment source index by step
+	fc.out.AddRegToReg("r9", "r8") // r9 = r9 + step
 
 	// Jump back to loop start
 	loopBackJumpPos := fc.eb.text.Len()
@@ -6096,7 +6218,7 @@ func (fc *FlapCompiler) compileWholeNumberToString(intReg, bufPtr string) {
 	negativePos := fc.eb.text.Len()
 	fc.patchJumpImmediate(negativeJump+2, int32(negativePos-negativeEnd))
 	fc.out.MovRegToReg("rax", intReg)
-	fc.out.NegReg("rax")
+	fc.out.Emit([]byte{0x48, 0xF7, 0xD8}) // neg rax
 
 	// Store negative sign
 	fc.out.MovImmToReg("r10", "45") // '-' = 45
