@@ -2681,7 +2681,7 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 	rodataFileOffset := 0x30f0
 	if len(elfBytes) > rodataFileOffset+32 {
 		// fmt.Fprintf(os.Stderr, "DEBUG: Final ELF rodata section (first 32 bytes at offset 0x%x): %q\n",
-			rodataFileOffset, elfBytes[rodataFileOffset:rodataFileOffset+32])
+		// 	rodataFileOffset, elfBytes[rodataFileOffset:rodataFileOffset+32])
 	}
 
 	// Output the executable file
@@ -4417,6 +4417,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 	case *ConcurrentGatherExpr:
 		fc.compileConcurrentGatherExpr(e)
+
+	case *CastExpr:
+		fc.compileCastExpr(e)
 	}
 }
 
@@ -4591,6 +4594,77 @@ func (fc *FlapCompiler) compileMatchJump(jumpExpr *JumpExpr) {
 			fc.activeLoops[targetLoopIndex].ContinuePatches,
 			jumpPos+1,
 		)
+	}
+}
+
+func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
+	// Compile the expression being cast (result in xmm0)
+	fc.compileExpression(expr.Expr)
+
+	// Cast conversions for FFI:
+	// - Integer types (i8-i64, u8-u64): truncate float64 to integer
+	// - Float types (f32, f64): precision changes (f64 is no-op)
+	// - cstr: convert Flap string map to C null-terminated string
+	// - ptr: reinterpret bits (no conversion)
+	// - number: no-op (already float64)
+
+	switch expr.Type {
+	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64":
+		// Integer casts: convert float64 to integer and back
+		// This truncates fractional parts for FFI with C integer types
+		// cvttsd2si rax, xmm0  (convert with truncation)
+		fc.out.Cvttsd2si("rax", "xmm0")
+		// cvtsi2sd xmm0, rax (convert back to float64)
+		fc.out.Cvtsi2sd("xmm0", "rax")
+		// Note: Since Flap uses float64 internally, we don't mask bits
+		// The truncation is sufficient for C FFI purposes
+
+	case "f32":
+		// f32 cast: for C float arguments
+		// For now, keep as float64 (C will handle the conversion)
+		// TODO: Add explicit cvtsd2ss/cvtss2sd if needed for precision
+
+	case "f64":
+		// Already float64, nothing to do
+		// This is the native Flap type
+
+	case "ptr":
+		// Pointer cast: value is already in xmm0 as float64 (reinterpreted bits)
+		// No conversion needed - bits pass through as-is
+		// Used for NULL pointers and raw memory addresses
+
+	case "number":
+		// Convert C return value to Flap number (identity, already float64)
+		// This is a no-op but explicit for FFI clarity
+
+	case "cstr":
+		// Convert Flap string to C null-terminated string
+		// xmm0 contains pointer to Flap string map
+		// Call runtime function: flap_string_to_cstr(xmm0) -> rax
+		fc.out.CallSymbol("flap_string_to_cstr")
+		// Convert C string pointer (rax) back to float64 in xmm0
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovRegToMem("rax", "rsp", 0)
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 8)
+
+	case "string":
+		// Convert C char* to Flap string
+		// xmm0 contains C string pointer as float64
+		// TODO: implement flap_cstr_to_string runtime function
+		fmt.Fprintf(os.Stderr, "Error: 'as string' conversion not yet implemented\n")
+		fmt.Fprintf(os.Stderr, "Use 'as cstr' to convert Flap strings to C strings\n")
+		os.Exit(1)
+
+	case "list":
+		// Convert C array to Flap list
+		// TODO: implement when needed (requires length parameter)
+		fmt.Fprintf(os.Stderr, "Error: 'as list' conversion not yet implemented\n")
+		os.Exit(1)
+
+	default:
+		fmt.Fprintf(os.Stderr, "Error: unknown cast type '%s'\n", expr.Type)
+		os.Exit(1)
 	}
 }
 
@@ -6763,6 +6837,141 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Clean up
 		fc.out.AddImmToReg("rsp", 32)
+
+	case "call":
+		// FFI: call(function_name, args...)
+		// First argument must be a string literal (function name)
+		if len(call.Args) < 1 {
+			fmt.Fprintf(os.Stderr, "Error: call() requires at least a function name\n")
+			os.Exit(1)
+		}
+
+		fnNameExpr, ok := call.Args[0].(*StringExpr)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "Error: call() first argument must be a string literal (function name)\n")
+			os.Exit(1)
+		}
+		fnName := fnNameExpr.Value
+
+		// x86-64 calling convention:
+		// Integer/pointer args: rdi, rsi, rdx, rcx, r8, r9
+		// Float args: xmm0-xmm7
+		intRegs := []string{"rdi", "rsi", "rdx", "rcx", "r8", "r9"}
+		xmmRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"}
+
+		intArgCount := 0
+		xmmArgCount := 0
+		numArgs := len(call.Args) - 1 // Exclude function name
+
+		if numArgs > 8 {
+			fmt.Fprintf(os.Stderr, "Error: call() supports max 8 arguments (got %d)\n", numArgs)
+			os.Exit(1)
+		}
+
+		// Determine argument types by checking for cast expressions
+		argTypes := make([]string, numArgs)
+		for i := 0; i < numArgs; i++ {
+			arg := call.Args[i+1]
+			if castExpr, ok := arg.(*CastExpr); ok {
+				argTypes[i] = castExpr.Type
+			} else {
+				// No cast - assume float64
+				argTypes[i] = "f64"
+			}
+		}
+
+		// Evaluate all arguments and save to stack
+		for i := 0; i < numArgs; i++ {
+			fc.compileExpression(call.Args[i+1])
+			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		}
+
+		// Load arguments into registers (in reverse order from stack)
+		for i := numArgs - 1; i >= 0; i-- {
+			argType := argTypes[i]
+
+			// Determine if this is an integer/pointer argument or float argument
+			isIntArg := false
+			switch argType {
+			case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "ptr", "cstr":
+				isIntArg = true
+			case "f32", "f64":
+				isIntArg = false
+			default:
+				// Unknown type - assume float
+				isIntArg = false
+			}
+
+			fc.out.MovMemToXmm("xmm0", "rsp", 0)
+			fc.out.AddImmToReg("rsp", 8)
+
+			if isIntArg {
+				// Integer/pointer argument
+				if intArgCount < len(intRegs) {
+					// For cstr, the value is already a pointer in xmm0
+					// For integers, convert from float64 to integer
+					if argType == "cstr" {
+						// cstr is already a pointer - just transfer bits
+						fc.out.SubImmFromReg("rsp", 8)
+						fc.out.MovXmmToMem("xmm0", "rsp", 0)
+						fc.out.MovMemToReg(intRegs[intArgCount], "rsp", 0)
+						fc.out.AddImmToReg("rsp", 8)
+					} else {
+						// Convert float64 to integer
+						fc.out.Cvttsd2si(intRegs[intArgCount], "xmm0")
+					}
+					intArgCount++
+				} else {
+					fmt.Fprintf(os.Stderr, "Error: call() supports max 6 integer/pointer arguments\n")
+					os.Exit(1)
+				}
+			} else {
+				// Float argument
+				if xmmArgCount < len(xmmRegs) {
+					if xmmArgCount != 0 {
+						// Move to appropriate xmm register
+						fc.out.SubImmFromReg("rsp", 8)
+						fc.out.MovXmmToMem("xmm0", "rsp", 0)
+						fc.out.MovMemToXmm(xmmRegs[xmmArgCount], "rsp", 0)
+						fc.out.AddImmToReg("rsp", 8)
+					}
+					// else: already in xmm0
+					xmmArgCount++
+				} else {
+					fmt.Fprintf(os.Stderr, "Error: call() supports max 8 float arguments\n")
+					os.Exit(1)
+				}
+			}
+		}
+
+		// Set rax = number of vector registers used (required by x86-64 ABI for varargs)
+		fc.out.MovImmToReg("rax", fmt.Sprintf("%d", xmmArgCount))
+
+		// Call the C function
+		fc.trackFunctionCall(fnName)
+		fc.eb.GenerateCallInstruction(fnName)
+
+		// Result is in rax (for integer/pointer returns) or xmm0 (for float returns)
+		// Check if this is a known floating-point function
+		floatFunctions := map[string]bool{
+			"sqrt": true, "sin": true, "cos": true, "tan": true,
+			"asin": true, "acos": true, "atan": true, "atan2": true,
+			"log": true, "log10": true, "exp": true, "pow": true,
+			"fabs": true, "fmod": true, "ceil": true, "floor": true,
+		}
+
+		if floatFunctions[fnName] {
+			// Float return - result already in xmm0
+			// Nothing to do
+		} else {
+			// Integer/pointer return - result in rax, need to convert to xmm0
+			// Transfer bits without conversion (for pointers)
+			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.MovRegToMem("rax", "rsp", 0)
+			fc.out.MovMemToXmm("xmm0", "rsp", 0)
+			fc.out.AddImmToReg("rsp", 8)
+		}
 
 	default:
 		// Unknown function - track it for dependency resolution
