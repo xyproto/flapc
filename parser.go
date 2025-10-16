@@ -423,15 +423,27 @@ func (e *ExpressionStmt) String() string { return e.Expr.String() }
 func (e *ExpressionStmt) statementNode() {}
 
 type LoopStmt struct {
-	Label    int        // Loop label number (e.g., 1 for @1)
+	// No explicit label - determined by nesting depth when created with @+
 	Iterator string     // Variable name (e.g., "i")
 	Iterable Expression // Expression to iterate over (e.g., range(10))
 	Body     []Statement
 }
 
+type LoopExpr struct {
+	// No explicit label - determined by nesting depth when created with @+
+	Iterator string      // Variable name (e.g., "i")
+	Iterable Expression  // Expression to iterate over (e.g., range(10))
+	Body     []Statement // Body statements
+}
+
+func (l *LoopExpr) String() string {
+	return fmt.Sprintf("@+ %s in %s { ... }", l.Iterator, l.Iterable.String())
+}
+func (l *LoopExpr) expressionNode() {}
+
 func (l *LoopStmt) String() string {
 	var out strings.Builder
-	out.WriteString(fmt.Sprintf("@%d ", l.Label))
+	out.WriteString("@+ ")
 	out.WriteString(l.Iterator)
 	out.WriteString(" in ")
 	out.WriteString(l.Iterable.String())
@@ -1337,192 +1349,38 @@ func (p *Parser) parseLoopStatement() Statement {
 		}
 
 		return &LoopStmt{
-			Label:    label,
 			Iterator: iterator,
 			Iterable: iterable,
 			Body:     body,
 		}
 	}
 
+	// If we reach here, must be @N for a jump statement
 	p.nextToken() // skip '@'
 
-	// Expect number for loop label
+	// Expect number for jump label
 	if p.current.Type != TOKEN_NUMBER {
-		p.error("expected number after @ (e.g., @1, @2, @0)")
+		p.error("expected number after @ (e.g., @0, @1, @2)")
 	}
 
 	labelNum, err := strconv.ParseFloat(p.current.Value, 64)
 	if err != nil {
-		p.error("invalid loop label number")
+		p.error("invalid jump label number")
 	}
 	label := int(labelNum)
 
 	p.nextToken() // skip label number
 
-	// Check if next is identifier (loop) or not (jump)
-	if p.current.Type != TOKEN_IDENT {
-		// It's a jump statement: @N or @N value
-		if label < 0 {
-			p.error("jump label must be >= 0 (use @0, @1, @2, etc.)")
-		}
-		// Check for optional return value: @0 value
-		var value Expression
-		if p.current.Type != TOKEN_NEWLINE && p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
-			value = p.parseExpression()
-		}
-		return &JumpStmt{Label: label, Value: value}
+	// It's a jump statement: @N or @N value
+	if label < 0 {
+		p.error("jump label must be >= 0 (use @0, @1, @2, etc.)")
 	}
-
-	// It's a loop statement
-	if label < 1 {
-		p.error("loop label must be >= 1 (use @1, @2, @3, etc.)")
+	// Check for optional return value: @0 value
+	var value Expression
+	if p.current.Type != TOKEN_NEWLINE && p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+		value = p.parseExpression()
 	}
-
-	iterator := p.current.Value
-
-	p.nextToken() // skip identifier
-
-	// Expect 'in' keyword
-	if p.current.Type != TOKEN_IN {
-		p.error("expected 'in' in loop statement")
-	}
-
-	p.nextToken() // skip 'in'
-
-	// Parse iterable expression
-	iterable := p.parseExpression()
-
-	// Skip newlines before '{'
-	for p.peek.Type == TOKEN_NEWLINE {
-		p.nextToken()
-	}
-
-	// Expect '{'
-	if p.peek.Type != TOKEN_LBRACE {
-		p.error("expected '{' in loop statement")
-	}
-	p.nextToken() // advance to '{'
-
-	// Skip newlines after '{'
-	for p.peek.Type == TOKEN_NEWLINE {
-		p.nextToken()
-	}
-
-	// Track loop depth for nested loops (for break/continue)
-	oldDepth := p.loopDepth
-	p.loopDepth = label
-	defer func() { p.loopDepth = oldDepth }()
-
-	// Parse loop body
-	var body []Statement
-	for p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
-		p.nextToken()
-		if p.current.Type == TOKEN_NEWLINE {
-			continue
-		}
-		stmt := p.parseStatement()
-		if stmt != nil {
-			body = append(body, stmt)
-		}
-	}
-
-	// Skip to '}'
-	for p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
-		p.nextToken()
-	}
-	p.nextToken() // skip to '}'
-
-	return &LoopStmt{
-		Label:    label,
-		Iterator: iterator,
-		Iterable: iterable,
-		Body:     body,
-	}
-}
-
-// parseForLoop handles 'for' keyword which is an alias for @(N+1)
-// Supports:
-// - for x in expr { ... } - normal loop with auto-increment label
-// - for x in N { ... } - loop N times (x from 0 to N-1)
-// - for { ... } - infinite loop
-func (p *Parser) parseForLoop() Statement {
-	p.nextToken() // skip 'for'
-
-	// Check for infinite loop: for { ... }
-	if p.current.Type == TOKEN_LBRACE {
-		// Infinite loop: for { ... }
-		// This is equivalent to: @(N+1) _ in range(∞) { ... }
-		// We'll implement this as a special case later
-		p.error("infinite loops (for { }) not yet implemented")
-	}
-
-	// Calculate auto-increment label: @(N+1)
-	label := p.loopDepth + 1
-
-	// Expect identifier for iterator variable
-	if p.current.Type != TOKEN_IDENT {
-		p.error("expected identifier after 'for'")
-	}
-	iterator := p.current.Value
-
-	p.nextToken() // skip identifier
-
-	// Expect 'in' keyword
-	if p.current.Type != TOKEN_IN {
-		p.error("expected 'in' in for loop")
-	}
-
-	p.nextToken() // skip 'in'
-
-	// Parse iterable expression
-	iterable := p.parseExpression()
-
-	// Skip newlines before '{'
-	for p.peek.Type == TOKEN_NEWLINE {
-		p.nextToken()
-	}
-
-	// Expect '{'
-	if p.peek.Type != TOKEN_LBRACE {
-		p.error("expected '{' in for loop")
-	}
-	p.nextToken() // advance to '{'
-
-	// Skip newlines after '{'
-	for p.peek.Type == TOKEN_NEWLINE {
-		p.nextToken()
-	}
-
-	// Track loop depth for nested loops (for break/continue)
-	oldDepth := p.loopDepth
-	p.loopDepth = label
-	defer func() { p.loopDepth = oldDepth }()
-
-	// Parse loop body
-	var body []Statement
-	for p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
-		p.nextToken()
-		if p.current.Type == TOKEN_NEWLINE {
-			continue
-		}
-		stmt := p.parseStatement()
-		if stmt != nil {
-			body = append(body, stmt)
-		}
-	}
-
-	// Skip to '}'
-	for p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
-		p.nextToken()
-	}
-	p.nextToken() // skip to '}'
-
-	return &LoopStmt{
-		Label:    label,
-		Iterator: iterator,
-		Iterable: iterable,
-		Body:     body,
-	}
+	return &JumpStmt{Label: label, Value: value}
 }
 
 func (p *Parser) parseExpression() Expression {
@@ -2012,9 +1870,98 @@ func (p *Parser) parsePrimary() Expression {
 		// peek should be '}'
 		p.nextToken() // move to '}'
 		return &MapExpr{Keys: keys, Values: values}
+
+	case TOKEN_AT_PLUS:
+		// Loop expression: @+ i in iterable { body }
+		return p.parseLoopExpr()
+
+	case TOKEN_AT:
+		// Jump expression: @N [value]
+		// Returns JumpExpr for breaking/continuing loops
+		p.nextToken() // skip '@'
+		if p.current.Type != TOKEN_NUMBER {
+			p.error("expected number after @")
+		}
+		labelNum, _ := strconv.ParseFloat(p.current.Value, 64)
+		label := int(labelNum)
+		p.nextToken() // skip number
+		var value Expression
+		if p.current.Type != TOKEN_NEWLINE && p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+			value = p.parseExpression()
+			p.nextToken()
+		}
+		return &JumpExpr{Label: label, Value: value}
 	}
 
 	return nil
+}
+
+// isLoopExpr checks if current position looks like a loop expression
+// Pattern: @+ ident in
+func (p *Parser) isLoopExpr() bool {
+	// Loop expressions always start with @+
+	return p.current.Type == TOKEN_AT_PLUS
+}
+
+// parseLoopExpr parses a loop expression: @+ i in iterable { body }
+func (p *Parser) parseLoopExpr() Expression {
+	// Must be @+
+	if p.current.Type != TOKEN_AT_PLUS {
+		p.error("expected @+ to start loop expression")
+	}
+
+	label := p.loopDepth + 1
+	p.nextToken() // skip '@+'
+
+	// Expect identifier for loop variable
+	if p.current.Type != TOKEN_IDENT {
+		p.error("expected identifier after @+")
+	}
+	iterator := p.current.Value
+	p.nextToken() // skip iterator
+
+	// Expect 'in' keyword
+	if p.current.Type != TOKEN_IN {
+		p.error("expected 'in' keyword in loop expression")
+	}
+	p.nextToken() // skip 'in'
+
+	iterable := p.parseExpression()
+	p.nextToken() // move past iterable
+
+	// Expect '{'
+	if p.current.Type != TOKEN_LBRACE {
+		p.error("expected '{' to start loop body")
+	}
+	p.nextToken() // skip '{'
+
+	// Parse loop body
+	oldDepth := p.loopDepth
+	p.loopDepth = label
+	defer func() { p.loopDepth = oldDepth }()
+
+	var body []Statement
+	for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+		if p.current.Type == TOKEN_NEWLINE {
+			p.nextToken()
+			continue
+		}
+		stmt := p.parseStatement()
+		if stmt != nil {
+			body = append(body, stmt)
+		}
+		p.nextToken()
+	}
+
+	if p.current.Type != TOKEN_RBRACE {
+		p.error("expected '}' at end of loop body")
+	}
+
+	return &LoopExpr{
+		Iterator: iterator,
+		Iterable: iterable,
+		Body:     body,
+	}
 }
 
 // LoopInfo tracks information about an active loop during compilation
@@ -2529,8 +2476,10 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, funcCall *CallExpr) {
 	loopStartPos := fc.eb.text.Len()
 
 	// Register this loop on the active loop stack
+	// Label is determined by loop depth (1-indexed)
+	loopLabel := len(fc.activeLoops) + 1
 	loopInfo := LoopInfo{
-		Label:      stmt.Label,
+		Label:      loopLabel,
 		StartPos:   loopStartPos,
 		EndPatches: []int{},
 	}
@@ -2655,8 +2604,10 @@ func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
 	loopStartPos := fc.eb.text.Len()
 
 	// Register this loop on the active loop stack
+	// Label is determined by loop depth (1-indexed)
+	loopLabel := len(fc.activeLoops) + 1
 	loopInfo := LoopInfo{
-		Label:      stmt.Label,
+		Label:      loopLabel,
 		StartPos:   loopStartPos,
 		EndPatches: []int{},
 	}
