@@ -3277,6 +3277,107 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		}
 
 	case *BinaryExpr:
+		// Handle or! error handling operator (special case: short-circuit)
+		if e.Operator == "or!" {
+			var jumpPos int
+			var jumpCond JumpCondition
+
+			// Check if left side is a comparison (which only sets flags)
+			if leftBinary, ok := e.Left.(*BinaryExpr); ok {
+				switch leftBinary.Operator {
+				case "<", "<=", ">", ">=", "==", "!=":
+					// It's a comparison - evaluate it (sets CPU flags)
+					// Compile left operand into xmm0
+					fc.compileExpression(leftBinary.Left)
+					fc.out.SubImmFromReg("rsp", 16)
+					fc.out.MovXmmToMem("xmm0", "rsp", 0)
+					// Compile right operand into xmm0
+					fc.compileExpression(leftBinary.Right)
+					fc.out.MovRegToReg("xmm1", "xmm0")
+					fc.out.MovMemToXmm("xmm0", "rsp", 0)
+					fc.out.AddImmToReg("rsp", 16)
+					// Compare (sets flags)
+					fc.out.Ucomisd("xmm0", "xmm1")
+
+					// Now jump based on the comparison result
+					// We want to jump to success if the condition is TRUE
+					switch leftBinary.Operator {
+					case ">":
+						jumpCond = JumpGreater
+					case ">=":
+						jumpCond = JumpGreaterOrEqual
+					case "<":
+						jumpCond = JumpLess
+					case "<=":
+						jumpCond = JumpLessOrEqual
+					case "==":
+						jumpCond = JumpEqual
+					case "!=":
+						jumpCond = JumpNotEqual
+					}
+					jumpPos = fc.eb.text.Len()
+					fc.out.JumpConditional(jumpCond, 0) // Placeholder, will patch later
+
+					// Fall through to error handling below
+					goto handleError
+				}
+			}
+
+			// Not a comparison - evaluate as a general expression
+			fc.compileExpression(e.Left)
+			// xmm0 contains the condition result
+
+			// Compare with 0.0 to check if condition is false
+			fc.out.XorpdXmm("xmm1", "xmm1") // xmm1 = 0.0
+			fc.out.Ucomisd("xmm0", "xmm1")  // Compare xmm0 with 0
+
+			// Jump to success label if condition is non-zero (true)
+			// Save position for jump patching
+			jumpPos = fc.eb.text.Len()
+			fc.out.JumpConditional(JumpNotEqual, 0) // Placeholder, will patch later
+
+		handleError:
+
+			// Condition is false (zero): print error message and exit
+			// Right side should be a string literal
+			if strExpr, ok := e.Right.(*StringExpr); ok {
+				// Write error message to stderr (fd=2)
+				errorMsg := strExpr.Value + "\n"
+
+				// Create label for error message
+				errorLabel := fmt.Sprintf("error_msg_%d", fc.stringCounter)
+				fc.stringCounter++
+				fc.eb.Define(errorLabel, errorMsg)
+
+				// syscall: write(2, msg, len)
+				fc.out.MovImmToReg("rax", "1")                              // syscall number for write
+				fc.out.MovImmToReg("rdi", "2")                              // fd = 2 (stderr)
+				fc.out.LeaSymbolToReg("rsi", errorLabel)                    // msg = error string
+				fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", len(errorMsg))) // len
+				fc.eb.Emit("syscall")
+
+				// syscall: exit(1)
+				fc.out.MovImmToReg("rax", "60") // syscall number for exit
+				fc.out.MovImmToReg("rdi", "1")  // exit code = 1
+				fc.eb.Emit("syscall")
+			} else {
+				// Right side is not a string literal, just exit with code 1
+				fc.out.MovImmToReg("rax", "60") // syscall number for exit
+				fc.out.MovImmToReg("rdi", "1")  // exit code = 1
+				fc.eb.Emit("syscall")
+			}
+
+			// Success label: condition was true, patch jump to here
+			successPos := fc.eb.text.Len()
+			// Calculate offset from end of jump instruction to success position
+			// JumpConditional emits 6 bytes on x86-64 (0x0f 0x85 + 4-byte offset)
+			jumpEndPos := jumpPos + 6
+			offset := int32(successPos - jumpEndPos)
+			fc.patchJumpImmediate(jumpPos+2, offset) // +2 to skip opcode bytes, patch the 4-byte offset
+			// xmm0 still contains the original condition value
+			return
+		}
+
 		// Check for string/list/map operations with + operator
 		if e.Operator == "+" {
 			leftType := fc.getExprType(e.Left)

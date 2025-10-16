@@ -1,6 +1,6 @@
 # The Flap Programming Language
 
-**Version**: 0.9.x (Release Candidate for 1.0.0)
+**Version**: 1.0.0
 **Tagline**: Float. Map. Fly.
 
 ## Language Philosophy
