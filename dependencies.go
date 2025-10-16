@@ -43,6 +43,7 @@ var FunctionRepository = map[string]string{
 
 	// Standard library
 	// "println": "github.com/xyproto/flap_core",  // Commented out - println is now a builtin
+	"print": "github.com/xyproto/flap_core", // Print without newline
 
 	// Graphics (example)
 	"InitWindow":    "github.com/xyproto/flap_raylib",
