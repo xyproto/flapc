@@ -1730,11 +1730,10 @@ func (p *Parser) parsePostfix() Expression {
 					p.nextToken() // skip ','
 					args = append(args, p.parseExpression())
 				}
+				// current should be on last arg, peek should be ')'
+				p.nextToken() // move to ')'
 			}
-
-			// current should be on last arg or on '('
-			// peek should be ')'
-			p.nextToken() // move to ')'
+			// current is now on ')', whether we had args or not
 
 			// Wrap the expression in a CallExpr
 			// If expr is a LambdaExpr, it will be compiled and called
@@ -1795,11 +1794,10 @@ func (p *Parser) parsePrimary() Expression {
 					p.nextToken() // skip ','
 					args = append(args, p.parseExpression())
 				}
+				// current should be on last arg, peek should be ')'
+				p.nextToken() // move to ')'
 			}
-
-			// current should be on last arg or on '('
-			// peek should be ')'
-			p.nextToken() // move to ')'
+			// current is now on ')', whether we had args or not
 			return &CallExpr{Function: name, Args: args}
 		}
 		return &IdentExpr{Name: name}
