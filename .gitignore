@@ -65,3 +65,9 @@ hello
 a.out
 main
 flapc
+
+# Test executables (compiled from programs/*.flap)
+test_*
+debug_*
+simple_*
+nested_*

@@ -1553,7 +1553,7 @@ func (p *Parser) parseLoopStatement() Statement {
 		var body []Statement
 		for p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
 			p.nextToken()
-			fmt.Fprintf(os.Stderr, "DEBUG: Parsing loop body, current=%v, peek=%v\n", p.current.Type, p.peek.Type)
+			// fmt.Fprintf(os.Stderr, "DEBUG: Parsing loop body, current=%v, peek=%v\n", p.current.Type, p.peek.Type)
 			if p.current.Type == TOKEN_NEWLINE {
 				continue
 			}
@@ -2366,7 +2366,7 @@ func NewFlapCompiler(machine Machine) (*FlapCompiler, error) {
 func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	// Use ARM64 code generator if target is ARM64
 	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG: Machine type = %v\n", fc.eb.machine)
+		// fmt.Fprintf(os.Stderr, "DEBUG: Machine type = %v\n", fc.eb.machine)
 	}
 	if fc.eb.machine == MachineARM64 {
 		if VerboseMode {
@@ -2499,13 +2499,13 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 	sort.Strings(symbolNames)
 
 	// DEBUG: Print what symbols we're writing
-	fmt.Fprintf(os.Stderr, "DEBUG: rodataSymbols contains %d symbols: %v\n", len(symbolNames), symbolNames)
-	fmt.Fprintf(os.Stderr, "DEBUG: rodata buffer size before reset: %d bytes\n", fc.eb.rodata.Len())
+	// fmt.Fprintf(os.Stderr, "DEBUG: rodataSymbols contains %d symbols: %v\n", len(symbolNames), symbolNames)
+	// fmt.Fprintf(os.Stderr, "DEBUG: rodata buffer size before reset: %d bytes\n", fc.eb.rodata.Len())
 
 	// Clear rodata buffer before writing sorted symbols
 	// (in case any data was written during code generation)
 	fc.eb.rodata.Reset()
-	fmt.Fprintf(os.Stderr, "DEBUG: rodata buffer size after reset: %d bytes\n", fc.eb.rodata.Len())
+	// fmt.Fprintf(os.Stderr, "DEBUG: rodata buffer size after reset: %d bytes\n", fc.eb.rodata.Len())
 
 	estimatedRodataAddr := uint64(0x403000 + 0x100)
 	currentAddr := estimatedRodataAddr
@@ -2513,16 +2513,16 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 		value := rodataSymbols[symbol]
 		fc.eb.WriteRodata([]byte(value))
 		fc.eb.DefineAddr(symbol, currentAddr)
-		fmt.Fprintf(os.Stderr, "DEBUG: Writing %s at 0x%x, len=%d\n", symbol, currentAddr, len(value))
+		// fmt.Fprintf(os.Stderr, "DEBUG: Writing %s at 0x%x, len=%d\n", symbol, currentAddr, len(value))
 		currentAddr += uint64(len(value))
 	}
-	fmt.Fprintf(os.Stderr, "DEBUG: rodata buffer size after writing all symbols: %d bytes\n", fc.eb.rodata.Len())
+	// fmt.Fprintf(os.Stderr, "DEBUG: rodata buffer size after writing all symbols: %d bytes\n", fc.eb.rodata.Len())
 	if fc.eb.rodata.Len() > 0 {
 		previewLen := 32
 		if fc.eb.rodata.Len() < previewLen {
 			previewLen = fc.eb.rodata.Len()
 		}
-		fmt.Fprintf(os.Stderr, "DEBUG: rodata buffer first %d bytes: %q\n", previewLen, fc.eb.rodata.Bytes()[:previewLen])
+		// fmt.Fprintf(os.Stderr, "DEBUG: rodata buffer first %d bytes: %q\n", previewLen, fc.eb.rodata.Bytes()[:previewLen])
 	}
 
 	// Write complete dynamic ELF with unique PLT functions
@@ -2537,11 +2537,11 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 
 	// Update rodata addresses using same sorted order
 	currentAddr = rodataBaseAddr
-	fmt.Fprintf(os.Stderr, "DEBUG: Updating addresses with actual rodata base=0x%x\n", rodataBaseAddr)
+	// fmt.Fprintf(os.Stderr, "DEBUG: Updating addresses with actual rodata base=0x%x\n", rodataBaseAddr)
 	for _, symbol := range symbolNames {
 		value := rodataSymbols[symbol]
 		fc.eb.DefineAddr(symbol, currentAddr)
-		fmt.Fprintf(os.Stderr, "DEBUG: Updated %s to 0x%x, len=%d\n", symbol, currentAddr, len(value))
+		// fmt.Fprintf(os.Stderr, "DEBUG: Updated %s to 0x%x, len=%d\n", symbol, currentAddr, len(value))
 		currentAddr += uint64(len(value))
 	}
 
@@ -2637,7 +2637,7 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 	}
 
 	if len(newSymbols) > 0 {
-		fmt.Fprintf(os.Stderr, "DEBUG: Found %d new rodata symbols after lambda generation: %v\n", len(newSymbols), newSymbols)
+		// fmt.Fprintf(os.Stderr, "DEBUG: Found %d new rodata symbols after lambda generation: %v\n", len(newSymbols), newSymbols)
 		sort.Strings(newSymbols)
 
 		// Append new symbols to rodata and assign addresses
@@ -2645,7 +2645,7 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 			value := rodataSymbols[symbol]
 			fc.eb.WriteRodata([]byte(value))
 			fc.eb.DefineAddr(symbol, currentAddr)
-			fmt.Fprintf(os.Stderr, "DEBUG: Added new symbol %s at 0x%x, len=%d\n", symbol, currentAddr, len(value))
+			// fmt.Fprintf(os.Stderr, "DEBUG: Added new symbol %s at 0x%x, len=%d\n", symbol, currentAddr, len(value))
 			currentAddr += uint64(len(value))
 			symbolNames = append(symbolNames, symbol)
 		}
@@ -2676,11 +2676,11 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 
 	// DEBUG: Check what's actually in the ELF before writing to file
 	elfBytes := fc.eb.Bytes()
-	fmt.Fprintf(os.Stderr, "DEBUG: Final ELF size: %d bytes\n", len(elfBytes))
+	// fmt.Fprintf(os.Stderr, "DEBUG: Final ELF size: %d bytes\n", len(elfBytes))
 	// Rodata is at file offset 0x30f0
 	rodataFileOffset := 0x30f0
 	if len(elfBytes) > rodataFileOffset+32 {
-		fmt.Fprintf(os.Stderr, "DEBUG: Final ELF rodata section (first 32 bytes at offset 0x%x): %q\n",
+		// fmt.Fprintf(os.Stderr, "DEBUG: Final ELF rodata section (first 32 bytes at offset 0x%x): %q\n",
 			rodataFileOffset, elfBytes[rodataFileOffset:rodataFileOffset+32])
 	}
 
