@@ -2476,8 +2476,34 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 
 	// Set up dynamic sections
 	ds := NewDynamicSections()
+
+	// Only add NEEDED libraries if their functions are actually used
+	// libc.so.6 is always needed for basic functionality
 	ds.AddNeeded("libc.so.6")
-	ds.AddNeeded("libm.so.6") // Needed for FFI calls to math functions (sqrt, etc.)
+
+	// Check if any libm functions are called (via call() FFI)
+	// Note: builtin math functions like sqrt(), sin(), cos() use hardware instructions, not libm
+	// But call("sqrt", ...) calls libm's sqrt
+	libmFunctions := map[string]bool{
+		"sqrt": true, "sin": true, "cos": true, "tan": true,
+		"asin": true, "acos": true, "atan": true, "atan2": true,
+		"sinh": true, "cosh": true, "tanh": true,
+		"log": true, "log10": true, "exp": true, "pow": true,
+		"fabs": true, "fmod": true, "ceil": true, "floor": true,
+	}
+	needsLibm := false
+	for funcName := range fc.usedFunctions {
+		if libmFunctions[funcName] {
+			needsLibm = true
+			break
+		}
+	}
+	if needsLibm {
+		ds.AddNeeded("libm.so.6")
+	}
+
+	// Note: dlopen/dlsym/dlclose are part of libc.so.6 on modern glibc (2.34+)
+	// No need to link libdl.so.2 separately
 
 	// Add symbols for PLT functions
 	for _, funcName := range pltFunctions {
@@ -7610,6 +7636,119 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			// For pointer returns (getenv, malloc, etc), "as number" will be used to get the pointer bits
 			fc.out.Cvtsi2sd("xmm0", "rax")
 		}
+
+	case "dlopen":
+		// dlopen(path, flags) - Open a dynamic library
+		// path: string (Flap string), flags: number (RTLD_LAZY=1, RTLD_NOW=2)
+		// Returns: library handle as float64
+		if len(call.Args) != 2 {
+			fmt.Fprintf(os.Stderr, "Error: dlopen() requires 2 arguments (path, flags)\n")
+			os.Exit(1)
+		}
+
+		// Evaluate flags argument first (will be in rdi later)
+		fc.compileExpression(call.Args[1])
+		// Convert flags to integer
+		fc.out.Cvttsd2si("r8", "xmm0")
+		// Save flags to stack
+		fc.out.Emit([]byte{0x41, 0x50}) // push r8
+
+		// Evaluate path argument (Flap string)
+		fc.compileExpression(call.Args[0])
+		// Convert Flap string to C string (xmm0 has map pointer)
+		// Save xmm0 to stack, call conversion function
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovMemToReg("rdi", "rsp", 0) // C string pointer will be in rax after call
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+		// Call flap_string_to_cstr (result in rax)
+		fc.out.CallSymbol("flap_string_to_cstr")
+
+		// Now rax = C string pointer
+		// Pop flags from stack to rsi
+		fc.out.Emit([]byte{0x41, 0x58}) // pop r8
+		fc.out.MovRegToReg("rdi", "rax") // path in rdi
+		fc.out.MovRegToReg("rsi", "r8")  // flags in rsi
+
+		// Align stack for C call
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+
+		// Call dlopen
+		fc.out.CallSymbol("dlopen")
+
+		// Restore stack
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+		// rax = library handle (pointer)
+		// Convert to float64
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "dlsym":
+		// dlsym(handle, symbol) - Get symbol address from library
+		// handle: number (library handle from dlopen), symbol: string
+		// Returns: symbol address as float64
+		if len(call.Args) != 2 {
+			fmt.Fprintf(os.Stderr, "Error: dlsym() requires 2 arguments (handle, symbol)\n")
+			os.Exit(1)
+		}
+
+		// Evaluate handle first
+		fc.compileExpression(call.Args[0])
+		fc.out.Cvttsd2si("r8", "xmm0")
+		fc.out.Emit([]byte{0x41, 0x50}) // push r8
+
+		// Evaluate symbol (Flap string)
+		fc.compileExpression(call.Args[1])
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovMemToReg("rdi", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+		// Convert to C string
+		fc.out.CallSymbol("flap_string_to_cstr")
+
+		// Pop handle to rdi
+		fc.out.Emit([]byte{0x41, 0x58}) // pop r8
+		fc.out.MovRegToReg("rsi", "rax") // symbol in rsi
+		fc.out.MovRegToReg("rdi", "r8")  // handle in rdi
+
+		// Align stack
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+
+		// Call dlsym
+		fc.out.CallSymbol("dlsym")
+
+		// Restore stack
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+		// rax = symbol address
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "dlclose":
+		// dlclose(handle) - Close a dynamic library
+		// handle: number (library handle from dlopen)
+		// Returns: 0.0 on success, non-zero on error
+		if len(call.Args) != 1 {
+			fmt.Fprintf(os.Stderr, "Error: dlclose() requires 1 argument (handle)\n")
+			os.Exit(1)
+		}
+
+		// Evaluate handle
+		fc.compileExpression(call.Args[0])
+		fc.out.Cvttsd2si("rdi", "xmm0")
+
+		// Align stack
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+
+		// Call dlclose
+		fc.out.CallSymbol("dlclose")
+
+		// Restore stack
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+		// rax = return code (0 on success)
+		fc.out.Cvtsi2sd("xmm0", "rax")
 
 	default:
 		// Unknown function - track it for dependency resolution
