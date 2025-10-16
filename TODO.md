@@ -13,9 +13,9 @@
 ### 1. Builtin Functions (Standard Library)
 
 **I/O Functions:**
-- [ ] **Implement readln()**: Read line from stdin, return as Flap string
-- [ ] **Implement read_file(path)**: Read entire file, return as Flap string
-- [ ] **Implement write_file(path, content)**: Write string to file
+- [ ] **Implement readln()**: Read line from stdin, return as Flap string (WIP - stack management issues)
+- [ ] **Implement read_file(path)**: Read entire file, return as Flap string (WIP - fclose segfault)
+- [x] **Implement write_file(path, content)**: Write string to file ✓ (Working!)
 
 **String Functions:**
 - [ ] **Implement num(string)**: Parse string to float64 ("42" → 42.0)
