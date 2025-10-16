@@ -10,21 +10,7 @@
 
 ## Active Work Items (Sorted by Priority)
 
-### 1. Core Compiler Fixes (Highest Priority - BLOCKING)
-
-All core compiler fixes complete! ✓
-
-### 2. Parser Completeness (Complete for 1.0.0 Spec)
-
-All parser features complete! ✓
-
-### 3. Code Generation for Parsed Features (Unblock Tests)
-
-- [ ] **Implement FMA codegen**: Generate VFMADD instruction for `a *+ b`
-  - Use AVX2 VFMADD213SD for scalar operations
-  - Better precision than separate multiply + add
-
-### 4. FFI Implementation (Enable Foreign Function Interface)
+### 1. FFI Implementation (Enable Foreign Function Interface)
 
 - [ ] **Implement dlopen/dlsym/dlclose**: Dynamic library loading
   - dlopen(path, flags) returns handle as float64
@@ -35,7 +21,7 @@ All parser features complete! ✓
   - sizeof_i8() through sizeof_f64()
   - Return size in bytes as float64
 
-### 5. Builtin Functions (Standard Library)
+### 2. Builtin Functions (Standard Library)
 
 **I/O Functions:**
 - [ ] **Implement readln()**: Read line from stdin, return as Flap string
@@ -64,7 +50,7 @@ All parser features complete! ✓
 - [ ] **Implement magnitude(v)**: Length of vector
 - [ ] **Implement normalize(v)**: Unit vector in same direction
 
-### 6. Polymorphic Operators (Type-Aware Behavior)
+### 3. Polymorphic Operators (Type-Aware Behavior)
 
 **String Operations:**
 - [ ] **Implement string < and >**: Lexicographic comparison
@@ -77,7 +63,7 @@ All parser features complete! ✓
 - [ ] **Implement list - list**: Set difference (remove elements)
 - [ ] **Implement map - map**: Remove keys from first map
 
-### 7. Control Flow Enhancements (Loop Return Values)
+### 4. Control Flow Enhancements (Loop Return Values)
 
 - [ ] **Implement LoopExpr**: Allow loops in expression context
   - Parse `x = @+ i in range(10) { i * 2 }` as LoopExpr
@@ -88,14 +74,14 @@ All parser features complete! ✓
   - `@+ i in range(10) { i == 5 { -> ret @1 42 } }` returns 42
   - `@+ i in range(10) { i * 2 }` at end returns last value
 
-### 8. Error Reporting Improvements
+### 5. Error Reporting Improvements
 
 - [ ] **Add line numbers to runtime errors**: Include source location in error messages
 - [ ] **Improve type error messages**: Show expected vs actual types
 - [ ] **Check function argument counts**: Report errors for wrong number of arguments
 - [ ] **Add undefined variable detection**: Report which variable is undefined
 
-### 9. Architecture Support (ARM64, RISC-V)
+### 6. Architecture Support (ARM64, RISC-V)
 
 **Phase 1: Architecture Abstraction**
 - [ ] **Create CodeGenerator interface**: Abstract instruction emission
@@ -115,7 +101,7 @@ All parser features complete! ✓
 - [ ] **Implement RISC-V instruction selection**: FADD.D, FSUB.D, etc.
 - [ ] **Test on RISC-V hardware/emulator**: Verify ELF executables run
 
-### 10. Performance Optimizations (Post-1.0.0)
+### 7. Performance Optimizations (Post-1.0.0)
 
 - [ ] **Implement AVX-512 map lookup**: 8 keys/iteration (4x faster than SSE2)
 - [ ] **Add perfect hashing**: For compile-time constant maps
@@ -123,7 +109,7 @@ All parser features complete! ✓
 - [ ] **Optimize CString conversion**: O(n²) → O(n)
 - [ ] **Add constant folding**: Evaluate constant expressions at compile time
 
-### 11. Advanced Features (2.0.0)
+### 8. Advanced Features (2.0.0)
 
 - [ ] **Multiple lambda dispatch**: `f = x => x * 2, x, y => x + y`
 - [ ] **Pattern matching**: Destructuring in match expressions
@@ -135,87 +121,6 @@ All parser features complete! ✓
 
 ---
 
-## Recently Completed (2025-10-17)
-
-### Postfix Operators Implementation (2025-10-17)
-- [x] **Implemented x++ and x-- as statements only (like Go)**:
-  - PostfixExpr handled in compileStatement, not compileExpression
-  - Clear error when used in expression context
-  - Only supports mutable variables
-  - Increments/decrements by 1.0 for numbers
-  - All 178 tests passing (100%)
-
-### Error Handling Documentation (2025-10-17)
-- [x] **Documented or! operator as railway-oriented programming**:
-  - Added comprehensive Error Handling section to LANGUAGE.md
-  - Convention: 0.0 = error, non-zero = success
-  - Clean error propagation without nested if/else
-  - Examples showing file operations with error handling
-  - Verified implementation with test cases
-
-### Debug Output Cleanup (2025-10-17)
-- [x] **Made debug output conditional on DEBUG_FLAP environment variable**:
-  - Added debug field to FlapCompiler struct
-  - Gated useful debug output behind DEBUG_FLAP=1
-  - Removed obsolete commented-out debug statements
-  - Clean output by default, detailed debug when needed
-
-### Python-Style Slice Syntax Implementation (2025-10-17)
-- [x] **Implemented full SliceExpr codegen with step parameter**:
-  - Support all slice variants: [start:], [:end], [::step], [start:end:step]
-  - Positive step: s[0:6:2] → "ace" (every 2nd character)
-  - Negative step: s[::-1] → "olleH" (string reversal)
-  - Smart defaults based on step sign
-  - Fixed r8 register preservation across malloc
-  - All tests passing: s[0:2], s[::2], s[::-1], s[1:5:2]
-- [x] **Created .result files**: Generated 48 test result files for validation
-- [x] **Documented slice syntax**: Added examples to LANGUAGE.md for strings and lists
-- [x] **Replaced magic numbers**: Added UnconditionalJumpSize, ConditionalJumpSize, StackSlotSize, ByteMask constants
-
-## Previously Completed (2025-10-16)
-
-### FFI String Conversion Bug Fix (2025-10-16)
-- [x] **Fixed flap_string_to_cstr crashes**: Used r14 instead of r11 to avoid malloc clobbering
-- [x] **Added string literal alignment**: 8-byte alignment for proper float64 access
-- [x] **Fixed r13 instruction encoding**: Corrected memory access instruction generation
-- [x] **Added libm.so.6 linking**: Required for FFI calls to math functions (sqrt, etc.)
-- [x] **All tests passing**: 178/178 tests now pass (100%)
-
-### FFI Memory Access Implementation
-- [x] **Implemented write_TYPE builtins**: All variants (i8-i64, u8-u64, f32, f64)
-- [x] **Implemented read_TYPE builtins**: All variants with proper sign/zero extension
-- [x] **Created movq.go**: Extracted MOVQ instruction generation
-- [x] **Made type keywords contextual**: Can use ptr, i32, string, etc. as variable names
-- [x] **Updated LANGUAGE.md**: Documented contextual keywords with examples
-
-### Test Framework Improvements
-- [x] **Added wildcard pattern matching**: Support * for variable values (e.g., malloc pointers)
-- [x] **Fixed .gitignore**: Allow .result files while ignoring test executables
-- [x] **test_ffi_malloc passing**: 171/173 tests now pass (98.8%)
-
-### Jump Control Flow Bug Fix
-- [x] **Added IsBreak field to JumpExpr**: Distinguish ret @N (break) from @N (continue)
-- [x] **Fixed nested_break_test**: @N now correctly continues loop instead of exiting
-- [x] **Updated compileMatchJump**: Handle both break and continue cases
-
-### Cast Operator Parsing
-- [x] **Implemented TOKEN_AS parsing**: Added CastExpr AST node
-- [x] **Added parsePostfix support**: Parse `expr as type` in postfix position
-- [x] **Support all cast types**: i8-i64, u8-u64, f32-f64, cstr, ptr, number, string, list
-
-### Test Framework Improvements
-- [x] **Ignore trailing whitespace**: Updated splitLines() to trim trailing spaces/tabs
-- [x] **Fixed test_ffi_from_c.flap**: Removed invalid statement blocks in match expressions
-
-### Loop Special Variables
-- [x] **Implemented @first, @last, @counter, @i**: All loop state variables working
-
-### Core Compiler
-- [x] **Two-pass compilation**: Symbols collected in first pass, code generated in second
-- [x] **Forward references**: Functions can be called before definition
-
----
-
 ## Test Status Summary
 
 **Passing**: 178/178 tests (100%) ✓
@@ -223,11 +128,12 @@ All parser features complete! ✓
 **Known Failures**: None! All tests passing as of 2025-10-17
 
 **Test Coverage**:
-- ✓ All arithmetic operators (+, -, *, /, %, **)
+- ✓ All arithmetic operators (+, -, *, /, %, **, *+)
 - ✓ All comparison operators (<, <=, >, >=, ==, !=)
 - ✓ All logical operators (and, or, xor, not)
 - ✓ All bitwise operators (&b, |b, ^b, ~b, <b, >b, <<b, >>b)
 - ✓ Postfix operators (x++, x-- as statements only)
+- ✓ FMA operator (*+ for fused multiply-add)
 - ✓ String operations (concatenation, length, indexing, comparison)
 - ✓ List operations (indexing, length, concatenation)
 - ✓ Map operations (indexing, length, SIMD lookup)
