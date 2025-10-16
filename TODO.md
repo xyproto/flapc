@@ -10,18 +10,7 @@
 
 ## Active Work Items (Sorted by Priority)
 
-### 1. FFI Implementation (Enable Foreign Function Interface)
-
-- [ ] **Implement dlopen/dlsym/dlclose**: Dynamic library loading
-  - dlopen(path, flags) returns handle as float64
-  - dlsym(handle, symbol) returns function pointer as float64
-  - dlclose(handle) closes library
-
-- [ ] **Implement sizeof_TYPE builtins**: Return type sizes
-  - sizeof_i8() through sizeof_f64()
-  - Return size in bytes as float64
-
-### 2. Builtin Functions (Standard Library)
+### 1. Builtin Functions (Standard Library)
 
 **I/O Functions:**
 - [ ] **Implement readln()**: Read line from stdin, return as Flap string
@@ -50,7 +39,7 @@
 - [ ] **Implement magnitude(v)**: Length of vector
 - [ ] **Implement normalize(v)**: Unit vector in same direction
 
-### 3. Polymorphic Operators (Type-Aware Behavior)
+### 2. Polymorphic Operators (Type-Aware Behavior)
 
 **String Operations:**
 - [ ] **Implement string < and >**: Lexicographic comparison
@@ -63,7 +52,7 @@
 - [ ] **Implement list - list**: Set difference (remove elements)
 - [ ] **Implement map - map**: Remove keys from first map
 
-### 4. Control Flow Enhancements (Loop Return Values)
+### 3. Control Flow Enhancements (Loop Return Values)
 
 - [ ] **Implement LoopExpr**: Allow loops in expression context
   - Parse `x = @+ i in range(10) { i * 2 }` as LoopExpr
@@ -74,14 +63,14 @@
   - `@+ i in range(10) { i == 5 { -> ret @1 42 } }` returns 42
   - `@+ i in range(10) { i * 2 }` at end returns last value
 
-### 5. Error Reporting Improvements
+### 4. Error Reporting Improvements
 
 - [ ] **Add line numbers to runtime errors**: Include source location in error messages
 - [ ] **Improve type error messages**: Show expected vs actual types
 - [ ] **Check function argument counts**: Report errors for wrong number of arguments
 - [ ] **Add undefined variable detection**: Report which variable is undefined
 
-### 6. Architecture Support (ARM64, RISC-V)
+### 5. Architecture Support (ARM64, RISC-V)
 
 **Phase 1: Architecture Abstraction**
 - [ ] **Create CodeGenerator interface**: Abstract instruction emission
@@ -101,7 +90,7 @@
 - [ ] **Implement RISC-V instruction selection**: FADD.D, FSUB.D, etc.
 - [ ] **Test on RISC-V hardware/emulator**: Verify ELF executables run
 
-### 7. Performance Optimizations (Post-1.0.0)
+### 6. Performance Optimizations (Post-1.0.0)
 
 - [ ] **Implement AVX-512 map lookup**: 8 keys/iteration (4x faster than SSE2)
 - [ ] **Add perfect hashing**: For compile-time constant maps
@@ -109,7 +98,7 @@
 - [ ] **Optimize CString conversion**: O(n²) → O(n)
 - [ ] **Add constant folding**: Evaluate constant expressions at compile time
 
-### 8. Advanced Features (2.0.0)
+### 7. Advanced Features (2.0.0)
 
 - [ ] **Multiple lambda dispatch**: `f = x => x * 2, x, y => x + y`
 - [ ] **Pattern matching**: Destructuring in match expressions
