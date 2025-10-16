@@ -704,7 +704,8 @@ func main() {
 			writeToFilename = "/tmp/flapc_inline"
 		}
 
-		err = CompileFlap(tmpFilename, writeToFilename)
+		machine, _ := StringToMachine(targetMachine)
+		err = CompileFlap(tmpFilename, writeToFilename, machine)
 		if err != nil {
 			log.Fatalf("Flap compilation error: %v", err)
 		}
@@ -725,7 +726,8 @@ func main() {
 					writeToFilename = strings.TrimSuffix(filepath.Base(file), ".flap")
 				}
 
-				err := CompileFlap(file, writeToFilename)
+				machine, _ := StringToMachine(targetMachine)
+				err := CompileFlap(file, writeToFilename, machine)
 				if err != nil {
 					log.Fatalf("Flap compilation error: %v", err)
 				}

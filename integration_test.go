@@ -63,7 +63,7 @@ func testFlapProgram(t *testing.T, name, srcPath, buildDir string) {
 	expectedPattern, shouldFailCompile := compileExpectations[name]
 
 	// Compile the program using Go API directly
-	compileErr := CompileFlap(srcPath, executable)
+	compileErr := CompileFlap(srcPath, executable, MachineX86_64)
 
 	// Check compilation result
 	if compileErr != nil {

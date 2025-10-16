@@ -1774,6 +1774,17 @@ func NewFlapCompiler(machine Machine) (*FlapCompiler, error) {
 }
 
 func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
+	// Use RISC-V64 code generator if target is RISC-V64
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Machine type = %v (MachineRiscv64 = %v)\n", fc.eb.machine, MachineRiscv64)
+	}
+	if fc.eb.machine == MachineRiscv64 {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "-> Using RISC-V64 code generator\n")
+		}
+		return fc.compileRiscv64(program, outputPath)
+	}
+
 	// Add format strings for printf
 	fc.eb.Define("fmt_str", "%s\x00")
 	fc.eb.Define("fmt_int", "%ld\n\x00")
@@ -6071,7 +6082,7 @@ func getUnknownFunctions(program *Program) []string {
 	return unknown
 }
 
-func CompileFlap(inputPath string, outputPath string) error {
+func CompileFlap(inputPath string, outputPath string, machine Machine) error {
 	// Read input file
 	content, err := os.ReadFile(inputPath)
 	if err != nil {
@@ -6133,7 +6144,7 @@ func CompileFlap(inputPath string, outputPath string) error {
 	combinedSource = combinedSource + string(content)
 
 	// Compile
-	compiler, err := NewFlapCompiler(MachineX86_64)
+	compiler, err := NewFlapCompiler(machine)
 	if err != nil {
 		return fmt.Errorf("failed to create compiler: %v", err)
 	}
@@ -6142,6 +6153,46 @@ func CompileFlap(inputPath string, outputPath string) error {
 	err = compiler.Compile(program, outputPath)
 	if err != nil {
 		return fmt.Errorf("compilation failed: %v", err)
+	}
+
+	return nil
+}
+
+// compileRiscv64 compiles a program for RISC-V64 architecture
+func (fc *FlapCompiler) compileRiscv64(program *Program, outputPath string) error {
+	// Create RISC-V64 code generator
+	rcg := NewRiscvCodeGen(fc.eb)
+
+	// Generate code
+	if err := rcg.CompileProgram(program); err != nil {
+		return err
+	}
+
+	// Write ELF file
+	return fc.writeELFRiscv64(outputPath)
+}
+
+// writeELFRiscv64 writes a RISC-V64 ELF executable
+func (fc *FlapCompiler) writeELFRiscv64(outputPath string) error {
+	// For now, create a static ELF (no dynamic linking)
+	// This is simpler and works with Spike
+
+	textBytes := fc.eb.text.Bytes()
+	rodataBytes := fc.eb.rodata.Bytes()
+
+	// Generate basic ELF header and program headers for RISC-V64
+	fc.eb.WriteELFHeader()
+
+	// Write the executable
+	elfBytes := fc.eb.Bytes()
+	if err := os.WriteFile(outputPath, elfBytes, 0755); err != nil {
+		return fmt.Errorf("failed to write executable: %v", err)
+	}
+
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "-> Wrote RISC-V64 executable: %s\n", outputPath)
+		fmt.Fprintf(os.Stderr, "   Text size: %d bytes\n", len(textBytes))
+		fmt.Fprintf(os.Stderr, "   Rodata size: %d bytes\n", len(rodataBytes))
 	}
 
 	return nil
