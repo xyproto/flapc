@@ -65,6 +65,8 @@ const (
 	TOKEN_INCREMENT     // ++
 	TOKEN_DECREMENT     // --
 	TOKEN_FMA           // *+ (fused multiply-add)
+	TOKEN_OR_BANG       // or! (error handling)
+	TOKEN_ME            // me (self-reference)
 )
 
 type Token struct {
@@ -190,9 +192,16 @@ func (l *Lexer) NextToken() Token {
 		case "and":
 			return Token{Type: TOKEN_AND, Value: value, Line: l.line}
 		case "or":
+			// Check for or!
+			if l.pos < len(l.input) && l.input[l.pos] == '!' {
+				l.pos++ // consume the !
+				return Token{Type: TOKEN_OR_BANG, Value: "or!", Line: l.line}
+			}
 			return Token{Type: TOKEN_OR, Value: value, Line: l.line}
 		case "not":
 			return Token{Type: TOKEN_NOT, Value: value, Line: l.line}
+		case "me":
+			return Token{Type: TOKEN_ME, Value: value, Line: l.line}
 		case "xor":
 			return Token{Type: TOKEN_XOR, Value: value, Line: l.line}
 		case "shl":
@@ -1352,8 +1361,22 @@ func (p *Parser) parseForLoop() Statement {
 }
 
 func (p *Parser) parseExpression() Expression {
-	expr := p.parseConcurrentGather()
-	return expr
+	return p.parseErrorHandling()
+}
+
+// parseErrorHandling handles the or! operator (lowest precedence, right-associative)
+func (p *Parser) parseErrorHandling() Expression {
+	left := p.parseConcurrentGather()
+
+	// or! is right-associative and very low precedence
+	if p.peek.Type == TOKEN_OR_BANG {
+		p.nextToken() // move to left
+		p.nextToken() // skip 'or!'
+		right := p.parseErrorHandling() // right-associative recursion
+		return &BinaryExpr{Left: left, Operator: "or!", Right: right}
+	}
+
+	return left
 }
 
 func (p *Parser) parseConcurrentGather() Expression {
@@ -1675,6 +1698,10 @@ func (p *Parser) parsePrimary() Expression {
 			return &CallExpr{Function: name, Args: args}
 		}
 		return &IdentExpr{Name: name}
+
+	case TOKEN_ME:
+		// "me" is a special identifier for self-reference
+		return &IdentExpr{Name: "me"}
 
 	case TOKEN_LPAREN:
 		// Could be lambda (params) -> expr or parenthesized expression (expr)
