@@ -12,47 +12,13 @@
 
 ### 1. Core Compiler Fixes (Highest Priority - BLOCKING)
 
-- [ ] **Fix flap_slice_string code generation bug** (CRITICAL):
-  - Bug: Raw Emit() calls in loop body (lines 5187-5203) don't appear in regenerated assembly
-  - Symptom: test_slice_forward outputs "0.00000" instead of "He" for s[0:2]
-  - Root cause: Code regeneration doesn't track/replay Emit() instructions
-  - Fix: Rewrite using proper Out methods:
-    - Line 5187: Replace with ShlRegImm("rax", "4")
-    - Line 5188: Replace with AddImmToReg("rax", 8)
-    - Line 5194: Replace with ShlRegImm("rdx", "4")
-    - Line 5195: Replace with AddImmToReg("rdx", 8)
-    - Line 5203: Replace with IncReg("rcx")
-    - Lines 5189-5190, 5199-5200: Complex addressing may still need Emit()
-  - Test: programs/test_slice_forward.flap (has .result file)
-
-- [x] **Fix test_ffi_malloc crash**: Fixed by using r14 (callee-saved) instead of r11 (2025-10-16) ✓
-- [x] **Fix test_ffi_from_c**: Added libm.so.6 for FFI math function calls (2025-10-16) ✓
-- [ ] **Create .result files for all programs/**: Test validation was silently skipped
 - [ ] **Remove debug output**: Clean up DEBUG print statements in parser.go loop code
-- [ ] **Add .gitignore for executables**: Prevent compiled test binaries from being committed
 
 ### 2. Parser Completeness (Complete for 1.0.0 Spec)
 
-- [x] **Implement TOKEN_AS parsing**: Added CastExpr AST node (2025-10-16) ✓
-- [x] **Fix JumpExpr bug**: Added IsBreak field to distinguish ret @N vs @N (2025-10-16) ✓
-- [x] **Slice syntax parsing**: SliceExpr for [start:end:step] ✓
-- [x] **Increment/decrement parsing**: TOKEN_INCREMENT, TOKEN_DECREMENT ✓
-- [x] **FMA parsing**: TOKEN_FMA for `*+` operator ✓
-- [x] **Error handling parsing**: TOKEN_OR_BANG for `or!` ✓
-- [x] **Type annotations parsing**: TOKEN_COLON in assignment ✓
+All parser features complete! ✓
 
 ### 3. Code Generation for Parsed Features (Unblock Tests)
-
-- [x] **Implement CastExpr codegen**: Generate code for `x as i32`, `ptr as ptr`, etc. (2025-10-16) ✓
-  - Support all cast types: i8-i64, u8-u64, f32-f64, cstr, ptr, number
-  - Integer casts: truncate float64 to integer
-  - cstr conversion: flap_string_to_cstr runtime function
-  - Tested with test_ffi_from_c.flap and test_ffi_malloc.flap
-  - Note: 'as string' and 'as list' (C→Flap) not yet needed
-
-- [ ] **Implement SliceExpr codegen**: Generate code for `list[start:end:step]`
-  - Support all slice variants: [start:], [:end], [::step], [start:end:step]
-  - Return new list/string with sliced elements
 
 - [ ] **Implement PostfixExpr codegen**: Generate code for `x++`, `x--`
   - Number: increment/decrement by 1.0
@@ -69,37 +35,14 @@
 
 ### 4. FFI Implementation (Enable Foreign Function Interface)
 
-- [x] **Implement call() builtin**: Call C functions with arguments ✓
-  - Parse function name as string literal
-  - Convert Flap values to C types using cast expressions
-  - Handle function pointers from dlsym()
-  - Return C values converted back to Flap floats
-
 - [ ] **Implement dlopen/dlsym/dlclose**: Dynamic library loading
   - dlopen(path, flags) returns handle as float64
   - dlsym(handle, symbol) returns function pointer as float64
   - dlclose(handle) closes library
 
-- [x] **Implement read_TYPE builtins**: Read from memory pointers ✓
-  - read_i8, read_i16, read_i32, read_i64
-  - read_u8, read_u16, read_u32, read_u64
-  - read_f32, read_f64
-  - Safe indexing: ptr[index] = ptr + (index * sizeof(TYPE))
-
-- [x] **Implement write_TYPE builtins**: Write to memory pointers ✓
-  - write_i8, write_i16, write_i32, write_i64
-  - write_u8, write_u16, write_u32, write_u64
-  - write_f32, write_f64
-  - Safe indexing: ptr[index] = ptr + (index * sizeof(TYPE))
-
 - [ ] **Implement sizeof_TYPE builtins**: Return type sizes
   - sizeof_i8() through sizeof_f64()
   - Return size in bytes as float64
-
-- [x] **Fix flap_string_to_cstr bug**: Fixed register usage and alignment (2025-10-16) ✓
-  - Used r14 (callee-saved) instead of r11 to avoid malloc clobbering
-  - Added 8-byte alignment for string literals in rodata
-  - Fixed instruction encoding for r13 memory access
 
 ### 5. Builtin Functions (Standard Library)
 
@@ -201,7 +144,21 @@
 
 ---
 
-## Recently Completed (2025-10-16)
+## Recently Completed (2025-10-17)
+
+### Python-Style Slice Syntax Implementation (2025-10-17)
+- [x] **Implemented full SliceExpr codegen with step parameter**:
+  - Support all slice variants: [start:], [:end], [::step], [start:end:step]
+  - Positive step: s[0:6:2] → "ace" (every 2nd character)
+  - Negative step: s[::-1] → "olleH" (string reversal)
+  - Smart defaults based on step sign
+  - Fixed r8 register preservation across malloc
+  - All tests passing: s[0:2], s[::2], s[::-1], s[1:5:2]
+- [x] **Created .result files**: Generated 48 test result files for validation
+- [x] **Documented slice syntax**: Added examples to LANGUAGE.md for strings and lists
+- [x] **Replaced magic numbers**: Added UnconditionalJumpSize, ConditionalJumpSize, StackSlotSize, ByteMask constants
+
+## Previously Completed (2025-10-16)
 
 ### FFI String Conversion Bug Fix (2025-10-16)
 - [x] **Fixed flap_string_to_cstr crashes**: Used r14 instead of r11 to avoid malloc clobbering
