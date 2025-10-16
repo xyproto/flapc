@@ -5331,7 +5331,8 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// Save C string pointer
 	fc.out.MovRegToReg("r12", "rdi") // r12 = C string pointer
 
-	// Calculate string length using strlen
+	// Calculate string length using strlen(r12)
+	fc.out.MovRegToReg("rdi", "r12") // Set argument for strlen
 	fc.trackFunctionCall("strlen")
 	fc.eb.GenerateCallInstruction("strlen")
 	fc.out.MovRegToReg("r14", "rax") // r14 = string length
