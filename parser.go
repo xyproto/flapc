@@ -62,6 +62,8 @@ const (
 	TOKEN_SHR           // shr keyword
 	TOKEN_ROL           // rol keyword
 	TOKEN_ROR           // ror keyword
+	TOKEN_INCREMENT     // ++
+	TOKEN_DECREMENT     // --
 )
 
 type Token struct {
@@ -211,21 +213,31 @@ func (l *Lexer) NextToken() Token {
 	switch ch {
 	case '+':
 		l.pos++
+		// Check for ++
+		if l.pos < len(l.input) && l.input[l.pos] == '+' {
+			l.pos++
+			return Token{Type: TOKEN_INCREMENT, Value: "++", Line: l.line}
+		}
 		return Token{Type: TOKEN_PLUS, Value: "+", Line: l.line}
 	case '-':
+		// Check for ->
+		if l.peek() == '>' {
+			l.pos += 2
+			return Token{Type: TOKEN_ARROW, Value: "->", Line: l.line}
+		}
+		// Check for --
+		if l.peek() == '-' {
+			l.pos += 2
+			return Token{Type: TOKEN_DECREMENT, Value: "--", Line: l.line}
+		}
 		// Check for negative number literal
-		if l.peek() != '>' && l.pos+1 < len(l.input) && unicode.IsDigit(rune(l.peek())) {
+		if l.pos+1 < len(l.input) && unicode.IsDigit(rune(l.peek())) {
 			start := l.pos
 			l.pos++ // skip '-'
 			for l.pos < len(l.input) && (unicode.IsDigit(rune(l.input[l.pos])) || l.input[l.pos] == '.') {
 				l.pos++
 			}
 			return Token{Type: TOKEN_NUMBER, Value: l.input[start:l.pos], Line: l.line}
-		}
-		// Check for ->
-		if l.peek() == '>' {
-			l.pos += 2
-			return Token{Type: TOKEN_ARROW, Value: "->", Line: l.line}
 		}
 		l.pos++
 		return Token{Type: TOKEN_MINUS, Value: "-", Line: l.line}
@@ -471,7 +483,7 @@ func (b *BinaryExpr) String() string {
 }
 func (b *BinaryExpr) expressionNode() {}
 
-// UnaryExpr represents a unary operation (currently just unary minus)
+// UnaryExpr represents a unary operation: not, -, #, ++expr, --expr
 type UnaryExpr struct {
 	Operator string
 	Operand  Expression
@@ -481,6 +493,17 @@ func (u *UnaryExpr) String() string {
 	return "(" + u.Operator + u.Operand.String() + ")"
 }
 func (u *UnaryExpr) expressionNode() {}
+
+// PostfixExpr: expr++, expr-- (increment/decrement after evaluation)
+type PostfixExpr struct {
+	Operator string     // "++", "--"
+	Operand  Expression
+}
+
+func (p *PostfixExpr) String() string {
+	return "(" + p.Operand.String() + p.Operator + ")"
+}
+func (p *PostfixExpr) expressionNode() {}
 
 type InExpr struct {
 	Value     Expression // Value to search for
@@ -1470,11 +1493,19 @@ func (p *Parser) parseMultiplicative() Expression {
 }
 
 func (p *Parser) parseUnary() Expression {
-	// Handle unary operators (not, unary minus)
+	// Handle unary operators (not, ++, --)
 	if p.current.Type == TOKEN_NOT {
 		p.nextToken() // skip 'not'
 		operand := p.parseUnary()
 		return &UnaryExpr{Operator: "not", Operand: operand}
+	}
+
+	// Handle prefix increment/decrement: ++x, --x
+	if p.current.Type == TOKEN_INCREMENT || p.current.Type == TOKEN_DECREMENT {
+		op := p.current.Value
+		p.nextToken() // skip ++ or --
+		operand := p.parseUnary()
+		return &UnaryExpr{Operator: op, Operand: operand}
 	}
 
 	// Unary minus handled in parsePrimary for simplicity
@@ -1555,6 +1586,11 @@ func (p *Parser) parsePostfix() Expression {
 				// create a special call expression that compiles the lambda inline
 				expr = &DirectCallExpr{Callee: expr, Args: args}
 			}
+		} else if p.peek.Type == TOKEN_INCREMENT || p.peek.Type == TOKEN_DECREMENT {
+			// Handle postfix increment/decrement: x++, x--
+			p.nextToken() // skip current expr
+			op := p.current.Value
+			expr = &PostfixExpr{Operator: op, Operand: expr}
 		} else {
 			break
 		}
