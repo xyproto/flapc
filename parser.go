@@ -64,6 +64,7 @@ const (
 	TOKEN_ROR           // ror keyword
 	TOKEN_INCREMENT     // ++
 	TOKEN_DECREMENT     // --
+	TOKEN_FMA           // *+ (fused multiply-add)
 )
 
 type Token struct {
@@ -243,6 +244,11 @@ func (l *Lexer) NextToken() Token {
 		return Token{Type: TOKEN_MINUS, Value: "-", Line: l.line}
 	case '*':
 		l.pos++
+		// Check for *+ (fused multiply-add)
+		if l.pos < len(l.input) && l.input[l.pos] == '+' {
+			l.pos++
+			return Token{Type: TOKEN_FMA, Value: "*+", Line: l.line}
+		}
 		return Token{Type: TOKEN_STAR, Value: "*", Line: l.line}
 	case '/':
 		l.pos++
@@ -1487,7 +1493,7 @@ func (p *Parser) parseBitwise() Expression {
 func (p *Parser) parseMultiplicative() Expression {
 	left := p.parseUnary()
 
-	for p.peek.Type == TOKEN_STAR || p.peek.Type == TOKEN_SLASH || p.peek.Type == TOKEN_MOD {
+	for p.peek.Type == TOKEN_STAR || p.peek.Type == TOKEN_SLASH || p.peek.Type == TOKEN_MOD || p.peek.Type == TOKEN_FMA {
 		p.nextToken()
 		op := p.current.Value
 		p.nextToken()
