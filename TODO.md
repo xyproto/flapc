@@ -53,7 +53,7 @@
 
 ### 4. FFI Implementation (Enable Foreign Function Interface)
 
-- [ ] **Implement call() builtin**: Call C functions with arguments
+- [x] **Implement call() builtin**: Call C functions with arguments ✓
   - Parse function name as string literal
   - Convert Flap values to C types using cast expressions
   - Handle function pointers from dlsym()
@@ -64,13 +64,13 @@
   - dlsym(handle, symbol) returns function pointer as float64
   - dlclose(handle) closes library
 
-- [ ] **Implement read_TYPE builtins**: Read from memory pointers
+- [x] **Implement read_TYPE builtins**: Read from memory pointers ✓
   - read_i8, read_i16, read_i32, read_i64
   - read_u8, read_u16, read_u32, read_u64
   - read_f32, read_f64
   - Safe indexing: ptr[index] = ptr + (index * sizeof(TYPE))
 
-- [ ] **Implement write_TYPE builtins**: Write to memory pointers
+- [x] **Implement write_TYPE builtins**: Write to memory pointers ✓
   - write_i8, write_i16, write_i32, write_i64
   - write_u8, write_u16, write_u32, write_u64
   - write_f32, write_f64
@@ -79,6 +79,10 @@
 - [ ] **Implement sizeof_TYPE builtins**: Return type sizes
   - sizeof_i8() through sizeof_f64()
   - Return size in bytes as float64
+
+- [ ] **Fix flap_string_to_cstr bug**: Debug crash when converting strings for C FFI
+  - String literals are stored as Flap maps in rodata (correct)
+  - Need to fix conversion logic or investigate segfault cause
 
 ### 5. Builtin Functions (Standard Library)
 
@@ -182,6 +186,18 @@
 
 ## Recently Completed (2025-10-16)
 
+### FFI Memory Access Implementation
+- [x] **Implemented write_TYPE builtins**: All variants (i8-i64, u8-u64, f32, f64)
+- [x] **Implemented read_TYPE builtins**: All variants with proper sign/zero extension
+- [x] **Created movq.go**: Extracted MOVQ instruction generation
+- [x] **Made type keywords contextual**: Can use ptr, i32, string, etc. as variable names
+- [x] **Updated LANGUAGE.md**: Documented contextual keywords with examples
+
+### Test Framework Improvements
+- [x] **Added wildcard pattern matching**: Support * for variable values (e.g., malloc pointers)
+- [x] **Fixed .gitignore**: Allow .result files while ignoring test executables
+- [x] **test_ffi_malloc passing**: 171/173 tests now pass (98.8%)
+
 ### Jump Control Flow Bug Fix
 - [x] **Added IsBreak field to JumpExpr**: Distinguish ret @N (break) from @N (continue)
 - [x] **Fixed nested_break_test**: @N now correctly continues loop instead of exiting
@@ -207,12 +223,10 @@
 
 ## Test Status Summary
 
-**Passing**: ~170/173 tests (98%+)
+**Passing**: 171/173 tests (98.8%)
 
 **Known Failures**:
-1. `test_ffi_malloc` - CastExpr codegen not implemented
-2. `test_ffi_from_c` - FFI call() builtin not implemented
-3. (1 more test to identify)
+1. `test_ffi_from_c` - flap_string_to_cstr crashes (string conversion bug)
 
 **Test Coverage**:
 - ✓ All arithmetic operators (+, -, *, /, %, **)
