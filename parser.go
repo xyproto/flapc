@@ -73,6 +73,16 @@ const (
 	TOKEN_AT_LAST       // @last (last iteration)
 	TOKEN_AT_COUNTER    // @counter (iteration counter)
 	TOKEN_AT_I          // @i (current element/key)
+	TOKEN_PIPE_B        // |b (bitwise OR)
+	TOKEN_AMP_B         // &b (bitwise AND)
+	TOKEN_CARET_B       // ^b (bitwise XOR)
+	TOKEN_TILDE_B       // ~b (bitwise NOT)
+	TOKEN_CARET         // ^ (head of list)
+	TOKEN_AMP           // & (tail of list)
+	TOKEN_LT_B          // <b (shift left)
+	TOKEN_GT_B          // >b (shift right)
+	TOKEN_LTLT_B        // <<b (rotate left)
+	TOKEN_GTGT_B        // >>b (rotate right)
 )
 
 type Token struct {
@@ -290,7 +300,15 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_EQUALS, Value: "=", Line: l.line}
 	case '<':
-		// Check for <=
+		// Check for <<b (rotate left), then <b (shift left), then <=, then <
+		if l.peek() == '<' && l.pos+2 < len(l.input) && l.input[l.pos+2] == 'b' {
+			l.pos += 3
+			return Token{Type: TOKEN_LTLT_B, Value: "<<b", Line: l.line}
+		}
+		if l.peek() == 'b' {
+			l.pos += 2
+			return Token{Type: TOKEN_LT_B, Value: "<b", Line: l.line}
+		}
 		if l.peek() == '=' {
 			l.pos += 2
 			return Token{Type: TOKEN_LE, Value: "<=", Line: l.line}
@@ -298,7 +316,15 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_LT, Value: "<", Line: l.line}
 	case '>':
-		// Check for >=
+		// Check for >>b (rotate right), then >b (shift right), then >=, then >
+		if l.peek() == '>' && l.pos+2 < len(l.input) && l.input[l.pos+2] == 'b' {
+			l.pos += 3
+			return Token{Type: TOKEN_GTGT_B, Value: ">>b", Line: l.line}
+		}
+		if l.peek() == 'b' {
+			l.pos += 2
+			return Token{Type: TOKEN_GT_B, Value: ">b", Line: l.line}
+		}
 		if l.peek() == '=' {
 			l.pos += 2
 			return Token{Type: TOKEN_GE, Value: ">=", Line: l.line}
@@ -315,10 +341,14 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return l.NextToken()
 	case '~':
-		// Check for ~>
+		// Check for ~> first, then ~b
 		if l.peek() == '>' {
 			l.pos += 2
 			return Token{Type: TOKEN_DEFAULT_ARROW, Value: "~>", Line: l.line}
+		}
+		if l.peek() == 'b' {
+			l.pos += 2
+			return Token{Type: TOKEN_TILDE_B, Value: "~b", Line: l.line}
 		}
 		l.pos++
 		return Token{Type: TOKEN_TILDE, Value: "~", Line: l.line}
@@ -383,7 +413,7 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_RBRACKET, Value: "]", Line: l.line}
 	case '|':
-		// Check for ||| first, then ||, then |
+		// Check for ||| first, then ||, then |b, then |
 		if l.peek() == '|' {
 			if l.pos+2 < len(l.input) && l.input[l.pos+2] == '|' {
 				l.pos += 3
@@ -392,8 +422,28 @@ func (l *Lexer) NextToken() Token {
 			l.pos += 2
 			return Token{Type: TOKEN_PIPEPIPE, Value: "||", Line: l.line}
 		}
+		if l.peek() == 'b' {
+			l.pos += 2
+			return Token{Type: TOKEN_PIPE_B, Value: "|b", Line: l.line}
+		}
 		l.pos++
 		return Token{Type: TOKEN_PIPE, Value: "|", Line: l.line}
+	case '&':
+		// Check for &b
+		if l.peek() == 'b' {
+			l.pos += 2
+			return Token{Type: TOKEN_AMP_B, Value: "&b", Line: l.line}
+		}
+		l.pos++
+		return Token{Type: TOKEN_AMP, Value: "&", Line: l.line}
+	case '^':
+		// Check for ^b
+		if l.peek() == 'b' {
+			l.pos += 2
+			return Token{Type: TOKEN_CARET_B, Value: "^b", Line: l.line}
+		}
+		l.pos++
+		return Token{Type: TOKEN_CARET, Value: "^", Line: l.line}
 	case '#':
 		l.pos++
 		return Token{Type: TOKEN_HASH, Value: "#", Line: l.line}
@@ -1631,7 +1681,11 @@ func (p *Parser) parseBitwise() Expression {
 	left := p.parseMultiplicative()
 
 	for p.peek.Type == TOKEN_SHL || p.peek.Type == TOKEN_SHR ||
-		p.peek.Type == TOKEN_ROL || p.peek.Type == TOKEN_ROR {
+		p.peek.Type == TOKEN_ROL || p.peek.Type == TOKEN_ROR ||
+		p.peek.Type == TOKEN_PIPE_B || p.peek.Type == TOKEN_AMP_B ||
+		p.peek.Type == TOKEN_CARET_B || p.peek.Type == TOKEN_LT_B ||
+		p.peek.Type == TOKEN_GT_B || p.peek.Type == TOKEN_LTLT_B ||
+		p.peek.Type == TOKEN_GTGT_B {
 		p.nextToken()
 		op := p.current.Value
 		p.nextToken()
@@ -1657,7 +1711,7 @@ func (p *Parser) parseMultiplicative() Expression {
 }
 
 func (p *Parser) parseUnary() Expression {
-	// Handle unary operators (not, ++, --)
+	// Handle unary operators (not, ++, --, ~b, ^, &)
 	if p.current.Type == TOKEN_NOT {
 		p.nextToken() // skip 'not'
 		operand := p.parseUnary()
@@ -1670,6 +1724,27 @@ func (p *Parser) parseUnary() Expression {
 		p.nextToken() // skip ++ or --
 		operand := p.parseUnary()
 		return &UnaryExpr{Operator: op, Operand: operand}
+	}
+
+	// Handle bitwise NOT: ~b
+	if p.current.Type == TOKEN_TILDE_B {
+		p.nextToken() // skip '~b'
+		operand := p.parseUnary()
+		return &UnaryExpr{Operator: "~b", Operand: operand}
+	}
+
+	// Handle head operator: ^
+	if p.current.Type == TOKEN_CARET {
+		p.nextToken() // skip '^'
+		operand := p.parseUnary()
+		return &UnaryExpr{Operator: "^", Operand: operand}
+	}
+
+	// Handle tail operator: &
+	if p.current.Type == TOKEN_AMP {
+		p.nextToken() // skip '&'
+		operand := p.parseUnary()
+		return &UnaryExpr{Operator: "&", Operand: operand}
 	}
 
 	// Unary minus handled in parsePrimary for simplicity
@@ -3150,6 +3225,55 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.Cmove("rax", "rcx") // rax = (xmm0 == 0) ? 1 : 0
 			// Convert to float64
 			fc.out.Cvtsi2sd("xmm0", "rax")
+		case "~b":
+			// Bitwise NOT: convert to int64, NOT, convert back
+			fc.out.Cvttsd2si("rax", "xmm0") // rax = int64(xmm0)
+			fc.out.NotReg("rax")            // rax = ~rax
+			fc.out.Cvtsi2sd("xmm0", "rax")  // xmm0 = float64(rax)
+		case "^":
+			// Head operator: return first element of list
+			// xmm0 contains list pointer (as float64)
+			// List format: [length (8 bytes)] [element0] [element1] ...
+			// Convert pointer from xmm0 to rax
+			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.MovXmmToMem("xmm0", "rsp", 0)
+			fc.out.MovMemToReg("rax", "rsp", 0)
+			fc.out.AddImmToReg("rsp", 8)
+			// Skip past length (8 bytes) to get to first element
+			fc.out.AddImmToReg("rax", 8)
+			// Load first element into xmm0
+			fc.out.MovMemToXmm("xmm0", "rax", 0)
+		case "&":
+			// Tail operator: return list without first element
+			// xmm0 contains list pointer (as float64)
+			// We need to create a new list starting from element 1
+			// For now, just adjust the pointer by 8 bytes (skip first element)
+			// Note: This is a simplified implementation
+			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.MovXmmToMem("xmm0", "rsp", 0)
+			fc.out.MovMemToReg("rax", "rsp", 0)
+			fc.out.AddImmToReg("rsp", 8)
+			// Load current length
+			fc.out.MovMemToReg("rcx", "rax", 0)
+			// Decrement length (convert to int, subtract 1, convert back)
+			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.MovRegToMem("rcx", "rsp", 0)
+			fc.out.MovMemToXmm("xmm1", "rsp", 0)
+			fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int(length)
+			fc.out.SubImmFromReg("rcx", 1)  // rcx = length - 1
+			fc.out.Cvtsi2sd("xmm1", "rcx")  // xmm1 = float(length - 1)
+			fc.out.MovXmmToMem("xmm1", "rsp", 0)
+			fc.out.MovMemToReg("rcx", "rsp", 0)
+			fc.out.AddImmToReg("rsp", 8)
+			// Store new length
+			fc.out.MovRegToMem("rcx", "rax", 0)
+			// Skip first element (advance by 8 bytes)
+			fc.out.AddImmToReg("rax", 8)
+			// Return adjusted pointer in xmm0
+			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.MovRegToMem("rax", "rsp", 0)
+			fc.out.MovMemToXmm("xmm0", "rsp", 0)
+			fc.out.AddImmToReg("rsp", 8)
 		}
 
 	case *BinaryExpr:
@@ -3506,6 +3630,48 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.Cvtsi2sd("xmm0", "rax")  // xmm0 = float64(rax)
 		case "ror":
 			// Rotate right: convert to int64, rotate, convert back
+			fc.out.Cvttsd2si("rax", "xmm0") // rax = int64(xmm0)
+			fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int64(xmm1)
+			fc.out.RorClReg("rax", "cl")    // ror rax, cl
+			fc.out.Cvtsi2sd("xmm0", "rax")  // xmm0 = float64(rax)
+		case "|b":
+			// Bitwise OR: convert to int64, OR, convert back
+			fc.out.Cvttsd2si("rax", "xmm0")   // rax = int64(xmm0)
+			fc.out.Cvttsd2si("rcx", "xmm1")   // rcx = int64(xmm1)
+			fc.out.OrRegWithReg("rax", "rcx") // rax |= rcx
+			fc.out.Cvtsi2sd("xmm0", "rax")    // xmm0 = float64(rax)
+		case "&b":
+			// Bitwise AND: convert to int64, AND, convert back
+			fc.out.Cvttsd2si("rax", "xmm0")    // rax = int64(xmm0)
+			fc.out.Cvttsd2si("rcx", "xmm1")    // rcx = int64(xmm1)
+			fc.out.AndRegWithReg("rax", "rcx") // rax &= rcx
+			fc.out.Cvtsi2sd("xmm0", "rax")     // xmm0 = float64(rax)
+		case "^b":
+			// Bitwise XOR: convert to int64, XOR, convert back
+			fc.out.Cvttsd2si("rax", "xmm0")    // rax = int64(xmm0)
+			fc.out.Cvttsd2si("rcx", "xmm1")    // rcx = int64(xmm1)
+			fc.out.XorRegWithReg("rax", "rcx") // rax ^= rcx
+			fc.out.Cvtsi2sd("xmm0", "rax")     // xmm0 = float64(rax)
+		case "<b":
+			// Shift left (same as shl): convert to int64, shift, convert back
+			fc.out.Cvttsd2si("rax", "xmm0") // rax = int64(xmm0)
+			fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int64(xmm1)
+			fc.out.ShlClReg("rax", "cl")    // rax <<= cl
+			fc.out.Cvtsi2sd("xmm0", "rax")  // xmm0 = float64(rax)
+		case ">b":
+			// Shift right (same as shr): convert to int64, shift, convert back
+			fc.out.Cvttsd2si("rax", "xmm0") // rax = int64(xmm0)
+			fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int64(xmm1)
+			fc.out.ShrClReg("rax", "cl")    // rax >>= cl
+			fc.out.Cvtsi2sd("xmm0", "rax")  // xmm0 = float64(rax)
+		case "<<b":
+			// Rotate left (same as rol): convert to int64, rotate, convert back
+			fc.out.Cvttsd2si("rax", "xmm0") // rax = int64(xmm0)
+			fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int64(xmm1)
+			fc.out.RolClReg("rax", "cl")    // rol rax, cl
+			fc.out.Cvtsi2sd("xmm0", "rax")  // xmm0 = float64(rax)
+		case ">>b":
+			// Rotate right (same as ror): convert to int64, rotate, convert back
 			fc.out.Cvttsd2si("rax", "xmm0") // rax = int64(xmm0)
 			fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int64(xmm1)
 			fc.out.RorClReg("rax", "cl")    // ror rax, cl

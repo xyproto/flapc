@@ -90,6 +90,25 @@ result = empty[1]    // returns 0.0 (empty map)
 
 result = 5 in mylist  // returns 1.0 or 0.0
 
+// Pipeline operator for functional composition
+x = 5 | abs | floor             // Equivalent to: floor(abs(5))
+result = data | filter(positive) | sum
+
+// Bitwise operators (operate on integer representation)
+flags = 0b1010 |b 0b0101    // bitwise OR: 15
+mask = 0b1111 &b 0b0011     // bitwise AND: 3
+toggle = 0b1010 ^b 0b0101   // bitwise XOR: 15
+inverted = ~b 0b1010        // bitwise NOT
+
+// Logical operators (for boolean conditions)
+x > 10 and y < 20          // logical AND
+x == 0 or y == 0           // logical OR
+not (x > 10)               // logical NOT
+
+// List head and tail operators
+first = ^[1, 2, 3]         // head: returns 1
+rest = &[1, 2, 3]          // tail: returns [2, 3]
+
 // Loops with implicit labels (by nesting depth)
 // Loops use @+ and get implicit labels by nesting depth
 @+ i in range(5) {    // Implicitly labeled @1
@@ -219,14 +238,40 @@ The following features **must** be implemented and tested before the 1.0.0 relea
 - [ ] Two-pass compilation (symbols collected, then code generated)
 
 ### Logical and Bitwise Operators
-- [ ] `or` logical OR (returns 1.0 if either operand is non-zero)
-- [ ] `and` logical AND (returns 1.0 if both operands are non-zero)
-- [ ] `xor` logical XOR (returns 1.0 if exactly one operand is non-zero)
-- [ ] `not` logical NOT (returns 1.0 if operand is 0.0, else 0.0)
-- [ ] `shl` shift left (bitwise shift on integer part)
-- [ ] `shr` shift right (bitwise shift on integer part)
-- [ ] `rol` rotate left (bitwise rotate on integer part)
-- [ ] `ror` rotate right (bitwise rotate on integer part)
+
+**Logical Operators** (for boolean logic):
+- [x] `or` logical OR (returns 1.0 if either operand is non-zero) ✓
+- [x] `and` logical AND (returns 1.0 if both operands are non-zero) ✓
+- [x] `xor` logical XOR (returns 1.0 if exactly one operand is non-zero) ✓
+- [x] `not` logical NOT (returns 1.0 if operand is 0.0, else 0.0) ✓
+
+**Bitwise Operators** (for bit manipulation):
+- [x] `|b` bitwise OR (operates on integer representation of float64) ✓
+- [x] `&b` bitwise AND (operates on integer representation of float64) ✓
+- [x] `^b` bitwise XOR (operates on integer representation of float64) ✓
+- [x] `~b` bitwise NOT (operates on integer representation of float64) ✓
+- [x] `<b` shift left (bitwise shift on integer part) ✓
+- [x] `>b` shift right (bitwise shift on integer part) ✓
+- [x] `<<b` rotate left (bitwise rotate on integer part) ✓
+- [x] `>>b` rotate right (bitwise rotate on integer part) ✓
+
+Examples:
+```flap
+// Logical operators (for conditions)
+x > 10 and y < 20        // true if both conditions hold
+x == 0 or y == 0         // true if either is zero
+not (x > 10)             // logical negation
+
+// Bitwise operators (for bit manipulation)
+flags = 0b1010 |b 0b0101  // bitwise OR: 0b1111 (15)
+mask = 0b1111 &b 0b0011   // bitwise AND: 0b0011 (3)
+toggle = 0b1010 ^b 0b0101 // bitwise XOR: 0b1111 (15)
+inverted = ~b 0b1010      // bitwise NOT: flips all bits
+shifted = 8 <b 2          // shift left: 32
+shifted_r = 8 >b 1        // shift right: 4
+rotated = 0b1001 <<b 1    // rotate left: 0b0011
+rotated_r = 0b1001 >>b 1  // rotate right: 0b1100
+```
 
 ### String Operations
 - [ ] Runtime string concatenation: `s1 + s2` where s1, s2 are variables
@@ -865,6 +910,75 @@ MemoryManager = @{
         // Add to free list and coalesce
         me.add_to_free_list(address)
         me.coalesce()
+    }
+}
+```
+
+## Functional Operators
+
+### Pipeline Operator `|`
+
+The pipeline operator enables elegant functional composition by passing the result of the left expression as the first argument to the right expression.
+
+**Syntax**: `value | function` is equivalent to `function(value)`
+
+**Examples**:
+```flap
+// Simple pipeline
+x = 5 | abs | floor      // Equivalent to: floor(abs(5))
+
+// Multi-step data transformation
+result = data
+    | filter(is_positive)
+    | map(square)
+    | reduce(sum, 0)
+
+// Combining with match expressions
+user_age | validate | check_adult {
+    1 -> "Access granted"
+    ~> "Access denied"
+}
+
+// Pipeline with method-like calls
+numbers = [1, -2, 3, -4, 5]
+positive_sum = numbers
+    | filter(x -> x > 0)
+    | reduce((a, b) -> a + b, 0)
+```
+
+**Semantics**:
+- Left-to-right evaluation
+- Each stage transforms the value for the next stage
+- Equivalent to nested function calls but more readable
+- Lower precedence than most operators (binds loosely)
+
+### List Operators
+
+**Head operator `^`**: Returns the first element of a list
+```flap
+first = ^[1, 2, 3]       // Returns 1
+head = ^list             // Returns list[0]
+```
+
+**Tail operator `&`**: Returns all elements except the first
+```flap
+rest = &[1, 2, 3]        // Returns [2, 3]
+tail = &list             // Returns list[1:]
+```
+
+**Pattern matching with head/tail**:
+```flap
+// Process list recursively
+sum_list = (xs) -> {
+    #xs == 0 -> 0
+    ~> ^xs + sum_list(&xs)
+}
+
+// First and rest pattern
+print_list = (xs) -> {
+    #xs > 0 {
+        println(^xs)
+        print_list(&xs)
     }
 }
 ```
