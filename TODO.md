@@ -5,7 +5,7 @@
 **Version**: 1.1.0-dev (ARM64/Mach-O in progress)
 **Platform**: x86-64 Linux/macOS (complete), ARM64 macOS (partial)
 **x86-64 Tests**: 178/178 (100%) ✓
-**ARM64 Tests**: ~20/178 (core features + control flow + loops)
+**ARM64 Tests**: ~25/178 (core features + control flow + loops)
 **Production Ready**: x86-64 only
 
 ---
@@ -56,9 +56,9 @@
   - ✅ Implement loop condition checking
   - ✅ Implement loop body compilation
   - ✅ Range loops (@+ i in range(N))
-  - [ ] List loops (@+ elem in [1,2,3])
+  - ✅ List loops (@+ elem in [1,2,3])
   - [ ] Implement break/continue (ret @N, @N)
-  - [ ] Support @first, @last, @counter, @i variables
+  - [ ] Support @first, @last, @counter, @i special variables
 
 **Essential Expression Types:**
 - [ ] **UnaryExpr**: Negation (-), not, length (#), head (^), tail (&)
@@ -260,9 +260,9 @@ The 1.0.0 release is feature-complete and production-ready for x86-64 Linux/macO
 - ✓ println(), print(), exit()
 - ✓ Control flow (match blocks with -> and ~>)
 - ✓ Range loops (@+ i in range(N))
-- ⚠ List loops - PARTIALLY IMPLEMENTED (stub exists)
+- ✓ List loops (@+ elem in [1,2,3])
 - ⚠ Break/continue - NOT YET IMPLEMENTED
-- ✗ Functions - NOT YET IMPLEMENTED
+- ✗ User-defined functions - NOT YET IMPLEMENTED
 - ✗ Most advanced features - NOT YET IMPLEMENTED
 
 ---
@@ -281,6 +281,6 @@ The 1.0.0 release is feature-complete and production-ready for x86-64 Linux/macO
 
 - **Current Focus**: ARM64 user-defined functions and dynamic linking (blocking execution)
 - **Next Milestone**: 50+ ARM64 tests passing (basic programs work)
-- **Recent Progress**: Range loops implemented! Can now compile iterative programs.
+- **Recent Progress**: Both range and list loops fully working! Major milestone achieved.
 - **macOS Blocker**: Dynamic linking required for execution (raw syscalls blocked)
 - **Code Quality**: Use otool, lldb, and comparison with clang for ARM64 debugging
