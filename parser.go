@@ -5429,8 +5429,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.patchJumpImmediate(cstrExitJumpPos+2, int32(cstrExitPos-(cstrExitJumpPos+6)))
 
 	// Return Flap string pointer in xmm0
-	fc.out.MovRegToReg("rax", "r13")
-	fc.out.Cvtsi2sd("xmm0", "rax")
+	fc.out.MovRegToXmm("xmm0", "r13")
 
 	// Restore callee-saved registers (no stack adjustment needed)
 	fc.out.PopReg("r14")
@@ -5883,7 +5882,6 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PushReg("r13")
 	fc.out.PushReg("r14")
 	fc.out.PushReg("r15")
-	fc.out.SubImmFromReg("rsp", 8) // Align stack for function calls
 
 	fc.out.MovRegToReg("r12", "rdi") // r12 = input string
 
@@ -5956,9 +5954,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.patchJumpImmediate(notLowerJump+2, int32(notLowerPos-(notLowerJump+6)))
 	fc.patchJumpImmediate(notLowerJump2+2, int32(notLowerPos-(notLowerJump2+6)))
 
-	fc.out.MovRegToReg("rax", "r13")
-	fc.out.Cvtsi2sd("xmm0", "rax")
-	fc.out.AddImmToReg("rsp", 8) // Restore stack alignment
+	fc.out.MovRegToXmm("xmm0", "r13")
 	fc.out.PopReg("r15")
 	fc.out.PopReg("r14")
 	fc.out.PopReg("r13")
@@ -5980,7 +5976,6 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PushReg("r13")
 	fc.out.PushReg("r14")
 	fc.out.PushReg("r15")
-	fc.out.SubImmFromReg("rsp", 8) // Align stack for function calls
 
 	fc.out.MovRegToReg("r12", "rdi") // r12 = input string
 
@@ -6053,9 +6048,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.patchJumpImmediate(notUpperJump+2, int32(notUpperPos-(notUpperJump+6)))
 	fc.patchJumpImmediate(notUpperJump2+2, int32(notUpperPos-(notUpperJump2+6)))
 
-	fc.out.MovRegToReg("rax", "r13")
-	fc.out.Cvtsi2sd("xmm0", "rax")
-	fc.out.AddImmToReg("rsp", 8) // Restore stack alignment
+	fc.out.MovRegToXmm("xmm0", "r13")
 	fc.out.PopReg("r15")
 	fc.out.PopReg("r14")
 	fc.out.PopReg("r13")
@@ -6256,8 +6249,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	trimAllDone := fc.eb.text.Len()
 	fc.patchJumpImmediate(trimCopyDone+2, int32(trimAllDone-(trimCopyDone+6)))
 
-	fc.out.MovRegToReg("rax", "r13")
-	fc.out.Cvtsi2sd("xmm0", "rax")
+	fc.out.MovRegToXmm("xmm0", "r13")
 	fc.out.PopReg("r15")
 	fc.out.PopReg("r14")
 	fc.out.PopReg("r13")
@@ -8466,7 +8458,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.XorRegWithReg("rdx", "rdx")
 		fc.out.Cvtsi2sd("xmm0", "rdx") // xmm0 = 0.0
 		fc.out.MovXmmToMem("xmm0", "rax", 0) // [map] = 0.0
-		fc.out.Cvtsi2sd("xmm0", "rax") // Return map pointer
+		fc.out.MovRegToXmm("xmm0", "rax") // Return map pointer
 
 		// Patch end jump
 		endPos := fc.eb.text.Len()
@@ -8592,7 +8584,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.XorRegWithReg("rdx", "rdx")
 		fc.out.Cvtsi2sd("xmm0", "rdx")
 		fc.out.MovXmmToMem("xmm0", "rax", 0)
-		fc.out.Cvtsi2sd("xmm0", "rax")
+		fc.out.MovRegToXmm("xmm0", "rax")
 
 		// Patch end jump
 		endPos := fc.eb.text.Len()
