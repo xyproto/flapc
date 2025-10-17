@@ -308,3 +308,12 @@ The 1.0.0 release is feature-complete and production-ready for x86-64 Linux/macO
 - **macOS Blocker**: Dynamic linking required for execution (raw syscalls blocked)
 - **Code Quality**: Use otool, lldb, and comparison with clang for ARM64 debugging
 - **Test Coverage**: 40/178 tests (22.5%) - 300% increase from session start
+
+# Additional required changes (to LANGUAGE.md and *.go):
+
+* Let "@+" just be "@", if it is possible to parse clearly.
+* "sum := sum + i" should be possible to write as "sum += i". Also add -=, *= and /=.
+* exit(0) at the end of programs should not be needed. If it's not there, the program should be able to simply ret?
+* "x < y { -> println("yes")
+}" should be possible to write as simply "x < y { println("yes") }
+* "double = (x) -> x * 2" should fail, because it should require => insted of ->. Also (x) could be just x.
