@@ -429,6 +429,59 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 		// Convert pointer to float64: scvtf d0, x0
 		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
 
+	case *UnaryExpr:
+		// Compile the operand first (result in d0)
+		if err := acg.compileExpression(e.Operand); err != nil {
+			return err
+		}
+
+		switch e.Operator {
+		case "-":
+			// Unary minus: negate the value
+			// Use fneg d0, d0 instruction
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x40, 0x60, 0x1e}) // fneg d0, d0
+
+		case "not":
+			// Logical NOT: returns 1.0 if operand is 0.0, else 0.0
+			// Compare d0 with 0.0
+			// fmov d1, #0.0
+			acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x60, 0x1e})
+			// fcmp d0, d1
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x20, 0x61, 0x1e})
+			// cset x0, eq (x0 = 1 if equal, else 0)
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x9f, 0x9a})
+			// scvtf d0, x0 (convert to float64)
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
+
+		case "~b":
+			// Bitwise NOT: convert to int64, NOT, convert back
+			// fcvtzs x0, d0
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x78, 0x9e})
+			// mvn x0, x0 (bitwise NOT)
+			acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x00, 0xaa})
+			// scvtf d0, x0
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
+
+		default:
+			return fmt.Errorf("unsupported unary operator for ARM64: %s", e.Operator)
+		}
+
+	case *LengthExpr:
+		// Compile the operand (should be a list/map, returns pointer as float64 in d0)
+		if err := acg.compileExpression(e.Operand); err != nil {
+			return err
+		}
+
+		// Convert pointer from float64 to integer in x0
+		// fcvtzs x0, d0
+		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x78, 0x9e})
+
+		// Load length from list/map (first 8 bytes)
+		// ldr d0, [x0]
+		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x40, 0xfd})
+
+		// Length is now in d0 as float64
+
 	default:
 		return fmt.Errorf("unsupported expression type for ARM64: %T", expr)
 	}
