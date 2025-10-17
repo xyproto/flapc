@@ -9,16 +9,16 @@ import (
 
 // ARM64CodeGen handles ARM64 code generation for macOS
 type ARM64CodeGen struct {
-	out            *ARM64Out
-	eb             *ExecutableBuilder
-	stackVars      map[string]int     // variable name -> stack offset from fp
-	stackSize      int                // current stack size
-	stringCounter  int                // counter for string labels
-	labelCounter   int                // counter for jump labels
-	activeLoops    []ARM64LoopInfo    // stack of active loops for break/continue
-	lambdaFuncs    []ARM64LambdaFunc  // list of lambda functions to generate
-	lambdaCounter  int                // counter for lambda names
-	currentLambda  *ARM64LambdaFunc   // current lambda being compiled (for recursion)
+	out           *ARM64Out
+	eb            *ExecutableBuilder
+	stackVars     map[string]int    // variable name -> stack offset from fp
+	stackSize     int               // current stack size
+	stringCounter int               // counter for string labels
+	labelCounter  int               // counter for jump labels
+	activeLoops   []ARM64LoopInfo   // stack of active loops for break/continue
+	lambdaFuncs   []ARM64LambdaFunc // list of lambda functions to generate
+	lambdaCounter int               // counter for lambda names
+	currentLambda *ARM64LambdaFunc  // current lambda being compiled (for recursion)
 }
 
 // ARM64LambdaFunc represents a lambda function for ARM64
