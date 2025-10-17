@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"os"
 )
 
 // Mach-O constants
@@ -216,6 +217,9 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	// Page size
 	pageSize := uint64(0x4000) // 16KB for ARM64, but 4KB works for x86_64 too
 
+	// macOS uses a large zero page (4GB) for security
+	zeroPageSize := uint64(0x100000000) // 4GB zero page
+
 	// Calculate sizes
 	textSize := uint64(eb.text.Len())
 	rodataSize := uint64(eb.rodata.Len())
@@ -224,9 +228,9 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	textSizeAligned := (textSize + pageSize - 1) &^ (pageSize - 1)
 	rodataSizeAligned := (rodataSize + pageSize - 1) &^ (pageSize - 1)
 
-	// Calculate addresses
-	textAddr := pageSize     // __TEXT segment starts at one page
-	textSectAddr := textAddr // __text section
+	// Calculate addresses - __TEXT starts after zero page
+	textAddr := zeroPageSize      // __TEXT segment starts at 4GB
+	textSectAddr := textAddr      // __text section
 	rodataAddr := textAddr + textSizeAligned
 	rodataSectAddr := rodataAddr // __rodata section
 
@@ -240,7 +244,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 			Cmd:      LC_SEGMENT_64,
 			CmdSize:  uint32(binary.Size(SegmentCommand64{})),
 			VMAddr:   0,
-			VMSize:   pageSize,
+			VMSize:   zeroPageSize, // 4GB zero page
 			FileOff:  0,
 			FileSize: 0,
 			MaxProt:  VM_PROT_NONE,
@@ -253,15 +257,48 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		ncmds++
 	}
 
+	// Calculate header + load commands size (preliminary for offsets)
+	// We need to know this before writing segments
+	headerSize := uint32(binary.Size(MachOHeader64{}))
+	// Pre-calculate all load commands to know total size
+	prelimLoadCmdsSize := uint32(0)
+	prelimLoadCmdsSize += uint32(binary.Size(SegmentCommand64{}))                        // __PAGEZERO
+	prelimLoadCmdsSize += uint32(binary.Size(SegmentCommand64{}) + binary.Size(Section64{})) // __TEXT
+	if rodataSize > 0 {
+		prelimLoadCmdsSize += uint32(binary.Size(SegmentCommand64{}) + binary.Size(Section64{})) // __DATA
+	}
+	dylinkerPath := "/usr/lib/dyld\x00"
+	dylinkerCmdSize := (uint32(binary.Size(LoadCommand{}) + 4 + len(dylinkerPath)) + 7) &^ 7
+	prelimLoadCmdsSize += dylinkerCmdSize // LC_LOAD_DYLINKER
+	prelimLoadCmdsSize += uint32(binary.Size(EntryPointCommand{})) // LC_MAIN
+	if eb.useDynamicLinking {
+		dylibPath := "/usr/lib/libSystem.B.dylib\x00"
+		dylibCmdSize := (uint32(binary.Size(LoadCommand{}) + 16 + len(dylibPath)) + 7) &^ 7
+		prelimLoadCmdsSize += dylibCmdSize // LC_LOAD_DYLIB
+	}
+	// Skip SYMTAB and DYSYMTAB - they need LINKEDIT segment
+
+	fileHeaderSize := headerSize + prelimLoadCmdsSize
+	// Align to page boundary for first segment
+	textFileOffset := uint64((fileHeaderSize + uint32(pageSize) - 1) &^ (uint32(pageSize) - 1))
+	rodataFileOffset := textFileOffset + textSizeAligned
+
 	// 2. LC_SEGMENT_64 for __TEXT with __text section
+	// The __TEXT segment should start at file offset 0 and include headers + code
 	{
+		// Round up filesize to match vmsize (which includes padding after text)
+		textFileSize := textFileOffset + textSize
+		if textFileSize > textSizeAligned {
+			textFileSize = textSizeAligned
+		}
+
 		seg := SegmentCommand64{
 			Cmd:      LC_SEGMENT_64,
 			CmdSize:  uint32(binary.Size(SegmentCommand64{}) + binary.Size(Section64{})),
 			VMAddr:   textAddr,
 			VMSize:   textSizeAligned,
-			FileOff:  0, // Will be at start of file after headers
-			FileSize: textSize,
+			FileOff:  0, // __TEXT starts at beginning of file
+			FileSize: textFileSize, // Includes headers + text, but not exceeding vmsize
 			MaxProt:  VM_PROT_READ | VM_PROT_EXECUTE,
 			InitProt: VM_PROT_READ | VM_PROT_EXECUTE,
 			NSects:   1,
@@ -274,7 +311,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		sect := Section64{
 			Addr:      textSectAddr,
 			Size:      textSize,
-			Offset:    0, // Will be set later
+			Offset:    uint32(textFileOffset),
 			Align:     4,
 			Reloff:    0,
 			Nreloc:    0,
@@ -296,7 +333,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 			CmdSize:  uint32(binary.Size(SegmentCommand64{}) + binary.Size(Section64{})),
 			VMAddr:   rodataAddr,
 			VMSize:   rodataSizeAligned,
-			FileOff:  0, // Will be set later
+			FileOff:  rodataFileOffset,
 			FileSize: rodataSize,
 			MaxProt:  VM_PROT_READ | VM_PROT_WRITE,
 			InitProt: VM_PROT_READ | VM_PROT_WRITE,
@@ -310,7 +347,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		sect := Section64{
 			Addr:      rodataSectAddr,
 			Size:      rodataSize,
-			Offset:    0, // Will be set later
+			Offset:    uint32(rodataFileOffset),
 			Align:     3, // 2^3 = 8 byte alignment
 			Reloff:    0,
 			Nreloc:    0,
@@ -382,37 +419,16 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		ncmds++
 	}
 
-	// 7. LC_SYMTAB (empty for now)
-	{
-		symtab := SymtabCommand{
-			Cmd:     LC_SYMTAB,
-			CmdSize: uint32(binary.Size(SymtabCommand{})),
-			Symoff:  0,
-			Nsyms:   0,
-			Stroff:  0,
-			Strsize: 0,
-		}
-		binary.Write(&loadCmdsBuf, binary.LittleEndian, &symtab)
-		ncmds++
-	}
+	// Skip SYMTAB and DYSYMTAB for now - they need a proper LINKEDIT segment
+	// These are optional for simple executables
 
-	// 8. LC_DYSYMTAB (empty for now)
-	{
-		dysymtab := DysymtabCommand{
-			Cmd:     LC_DYSYMTAB,
-			CmdSize: uint32(binary.Size(DysymtabCommand{})),
-		}
-		binary.Write(&loadCmdsBuf, binary.LittleEndian, &dysymtab)
-		ncmds++
-	}
-
-	// Calculate header + load commands size
-	headerSize := uint32(binary.Size(MachOHeader64{}))
+	// Verify our preliminary calculation was correct
 	loadCmdsSize := uint32(loadCmdsBuf.Len())
-	fileHeaderSize := headerSize + loadCmdsSize
-
-	// Align to page boundary for first segment
-	fileOffset := uint64((fileHeaderSize + uint32(pageSize) - 1) &^ (uint32(pageSize) - 1))
+	if loadCmdsSize != prelimLoadCmdsSize {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Warning: load commands size mismatch: expected %d, got %d\n", prelimLoadCmdsSize, loadCmdsSize)
+		}
+	}
 
 	// Write Mach-O header
 	header := MachOHeader64{
@@ -431,7 +447,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	buf.Write(loadCmdsBuf.Bytes())
 
 	// Pad to page boundary
-	for uint64(buf.Len()) < fileOffset {
+	for uint64(buf.Len()) < textFileOffset {
 		buf.WriteByte(0)
 	}
 

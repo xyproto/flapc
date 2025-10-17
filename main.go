@@ -453,8 +453,29 @@ func NewWithPlatform(platform Platform) (*ExecutableBuilder, error) {
 	}, nil
 }
 
-// getSyscallNumbers returns architecture-specific syscall numbers
+// getSyscallNumbers returns platform-specific syscall numbers
 func getSyscallNumbers(platform Platform) map[string]string {
+	// macOS (Darwin) has different syscall numbers with class prefix 0x2000000
+	if platform.OS == OSDarwin {
+		switch platform.Arch {
+		case ArchX86_64:
+			return map[string]string{
+				"SYS_WRITE": "33554436", // 0x2000004
+				"SYS_EXIT":  "33554433", // 0x2000001
+				"STDOUT":    "1",
+			}
+		case ArchARM64:
+			return map[string]string{
+				"SYS_WRITE": "4", // 0x4 - Darwin uses lower 24 bits, x16 needs just the number
+				"SYS_EXIT":  "1", // 0x1
+				"STDOUT":    "1",
+			}
+		default:
+			return map[string]string{}
+		}
+	}
+
+	// Linux/FreeBSD syscall numbers
 	switch platform.Arch {
 	case ArchX86_64:
 		return map[string]string{
