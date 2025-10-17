@@ -53,8 +53,11 @@ const (
 	S_LITERAL_POINTERS = 0x5
 
 	// Section attributes
-	S_ATTR_PURE_INSTRUCTIONS = 0x80000000
-	S_ATTR_SOME_INSTRUCTIONS = 0x00000400
+	S_ATTR_PURE_INSTRUCTIONS   = 0x80000000
+	S_ATTR_SOME_INSTRUCTIONS   = 0x00000400
+	S_SYMBOL_STUBS             = 0x8
+	S_LAZY_SYMBOL_POINTERS     = 0x7
+	S_NON_LAZY_SYMBOL_POINTERS = 0x6
 )
 
 // MachOHeader64 represents the Mach-O 64-bit header
@@ -197,6 +200,23 @@ type LinkEditDataCommand struct {
 	DataSize uint32
 }
 
+// Nlist64 represents a 64-bit symbol table entry
+type Nlist64 struct {
+	N_strx  uint32 // String table index
+	N_type  uint8  // Symbol type
+	N_sect  uint8  // Section number
+	N_desc  uint16 // Description
+	N_value uint64 // Symbol value
+}
+
+// Symbol type flags
+const (
+	N_UNDF = 0x0  // Undefined symbol
+	N_EXT  = 0x1  // External symbol
+	N_TYPE = 0x0e // Type mask
+	N_SECT = 0xe  // Defined in section
+)
+
 // WriteMachO writes a Mach-O executable for macOS
 func (eb *ExecutableBuilder) WriteMachO() error {
 	var buf bytes.Buffer
@@ -224,19 +244,127 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	textSize := uint64(eb.text.Len())
 	rodataSize := uint64(eb.rodata.Len())
 
+	// Calculate dynamic linking section sizes
+	numImports := uint32(len(eb.neededFunctions))
+	stubsSize := uint64(0)
+	gotSize := uint64(0)
+	if eb.useDynamicLinking && numImports > 0 {
+		stubsSize = uint64(numImports * 12)  // 12 bytes per stub on ARM64
+		gotSize = uint64(numImports * 8)     // 8 bytes per GOT entry
+	}
+
 	// Align sizes
 	textSizeAligned := (textSize + pageSize - 1) &^ (pageSize - 1)
 	rodataSizeAligned := (rodataSize + pageSize - 1) &^ (pageSize - 1)
+	stubsSizeAligned := (stubsSize + 15) &^ 15 // 16-byte align
+	_ = stubsSizeAligned                      // May be used for stub alignment
+	_ = (gotSize + 15) &^ 15                  // May be used for GOT alignment
 
 	// Calculate addresses - __TEXT starts after zero page
 	textAddr := zeroPageSize      // __TEXT segment starts at 4GB
 	textSectAddr := textAddr      // __text section
+	stubsAddr := textAddr + textSize // __stubs right after __text
+
 	rodataAddr := textAddr + textSizeAligned
-	rodataSectAddr := rodataAddr // __rodata section
+	rodataSectAddr := rodataAddr // __data section (rodata)
+	gotAddr := rodataAddr + rodataSize // __got right after __data
 
 	// Build load commands in a temporary buffer
 	var loadCmdsBuf bytes.Buffer
 	ncmds := uint32(0)
+
+	// Calculate preliminary load commands size for offset calculations
+	headerSize := uint32(binary.Size(MachOHeader64{}))
+	prelimLoadCmdsSize := uint32(0)
+	prelimLoadCmdsSize += uint32(binary.Size(SegmentCommand64{})) // __PAGEZERO
+
+	// __TEXT segment with sections
+	textNSects := uint32(1) // __text
+	if eb.useDynamicLinking && numImports > 0 {
+		textNSects++ // __stubs
+	}
+	prelimLoadCmdsSize += uint32(binary.Size(SegmentCommand64{}) + int(textNSects)*binary.Size(Section64{}))
+
+	// __DATA segment with sections (if needed)
+	if rodataSize > 0 || (eb.useDynamicLinking && numImports > 0) {
+		dataNSects := uint32(0)
+		if rodataSize > 0 {
+			dataNSects++
+		}
+		if eb.useDynamicLinking && numImports > 0 {
+			dataNSects++ // __got
+		}
+		prelimLoadCmdsSize += uint32(binary.Size(SegmentCommand64{}) + int(dataNSects)*binary.Size(Section64{}))
+	}
+
+	// __LINKEDIT segment (if dynamic linking)
+	if eb.useDynamicLinking && numImports > 0 {
+		prelimLoadCmdsSize += uint32(binary.Size(SegmentCommand64{}))
+	}
+
+	dylinkerPath := "/usr/lib/dyld\x00"
+	dylinkerCmdSize := (uint32(binary.Size(LoadCommand{}) + 4 + len(dylinkerPath)) + 7) &^ 7
+	prelimLoadCmdsSize += dylinkerCmdSize // LC_LOAD_DYLINKER
+	prelimLoadCmdsSize += uint32(binary.Size(EntryPointCommand{})) // LC_MAIN
+
+	if eb.useDynamicLinking {
+		dylibPath := "/usr/lib/libSystem.B.dylib\x00"
+		dylibCmdSize := (uint32(binary.Size(LoadCommand{}) + 16 + len(dylibPath)) + 7) &^ 7
+		prelimLoadCmdsSize += dylibCmdSize // LC_LOAD_DYLIB
+
+		if numImports > 0 {
+			prelimLoadCmdsSize += uint32(binary.Size(SymtabCommand{}))    // LC_SYMTAB
+			prelimLoadCmdsSize += uint32(binary.Size(DysymtabCommand{})) // LC_DYSYMTAB
+		}
+	}
+
+	fileHeaderSize := headerSize + prelimLoadCmdsSize
+	// Align to page boundary for first segment
+	textFileOffset := uint64((fileHeaderSize + uint32(pageSize) - 1) &^ (uint32(pageSize) - 1))
+	stubsFileOffset := textFileOffset + textSize
+	rodataFileOffset := textFileOffset + textSizeAligned
+	gotFileOffset := rodataFileOffset + rodataSize
+
+	// Calculate LINKEDIT segment offset and size
+	linkeditFileOffset := rodataFileOffset + rodataSizeAligned
+
+	// Build symbol table and string table
+	var symtab []Nlist64
+	var strtab bytes.Buffer
+	strtab.WriteByte(0) // First byte must be null
+
+	if eb.useDynamicLinking && numImports > 0 {
+		for _, funcName := range eb.neededFunctions {
+			strOffset := uint32(strtab.Len())
+			strtab.WriteString(funcName)
+			strtab.WriteByte(0)
+
+			sym := Nlist64{
+				N_strx:  strOffset,
+				N_type:  N_UNDF | N_EXT, // Undefined external symbol
+				N_sect:  0,
+				N_desc:  0,
+				N_value: 0,
+			}
+			symtab = append(symtab, sym)
+		}
+	}
+
+	// Build indirect symbol table (maps GOT/stub entries to symbol indices)
+	var indirectSymTab []uint32
+	if eb.useDynamicLinking && numImports > 0 {
+		for i := uint32(0); i < numImports; i++ {
+			indirectSymTab = append(indirectSymTab, i) // GOT entries
+		}
+		for i := uint32(0); i < numImports; i++ {
+			indirectSymTab = append(indirectSymTab, i) // Stub entries
+		}
+	}
+
+	symtabSize := uint32(len(symtab) * binary.Size(Nlist64{}))
+	strtabSize := uint32(strtab.Len())
+	indirectSymTabSize := uint32(len(indirectSymTab) * 4)
+	linkeditSize := symtabSize + strtabSize + indirectSymTabSize
 
 	// 1. LC_SEGMENT_64 for __PAGEZERO (required on macOS)
 	{
@@ -257,51 +385,25 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		ncmds++
 	}
 
-	// Calculate header + load commands size (preliminary for offsets)
-	// We need to know this before writing segments
-	headerSize := uint32(binary.Size(MachOHeader64{}))
-	// Pre-calculate all load commands to know total size
-	prelimLoadCmdsSize := uint32(0)
-	prelimLoadCmdsSize += uint32(binary.Size(SegmentCommand64{}))                        // __PAGEZERO
-	prelimLoadCmdsSize += uint32(binary.Size(SegmentCommand64{}) + binary.Size(Section64{})) // __TEXT
-	if rodataSize > 0 {
-		prelimLoadCmdsSize += uint32(binary.Size(SegmentCommand64{}) + binary.Size(Section64{})) // __DATA
-	}
-	dylinkerPath := "/usr/lib/dyld\x00"
-	dylinkerCmdSize := (uint32(binary.Size(LoadCommand{}) + 4 + len(dylinkerPath)) + 7) &^ 7
-	prelimLoadCmdsSize += dylinkerCmdSize // LC_LOAD_DYLINKER
-	prelimLoadCmdsSize += uint32(binary.Size(EntryPointCommand{})) // LC_MAIN
-	if eb.useDynamicLinking {
-		dylibPath := "/usr/lib/libSystem.B.dylib\x00"
-		dylibCmdSize := (uint32(binary.Size(LoadCommand{}) + 16 + len(dylibPath)) + 7) &^ 7
-		prelimLoadCmdsSize += dylibCmdSize // LC_LOAD_DYLIB
-	}
-	// Skip SYMTAB and DYSYMTAB - they need LINKEDIT segment
-
-	fileHeaderSize := headerSize + prelimLoadCmdsSize
-	// Align to page boundary for first segment
-	textFileOffset := uint64((fileHeaderSize + uint32(pageSize) - 1) &^ (uint32(pageSize) - 1))
-	rodataFileOffset := textFileOffset + textSizeAligned
-
-	// 2. LC_SEGMENT_64 for __TEXT with __text section
-	// The __TEXT segment should start at file offset 0 and include headers + code
+	// 2. LC_SEGMENT_64 for __TEXT with __text and __stubs sections
 	{
-		// Round up filesize to match vmsize (which includes padding after text)
-		textFileSize := textFileOffset + textSize
-		if textFileSize > textSizeAligned {
-			textFileSize = textSizeAligned
+		// FileSize must not exceed VMSize
+		// __TEXT segment maps from file offset 0 (includes headers) to end of stubs
+		textSegFileSize := stubsFileOffset + stubsSize
+		if textSegFileSize > textSizeAligned {
+			textSegFileSize = textSizeAligned // Cap at vmsize
 		}
 
 		seg := SegmentCommand64{
 			Cmd:      LC_SEGMENT_64,
-			CmdSize:  uint32(binary.Size(SegmentCommand64{}) + binary.Size(Section64{})),
+			CmdSize:  uint32(binary.Size(SegmentCommand64{}) + int(textNSects)*binary.Size(Section64{})),
 			VMAddr:   textAddr,
 			VMSize:   textSizeAligned,
 			FileOff:  0, // __TEXT starts at beginning of file
-			FileSize: textFileSize, // Includes headers + text, but not exceeding vmsize
+			FileSize: textSegFileSize,
 			MaxProt:  VM_PROT_READ | VM_PROT_EXECUTE,
 			InitProt: VM_PROT_READ | VM_PROT_EXECUTE,
-			NSects:   1,
+			NSects:   textNSects,
 			Flags:    0,
 		}
 		copy(seg.SegName[:], "__TEXT")
@@ -323,46 +425,121 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		copy(sect.SectName[:], "__text")
 		copy(sect.SegName[:], "__TEXT")
 		binary.Write(&loadCmdsBuf, binary.LittleEndian, &sect)
+
+		// __stubs section (if dynamic linking)
+		if eb.useDynamicLinking && numImports > 0 {
+			stubsSect := Section64{
+				Addr:      stubsAddr,
+				Size:      stubsSize,
+				Offset:    uint32(stubsFileOffset),
+				Align:     2, // 2^2 = 4 byte alignment
+				Reloff:    0,
+				Nreloc:    0,
+				Flags:     S_SYMBOL_STUBS | S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS,
+				Reserved1: numImports, // Indirect symbol table index (stubs start after GOT entries)
+				Reserved2: 12,         // Stub size (12 bytes per stub)
+				Reserved3: 0,
+			}
+			copy(stubsSect.SectName[:], "__stubs")
+			copy(stubsSect.SegName[:], "__TEXT")
+			binary.Write(&loadCmdsBuf, binary.LittleEndian, &stubsSect)
+		}
+
 		ncmds++
 	}
 
-	// 3. LC_SEGMENT_64 for __DATA with __data section (rodata goes here)
-	if rodataSize > 0 {
+	// 3. LC_SEGMENT_64 for __DATA with __data and __got sections
+	if rodataSize > 0 || (eb.useDynamicLinking && numImports > 0) {
+		dataNSects := uint32(0)
+		if rodataSize > 0 {
+			dataNSects++
+		}
+		if eb.useDynamicLinking && numImports > 0 {
+			dataNSects++
+		}
+
+		dataSegSize := rodataSizeAligned
+		dataFileSize := rodataSize
+		if eb.useDynamicLinking && numImports > 0 {
+			dataFileSize += gotSize
+		}
+
 		seg := SegmentCommand64{
 			Cmd:      LC_SEGMENT_64,
-			CmdSize:  uint32(binary.Size(SegmentCommand64{}) + binary.Size(Section64{})),
+			CmdSize:  uint32(binary.Size(SegmentCommand64{}) + int(dataNSects)*binary.Size(Section64{})),
 			VMAddr:   rodataAddr,
-			VMSize:   rodataSizeAligned,
+			VMSize:   dataSegSize,
 			FileOff:  rodataFileOffset,
-			FileSize: rodataSize,
+			FileSize: dataFileSize,
 			MaxProt:  VM_PROT_READ | VM_PROT_WRITE,
 			InitProt: VM_PROT_READ | VM_PROT_WRITE,
-			NSects:   1,
+			NSects:   dataNSects,
 			Flags:    0,
 		}
 		copy(seg.SegName[:], "__DATA")
 		binary.Write(&loadCmdsBuf, binary.LittleEndian, &seg)
 
-		// __data section (using for rodata)
-		sect := Section64{
-			Addr:      rodataSectAddr,
-			Size:      rodataSize,
-			Offset:    uint32(rodataFileOffset),
-			Align:     3, // 2^3 = 8 byte alignment
-			Reloff:    0,
-			Nreloc:    0,
-			Flags:     S_REGULAR,
-			Reserved1: 0,
-			Reserved2: 0,
-			Reserved3: 0,
+		// __data section (rodata)
+		if rodataSize > 0 {
+			sect := Section64{
+				Addr:      rodataSectAddr,
+				Size:      rodataSize,
+				Offset:    uint32(rodataFileOffset),
+				Align:     3, // 2^3 = 8 byte alignment
+				Reloff:    0,
+				Nreloc:    0,
+				Flags:     S_REGULAR,
+				Reserved1: 0,
+				Reserved2: 0,
+				Reserved3: 0,
+			}
+			copy(sect.SectName[:], "__data")
+			copy(sect.SegName[:], "__DATA")
+			binary.Write(&loadCmdsBuf, binary.LittleEndian, &sect)
 		}
-		copy(sect.SectName[:], "__data")
-		copy(sect.SegName[:], "__DATA")
-		binary.Write(&loadCmdsBuf, binary.LittleEndian, &sect)
+
+		// __got section (Global Offset Table)
+		if eb.useDynamicLinking && numImports > 0 {
+			gotSect := Section64{
+				Addr:      gotAddr,
+				Size:      gotSize,
+				Offset:    uint32(gotFileOffset),
+				Align:     3, // 2^3 = 8 byte alignment
+				Reloff:    0,
+				Nreloc:    0,
+				Flags:     S_NON_LAZY_SYMBOL_POINTERS,
+				Reserved1: 0, // Indirect symbol table index (GOT entries start at 0)
+				Reserved2: 0,
+				Reserved3: 0,
+			}
+			copy(gotSect.SectName[:], "__got")
+			copy(gotSect.SegName[:], "__DATA")
+			binary.Write(&loadCmdsBuf, binary.LittleEndian, &gotSect)
+		}
+
 		ncmds++
 	}
 
-	// 4. LC_LOAD_DYLINKER
+	// 4. LC_SEGMENT_64 for __LINKEDIT (if dynamic linking)
+	if eb.useDynamicLinking && numImports > 0 {
+		seg := SegmentCommand64{
+			Cmd:      LC_SEGMENT_64,
+			CmdSize:  uint32(binary.Size(SegmentCommand64{})),
+			VMAddr:   ((linkeditFileOffset + pageSize - 1) &^ (pageSize - 1)) + zeroPageSize,
+			VMSize:   uint64((linkeditSize + uint32(pageSize) - 1) &^ (uint32(pageSize) - 1)),
+			FileOff:  linkeditFileOffset,
+			FileSize: uint64(linkeditSize),
+			MaxProt:  VM_PROT_READ,
+			InitProt: VM_PROT_READ,
+			NSects:   0,
+			Flags:    0,
+		}
+		copy(seg.SegName[:], "__LINKEDIT")
+		binary.Write(&loadCmdsBuf, binary.LittleEndian, &seg)
+		ncmds++
+	}
+
+	// 5. LC_LOAD_DYLINKER
 	{
 		dylinkerPath := "/usr/lib/dyld\x00"
 		cmdSize := uint32(binary.Size(LoadCommand{}) + 4 + len(dylinkerPath))
@@ -383,7 +560,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		ncmds++
 	}
 
-	// 5. LC_MAIN (entry point)
+	// 6. LC_MAIN (entry point)
 	{
 		entry := EntryPointCommand{
 			Cmd:       LC_MAIN,
@@ -395,7 +572,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		ncmds++
 	}
 
-	// 6. LC_LOAD_DYLIB for libSystem.B.dylib (required for any macOS executable)
+	// 7. LC_LOAD_DYLIB for libSystem.B.dylib (required for any macOS executable)
 	if eb.useDynamicLinking {
 		dylibPath := "/usr/lib/libSystem.B.dylib\x00"
 		cmdSize := uint32(binary.Size(LoadCommand{}) + 16 + len(dylibPath))
@@ -419,8 +596,47 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		ncmds++
 	}
 
-	// Skip SYMTAB and DYSYMTAB for now - they need a proper LINKEDIT segment
-	// These are optional for simple executables
+	// 8. LC_SYMTAB (if dynamic linking)
+	if eb.useDynamicLinking && numImports > 0 {
+		symtabCmd := SymtabCommand{
+			Cmd:     LC_SYMTAB,
+			CmdSize: uint32(binary.Size(SymtabCommand{})),
+			Symoff:  uint32(linkeditFileOffset),
+			Nsyms:   uint32(len(symtab)),
+			Stroff:  uint32(linkeditFileOffset) + symtabSize,
+			Strsize: strtabSize,
+		}
+		binary.Write(&loadCmdsBuf, binary.LittleEndian, &symtabCmd)
+		ncmds++
+	}
+
+	// 9. LC_DYSYMTAB (if dynamic linking)
+	if eb.useDynamicLinking && numImports > 0 {
+		dysymtabCmd := DysymtabCommand{
+			Cmd:            LC_DYSYMTAB,
+			CmdSize:        uint32(binary.Size(DysymtabCommand{})),
+			ILocalSym:      0,
+			NLocalSym:      0,
+			IExtDefSym:     0,
+			NExtDefSym:     0,
+			IUndefSym:      0,
+			NUndefSym:      uint32(len(symtab)),
+			TOCOff:         0,
+			NTOC:           0,
+			ModTabOff:      0,
+			NModTab:        0,
+			ExtRefSymOff:   0,
+			NExtRefSyms:    0,
+			IndirectSymOff: uint32(linkeditFileOffset) + symtabSize + strtabSize,
+			NIndirectSyms:  uint32(len(indirectSymTab)),
+			ExtRelOff:      0,
+			NExtRel:        0,
+			LocRelOff:      0,
+			NLocRel:        0,
+		}
+		binary.Write(&loadCmdsBuf, binary.LittleEndian, &dysymtabCmd)
+		ncmds++
+	}
 
 	// Verify our preliminary calculation was correct
 	loadCmdsSize := uint32(loadCmdsBuf.Len())
@@ -446,6 +662,36 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	// Write load commands
 	buf.Write(loadCmdsBuf.Bytes())
 
+	// Patch bl instructions to call stubs (if dynamic linking)
+	if eb.useDynamicLinking && numImports > 0 {
+		textBytes := eb.text.Bytes()
+		for _, patch := range eb.callPatches {
+			// Find which stub this call refers to
+			stubIndex := -1
+			for i, funcName := range eb.neededFunctions {
+				if patch.targetName == funcName+"$stub" {
+					stubIndex = i
+					break
+				}
+			}
+
+			if stubIndex >= 0 {
+				// Calculate stub address
+				thisStubAddr := stubsAddr + uint64(stubIndex*12)
+				// Calculate PC-relative offset from call instruction to stub
+				callAddr := textSectAddr + uint64(patch.position)
+				offset := int64(thisStubAddr - callAddr) / 4 // ARM64 offset in words
+
+				// Patch bl instruction (opcode 0x94 in bits [31:26])
+				blInstr := uint32(0x94000000) | (uint32(offset) & 0x03ffffff)
+				textBytes[patch.position] = byte(blInstr)
+				textBytes[patch.position+1] = byte(blInstr >> 8)
+				textBytes[patch.position+2] = byte(blInstr >> 16)
+				textBytes[patch.position+3] = byte(blInstr >> 24)
+			}
+		}
+	}
+
 	// Pad to page boundary
 	for uint64(buf.Len()) < textFileOffset {
 		buf.WriteByte(0)
@@ -453,6 +699,40 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 
 	// Write __text section
 	buf.Write(eb.text.Bytes())
+
+	// Write __stubs section (if dynamic linking)
+	if eb.useDynamicLinking && numImports > 0 {
+		// Generate stub code for each import
+		for i := uint32(0); i < numImports; i++ {
+			// ARM64 stub pattern (12 bytes):
+			// adrp x16, GOT@PAGE
+			// ldr x16, [x16, GOT@PAGEOFF]
+			// br x16
+
+			// Calculate GOT entry address for this import
+			gotEntryAddr := gotAddr + uint64(i*8)
+			stubAddr := stubsAddr + uint64(i*12)
+
+			// Calculate PC-relative offset from stub to GOT entry
+			// ADRP: PC-relative page address
+			pcRelPage := int64((gotEntryAddr &^ 0xfff) - (stubAddr &^ 0xfff))
+			adrpImm := (pcRelPage >> 12) & 0x1fffff
+			adrpImmLo := (adrpImm & 0x3) << 29
+			adrpImmHi := (adrpImm >> 2) << 5
+			adrpInstr := uint32(0x90000010) | uint32(adrpImmLo) | uint32(adrpImmHi) // adrp x16, #page
+
+			// LDR: Load from [x16 + pageoffset]
+			pageOffset := (gotEntryAddr & 0xfff) >> 3 // Divide by 8 for 8-byte loads
+			ldrInstr := uint32(0xf9400210) | (uint32(pageOffset) << 10) // ldr x16, [x16, #offset]
+
+			// BR: Branch to x16
+			brInstr := uint32(0xd61f0200) // br x16
+
+			binary.Write(&buf, binary.LittleEndian, adrpInstr)
+			binary.Write(&buf, binary.LittleEndian, ldrInstr)
+			binary.Write(&buf, binary.LittleEndian, brInstr)
+		}
+	}
 
 	// Pad to page boundary
 	for uint64(buf.Len())%pageSize != 0 {
@@ -462,6 +742,35 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	// Write __data section (rodata)
 	if rodataSize > 0 {
 		buf.Write(eb.rodata.Bytes())
+	}
+
+	// Write __got section (if dynamic linking)
+	if eb.useDynamicLinking && numImports > 0 {
+		// GOT entries are initially zero (dyld will fill them at runtime)
+		for i := uint32(0); i < numImports; i++ {
+			binary.Write(&buf, binary.LittleEndian, uint64(0))
+		}
+	}
+
+	// Write __LINKEDIT segment (if dynamic linking)
+	if eb.useDynamicLinking && numImports > 0 {
+		// Pad to linkedit file offset
+		for uint64(buf.Len()) < linkeditFileOffset {
+			buf.WriteByte(0)
+		}
+
+		// Write symbol table
+		for _, sym := range symtab {
+			binary.Write(&buf, binary.LittleEndian, &sym)
+		}
+
+		// Write string table
+		buf.Write(strtab.Bytes())
+
+		// Write indirect symbol table
+		for _, idx := range indirectSymTab {
+			binary.Write(&buf, binary.LittleEndian, idx)
+		}
 	}
 
 	eb.elf = buf

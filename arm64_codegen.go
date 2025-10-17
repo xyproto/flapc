@@ -802,6 +802,8 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 		return acg.compileExit(call)
 	case "print":
 		return acg.compilePrint(call)
+	case "getpid":
+		return acg.compileGetPid(call)
 	default:
 		// Check if it's a variable holding a function pointer
 		if _, exists := acg.stackVars[call.Function]; exists {
@@ -1413,6 +1415,47 @@ func (acg *ARM64CodeGen) compileDirectCall(call *DirectCallExpr) error {
 	acg.out.out.writer.WriteBytes([]byte{0x00, 0x02, 0x3f, 0xd6})
 
 	// Result is in d0
+	return nil
+}
+
+// compileGetPid compiles a getpid() call via dynamic linking
+func (acg *ARM64CodeGen) compileGetPid(call *CallExpr) error {
+	// Mark that we need dynamic linking
+	acg.eb.useDynamicLinking = true
+
+	// Add getpid to needed functions list if not already there
+	funcName := "_getpid" // macOS/BSD uses underscore prefix
+	found := false
+	for _, f := range acg.eb.neededFunctions {
+		if f == funcName {
+			found = true
+			break
+		}
+	}
+	if !found {
+		acg.eb.neededFunctions = append(acg.eb.neededFunctions, funcName)
+	}
+
+	// Generate a call through the stub
+	// We'll create a stub for each imported function
+	// For now, use PC-relative branch placeholder (will need stub generation later)
+	stubLabel := funcName + "$stub"
+
+	// bl stub (branch with link)
+	// This is a placeholder - we'll need to patch it with actual stub address
+	position := acg.eb.text.Len()
+	acg.eb.callPatches = append(acg.eb.callPatches, CallPatch{
+		position:   position,
+		targetName: stubLabel,
+	})
+
+	// Emit placeholder bl instruction (will be patched)
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x94}) // bl #0
+
+	// Result is in x0 (integer), convert to float64 in d0
+	// scvtf d0, x0
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
+
 	return nil
 }
 
