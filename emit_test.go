@@ -158,11 +158,11 @@ func TestARM64Syscall(t *testing.T) {
 	}
 }
 
-// TestMachineStringConversion tests machine type conversions
-func TestMachineStringConversion(t *testing.T) {
+// TestPlatformStringConversion tests platform type conversions
+func TestPlatformStringConversion(t *testing.T) {
 	tests := []struct {
 		input    string
-		expected Machine
+		expected Arch
 		wantErr  bool
 	}{
 		{"x86_64", ArchX86_64, false},
@@ -172,7 +172,7 @@ func TestMachineStringConversion(t *testing.T) {
 		{"riscv64", ArchRiscv64, false},
 		{"riscv", ArchRiscv64, false},
 		{"rv64", ArchRiscv64, false},
-		{"invalid", -1, true},
+		{"invalid", 0, true},
 	}
 
 	for _, tt := range tests {
@@ -186,30 +186,29 @@ func TestMachineStringConversion(t *testing.T) {
 				if err != nil {
 					t.Errorf("Unexpected error for input %s: %v", tt.input, err)
 				}
-				if result != tt.expected {
-					t.Errorf("StringToMachine(%s) = %v, want %v", tt.input, result, tt.expected)
+				if result.Arch != tt.expected {
+					t.Errorf("StringToMachine(%s).Arch = %v, want %v", tt.input, result.Arch, tt.expected)
 				}
 			}
 		})
 	}
 }
 
-// TestMachineToString tests machine constant to string conversion
-func TestMachineToString(t *testing.T) {
+// TestPlatformToString tests platform to string conversion
+func TestPlatformToString(t *testing.T) {
 	tests := []struct {
-		machine  Machine
+		platform Platform
 		expected string
 	}{
-		{ArchX86_64, "x86_64"},
-		{ArchARM64, "aarch64"},
-		{ArchRiscv64, "riscv64"},
-		{Machine(-1), "unknown"},
+		{Platform{Arch: ArchX86_64, OS: OSLinux}, "x86_64"},
+		{Platform{Arch: ArchARM64, OS: OSLinux}, "aarch64"},
+		{Platform{Arch: ArchRiscv64, OS: OSLinux}, "riscv64"},
 	}
 
 	for _, tt := range tests {
-		result := tt.machine.String()
+		result := tt.platform.String()
 		if result != tt.expected {
-			t.Errorf("Machine(%d).String() = %s, want %s", tt.machine, result, tt.expected)
+			t.Errorf("Platform{Arch: %v}.String() = %s, want %s", tt.platform.Arch, result, tt.expected)
 		}
 	}
 }

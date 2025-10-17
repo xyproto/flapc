@@ -186,7 +186,7 @@ func TestMovVsLea(t *testing.T) {
 	eb1.DefineAddr("sym1", 0x2000)
 
 	out1 := &Out{
-		machine: eb1.machine,
+		machine: eb1.platform,
 		writer:  &BufferWrapper{&eb1.text},
 		eb:      eb1,
 	}
@@ -213,7 +213,7 @@ func TestMovVsLea(t *testing.T) {
 	eb2.DefineAddr("sym2", 0x2000)
 
 	out2 := &Out{
-		machine: eb2.machine,
+		machine: eb2.platform,
 		writer:  &BufferWrapper{&eb2.text},
 		eb:      eb2,
 	}

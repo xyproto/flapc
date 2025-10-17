@@ -38,8 +38,9 @@ func TestARM64BasicCompilation(t *testing.T) {
 				t.Fatalf("Failed to write test file: %v", err)
 			}
 
-			// Compile for ARM64
-			err := CompileFlap(tmpFile, outFile, ArchARM64)
+			// Compile for ARM64 macOS
+			platform := Platform{Arch: ArchARM64, OS: OSDarwin}
+			err := CompileFlap(tmpFile, outFile, platform)
 			if err != nil {
 				t.Fatalf("Compilation failed: %v", err)
 			}

@@ -294,7 +294,83 @@ func (a *ARM64Out) CompareAndBranchNonZero64(reg string, offset int32) error {
 	return nil
 }
 
-// TODO: Add floating-point instructions (FADD, FSUB, FMUL, FDIV, FCVT, etc.)
+// LDR (immediate, FP/SIMD): LDR Dt, [Xn, #offset]
+func (a *ARM64Out) LdrImm64Double(dest, base string, offset int32) error {
+	rt, ok := arm64FPRegs[dest]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", dest)
+	}
+	rn, ok := arm64GPRegs[base]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", base)
+	}
+
+	if offset%8 != 0 {
+		return fmt.Errorf("LDR FP offset not 8-byte aligned: %d", offset)
+	}
+
+	// For negative offsets, use LDUR (unscaled) instead
+	if offset < 0 {
+		if offset < -256 || offset > 255 {
+			return fmt.Errorf("LDR FP offset out of range for LDUR: %d", offset)
+		}
+		// LDUR (unscaled): size=11, V=1, opc=01
+		imm9 := uint32(offset) & 0x1ff
+		instr := uint32(0xfc400000) | (imm9 << 12) | (rn << 5) | rt
+		a.encodeInstr(instr)
+		return nil
+	}
+
+	if offset >= (1<<12)*8 {
+		return fmt.Errorf("LDR FP offset out of range: %d", offset)
+	}
+
+	imm12 := uint32(offset / 8)
+	// LDR (immediate, unsigned offset, 64-bit FP/SIMD): size=11 (64-bit)
+	instr := uint32(0xfd400000) | (imm12 << 10) | (rn << 5) | rt
+	a.encodeInstr(instr)
+	return nil
+}
+
+// STR (immediate, FP/SIMD): STR Dt, [Xn, #offset]
+func (a *ARM64Out) StrImm64Double(src, base string, offset int32) error {
+	rt, ok := arm64FPRegs[src]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", src)
+	}
+	rn, ok := arm64GPRegs[base]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", base)
+	}
+
+	if offset%8 != 0 {
+		return fmt.Errorf("STR FP offset not 8-byte aligned: %d", offset)
+	}
+
+	// For negative offsets, use STUR (unscaled) instead
+	if offset < 0 {
+		if offset < -256 || offset > 255 {
+			return fmt.Errorf("STR FP offset out of range for STUR: %d", offset)
+		}
+		// STUR (unscaled): size=11, V=1, opc=00
+		imm9 := uint32(offset) & 0x1ff
+		instr := uint32(0xfc000000) | (imm9 << 12) | (rn << 5) | rt
+		a.encodeInstr(instr)
+		return nil
+	}
+
+	if offset >= (1<<12)*8 {
+		return fmt.Errorf("STR FP offset out of range: %d", offset)
+	}
+
+	imm12 := uint32(offset / 8)
+	// STR (immediate, unsigned offset, 64-bit FP/SIMD): size=11 (64-bit)
+	instr := uint32(0xfd000000) | (imm12 << 10) | (rn << 5) | rt
+	a.encodeInstr(instr)
+	return nil
+}
+
+// TODO: Add more floating-point instructions (FADD, FSUB, FMUL, FDIV, FCVT, etc.)
 // TODO: Add SIMD/NEON instructions
 // TODO: Add load/store pair instructions (STP, LDP)
 // TODO: Add more arithmetic instructions (MUL, UDIV, SDIV, etc.)
