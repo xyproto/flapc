@@ -9163,6 +9163,25 @@ func getUnknownFunctions(program *Program) []string {
 	return unknown
 }
 
+// filterPrivateFunctions removes all function definitions with names starting with _
+// Private functions (starting with _) are not exported when importing modules
+func filterPrivateFunctions(program *Program) {
+	var publicStmts []Statement
+	for _, stmt := range program.Statements {
+		// Check if this is an assignment statement
+		if assign, ok := stmt.(*AssignStmt); ok {
+			// Check if the name starts with _
+			if len(assign.Name) > 0 && assign.Name[0] == '_' {
+				// Skip private functions - don't export them
+				continue
+			}
+		}
+		// Keep all non-private statements
+		publicStmts = append(publicStmts, stmt)
+	}
+	program.Statements = publicStmts
+}
+
 func processImports(program *Program) error {
 	// Find all import statements
 	var imports []*ImportStmt
@@ -9208,6 +9227,9 @@ func processImports(program *Program) error {
 
 			depParser := NewParserWithFilename(string(depContent), flapFile)
 			depProgram := depParser.ParseProgram()
+
+			// Filter out private functions (names starting with _)
+			filterPrivateFunctions(depProgram)
 
 			// If alias is "*", import into same namespace
 			// Otherwise, prefix all function names with namespace
