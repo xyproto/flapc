@@ -884,8 +884,172 @@ func (acg *ARM64CodeGen) compileRangeLoop(stmt *LoopStmt, funcCall *CallExpr) er
 
 // compileListLoop compiles a list iteration loop (@+ elem in [1,2,3] { ... })
 func (acg *ARM64CodeGen) compileListLoop(stmt *LoopStmt) error {
-	// TODO: Implement list loop support
-	return fmt.Errorf("list loops not yet implemented for ARM64")
+	// Increment label counter for uniqueness
+	acg.labelCounter++
+
+	// Evaluate the list expression (returns pointer as float64 in d0)
+	if err := acg.compileExpression(stmt.Iterable); err != nil {
+		return err
+	}
+
+	// Save list pointer to stack
+	acg.stackSize += 8
+	listPtrOffset := acg.stackSize
+	if err := acg.out.StrImm64Double("d0", "x29", int32(-listPtrOffset)); err != nil {
+		return err
+	}
+
+	// Convert pointer from float64 to integer in x0: fcvtzs x0, d0
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x78, 0x9e})
+
+	// Load list length from [x0] (first 8 bytes)
+	// ldr d0, [x0]
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x40, 0xfd})
+
+	// Convert length to integer: fcvtzs x0, d0
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x78, 0x9e})
+
+	// Store length in stack
+	acg.stackSize += 8
+	lengthOffset := acg.stackSize
+	if err := acg.out.StrImm64("x0", "x29", int32(-lengthOffset)); err != nil {
+		return err
+	}
+
+	// Allocate stack space for index variable
+	acg.stackSize += 8
+	indexOffset := acg.stackSize
+	// Initialize index to 0: mov x0, #0
+	if err := acg.out.MovImm64("x0", 0); err != nil {
+		return err
+	}
+	if err := acg.out.StrImm64("x0", "x29", int32(-indexOffset)); err != nil {
+		return err
+	}
+
+	// Allocate stack space for iterator variable (the actual value from the list)
+	acg.stackSize += 8
+	iterOffset := acg.stackSize
+	acg.stackVars[stmt.Iterator] = iterOffset
+
+	// Loop start label
+	loopStartPos := acg.eb.text.Len()
+
+	// Register this loop on the active loop stack
+	loopLabel := len(acg.activeLoops) + 1
+	loopInfo := ARM64LoopInfo{
+		Label:            loopLabel,
+		StartPos:         loopStartPos,
+		EndPatches:       []int{},
+		ContinuePatches:  []int{},
+		IteratorOffset:   iterOffset,
+		IndexOffset:      indexOffset,
+		UpperBoundOffset: lengthOffset,
+		ListPtrOffset:    listPtrOffset,
+		IsRangeLoop:      false,
+	}
+	acg.activeLoops = append(acg.activeLoops, loopInfo)
+
+	// Load index: ldr x0, [x29, #-indexOffset]
+	if err := acg.out.LdrImm64("x0", "x29", int32(-indexOffset)); err != nil {
+		return err
+	}
+
+	// Load length: ldr x1, [x29, #-lengthOffset]
+	if err := acg.out.LdrImm64("x1", "x29", int32(-lengthOffset)); err != nil {
+		return err
+	}
+
+	// Compare index with length: cmp x0, x1
+	acg.out.out.writer.WriteBytes([]byte{0x1f, 0x00, 0x01, 0xeb}) // cmp x0, x1
+
+	// Jump to loop end if index >= length
+	loopEndJumpPos := acg.eb.text.Len()
+	acg.out.BranchCond("ge", 0) // Placeholder
+
+	// Add this to the loop's end patches
+	acg.activeLoops[len(acg.activeLoops)-1].EndPatches = append(
+		acg.activeLoops[len(acg.activeLoops)-1].EndPatches,
+		loopEndJumpPos,
+	)
+
+	// Load list pointer from stack to x2
+	if err := acg.out.LdrImm64Double("d0", "x29", int32(-listPtrOffset)); err != nil {
+		return err
+	}
+	// Convert to integer: fcvtzs x2, d0
+	acg.out.out.writer.WriteBytes([]byte{0x02, 0x00, 0x78, 0x9e})
+
+	// Skip length prefix: x2 += 8
+	if err := acg.out.AddImm64("x2", "x2", 8); err != nil {
+		return err
+	}
+
+	// Load index into x0
+	if err := acg.out.LdrImm64("x0", "x29", int32(-indexOffset)); err != nil {
+		return err
+	}
+
+	// Calculate offset: x0 = x0 << 3 (x0 * 8)
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x1c, 0x00, 0xd3}) // lsl x0, x0, #3
+
+	// Add to base: x2 = x2 + x0
+	acg.out.out.writer.WriteBytes([]byte{0x42, 0x00, 0x00, 0x8b}) // add x2, x2, x0
+
+	// Load element value: ldr d0, [x2]
+	acg.out.out.writer.WriteBytes([]byte{0x40, 0x00, 0x40, 0xfd}) // ldr d0, [x2]
+
+	// Store iterator value: str d0, [x29, #-iterOffset]
+	if err := acg.out.StrImm64Double("d0", "x29", int32(-iterOffset)); err != nil {
+		return err
+	}
+
+	// Compile loop body
+	for _, s := range stmt.Body {
+		if err := acg.compileStatement(s); err != nil {
+			return err
+		}
+	}
+
+	// Mark continue position (increment step)
+	continuePos := acg.eb.text.Len()
+	acg.activeLoops[len(acg.activeLoops)-1].ContinuePos = continuePos
+
+	// Patch all continue jumps to point here
+	for _, patchPos := range acg.activeLoops[len(acg.activeLoops)-1].ContinuePatches {
+		offset := int32(continuePos - patchPos)
+		acg.patchJumpOffset(patchPos, offset)
+	}
+
+	// Increment index
+	if err := acg.out.LdrImm64("x0", "x29", int32(-indexOffset)); err != nil {
+		return err
+	}
+	if err := acg.out.AddImm64("x0", "x0", 1); err != nil {
+		return err
+	}
+	if err := acg.out.StrImm64("x0", "x29", int32(-indexOffset)); err != nil {
+		return err
+	}
+
+	// Jump back to loop start
+	loopBackJumpPos := acg.eb.text.Len()
+	backOffset := int32(loopStartPos - loopBackJumpPos)
+	acg.out.Branch(backOffset)
+
+	// Loop end label
+	loopEndPos := acg.eb.text.Len()
+
+	// Patch all end jumps
+	for _, patchPos := range acg.activeLoops[len(acg.activeLoops)-1].EndPatches {
+		endOffset := int32(loopEndPos - patchPos)
+		acg.patchJumpOffset(patchPos, endOffset)
+	}
+
+	// Pop loop from active stack
+	acg.activeLoops = acg.activeLoops[:len(acg.activeLoops)-1]
+
+	return nil
 }
 
 // compileExit compiles an exit call
