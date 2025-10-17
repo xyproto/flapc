@@ -482,6 +482,58 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 
 		// Length is now in d0 as float64
 
+	case *MapExpr:
+		// Map literal stored as: [count (float64)] [key1] [value1] [key2] [value2] ...
+		labelName := fmt.Sprintf("map_%d", acg.stringCounter)
+		acg.stringCounter++
+
+		var mapData []byte
+
+		// Add count
+		count := float64(len(e.Keys))
+		countBits := uint64(0)
+		*(*float64)(unsafe.Pointer(&countBits)) = count
+		for i := 0; i < 8; i++ {
+			mapData = append(mapData, byte((countBits>>(i*8))&0xFF))
+		}
+
+		// Add key-value pairs (only number literals supported for now)
+		for i := range e.Keys {
+			if keyNum, ok := e.Keys[i].(*NumberExpr); ok {
+				keyBits := uint64(0)
+				*(*float64)(unsafe.Pointer(&keyBits)) = keyNum.Value
+				for j := 0; j < 8; j++ {
+					mapData = append(mapData, byte((keyBits>>(j*8))&0xFF))
+				}
+			} else {
+				return fmt.Errorf("unsupported map key type for ARM64: %T", e.Keys[i])
+			}
+
+			if valNum, ok := e.Values[i].(*NumberExpr); ok {
+				valBits := uint64(0)
+				*(*float64)(unsafe.Pointer(&valBits)) = valNum.Value
+				for j := 0; j < 8; j++ {
+					mapData = append(mapData, byte((valBits>>(j*8))&0xFF))
+				}
+			} else {
+				return fmt.Errorf("unsupported map value type for ARM64: %T", e.Values[i])
+			}
+		}
+
+		acg.eb.Define(labelName, string(mapData))
+
+		// Load address into x0
+		offset := uint64(acg.eb.text.Len())
+		acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
+			offset:     offset,
+			symbolName: labelName,
+		})
+		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x90}) // ADRP x0, label@PAGE
+		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x91}) // ADD x0, x0, label@PAGEOFF
+
+		// Convert pointer to float64
+		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e}) // scvtf d0, x0
+
 	default:
 		return fmt.Errorf("unsupported expression type for ARM64: %T", expr)
 	}
