@@ -79,6 +79,9 @@ x > 42 {
     ~> 123           // yields 1.0 when true, 123 when false
 }
 
+// Shorthand: ~> without -> is equivalent to { -> ~> value }
+x > 42 { ~> 123 }    // same as { -> ~> 123 }
+
 // Subject/guard matching
 x {
     x < 10 -> 0
@@ -369,7 +372,7 @@ loop_state_var          = "@first" | "@last" | "@counter" | "@i" ;
 
 lambda_expr             = parameter_list "=>" lambda_body ;
 
-lambda_body             = expression [ match_block ] ;
+lambda_body             = block | expression [ match_block ] ;
 
 parameter_list          = identifier { "," identifier } ;
 
@@ -523,17 +526,39 @@ y_val = read_f32(point_ptr, 1)
 call("free", point_ptr as ptr)
 ```
 
-## Automatic Dependency Resolution
+## Module System
 
-Flap uses automatic dependency resolution - no explicit `import` statements needed. When the compiler encounters an unknown function, it automatically fetches and compiles the required code from predefined repositories.
+Flap supports both explicit imports and automatic dependency resolution.
 
-### Example
+### Explicit Imports
 
 ```flap
-// No import needed!
-x := -5
-y := abs(x)      // Compiler automatically fetches flap_math
-println(y)       // Outputs: 5
+// Import with namespace
+import "github.com/xyproto/flap_math" as math
+result := math.square(5)
+
+// Import with wildcard (into same namespace)
+import "github.com/xyproto/flap_core" as *
+filtered := filter((x) -> x > 2, [1, 2, 3, 4])
+
+// Version specification
+import "github.com/xyproto/flap_math@v1.0.0" as math
+import "github.com/xyproto/flap_math@latest" as math
+import "github.com/xyproto/flap_math@HEAD" as math
+```
+
+### Private Functions
+
+Functions and variables starting with `_` are private and not exported:
+
+```flap
+// Public function (exported)
+square = (x) -> x * x
+
+// Private helper (not exported)
+_validate = (x) -> x > 0 { -> ~> 1 ~> 0 }
+
+// Only square() is available when imported
 ```
 
 ### Cache Management

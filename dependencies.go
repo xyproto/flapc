@@ -137,6 +137,171 @@ func EnsureRepoCloned(repoURL string, updateDeps bool) (string, error) {
 	return repoPath, nil
 }
 
+// EnsureRepoClonedWithVersion ensures a repository is cloned and checked out at a specific version
+// version can be: tag (e.g., "v1.0.0"), branch (e.g., "main"), commit hash, "latest", "HEAD", or ""
+// Empty string or "latest" means use the latest tag (or main/master if no tags)
+func EnsureRepoClonedWithVersion(repoURL, version string, updateDeps bool) (string, error) {
+	repoPath, err := GetRepoCachePath(repoURL)
+	if err != nil {
+		return "", err
+	}
+
+	// Check if repo already exists
+	repoExists := false
+	if _, err := os.Stat(filepath.Join(repoPath, ".git")); err == nil {
+		repoExists = true
+	}
+
+	if !repoExists {
+		// Repo doesn't exist, clone it with the specific version
+		if err := GitCloneWithVersion(repoURL, repoPath, version); err != nil {
+			return "", fmt.Errorf("failed to clone %s: %w", repoURL, err)
+		}
+		fmt.Fprintf(os.Stderr, "Cloned dependency: %s", repoURL)
+		if version != "" {
+			fmt.Fprintf(os.Stderr, " at %s", version)
+		}
+		fmt.Fprintf(os.Stderr, "\n")
+	} else {
+		// Repo exists
+		if updateDeps {
+			// Fetch updates
+			fetchCmd := exec.Command("git", "-C", repoPath, "fetch", "--all", "--tags")
+			fetchCmd.Stdout = os.Stderr
+			fetchCmd.Stderr = os.Stderr
+			if err := fetchCmd.Run(); err != nil {
+				return "", fmt.Errorf("failed to fetch updates for %s: %w", repoURL, err)
+			}
+		}
+
+		// Checkout the requested version
+		checkoutRef := resolveVersionRef(version, repoPath)
+		if checkoutRef != "" {
+			checkoutCmd := exec.Command("git", "-C", repoPath, "checkout", checkoutRef)
+			checkoutCmd.Stdout = os.Stderr
+			checkoutCmd.Stderr = os.Stderr
+			if err := checkoutCmd.Run(); err != nil {
+				return "", fmt.Errorf("failed to checkout %s in %s: %w", checkoutRef, repoURL, err)
+			}
+			if updateDeps {
+				fmt.Fprintf(os.Stderr, "Updated dependency: %s at %s\n", repoURL, checkoutRef)
+			}
+		}
+	}
+
+	return repoPath, nil
+}
+
+// resolveVersionRef converts a version string to a git ref
+// "" or "latest" -> use smart detection (latest tag > main > master)
+// "HEAD" -> "HEAD"
+// anything else -> as-is (tag/branch/commit)
+func resolveVersionRef(version, repoPath string) string {
+	if version == "" || version == "latest" {
+		// Try to get latest tag
+		if latestTag, err := getLatestTagInRepo(repoPath); err == nil && latestTag != "" {
+			return latestTag
+		}
+		// Fall back to main or master
+		if remoteBranchExists(repoPath, "origin/main") {
+			return "origin/main"
+		}
+		if remoteBranchExists(repoPath, "origin/master") {
+			return "origin/master"
+		}
+		return "" // Let git use default
+	}
+	if version == "HEAD" {
+		return "HEAD"
+	}
+	return version
+}
+
+// GitCloneWithVersion clones a repository and checks out a specific version
+func GitCloneWithVersion(repoURL, destPath, version string) error {
+	// Create parent directory
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		return fmt.Errorf("failed to create cache directory: %w", err)
+	}
+
+	// Build full clone URL
+	cloneURL := repoURL
+	if !strings.HasPrefix(repoURL, "http://") &&
+		!strings.HasPrefix(repoURL, "https://") &&
+		!strings.HasPrefix(repoURL, "git://") &&
+		!strings.HasPrefix(repoURL, "git@") {
+		cloneURL = "https://" + repoURL
+	}
+
+	// Handle version-specific cloning
+	if version == "" || version == "latest" {
+		// Use smart detection (latest tag > main > master)
+		// First do a bare clone to discover refs
+		cmd := exec.Command("git", "clone", "--bare", cloneURL, destPath+".tmp")
+		cmd.Stdout = os.Stderr
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("git clone failed: %w (tried to clone %s)", err, cloneURL)
+		}
+
+		// Determine best ref
+		checkoutRef, err := determineCheckoutRef(destPath + ".tmp")
+		if err != nil {
+			os.RemoveAll(destPath + ".tmp")
+			return fmt.Errorf("failed to determine checkout ref: %w", err)
+		}
+
+		// Remove temp bare clone
+		os.RemoveAll(destPath + ".tmp")
+
+		// Clone with determined ref
+		if checkoutRef != "" {
+			fmt.Fprintf(os.Stderr, "Cloning %s at %s...\n", repoURL, checkoutRef)
+			cloneCmd := exec.Command("git", "clone", "--depth=1", "--branch", checkoutRef, cloneURL, destPath)
+			cloneCmd.Stdout = os.Stderr
+			cloneCmd.Stderr = os.Stderr
+			if err := cloneCmd.Run(); err != nil {
+				return fmt.Errorf("git clone failed: %w", err)
+			}
+		} else {
+			cloneCmd := exec.Command("git", "clone", "--depth=1", cloneURL, destPath)
+			cloneCmd.Stdout = os.Stderr
+			cloneCmd.Stderr = os.Stderr
+			if err := cloneCmd.Run(); err != nil {
+				return fmt.Errorf("git clone failed: %w", err)
+			}
+		}
+	} else {
+		// Try cloning with the specific version as a branch/tag first
+		fmt.Fprintf(os.Stderr, "Cloning %s at %s...\n", repoURL, version)
+		cloneCmd := exec.Command("git", "clone", "--depth=1", "--branch", version, cloneURL, destPath)
+		cloneCmd.Stdout = os.Stderr
+		cloneCmd.Stderr = os.Stderr
+
+		if err := cloneCmd.Run(); err != nil {
+			// Branch/tag didn't work, might be a commit hash
+			// Do a full clone and then checkout
+			fmt.Fprintf(os.Stderr, "Not a branch/tag, trying as commit...\n")
+			cloneCmd = exec.Command("git", "clone", cloneURL, destPath)
+			cloneCmd.Stdout = os.Stderr
+			cloneCmd.Stderr = os.Stderr
+			if err := cloneCmd.Run(); err != nil {
+				return fmt.Errorf("git clone failed: %w", err)
+			}
+
+			// Try to checkout the commit
+			checkoutCmd := exec.Command("git", "-C", destPath, "checkout", version)
+			checkoutCmd.Stdout = os.Stderr
+			checkoutCmd.Stderr = os.Stderr
+			if err := checkoutCmd.Run(); err != nil {
+				return fmt.Errorf("git checkout %s failed: %w", version, err)
+			}
+		}
+	}
+
+	return nil
+}
+
 // GitClone clones a Git repository to the specified path
 // Strategy: Use latest tag if available, otherwise main branch, otherwise master
 func GitClone(repoURL, destPath string) error {

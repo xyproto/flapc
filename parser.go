@@ -102,6 +102,8 @@ const (
 	TOKEN_STRING_TYPE // string (type)
 	TOKEN_LIST_TYPE   // list (type)
 	TOKEN_USE         // use (import)
+	TOKEN_IMPORT      // import (with git URL)
+	TOKEN_DOT         // . (for namespaced calls)
 )
 
 // Code generation constants
@@ -254,6 +256,10 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_RET, Value: value, Line: l.line}
 		case "use":
 			return Token{Type: TOKEN_USE, Value: value, Line: l.line}
+		case "import":
+			return Token{Type: TOKEN_IMPORT, Value: value, Line: l.line}
+		case "as":
+			return Token{Type: TOKEN_AS, Value: value, Line: l.line}
 		case "xor":
 			return Token{Type: TOKEN_XOR, Value: value, Line: l.line}
 		case "shl":
@@ -266,8 +272,6 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_ROR, Value: value, Line: l.line}
 		case "mod":
 			return Token{Type: TOKEN_MOD, Value: value, Line: l.line}
-		case "as":
-			return Token{Type: TOKEN_AS, Value: value, Line: l.line}
 			// Note: All type keywords (i8, i16, i32, i64, u8, u16, u32, u64, f32, f64,
 			// cstr, ptr, number, string, list) are contextual keywords.
 			// They are only treated as type keywords after "as" in cast expressions.
@@ -402,6 +406,9 @@ func (l *Lexer) NextToken() Token {
 	case ';':
 		l.pos++
 		return Token{Type: TOKEN_SEMICOLON, Value: ";", Line: l.line}
+	case '.':
+		l.pos++
+		return Token{Type: TOKEN_DOT, Value: ".", Line: l.line}
 	case '@':
 		// Check for @first, @last, @-, @+, @=
 		if l.peek() >= 'a' && l.peek() <= 'z' {
@@ -545,6 +552,21 @@ type UseStmt struct {
 
 func (u *UseStmt) String() string { return "use " + u.Path }
 func (u *UseStmt) statementNode()  {}
+
+type ImportStmt struct {
+	URL     string // Git URL: "github.com/owner/repo"
+	Version string // Git ref: "v1.0.0", "HEAD", "latest", "commit-hash", or "" for latest
+	Alias   string // Namespace alias: "xmath" or "*" for wildcard
+}
+
+func (i *ImportStmt) String() string {
+	url := i.URL
+	if i.Version != "" {
+		url += "@" + i.Version
+	}
+	return "import " + url + " as " + i.Alias
+}
+func (i *ImportStmt) statementNode() {}
 
 type ExpressionStmt struct {
 	Expr Expression
@@ -752,6 +774,19 @@ func (m *MatchExpr) String() string {
 	return m.Condition.String() + " { " + strings.Join(parts, " ") + " }"
 }
 func (m *MatchExpr) expressionNode() {}
+
+type BlockExpr struct {
+	Statements []Statement
+}
+
+func (b *BlockExpr) String() string {
+	var parts []string
+	for _, stmt := range b.Statements {
+		parts = append(parts, stmt.String())
+	}
+	return "{ " + strings.Join(parts, "; ") + " }"
+}
+func (b *BlockExpr) expressionNode() {}
 
 type CallExpr struct {
 	Function string
@@ -1147,6 +1182,37 @@ func foldConstantExpr(expr Expression) Expression {
 	}
 }
 
+func (p *Parser) parseImport() *ImportStmt {
+	p.nextToken() // skip 'import'
+
+	if p.current.Type != TOKEN_STRING {
+		p.error("expected git URL string after 'import'")
+	}
+	urlWithVersion := p.current.Value
+	p.nextToken()
+
+	// Parse URL and optional version (URL@version)
+	url := urlWithVersion
+	version := ""
+	if atIndex := strings.LastIndex(urlWithVersion, "@"); atIndex != -1 {
+		url = urlWithVersion[:atIndex]
+		version = urlWithVersion[atIndex+1:]
+	}
+
+	if p.current.Type != TOKEN_AS {
+		p.error("expected 'as' after import URL")
+	}
+	p.nextToken()
+
+	if p.current.Type != TOKEN_IDENT && p.current.Type != TOKEN_STAR {
+		p.error("expected alias or '*' after 'as'")
+	}
+	alias := p.current.Value
+	p.nextToken()
+
+	return &ImportStmt{URL: url, Version: version, Alias: alias}
+}
+
 func (p *Parser) parseStatement() Statement {
 	// Check for use keyword (imports)
 	if p.current.Type == TOKEN_USE {
@@ -1156,6 +1222,11 @@ func (p *Parser) parseStatement() Statement {
 		}
 		path := p.current.Value
 		return &UseStmt{Path: path}
+	}
+
+	// Check for import keyword (git URL imports)
+	if p.current.Type == TOKEN_IMPORT {
+		return p.parseImport()
 	}
 
 	// Check for ret keyword
@@ -1484,6 +1555,16 @@ func (p *Parser) parseMatchTarget() Expression {
 		return &JumpExpr{Label: label, Value: value, IsBreak: false}
 	default:
 		expr := p.parseExpression()
+
+		// Check if this expression has a match block attached
+		if p.peek.Type == TOKEN_LBRACE {
+			p.nextToken() // move to expr
+			p.nextToken() // move to '{'
+			p.nextToken() // skip '{'
+			p.skipNewlines()
+			return p.parseMatchBlock(expr)
+		}
+
 		p.nextToken()
 		return expr
 	}
@@ -1761,7 +1842,31 @@ func (p *Parser) parseComparison() Expression {
 }
 
 func (p *Parser) parseLambdaBody() Expression {
-	// Parse the body expression
+	// Check if lambda body is a block { ... }
+	if p.current.Type == TOKEN_LBRACE {
+		p.nextToken() // skip '{'
+		p.skipNewlines()
+
+		// Parse statements until we hit '}'
+		var statements []Statement
+		for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+			stmt := p.parseStatement()
+			if stmt != nil {
+				statements = append(statements, stmt)
+			}
+			p.skipNewlines()
+		}
+
+		if p.current.Type != TOKEN_RBRACE {
+			p.error("expected '}' at end of lambda block")
+		}
+		// Don't skip the '}' - let the caller handle it
+
+		// Return a BlockExpr containing the statements
+		return &BlockExpr{Statements: statements}
+	}
+
+	// Otherwise, parse the body expression
 	expr := p.parseExpression()
 
 	if p.peek.Type == TOKEN_LBRACE {
@@ -2024,6 +2129,17 @@ func (p *Parser) parsePrimary() Expression {
 
 	case TOKEN_IDENT:
 		name := p.current.Value
+
+		// Check for namespaced identifier (namespace.identifier)
+		if p.peek.Type == TOKEN_DOT {
+			p.nextToken() // skip first identifier (namespace)
+			p.nextToken() // skip '.'
+			if p.current.Type != TOKEN_IDENT {
+				p.error("expected identifier after '.'")
+			}
+			name = name + "." + p.current.Value // Combine namespace.identifier
+		}
+
 		// Check for function call
 		if p.peek.Type == TOKEN_LPAREN {
 			p.nextToken() // skip identifier
@@ -2379,6 +2495,9 @@ func NewFlapCompiler(machine Machine) (*FlapCompiler, error) {
 }
 
 func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
+	if fc.debug {
+		fmt.Fprintf(os.Stderr, "DEBUG Compile: starting compilation with %d statements\n", len(program.Statements))
+	}
 	// Use ARM64 code generator if target is ARM64
 	if VerboseMode {
 	}
@@ -2472,10 +2591,10 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.generateRuntimeHelpers()
 
 	// Write ELF using existing infrastructure
-	return fc.writeELF(outputPath)
+	return fc.writeELF(program, outputPath)
 }
 
-func (fc *FlapCompiler) writeELF(outputPath string) error {
+func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	// Build pltFunctions list from all called functions
 	// Start with essential functions that runtime helpers need
 	pltFunctions := []string{"printf", "exit", "malloc"}
@@ -2645,8 +2764,17 @@ func (fc *FlapCompiler) writeELF(outputPath string) error {
 	// ===== END AVX-512 DETECTION =====
 
 	// Recompile with correct addresses
-	parser := NewParser(fc.sourceCode)
-	program := parser.ParseProgram()
+	// NOTE: Use the original program parameter (which includes imports),
+	// not a reparsed version from source which would lose imported statements
+
+	// Reset compiler state for second pass
+	fc.variables = make(map[string]int)
+	fc.mutableVars = make(map[string]bool)
+	fc.varTypes = make(map[string]string)
+	fc.stackOffset = 0
+	fc.lambdaFuncs = nil  // Clear lambda list to avoid duplicates
+	fc.lambdaCounter = 0
+
 	// Collect symbols again (two-pass compilation for second regeneration)
 	for _, stmt := range program.Statements {
 		if err := fc.collectSymbols(stmt); err != nil {
@@ -2765,6 +2893,9 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 			offset := fc.stackOffset
 			fc.variables[s.Name] = offset
 			fc.mutableVars[s.Name] = s.Mutable
+			if fc.debug {
+				fmt.Fprintf(os.Stderr, "DEBUG collectSymbols: storing variable '%s' at offset %d\n", s.Name, offset)
+			}
 
 			// Track type if we can determine it from the expression
 			exprType := fc.getExprType(s.Value)
@@ -2795,6 +2926,10 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 	case *AssignStmt:
 		// Variable already registered in collectSymbols pass
 		offset := fc.variables[s.Name]
+
+		if fc.debug {
+			fmt.Fprintf(os.Stderr, "DEBUG compileStatement: compiling assignment '%s' (type: %T)\n", s.Name, s.Value)
+		}
 
 		// Allocate actual stack space (was only registered in first pass)
 		fc.out.SubImmFromReg("rsp", 16)
@@ -4517,6 +4652,10 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		fc.lambdaCounter++
 		funcName := fmt.Sprintf("lambda_%d", fc.lambdaCounter)
 
+		if fc.debug {
+			fmt.Fprintf(os.Stderr, "DEBUG compileExpression: adding lambda '%s' with %d params\n", funcName, len(e.Params))
+		}
+
 		// Store lambda for later code generation
 		fc.lambdaFuncs = append(fc.lambdaFuncs, LambdaFunc{
 			Name:   funcName,
@@ -4546,6 +4685,23 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		fc.out.MovMemToXmm("xmm0", "rax", 0)
 
 		// Length is now in xmm0 as float64
+
+	case *BlockExpr:
+		// Compile each statement in the block
+		// The last statement should leave its value in xmm0
+		for i, stmt := range e.Statements {
+			fc.compileStatement(stmt)
+			// If it's not the last statement and it's an expression statement,
+			// the value is already in xmm0 but will be overwritten by the next statement
+			if i == len(e.Statements)-1 {
+				// Last statement - its value should already be in xmm0
+				// If it's an expression statement, compileStatement already put it there
+				// If it's an assignment, we need to load the assigned value
+				if assignStmt, ok := stmt.(*AssignStmt); ok {
+					fc.compileExpression(assignStmt.Value)
+				}
+			}
+		}
 
 	case *MatchExpr:
 		fc.compileMatchExpr(e)
@@ -5067,7 +5223,13 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 }
 
 func (fc *FlapCompiler) generateLambdaFunctions() {
+	if fc.debug {
+		fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: generating %d lambdas\n", len(fc.lambdaFuncs))
+	}
 	for _, lambda := range fc.lambdaFuncs {
+		if fc.debug {
+			fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: generating lambda '%s'\n", lambda.Name)
+		}
 		// Record the offset of this lambda function in .text
 		fc.lambdaOffsets[lambda.Name] = fc.eb.text.Len()
 
@@ -6272,6 +6434,9 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
 	// Load function pointer from variable
 	offset, _ := fc.variables[call.Function]
+	if fc.debug {
+		fmt.Fprintf(os.Stderr, "DEBUG compileStoredFunctionCall: calling '%s' at offset %d\n", call.Function, offset)
+	}
 	fc.out.MovMemToXmm("xmm0", "rbp", -offset)
 
 	// Convert function pointer from float64 to integer in rax
@@ -7030,6 +7195,10 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 	}
 
 	// Check if this is a stored function (variable containing function pointer)
+	if fc.debug {
+		fmt.Fprintf(os.Stderr, "DEBUG compileCall: looking up function '%s'\n", call.Function)
+		fmt.Fprintf(os.Stderr, "DEBUG compileCall: variables map has: %v\n", fc.variables)
+	}
 	if _, isVariable := fc.variables[call.Function]; isVariable {
 		fc.compileStoredFunctionCall(call)
 		return
@@ -8955,6 +9124,93 @@ func getUnknownFunctions(program *Program) []string {
 	return unknown
 }
 
+func processImports(program *Program) error {
+	// Find all import statements
+	var imports []*ImportStmt
+	for _, stmt := range program.Statements {
+		if importStmt, ok := stmt.(*ImportStmt); ok {
+			imports = append(imports, importStmt)
+		}
+	}
+
+	if len(imports) == 0 {
+		return nil // No imports to process
+	}
+
+	fmt.Fprintf(os.Stderr, "Processing %d import(s)\n", len(imports))
+
+	// Process each import
+	for _, imp := range imports {
+		fmt.Fprintf(os.Stderr, "Importing %s", imp.URL)
+		if imp.Version != "" {
+			fmt.Fprintf(os.Stderr, "@%s", imp.Version)
+		}
+		fmt.Fprintf(os.Stderr, " as %s\n", imp.Alias)
+
+		// Clone/cache the repository
+		repoPath, err := EnsureRepoClonedWithVersion(imp.URL, imp.Version, UpdateDepsFlag)
+		if err != nil {
+			return fmt.Errorf("failed to fetch %s: %v", imp.URL, err)
+		}
+
+		// Find all .flap files in the repository
+		flapFiles, err := FindFlapFiles(repoPath)
+		if err != nil {
+			return fmt.Errorf("failed to find .flap files in %s: %v", repoPath, err)
+		}
+
+		// Parse and merge each .flap file with namespace handling
+		for _, flapFile := range flapFiles {
+			depContent, err := os.ReadFile(flapFile)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to read %s: %v\n", flapFile, err)
+				continue
+			}
+
+			depParser := NewParserWithFilename(string(depContent), flapFile)
+			depProgram := depParser.ParseProgram()
+
+			// If alias is "*", import into same namespace
+			// Otherwise, prefix all function names with namespace
+			if imp.Alias != "*" {
+				addNamespaceToFunctions(depProgram, imp.Alias)
+			}
+
+			// Prepend dependency program to main program
+			program.Statements = append(depProgram.Statements, program.Statements...)
+			fmt.Fprintf(os.Stderr, "Loaded %s from %s\n", flapFile, imp.URL)
+		}
+	}
+
+	// Remove import statements from program (they've been processed)
+	var filteredStmts []Statement
+	for _, stmt := range program.Statements {
+		if _, ok := stmt.(*ImportStmt); !ok {
+			filteredStmts = append(filteredStmts, stmt)
+		}
+	}
+	program.Statements = filteredStmts
+
+	// Debug: print final program
+	if os.Getenv("DEBUG_FLAP") != "" {
+		fmt.Fprintf(os.Stderr, "DEBUG processImports: final program after import processing:\n")
+		for i, stmt := range program.Statements {
+			fmt.Fprintf(os.Stderr, "  [%d] %s\n", i, stmt.String())
+		}
+	}
+
+	return nil
+}
+
+func addNamespaceToFunctions(program *Program, namespace string) {
+	for _, stmt := range program.Statements {
+		if assign, ok := stmt.(*AssignStmt); ok {
+			// Add namespace prefix to function name
+			assign.Name = namespace + "." + assign.Name
+		}
+	}
+}
+
 func CompileFlap(inputPath string, outputPath string, machine Machine) error {
 	// Read input file
 	content, err := os.ReadFile(inputPath)
@@ -8967,6 +9223,12 @@ func CompileFlap(inputPath string, outputPath string, machine Machine) error {
 	program := parser.ParseProgram()
 
 	fmt.Fprintf(os.Stderr, "Parsed program:\n%s\n", program.String())
+
+	// Process explicit import statements
+	err = processImports(program)
+	if err != nil {
+		return fmt.Errorf("failed to process imports: %v", err)
+	}
 
 	// Check for unknown functions and resolve dependencies
 	// Build combined source code (dependencies + main)
