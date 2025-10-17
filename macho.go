@@ -266,6 +266,9 @@ const (
 
 // WriteMachO writes a Mach-O executable for macOS
 func (eb *ExecutableBuilder) WriteMachO() error {
+
+	debug := os.Getenv("FLAP_DEBUG") != ""
+
 	var buf bytes.Buffer
 
 	// Determine CPU type
@@ -705,8 +708,10 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	}
 
 	// 10. LC_DYLD_CHAINED_FIXUPS (if dynamic linking)
-	fmt.Fprintf(os.Stderr, "DEBUG: About to write LC_DYLD_CHAINED_FIXUPS: useDynamicLinking=%v, numImports=%d, chainedFixupsSize=%d\n",
-		eb.useDynamicLinking, numImports, chainedFixupsSize)
+	if debug {
+		fmt.Fprintf(os.Stderr, "DEBUG: About to write LC_DYLD_CHAINED_FIXUPS: useDynamicLinking=%v, numImports=%d, chainedFixupsSize=%d\n",
+			eb.useDynamicLinking, numImports, chainedFixupsSize)
+	}
 	if eb.useDynamicLinking && numImports > 0 {
 		chainedFixupsCmd := LinkEditDataCommand{
 			Cmd:      LC_DYLD_CHAINED_FIXUPS,
@@ -714,11 +719,15 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 			DataOff:  uint32(linkeditFileOffset) + symtabSize + strtabSize + indirectSymTabSize,
 			DataSize: chainedFixupsSize,
 		}
-		fmt.Fprintf(os.Stderr, "DEBUG: Writing LC_DYLD_CHAINED_FIXUPS with DataSize=%d, DataOff=%d\n",
-			chainedFixupsSize, uint32(linkeditFileOffset)+symtabSize+strtabSize+indirectSymTabSize)
+		if debug {
+			fmt.Fprintf(os.Stderr, "DEBUG: Writing LC_DYLD_CHAINED_FIXUPS with DataSize=%d, DataOff=%d\n",
+				chainedFixupsSize, uint32(linkeditFileOffset)+symtabSize+strtabSize+indirectSymTabSize)
+		}
 		binary.Write(&loadCmdsBuf, binary.LittleEndian, &chainedFixupsCmd)
 		ncmds++
-		fmt.Fprintf(os.Stderr, "DEBUG: After writing LC_DYLD_CHAINED_FIXUPS, ncmds=%d\n", ncmds)
+		if debug {
+			fmt.Fprintf(os.Stderr, "DEBUG: After writing LC_DYLD_CHAINED_FIXUPS, ncmds=%d\n", ncmds)
+		}
 	}
 
 	// Verify our preliminary calculation was correct
@@ -730,7 +739,9 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	}
 
 	// Write Mach-O header
-	fmt.Fprintf(os.Stderr, "DEBUG: About to write Mach-O header with NCmds=%d, SizeOfCmds=%d\n", ncmds, loadCmdsSize)
+	if debug {
+		fmt.Fprintf(os.Stderr, "DEBUG: About to write Mach-O header with NCmds=%d, SizeOfCmds=%d\n", ncmds, loadCmdsSize)
+	}
 	header := MachOHeader64{
 		Magic:      MH_MAGIC_64,
 		CPUType:    cpuType,
@@ -742,15 +753,19 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		Reserved:   0,
 	}
 	binary.Write(&buf, binary.LittleEndian, &header)
-	fmt.Fprintf(os.Stderr, "DEBUG: Wrote Mach-O header\n")
+	if debug {
+		fmt.Fprintf(os.Stderr, "DEBUG: Wrote Mach-O header\n")
+	}
 
 	// Debug: verify what's actually in the buffer
 	bufBytes := buf.Bytes()
 	if len(bufBytes) >= 32 {
 		ncmdsInBuf := binary.LittleEndian.Uint32(bufBytes[16:20])
 		sizeofcmdsInBuf := binary.LittleEndian.Uint32(bufBytes[20:24])
-		fmt.Fprintf(os.Stderr, "DEBUG: Header in buffer has NCmds=%d, SizeOfCmds=%d (NCmds bytes: %v)\n",
-			ncmdsInBuf, sizeofcmdsInBuf, bufBytes[16:20])
+		if debug {
+			fmt.Fprintf(os.Stderr, "DEBUG: Header in buffer has NCmds=%d, SizeOfCmds=%d (NCmds bytes: %v)\n",
+				ncmdsInBuf, sizeofcmdsInBuf, bufBytes[16:20])
+		}
 	}
 
 	// Write load commands
