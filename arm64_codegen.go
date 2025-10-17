@@ -9,13 +9,23 @@ import (
 
 // ARM64CodeGen handles ARM64 code generation for macOS
 type ARM64CodeGen struct {
-	out           *ARM64Out
-	eb            *ExecutableBuilder
-	stackVars     map[string]int // variable name -> stack offset from fp
-	stackSize     int            // current stack size
-	stringCounter int            // counter for string labels
-	labelCounter  int            // counter for jump labels
-	activeLoops   []ARM64LoopInfo // stack of active loops for break/continue
+	out            *ARM64Out
+	eb             *ExecutableBuilder
+	stackVars      map[string]int     // variable name -> stack offset from fp
+	stackSize      int                // current stack size
+	stringCounter  int                // counter for string labels
+	labelCounter   int                // counter for jump labels
+	activeLoops    []ARM64LoopInfo    // stack of active loops for break/continue
+	lambdaFuncs    []ARM64LambdaFunc  // list of lambda functions to generate
+	lambdaCounter  int                // counter for lambda names
+	currentLambda  *ARM64LambdaFunc   // current lambda being compiled (for recursion)
+}
+
+// ARM64LambdaFunc represents a lambda function for ARM64
+type ARM64LambdaFunc struct {
+	Name   string
+	Params []string
+	Body   Expression
 }
 
 // ARM64LoopInfo tracks information about an active loop
@@ -84,6 +94,11 @@ func (acg *ARM64CodeGen) CompileProgram(program *Program) error {
 		return err
 	}
 	if err := acg.out.Return("x30"); err != nil {
+		return err
+	}
+
+	// Generate lambda functions after main program
+	if err := acg.generateLambdaFunctions(); err != nil {
 		return err
 	}
 
@@ -381,8 +396,38 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 	case *CallExpr:
 		return acg.compileCall(e)
 
+	case *DirectCallExpr:
+		return acg.compileDirectCall(e)
+
 	case *MatchExpr:
 		return acg.compileMatchExpr(e)
+
+	case *LambdaExpr:
+		// Generate a unique function name for this lambda
+		acg.lambdaCounter++
+		funcName := fmt.Sprintf("lambda_%d", acg.lambdaCounter)
+
+		// Store lambda for later code generation
+		acg.lambdaFuncs = append(acg.lambdaFuncs, ARM64LambdaFunc{
+			Name:   funcName,
+			Params: e.Params,
+			Body:   e.Body,
+		})
+
+		// Return function pointer as float64 in d0
+		// Load function address into x0
+		offset := uint64(acg.eb.text.Len())
+		acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
+			offset:     offset,
+			symbolName: funcName,
+		})
+		// ADRP x0, funcName@PAGE
+		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x90})
+		// ADD x0, x0, funcName@PAGEOFF
+		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x91})
+
+		// Convert pointer to float64: scvtf d0, x0
+		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
 
 	default:
 		return fmt.Errorf("unsupported expression type for ARM64: %T", expr)
@@ -552,6 +597,15 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 	case "print":
 		return acg.compilePrint(call)
 	default:
+		// Check if it's a variable holding a function pointer
+		if _, exists := acg.stackVars[call.Function]; exists {
+			// Convert to DirectCallExpr and compile
+			directCall := &DirectCallExpr{
+				Callee: &IdentExpr{Name: call.Function},
+				Args:   call.Args,
+			}
+			return acg.compileDirectCall(directCall)
+		}
 		return fmt.Errorf("unsupported function for ARM64: %s", call.Function)
 	}
 }
@@ -1089,6 +1143,161 @@ func (acg *ARM64CodeGen) compileExit(call *CallExpr) error {
 
 	// svc #0
 	acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4})
+
+	return nil
+}
+
+// compileDirectCall compiles a direct function call (e.g., lambda invocation)
+func (acg *ARM64CodeGen) compileDirectCall(call *DirectCallExpr) error {
+	// Compile the callee expression (e.g., a lambda) to get function pointer
+	// Result in d0 (function pointer as float64)
+	if err := acg.compileExpression(call.Callee); err != nil {
+		return err
+	}
+
+	// Convert function pointer from float64 to integer in x0
+	// fcvtzs x0, d0
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x78, 0x9e})
+
+	// Save function pointer to stack (x0 might get clobbered during arg evaluation)
+	acg.out.SubImm64("sp", "sp", 16)
+	if err := acg.out.StrImm64("x0", "sp", 0); err != nil {
+		return err
+	}
+
+	// Evaluate all arguments and save to stack
+	for _, arg := range call.Args {
+		if err := acg.compileExpression(arg); err != nil {
+			return err
+		}
+		// Result in d0, save to stack
+		acg.out.SubImm64("sp", "sp", 8)
+		// str d0, [sp]
+		acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x00, 0xfd})
+	}
+
+	// Load arguments from stack into d0-d7 registers (in reverse order)
+	// ARM64 AAPCS64 passes float args in d0-d7
+	if len(call.Args) > 8 {
+		return fmt.Errorf("too many arguments to direct call (max 8)")
+	}
+
+	for i := len(call.Args) - 1; i >= 0; i-- {
+		// ldr dN, [sp]
+		regNum := uint32(i)
+		instr := uint32(0xfd400000) | (regNum) | (31 << 5) // ldr dN, [sp, #0]
+		acg.out.out.writer.WriteBytes([]byte{
+			byte(instr),
+			byte(instr >> 8),
+			byte(instr >> 16),
+			byte(instr >> 24),
+		})
+		acg.out.AddImm64("sp", "sp", 8)
+	}
+
+	// Load function pointer from stack to x16 (temporary register)
+	if err := acg.out.LdrImm64("x16", "sp", 0); err != nil {
+		return err
+	}
+	if err := acg.out.AddImm64("sp", "sp", 16); err != nil {
+		return err
+	}
+
+	// Call the function pointer in x16: blr x16
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x02, 0x3f, 0xd6})
+
+	// Result is in d0
+	return nil
+}
+
+// generateLambdaFunctions generates code for all lambda functions
+func (acg *ARM64CodeGen) generateLambdaFunctions() error {
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: generating %d lambdas\n", len(acg.lambdaFuncs))
+	}
+
+	for _, lambda := range acg.lambdaFuncs {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: generating lambda '%s'\n", lambda.Name)
+		}
+
+		// Mark the start of the lambda function with a label
+		acg.eb.MarkLabel(lambda.Name)
+
+		// Function prologue - ARM64 ABI
+		// Save frame pointer and link register
+		if err := acg.out.SubImm64("sp", "sp", 32); err != nil {
+			return err
+		}
+		if err := acg.out.StrImm64("x29", "sp", 0); err != nil {
+			return err
+		}
+		if err := acg.out.StrImm64("x30", "sp", 8); err != nil {
+			return err
+		}
+		// Set frame pointer
+		if err := acg.out.AddImm64("x29", "sp", 0); err != nil {
+			return err
+		}
+
+		// Save previous state
+		oldStackVars := acg.stackVars
+		oldStackSize := acg.stackSize
+		oldCurrentLambda := acg.currentLambda
+
+		// Create new scope for lambda
+		acg.stackVars = make(map[string]int)
+		acg.stackSize = 0
+		acg.currentLambda = &lambda
+
+		// Store parameters from d0-d7 registers to stack
+		// Parameters come in d0, d1, d2, d3, d4, d5, d6, d7 (AAPCS64)
+		for i, paramName := range lambda.Params {
+			if i >= 8 {
+				return fmt.Errorf("lambda has too many parameters (max 8)")
+			}
+
+			// Allocate stack space for parameter (8 bytes for float64)
+			acg.stackSize += 8
+			paramOffset := acg.stackSize
+			acg.stackVars[paramName] = paramOffset
+
+			// Store parameter from d register to stack
+			// str dN, [x29, #-paramOffset]
+			regName := fmt.Sprintf("d%d", i)
+			if err := acg.out.StrImm64Double(regName, "x29", int32(-paramOffset)); err != nil {
+				return err
+			}
+		}
+
+		// Compile lambda body (result in d0)
+		if err := acg.compileExpression(lambda.Body); err != nil {
+			return err
+		}
+
+		// Clear lambda context
+		acg.currentLambda = nil
+
+		// Function epilogue - ARM64 ABI
+		// Restore registers and return
+		if err := acg.out.LdrImm64("x30", "sp", 8); err != nil {
+			return err
+		}
+		if err := acg.out.LdrImm64("x29", "sp", 0); err != nil {
+			return err
+		}
+		if err := acg.out.AddImm64("sp", "sp", 32); err != nil {
+			return err
+		}
+		if err := acg.out.Return("x30"); err != nil {
+			return err
+		}
+
+		// Restore previous state
+		acg.stackVars = oldStackVars
+		acg.stackSize = oldStackSize
+		acg.currentLambda = oldCurrentLambda
+	}
 
 	return nil
 }
