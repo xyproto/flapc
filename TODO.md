@@ -5,7 +5,7 @@
 **Version**: 1.1.0-dev (ARM64/Mach-O in progress)
 **Platform**: x86-64 Linux/macOS (complete), ARM64 macOS (partial)
 **x86-64 Tests**: 178/178 (100%) ✓
-**ARM64 Tests**: ~25/178 (core features + control flow + loops)
+**ARM64 Tests**: ~45/178 (core features + control flow + loops + InExpr)
 **Production Ready**: x86-64 only
 
 ---
@@ -44,8 +44,8 @@
 ### 🚧 In Progress (ARM64 Backend)
 
 **Additional Expression Types:**
-- [ ] **SliceExpr**: List/string slicing `list[start:end:step]`
-- [ ] **InExpr**: Membership testing `x in list`
+- [ ] **SliceExpr**: List/string slicing `list[start:end:step]` (requires runtime functions)
+- [x] **InExpr**: Membership testing `x in list` ✓
 - [ ] **UnaryExpr**: Head (^) and Tail (&) operators
 
 **Loop Enhancements:**
@@ -214,7 +214,7 @@ The 1.0.0 release is feature-complete and production-ready for x86-64 Linux/macO
 ## Test Status Summary
 
 **x86-64**: 178/178 tests (100%) ✓
-**ARM64**: ~40/178 tests (22.5% - core features + lambdas + essential ops)
+**ARM64**: ~45/178 tests (25% - core features + lambdas + essential ops + InExpr)
 
 **ARM64 Test Coverage**:
 - ✓ Number expressions (integers, floats)
@@ -234,7 +234,7 @@ The 1.0.0 release is feature-complete and production-ready for x86-64 Linux/macO
 - ✓ LengthExpr (#list, #map)
 - ⚠ Break/continue - NOT YET IMPLEMENTED
 - ✗ SliceExpr - NOT YET IMPLEMENTED
-- ✗ InExpr - NOT YET IMPLEMENTED
+- ✓ InExpr (x in list)
 - ✗ Most advanced features - NOT YET IMPLEMENTED
 
 ---
