@@ -1372,6 +1372,14 @@ func (p *Parser) parseAssignment() *AssignStmt {
 		value = p.parseExpression()
 	}
 
+	// Check for match block after expression
+	if p.peek.Type == TOKEN_LBRACE {
+		p.nextToken() // move to expression
+		p.nextToken() // skip '{'
+		p.skipNewlines()
+		value = p.parseMatchBlock(value)
+	}
+
 	// Check for multiple lambda dispatch: f = (x) -> x, (y) -> y + 1
 	if lambda, ok := value.(*LambdaExpr); ok && p.peek.Type == TOKEN_COMMA {
 		lambdas := []*LambdaExpr{lambda}
@@ -1860,7 +1868,21 @@ func (p *Parser) parseLambdaBody() Expression {
 			if stmt != nil {
 				statements = append(statements, stmt)
 			}
-			p.skipNewlines()
+
+			// Need to advance to the next statement
+			// Skip newlines and semicolons between statements
+			if p.peek.Type == TOKEN_NEWLINE || p.peek.Type == TOKEN_SEMICOLON {
+				p.nextToken() // move to separator
+				p.skipNewlines()
+			} else if p.peek.Type == TOKEN_RBRACE || p.peek.Type == TOKEN_EOF {
+				// At end of block
+				p.nextToken() // move to '}'
+				break
+			} else {
+				// No separator found - might be at end
+				p.nextToken()
+				p.skipNewlines()
+			}
 		}
 
 		if p.current.Type != TOKEN_RBRACE {
@@ -4693,6 +4715,14 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		// Length is now in xmm0 as float64
 
 	case *BlockExpr:
+		// First, collect symbols from all statements in the block
+		for _, stmt := range e.Statements {
+			if err := fc.collectSymbols(stmt); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v at line 0\n", err)
+				os.Exit(1)
+			}
+		}
+
 		// Compile each statement in the block
 		// The last statement should leave its value in xmm0
 		for i, stmt := range e.Statements {
@@ -4704,7 +4734,10 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				// If it's an expression statement, compileStatement already put it there
 				// If it's an assignment, we need to load the assigned value
 				if assignStmt, ok := stmt.(*AssignStmt); ok {
-					fc.compileExpression(assignStmt.Value)
+					fc.compileExpression(&IdentExpr{Name: assignStmt.Name})
+				} else if exprStmt, ok := stmt.(*ExpressionStmt); ok {
+					// Expression statement - result should already be in xmm0
+					fc.compileExpression(exprStmt.Expr)
 				}
 			}
 		}
