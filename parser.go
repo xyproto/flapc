@@ -1294,7 +1294,7 @@ func (p *Parser) parseStatement() Statement {
 	return nil
 }
 
-// tryParseNonParenLambda attempts to parse a lambda without parentheses: x -> expr or x y -> expr
+// tryParseNonParenLambda attempts to parse a lambda without parentheses: x => expr or x, y => expr
 // Returns nil if current position doesn't look like a lambda
 func (p *Parser) tryParseNonParenLambda() Expression {
 	if p.current.Type != TOKEN_IDENT {
@@ -1310,18 +1310,25 @@ func (p *Parser) tryParseNonParenLambda() Expression {
 		return &LambdaExpr{Params: []string{firstParam}, Body: body}
 	}
 
-	// Multi param: x y z => or x y z ->
-	// We need to check if peek is identifier and look for => or -> further ahead
-	if p.peek.Type != TOKEN_IDENT {
+	// Multi param: x, y, z => or x, y, z ->
+	// Parameters are comma-separated
+	if p.peek.Type != TOKEN_COMMA {
 		return nil
 	}
 
 	// Collect parameters until we find => or -> or something else
 	params := []string{firstParam}
-	p.nextToken() // move to second param
 
-	for p.current.Type == TOKEN_IDENT {
+	for p.peek.Type == TOKEN_COMMA {
+		p.nextToken() // skip current param
+		p.nextToken() // skip ','
+
+		if p.current.Type != TOKEN_IDENT {
+			p.error("expected parameter name after ','")
+		}
+
 		params = append(params, p.current.Value)
+
 		if p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_ARROW {
 			// Found the arrow! This is a lambda
 			p.nextToken() // skip last param
@@ -1329,16 +1336,10 @@ func (p *Parser) tryParseNonParenLambda() Expression {
 			body := p.parseLambdaBody()
 			return &LambdaExpr{Params: params, Body: body}
 		}
-		if p.peek.Type != TOKEN_IDENT {
-			// We have multiple identifiers but no arrow following
-			// This is ambiguous syntax - error out
-			p.error(fmt.Sprintf("expected '->' after lambda parameters (%s), got %v", strings.Join(params, " "), p.peek.Type))
-		}
-		p.nextToken()
 	}
 
-	// Shouldn't reach here
-	p.error("unexpected end of lambda parameter list")
+	// We have multiple identifiers separated by commas but no arrow following
+	p.error(fmt.Sprintf("expected '=>' or '->' after lambda parameters (%s), got %v", strings.Join(params, ", "), p.peek.Type))
 	return nil
 }
 
@@ -2157,6 +2158,14 @@ func (p *Parser) parsePrimary() Expression {
 
 	case TOKEN_IDENT:
 		name := p.current.Value
+
+		// Check for lambda: x => expr or x, y => expr
+		if p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_ARROW {
+			// Try to parse as non-parenthesized lambda
+			if lambda := p.tryParseNonParenLambda(); lambda != nil {
+				return lambda
+			}
+		}
 
 		// Check for namespaced identifier (namespace.identifier)
 		if p.peek.Type == TOKEN_DOT {
