@@ -5882,6 +5882,8 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PushReg("r12")
 	fc.out.PushReg("r13")
 	fc.out.PushReg("r14")
+	fc.out.PushReg("r15")
+	fc.out.SubImmFromReg("rsp", 8) // Align stack for function calls
 
 	fc.out.MovRegToReg("r12", "rdi") // r12 = input string
 
@@ -5890,9 +5892,10 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.Cvttsd2si("r14", "xmm0") // r14 = count
 
 	// Allocate new string map
-	fc.out.MovRegToReg("rdi", "r14")
-	fc.out.Emit([]byte{0x48, 0xc1, 0xe7, 0x04}) // shl rdi, 4
-	fc.out.Emit([]byte{0x48, 0x83, 0xc7, 0x08}) // add rdi, 8
+	fc.out.MovRegToReg("rax", "r14")
+	fc.out.ShlRegImm("rax", "4") // rax = count * 16
+	fc.out.AddImmToReg("rax", 8)
+	fc.out.MovRegToReg("rdi", "rax")
 	fc.trackFunctionCall("malloc")
 	fc.eb.GenerateCallInstruction("malloc")
 	fc.out.MovRegToReg("r13", "rax") // r13 = output string
@@ -5903,42 +5906,50 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovXmmToMem("xmm0", "r13", 0)
 
 	// Loop through characters
-	fc.out.XorRegWithReg("rbx", "rbx")
+	fc.out.XorRegWithReg("rbx", "rbx") // rbx = loop counter
 	upperLoopStart := fc.eb.text.Len()
-	fc.out.Emit([]byte{0x4c, 0x39, 0xf3})              // cmp rbx, r14
+	fc.out.CmpRegToReg("rbx", "r14")
 	upperLoopEnd := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpGreaterOrEqual, 0)
 
-	// Calculate offset
+	// Calculate offset: rax = 8 + rbx*16
 	fc.out.MovRegToReg("rax", "rbx")
-	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x04})        // shl rax, 4
-	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x08})        // add rax, 8
+	fc.out.ShlRegImm("rax", "4") // rax = rbx * 16
+	fc.out.AddImmToReg("rax", 8)  // rax = 8 + rbx * 16
 
-	// Copy key
-	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x10, 0x04, 0x04})       // movsd xmm0, [r12 + rax]
-	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x11, 0x04, 0x05})       // movsd [r13 + rax], xmm0
+	// Calculate source address: r15 = r12 + rax
+	fc.out.MovRegToReg("r15", "r12")
+	fc.out.AddRegToReg("r15", "rax")
 
-	// Load character value
-	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x10, 0x44, 0x04, 0x08}) // movsd xmm0, [r12 + rax + 8]
-	fc.out.Cvttsd2si("r10", "xmm0")
+	// Calculate dest address: r10 = r13 + rax
+	fc.out.MovRegToReg("r10", "r13")
+	fc.out.AddRegToReg("r10", "rax")
+
+	// Copy key (index)
+	fc.out.MovMemToXmm("xmm0", "r15", 0)
+	fc.out.MovXmmToMem("xmm0", "r10", 0)
+
+	// Load character value and convert
+	fc.out.MovMemToXmm("xmm0", "r15", 8)
+	fc.out.Cvttsd2si("rax", "xmm0")  // Use rax for the character value
 
 	// Convert to uppercase: if (c >= 'a' && c <= 'z') c -= 32
-	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x61})        // cmp r10, 'a'
+	fc.out.CmpRegToImm("rax", int64('a'))
 	notLowerJump := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpLess, 0)
-	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x7a})        // cmp r10, 'z'
+	fc.out.CmpRegToImm("rax", int64('z'))
 	notLowerJump2 := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpGreater, 0)
-	fc.out.Emit([]byte{0x49, 0x83, 0xea, 0x20})        // sub r10, 32
+	fc.out.SubImmFromReg("rax", 32)
 
 	// Store uppercase character
 	notLowerPos := fc.eb.text.Len()
-	fc.out.Cvtsi2sd("xmm0", "r10")
-	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x11, 0x44, 0x05, 0x08}) // movsd [r13 + rax + 8], xmm0
+	fc.out.Cvtsi2sd("xmm0", "rax")
+	fc.out.MovXmmToMem("xmm0", "r10", 8)
 
-	fc.out.Emit([]byte{0x48, 0xff, 0xc3})              // inc rbx
-	jumpBack := int32(upperLoopStart - (fc.eb.text.Len() + 2))
-	fc.out.Emit([]byte{0xeb, byte(jumpBack)})
+	fc.out.IncReg("rbx")
+	jumpBack := int32(upperLoopStart - (fc.eb.text.Len() + 5))
+	fc.out.JumpUnconditional(jumpBack)
 
 	upperDone := fc.eb.text.Len()
 	fc.patchJumpImmediate(upperLoopEnd+2, int32(upperDone-(upperLoopEnd+6)))
@@ -5947,6 +5958,8 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	fc.out.MovRegToReg("rax", "r13")
 	fc.out.Cvtsi2sd("xmm0", "rax")
+	fc.out.AddImmToReg("rsp", 8) // Restore stack alignment
+	fc.out.PopReg("r15")
 	fc.out.PopReg("r14")
 	fc.out.PopReg("r13")
 	fc.out.PopReg("r12")
@@ -5966,6 +5979,8 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PushReg("r12")
 	fc.out.PushReg("r13")
 	fc.out.PushReg("r14")
+	fc.out.PushReg("r15")
+	fc.out.SubImmFromReg("rsp", 8) // Align stack for function calls
 
 	fc.out.MovRegToReg("r12", "rdi") // r12 = input string
 
@@ -5974,9 +5989,10 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.Cvttsd2si("r14", "xmm0") // r14 = count
 
 	// Allocate new string map
-	fc.out.MovRegToReg("rdi", "r14")
-	fc.out.Emit([]byte{0x48, 0xc1, 0xe7, 0x04}) // shl rdi, 4
-	fc.out.Emit([]byte{0x48, 0x83, 0xc7, 0x08}) // add rdi, 8
+	fc.out.MovRegToReg("rax", "r14")
+	fc.out.ShlRegImm("rax", "4") // rax = count * 16
+	fc.out.AddImmToReg("rax", 8)
+	fc.out.MovRegToReg("rdi", "rax")
 	fc.trackFunctionCall("malloc")
 	fc.eb.GenerateCallInstruction("malloc")
 	fc.out.MovRegToReg("r13", "rax") // r13 = output string
@@ -5987,42 +6003,50 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovXmmToMem("xmm0", "r13", 0)
 
 	// Loop through characters
-	fc.out.XorRegWithReg("rbx", "rbx")
+	fc.out.XorRegWithReg("rbx", "rbx") // rbx = loop counter
 	lowerLoopStart := fc.eb.text.Len()
-	fc.out.Emit([]byte{0x4c, 0x39, 0xf3})              // cmp rbx, r14
+	fc.out.CmpRegToReg("rbx", "r14")
 	lowerLoopEnd := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpGreaterOrEqual, 0)
 
-	// Calculate offset
+	// Calculate offset: rax = 8 + rbx*16
 	fc.out.MovRegToReg("rax", "rbx")
-	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x04})        // shl rax, 4
-	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x08})        // add rax, 8
+	fc.out.ShlRegImm("rax", "4") // rax = rbx * 16
+	fc.out.AddImmToReg("rax", 8)  // rax = 8 + rbx * 16
 
-	// Copy key
-	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x10, 0x04, 0x04})       // movsd xmm0, [r12 + rax]
-	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x11, 0x04, 0x05})       // movsd [r13 + rax], xmm0
+	// Calculate source address: r15 = r12 + rax
+	fc.out.MovRegToReg("r15", "r12")
+	fc.out.AddRegToReg("r15", "rax")
 
-	// Load character value
-	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x10, 0x44, 0x04, 0x08}) // movsd xmm0, [r12 + rax + 8]
-	fc.out.Cvttsd2si("r10", "xmm0")
+	// Calculate dest address: r10 = r13 + rax
+	fc.out.MovRegToReg("r10", "r13")
+	fc.out.AddRegToReg("r10", "rax")
+
+	// Copy key (index)
+	fc.out.MovMemToXmm("xmm0", "r15", 0)
+	fc.out.MovXmmToMem("xmm0", "r10", 0)
+
+	// Load character value and convert
+	fc.out.MovMemToXmm("xmm0", "r15", 8)
+	fc.out.Cvttsd2si("rax", "xmm0")  // Use rax for the character value
 
 	// Convert to lowercase: if (c >= 'A' && c <= 'Z') c += 32
-	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x41})        // cmp r10, 'A'
+	fc.out.CmpRegToImm("rax", int64('A'))
 	notUpperJump := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpLess, 0)
-	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x5a})        // cmp r10, 'Z'
+	fc.out.CmpRegToImm("rax", int64('Z'))
 	notUpperJump2 := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpGreater, 0)
-	fc.out.Emit([]byte{0x49, 0x83, 0xc2, 0x20})        // add r10, 32
+	fc.out.AddImmToReg("rax", 32)
 
 	// Store lowercase character
 	notUpperPos := fc.eb.text.Len()
-	fc.out.Cvtsi2sd("xmm0", "r10")
-	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x11, 0x44, 0x05, 0x08}) // movsd [r13 + rax + 8], xmm0
+	fc.out.Cvtsi2sd("xmm0", "rax")
+	fc.out.MovXmmToMem("xmm0", "r10", 8)
 
-	fc.out.Emit([]byte{0x48, 0xff, 0xc3})              // inc rbx
-	jumpBack = int32(lowerLoopStart - (fc.eb.text.Len() + 2))
-	fc.out.Emit([]byte{0xeb, byte(jumpBack)})
+	fc.out.IncReg("rbx")
+	jumpBack = int32(lowerLoopStart - (fc.eb.text.Len() + 5))
+	fc.out.JumpUnconditional(jumpBack)
 
 	lowerDone := fc.eb.text.Len()
 	fc.patchJumpImmediate(lowerLoopEnd+2, int32(lowerDone-(lowerLoopEnd+6)))
@@ -6031,6 +6055,8 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	fc.out.MovRegToReg("rax", "r13")
 	fc.out.Cvtsi2sd("xmm0", "rax")
+	fc.out.AddImmToReg("rsp", 8) // Restore stack alignment
+	fc.out.PopReg("r15")
 	fc.out.PopReg("r14")
 	fc.out.PopReg("r13")
 	fc.out.PopReg("r12")
