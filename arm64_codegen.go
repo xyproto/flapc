@@ -175,12 +175,17 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 			return err
 		}
 
-		// Load string address into x1
-		// TODO: Implement PC-relative load for rodata symbols
-		// For now, use placeholder
-		if err := acg.out.MovImm64("x1", 0); err != nil {
-			return err
-		}
+		// Load string address into x1 using PC-relative addressing
+		// ADRP x1, symbol@PAGE
+		// ADD x1, x1, symbol@PAGEOFF
+		offset := uint64(acg.eb.text.Len())
+		acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
+			offset:     offset,
+			symbolName: label,
+		})
+		// Emit placeholder ADRP + ADD instructions (will be patched later)
+		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0x90}) // ADRP x1, #0
+		acg.out.out.writer.WriteBytes([]byte{0x21, 0x00, 0x00, 0x91}) // ADD x1, x1, #0
 
 		// mov x2, length
 		if err := acg.out.MovImm64("x2", uint64(len(content)-1)); err != nil {

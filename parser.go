@@ -9589,8 +9589,38 @@ func (fc *FlapCompiler) compileRiscv64(program *Program, outputPath string) erro
 
 // writeMachOARM64 writes an ARM64 Mach-O executable for macOS
 func (fc *FlapCompiler) writeMachOARM64(outputPath string) error {
-	textBytes := fc.eb.text.Bytes()
-	rodataBytes := fc.eb.rodata.Bytes()
+	// First, write all rodata symbols to the rodata buffer and assign addresses
+	pageSize := uint64(0x4000) // 16KB page size for ARM64
+	textSize := uint64(fc.eb.text.Len())
+	textSizeAligned := (textSize + pageSize - 1) &^ (pageSize - 1)
+
+	// Calculate rodata address (comes after __TEXT segment)
+	rodataAddr := pageSize + textSizeAligned
+
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr, "-> Writing rodata symbols")
+	}
+
+	// Get all rodata symbols and write them
+	rodataSymbols := fc.eb.RodataSection()
+	currentAddr := rodataAddr
+	for symbol, value := range rodataSymbols {
+		fc.eb.WriteRodata([]byte(value))
+		fc.eb.DefineAddr(symbol, currentAddr)
+		currentAddr += uint64(len(value))
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "   %s at 0x%x (%d bytes)\n", symbol, fc.eb.consts[symbol].addr, len(value))
+		}
+	}
+
+	rodataSize := fc.eb.rodata.Len()
+
+	// Now patch PC-relative relocations in the text
+	if VerboseMode && len(fc.eb.pcRelocations) > 0 {
+		fmt.Fprintf(os.Stderr, "-> Patching %d PC-relative relocations\n", len(fc.eb.pcRelocations))
+	}
+	textAddr := pageSize
+	fc.eb.PatchPCRelocations(textAddr, rodataAddr, rodataSize)
 
 	// Use the existing Mach-O writer infrastructure
 	if err := fc.eb.WriteMachO(); err != nil {
@@ -9605,12 +9635,8 @@ func (fc *FlapCompiler) writeMachOARM64(outputPath string) error {
 
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "-> Wrote ARM64 Mach-O executable: %s\n", outputPath)
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "   Text size: %d bytes\n", len(textBytes))
-		}
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "   Rodata size: %d bytes\n", len(rodataBytes))
-		}
+		fmt.Fprintf(os.Stderr, "   Text size: %d bytes\n", fc.eb.text.Len())
+		fmt.Fprintf(os.Stderr, "   Rodata size: %d bytes\n", rodataSize)
 	}
 
 	return nil
