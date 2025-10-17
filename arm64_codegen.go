@@ -534,6 +534,107 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 		// Convert pointer to float64
 		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e}) // scvtf d0, x0
 
+	case *InExpr:
+		// Compile value to search for (result in d0)
+		if err := acg.compileExpression(e.Value); err != nil {
+			return err
+		}
+
+		// Save search value to stack
+		acg.out.SubImm64("sp", "sp", 16)
+		acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x00, 0xfd}) // str d0, [sp]
+
+		// Compile container expression (result in d0 as float64 pointer)
+		if err := acg.compileExpression(e.Container); err != nil {
+			return err
+		}
+
+		// Save container pointer
+		acg.out.out.writer.WriteBytes([]byte{0xe0, 0x07, 0x00, 0xfd}) // str d0, [sp, #8]
+
+		// Convert container pointer from float64 to integer in x0
+		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x78, 0x9e}) // fcvtzs x0, d0
+
+		// Load count from container (first 8 bytes)
+		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x40, 0xfd}) // ldr d1, [x0]
+
+		// Convert count to integer in x1
+		acg.out.out.writer.WriteBytes([]byte{0x21, 0x00, 0x78, 0x9e}) // fcvtzs x1, d1
+
+		// x0 = container pointer, x1 = count
+		// x2 = loop index (start at 0)
+		if err := acg.out.MovImm64("x2", 0); err != nil {
+			return err
+		}
+
+		// Load search value into d2
+		acg.out.out.writer.WriteBytes([]byte{0xe2, 0x03, 0x40, 0xfd}) // ldr d2, [sp]
+
+		// Loop start
+		loopStartPos := acg.eb.text.Len()
+
+		// Compare index with count: cmp x2, x1
+		acg.out.out.writer.WriteBytes([]byte{0x5f, 0x00, 0x01, 0xeb}) // cmp x2, x1
+
+		// If index >= count, jump to not_found
+		notFoundJumpPos := acg.eb.text.Len()
+		acg.out.BranchCond("ge", 0) // Placeholder
+
+		// Calculate element address: x0 + 8 + (x2 * 8)
+		// x3 = x2 * 8
+		acg.out.out.writer.WriteBytes([]byte{0x43, 0x1c, 0x00, 0xd3}) // lsl x3, x2, #3
+		// x3 = x0 + x3
+		acg.out.out.writer.WriteBytes([]byte{0x03, 0x00, 0x00, 0x8b}) // add x3, x0, x3
+		// x3 = x3 + 8 (skip count)
+		if err := acg.out.AddImm64("x3", "x3", 8); err != nil {
+			return err
+		}
+
+		// Load element into d3
+		acg.out.out.writer.WriteBytes([]byte{0x63, 0x00, 0x40, 0xfd}) // ldr d3, [x3]
+
+		// Compare element with search value: fcmp d2, d3
+		acg.out.out.writer.WriteBytes([]byte{0x40, 0x20, 0x63, 0x1e})
+
+		// If equal, jump to found
+		foundJumpPos := acg.eb.text.Len()
+		acg.out.BranchCond("eq", 0) // Placeholder
+
+		// Increment index: x2++
+		if err := acg.out.AddImm64("x2", "x2", 1); err != nil {
+			return err
+		}
+
+		// Jump back to loop start
+		loopBackOffset := int32(loopStartPos - (acg.eb.text.Len() + 4))
+		acg.out.Branch(loopBackOffset)
+
+		// Not found: return 0.0
+		notFoundPos := acg.eb.text.Len()
+		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x60, 0x1e}) // fmov d0, #0.0
+
+		// Jump to end
+		endJumpPos := acg.eb.text.Len()
+		acg.out.Branch(0) // Placeholder
+
+		// Found: return 1.0
+		foundPos := acg.eb.text.Len()
+		if err := acg.out.MovImm64("x0", 1); err != nil {
+			return err
+		}
+		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e}) // scvtf d0, x0
+
+		// End
+		endPos := acg.eb.text.Len()
+
+		// Clean up stack
+		acg.out.AddImm64("sp", "sp", 16)
+
+		// Patch jumps
+		acg.patchJumpOffset(notFoundJumpPos, int32(notFoundPos-notFoundJumpPos))
+		acg.patchJumpOffset(foundJumpPos, int32(foundPos-foundJumpPos))
+		acg.patchJumpOffset(endJumpPos, int32(endPos-endJumpPos))
+
 	default:
 		return fmt.Errorf("unsupported expression type for ARM64: %T", expr)
 	}
