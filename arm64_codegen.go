@@ -15,6 +15,21 @@ type ARM64CodeGen struct {
 	stackSize     int            // current stack size
 	stringCounter int            // counter for string labels
 	labelCounter  int            // counter for jump labels
+	activeLoops   []ARM64LoopInfo // stack of active loops for break/continue
+}
+
+// ARM64LoopInfo tracks information about an active loop
+type ARM64LoopInfo struct {
+	Label            int   // Loop label (@1, @2, @3, etc.)
+	StartPos         int   // Code position of loop start (condition check)
+	ContinuePos      int   // Code position for continue (increment step)
+	EndPatches       []int // Positions that need to be patched to jump to loop end
+	ContinuePatches  []int // Positions that need to be patched to jump to continue position
+	IteratorOffset   int   // Stack offset for iterator variable
+	IndexOffset      int   // Stack offset for index counter (list loops only)
+	UpperBoundOffset int   // Stack offset for limit (range) or length (list)
+	ListPtrOffset    int   // Stack offset for list pointer (list loops only)
+	IsRangeLoop      bool  // True for range loops, false for list loops
 }
 
 // NewARM64CodeGen creates a new ARM64 code generator
@@ -82,6 +97,8 @@ func (acg *ARM64CodeGen) compileStatement(stmt Statement) error {
 		return acg.compileExpression(s.Expr)
 	case *AssignStmt:
 		return acg.compileAssignment(s)
+	case *LoopStmt:
+		return acg.compileLoopStatement(s)
 	default:
 		return fmt.Errorf("unsupported statement type for ARM64: %T", stmt)
 	}
@@ -364,6 +381,9 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 	case *CallExpr:
 		return acg.compileCall(e)
 
+	case *MatchExpr:
+		return acg.compileMatchExpr(e)
+
 	default:
 		return fmt.Errorf("unsupported expression type for ARM64: %T", expr)
 	}
@@ -384,6 +404,142 @@ func (acg *ARM64CodeGen) compileAssignment(assign *AssignStmt) error {
 
 	// Store result on stack: str d0, [x29, #-offset]
 	return acg.out.StrImm64Double("d0", "x29", int32(-acg.stackSize))
+}
+
+// compileMatchExpr compiles a match expression (if/else equivalent)
+func (acg *ARM64CodeGen) compileMatchExpr(expr *MatchExpr) error {
+	// Compile the condition expression (result in d0)
+	if err := acg.compileExpression(expr.Condition); err != nil {
+		return err
+	}
+
+	// Determine the jump condition based on the condition type
+	var jumpCond string
+	needsZeroCompare := false
+
+	// Check if condition is a comparison (we can use the flags directly)
+	if binExpr, ok := expr.Condition.(*BinaryExpr); ok {
+		switch binExpr.Operator {
+		case "<":
+			jumpCond = "ge" // Jump if NOT less than (>=)
+		case "<=":
+			jumpCond = "gt" // Jump if NOT less or equal (>)
+		case ">":
+			jumpCond = "le" // Jump if NOT greater than (<=)
+		case ">=":
+			jumpCond = "lt" // Jump if NOT greater or equal (<)
+		case "==":
+			jumpCond = "ne" // Jump if NOT equal (!=)
+		case "!=":
+			jumpCond = "eq" // Jump if NOT not-equal (==)
+		default:
+			needsZeroCompare = true
+		}
+	} else {
+		needsZeroCompare = true
+	}
+
+	// If not a direct comparison, compare d0 with 0.0
+	if needsZeroCompare {
+		// fmov d1, #0.0
+		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x60, 0x1e}) // fmov d1, #0.0
+		// fcmp d0, d1
+		acg.out.out.writer.WriteBytes([]byte{0x00, 0x20, 0x61, 0x1e})
+		jumpCond = "eq" // Jump to default if condition is false (== 0.0)
+	}
+
+	// Save position for default jump (will be patched later)
+	defaultJumpPos := acg.eb.text.Len()
+	// Emit placeholder conditional branch to default
+	acg.out.BranchCond(jumpCond, 0) // 4 bytes
+
+	// Track positions for end jumps
+	var endJumpPositions []int
+
+	// Compile match clauses (only support simple -> result for now)
+	if len(expr.Clauses) > 0 {
+		for _, clause := range expr.Clauses {
+			// For now, skip guard support (simplified implementation)
+			if clause.Guard != nil {
+				return fmt.Errorf("match guards not yet supported for ARM64")
+			}
+
+			// Compile the result expression
+			if clause.Result != nil {
+				if err := acg.compileExpression(clause.Result); err != nil {
+					return err
+				}
+			}
+
+			// Jump to end after executing this clause
+			endJumpPos := acg.eb.text.Len()
+			acg.out.Branch(0) // Unconditional branch to end (4 bytes)
+			endJumpPositions = append(endJumpPositions, endJumpPos)
+		}
+	}
+
+	// Default clause position
+	defaultPos := acg.eb.text.Len()
+
+	// Compile default expression if present
+	if expr.DefaultExpr != nil {
+		if err := acg.compileExpression(expr.DefaultExpr); err != nil {
+			return err
+		}
+	} else if len(expr.Clauses) == 0 {
+		// No clauses and no default - preserve condition value
+		// d0 already has the condition value
+	} else {
+		// Default is 0.0
+		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x60, 0x1e}) // fmov d0, #0.0
+	}
+
+	// End position
+	endPos := acg.eb.text.Len()
+
+	// Patch default jump
+	defaultOffset := int32(defaultPos - defaultJumpPos)
+	acg.patchJumpOffset(defaultJumpPos, defaultOffset)
+
+	// Patch all end jumps
+	for _, jumpPos := range endJumpPositions {
+		offset := int32(endPos - jumpPos)
+		acg.patchJumpOffset(jumpPos, offset)
+	}
+
+	return nil
+}
+
+// patchJumpOffset patches a branch instruction's offset
+func (acg *ARM64CodeGen) patchJumpOffset(pos int, offset int32) {
+	// ARM64 branch offsets are in words (4 bytes), not bytes
+	if offset%4 != 0 {
+		// Offset not aligned - this shouldn't happen but handle gracefully
+		offset = (offset >> 2) << 2
+	}
+
+	imm := offset >> 2 // Convert to word offset
+
+	textBytes := acg.eb.text.Bytes()
+
+	// Read existing instruction
+	instr := uint32(textBytes[pos]) | (uint32(textBytes[pos+1]) << 8) |
+		(uint32(textBytes[pos+2]) << 16) | (uint32(textBytes[pos+3]) << 24)
+
+	// Check if it's a conditional branch (B.cond) or unconditional branch (B)
+	if (instr & 0xff000010) == 0x54000000 {
+		// Conditional branch: B.cond - imm19 at bits [23:5]
+		instr = (instr & 0xff00001f) | ((uint32(imm) & 0x7ffff) << 5)
+	} else if (instr & 0xfc000000) == 0x14000000 {
+		// Unconditional branch: B - imm26 at bits [25:0]
+		instr = (instr & 0xfc000000) | (uint32(imm) & 0x3ffffff)
+	}
+
+	// Write back patched instruction
+	textBytes[pos] = byte(instr)
+	textBytes[pos+1] = byte(instr >> 8)
+	textBytes[pos+2] = byte(instr >> 16)
+	textBytes[pos+3] = byte(instr >> 24)
 }
 
 // compileCall compiles a function call
@@ -575,6 +731,161 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 	}
 
 	return nil
+}
+
+// compileLoopStatement compiles a loop statement
+func (acg *ARM64CodeGen) compileLoopStatement(stmt *LoopStmt) error {
+	// Check if iterating over range() or a list
+	funcCall, isRangeCall := stmt.Iterable.(*CallExpr)
+	if isRangeCall && funcCall.Function == "range" && len(funcCall.Args) == 1 {
+		// Range loop
+		return acg.compileRangeLoop(stmt, funcCall)
+	} else {
+		// List iteration
+		return acg.compileListLoop(stmt)
+	}
+}
+
+// compileRangeLoop compiles a range-based loop (@+ i in range(10) { ... })
+func (acg *ARM64CodeGen) compileRangeLoop(stmt *LoopStmt, funcCall *CallExpr) error {
+	// Increment label counter for uniqueness
+	acg.labelCounter++
+
+	// Evaluate the loop limit (argument to range())
+	if err := acg.compileExpression(funcCall.Args[0]); err != nil {
+		return err
+	}
+
+	// Convert d0 (float64) to integer in x0: fcvtzs x0, d0
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x78, 0x9e})
+
+	// Allocate stack space for loop limit
+	acg.stackSize += 8
+	limitOffset := acg.stackSize
+	// Store limit: str x0, [x29, #-limitOffset]
+	if err := acg.out.StrImm64("x0", "x29", int32(-limitOffset)); err != nil {
+		return err
+	}
+
+	// Allocate stack space for iterator variable
+	acg.stackSize += 8
+	iterOffset := acg.stackSize
+	acg.stackVars[stmt.Iterator] = iterOffset
+
+	// Initialize iterator to 0.0
+	// mov x0, #0
+	if err := acg.out.MovImm64("x0", 0); err != nil {
+		return err
+	}
+	// scvtf d0, x0 (convert to float64)
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
+	// Store iterator: str d0, [x29, #-iterOffset]
+	if err := acg.out.StrImm64Double("d0", "x29", int32(-iterOffset)); err != nil {
+		return err
+	}
+
+	// Loop start label
+	loopStartPos := acg.eb.text.Len()
+
+	// Register this loop on the active loop stack
+	loopLabel := len(acg.activeLoops) + 1
+	loopInfo := ARM64LoopInfo{
+		Label:            loopLabel,
+		StartPos:         loopStartPos,
+		EndPatches:       []int{},
+		ContinuePatches:  []int{},
+		IteratorOffset:   iterOffset,
+		UpperBoundOffset: limitOffset,
+		IsRangeLoop:      true,
+	}
+	acg.activeLoops = append(acg.activeLoops, loopInfo)
+
+	// Load iterator value as float: ldr d0, [x29, #-iterOffset]
+	if err := acg.out.LdrImm64Double("d0", "x29", int32(-iterOffset)); err != nil {
+		return err
+	}
+
+	// Convert iterator to integer for comparison: fcvtzs x0, d0
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x78, 0x9e})
+
+	// Load limit value: ldr x1, [x29, #-limitOffset]
+	if err := acg.out.LdrImm64("x1", "x29", int32(-limitOffset)); err != nil {
+		return err
+	}
+
+	// Compare iterator with limit: cmp x0, x1
+	acg.out.out.writer.WriteBytes([]byte{0x1f, 0x00, 0x01, 0xeb}) // cmp x0, x1
+
+	// Jump to loop end if iterator >= limit
+	loopEndJumpPos := acg.eb.text.Len()
+	acg.out.BranchCond("ge", 0) // Placeholder
+
+	// Add this to the loop's end patches
+	acg.activeLoops[len(acg.activeLoops)-1].EndPatches = append(
+		acg.activeLoops[len(acg.activeLoops)-1].EndPatches,
+		loopEndJumpPos,
+	)
+
+	// Compile loop body
+	for _, s := range stmt.Body {
+		if err := acg.compileStatement(s); err != nil {
+			return err
+		}
+	}
+
+	// Mark continue position (increment step)
+	continuePos := acg.eb.text.Len()
+	acg.activeLoops[len(acg.activeLoops)-1].ContinuePos = continuePos
+
+	// Patch all continue jumps to point here
+	for _, patchPos := range acg.activeLoops[len(acg.activeLoops)-1].ContinuePatches {
+		offset := int32(continuePos - patchPos)
+		acg.patchJumpOffset(patchPos, offset)
+	}
+
+	// Increment iterator (add 1.0 to float64 value)
+	// ldr d0, [x29, #-iterOffset]
+	if err := acg.out.LdrImm64Double("d0", "x29", int32(-iterOffset)); err != nil {
+		return err
+	}
+	// Load 1.0 into d1
+	// mov x0, #1
+	if err := acg.out.MovImm64("x0", 1); err != nil {
+		return err
+	}
+	// scvtf d1, x0
+	acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x62, 0x9e})
+	// fadd d0, d0, d1
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x28, 0x61, 0x1e})
+	// Store incremented value: str d0, [x29, #-iterOffset]
+	if err := acg.out.StrImm64Double("d0", "x29", int32(-iterOffset)); err != nil {
+		return err
+	}
+
+	// Jump back to loop start
+	loopBackJumpPos := acg.eb.text.Len()
+	backOffset := int32(loopStartPos - loopBackJumpPos)
+	acg.out.Branch(backOffset)
+
+	// Loop end label
+	loopEndPos := acg.eb.text.Len()
+
+	// Patch all end jumps
+	for _, patchPos := range acg.activeLoops[len(acg.activeLoops)-1].EndPatches {
+		endOffset := int32(loopEndPos - patchPos)
+		acg.patchJumpOffset(patchPos, endOffset)
+	}
+
+	// Pop loop from active stack
+	acg.activeLoops = acg.activeLoops[:len(acg.activeLoops)-1]
+
+	return nil
+}
+
+// compileListLoop compiles a list iteration loop (@+ elem in [1,2,3] { ... })
+func (acg *ARM64CodeGen) compileListLoop(stmt *LoopStmt) error {
+	// TODO: Implement list loop support
+	return fmt.Errorf("list loops not yet implemented for ARM64")
 }
 
 // compileExit compiles an exit call

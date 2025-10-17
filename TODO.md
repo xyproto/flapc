@@ -5,7 +5,7 @@
 **Version**: 1.1.0-dev (ARM64/Mach-O in progress)
 **Platform**: x86-64 Linux/macOS (complete), ARM64 macOS (partial)
 **x86-64 Tests**: 178/178 (100%) ✓
-**ARM64 Tests**: ~10/178 (core features only)
+**ARM64 Tests**: ~15/178 (core features + control flow)
 **Production Ready**: x86-64 only
 
 ---
@@ -44,11 +44,11 @@
 ### 🚧 In Progress (ARM64 Backend)
 
 **Control Flow (HIGH PRIORITY):**
-- [ ] **Match expressions/blocks**: Conditional execution (if/else equivalent)
-  - Implement condition evaluation
-  - Implement conditional branches (B.EQ, B.NE, etc.)
-  - Support `->` (then) and `~>` (else) arms
-  - Handle nested match blocks
+- [x] **Match expressions/blocks**: Conditional execution (if/else equivalent)
+  - ✅ Implement condition evaluation
+  - ✅ Implement conditional branches (B.EQ, B.NE, etc.)
+  - ✅ Support `->` (then) and `~>` (else) arms
+  - [ ] Handle nested match blocks (basic match expressions work)
 
 **Loops (HIGH PRIORITY):**
 - [ ] **LoopStmt**: Basic loop support
@@ -256,7 +256,7 @@ The 1.0.0 release is feature-complete and production-ready for x86-64 Linux/macO
 - ✓ List literals and indexing
 - ✓ Variable assignment and references
 - ✓ println(), print(), exit()
-- ✗ Control flow (match blocks) - NOT YET IMPLEMENTED
+- ✓ Control flow (match blocks with -> and ~>)
 - ✗ Loops - NOT YET IMPLEMENTED
 - ✗ Functions - NOT YET IMPLEMENTED
 - ✗ Most advanced features - NOT YET IMPLEMENTED
@@ -275,7 +275,8 @@ The 1.0.0 release is feature-complete and production-ready for x86-64 Linux/macO
 
 ## Notes
 
-- **Current Focus**: ARM64 control flow and loops (blocking most test programs)
+- **Current Focus**: ARM64 loops and user-defined functions (blocking most test programs)
 - **Next Milestone**: 50+ ARM64 tests passing (basic programs work)
+- **Recent Progress**: Match expressions fully working! Control flow (if/else) now supported.
 - **macOS Blocker**: Dynamic linking required for execution (raw syscalls blocked)
 - **Code Quality**: Use otool, lldb, and comparison with clang for ARM64 debugging

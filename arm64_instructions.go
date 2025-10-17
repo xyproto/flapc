@@ -172,9 +172,25 @@ func (a *ARM64Out) StrImm64(src, base string, offset int32) error {
 		return fmt.Errorf("invalid ARM64 register: %s", base)
 	}
 
-	// Check if offset fits in unsigned 12-bit scaled immediate (must be multiple of 8)
-	if offset < 0 || offset%8 != 0 || offset >= (1<<12)*8 {
-		return fmt.Errorf("STR offset out of range or not aligned: %d", offset)
+	if offset%8 != 0 {
+		return fmt.Errorf("STR offset not 8-byte aligned: %d", offset)
+	}
+
+	// For negative offsets, use STUR (unscaled) instead
+	if offset < 0 {
+		if offset < -256 || offset > 255 {
+			return fmt.Errorf("STR offset out of range for STUR: %d", offset)
+		}
+		// STUR (unscaled): size=11, V=0, opc=00
+		imm9 := uint32(offset) & 0x1ff
+		instr := uint32(0xf8000000) | (imm9 << 12) | (rn << 5) | rt
+		a.encodeInstr(instr)
+		return nil
+	}
+
+	// Check if offset fits in unsigned 12-bit scaled immediate
+	if offset >= (1<<12)*8 {
+		return fmt.Errorf("STR offset out of range: %d", offset)
 	}
 
 	imm12 := uint32(offset / 8)
@@ -195,8 +211,24 @@ func (a *ARM64Out) LdrImm64(dest, base string, offset int32) error {
 		return fmt.Errorf("invalid ARM64 register: %s", base)
 	}
 
-	if offset < 0 || offset%8 != 0 || offset >= (1<<12)*8 {
-		return fmt.Errorf("LDR offset out of range or not aligned: %d", offset)
+	if offset%8 != 0 {
+		return fmt.Errorf("LDR offset not 8-byte aligned: %d", offset)
+	}
+
+	// For negative offsets, use LDUR (unscaled) instead
+	if offset < 0 {
+		if offset < -256 || offset > 255 {
+			return fmt.Errorf("LDR offset out of range for LDUR: %d", offset)
+		}
+		// LDUR (unscaled): size=11, V=0, opc=01
+		imm9 := uint32(offset) & 0x1ff
+		instr := uint32(0xf8400000) | (imm9 << 12) | (rn << 5) | rt
+		a.encodeInstr(instr)
+		return nil
+	}
+
+	if offset >= (1<<12)*8 {
+		return fmt.Errorf("LDR offset out of range: %d", offset)
 	}
 
 	imm12 := uint32(offset / 8)
