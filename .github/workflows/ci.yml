@@ -10,7 +10,7 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libc6-dev libm-dev git
+        sudo apt-get install -y libc6-dev git
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
