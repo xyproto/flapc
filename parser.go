@@ -6086,40 +6086,42 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Load character at rbx
 	fc.out.MovRegToReg("rax", "rbx")
-	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x04})        // shl rax, 4
-	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x10})        // add rax, 16 (skip count and key)
-	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x10, 0x04, 0x04})       // movsd xmm0, [r12 + rax]
+	fc.out.ShlRegImm("rax", "4")    // rax = rbx * 16
+	fc.out.AddImmToReg("rax", 8)    // rax = 8 + rbx * 16
+	fc.out.MovRegToReg("r8", "r12")
+	fc.out.AddRegToReg("r8", "rax") // r8 = r12 + offset
+	fc.out.MovMemToXmm("xmm0", "r8", 8)  // Load value
 	fc.out.Cvttsd2si("r10", "xmm0")
 
 	// Check if whitespace (space=32, tab=9, newline=10, cr=13)
-	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x20})        // cmp r10, 32
+	fc.out.CmpRegToImm("r10", 32)
 	notWhitespace1 := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpNotEqual, 0)
-	fc.out.Emit([]byte{0x48, 0xff, 0xc3})              // inc rbx
+	fc.out.IncReg("rbx")
 	jumpStartLoop := int32(trimStartLoop - (fc.eb.text.Len() + 2))
 	fc.out.Emit([]byte{0xeb, byte(jumpStartLoop)})
 
 	notWS1Pos := fc.eb.text.Len()
-	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x09})        // cmp r10, 9
+	fc.out.CmpRegToImm("r10", 9)
 	notWhitespace2 := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpNotEqual, 0)
-	fc.out.Emit([]byte{0x48, 0xff, 0xc3})              // inc rbx
+	fc.out.IncReg("rbx")
 	jumpStartLoop2 := int32(trimStartLoop - (fc.eb.text.Len() + 2))
 	fc.out.Emit([]byte{0xeb, byte(jumpStartLoop2)})
 
 	notWS2Pos := fc.eb.text.Len()
-	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x0a})        // cmp r10, 10
+	fc.out.CmpRegToImm("r10", 10)
 	notWhitespace3 := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpNotEqual, 0)
-	fc.out.Emit([]byte{0x48, 0xff, 0xc3})              // inc rbx
+	fc.out.IncReg("rbx")
 	jumpStartLoop3 := int32(trimStartLoop - (fc.eb.text.Len() + 2))
 	fc.out.Emit([]byte{0xeb, byte(jumpStartLoop3)})
 
 	notWS3Pos := fc.eb.text.Len()
-	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x0d})        // cmp r10, 13
+	fc.out.CmpRegToImm("r10", 13)
 	trimStartFound := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpNotEqual, 0)
-	fc.out.Emit([]byte{0x48, 0xff, 0xc3})              // inc rbx
+	fc.out.IncReg("rbx")
 	jumpStartLoop4 := int32(trimStartLoop - (fc.eb.text.Len() + 2))
 	fc.out.Emit([]byte{0xeb, byte(jumpStartLoop4)})
 
@@ -6146,27 +6148,29 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Load character at r15
 	fc.out.MovRegToReg("rax", "r15")
-	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x04})        // shl rax, 4
-	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x10})        // add rax, 16
-	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x10, 0x04, 0x04})       // movsd xmm0, [r12 + rax]
+	fc.out.ShlRegImm("rax", "4")    // rax = r15 * 16
+	fc.out.AddImmToReg("rax", 8)    // rax = 8 + r15 * 16
+	fc.out.MovRegToReg("r8", "r12")
+	fc.out.AddRegToReg("r8", "rax") // r8 = r12 + offset
+	fc.out.MovMemToXmm("xmm0", "r8", 8)  // Load value
 	fc.out.Cvttsd2si("r10", "xmm0")
 
 	// Check if whitespace
-	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x20})        // cmp r10, 32
+	fc.out.CmpRegToImm("r10", 32)
 	trimWSJump1 := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpEqual, 0)
-	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x09})        // cmp r10, 9
+	fc.out.CmpRegToImm("r10", 9)
 	trimWSJump2 := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpEqual, 0)
-	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x0a})        // cmp r10, 10
+	fc.out.CmpRegToImm("r10", 10)
 	trimWSJump3 := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpEqual, 0)
-	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x0d})        // cmp r10, 13
+	fc.out.CmpRegToImm("r10", 13)
 	trimWSJump4 := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpEqual, 0)
 
 	// Not whitespace - found end
-	fc.out.Emit([]byte{0x49, 0xff, 0xc7})              // inc r15 (make exclusive)
+	fc.out.IncReg("r15")  // Make exclusive
 	trimFoundEnd := fc.eb.text.Len()
 	fc.out.JumpUnconditional(0)
 
@@ -6187,12 +6191,12 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// Now rbx = start, r15 = end (exclusive), create substring
 	// new_len = r15 - rbx
 	fc.out.MovRegToReg("r14", "r15")
-	fc.out.Emit([]byte{0x4c, 0x29, 0xde})              // sub r14, rbx
+	fc.out.SubRegFromReg("r14", "rbx")
 
 	// Allocate new string
 	fc.out.MovRegToReg("rdi", "r14")
-	fc.out.Emit([]byte{0x48, 0xc1, 0xe7, 0x04})        // shl rdi, 4
-	fc.out.Emit([]byte{0x48, 0x83, 0xc7, 0x08})        // add rdi, 8
+	fc.out.ShlRegImm("rdi", "4")  // rdi = r14 * 16
+	fc.out.AddImmToReg("rdi", 8)  // rdi = r14 * 16 + 8
 	fc.trackFunctionCall("malloc")
 	fc.eb.GenerateCallInstruction("malloc")
 	fc.out.MovRegToReg("r13", "rax")
@@ -6211,24 +6215,30 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Calculate source offset (rbx + rcx)
 	fc.out.MovRegToReg("rax", "rbx")
-	fc.out.Emit([]byte{0x48, 0x01, 0xc8})              // add rax, rcx
-	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x04})        // shl rax, 4
-	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x08})        // add rax, 8
+	fc.out.AddRegToReg("rax", "rcx")  // rax = rbx + rcx (source index)
+	fc.out.ShlRegImm("rax", "4")      // rax = (rbx + rcx) * 16
+	fc.out.AddImmToReg("rax", 8)      // rax = (rbx + rcx) * 16 + 8
 
 	// Calculate dest offset (rcx)
 	fc.out.MovRegToReg("rdx", "rcx")
-	fc.out.Emit([]byte{0x48, 0xc1, 0xe2, 0x04})        // shl rdx, 4
-	fc.out.Emit([]byte{0x48, 0x83, 0xc2, 0x08})        // add rdx, 8
+	fc.out.ShlRegImm("rdx", "4")  // rdx = rcx * 16
+	fc.out.AddImmToReg("rdx", 8)  // rdx = rcx * 16 + 8
+
+	// Calculate source and dest addresses
+	fc.out.MovRegToReg("r8", "r12")
+	fc.out.AddRegToReg("r8", "rax")  // r8 = source base + offset
+	fc.out.MovRegToReg("r9", "r13")
+	fc.out.AddRegToReg("r9", "rdx")  // r9 = dest base + offset
 
 	// Copy key
 	fc.out.Cvtsi2sd("xmm0", "rcx")
-	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x11, 0x04, 0x15})       // movsd [r13 + rdx], xmm0
+	fc.out.MovXmmToMem("xmm0", "r9", 0)
 
 	// Copy value
-	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x10, 0x44, 0x04, 0x08}) // movsd xmm0, [r12 + rax + 8]
-	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x11, 0x44, 0x15, 0x08}) // movsd [r13 + rdx + 8], xmm0
+	fc.out.MovMemToXmm("xmm0", "r8", 8)
+	fc.out.MovXmmToMem("xmm0", "r9", 8)
 
-	fc.out.Emit([]byte{0x48, 0xff, 0xc1})              // inc rcx
+	fc.out.IncReg("rcx")
 	jumpCopyLoop := int32(trimCopyLoop - (fc.eb.text.Len() + 2))
 	fc.out.Emit([]byte{0xeb, byte(jumpCopyLoop)})
 
