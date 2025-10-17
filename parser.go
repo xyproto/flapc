@@ -3868,42 +3868,42 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 					fc.out.MovMemToXmm("xmm0", "rsp", 0)
 					fc.out.AddImmToReg("rsp", StackSlotSize)
 					break
-				} else {
-					// Runtime string concatenation
-					// Evaluate left string (result pointer in xmm0)
-					fc.compileExpression(e.Left)
-					// Save left pointer to stack
-					fc.out.SubImmFromReg("rsp", 16)
-					fc.out.MovXmmToMem("xmm0", "rsp", 0)
-
-					// Evaluate right string (result pointer in xmm0)
-					fc.compileExpression(e.Right)
-					// Save right pointer to stack
-					fc.out.SubImmFromReg("rsp", 16)
-					fc.out.MovXmmToMem("xmm0", "rsp", 0)
-
-					// Call _flap_string_concat(left_ptr, right_ptr)
-					// Load arguments into registers following x86-64 calling convention
-					fc.out.MovMemToReg("rdi", "rsp", 16) // left ptr (first arg)
-					fc.out.MovMemToReg("rsi", "rsp", 0)  // right ptr (second arg)
-					fc.out.AddImmToReg("rsp", 32)        // clean up stack
-
-					// Align stack for call (must be at 16n+8 before CALL)
-					fc.out.SubImmFromReg("rsp", StackSlotSize)
-
-					// Call the helper function (direct call, not through PLT)
-					fc.out.CallSymbol("_flap_string_concat")
-
-					// Restore stack alignment
-					fc.out.AddImmToReg("rsp", StackSlotSize)
-
-					// Result pointer is in rax, convert to xmm0
-					fc.out.SubImmFromReg("rsp", StackSlotSize)
-					fc.out.MovRegToMem("rax", "rsp", 0)
-					fc.out.MovMemToXmm("xmm0", "rsp", 0)
-					fc.out.AddImmToReg("rsp", StackSlotSize)
-					break
 				}
+
+				// Runtime string concatenation
+				// Evaluate left string (result pointer in xmm0)
+				fc.compileExpression(e.Left)
+				// Save left pointer to stack
+				fc.out.SubImmFromReg("rsp", 16)
+				fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+				// Evaluate right string (result pointer in xmm0)
+				fc.compileExpression(e.Right)
+				// Save right pointer to stack
+				fc.out.SubImmFromReg("rsp", 16)
+				fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+				// Call _flap_string_concat(left_ptr, right_ptr)
+				// Load arguments into registers following x86-64 calling convention
+				fc.out.MovMemToReg("rdi", "rsp", 16) // left ptr (first arg)
+				fc.out.MovMemToReg("rsi", "rsp", 0)  // right ptr (second arg)
+				fc.out.AddImmToReg("rsp", 32)        // clean up stack
+
+				// Align stack for call (must be at 16n+8 before CALL)
+				fc.out.SubImmFromReg("rsp", StackSlotSize)
+
+				// Call the helper function (direct call, not through PLT)
+				fc.out.CallSymbol("_flap_string_concat")
+
+				// Restore stack alignment
+				fc.out.AddImmToReg("rsp", StackSlotSize)
+
+				// Result pointer is in rax, convert to xmm0
+				fc.out.SubImmFromReg("rsp", StackSlotSize)
+				fc.out.MovRegToMem("rax", "rsp", 0)
+				fc.out.MovMemToXmm("xmm0", "rsp", 0)
+				fc.out.AddImmToReg("rsp", StackSlotSize)
+				break
 			}
 
 			if leftType == "list" && rightType == "list" {
