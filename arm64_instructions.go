@@ -370,6 +370,35 @@ func (a *ARM64Out) StrImm64Double(src, base string, offset int32) error {
 	return nil
 }
 
+// B.cond (conditional branch): B.cond label
+// Condition codes: EQ, NE, CS/HS, CC/LO, MI, PL, VS, VC, HI, LS, GE, LT, GT, LE, AL
+func (a *ARM64Out) BranchCond(cond string, offset int32) error {
+	if offset%4 != 0 {
+		return fmt.Errorf("branch offset must be word-aligned: %d", offset)
+	}
+	imm19 := offset >> 2
+	if imm19 < -(1<<18) || imm19 >= (1<<18) {
+		return fmt.Errorf("branch offset out of range: %d", offset)
+	}
+
+	// Map condition codes to their values
+	condMap := map[string]uint32{
+		"eq": 0x0, "ne": 0x1, "cs": 0x2, "hs": 0x2, "cc": 0x3, "lo": 0x3,
+		"mi": 0x4, "pl": 0x5, "vs": 0x6, "vc": 0x7, "hi": 0x8, "ls": 0x9,
+		"ge": 0xa, "lt": 0xb, "gt": 0xc, "le": 0xd, "al": 0xe,
+	}
+
+	condCode, ok := condMap[cond]
+	if !ok {
+		return fmt.Errorf("invalid condition code: %s", cond)
+	}
+
+	// B.cond: 01010100 | imm19 | 0 | cond
+	instr := uint32(0x54000000) | (uint32(imm19&0x7ffff) << 5) | condCode
+	a.encodeInstr(instr)
+	return nil
+}
+
 // TODO: Add more floating-point instructions (FADD, FSUB, FMUL, FDIV, FCVT, etc.)
 // TODO: Add SIMD/NEON instructions
 // TODO: Add load/store pair instructions (STP, LDP)
