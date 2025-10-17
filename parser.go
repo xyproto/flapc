@@ -51,6 +51,7 @@ const (
 	TOKEN_LBRACKET      // [
 	TOKEN_RBRACKET      // ]
 	TOKEN_ARROW         // ->
+	TOKEN_FAT_ARROW     // =>
 	TOKEN_PIPE          // |
 	TOKEN_PIPEPIPE      // ||
 	TOKEN_PIPEPIPEPIPE  // |||
@@ -334,6 +335,11 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_COLON, Value: ":", Line: l.line}
 	case '=':
+		// Check for =>
+		if l.peek() == '>' {
+			l.pos += 2
+			return Token{Type: TOKEN_FAT_ARROW, Value: "=>", Line: l.line}
+		}
 		// Check for ==
 		if l.peek() == '=' {
 			l.pos += 2
@@ -1295,31 +1301,31 @@ func (p *Parser) tryParseNonParenLambda() Expression {
 		return nil
 	}
 
-	// Single param: x ->
+	// Single param: x => or x ->
 	firstParam := p.current.Value
-	if p.peek.Type == TOKEN_ARROW {
+	if p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_ARROW {
 		p.nextToken() // skip param
-		p.nextToken() // skip '->'
+		p.nextToken() // skip '=>' or '->'
 		body := p.parseLambdaBody()
 		return &LambdaExpr{Params: []string{firstParam}, Body: body}
 	}
 
-	// Multi param: x y z ->
-	// We need to check if peek is identifier and look for -> further ahead
+	// Multi param: x y z => or x y z ->
+	// We need to check if peek is identifier and look for => or -> further ahead
 	if p.peek.Type != TOKEN_IDENT {
 		return nil
 	}
 
-	// Collect parameters until we find -> or something else
+	// Collect parameters until we find => or -> or something else
 	params := []string{firstParam}
 	p.nextToken() // move to second param
 
 	for p.current.Type == TOKEN_IDENT {
 		params = append(params, p.current.Value)
-		if p.peek.Type == TOKEN_ARROW {
+		if p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_ARROW {
 			// Found the arrow! This is a lambda
 			p.nextToken() // skip last param
-			p.nextToken() // skip '->'
+			p.nextToken() // skip '=>' or '->'
 			body := p.parseLambdaBody()
 			return &LambdaExpr{Params: params, Body: body}
 		}
@@ -2185,11 +2191,11 @@ func (p *Parser) parsePrimary() Expression {
 		// Could be lambda (params) -> expr or parenthesized expression (expr)
 		p.nextToken() // skip '('
 
-		// Check for empty parameter list: () ->
+		// Check for empty parameter list: () => or () ->
 		if p.current.Type == TOKEN_RPAREN {
-			if p.peek.Type == TOKEN_ARROW {
+			if p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_ARROW {
 				p.nextToken() // skip ')'
-				p.nextToken() // skip '->'
+				p.nextToken() // skip '=>' or '->'
 				body := p.parseLambdaBody()
 				return &LambdaExpr{Params: []string{}, Body: body}
 			}
@@ -2206,12 +2212,12 @@ func (p *Parser) parsePrimary() Expression {
 			firstIdent := p.current.Value
 
 			if p.peek.Type == TOKEN_RPAREN {
-				// Could be (x) -> expr or (x)
+				// Could be (x) => expr or (x) -> expr or (x)
 				p.nextToken() // move to ')'
-				if p.peek.Type == TOKEN_ARROW {
-					// It's a lambda: (x) -> expr
+				if p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_ARROW {
+					// It's a lambda: (x) => expr or (x) -> expr
 					p.nextToken() // skip ')'
-					p.nextToken() // skip '->'
+					p.nextToken() // skip '=>' or '->'
 					body := p.parseLambdaBody()
 					return &LambdaExpr{Params: []string{firstIdent}, Body: body}
 				}
@@ -2239,13 +2245,13 @@ func (p *Parser) parsePrimary() Expression {
 					p.error("expected ')' after lambda parameters")
 				}
 
-				// peek should be '->'
-				if p.peek.Type != TOKEN_ARROW {
-					p.error("expected '->' after lambda parameters")
+				// peek should be '=>' or '->'
+				if p.peek.Type != TOKEN_FAT_ARROW && p.peek.Type != TOKEN_ARROW {
+					p.error("expected '=>' or '->' after lambda parameters")
 				}
 
 				p.nextToken() // skip ')'
-				p.nextToken() // skip '->'
+				p.nextToken() // skip '=>' or '->'
 				body := p.parseLambdaBody()
 				return &LambdaExpr{Params: params, Body: body}
 			}
