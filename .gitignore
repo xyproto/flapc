@@ -60,6 +60,7 @@ __pycache__/
 venv/
 .venv/
 
+.claude/
 ggg
 hello
 a.out
