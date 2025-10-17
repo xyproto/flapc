@@ -18,21 +18,21 @@ import (
 
 // VSubPDVectorToVector performs vector subtraction: dst = src1 - src2
 func (o *Out) VSubPDVectorToVector(dst, src1, src2 string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.vsubpdX86VectorToVector(dst, src1, src2)
-	case MachineARM64:
+	case ArchARM64:
 		o.vsubpdARM64VectorToVector(dst, src1, src2)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.vsubpdRISCVVectorToVector(dst, src1, src2)
 	}
 }
 
 // x86-64 VSUBPD (opcode 0x5C)
 func (o *Out) vsubpdX86VectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -122,9 +122,9 @@ func (o *Out) vsubpdX86VectorToVector(dst, src1, src2 string) {
 
 // ARM64 FSUB
 func (o *Out) vsubpdARM64VectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -169,9 +169,9 @@ func (o *Out) vsubpdARM64VectorToVector(dst, src1, src2 string) {
 
 // RISC-V vfsub.vv
 func (o *Out) vsubpdRISCVVectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}

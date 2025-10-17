@@ -15,12 +15,12 @@ import (
 
 // Ret generates a return instruction
 func (o *Out) Ret() {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.retX86()
-	case MachineARM64:
+	case ArchARM64:
 		o.retARM64()
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.retRISCV()
 	}
 }
@@ -28,13 +28,13 @@ func (o *Out) Ret() {
 // RetImm generates a return with immediate pop (x86-64 only)
 // Used to clean up stack parameters after return
 func (o *Out) RetImm(popBytes uint16) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.retX86Imm(popBytes)
-	case MachineARM64:
+	case ArchARM64:
 		// ARM64 doesn't have RET with immediate, just do normal RET
 		o.retARM64()
-	case MachineRiscv64:
+	case ArchRiscv64:
 		// RISC-V doesn't have RET with immediate, just do normal RET
 		o.retRISCV()
 	}

@@ -7,7 +7,7 @@ import (
 // Test ADD instruction
 func TestAddX86RegToReg(t *testing.T) {
 	eb, _ := New("x86_64")
-	out := &Out{machine: eb.machine, writer: eb.TextWriter(), eb: eb}
+	out := &Out{machine: eb.platform, writer: eb.TextWriter(), eb: eb}
 
 	out.AddRegToReg("rax", "rbx")
 
@@ -26,7 +26,7 @@ func TestAddX86RegToReg(t *testing.T) {
 
 func TestAddX86ImmToReg(t *testing.T) {
 	eb, _ := New("x86_64")
-	out := &Out{machine: eb.machine, writer: eb.TextWriter(), eb: eb}
+	out := &Out{machine: eb.platform, writer: eb.TextWriter(), eb: eb}
 
 	out.AddImmToReg("rax", 5)
 
@@ -45,7 +45,7 @@ func TestAddX86ImmToReg(t *testing.T) {
 
 func TestAddARM64RegToReg(t *testing.T) {
 	eb, _ := New("arm64")
-	out := &Out{machine: eb.machine, writer: eb.TextWriter(), eb: eb}
+	out := &Out{machine: eb.platform, writer: eb.TextWriter(), eb: eb}
 
 	out.AddRegToReg("x0", "x1")
 
@@ -61,7 +61,7 @@ func TestAddARM64RegToReg(t *testing.T) {
 
 func TestAddRISCVRegToReg(t *testing.T) {
 	eb, _ := New("riscv64")
-	out := &Out{machine: eb.machine, writer: eb.TextWriter(), eb: eb}
+	out := &Out{machine: eb.platform, writer: eb.TextWriter(), eb: eb}
 
 	out.AddRegToReg("a0", "a1")
 
@@ -81,7 +81,7 @@ func TestAddRISCVRegToReg(t *testing.T) {
 // Test SUB instruction
 func TestSubX86RegFromReg(t *testing.T) {
 	eb, _ := New("x86_64")
-	out := &Out{machine: eb.machine, writer: eb.TextWriter(), eb: eb}
+	out := &Out{machine: eb.platform, writer: eb.TextWriter(), eb: eb}
 
 	out.SubRegFromReg("rax", "rbx")
 
@@ -100,7 +100,7 @@ func TestSubX86RegFromReg(t *testing.T) {
 
 func TestSubARM64RegFromReg(t *testing.T) {
 	eb, _ := New("arm64")
-	out := &Out{machine: eb.machine, writer: eb.TextWriter(), eb: eb}
+	out := &Out{machine: eb.platform, writer: eb.TextWriter(), eb: eb}
 
 	out.SubRegFromReg("x0", "x1")
 
@@ -116,7 +116,7 @@ func TestSubARM64RegFromReg(t *testing.T) {
 
 func TestSubRISCVRegFromReg(t *testing.T) {
 	eb, _ := New("riscv64")
-	out := &Out{machine: eb.machine, writer: eb.TextWriter(), eb: eb}
+	out := &Out{machine: eb.platform, writer: eb.TextWriter(), eb: eb}
 
 	out.SubRegFromReg("a0", "a1")
 
@@ -134,7 +134,7 @@ func TestSubRISCVRegFromReg(t *testing.T) {
 // Test Jump instructions
 func TestJumpX86Equal(t *testing.T) {
 	eb, _ := New("x86_64")
-	out := &Out{machine: eb.machine, writer: eb.TextWriter(), eb: eb}
+	out := &Out{machine: eb.platform, writer: eb.TextWriter(), eb: eb}
 
 	out.JumpConditional(JumpEqual, 100)
 
@@ -158,7 +158,7 @@ func TestJumpX86Equal(t *testing.T) {
 
 func TestJumpX86Unconditional(t *testing.T) {
 	eb, _ := New("x86_64")
-	out := &Out{machine: eb.machine, writer: eb.TextWriter(), eb: eb}
+	out := &Out{machine: eb.platform, writer: eb.TextWriter(), eb: eb}
 
 	out.JumpUnconditional(200)
 
@@ -181,7 +181,7 @@ func TestJumpX86Unconditional(t *testing.T) {
 
 func TestJumpARM64Equal(t *testing.T) {
 	eb, _ := New("arm64")
-	out := &Out{machine: eb.machine, writer: eb.TextWriter(), eb: eb}
+	out := &Out{machine: eb.platform, writer: eb.TextWriter(), eb: eb}
 
 	out.JumpConditional(JumpEqual, 32) // 8 instructions forward
 
@@ -203,7 +203,7 @@ func TestJumpARM64Equal(t *testing.T) {
 
 func TestJumpRISCVEqual(t *testing.T) {
 	eb, _ := New("riscv64")
-	out := &Out{machine: eb.machine, writer: eb.TextWriter(), eb: eb}
+	out := &Out{machine: eb.platform, writer: eb.TextWriter(), eb: eb}
 
 	out.JumpConditional(JumpEqual, 8)
 

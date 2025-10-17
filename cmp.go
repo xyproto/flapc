@@ -17,12 +17,12 @@ import (
 // This sets flags that can be used by conditional branches
 // Essential for implementing Flap's comparison operators: >=, <=, >, <, ==, !=
 func (o *Out) CmpRegToReg(src1, src2 string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.cmpX86RegToReg(src1, src2)
-	case MachineARM64:
+	case ArchARM64:
 		o.cmpARM64RegToReg(src1, src2)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.cmpRISCVRegToReg(src1, src2)
 	}
 }
@@ -30,20 +30,20 @@ func (o *Out) CmpRegToReg(src1, src2 string) {
 // CmpRegToImm generates a comparison between a register and an immediate value
 // Used for constant comparisons like: x > 0, x <= 1, etc.
 func (o *Out) CmpRegToImm(reg string, imm int64) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.cmpX86RegToImm(reg, imm)
-	case MachineARM64:
+	case ArchARM64:
 		o.cmpARM64RegToImm(reg, imm)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.cmpRISCVRegToImm(reg, imm)
 	}
 }
 
 // x86-64 CMP instruction: CMP src2, src1 (computes src1 - src2 and sets flags)
 func (o *Out) cmpX86RegToReg(src1, src2 string) {
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !src1Ok || !src2Ok {
 		return
 	}
@@ -76,7 +76,7 @@ func (o *Out) cmpX86RegToReg(src1, src2 string) {
 
 // x86-64 CMP with immediate: CMP reg, imm
 func (o *Out) cmpX86RegToImm(reg string, imm int64) {
-	regInfo, regOk := GetRegister(o.machine, reg)
+	regInfo, regOk := GetRegister(o.machine.Arch, reg)
 	if !regOk {
 		return
 	}
@@ -120,8 +120,8 @@ func (o *Out) cmpX86RegToImm(reg string, imm int64) {
 
 // ARM64 CMP instruction: CMP Xn, Xm (actually SUBS XZR, Xn, Xm)
 func (o *Out) cmpARM64RegToReg(src1, src2 string) {
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !src1Ok || !src2Ok {
 		return
 	}
@@ -150,7 +150,7 @@ func (o *Out) cmpARM64RegToReg(src1, src2 string) {
 
 // ARM64 CMP with immediate: CMP Xn, #imm (SUBS XZR, Xn, #imm)
 func (o *Out) cmpARM64RegToImm(reg string, imm int64) {
-	regInfo, regOk := GetRegister(o.machine, reg)
+	regInfo, regOk := GetRegister(o.machine.Arch, reg)
 	if !regOk {
 		return
 	}
@@ -188,8 +188,8 @@ func (o *Out) cmpARM64RegToImm(reg string, imm int64) {
 // Comparison is done with SUB and checking the result
 // Or using SLT (set less than) instructions
 func (o *Out) cmpRISCVRegToReg(src1, src2 string) {
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !src1Ok || !src2Ok {
 		return
 	}
@@ -218,7 +218,7 @@ func (o *Out) cmpRISCVRegToReg(src1, src2 string) {
 
 // RISC-V CMP with immediate using ADDI with negated immediate
 func (o *Out) cmpRISCVRegToImm(reg string, imm int64) {
-	regInfo, regOk := GetRegister(o.machine, reg)
+	regInfo, regOk := GetRegister(o.machine.Arch, reg)
 	if !regOk {
 		return
 	}
@@ -255,15 +255,15 @@ func (o *Out) cmpRISCVRegToImm(reg string, imm int64) {
 // Cmove - Conditional Move if Equal (ZF=1)
 // cmove dst, src
 func (o *Out) Cmove(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.cmoveX86(dst, src)
 	}
 }
 
 func (o *Out) cmoveX86(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -298,15 +298,15 @@ func (o *Out) cmoveX86(dst, src string) {
 // Cmovne - Conditional Move if Not Equal (ZF=0)
 // cmovne dst, src
 func (o *Out) Cmovne(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.cmovneX86(dst, src)
 	}
 }
 
 func (o *Out) cmovneX86(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -341,15 +341,15 @@ func (o *Out) cmovneX86(dst, src string) {
 // Cmova - Conditional Move if Above (CF=0 and ZF=0) - for unsigned >
 // Used for float comparison result >
 func (o *Out) Cmova(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.cmovaX86(dst, src)
 	}
 }
 
 func (o *Out) cmovaX86(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -381,15 +381,15 @@ func (o *Out) cmovaX86(dst, src string) {
 // Cmovae - Conditional Move if Above or Equal (CF=0) - for unsigned >=
 // Used for float comparison result >=
 func (o *Out) Cmovae(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.cmovaeX86(dst, src)
 	}
 }
 
 func (o *Out) cmovaeX86(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -421,15 +421,15 @@ func (o *Out) cmovaeX86(dst, src string) {
 // Cmovb - Conditional Move if Below (CF=1) - for unsigned <
 // Used for float comparison result <
 func (o *Out) Cmovb(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.cmovbX86(dst, src)
 	}
 }
 
 func (o *Out) cmovbX86(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -461,15 +461,15 @@ func (o *Out) cmovbX86(dst, src string) {
 // Cmovbe - Conditional Move if Below or Equal (CF=1 or ZF=1) - for unsigned <=
 // Used for float comparison result <=
 func (o *Out) Cmovbe(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.cmovbeX86(dst, src)
 	}
 }
 
 func (o *Out) cmovbeX86(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}

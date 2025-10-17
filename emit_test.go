@@ -165,13 +165,13 @@ func TestMachineStringConversion(t *testing.T) {
 		expected Machine
 		wantErr  bool
 	}{
-		{"x86_64", MachineX86_64, false},
-		{"amd64", MachineX86_64, false},
-		{"aarch64", MachineARM64, false},
-		{"arm64", MachineARM64, false},
-		{"riscv64", MachineRiscv64, false},
-		{"riscv", MachineRiscv64, false},
-		{"rv64", MachineRiscv64, false},
+		{"x86_64", ArchX86_64, false},
+		{"amd64", ArchX86_64, false},
+		{"aarch64", ArchARM64, false},
+		{"arm64", ArchARM64, false},
+		{"riscv64", ArchRiscv64, false},
+		{"riscv", ArchRiscv64, false},
+		{"rv64", ArchRiscv64, false},
 		{"invalid", -1, true},
 	}
 
@@ -200,9 +200,9 @@ func TestMachineToString(t *testing.T) {
 		machine  Machine
 		expected string
 	}{
-		{MachineX86_64, "x86_64"},
-		{MachineARM64, "aarch64"},
-		{MachineRiscv64, "riscv64"},
+		{ArchX86_64, "x86_64"},
+		{ArchARM64, "aarch64"},
+		{ArchRiscv64, "riscv64"},
 		{Machine(-1), "unknown"},
 	}
 

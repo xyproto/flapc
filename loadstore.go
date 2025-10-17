@@ -17,12 +17,12 @@ import (
 // LoadRegFromMem loads a value from memory into a register
 // dst = [base + offset]
 func (o *Out) LoadRegFromMem(dst, base string, offset int32) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.loadX86RegFromMem(dst, base, offset)
-	case MachineARM64:
+	case ArchARM64:
 		o.loadARM64RegFromMem(dst, base, offset)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.loadRISCVRegFromMem(dst, base, offset)
 	}
 }
@@ -30,12 +30,12 @@ func (o *Out) LoadRegFromMem(dst, base string, offset int32) {
 // StoreRegToMem stores a register value to memory
 // [base + offset] = src
 func (o *Out) StoreRegToMem(src, base string, offset int32) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.storeX86RegToMem(src, base, offset)
-	case MachineARM64:
+	case ArchARM64:
 		o.storeARM64RegToMem(src, base, offset)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.storeRISCVRegToMem(src, base, offset)
 	}
 }
@@ -46,8 +46,8 @@ func (o *Out) StoreRegToMem(src, base string, offset int32) {
 
 // x86-64 MOV reg, [reg + offset] (load)
 func (o *Out) loadX86RegFromMem(dst, base string, offset int32) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	baseReg, baseOk := GetRegister(o.machine, base)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	baseReg, baseOk := GetRegister(o.machine.Arch, base)
 	if !dstOk || !baseOk {
 		return
 	}
@@ -119,8 +119,8 @@ func (o *Out) loadX86RegFromMem(dst, base string, offset int32) {
 
 // x86-64 MOV [reg + offset], reg (store)
 func (o *Out) storeX86RegToMem(src, base string, offset int32) {
-	srcReg, srcOk := GetRegister(o.machine, src)
-	baseReg, baseOk := GetRegister(o.machine, base)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	baseReg, baseOk := GetRegister(o.machine.Arch, base)
 	if !srcOk || !baseOk {
 		return
 	}
@@ -187,8 +187,8 @@ func (o *Out) storeX86RegToMem(src, base string, offset int32) {
 
 // ARM64 LDR Xt, [Xn, #offset] (load)
 func (o *Out) loadARM64RegFromMem(dst, base string, offset int32) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	baseReg, baseOk := GetRegister(o.machine, base)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	baseReg, baseOk := GetRegister(o.machine.Arch, base)
 	if !dstOk || !baseOk {
 		return
 	}
@@ -240,8 +240,8 @@ func (o *Out) loadARM64RegFromMem(dst, base string, offset int32) {
 
 // ARM64 STR Xt, [Xn, #offset] (store)
 func (o *Out) storeARM64RegToMem(src, base string, offset int32) {
-	srcReg, srcOk := GetRegister(o.machine, src)
-	baseReg, baseOk := GetRegister(o.machine, base)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	baseReg, baseOk := GetRegister(o.machine.Arch, base)
 	if !srcOk || !baseOk {
 		return
 	}
@@ -295,8 +295,8 @@ func (o *Out) storeARM64RegToMem(src, base string, offset int32) {
 
 // RISC-V LD rd, offset(rs1) (load)
 func (o *Out) loadRISCVRegFromMem(dst, base string, offset int32) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	baseReg, baseOk := GetRegister(o.machine, base)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	baseReg, baseOk := GetRegister(o.machine.Arch, base)
 	if !dstOk || !baseOk {
 		return
 	}
@@ -335,8 +335,8 @@ func (o *Out) loadRISCVRegFromMem(dst, base string, offset int32) {
 
 // RISC-V SD rs2, offset(rs1) (store)
 func (o *Out) storeRISCVRegToMem(src, base string, offset int32) {
-	srcReg, srcOk := GetRegister(o.machine, src)
-	baseReg, baseOk := GetRegister(o.machine, base)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	baseReg, baseOk := GetRegister(o.machine.Arch, base)
 	if !srcOk || !baseOk {
 		return
 	}

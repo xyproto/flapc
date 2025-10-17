@@ -15,31 +15,31 @@ import (
 
 // PushReg pushes a register value onto the stack
 func (o *Out) PushReg(reg string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.pushX86Reg(reg)
-	case MachineARM64:
+	case ArchARM64:
 		o.pushARM64Reg(reg)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.pushRISCVReg(reg)
 	}
 }
 
 // PopReg pops a value from the stack into a register
 func (o *Out) PopReg(reg string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.popX86Reg(reg)
-	case MachineARM64:
+	case ArchARM64:
 		o.popARM64Reg(reg)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.popRISCVReg(reg)
 	}
 }
 
 // x86-64 PUSH reg
 func (o *Out) pushX86Reg(reg string) {
-	regInfo, regOk := GetRegister(o.machine, reg)
+	regInfo, regOk := GetRegister(o.machine.Arch, reg)
 	if !regOk {
 		return
 	}
@@ -64,7 +64,7 @@ func (o *Out) pushX86Reg(reg string) {
 
 // x86-64 POP reg
 func (o *Out) popX86Reg(reg string) {
-	regInfo, regOk := GetRegister(o.machine, reg)
+	regInfo, regOk := GetRegister(o.machine.Arch, reg)
 	if !regOk {
 		return
 	}
@@ -89,7 +89,7 @@ func (o *Out) popX86Reg(reg string) {
 // ARM64 doesn't have dedicated PUSH/POP, uses STR/LDR with pre/post-indexing
 // We'll use STP/LDP (store/load pair) for efficiency
 func (o *Out) pushARM64Reg(reg string) {
-	regInfo, regOk := GetRegister(o.machine, reg)
+	regInfo, regOk := GetRegister(o.machine.Arch, reg)
 	if !regOk {
 		return
 	}
@@ -115,7 +115,7 @@ func (o *Out) pushARM64Reg(reg string) {
 
 // ARM64 POP
 func (o *Out) popARM64Reg(reg string) {
-	regInfo, regOk := GetRegister(o.machine, reg)
+	regInfo, regOk := GetRegister(o.machine.Arch, reg)
 	if !regOk {
 		return
 	}
@@ -140,7 +140,7 @@ func (o *Out) popARM64Reg(reg string) {
 
 // RISC-V doesn't have dedicated PUSH/POP, uses SD/LD with stack pointer
 func (o *Out) pushRISCVReg(reg string) {
-	regInfo, regOk := GetRegister(o.machine, reg)
+	regInfo, regOk := GetRegister(o.machine.Arch, reg)
 	if !regOk {
 		return
 	}
@@ -180,7 +180,7 @@ func (o *Out) pushRISCVReg(reg string) {
 
 // RISC-V POP
 func (o *Out) popRISCVReg(reg string) {
-	regInfo, regOk := GetRegister(o.machine, reg)
+	regInfo, regOk := GetRegister(o.machine.Arch, reg)
 	if !regOk {
 		return
 	}

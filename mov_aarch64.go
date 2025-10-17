@@ -7,7 +7,7 @@ func (a *ARM64) MovImmediate(w Writer, dest, val string) error {
 }
 
 func (a *ARM64) IsValidRegister(reg string) bool {
-	return IsRegister(MachineARM64, reg)
+	return IsRegister(ArchARM64, reg)
 }
 
 func (a *ARM64) Syscall(w Writer) error {

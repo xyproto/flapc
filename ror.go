@@ -11,14 +11,14 @@ import (
 // RorClReg - Rotate Right by CL register
 // ror reg, cl
 func (o *Out) RorClReg(dst, cl string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.rorClX86(dst)
 	}
 }
 
 func (o *Out) rorClX86(dst string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
 	if !dstOk {
 		return
 	}

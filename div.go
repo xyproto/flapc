@@ -16,12 +16,12 @@ import (
 // DivRegByReg generates DIV dst, src (dst = dst / src)
 // Note: On x86-64, this is more complex due to implicit RDX:RAX usage
 func (o *Out) DivRegByReg(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.divX86RegByReg(dst, src)
-	case MachineARM64:
+	case ArchARM64:
 		o.divARM64RegByReg(dst, src)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.divRISCVRegByReg(dst, src)
 	}
 }
@@ -29,44 +29,44 @@ func (o *Out) DivRegByReg(dst, src string) {
 // DivRegByRegToReg generates DIV quotient, dividend, divisor (quotient = dividend / divisor)
 // 3-operand form for ARM64 and RISC-V
 func (o *Out) DivRegByRegToReg(quotient, dividend, divisor string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		// x86-64: Complex due to implicit RDX:RAX - need temporary handling
 		// For now, MOV quotient, dividend; DIV quotient, divisor
 		if quotient != dividend {
 			o.MovRegToReg(quotient, dividend)
 		}
 		o.DivRegByReg(quotient, divisor)
-	case MachineARM64:
+	case ArchARM64:
 		o.divARM64RegByRegToReg(quotient, dividend, divisor)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.divRISCVRegByRegToReg(quotient, dividend, divisor)
 	}
 }
 
 // RemRegByReg generates REM dst, src (dst = dst % src) - remainder/modulo
 func (o *Out) RemRegByReg(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.remX86RegByReg(dst, src)
-	case MachineARM64:
+	case ArchARM64:
 		o.remARM64RegByReg(dst, src)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.remRISCVRegByReg(dst, src)
 	}
 }
 
 // RemRegByRegToReg generates REM remainder, dividend, divisor (remainder = dividend % divisor)
 func (o *Out) RemRegByRegToReg(remainder, dividend, divisor string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		if remainder != dividend {
 			o.MovRegToReg(remainder, dividend)
 		}
 		o.RemRegByReg(remainder, divisor)
-	case MachineARM64:
+	case ArchARM64:
 		o.remARM64RegByRegToReg(remainder, dividend, divisor)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.remRISCVRegByRegToReg(remainder, dividend, divisor)
 	}
 }
@@ -88,7 +88,7 @@ func (o *Out) divX86RegByReg(dst, src string) {
 	// 5. Move RAX back to dst if needed
 
 	// Simplified version: assumes dst is already in RAX
-	srcReg, srcOk := GetRegister(o.machine, src)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !srcOk {
 		return
 	}
@@ -122,7 +122,7 @@ func (o *Out) divX86RegByReg(dst, src string) {
 // x86-64 IDIV for remainder
 func (o *Out) remX86RegByReg(dst, src string) {
 	// Same as division, but the result we want is in RDX, not RAX
-	srcReg, srcOk := GetRegister(o.machine, src)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !srcOk {
 		return
 	}
@@ -162,8 +162,8 @@ func (o *Out) remX86RegByReg(dst, src string) {
 
 // ARM64 SDIV (signed divide) - 2 operand form
 func (o *Out) divARM64RegByReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -192,9 +192,9 @@ func (o *Out) divARM64RegByReg(dst, src string) {
 
 // ARM64 SDIV - 3 operand form
 func (o *Out) divARM64RegByRegToReg(quotient, dividend, divisor string) {
-	quotientReg, quotientOk := GetRegister(o.machine, quotient)
-	dividendReg, dividendOk := GetRegister(o.machine, dividend)
-	divisorReg, divisorOk := GetRegister(o.machine, divisor)
+	quotientReg, quotientOk := GetRegister(o.machine.Arch, quotient)
+	dividendReg, dividendOk := GetRegister(o.machine.Arch, dividend)
+	divisorReg, divisorOk := GetRegister(o.machine.Arch, divisor)
 	if !quotientOk || !dividendOk || !divisorOk {
 		return
 	}
@@ -221,8 +221,8 @@ func (o *Out) divARM64RegByRegToReg(quotient, dividend, divisor string) {
 // ARM64 remainder - calculate using: rem = dividend - (quotient * divisor)
 // This requires a temp register
 func (o *Out) remARM64RegByReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -270,9 +270,9 @@ func (o *Out) remARM64RegByReg(dst, src string) {
 
 // ARM64 remainder - 3 operand form
 func (o *Out) remARM64RegByRegToReg(remainder, dividend, divisor string) {
-	remainderReg, remainderOk := GetRegister(o.machine, remainder)
-	dividendReg, dividendOk := GetRegister(o.machine, dividend)
-	divisorReg, divisorOk := GetRegister(o.machine, divisor)
+	remainderReg, remainderOk := GetRegister(o.machine.Arch, remainder)
+	dividendReg, dividendOk := GetRegister(o.machine.Arch, dividend)
+	divisorReg, divisorOk := GetRegister(o.machine.Arch, divisor)
 	if !remainderOk || !dividendOk || !divisorOk {
 		return
 	}
@@ -323,8 +323,8 @@ func (o *Out) remARM64RegByRegToReg(remainder, dividend, divisor string) {
 
 // RISC-V DIV (signed divide, requires M extension) - 2 operand form
 func (o *Out) divRISCVRegByReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -353,9 +353,9 @@ func (o *Out) divRISCVRegByReg(dst, src string) {
 
 // RISC-V DIV - 3 operand form
 func (o *Out) divRISCVRegByRegToReg(quotient, dividend, divisor string) {
-	quotientReg, quotientOk := GetRegister(o.machine, quotient)
-	dividendReg, dividendOk := GetRegister(o.machine, dividend)
-	divisorReg, divisorOk := GetRegister(o.machine, divisor)
+	quotientReg, quotientOk := GetRegister(o.machine.Arch, quotient)
+	dividendReg, dividendOk := GetRegister(o.machine.Arch, dividend)
+	divisorReg, divisorOk := GetRegister(o.machine.Arch, divisor)
 	if !quotientOk || !dividendOk || !divisorOk {
 		return
 	}
@@ -383,8 +383,8 @@ func (o *Out) divRISCVRegByRegToReg(quotient, dividend, divisor string) {
 
 // RISC-V REM (signed remainder, requires M extension) - 2 operand form
 func (o *Out) remRISCVRegByReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -413,9 +413,9 @@ func (o *Out) remRISCVRegByReg(dst, src string) {
 
 // RISC-V REM - 3 operand form
 func (o *Out) remRISCVRegByRegToReg(remainder, dividend, divisor string) {
-	remainderReg, remainderOk := GetRegister(o.machine, remainder)
-	dividendReg, dividendOk := GetRegister(o.machine, dividend)
-	divisorReg, divisorOk := GetRegister(o.machine, divisor)
+	remainderReg, remainderOk := GetRegister(o.machine.Arch, remainder)
+	dividendReg, dividendOk := GetRegister(o.machine.Arch, dividend)
+	divisorReg, divisorOk := GetRegister(o.machine.Arch, divisor)
 	if !remainderOk || !dividendOk || !divisorOk {
 		return
 	}

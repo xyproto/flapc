@@ -28,12 +28,12 @@ import (
 // VZeroUpper zeros upper bits of vector registers
 // Prevents AVX-SSE transition penalty
 func (o *Out) VZeroUpper() {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.vzeroupperX86()
-	case MachineARM64:
+	case ArchARM64:
 		o.vzeroupperARM64()
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.vzeroupperRISCV()
 	}
 }
@@ -95,12 +95,12 @@ func (o *Out) vzeroupperRISCV() {
 // VZeroAll zeros all vector registers
 // More aggressive than VZEROUPPER - zeros entire ZMM registers
 func (o *Out) VZeroAll() {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.vzeroallX86()
-	case MachineARM64:
+	case ArchARM64:
 		o.vzeroallARM64()
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.vzeroallRISCV()
 	}
 }

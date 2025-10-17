@@ -337,15 +337,15 @@ var riscvRegisters = map[string]Register{
 }
 
 // GetRegister returns register info for the given machine and register name
-func GetRegister(machine Machine, regName string) (Register, bool) {
+func GetRegister(machine Arch, regName string) (Register, bool) {
 	switch machine {
-	case MachineX86_64:
+	case ArchX86_64:
 		reg, ok := x86_64Registers[regName]
 		return reg, ok
-	case MachineARM64:
+	case ArchARM64:
 		reg, ok := arm64Registers[regName]
 		return reg, ok
-	case MachineRiscv64:
+	case ArchRiscv64:
 		reg, ok := riscvRegisters[regName]
 		return reg, ok
 	default:
@@ -354,7 +354,7 @@ func GetRegister(machine Machine, regName string) (Register, bool) {
 }
 
 // IsRegister checks if a string is a valid register name for the given machine
-func IsRegister(machine Machine, name string) bool {
+func IsRegister(machine Arch, name string) bool {
 	_, ok := GetRegister(machine, name)
 	return ok
 }

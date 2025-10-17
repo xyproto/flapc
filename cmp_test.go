@@ -12,7 +12,7 @@ func TestCmpX86RegToReg(t *testing.T) {
 	}
 
 	out := &Out{
-		machine: eb.machine,
+		machine: eb.platform,
 		writer:  eb.TextWriter(),
 		eb:      eb,
 	}
@@ -43,7 +43,7 @@ func TestCmpX86RegToImm8(t *testing.T) {
 	}
 
 	out := &Out{
-		machine: eb.machine,
+		machine: eb.platform,
 		writer:  eb.TextWriter(),
 		eb:      eb,
 	}
@@ -73,7 +73,7 @@ func TestCmpX86RegToImm32(t *testing.T) {
 	}
 
 	out := &Out{
-		machine: eb.machine,
+		machine: eb.platform,
 		writer:  eb.TextWriter(),
 		eb:      eb,
 	}
@@ -107,7 +107,7 @@ func TestCmpARM64RegToReg(t *testing.T) {
 	}
 
 	out := &Out{
-		machine: eb.machine,
+		machine: eb.platform,
 		writer:  eb.TextWriter(),
 		eb:      eb,
 	}
@@ -155,7 +155,7 @@ func TestCmpARM64RegToImm(t *testing.T) {
 	}
 
 	out := &Out{
-		machine: eb.machine,
+		machine: eb.platform,
 		writer:  eb.TextWriter(),
 		eb:      eb,
 	}
@@ -195,7 +195,7 @@ func TestCmpRISCVRegToReg(t *testing.T) {
 	}
 
 	out := &Out{
-		machine: eb.machine,
+		machine: eb.platform,
 		writer:  eb.TextWriter(),
 		eb:      eb,
 	}

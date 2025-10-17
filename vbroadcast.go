@@ -25,12 +25,12 @@ import (
 // VBroadcastSDScalarToVector broadcasts a scalar float64 to all vector elements
 // dst[i] = src (for all i)
 func (o *Out) VBroadcastSDScalarToVector(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.vbroadcastsdX86ScalarToVector(dst, src)
-	case MachineARM64:
+	case ArchARM64:
 		o.vbroadcastARM64ScalarToVector(dst, src)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.vbroadcastRISCVScalarToVector(dst, src)
 	}
 }
@@ -38,12 +38,12 @@ func (o *Out) VBroadcastSDScalarToVector(dst, src string) {
 // VBroadcastSDMemToVector broadcasts a scalar float64 from memory to all vector elements
 // dst[i] = memory[base + offset] (for all i)
 func (o *Out) VBroadcastSDMemToVector(dst, base string, offset int32) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.vbroadcastsdX86MemToVector(dst, base, offset)
-	case MachineARM64:
+	case ArchARM64:
 		o.vbroadcastARM64MemToVector(dst, base, offset)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.vbroadcastRISCVMemToVector(dst, base, offset)
 	}
 }
@@ -55,8 +55,8 @@ func (o *Out) VBroadcastSDMemToVector(dst, base string, offset int32) {
 // x86-64 VBROADCASTSD zmm1, xmm2 (register to vector)
 // EVEX.512.66.0F38.W1 19 /r
 func (o *Out) vbroadcastsdX86ScalarToVector(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -160,8 +160,8 @@ func (o *Out) vbroadcastsdX86ScalarToVector(dst, src string) {
 // x86-64 VBROADCASTSD zmm1, m64 (memory to vector)
 // EVEX.512.66.0F38.W1 19 /r
 func (o *Out) vbroadcastsdX86MemToVector(dst, base string, offset int32) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	baseReg, baseOk := GetRegister(o.machine, base)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	baseReg, baseOk := GetRegister(o.machine.Arch, base)
 	if !dstOk || !baseOk {
 		return
 	}
@@ -266,8 +266,8 @@ func (o *Out) vbroadcastsdX86MemToVector(dst, base string, offset int32) {
 
 // ARM64 DUP zd.d, zn.d[0] (SVE2) or DUP vd.2d, vn.d[0] (NEON)
 func (o *Out) vbroadcastARM64ScalarToVector(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -315,8 +315,8 @@ func (o *Out) vbroadcastARM64ScalarToVector(dst, src string) {
 
 // ARM64 LD1RD {zt.d}, pg/z, [xn, #imm]
 func (o *Out) vbroadcastARM64MemToVector(dst, base string, offset int32) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	baseReg, baseOk := GetRegister(o.machine, base)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	baseReg, baseOk := GetRegister(o.machine.Arch, base)
 	if !dstOk || !baseOk {
 		return
 	}
@@ -360,8 +360,8 @@ func (o *Out) vbroadcastARM64MemToVector(dst, base string, offset int32) {
 // RISC-V vfmv.v.f vd, fs
 // Broadcast float register to all vector elements
 func (o *Out) vbroadcastRISCVScalarToVector(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	_, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	_, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -395,8 +395,8 @@ func (o *Out) vbroadcastRISCVScalarToVector(dst, src string) {
 
 // RISC-V vle64.v + vrgather for broadcast from memory
 func (o *Out) vbroadcastRISCVMemToVector(dst, base string, offset int32) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	_, baseOk := GetRegister(o.machine, base)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	_, baseOk := GetRegister(o.machine.Arch, base)
 	if !dstOk || !baseOk {
 		return
 	}

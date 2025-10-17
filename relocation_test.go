@@ -17,7 +17,7 @@ func TestPCRelocationPatchingX86(t *testing.T) {
 
 	// Generate LEA instruction that references the symbol
 	out := &Out{
-		machine: eb.machine,
+		machine: eb.platform,
 		writer:  eb.TextWriter(),
 		eb:      eb,
 	}
@@ -73,7 +73,7 @@ func TestPCRelocationPatchingARM64(t *testing.T) {
 
 	// Generate ADRP + ADD instructions
 	out := &Out{
-		machine: eb.machine,
+		machine: eb.platform,
 		writer:  eb.TextWriter(),
 		eb:      eb,
 	}
@@ -134,7 +134,7 @@ func TestPCRelocationPatchingRISCV(t *testing.T) {
 
 	// Generate AUIPC + ADDI instructions
 	out := &Out{
-		machine: eb.machine,
+		machine: eb.platform,
 		writer:  eb.TextWriter(),
 		eb:      eb,
 	}

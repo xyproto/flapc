@@ -25,12 +25,12 @@ import (
 // VMinPDVectorToVector computes element-wise minimum
 // dst[i] = min(src1[i], src2[i])
 func (o *Out) VMinPDVectorToVector(dst, src1, src2 string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.vminpdX86VectorToVector(dst, src1, src2)
-	case MachineARM64:
+	case ArchARM64:
 		o.vminARM64VectorToVector(dst, src1, src2)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.vminRISCVVectorToVector(dst, src1, src2)
 	}
 }
@@ -38,12 +38,12 @@ func (o *Out) VMinPDVectorToVector(dst, src1, src2 string) {
 // VMaxPDVectorToVector computes element-wise maximum
 // dst[i] = max(src1[i], src2[i])
 func (o *Out) VMaxPDVectorToVector(dst, src1, src2 string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.vmaxpdX86VectorToVector(dst, src1, src2)
-	case MachineARM64:
+	case ArchARM64:
 		o.vmaxARM64VectorToVector(dst, src1, src2)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.vmaxRISCVVectorToVector(dst, src1, src2)
 	}
 }
@@ -55,9 +55,9 @@ func (o *Out) VMaxPDVectorToVector(dst, src1, src2 string) {
 // x86-64 VMINPD zmm1, zmm2, zmm3
 // EVEX.NDS.512.66.0F.W1 5D /r
 func (o *Out) vminpdX86VectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -155,9 +155,9 @@ func (o *Out) vminpdX86VectorToVector(dst, src1, src2 string) {
 // x86-64 VMAXPD zmm1, zmm2, zmm3
 // EVEX.NDS.512.66.0F.W1 5F /r
 func (o *Out) vmaxpdX86VectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -253,9 +253,9 @@ func (o *Out) vmaxpdX86VectorToVector(dst, src1, src2 string) {
 // ============================================================================
 
 func (o *Out) vminARM64VectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -307,9 +307,9 @@ func (o *Out) vminARM64VectorToVector(dst, src1, src2 string) {
 // ============================================================================
 
 func (o *Out) vmaxARM64VectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -361,9 +361,9 @@ func (o *Out) vmaxARM64VectorToVector(dst, src1, src2 string) {
 // ============================================================================
 
 func (o *Out) vminRISCVVectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -398,9 +398,9 @@ func (o *Out) vminRISCVVectorToVector(dst, src1, src2 string) {
 // ============================================================================
 
 func (o *Out) vmaxRISCVVectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}

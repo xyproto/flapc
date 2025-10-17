@@ -26,12 +26,12 @@ import (
 // VAndPDVectorToVector computes bitwise AND
 // dst[i] = src1[i] & src2[i]
 func (o *Out) VAndPDVectorToVector(dst, src1, src2 string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.vandpdX86VectorToVector(dst, src1, src2)
-	case MachineARM64:
+	case ArchARM64:
 		o.vandARM64VectorToVector(dst, src1, src2)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.vandRISCVVectorToVector(dst, src1, src2)
 	}
 }
@@ -39,12 +39,12 @@ func (o *Out) VAndPDVectorToVector(dst, src1, src2 string) {
 // VOrPDVectorToVector computes bitwise OR
 // dst[i] = src1[i] | src2[i]
 func (o *Out) VOrPDVectorToVector(dst, src1, src2 string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.vorpdX86VectorToVector(dst, src1, src2)
-	case MachineARM64:
+	case ArchARM64:
 		o.vorARM64VectorToVector(dst, src1, src2)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.vorRISCVVectorToVector(dst, src1, src2)
 	}
 }
@@ -52,12 +52,12 @@ func (o *Out) VOrPDVectorToVector(dst, src1, src2 string) {
 // VXorPDVectorToVector computes bitwise XOR
 // dst[i] = src1[i] ^ src2[i]
 func (o *Out) VXorPDVectorToVector(dst, src1, src2 string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.vxorpdX86VectorToVector(dst, src1, src2)
-	case MachineARM64:
+	case ArchARM64:
 		o.vxorARM64VectorToVector(dst, src1, src2)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.vxorRISCVVectorToVector(dst, src1, src2)
 	}
 }
@@ -67,9 +67,9 @@ func (o *Out) VXorPDVectorToVector(dst, src1, src2 string) {
 // ============================================================================
 
 func (o *Out) vandpdX86VectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -156,9 +156,9 @@ func (o *Out) vandpdX86VectorToVector(dst, src1, src2 string) {
 // ============================================================================
 
 func (o *Out) vorpdX86VectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -245,9 +245,9 @@ func (o *Out) vorpdX86VectorToVector(dst, src1, src2 string) {
 // ============================================================================
 
 func (o *Out) vxorpdX86VectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -334,9 +334,9 @@ func (o *Out) vxorpdX86VectorToVector(dst, src1, src2 string) {
 // ============================================================================
 
 func (o *Out) vandARM64VectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -384,9 +384,9 @@ func (o *Out) vandARM64VectorToVector(dst, src1, src2 string) {
 }
 
 func (o *Out) vorARM64VectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -434,9 +434,9 @@ func (o *Out) vorARM64VectorToVector(dst, src1, src2 string) {
 }
 
 func (o *Out) vxorARM64VectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -488,9 +488,9 @@ func (o *Out) vxorARM64VectorToVector(dst, src1, src2 string) {
 // ============================================================================
 
 func (o *Out) vandRISCVVectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -520,9 +520,9 @@ func (o *Out) vandRISCVVectorToVector(dst, src1, src2 string) {
 }
 
 func (o *Out) vorRISCVVectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -552,9 +552,9 @@ func (o *Out) vorRISCVVectorToVector(dst, src1, src2 string) {
 }
 
 func (o *Out) vxorRISCVVectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}

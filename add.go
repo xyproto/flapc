@@ -15,24 +15,24 @@ import (
 
 // AddRegToReg generates ADD dst, src (dst = dst + src)
 func (o *Out) AddRegToReg(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.addX86RegToReg(dst, src)
-	case MachineARM64:
+	case ArchARM64:
 		o.addARM64RegToReg(dst, src)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.addRISCVRegToReg(dst, src)
 	}
 }
 
 // AddImmToReg generates ADD dst, imm (dst = dst + imm)
 func (o *Out) AddImmToReg(dst string, imm int64) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.addX86ImmToReg(dst, imm)
-	case MachineARM64:
+	case ArchARM64:
 		o.addARM64ImmToReg(dst, imm)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.addRISCVImmToReg(dst, imm)
 	}
 }
@@ -40,23 +40,23 @@ func (o *Out) AddImmToReg(dst string, imm int64) {
 // AddRegToRegToReg generates ADD dst, src1, src2 (dst = src1 + src2)
 // For ARM64 and RISC-V which have 3-operand form
 func (o *Out) AddRegToRegToReg(dst, src1, src2 string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		// x86 doesn't have 3-operand ADD, use MOV + ADD
 		// MOV dst, src1; ADD dst, src2
 		o.MovRegToReg(dst, src1)
 		o.AddRegToReg(dst, src2)
-	case MachineARM64:
+	case ArchARM64:
 		o.addARM64RegToRegToReg(dst, src1, src2)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.addRISCVRegToRegToReg(dst, src1, src2)
 	}
 }
 
 // x86-64 ADD reg, reg
 func (o *Out) addX86RegToReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -89,7 +89,7 @@ func (o *Out) addX86RegToReg(dst, src string) {
 
 // x86-64 ADD reg, imm
 func (o *Out) addX86ImmToReg(dst string, imm int64) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
 	if !dstOk {
 		return
 	}
@@ -133,8 +133,8 @@ func (o *Out) addX86ImmToReg(dst string, imm int64) {
 
 // ARM64 ADD Xd, Xn, Xm
 func (o *Out) addARM64RegToReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -162,7 +162,7 @@ func (o *Out) addARM64RegToReg(dst, src string) {
 
 // ARM64 ADD Xd, Xn, #imm
 func (o *Out) addARM64ImmToReg(dst string, imm int64) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
 	if !dstOk {
 		return
 	}
@@ -196,9 +196,9 @@ func (o *Out) addARM64ImmToReg(dst string, imm int64) {
 
 // ARM64 ADD Xd, Xn, Xm (3-operand form)
 func (o *Out) addARM64RegToRegToReg(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -224,8 +224,8 @@ func (o *Out) addARM64RegToRegToReg(dst, src1, src2 string) {
 
 // RISC-V ADD rd, rs1, rs2
 func (o *Out) addRISCVRegToReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -252,7 +252,7 @@ func (o *Out) addRISCVRegToReg(dst, src string) {
 
 // RISC-V ADDI rd, rs1, imm
 func (o *Out) addRISCVImmToReg(dst string, imm int64) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
 	if !dstOk {
 		return
 	}
@@ -286,9 +286,9 @@ func (o *Out) addRISCVImmToReg(dst string, imm int64) {
 
 // RISC-V ADD rd, rs1, rs2 (3-operand form)
 func (o *Out) addRISCVRegToRegToReg(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}

@@ -26,12 +26,12 @@ import (
 // VPermPDVectorWithImm permutes vector elements according to immediate
 // dst[i] = src[perm[i]] where perm is encoded in imm8
 func (o *Out) VPermPDVectorWithImm(dst, src string, imm8 uint8) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.vpermpdX86VectorWithImm(dst, src, imm8)
-	case MachineARM64:
+	case ArchARM64:
 		o.vpermARM64VectorWithImm(dst, src, imm8)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.vpermRISCVVectorWithImm(dst, src, imm8)
 	}
 }
@@ -39,12 +39,12 @@ func (o *Out) VPermPDVectorWithImm(dst, src string, imm8 uint8) {
 // VPermPDVectorWithIndex permutes vector elements according to index vector
 // dst[i] = src[indices[i]]
 func (o *Out) VPermPDVectorWithIndex(dst, src, indices string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.vpermpdX86VectorWithIndex(dst, src, indices)
-	case MachineARM64:
+	case ArchARM64:
 		o.vpermARM64VectorWithIndex(dst, src, indices)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.vpermRISCVVectorWithIndex(dst, src, indices)
 	}
 }
@@ -57,8 +57,8 @@ func (o *Out) VPermPDVectorWithIndex(dst, src, indices string) {
 // EVEX.256.66.0F3A.W1 01 /r ib (AVX-512)
 // VEX.256.66.0F3A.W1 01 /r ib (AVX2)
 func (o *Out) vpermpdX86VectorWithImm(dst, src string, imm8 uint8) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -149,9 +149,9 @@ func (o *Out) vpermpdX86VectorWithImm(dst, src string, imm8 uint8) {
 // x86-64 VPERMPD zmm1, zmm2, zmm3/m512
 // EVEX.NDS.512.66.0F38.W1 16 /r
 func (o *Out) vpermpdX86VectorWithIndex(dst, src, indices string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
-	indicesReg, indicesOk := GetRegister(o.machine, indices)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	indicesReg, indicesOk := GetRegister(o.machine.Arch, indices)
 	if !dstOk || !srcOk || !indicesOk {
 		return
 	}
@@ -208,8 +208,8 @@ func (o *Out) vpermpdX86VectorWithIndex(dst, src, indices string) {
 // ============================================================================
 
 func (o *Out) vpermARM64VectorWithImm(dst, src string, imm8 uint8) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	_, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	_, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -235,9 +235,9 @@ func (o *Out) vpermARM64VectorWithImm(dst, src string, imm8 uint8) {
 }
 
 func (o *Out) vpermARM64VectorWithIndex(dst, src, indices string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
-	indicesReg, indicesOk := GetRegister(o.machine, indices)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	indicesReg, indicesOk := GetRegister(o.machine.Arch, indices)
 	if !dstOk || !srcOk || !indicesOk {
 		return
 	}
@@ -289,8 +289,8 @@ func (o *Out) vpermARM64VectorWithIndex(dst, src, indices string) {
 // ============================================================================
 
 func (o *Out) vpermRISCVVectorWithImm(dst, src string, imm8 uint8) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -323,9 +323,9 @@ func (o *Out) vpermRISCVVectorWithImm(dst, src string, imm8 uint8) {
 }
 
 func (o *Out) vpermRISCVVectorWithIndex(dst, src, indices string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
-	indicesReg, indicesOk := GetRegister(o.machine, indices)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	indicesReg, indicesOk := GetRegister(o.machine.Arch, indices)
 	if !dstOk || !srcOk || !indicesOk {
 		return
 	}

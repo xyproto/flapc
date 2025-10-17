@@ -28,12 +28,12 @@ import (
 // VRcpPDVectorToVector computes reciprocal approximation
 // dst[i] ≈ 1.0 / src[i]
 func (o *Out) VRcpPDVectorToVector(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.vrcppdX86VectorToVector(dst, src)
-	case MachineARM64:
+	case ArchARM64:
 		o.vrcpARM64VectorToVector(dst, src)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.vrcpRISCVVectorToVector(dst, src)
 	}
 }
@@ -41,12 +41,12 @@ func (o *Out) VRcpPDVectorToVector(dst, src string) {
 // VRsqrtPDVectorToVector computes reciprocal square root approximation
 // dst[i] ≈ 1.0 / sqrt(src[i])
 func (o *Out) VRsqrtPDVectorToVector(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.vrsqrtpdX86VectorToVector(dst, src)
-	case MachineARM64:
+	case ArchARM64:
 		o.vrsqrtARM64VectorToVector(dst, src)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.vrsqrtRISCVVectorToVector(dst, src)
 	}
 }
@@ -58,8 +58,8 @@ func (o *Out) VRsqrtPDVectorToVector(dst, src string) {
 // x86-64 VRCP14PD zmm1, zmm2
 // EVEX.512.66.0F38.W1 4C /r
 func (o *Out) vrcppdX86VectorToVector(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -122,8 +122,8 @@ func (o *Out) vrcppdX86VectorToVector(dst, src string) {
 // x86-64 VRSQRT14PD zmm1, zmm2
 // EVEX.512.66.0F38.W1 4E /r
 func (o *Out) vrsqrtpdX86VectorToVector(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -182,8 +182,8 @@ func (o *Out) vrsqrtpdX86VectorToVector(dst, src string) {
 // ============================================================================
 
 func (o *Out) vrcpARM64VectorToVector(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -233,8 +233,8 @@ func (o *Out) vrcpARM64VectorToVector(dst, src string) {
 // ============================================================================
 
 func (o *Out) vrsqrtARM64VectorToVector(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -286,8 +286,8 @@ func (o *Out) vrsqrtARM64VectorToVector(dst, src string) {
 // RISC-V vfrec7.v vd, vs2
 // 7-bit precision reciprocal estimate
 func (o *Out) vrcpRISCVVectorToVector(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -323,8 +323,8 @@ func (o *Out) vrcpRISCVVectorToVector(dst, src string) {
 // RISC-V vfrsqrt7.v vd, vs2
 // 7-bit precision reciprocal square root estimate
 func (o *Out) vrsqrtRISCVVectorToVector(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}

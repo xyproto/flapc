@@ -202,15 +202,15 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 
 	// Determine CPU type
 	var cpuType, cpuSubtype uint32
-	switch eb.machine {
-	case MachineX86_64:
+	switch eb.platform.Arch {
+	case ArchX86_64:
 		cpuType = CPU_TYPE_X86_64
 		cpuSubtype = CPU_SUBTYPE_X86_64_ALL
-	case MachineARM64:
+	case ArchARM64:
 		cpuType = CPU_TYPE_ARM64
 		cpuSubtype = CPU_SUBTYPE_ARM64_ALL
 	default:
-		return fmt.Errorf("unsupported architecture for Mach-O: %s", eb.machine)
+		return fmt.Errorf("unsupported architecture for Mach-O: %s", eb.platform)
 	}
 
 	// Page size

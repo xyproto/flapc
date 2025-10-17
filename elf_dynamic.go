@@ -17,10 +17,10 @@ func (eb *ExecutableBuilder) WriteDynamicELF() error {
 
 	// Interpreter path (architecture-specific)
 	interp := "/lib64/ld-linux-x86-64.so.2"
-	switch eb.machine {
-	case MachineARM64:
+	switch eb.platform.Arch {
+	case ArchARM64:
 		interp = "/lib/ld-linux-aarch64.so.1"
-	case MachineRiscv64:
+	case ArchRiscv64:
 		interp = "/lib/ld-linux-riscv64-lp64d.so.1"
 	}
 

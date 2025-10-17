@@ -39,7 +39,7 @@ func TestARM64BasicCompilation(t *testing.T) {
 			}
 
 			// Compile for ARM64
-			err := CompileFlap(tmpFile, outFile, MachineARM64)
+			err := CompileFlap(tmpFile, outFile, ArchARM64)
 			if err != nil {
 				t.Fatalf("Compilation failed: %v", err)
 			}

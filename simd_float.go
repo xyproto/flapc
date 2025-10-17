@@ -10,12 +10,12 @@ import (
 // Cvtsi2sd - Convert int64 to scalar double (SSE2)
 // cvtsi2sd xmm, r64
 func (o *Out) Cvtsi2sd(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.cvtsi2sdX86(dst, src)
-	case MachineARM64:
+	case ArchARM64:
 		o.scvtfARM64(dst, src)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.fcvtRISCV(dst, src)
 	}
 }
@@ -26,7 +26,7 @@ func (o *Out) cvtsi2sdX86(dst, src string) {
 	}
 
 	// Get source register
-	srcReg, srcOk := GetRegister(o.machine, src)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !srcOk {
 		return
 	}
@@ -67,7 +67,7 @@ func (o *Out) scvtfARM64(dst, src string) {
 		fmt.Fprintf(os.Stderr, "scvtf %s, %s: ", dst, src)
 	}
 
-	srcReg, srcOk := GetRegister(o.machine, src)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !srcOk {
 		return
 	}
@@ -96,7 +96,7 @@ func (o *Out) fcvtRISCV(dst, src string) {
 		fmt.Fprintf(os.Stderr, "fcvt.d.l %s, %s: ", dst, src)
 	}
 
-	srcReg, srcOk := GetRegister(o.machine, src)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !srcOk {
 		return
 	}
@@ -121,12 +121,12 @@ func (o *Out) fcvtRISCV(dst, src string) {
 
 // AddpdXmm - Add Packed Double (SIMD addition)
 func (o *Out) AddpdXmm(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.addpdX86(dst, src)
-	case MachineARM64:
+	case ArchARM64:
 		o.faddARM64(dst, src)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.faddRISCV(dst, src)
 	}
 }
@@ -170,8 +170,8 @@ func (o *Out) addpdX86(dst, src string) {
 
 // SubpdXmm - Subtract Packed Double
 func (o *Out) SubpdXmm(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.subpdX86(dst, src)
 	}
 }
@@ -199,8 +199,8 @@ func (o *Out) subpdX86(dst, src string) {
 
 // MulpdXmm - Multiply Packed Double
 func (o *Out) MulpdXmm(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.mulpdX86(dst, src)
 	}
 }
@@ -228,8 +228,8 @@ func (o *Out) mulpdX86(dst, src string) {
 
 // DivpdXmm - Divide Packed Double
 func (o *Out) DivpdXmm(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.divpdX86(dst, src)
 	}
 }
@@ -257,8 +257,8 @@ func (o *Out) divpdX86(dst, src string) {
 
 // MovXmmToMem - Store XMM register to memory
 func (o *Out) MovXmmToMem(xmm, base string, offset int) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.movxmmToMemX86(xmm, base, offset)
 	}
 }
@@ -271,7 +271,7 @@ func (o *Out) movxmmToMemX86(xmm, base string, offset int) {
 	var xmmNum int
 	fmt.Sscanf(xmm, "xmm%d", &xmmNum)
 
-	baseReg, _ := GetRegister(o.machine, base)
+	baseReg, _ := GetRegister(o.machine.Arch, base)
 
 	// F2 prefix for scalar double
 	o.Write(0xF2)
@@ -320,8 +320,8 @@ func (o *Out) movxmmToMemX86(xmm, base string, offset int) {
 
 // MovMemToXmm - Load from memory to XMM register
 func (o *Out) MovMemToXmm(xmm, base string, offset int) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.movMemToXmmX86(xmm, base, offset)
 	}
 }
@@ -334,7 +334,7 @@ func (o *Out) movMemToXmmX86(xmm, base string, offset int) {
 	var xmmNum int
 	fmt.Sscanf(xmm, "xmm%d", &xmmNum)
 
-	baseReg, _ := GetRegister(o.machine, base)
+	baseReg, _ := GetRegister(o.machine.Arch, base)
 
 	o.Write(0xF2) // prefix
 
@@ -403,8 +403,8 @@ func (o *Out) faddRISCV(dst, src string) {
 
 // Cvttsd2si - Convert float64 to int64 with truncation
 func (o *Out) Cvttsd2si(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.cvttsd2siX86(dst, src)
 	}
 }
@@ -414,7 +414,7 @@ func (o *Out) cvttsd2siX86(dst, src string) {
 		fmt.Fprintf(os.Stderr, "cvttsd2si %s, %s: ", dst, src)
 	}
 
-	dstReg, _ := GetRegister(o.machine, dst)
+	dstReg, _ := GetRegister(o.machine.Arch, dst)
 
 	var xmmNum int
 	fmt.Sscanf(src, "xmm%d", &xmmNum)
@@ -448,8 +448,8 @@ func (o *Out) cvttsd2siX86(dst, src string) {
 // Ucomisd - Compare scalar double-precision floating-point values and set EFLAGS
 // ucomisd xmm1, xmm2
 func (o *Out) Ucomisd(xmm1, xmm2 string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.ucomisdX86(xmm1, xmm2)
 	}
 }
@@ -503,8 +503,8 @@ func (o *Out) Emit(bytes []byte) {
 // MovXmmToXmm - Move scalar double from one XMM register to another
 // movsd xmm1, xmm2
 func (o *Out) MovXmmToXmm(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.movX86XmmToXmm(dst, src)
 	}
 }

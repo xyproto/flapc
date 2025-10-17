@@ -15,22 +15,22 @@ import (
 
 // MulRegWithReg generates MUL dst, src (dst = dst * src)
 func (o *Out) MulRegWithReg(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.mulX86RegWithReg(dst, src)
-	case MachineARM64:
+	case ArchARM64:
 		o.mulARM64RegWithReg(dst, src)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.mulRISCVRegWithReg(dst, src)
 	}
 }
 
 // MulRegWithImm generates MUL dst, imm (dst = dst * imm)
 func (o *Out) MulRegWithImm(dst string, imm int32) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.mulX86RegWithImm(dst, imm)
-	case MachineARM64:
+	case ArchARM64:
 		// ARM64 doesn't have MUL with immediate, need to load to register first
 		// For now, we'll just document this limitation
 		if VerboseMode {
@@ -39,7 +39,7 @@ func (o *Out) MulRegWithImm(dst string, imm int32) {
 		if VerboseMode {
 			fmt.Fprintln(os.Stderr)
 		}
-	case MachineRiscv64:
+	case ArchRiscv64:
 		// RISC-V doesn't have MUL with immediate either
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "# mul %s, %d (load to temp reg needed):", dst, imm)
@@ -53,22 +53,22 @@ func (o *Out) MulRegWithImm(dst string, imm int32) {
 // MulRegWithRegToReg generates MUL dst, src1, src2 (dst = src1 * src2)
 // 3-operand form for ARM64 and RISC-V
 func (o *Out) MulRegWithRegToReg(dst, src1, src2 string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		// x86-64: MOV dst, src1; IMUL dst, src2
 		o.MovRegToReg(dst, src1)
 		o.MulRegWithReg(dst, src2)
-	case MachineARM64:
+	case ArchARM64:
 		o.mulARM64RegWithRegToReg(dst, src1, src2)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.mulRISCVRegWithRegToReg(dst, src1, src2)
 	}
 }
 
 // x86-64 IMUL (signed multiply) - 2 operand form
 func (o *Out) mulX86RegWithReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -102,7 +102,7 @@ func (o *Out) mulX86RegWithReg(dst, src string) {
 
 // x86-64 IMUL with immediate (3-operand form: dst = src * imm)
 func (o *Out) mulX86RegWithImm(dst string, imm int32) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
 	if !dstOk {
 		return
 	}
@@ -145,8 +145,8 @@ func (o *Out) mulX86RegWithImm(dst string, imm int32) {
 
 // ARM64 MUL (multiply) - 2 operand form
 func (o *Out) mulARM64RegWithReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -175,9 +175,9 @@ func (o *Out) mulARM64RegWithReg(dst, src string) {
 
 // ARM64 MUL - 3 operand form
 func (o *Out) mulARM64RegWithRegToReg(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -203,8 +203,8 @@ func (o *Out) mulARM64RegWithRegToReg(dst, src1, src2 string) {
 
 // RISC-V MUL (requires M extension)
 func (o *Out) mulRISCVRegWithReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -231,9 +231,9 @@ func (o *Out) mulRISCVRegWithReg(dst, src string) {
 
 // RISC-V MUL - 3 operand form
 func (o *Out) mulRISCVRegWithRegToReg(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}

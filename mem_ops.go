@@ -9,8 +9,8 @@ import (
 
 // MovRegToMem - Store register to memory [base+offset]
 func (o *Out) MovRegToMem(src, base string, offset int) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.movRegToMemX86(src, base, offset)
 	}
 }
@@ -20,8 +20,8 @@ func (o *Out) movRegToMemX86(src, base string, offset int) {
 		fmt.Fprintf(os.Stderr, "mov [%s+%d], %s: ", base, offset, src)
 	}
 
-	srcReg, _ := GetRegister(o.machine, src)
-	baseReg, _ := GetRegister(o.machine, base)
+	srcReg, _ := GetRegister(o.machine.Arch, src)
+	baseReg, _ := GetRegister(o.machine.Arch, base)
 
 	// REX.W for 64-bit operation
 	rex := uint8(0x48)
@@ -66,8 +66,8 @@ func (o *Out) movRegToMemX86(src, base string, offset int) {
 
 // MovMemToReg - Load from memory [base+offset] to register
 func (o *Out) MovMemToReg(dst, base string, offset int) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.movMemToRegX86(dst, base, offset)
 	}
 }
@@ -77,8 +77,8 @@ func (o *Out) movMemToRegX86(dst, base string, offset int) {
 		fmt.Fprintf(os.Stderr, "mov %s, [%s+%d]: ", dst, base, offset)
 	}
 
-	dstReg, _ := GetRegister(o.machine, dst)
-	baseReg, _ := GetRegister(o.machine, base)
+	dstReg, _ := GetRegister(o.machine.Arch, dst)
+	baseReg, _ := GetRegister(o.machine.Arch, base)
 
 	rex := uint8(0x48)
 	if dstReg.Encoding >= 8 {
@@ -122,8 +122,8 @@ func (o *Out) movMemToRegX86(dst, base string, offset int) {
 
 // ShlImmReg - Shift left by immediate
 func (o *Out) ShlImmReg(dst string, imm int) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.shlImmX86(dst, imm)
 	}
 }
@@ -133,7 +133,7 @@ func (o *Out) shlImmX86(dst string, imm int) {
 		fmt.Fprintf(os.Stderr, "shl %s, %d: ", dst, imm)
 	}
 
-	dstReg, _ := GetRegister(o.machine, dst)
+	dstReg, _ := GetRegister(o.machine.Arch, dst)
 
 	rex := uint8(0x48)
 	if dstReg.Encoding >= 8 {
@@ -161,8 +161,8 @@ func (o *Out) shlImmX86(dst string, imm int) {
 
 // MovByteRegToMem - Store byte from register to memory [base+offset]
 func (o *Out) MovByteRegToMem(src, base string, offset int) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.movByteRegToMemX86(src, base, offset)
 	}
 }
@@ -172,8 +172,8 @@ func (o *Out) movByteRegToMemX86(src, base string, offset int) {
 		fmt.Fprintf(os.Stderr, "mov byte [%s+%d], %s: ", base, offset, src)
 	}
 
-	srcReg, _ := GetRegister(o.machine, src)
-	baseReg, _ := GetRegister(o.machine, base)
+	srcReg, _ := GetRegister(o.machine.Arch, src)
+	baseReg, _ := GetRegister(o.machine.Arch, base)
 
 	// REX prefix for extended registers (no REX.W for byte operation)
 	needREX := srcReg.Encoding >= 8 || baseReg.Encoding >= 8 || srcReg.Encoding >= 4
@@ -221,8 +221,8 @@ func (o *Out) movByteRegToMemX86(src, base string, offset int) {
 
 // LeaMemToReg - Load effective address [base+offset] to register
 func (o *Out) LeaMemToReg(dst, base string, offset int) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.leaMemToRegX86(dst, base, offset)
 	}
 }
@@ -232,8 +232,8 @@ func (o *Out) leaMemToRegX86(dst, base string, offset int) {
 		fmt.Fprintf(os.Stderr, "lea %s, [%s+%d]: ", dst, base, offset)
 	}
 
-	dstReg, _ := GetRegister(o.machine, dst)
-	baseReg, _ := GetRegister(o.machine, base)
+	dstReg, _ := GetRegister(o.machine.Arch, dst)
+	baseReg, _ := GetRegister(o.machine.Arch, base)
 
 	rex := uint8(0x48) // REX.W for 64-bit
 	if dstReg.Encoding >= 8 {

@@ -51,7 +51,7 @@ func (t CType) String() string {
 }
 
 // Size returns the size in bytes for the given architecture
-func (t CType) Size(arch Machine) int {
+func (t CType) Size(arch Arch) int {
 	switch t {
 	case CTypeVoid:
 		return 0
@@ -179,12 +179,12 @@ func (dl *DynamicLinker) GenerateFunctionCall(eb *ExecutableBuilder, funcName st
 	}
 
 	// Generate calling convention code
-	switch eb.machine {
-	case MachineX86_64:
+	switch eb.platform.Arch {
+	case ArchX86_64:
 		return dl.generateX86FunctionCall(eb, fn, args)
-	case MachineARM64:
+	case ArchARM64:
 		return dl.generateARM64FunctionCall(eb, fn, args)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		return dl.generateRISCVFunctionCall(eb, fn, args)
 	default:
 		return fmt.Errorf("unsupported architecture for function calls")

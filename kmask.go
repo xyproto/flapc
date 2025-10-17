@@ -26,12 +26,12 @@ import (
 // KAndMaskToMask computes bitwise AND on mask registers
 // dst = src1 & src2
 func (o *Out) KAndMaskToMask(dst, src1, src2 string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.kandX86MaskToMask(dst, src1, src2)
-	case MachineARM64:
+	case ArchARM64:
 		o.kandARM64MaskToMask(dst, src1, src2)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.kandRISCVMaskToMask(dst, src1, src2)
 	}
 }
@@ -39,12 +39,12 @@ func (o *Out) KAndMaskToMask(dst, src1, src2 string) {
 // KOrMaskToMask computes bitwise OR on mask registers
 // dst = src1 | src2
 func (o *Out) KOrMaskToMask(dst, src1, src2 string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.korX86MaskToMask(dst, src1, src2)
-	case MachineARM64:
+	case ArchARM64:
 		o.korARM64MaskToMask(dst, src1, src2)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.korRISCVMaskToMask(dst, src1, src2)
 	}
 }
@@ -52,12 +52,12 @@ func (o *Out) KOrMaskToMask(dst, src1, src2 string) {
 // KXorMaskToMask computes bitwise XOR on mask registers
 // dst = src1 ^ src2
 func (o *Out) KXorMaskToMask(dst, src1, src2 string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.kxorX86MaskToMask(dst, src1, src2)
-	case MachineARM64:
+	case ArchARM64:
 		o.kxorARM64MaskToMask(dst, src1, src2)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.kxorRISCVMaskToMask(dst, src1, src2)
 	}
 }
@@ -65,12 +65,12 @@ func (o *Out) KXorMaskToMask(dst, src1, src2 string) {
 // KNotMaskToMask computes bitwise NOT on mask register
 // dst = ~src
 func (o *Out) KNotMaskToMask(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.knotX86MaskToMask(dst, src)
-	case MachineARM64:
+	case ArchARM64:
 		o.knotARM64MaskToMask(dst, src)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.knotRISCVMaskToMask(dst, src)
 	}
 }
@@ -82,9 +82,9 @@ func (o *Out) KNotMaskToMask(dst, src string) {
 // x86-64 KANDW k1, k2, k3 (16-bit mask operation)
 // VEX.L1.0F.W0 41 /r
 func (o *Out) kandX86MaskToMask(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -124,9 +124,9 @@ func (o *Out) kandX86MaskToMask(dst, src1, src2 string) {
 // x86-64 KORW k1, k2, k3
 // VEX.L1.0F.W0 45 /r
 func (o *Out) korX86MaskToMask(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -161,9 +161,9 @@ func (o *Out) korX86MaskToMask(dst, src1, src2 string) {
 // x86-64 KXORW k1, k2, k3
 // VEX.L1.0F.W0 47 /r
 func (o *Out) kxorX86MaskToMask(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -198,8 +198,8 @@ func (o *Out) kxorX86MaskToMask(dst, src1, src2 string) {
 // x86-64 KNOTW k1, k2
 // VEX.L0.0F.W0 44 /r
 func (o *Out) knotX86MaskToMask(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -231,9 +231,9 @@ func (o *Out) knotX86MaskToMask(dst, src string) {
 // ============================================================================
 
 func (o *Out) kandARM64MaskToMask(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -262,9 +262,9 @@ func (o *Out) kandARM64MaskToMask(dst, src1, src2 string) {
 }
 
 func (o *Out) korARM64MaskToMask(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -293,9 +293,9 @@ func (o *Out) korARM64MaskToMask(dst, src1, src2 string) {
 }
 
 func (o *Out) kxorARM64MaskToMask(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -324,8 +324,8 @@ func (o *Out) kxorARM64MaskToMask(dst, src1, src2 string) {
 }
 
 func (o *Out) knotARM64MaskToMask(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -357,9 +357,9 @@ func (o *Out) knotARM64MaskToMask(dst, src string) {
 // ============================================================================
 
 func (o *Out) kandRISCVMaskToMask(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -389,9 +389,9 @@ func (o *Out) kandRISCVMaskToMask(dst, src1, src2 string) {
 }
 
 func (o *Out) korRISCVMaskToMask(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -421,9 +421,9 @@ func (o *Out) korRISCVMaskToMask(dst, src1, src2 string) {
 }
 
 func (o *Out) kxorRISCVMaskToMask(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -453,8 +453,8 @@ func (o *Out) kxorRISCVMaskToMask(dst, src1, src2 string) {
 }
 
 func (o *Out) knotRISCVMaskToMask(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}

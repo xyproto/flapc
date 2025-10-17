@@ -19,12 +19,12 @@ import (
 // VMulPDVectorToVector performs vector multiplication: dst = src1 * src2
 // All three operands are vector registers
 func (o *Out) VMulPDVectorToVector(dst, src1, src2 string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.vmulpdX86VectorToVector(dst, src1, src2)
-	case MachineARM64:
+	case ArchARM64:
 		o.vmulpdARM64VectorToVector(dst, src1, src2)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.vmulpdRISCVVectorToVector(dst, src1, src2)
 	}
 }
@@ -36,9 +36,9 @@ func (o *Out) VMulPDVectorToVector(dst, src1, src2 string) {
 // x86-64 VMULPD zmm, zmm, zmm (AVX-512)
 // EVEX.NDS.512.66.0F.W1 59 /r
 func (o *Out) vmulpdX86VectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -157,9 +157,9 @@ func (o *Out) vmulpdX86VectorToVector(dst, src1, src2 string) {
 
 // ARM64 FMUL Zd.D, Pg/M, Zn.D, Zm.D (SVE2)
 func (o *Out) vmulpdARM64VectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -216,9 +216,9 @@ func (o *Out) vmulpdARM64VectorToVector(dst, src1, src2 string) {
 
 // RISC-V vfmul.vv vd, vs2, vs1 (RVV)
 func (o *Out) vmulpdRISCVVectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}

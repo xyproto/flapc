@@ -32,24 +32,24 @@ const (
 // JumpConditional generates a conditional jump instruction
 // offset is the relative offset to jump to (signed, from the end of the instruction)
 func (o *Out) JumpConditional(condition JumpCondition, offset int32) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.jmpX86Conditional(condition, offset)
-	case MachineARM64:
+	case ArchARM64:
 		o.jmpARM64Conditional(condition, offset)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.jmpRISCVConditional(condition, offset)
 	}
 }
 
 // JumpUnconditional generates an unconditional jump
 func (o *Out) JumpUnconditional(offset int32) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.jmpX86Unconditional(offset)
-	case MachineARM64:
+	case ArchARM64:
 		o.jmpARM64Unconditional(offset)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.jmpRISCVUnconditional(offset)
 	}
 }

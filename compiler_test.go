@@ -199,7 +199,7 @@ func TestCTypeSize(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.ctype.String(), func(t *testing.T) {
-			size := tt.ctype.Size(MachineX86_64)
+			size := tt.ctype.Size(ArchX86_64)
 			if size != tt.expected {
 				t.Errorf("Size(%s) = %d, want %d", tt.ctype, size, tt.expected)
 			}

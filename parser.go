@@ -2498,9 +2498,9 @@ type LambdaFunc struct {
 	Body   Expression
 }
 
-func NewFlapCompiler(machine Machine) (*FlapCompiler, error) {
+func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 	// Create ExecutableBuilder
-	eb, err := New(machine.String())
+	eb, err := NewWithPlatform(platform)
 	if err != nil {
 		return nil, err
 	}
@@ -2511,7 +2511,7 @@ func NewFlapCompiler(machine Machine) (*FlapCompiler, error) {
 
 	// Create Out wrapper
 	out := &Out{
-		machine: eb.machine,
+		machine: eb.platform,
 		writer:  eb.TextWriter(),
 		eb:      eb,
 	}
@@ -2542,14 +2542,14 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	// Use ARM64 code generator if target is ARM64
 	if VerboseMode {
 	}
-	if fc.eb.machine == MachineARM64 {
+	if fc.eb.platform.Arch == ArchARM64 {
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "-> Using ARM64 code generator\n")
 		}
 		return fc.compileARM64(program, outputPath)
 	}
 	// Use RISC-V64 code generator if target is RISC-V64
-	if fc.eb.machine == MachineRiscv64 {
+	if fc.eb.platform.Arch == ArchRiscv64 {
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "-> Using RISC-V64 code generator\n")
 		}
@@ -9467,7 +9467,7 @@ func addNamespaceToFunctions(program *Program, namespace string) {
 	}
 }
 
-func CompileFlap(inputPath string, outputPath string, machine Machine) error {
+func CompileFlap(inputPath string, outputPath string, platform Platform) error {
 	// Read input file
 	content, err := os.ReadFile(inputPath)
 	if err != nil {
@@ -9545,7 +9545,7 @@ func CompileFlap(inputPath string, outputPath string, machine Machine) error {
 	combinedSource = combinedSource + string(content)
 
 	// Compile
-	compiler, err := NewFlapCompiler(machine)
+	compiler, err := NewFlapCompiler(platform)
 	if err != nil {
 		return fmt.Errorf("failed to create compiler: %v", err)
 	}

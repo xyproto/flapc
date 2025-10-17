@@ -18,21 +18,21 @@ import (
 
 // VDivPDVectorToVector performs vector division: dst = src1 / src2
 func (o *Out) VDivPDVectorToVector(dst, src1, src2 string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.vdivpdX86VectorToVector(dst, src1, src2)
-	case MachineARM64:
+	case ArchARM64:
 		o.vdivpdARM64VectorToVector(dst, src1, src2)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.vdivpdRISCVVectorToVector(dst, src1, src2)
 	}
 }
 
 // x86-64 VDIVPD (opcode 0x5E)
 func (o *Out) vdivpdX86VectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -121,9 +121,9 @@ func (o *Out) vdivpdX86VectorToVector(dst, src1, src2 string) {
 
 // ARM64 FDIV
 func (o *Out) vdivpdARM64VectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -168,9 +168,9 @@ func (o *Out) vdivpdARM64VectorToVector(dst, src1, src2 string) {
 
 // RISC-V vfdiv.vv
 func (o *Out) vdivpdRISCVVectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	src1Reg, src1Ok := GetRegister(o.machine, src1)
-	src2Reg, src2Ok := GetRegister(o.machine, src2)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
+	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}

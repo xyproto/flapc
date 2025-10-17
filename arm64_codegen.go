@@ -15,7 +15,7 @@ type ARM64CodeGen struct {
 // NewARM64CodeGen creates a new ARM64 code generator
 func NewARM64CodeGen(eb *ExecutableBuilder) *ARM64CodeGen {
 	return &ARM64CodeGen{
-		out:       &ARM64Out{out: &Out{machine: MachineARM64, writer: eb.TextWriter(), eb: eb}},
+		out:       &ARM64Out{out: &Out{machine: Platform{Arch: ArchARM64, OS: OSDarwin}, writer: eb.TextWriter(), eb: eb}},
 		eb:        eb,
 		stackVars: make(map[string]int),
 		stackSize: 0,

@@ -20,7 +20,7 @@ func TestLeaSymbolToReg(t *testing.T) {
 
 	// Create Out structure
 	out := &Out{
-		machine: eb.machine,
+		machine: eb.platform,
 		writer:  &BufferWrapper{&eb.text},
 		eb:      eb,
 	}
@@ -64,7 +64,7 @@ func TestLeaImmToReg(t *testing.T) {
 	}
 
 	out := &Out{
-		machine: eb.machine,
+		machine: eb.platform,
 		writer:  &BufferWrapper{&eb.text},
 		eb:      eb,
 	}
@@ -108,7 +108,7 @@ func TestLeaARM64(t *testing.T) {
 	eb.Define("data", "test\x00")
 
 	out := &Out{
-		machine: eb.machine,
+		machine: eb.platform,
 		writer:  &BufferWrapper{&eb.text},
 		eb:      eb,
 	}
@@ -148,7 +148,7 @@ func TestLeaRISCV(t *testing.T) {
 	eb.Define("label", "value\x00")
 
 	out := &Out{
-		machine: eb.machine,
+		machine: eb.platform,
 		writer:  &BufferWrapper{&eb.text},
 		eb:      eb,
 	}

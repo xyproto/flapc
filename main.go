@@ -12,45 +12,164 @@ import (
 	"strings"
 )
 
-// A tiny compiler for x86_64, aarch64, and riscv64 ELF files for Linux
+// A tiny compiler for x86_64, aarch64, and riscv64 for Linux, macOS, FreeBSD
 
 const versionString = "flapc 1.0.0"
 
-// Machine architecture constants
-type Machine int
+// Architecture type
+type Arch int
 
 const (
-	MachineX86_64 Machine = iota
-	MachineARM64
-	MachineRiscv64
+	ArchX86_64 Arch = iota
+	ArchARM64
+	ArchRiscv64
 )
 
-// MachineToString converts machine constant to string representation
-func (m Machine) String() string {
-	switch m {
-	case MachineX86_64:
+func (a Arch) String() string {
+	switch a {
+	case ArchX86_64:
 		return "x86_64"
-	case MachineARM64:
+	case ArchARM64:
 		return "aarch64"
-	case MachineRiscv64:
+	case ArchRiscv64:
 		return "riscv64"
 	default:
 		return "unknown"
 	}
 }
 
-// StringToMachine converts string representation to machine constant
-func StringToMachine(machine string) (Machine, error) {
-	switch strings.ToLower(machine) {
-	case "x86_64", "amd64":
-		return MachineX86_64, nil
+// ParseArch parses an architecture string (like GOARCH values)
+func ParseArch(s string) (Arch, error) {
+	switch strings.ToLower(s) {
+	case "x86_64", "amd64", "x86-64":
+		return ArchX86_64, nil
 	case "aarch64", "arm64":
-		return MachineARM64, nil
+		return ArchARM64, nil
 	case "riscv64", "riscv", "rv64":
-		return MachineRiscv64, nil
+		return ArchRiscv64, nil
 	default:
-		return -1, fmt.Errorf("unsupported architecture: %s", machine)
+		return 0, fmt.Errorf("unsupported architecture: %s (supported: amd64, arm64, riscv64)", s)
 	}
+}
+
+// OS type
+type OS int
+
+const (
+	OSLinux OS = iota
+	OSDarwin
+	OSFreeBSD
+)
+
+func (o OS) String() string {
+	switch o {
+	case OSLinux:
+		return "linux"
+	case OSDarwin:
+		return "darwin"
+	case OSFreeBSD:
+		return "freebsd"
+	default:
+		return "unknown"
+	}
+}
+
+// ParseOS parses an OS string (like GOOS values)
+func ParseOS(s string) (OS, error) {
+	switch strings.ToLower(s) {
+	case "linux":
+		return OSLinux, nil
+	case "darwin", "macos":
+		return OSDarwin, nil
+	case "freebsd":
+		return OSFreeBSD, nil
+	default:
+		return 0, fmt.Errorf("unsupported OS: %s (supported: linux, darwin, freebsd)", s)
+	}
+}
+
+// Platform represents a target platform (architecture + OS)
+type Platform struct {
+	Arch Arch
+	OS   OS
+}
+
+// String returns a string representation like "aarch64" (just the arch for compatibility)
+func (p Platform) String() string {
+	return p.Arch.String()
+}
+
+// FullString returns the full platform string like "arm64-darwin"
+func (p Platform) FullString() string {
+	archStr := p.Arch.String()
+	// Convert aarch64 -> arm64 for cleaner output
+	if p.Arch == ArchARM64 {
+		archStr = "arm64"
+	} else if p.Arch == ArchX86_64 {
+		archStr = "amd64"
+	}
+	return archStr + "-" + p.OS.String()
+}
+
+// IsMachO returns true if this platform uses Mach-O format
+func (p Platform) IsMachO() bool {
+	return p.OS == OSDarwin
+}
+
+// IsELF returns true if this platform uses ELF format
+func (p Platform) IsELF() bool {
+	return p.OS == OSLinux || p.OS == OSFreeBSD
+}
+
+// GetDefaultPlatform returns the platform for the current runtime
+func GetDefaultPlatform() Platform {
+	var arch Arch
+	switch runtime.GOARCH {
+	case "amd64":
+		arch = ArchX86_64
+	case "arm64":
+		arch = ArchARM64
+	case "riscv64":
+		arch = ArchRiscv64
+	default:
+		arch = ArchX86_64 // fallback
+	}
+
+	var os OS
+	switch runtime.GOOS {
+	case "linux":
+		os = OSLinux
+	case "darwin":
+		os = OSDarwin
+	case "freebsd":
+		os = OSFreeBSD
+	default:
+		os = OSLinux // fallback
+	}
+
+	return Platform{Arch: arch, OS: os}
+}
+
+// Deprecated: Use ParseArch and ParseOS separately
+func StringToMachine(s string) (Platform, error) {
+	// For backward compatibility, try to parse as "arch" or "arch-os"
+	parts := strings.Split(s, "-")
+	arch, err := ParseArch(parts[0])
+	if err != nil {
+		return Platform{}, err
+	}
+
+	var os OS
+	if len(parts) > 1 {
+		os, err = ParseOS(parts[1])
+		if err != nil {
+			return Platform{}, err
+		}
+	} else {
+		os = GetDefaultPlatform().OS
+	}
+
+	return Platform{Arch: arch, OS: os}, nil
 }
 
 type Writer interface {
@@ -84,13 +203,12 @@ type BufferWrapper struct {
 }
 
 type ExecutableBuilder struct {
-	machine                 Machine
+	platform                Platform
 	arch                    Architecture
 	consts                  map[string]*Const
 	labels                  map[string]int // Maps label names to their offsets in .text
 	dynlinker               *DynamicLinker
 	useDynamicLinking       bool
-	useMachO                bool // Use Mach-O format (macOS) instead of ELF
 	neededFunctions         []string
 	pcRelocations           []PCRelocation
 	callPatches             []CallPatch
@@ -136,12 +254,12 @@ func (eb *ExecutableBuilder) PatchPCRelocations(textAddr, rodataAddr uint64, rod
 
 		offset := int(reloc.offset)
 
-		switch eb.machine {
-		case MachineX86_64:
+		switch eb.platform.Arch {
+		case ArchX86_64:
 			eb.patchX86_64PCRel(textBytes, offset, textAddr, targetAddr, reloc.symbolName)
-		case MachineARM64:
+		case ArchARM64:
 			eb.patchARM64PCRel(textBytes, offset, textAddr, targetAddr, reloc.symbolName)
-		case MachineRiscv64:
+		case ArchRiscv64:
 			eb.patchRISCV64PCRel(textBytes, offset, textAddr, targetAddr, reloc.symbolName)
 		}
 	}
@@ -302,18 +420,33 @@ func (eb *ExecutableBuilder) patchRISCV64PCRel(textBytes []byte, offset int, tex
 }
 
 func New(machineStr string) (*ExecutableBuilder, error) {
-	machine, err := StringToMachine(machineStr)
+	platform, err := StringToMachine(machineStr)
 	if err != nil {
 		return nil, err
 	}
 
-	arch, err := NewArchitecture(machine.String())
+	arch, err := NewArchitecture(platform.String())
 	if err != nil {
 		return nil, err
 	}
 
 	return &ExecutableBuilder{
-		machine:   machine,
+		platform:  platform,
+		arch:      arch,
+		consts:    make(map[string]*Const),
+		dynlinker: NewDynamicLinker(),
+	}, nil
+}
+
+// NewWithPlatform creates an ExecutableBuilder for a specific platform
+func NewWithPlatform(platform Platform) (*ExecutableBuilder, error) {
+	arch, err := NewArchitecture(platform.String())
+	if err != nil {
+		return nil, err
+	}
+
+	return &ExecutableBuilder{
+		platform:  platform,
 		arch:      arch,
 		consts:    make(map[string]*Const),
 		dynlinker: NewDynamicLinker(),
@@ -321,21 +454,21 @@ func New(machineStr string) (*ExecutableBuilder, error) {
 }
 
 // getSyscallNumbers returns architecture-specific syscall numbers
-func getSyscallNumbers(machine Machine) map[string]string {
-	switch machine {
-	case MachineX86_64:
+func getSyscallNumbers(platform Platform) map[string]string {
+	switch platform.Arch {
+	case ArchX86_64:
 		return map[string]string{
 			"SYS_WRITE": "1",
 			"SYS_EXIT":  "60",
 			"STDOUT":    "1",
 		}
-	case MachineARM64:
+	case ArchARM64:
 		return map[string]string{
 			"SYS_WRITE": "64",
 			"SYS_EXIT":  "93",
 			"STDOUT":    "1",
 		}
-	case MachineRiscv64:
+	case ArchRiscv64:
 		return map[string]string{
 			"SYS_WRITE": "64",
 			"SYS_EXIT":  "93",
@@ -389,7 +522,7 @@ func (eb *ExecutableBuilder) PatchCallSites(textAddr uint64) {
 
 func (eb *ExecutableBuilder) Lookup(what string) string {
 	// Check architecture-specific syscall numbers first
-	syscalls := getSyscallNumbers(eb.machine)
+	syscalls := getSyscallNumbers(eb.platform)
 	if v, ok := syscalls[what]; ok {
 		return v
 	}
@@ -402,7 +535,7 @@ func (eb *ExecutableBuilder) Lookup(what string) string {
 
 func (eb *ExecutableBuilder) Bytes() []byte {
 	// For Mach-O format (macOS)
-	if eb.useMachO {
+	if eb.platform.IsMachO() {
 		if err := eb.WriteMachO(); err != nil {
 			if VerboseMode {
 				fmt.Fprintf(os.Stderr, "ERROR: Failed to write Mach-O: %v\n", err)
@@ -526,7 +659,7 @@ func (eb *ExecutableBuilder) WriteData(data []byte) uint64 {
 
 func (eb *ExecutableBuilder) MovInstruction(dst, src string) error {
 	out := &Out{
-		machine: eb.machine,
+		machine: eb.platform,
 		writer:  eb.TextWriter(),
 		eb:      eb,
 	}
@@ -601,13 +734,13 @@ func (eb *ExecutableBuilder) GenerateCallInstruction(funcName string) error {
 	}
 
 	// Generate architecture-specific call instruction with placeholder
-	switch eb.machine {
-	case MachineX86_64:
+	switch eb.platform.Arch {
+	case ArchX86_64:
 		w.Write(0xE8)               // CALL rel32
 		w.WriteUnsigned(0x12345678) // Placeholder - will be patched
-	case MachineARM64:
+	case ArchARM64:
 		w.WriteUnsigned(0x94000000) // BL placeholder
-	case MachineRiscv64:
+	case ArchRiscv64:
 		w.WriteUnsigned(0x000000EF) // JAL placeholder
 	}
 
@@ -660,11 +793,20 @@ var UpdateDepsFlag bool
 func main() {
 	const defaultOutputFilename = "/tmp/main"
 
-	var machine = flag.String("m", "x86_64", "target machine architecture (x86_64, amd64, arm64, aarch64, riscv64, riscv, rv64)")
-	var machineLong = flag.String("machine", "x86_64", "target machine architecture (x86_64, amd64, arm64, aarch64, riscv64, riscv, rv64)")
+	// Get default platform
+	defaultPlatform := GetDefaultPlatform()
+	defaultArchStr := "amd64"
+	if defaultPlatform.Arch == ArchARM64 {
+		defaultArchStr = "arm64"
+	} else if defaultPlatform.Arch == ArchRiscv64 {
+		defaultArchStr = "riscv64"
+	}
+	defaultOSStr := defaultPlatform.OS.String()
+
+	var archFlag = flag.String("arch", defaultArchStr, "target architecture (amd64, arm64, riscv64)")
+	var osFlag = flag.String("os", defaultOSStr, "target OS (linux, darwin, freebsd)")
 	var outputFilenameFlag = flag.String("o", defaultOutputFilename, "output executable filename")
 	var outputFilenameLongFlag = flag.String("output", defaultOutputFilename, "output executable filename")
-	var formatFlag = flag.String("format", "auto", "output format: auto, elf, macho (auto detects based on OS)")
 	var versionShort = flag.Bool("V", false, "print version information and exit")
 	var version = flag.Bool("version", false, "print version information and exit")
 	var verbose = flag.Bool("v", false, "verbose mode (show detailed compilation info)")
@@ -685,11 +827,18 @@ func main() {
 	// Set global verbosity flag (use whichever was specified)
 	VerboseMode = *verbose || *verboseLong
 
-	// Use whichever flag was specified (prefer short form if both given)
-	targetMachine := *machine
-	if *machineLong != "x86_64" {
-		targetMachine = *machineLong
+	// Parse target platform
+	targetArch, err := ParseArch(*archFlag)
+	if err != nil {
+		log.Fatalf("Invalid architecture: %v", err)
 	}
+
+	targetOS, err := ParseOS(*osFlag)
+	if err != nil {
+		log.Fatalf("Invalid OS: %v", err)
+	}
+
+	targetPlatform := Platform{Arch: targetArch, OS: targetOS}
 
 	// Use whichever output flag was specified (prefer short form if both given)
 	outputFilename := *outputFilenameFlag
@@ -715,25 +864,14 @@ func main() {
 		fmt.Fprintln(os.Stderr, "flapc: warning: no input files")
 	}
 
-	// Determine output format
-	useMachO := false
-	switch *formatFlag {
-	case "auto":
-		// Auto-detect based on OS
-		useMachO = (runtime.GOOS == "darwin")
-	case "macho":
-		useMachO = true
-	case "elf":
-		useMachO = false
-	default:
-		log.Fatalf("Unknown format: %s (use auto, elf, or macho)", *formatFlag)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Target platform: %s\n", targetPlatform.FullString())
 	}
 
-	eb, err := New(targetMachine)
+	eb, err := NewWithPlatform(targetPlatform)
 	if err != nil {
 		log.Fatalln(err)
 	}
-	eb.useMachO = useMachO
 
 	// Handle -c flag for inline code execution
 	if *codeFlag != "" {
@@ -760,8 +898,7 @@ func main() {
 			inlineFlagProvided = false
 		}
 
-		machine, _ := StringToMachine(targetMachine)
-		err = CompileFlap(tmpFilename, writeToFilename, machine)
+		err = CompileFlap(tmpFilename, writeToFilename, targetPlatform)
 		if err != nil {
 			log.Fatalf("Flap compilation error: %v", err)
 		}
@@ -790,8 +927,7 @@ func main() {
 					writeToFilename = strings.TrimSuffix(filepath.Base(file), ".flap")
 				}
 
-				machine, _ := StringToMachine(targetMachine)
-				err := CompileFlap(file, writeToFilename, machine)
+				err := CompileFlap(file, writeToFilename, targetPlatform)
 				if err != nil {
 					log.Fatalf("Flap compilation error: %v", err)
 				}

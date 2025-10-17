@@ -10,7 +10,7 @@ func (x *X86_64) MovImmediate(w Writer, dest, val string) error {
 }
 
 func (x *X86_64) IsValidRegister(reg string) bool {
-	return IsRegister(MachineX86_64, reg)
+	return IsRegister(ArchX86_64, reg)
 }
 
 func (x *X86_64) Syscall(w Writer) error {
@@ -36,7 +36,7 @@ func (r *Riscv64) MovImmediate(w Writer, dest, val string) error {
 }
 
 func (r *Riscv64) IsValidRegister(reg string) bool {
-	return IsRegister(MachineRiscv64, reg)
+	return IsRegister(ArchRiscv64, reg)
 }
 
 func (r *Riscv64) Syscall(w Writer) error {

@@ -25,12 +25,12 @@ import (
 // VAbsPDVectorToVector computes absolute value of all elements
 // dst[i] = abs(src[i])
 func (o *Out) VAbsPDVectorToVector(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.vabspdX86VectorToVector(dst, src)
-	case MachineARM64:
+	case ArchARM64:
 		o.vabsARM64VectorToVector(dst, src)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.vabsRISCVVectorToVector(dst, src)
 	}
 }
@@ -43,8 +43,8 @@ func (o *Out) VAbsPDVectorToVector(dst, src string) {
 // Absolute value = AND with 0x7FFFFFFFFFFFFFFF to clear sign bit
 // Uses VBROADCASTSD + VANDPD
 func (o *Out) vabspdX86VectorToVector(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -122,8 +122,8 @@ func (o *Out) vabspdX86VectorToVector(dst, src string) {
 
 // ARM64 FABS zd.d, pg/m, zn.d (SVE2) or FABS vd.2d, vn.2d (NEON)
 func (o *Out) vabsARM64VectorToVector(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -182,8 +182,8 @@ func (o *Out) vabsARM64VectorToVector(dst, src string) {
 
 // RISC-V vfabs.v vd, vs2
 func (o *Out) vabsRISCVVectorToVector(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}

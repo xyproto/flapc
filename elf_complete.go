@@ -599,12 +599,12 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 }
 
 func (eb *ExecutableBuilder) getInterpreterPath() string {
-	switch eb.machine {
-	case MachineX86_64:
+	switch eb.platform.Arch {
+	case ArchX86_64:
 		return "/lib64/ld-linux-x86-64.so.2"
-	case MachineARM64:
+	case ArchARM64:
 		return "/lib/ld-linux-aarch64.so.1"
-	case MachineRiscv64:
+	case ArchRiscv64:
 		return "/lib/ld-linux-riscv64-lp64d.so.1"
 	default:
 		return "/lib64/ld-linux-x86-64.so.2"
@@ -619,12 +619,12 @@ func (eb *ExecutableBuilder) patchPLTCalls(ds *DynamicSections, textAddr uint64,
 		fmt.Fprintf(os.Stderr, "Text bytes (%d total): %x\n", len(textBytes), textBytes)
 	}
 
-	switch eb.machine {
-	case MachineX86_64:
+	switch eb.platform.Arch {
+	case ArchX86_64:
 		eb.patchX86PLTCalls(textBytes, ds, textAddr, pltBase, functions)
-	case MachineARM64:
+	case ArchARM64:
 		eb.patchARM64PLTCalls(textBytes, ds, textAddr, pltBase, functions)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		eb.patchRISCVPLTCalls(textBytes, ds, textAddr, pltBase, functions)
 	}
 

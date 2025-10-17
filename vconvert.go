@@ -25,12 +25,12 @@ import (
 // VCvtQQ2PDVectorToVector converts packed int64 to float64
 // dst[i] = (float64)src[i]
 func (o *Out) VCvtQQ2PDVectorToVector(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.vcvtqq2pdX86VectorToVector(dst, src)
-	case MachineARM64:
+	case ArchARM64:
 		o.vcvtqq2pdARM64VectorToVector(dst, src)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.vcvtqq2pdRISCVVectorToVector(dst, src)
 	}
 }
@@ -38,12 +38,12 @@ func (o *Out) VCvtQQ2PDVectorToVector(dst, src string) {
 // VCvtTPD2QQVectorToVector converts packed float64 to int64 with truncation
 // dst[i] = (int64)trunc(src[i])
 func (o *Out) VCvtTPD2QQVectorToVector(dst, src string) {
-	switch o.machine {
-	case MachineX86_64:
+	switch o.machine.Arch {
+	case ArchX86_64:
 		o.vcvttpd2qqX86VectorToVector(dst, src)
-	case MachineARM64:
+	case ArchARM64:
 		o.vcvttpd2qqARM64VectorToVector(dst, src)
-	case MachineRiscv64:
+	case ArchRiscv64:
 		o.vcvttpd2qqRISCVVectorToVector(dst, src)
 	}
 }
@@ -55,8 +55,8 @@ func (o *Out) VCvtTPD2QQVectorToVector(dst, src string) {
 // x86-64 VCVTQQ2PD zmm1, zmm2/m512
 // EVEX.512.F3.0F.W1 E6 /r
 func (o *Out) vcvtqq2pdX86VectorToVector(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -156,8 +156,8 @@ func (o *Out) vcvtqq2pdX86VectorToVector(dst, src string) {
 // x86-64 VCVTTPD2QQ zmm1, zmm2/m512
 // EVEX.512.66.0F.W1 7A /r
 func (o *Out) vcvttpd2qqX86VectorToVector(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -255,8 +255,8 @@ func (o *Out) vcvttpd2qqX86VectorToVector(dst, src string) {
 // ============================================================================
 
 func (o *Out) vcvtqq2pdARM64VectorToVector(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -307,8 +307,8 @@ func (o *Out) vcvtqq2pdARM64VectorToVector(dst, src string) {
 // ============================================================================
 
 func (o *Out) vcvttpd2qqARM64VectorToVector(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -361,8 +361,8 @@ func (o *Out) vcvttpd2qqARM64VectorToVector(dst, src string) {
 // RISC-V vfcvt.f.x.v vd, vs2
 // Convert signed integer to float
 func (o *Out) vcvtqq2pdRISCVVectorToVector(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -398,8 +398,8 @@ func (o *Out) vcvtqq2pdRISCVVectorToVector(dst, src string) {
 // RISC-V vfcvt.x.f.v vd, vs2
 // Convert float to signed integer with truncation
 func (o *Out) vcvttpd2qqRISCVVectorToVector(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine, dst)
-	srcReg, srcOk := GetRegister(o.machine, src)
+	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	srcReg, srcOk := GetRegister(o.machine.Arch, src)
 	if !dstOk || !srcOk {
 		return
 	}
