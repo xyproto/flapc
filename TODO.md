@@ -5,7 +5,7 @@
 **Version**: 1.1.0-dev (ARM64/Mach-O in progress)
 **Platform**: x86-64 Linux/macOS (complete), ARM64 macOS (partial)
 **x86-64 Tests**: 178/178 (100%) ✓
-**ARM64 Tests**: ~15/178 (core features + control flow)
+**ARM64 Tests**: ~20/178 (core features + control flow + loops)
 **Production Ready**: x86-64 only
 
 ---
@@ -51,12 +51,14 @@
   - [ ] Handle nested match blocks (basic match expressions work)
 
 **Loops (HIGH PRIORITY):**
-- [ ] **LoopStmt**: Basic loop support
-  - Implement loop initialization
-  - Implement loop condition checking
-  - Implement loop body compilation
-  - Implement break/continue (ret @N, @N)
-  - Support @first, @last, @counter, @i variables
+- [x] **LoopStmt**: Basic loop support
+  - ✅ Implement loop initialization
+  - ✅ Implement loop condition checking
+  - ✅ Implement loop body compilation
+  - ✅ Range loops (@+ i in range(N))
+  - [ ] List loops (@+ elem in [1,2,3])
+  - [ ] Implement break/continue (ret @N, @N)
+  - [ ] Support @first, @last, @counter, @i variables
 
 **Essential Expression Types:**
 - [ ] **UnaryExpr**: Negation (-), not, length (#), head (^), tail (&)
@@ -257,7 +259,9 @@ The 1.0.0 release is feature-complete and production-ready for x86-64 Linux/macO
 - ✓ Variable assignment and references
 - ✓ println(), print(), exit()
 - ✓ Control flow (match blocks with -> and ~>)
-- ✗ Loops - NOT YET IMPLEMENTED
+- ✓ Range loops (@+ i in range(N))
+- ⚠ List loops - PARTIALLY IMPLEMENTED (stub exists)
+- ⚠ Break/continue - NOT YET IMPLEMENTED
 - ✗ Functions - NOT YET IMPLEMENTED
 - ✗ Most advanced features - NOT YET IMPLEMENTED
 
@@ -275,8 +279,8 @@ The 1.0.0 release is feature-complete and production-ready for x86-64 Linux/macO
 
 ## Notes
 
-- **Current Focus**: ARM64 loops and user-defined functions (blocking most test programs)
+- **Current Focus**: ARM64 user-defined functions and dynamic linking (blocking execution)
 - **Next Milestone**: 50+ ARM64 tests passing (basic programs work)
-- **Recent Progress**: Match expressions fully working! Control flow (if/else) now supported.
+- **Recent Progress**: Range loops implemented! Can now compile iterative programs.
 - **macOS Blocker**: Dynamic linking required for execution (raw syscalls blocked)
 - **Code Quality**: Use otool, lldb, and comparison with clang for ARM64 debugging
