@@ -693,8 +693,14 @@ func main() {
 
 	// Use whichever output flag was specified (prefer short form if both given)
 	outputFilename := *outputFilenameFlag
+	outputFlagProvided := false
 	if *outputFilenameLongFlag != defaultOutputFilename {
 		outputFilename = *outputFilenameLongFlag
+		outputFlagProvided = true
+	}
+	if *outputFilenameFlag != defaultOutputFilename {
+		outputFilename = *outputFilenameFlag
+		outputFlagProvided = true
 	}
 
 	// Get input files from remaining arguments
@@ -702,6 +708,11 @@ func main() {
 
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "----=[ %s ]=----\n", versionString)
+	}
+
+	// Warn if no input files provided
+	if len(inputFiles) == 0 && *codeFlag == "" {
+		fmt.Fprintln(os.Stderr, "flapc: warning: no input files")
 	}
 
 	// Determine output format
@@ -743,8 +754,10 @@ func main() {
 
 		// Compile the temp file
 		writeToFilename := outputFilename
+		inlineFlagProvided := outputFlagProvided
 		if outputFilename == defaultOutputFilename {
 			writeToFilename = "/tmp/flapc_inline"
+			inlineFlagProvided = false
 		}
 
 		machine, _ := StringToMachine(targetMachine)
@@ -754,6 +767,8 @@ func main() {
 		}
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "-> Wrote executable: %s\n", writeToFilename)
+		} else if !inlineFlagProvided {
+			fmt.Println(writeToFilename)
 		}
 		return
 	}
@@ -782,6 +797,8 @@ func main() {
 				}
 				if VerboseMode {
 					fmt.Fprintf(os.Stderr, "-> Wrote executable: %s\n", writeToFilename)
+				} else if !outputFlagProvided {
+					fmt.Println(writeToFilename)
 				}
 				return
 			}
