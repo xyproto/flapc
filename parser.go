@@ -557,7 +557,7 @@ type UseStmt struct {
 }
 
 func (u *UseStmt) String() string { return "use " + u.Path }
-func (u *UseStmt) statementNode()  {}
+func (u *UseStmt) statementNode() {}
 
 type ImportStmt struct {
 	URL     string // Git URL: "github.com/owner/repo"
@@ -1018,7 +1018,9 @@ func (p *Parser) formatError(line int, msg string) string {
 
 // error prints a formatted error and exits
 func (p *Parser) error(msg string) {
-	fmt.Fprintln(os.Stderr, p.formatError(p.current.Line, msg))
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr, p.formatError(p.current.Line, msg))
+	}
 	os.Exit(1)
 }
 
@@ -2533,7 +2535,9 @@ func NewFlapCompiler(machine Machine) (*FlapCompiler, error) {
 
 func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	if fc.debug {
-		fmt.Fprintf(os.Stderr, "DEBUG Compile: starting compilation with %d statements\n", len(program.Statements))
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG Compile: starting compilation with %d statements\n", len(program.Statements))
+		}
 	}
 	// Use ARM64 code generator if target is ARM64
 	if VerboseMode {
@@ -2735,8 +2739,12 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	// Note: We pass pltFunctions (unique) for building PLT/GOT structure
 	// We'll use fc.callOrder (with duplicates) later for patching actual call sites
 	if fc.debug {
-		fmt.Fprintf(os.Stderr, "\n=== First compilation callOrder: %v ===\n", fc.callOrder)
-		fmt.Fprintf(os.Stderr, "=== pltFunctions (unique): %v ===\n", pltFunctions)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "\n=== First compilation callOrder: %v ===\n", fc.callOrder)
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "=== pltFunctions (unique): %v ===\n", pltFunctions)
+		}
 	}
 	gotBase, rodataBaseAddr, textAddr, pltBase, err := fc.eb.WriteCompleteDynamicELF(ds, pltFunctions)
 	if err != nil {
@@ -2809,7 +2817,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	fc.mutableVars = make(map[string]bool)
 	fc.varTypes = make(map[string]string)
 	fc.stackOffset = 0
-	fc.lambdaFuncs = nil  // Clear lambda list to avoid duplicates
+	fc.lambdaFuncs = nil // Clear lambda list to avoid duplicates
 	fc.lambdaCounter = 0
 
 	// Collect symbols again (two-pass compilation for second regeneration)
@@ -2881,7 +2889,9 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	// patchPLTCalls will look up each function name in the PLT to get its offset
 	// This handles duplicate calls (e.g., two calls to exit) correctly
 	if fc.debug {
-		fmt.Fprintf(os.Stderr, "\n=== Second compilation callOrder: %v ===\n", fc.callOrder)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "\n=== Second compilation callOrder: %v ===\n", fc.callOrder)
+		}
 	}
 	fc.eb.patchPLTCalls(ds, textAddr, pltBase, fc.callOrder)
 
@@ -2891,7 +2901,9 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 
 	// Patch function calls in regenerated code
 	if fc.debug {
-		fmt.Fprintf(os.Stderr, "\n=== Patching function calls (regenerated code) ===\n")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "\n=== Patching function calls (regenerated code) ===\n")
+		}
 	}
 	fc.eb.PatchCallSites(textAddr)
 
@@ -2912,7 +2924,9 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	}
 
 	if fc.debug {
-		fmt.Fprintf(os.Stderr, "Final GOT base: 0x%x\n", gotBase)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Final GOT base: 0x%x\n", gotBase)
+		}
 	}
 	return nil
 }
@@ -2931,7 +2945,9 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 			fc.variables[s.Name] = offset
 			fc.mutableVars[s.Name] = s.Mutable
 			if fc.debug {
-				fmt.Fprintf(os.Stderr, "DEBUG collectSymbols: storing variable '%s' at offset %d\n", s.Name, offset)
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "DEBUG collectSymbols: storing variable '%s' at offset %d\n", s.Name, offset)
+				}
 			}
 
 			// Track type if we can determine it from the expression
@@ -2965,7 +2981,9 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 		offset := fc.variables[s.Name]
 
 		if fc.debug {
-			fmt.Fprintf(os.Stderr, "DEBUG compileStatement: compiling assignment '%s' (type: %T)\n", s.Name, s.Value)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG compileStatement: compiling assignment '%s' (type: %T)\n", s.Name, s.Value)
+			}
 		}
 
 		// Allocate actual stack space (was only registered in first pass)
@@ -2988,20 +3006,26 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 			// x++ and x-- are statements only, not expressions
 			identExpr, ok := postfix.Operand.(*IdentExpr)
 			if !ok {
-				fmt.Fprintf(os.Stderr, "Error: postfix operator %s requires a variable operand\n", postfix.Operator)
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Error: postfix operator %s requires a variable operand\n", postfix.Operator)
+				}
 				os.Exit(1)
 			}
 
 			// Get the variable's stack offset
 			offset, exists := fc.variables[identExpr.Name]
 			if !exists {
-				fmt.Fprintf(os.Stderr, "Error: undefined variable '%s'\n", identExpr.Name)
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Error: undefined variable '%s'\n", identExpr.Name)
+				}
 				os.Exit(1)
 			}
 
 			// Check if variable is mutable
 			if !fc.mutableVars[identExpr.Name] {
-				fmt.Fprintf(os.Stderr, "Error: cannot modify immutable variable '%s'\n", identExpr.Name)
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Error: cannot modify immutable variable '%s'\n", identExpr.Name)
+				}
 				os.Exit(1)
 			}
 
@@ -3032,7 +3056,9 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 			case "--":
 				fc.out.SubsdXmm("xmm0", "xmm1") // xmm0 = xmm0 - 1.0
 			default:
-				fmt.Fprintf(os.Stderr, "Error: unknown postfix operator '%s'\n", postfix.Operator)
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Error: unknown postfix operator '%s'\n", postfix.Operator)
+				}
 				os.Exit(1)
 			}
 
@@ -3346,7 +3372,9 @@ func (fc *FlapCompiler) compileJumpStatement(stmt *JumpStmt) {
 		if stmt.IsBreak {
 			keyword = "ret"
 		}
-		fmt.Fprintf(os.Stderr, "Error: %s used outside of loop\n", keyword)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Error: %s used outside of loop\n", keyword)
+		}
 		os.Exit(1)
 	}
 
@@ -3369,8 +3397,10 @@ func (fc *FlapCompiler) compileJumpStatement(stmt *JumpStmt) {
 			if stmt.IsBreak {
 				keyword = "ret"
 			}
-			fmt.Fprintf(os.Stderr, "Error: %s @%d references loop @%d which is not active\n",
-				keyword, stmt.Label, stmt.Label)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: %s @%d references loop @%d which is not active\n",
+					keyword, stmt.Label, stmt.Label)
+			}
 			os.Exit(1)
 		}
 	}
@@ -3400,7 +3430,9 @@ func (fc *FlapCompiler) patchJumpImmediate(pos int, offset int32) {
 	bytes := fc.eb.text.Bytes()
 
 	if fc.debug {
-		fmt.Fprintf(os.Stderr, "DEBUG PATCH: Before patching at pos %d: %02x %02x %02x %02x\n", pos, bytes[pos], bytes[pos+1], bytes[pos+2], bytes[pos+3])
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG PATCH: Before patching at pos %d: %02x %02x %02x %02x\n", pos, bytes[pos], bytes[pos+1], bytes[pos+2], bytes[pos+3])
+		}
 	}
 
 	// Write 32-bit little-endian offset at position
@@ -3410,7 +3442,9 @@ func (fc *FlapCompiler) patchJumpImmediate(pos int, offset int32) {
 	bytes[pos+3] = byte(offset >> 24)
 
 	if fc.debug {
-		fmt.Fprintf(os.Stderr, "DEBUG PATCH: After patching at pos %d: %02x %02x %02x %02x (offset=%d)\n", pos, bytes[pos], bytes[pos+1], bytes[pos+2], bytes[pos+3], offset)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG PATCH: After patching at pos %d: %02x %02x %02x %02x (offset=%d)\n", pos, bytes[pos], bytes[pos+1], bytes[pos+2], bytes[pos+3], offset)
+		}
 	}
 }
 
@@ -3542,7 +3576,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		// Load variable from stack into xmm0
 		offset, exists := fc.variables[e.Name]
 		if !exists {
-			fmt.Fprintf(os.Stderr, "Error: undefined variable '%s' at line %d\n", e.Name, 0)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: undefined variable '%s' at line %d\n", e.Name, 0)
+			}
 			os.Exit(1)
 		}
 		// movsd xmm0, [rbp - offset]
@@ -3551,7 +3587,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 	case *LoopStateExpr:
 		// @first, @last, @counter, @i are special loop state variables
 		if len(fc.activeLoops) == 0 {
-			fmt.Fprintf(os.Stderr, "Error: @%s used outside of loop\n", e.Type)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: @%s used outside of loop\n", e.Type)
+			}
 			os.Exit(1)
 		}
 
@@ -3623,7 +3661,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.MovMemToXmm("xmm0", "rbp", -currentLoop.IteratorOffset)
 
 		default:
-			fmt.Fprintf(os.Stderr, "Error: unknown loop state variable @%s\n", e.Type)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: unknown loop state variable @%s\n", e.Type)
+			}
 			os.Exit(1)
 		}
 
@@ -3716,7 +3756,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 	case *PostfixExpr:
 		// PostfixExpr (x++, x--) can only be used as statements, not expressions
-		fmt.Fprintf(os.Stderr, "Error: %s can only be used as a statement, not in an expression (like Go)\n", e.Operator)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Error: %s can only be used as a statement, not in an expression (like Go)\n", e.Operator)
+		}
 		os.Exit(1)
 
 	case *BinaryExpr:
@@ -3952,7 +3994,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 			if leftType == "map" && rightType == "map" {
 				// Map union - TODO
-				fmt.Fprintf(os.Stderr, "Error: map union not yet implemented\n")
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Error: map union not yet implemented\n")
+				}
 				os.Exit(1)
 			}
 		}
@@ -4253,7 +4297,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				listData = append(listData, byte((bits>>48)&ByteMask))
 				listData = append(listData, byte((bits>>56)&ByteMask))
 			} else {
-				fmt.Fprintf(os.Stderr, "Error: list literal elements must be constant numbers\n")
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Error: list literal elements must be constant numbers\n")
+				}
 				os.Exit(1)
 			}
 		}
@@ -4690,7 +4736,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		funcName := fmt.Sprintf("lambda_%d", fc.lambdaCounter)
 
 		if fc.debug {
-			fmt.Fprintf(os.Stderr, "DEBUG compileExpression: adding lambda '%s' with %d params\n", funcName, len(e.Params))
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG compileExpression: adding lambda '%s' with %d params\n", funcName, len(e.Params))
+			}
 		}
 
 		// Store lambda for later code generation
@@ -4727,7 +4775,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		// First, collect symbols from all statements in the block
 		for _, stmt := range e.Statements {
 			if err := fc.collectSymbols(stmt); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v at line 0\n", err)
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Error: %v at line 0\n", err)
+				}
 				os.Exit(1)
 			}
 		}
@@ -4903,7 +4953,9 @@ func (fc *FlapCompiler) compileMatchJump(jumpExpr *JumpExpr) {
 		if jumpExpr.IsBreak {
 			keyword = "ret"
 		}
-		fmt.Fprintf(os.Stderr, "Error: %s @%d used outside of loop in match expression\n", keyword, jumpExpr.Label)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Error: %s @%d used outside of loop in match expression\n", keyword, jumpExpr.Label)
+		}
 		os.Exit(1)
 	}
 
@@ -4921,8 +4973,10 @@ func (fc *FlapCompiler) compileMatchJump(jumpExpr *JumpExpr) {
 		if jumpExpr.IsBreak {
 			keyword = "ret"
 		}
-		fmt.Fprintf(os.Stderr, "Error: %s @%d references loop @%d which is not active\n",
-			keyword, jumpExpr.Label, jumpExpr.Label)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Error: %s @%d references loop @%d which is not active\n",
+				keyword, jumpExpr.Label, jumpExpr.Label)
+		}
 		os.Exit(1)
 	}
 
@@ -5000,18 +5054,26 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 		// Convert C char* to Flap string
 		// xmm0 contains C string pointer as float64
 		// TODO: implement flap_cstr_to_string runtime function
-		fmt.Fprintf(os.Stderr, "Error: 'as string' conversion not yet implemented\n")
-		fmt.Fprintf(os.Stderr, "Use 'as cstr' to convert Flap strings to C strings\n")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Error: 'as string' conversion not yet implemented\n")
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Use 'as cstr' to convert Flap strings to C strings\n")
+		}
 		os.Exit(1)
 
 	case "list":
 		// Convert C array to Flap list
 		// TODO: implement when needed (requires length parameter)
-		fmt.Fprintf(os.Stderr, "Error: 'as list' conversion not yet implemented\n")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Error: 'as list' conversion not yet implemented\n")
+		}
 		os.Exit(1)
 
 	default:
-		fmt.Fprintf(os.Stderr, "Error: unknown cast type '%s'\n", expr.Type)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Error: unknown cast type '%s'\n", expr.Type)
+		}
 		os.Exit(1)
 	}
 }
@@ -5153,12 +5215,16 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	// For now, only support: list || lambda
 	lambda, ok := expr.Operation.(*LambdaExpr)
 	if !ok {
-		fmt.Fprintf(os.Stderr, "Error: parallel operator (||) currently only supports lambda expressions\n")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Error: parallel operator (||) currently only supports lambda expressions\n")
+		}
 		os.Exit(1)
 	}
 
 	if len(lambda.Params) != 1 {
-		fmt.Fprintf(os.Stderr, "Error: parallel operator lambda must have exactly one parameter\n")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Error: parallel operator lambda must have exactly one parameter\n")
+		}
 		os.Exit(1)
 	}
 
@@ -5272,11 +5338,15 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 
 func (fc *FlapCompiler) generateLambdaFunctions() {
 	if fc.debug {
-		fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: generating %d lambdas\n", len(fc.lambdaFuncs))
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: generating %d lambdas\n", len(fc.lambdaFuncs))
+		}
 	}
 	for _, lambda := range fc.lambdaFuncs {
 		if fc.debug {
-			fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: generating lambda '%s'\n", lambda.Name)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: generating lambda '%s'\n", lambda.Name)
+			}
 		}
 		// Record the offset of this lambda function in .text
 		fc.lambdaOffsets[lambda.Name] = fc.eb.text.Len()
@@ -5304,7 +5374,9 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 		xmmRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"}
 		for i, paramName := range lambda.Params {
 			if i >= len(xmmRegs) {
-				fmt.Fprintf(os.Stderr, "Error: lambda has too many parameters (max 6)\n")
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Error: lambda has too many parameters (max 6)\n")
+				}
 				os.Exit(1)
 			}
 
@@ -6123,7 +6195,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// Calculate offset: rax = 8 + rbx*16
 	fc.out.MovRegToReg("rax", "rbx")
 	fc.out.ShlRegImm("rax", "4") // rax = rbx * 16
-	fc.out.AddImmToReg("rax", 8)  // rax = 8 + rbx * 16
+	fc.out.AddImmToReg("rax", 8) // rax = 8 + rbx * 16
 
 	// Calculate source address: r15 = r12 + rax
 	fc.out.MovRegToReg("r15", "r12")
@@ -6139,7 +6211,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Load character value and convert
 	fc.out.MovMemToXmm("xmm0", "r15", 8)
-	fc.out.Cvttsd2si("rax", "xmm0")  // Use rax for the character value
+	fc.out.Cvttsd2si("rax", "xmm0") // Use rax for the character value
 
 	// Convert to uppercase: if (c >= 'a' && c <= 'z') c -= 32
 	fc.out.CmpRegToImm("rax", int64('a'))
@@ -6217,7 +6289,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// Calculate offset: rax = 8 + rbx*16
 	fc.out.MovRegToReg("rax", "rbx")
 	fc.out.ShlRegImm("rax", "4") // rax = rbx * 16
-	fc.out.AddImmToReg("rax", 8)  // rax = 8 + rbx * 16
+	fc.out.AddImmToReg("rax", 8) // rax = 8 + rbx * 16
 
 	// Calculate source address: r15 = r12 + rax
 	fc.out.MovRegToReg("r15", "r12")
@@ -6233,7 +6305,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Load character value and convert
 	fc.out.MovMemToXmm("xmm0", "r15", 8)
-	fc.out.Cvttsd2si("rax", "xmm0")  // Use rax for the character value
+	fc.out.Cvttsd2si("rax", "xmm0") // Use rax for the character value
 
 	// Convert to lowercase: if (c >= 'A' && c <= 'Z') c += 32
 	fc.out.CmpRegToImm("rax", int64('A'))
@@ -6290,17 +6362,17 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// Find start (skip leading whitespace)
 	fc.out.XorRegWithReg("rbx", "rbx") // rbx = start index
 	trimStartLoop := fc.eb.text.Len()
-	fc.out.Emit([]byte{0x4c, 0x39, 0xf3})              // cmp rbx, r14
+	fc.out.Emit([]byte{0x4c, 0x39, 0xf3}) // cmp rbx, r14
 	trimStartDone := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpGreaterOrEqual, 0)
 
 	// Load character at rbx
 	fc.out.MovRegToReg("rax", "rbx")
-	fc.out.ShlRegImm("rax", "4")    // rax = rbx * 16
-	fc.out.AddImmToReg("rax", 8)    // rax = 8 + rbx * 16
+	fc.out.ShlRegImm("rax", "4") // rax = rbx * 16
+	fc.out.AddImmToReg("rax", 8) // rax = 8 + rbx * 16
 	fc.out.MovRegToReg("r8", "r12")
-	fc.out.AddRegToReg("r8", "rax") // r8 = r12 + offset
-	fc.out.MovMemToXmm("xmm0", "r8", 8)  // Load value
+	fc.out.AddRegToReg("r8", "rax")     // r8 = r12 + offset
+	fc.out.MovMemToXmm("xmm0", "r8", 8) // Load value
 	fc.out.Cvttsd2si("r10", "xmm0")
 
 	// Check if whitespace (space=32, tab=9, newline=10, cr=13)
@@ -6344,25 +6416,25 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.patchJumpImmediate(trimStartFound+2, int32(trimFoundStart-(trimStartFound+6)))
 
 	// Find end (skip trailing whitespace) - work backwards from r14-1
-	fc.out.MovRegToReg("r15", "r14")                   // r15 = end index (exclusive)
+	fc.out.MovRegToReg("r15", "r14") // r15 = end index (exclusive)
 	// Handle empty or all-whitespace case
-	fc.out.Emit([]byte{0x4c, 0x39, 0xfb})              // cmp rbx, r15
+	fc.out.Emit([]byte{0x4c, 0x39, 0xfb}) // cmp rbx, r15
 	emptyResult := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpGreaterOrEqual, 0)
 
 	trimEndLoop := fc.eb.text.Len()
-	fc.out.Emit([]byte{0x49, 0x83, 0xff, 0x00})        // cmp r15, 0
+	fc.out.Emit([]byte{0x49, 0x83, 0xff, 0x00}) // cmp r15, 0
 	trimEndDone := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpLessOrEqual, 0)
-	fc.out.Emit([]byte{0x49, 0x83, 0xef, 0x01})        // dec r15
+	fc.out.Emit([]byte{0x49, 0x83, 0xef, 0x01}) // dec r15
 
 	// Load character at r15
 	fc.out.MovRegToReg("rax", "r15")
-	fc.out.ShlRegImm("rax", "4")    // rax = r15 * 16
-	fc.out.AddImmToReg("rax", 8)    // rax = 8 + r15 * 16
+	fc.out.ShlRegImm("rax", "4") // rax = r15 * 16
+	fc.out.AddImmToReg("rax", 8) // rax = 8 + r15 * 16
 	fc.out.MovRegToReg("r8", "r12")
-	fc.out.AddRegToReg("r8", "rax") // r8 = r12 + offset
-	fc.out.MovMemToXmm("xmm0", "r8", 8)  // Load value
+	fc.out.AddRegToReg("r8", "rax")     // r8 = r12 + offset
+	fc.out.MovMemToXmm("xmm0", "r8", 8) // Load value
 	fc.out.Cvttsd2si("r10", "xmm0")
 
 	// Check if whitespace
@@ -6380,7 +6452,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.JumpConditional(JumpEqual, 0)
 
 	// Not whitespace - found end
-	fc.out.IncReg("r15")  // Make exclusive
+	fc.out.IncReg("r15") // Make exclusive
 	trimFoundEnd := fc.eb.text.Len()
 	fc.out.JumpUnconditional(0)
 
@@ -6405,8 +6477,8 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Allocate new string
 	fc.out.MovRegToReg("rdi", "r14")
-	fc.out.ShlRegImm("rdi", "4")  // rdi = r14 * 16
-	fc.out.AddImmToReg("rdi", 8)  // rdi = r14 * 16 + 8
+	fc.out.ShlRegImm("rdi", "4") // rdi = r14 * 16
+	fc.out.AddImmToReg("rdi", 8) // rdi = r14 * 16 + 8
 	fc.trackFunctionCall("malloc")
 	fc.eb.GenerateCallInstruction("malloc")
 	fc.out.MovRegToReg("r13", "rax")
@@ -6419,26 +6491,26 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// Copy characters from rbx to r15
 	fc.out.XorRegWithReg("rcx", "rcx") // rcx = output index
 	trimCopyLoop := fc.eb.text.Len()
-	fc.out.Emit([]byte{0x4c, 0x39, 0xf1})              // cmp rcx, r14
+	fc.out.Emit([]byte{0x4c, 0x39, 0xf1}) // cmp rcx, r14
 	trimCopyDone := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpGreaterOrEqual, 0)
 
 	// Calculate source offset (rbx + rcx)
 	fc.out.MovRegToReg("rax", "rbx")
-	fc.out.AddRegToReg("rax", "rcx")  // rax = rbx + rcx (source index)
-	fc.out.ShlRegImm("rax", "4")      // rax = (rbx + rcx) * 16
-	fc.out.AddImmToReg("rax", 8)      // rax = (rbx + rcx) * 16 + 8
+	fc.out.AddRegToReg("rax", "rcx") // rax = rbx + rcx (source index)
+	fc.out.ShlRegImm("rax", "4")     // rax = (rbx + rcx) * 16
+	fc.out.AddImmToReg("rax", 8)     // rax = (rbx + rcx) * 16 + 8
 
 	// Calculate dest offset (rcx)
 	fc.out.MovRegToReg("rdx", "rcx")
-	fc.out.ShlRegImm("rdx", "4")  // rdx = rcx * 16
-	fc.out.AddImmToReg("rdx", 8)  // rdx = rcx * 16 + 8
+	fc.out.ShlRegImm("rdx", "4") // rdx = rcx * 16
+	fc.out.AddImmToReg("rdx", 8) // rdx = rcx * 16 + 8
 
 	// Calculate source and dest addresses
 	fc.out.MovRegToReg("r8", "r12")
-	fc.out.AddRegToReg("r8", "rax")  // r8 = source base + offset
+	fc.out.AddRegToReg("r8", "rax") // r8 = source base + offset
 	fc.out.MovRegToReg("r9", "r13")
-	fc.out.AddRegToReg("r9", "rdx")  // r9 = dest base + offset
+	fc.out.AddRegToReg("r9", "rdx") // r9 = dest base + offset
 
 	// Copy key
 	fc.out.Cvtsi2sd("xmm0", "rcx")
@@ -6483,7 +6555,9 @@ func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
 	// Load function pointer from variable
 	offset, _ := fc.variables[call.Function]
 	if fc.debug {
-		fmt.Fprintf(os.Stderr, "DEBUG compileStoredFunctionCall: calling '%s' at offset %d\n", call.Function, offset)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG compileStoredFunctionCall: calling '%s' at offset %d\n", call.Function, offset)
+		}
 	}
 	fc.out.MovMemToXmm("xmm0", "rbp", -offset)
 
@@ -6496,7 +6570,9 @@ func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
 	// Compile arguments and put them in xmm registers
 	xmmRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"}
 	if len(call.Args) > len(xmmRegs) {
-		fmt.Fprintf(os.Stderr, "Error: too many arguments to stored function (max 6)\n")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Error: too many arguments to stored function (max 6)\n")
+		}
 		os.Exit(1)
 	}
 
@@ -6546,7 +6622,9 @@ func (fc *FlapCompiler) compileDirectCall(call *DirectCallExpr) {
 	// Compile arguments and put them in xmm registers
 	xmmRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"}
 	if len(call.Args) > len(xmmRegs) {
-		fmt.Fprintf(os.Stderr, "Error: too many arguments to direct call (max 6)\n")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Error: too many arguments to direct call (max 6)\n")
+		}
 		os.Exit(1)
 	}
 
@@ -7196,8 +7274,10 @@ func (fc *FlapCompiler) compileTailCall(call *CallExpr) {
 	// Instead of calling, we update parameters and jump to function start
 
 	if len(call.Args) != len(fc.currentLambda.Params) {
-		fmt.Fprintf(os.Stderr, "Error: tail call to 'me' has %d args but function has %d params\n",
-			len(call.Args), len(fc.currentLambda.Params))
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Error: tail call to 'me' has %d args but function has %d params\n",
+				len(call.Args), len(fc.currentLambda.Params))
+		}
 		os.Exit(1)
 	}
 
@@ -7244,8 +7324,12 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 	// Check if this is a stored function (variable containing function pointer)
 	if fc.debug {
-		fmt.Fprintf(os.Stderr, "DEBUG compileCall: looking up function '%s'\n", call.Function)
-		fmt.Fprintf(os.Stderr, "DEBUG compileCall: variables map has: %v\n", fc.variables)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG compileCall: looking up function '%s'\n", call.Function)
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG compileCall: variables map has: %v\n", fc.variables)
+		}
 	}
 	if _, isVariable := fc.variables[call.Function]; isVariable {
 		fc.compileStoredFunctionCall(call)
@@ -7328,7 +7412,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 	case "printf":
 		if len(call.Args) == 0 {
-			fmt.Fprintf(os.Stderr, "Error: printf() requires at least a format string\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: printf() requires at least a format string\n")
+			}
 			os.Exit(1)
 		}
 
@@ -7336,7 +7422,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		formatArg := call.Args[0]
 		strExpr, ok := formatArg.(*StringExpr)
 		if !ok {
-			fmt.Fprintf(os.Stderr, "Error: printf() first argument must be a string literal\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: printf() first argument must be a string literal\n")
+			}
 			os.Exit(1)
 		}
 
@@ -7394,7 +7482,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		numArgs := len(call.Args) - 1
 		if numArgs > 8 {
-			fmt.Fprintf(os.Stderr, "Error: printf() supports max 8 arguments (got %d)\n", numArgs)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: printf() supports max 8 arguments (got %d)\n", numArgs)
+			}
 			os.Exit(1)
 		}
 
@@ -7502,7 +7592,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Raw Linux syscall: syscall(number, arg1, arg2, arg3, arg4, arg5, arg6)
 		// x86-64 syscall convention: rax=number, rdi, rsi, rdx, r10, r8, r9
 		if len(call.Args) < 1 || len(call.Args) > 7 {
-			fmt.Fprintf(os.Stderr, "Error: syscall() requires 1-7 arguments (syscall number + up to 6 args)\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: syscall() requires 1-7 arguments (syscall number + up to 6 args)\n")
+			}
 			os.Exit(1)
 		}
 
@@ -7537,7 +7629,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Call getpid() from libc via PLT
 		// getpid() takes no arguments and returns pid_t in rax
 		if len(call.Args) != 0 {
-			fmt.Fprintf(os.Stderr, "Error: getpid() takes no arguments\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: getpid() takes no arguments\n")
+			}
 			os.Exit(1)
 		}
 		fc.trackFunctionCall("getpid")
@@ -7547,7 +7641,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 	case "sqrt":
 		if len(call.Args) != 1 {
-			fmt.Fprintf(os.Stderr, "Error: sqrt() requires exactly 1 argument\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: sqrt() requires exactly 1 argument\n")
+			}
 			os.Exit(1)
 		}
 		// Compile argument (result in xmm0)
@@ -7558,7 +7654,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 	case "sin":
 		if len(call.Args) != 1 {
-			fmt.Fprintf(os.Stderr, "Error: sin() requires exactly 1 argument\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: sin() requires exactly 1 argument\n")
+			}
 			os.Exit(1)
 		}
 		fc.compileExpression(call.Args[0])
@@ -7574,7 +7672,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 	case "cos":
 		if len(call.Args) != 1 {
-			fmt.Fprintf(os.Stderr, "Error: cos() requires exactly 1 argument\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: cos() requires exactly 1 argument\n")
+			}
 			os.Exit(1)
 		}
 		fc.compileExpression(call.Args[0])
@@ -7589,7 +7689,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 	case "tan":
 		if len(call.Args) != 1 {
-			fmt.Fprintf(os.Stderr, "Error: tan() requires exactly 1 argument\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: tan() requires exactly 1 argument\n")
+			}
 			os.Exit(1)
 		}
 		fc.compileExpression(call.Args[0])
@@ -7606,7 +7708,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 	case "atan":
 		if len(call.Args) != 1 {
-			fmt.Fprintf(os.Stderr, "Error: atan() requires exactly 1 argument\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: atan() requires exactly 1 argument\n")
+			}
 			os.Exit(1)
 		}
 		fc.compileExpression(call.Args[0])
@@ -7623,7 +7727,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 	case "asin":
 		if len(call.Args) != 1 {
-			fmt.Fprintf(os.Stderr, "Error: asin() requires exactly 1 argument\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: asin() requires exactly 1 argument\n")
+			}
 			os.Exit(1)
 		}
 		fc.compileExpression(call.Args[0])
@@ -7652,7 +7758,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 	case "acos":
 		if len(call.Args) != 1 {
-			fmt.Fprintf(os.Stderr, "Error: acos() requires exactly 1 argument\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: acos() requires exactly 1 argument\n")
+			}
 			os.Exit(1)
 		}
 		fc.compileExpression(call.Args[0])
@@ -7674,7 +7782,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 	case "abs":
 		if len(call.Args) != 1 {
-			fmt.Fprintf(os.Stderr, "Error: abs() requires exactly 1 argument\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: abs() requires exactly 1 argument\n")
+			}
 			os.Exit(1)
 		}
 		fc.compileExpression(call.Args[0])
@@ -7689,7 +7799,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 	case "floor":
 		if len(call.Args) != 1 {
-			fmt.Fprintf(os.Stderr, "Error: floor() requires exactly 1 argument\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: floor() requires exactly 1 argument\n")
+			}
 			os.Exit(1)
 		}
 		fc.compileExpression(call.Args[0])
@@ -7742,7 +7854,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 	case "ceil":
 		if len(call.Args) != 1 {
-			fmt.Fprintf(os.Stderr, "Error: ceil() requires exactly 1 argument\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: ceil() requires exactly 1 argument\n")
+			}
 			os.Exit(1)
 		}
 		fc.compileExpression(call.Args[0])
@@ -7790,7 +7904,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 	case "round":
 		if len(call.Args) != 1 {
-			fmt.Fprintf(os.Stderr, "Error: round() requires exactly 1 argument\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: round() requires exactly 1 argument\n")
+			}
 			os.Exit(1)
 		}
 		fc.compileExpression(call.Args[0])
@@ -7832,7 +7948,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 	case "log":
 		if len(call.Args) != 1 {
-			fmt.Fprintf(os.Stderr, "Error: log() requires exactly 1 argument\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: log() requires exactly 1 argument\n")
+			}
 			os.Exit(1)
 		}
 		fc.compileExpression(call.Args[0])
@@ -7854,7 +7972,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 	case "exp":
 		if len(call.Args) != 1 {
-			fmt.Fprintf(os.Stderr, "Error: exp() requires exactly 1 argument\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: exp() requires exactly 1 argument\n")
+			}
 			os.Exit(1)
 		}
 		fc.compileExpression(call.Args[0])
@@ -7895,7 +8015,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 	case "pow":
 		if len(call.Args) != 2 {
-			fmt.Fprintf(os.Stderr, "Error: pow() requires exactly 2 arguments\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: pow() requires exactly 2 arguments\n")
+			}
 			os.Exit(1)
 		}
 		fc.compileExpression(call.Args[0]) // x in xmm0
@@ -7942,7 +8064,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Convert number to string
 		// str(x) converts a number to a Flap string (map[uint64]float64)
 		if len(call.Args) != 1 {
-			fmt.Fprintf(os.Stderr, "Error: str() requires exactly 1 argument\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: str() requires exactly 1 argument\n")
+			}
 			os.Exit(1)
 		}
 
@@ -8054,7 +8178,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Parse string to number
 		// num(string) converts a Flap string to a number
 		if len(call.Args) != 1 {
-			fmt.Fprintf(os.Stderr, "Error: num() requires exactly 1 argument\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: num() requires exactly 1 argument\n")
+			}
 			os.Exit(1)
 		}
 
@@ -8080,7 +8206,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Convert string to uppercase
 		// upper(string) returns a new uppercase string
 		if len(call.Args) != 1 {
-			fmt.Fprintf(os.Stderr, "Error: upper() requires exactly 1 argument\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: upper() requires exactly 1 argument\n")
+			}
 			os.Exit(1)
 		}
 
@@ -8099,7 +8227,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Convert string to lowercase
 		// lower(string) returns a new lowercase string
 		if len(call.Args) != 1 {
-			fmt.Fprintf(os.Stderr, "Error: lower() requires exactly 1 argument\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: lower() requires exactly 1 argument\n")
+			}
 			os.Exit(1)
 		}
 
@@ -8118,7 +8248,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Remove leading/trailing whitespace
 		// trim(string) returns a new trimmed string
 		if len(call.Args) != 1 {
-			fmt.Fprintf(os.Stderr, "Error: trim() requires exactly 1 argument\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: trim() requires exactly 1 argument\n")
+			}
 			os.Exit(1)
 		}
 
@@ -8137,7 +8269,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		"write_u8", "write_u16", "write_u32", "write_u64", "write_f64":
 		// FFI memory write: write_TYPE(ptr, index, value)
 		if len(call.Args) != 3 {
-			fmt.Fprintf(os.Stderr, "Error: %s() requires exactly 3 arguments (ptr, index, value)\n", call.Function)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: %s() requires exactly 3 arguments (ptr, index, value)\n", call.Function)
+			}
 			os.Exit(1)
 		}
 
@@ -8227,7 +8361,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		"read_u8", "read_u16", "read_u32", "read_u64", "read_f64":
 		// FFI memory read: read_TYPE(ptr, index) -> value
 		if len(call.Args) != 2 {
-			fmt.Fprintf(os.Stderr, "Error: %s() requires exactly 2 arguments (ptr, index)\n", call.Function)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: %s() requires exactly 2 arguments (ptr, index)\n", call.Function)
+			}
 			os.Exit(1)
 		}
 
@@ -8339,13 +8475,17 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// FFI: call(function_name, args...)
 		// First argument must be a string literal (function name)
 		if len(call.Args) < 1 {
-			fmt.Fprintf(os.Stderr, "Error: call() requires at least a function name\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: call() requires at least a function name\n")
+			}
 			os.Exit(1)
 		}
 
 		fnNameExpr, ok := call.Args[0].(*StringExpr)
 		if !ok {
-			fmt.Fprintf(os.Stderr, "Error: call() first argument must be a string literal (function name)\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: call() first argument must be a string literal (function name)\n")
+			}
 			os.Exit(1)
 		}
 		fnName := fnNameExpr.Value
@@ -8361,7 +8501,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		numArgs := len(call.Args) - 1 // Exclude function name
 
 		if numArgs > 8 {
-			fmt.Fprintf(os.Stderr, "Error: call() supports max 8 arguments (got %d)\n", numArgs)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: call() supports max 8 arguments (got %d)\n", numArgs)
+			}
 			os.Exit(1)
 		}
 
@@ -8420,7 +8562,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 					}
 					intArgCount++
 				} else {
-					fmt.Fprintf(os.Stderr, "Error: call() supports max 6 integer/pointer arguments\n")
+					if VerboseMode {
+						fmt.Fprintf(os.Stderr, "Error: call() supports max 6 integer/pointer arguments\n")
+					}
 					os.Exit(1)
 				}
 			} else {
@@ -8436,7 +8580,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 					// else: already in xmm0
 					xmmArgCount++
 				} else {
-					fmt.Fprintf(os.Stderr, "Error: call() supports max 8 float arguments\n")
+					if VerboseMode {
+						fmt.Fprintf(os.Stderr, "Error: call() supports max 8 float arguments\n")
+					}
 					os.Exit(1)
 				}
 			}
@@ -8473,7 +8619,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// path: string (Flap string), flags: number (RTLD_LAZY=1, RTLD_NOW=2)
 		// Returns: library handle as float64
 		if len(call.Args) != 2 {
-			fmt.Fprintf(os.Stderr, "Error: dlopen() requires 2 arguments (path, flags)\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: dlopen() requires 2 arguments (path, flags)\n")
+			}
 			os.Exit(1)
 		}
 
@@ -8498,7 +8646,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Now rax = C string pointer
 		// Pop flags from stack to rsi
-		fc.out.Emit([]byte{0x41, 0x58}) // pop r8
+		fc.out.Emit([]byte{0x41, 0x58})  // pop r8
 		fc.out.MovRegToReg("rdi", "rax") // path in rdi
 		fc.out.MovRegToReg("rsi", "r8")  // flags in rsi
 
@@ -8520,7 +8668,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// handle: number (library handle from dlopen), symbol: string
 		// Returns: symbol address as float64
 		if len(call.Args) != 2 {
-			fmt.Fprintf(os.Stderr, "Error: dlsym() requires 2 arguments (handle, symbol)\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: dlsym() requires 2 arguments (handle, symbol)\n")
+			}
 			os.Exit(1)
 		}
 
@@ -8540,7 +8690,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.CallSymbol("flap_string_to_cstr")
 
 		// Pop handle to rdi
-		fc.out.Emit([]byte{0x41, 0x58}) // pop r8
+		fc.out.Emit([]byte{0x41, 0x58})  // pop r8
 		fc.out.MovRegToReg("rsi", "rax") // symbol in rsi
 		fc.out.MovRegToReg("rdi", "r8")  // handle in rdi
 
@@ -8561,7 +8711,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// handle: number (library handle from dlopen)
 		// Returns: 0.0 on success, non-zero on error
 		if len(call.Args) != 1 {
-			fmt.Fprintf(os.Stderr, "Error: dlclose() requires 1 argument (handle)\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: dlclose() requires 1 argument (handle)\n")
+			}
 			os.Exit(1)
 		}
 
@@ -8584,7 +8736,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 	case "readln":
 		// readln() - Read a line from stdin, return as Flap string
 		if len(call.Args) != 0 {
-			fmt.Fprintf(os.Stderr, "Error: readln() takes no arguments\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: readln() takes no arguments\n")
+			}
 			os.Exit(1)
 		}
 
@@ -8595,8 +8749,8 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Initialize lineptr = NULL, n = 0
 		fc.out.XorRegWithReg("rax", "rax")
-		fc.out.MovRegToMem("rax", "rsp", 0)  // lineptr = NULL
-		fc.out.MovRegToMem("rax", "rsp", 8)  // n = 0
+		fc.out.MovRegToMem("rax", "rsp", 0) // lineptr = NULL
+		fc.out.MovRegToMem("rax", "rsp", 8) // n = 0
 
 		// Load stdin from libc
 		// stdin is at stdin@@GLIBC_2.2.5
@@ -8604,8 +8758,8 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.MovMemToReg("rdx", "rdx", 0) // dereference stdin pointer
 
 		// Set up getline arguments
-		fc.out.MovRegToReg("rdi", "rsp")        // &lineptr
-		fc.out.LeaMemToReg("rsi", "rsp", 8)     // &n
+		fc.out.MovRegToReg("rdi", "rsp")    // &lineptr
+		fc.out.LeaMemToReg("rsi", "rsp", 8) // &n
 		// rdx already has stdin
 
 		// Call getline
@@ -8683,9 +8837,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.trackFunctionCall("malloc")
 		fc.eb.GenerateCallInstruction("malloc")
 		fc.out.XorRegWithReg("rdx", "rdx")
-		fc.out.Cvtsi2sd("xmm0", "rdx") // xmm0 = 0.0
+		fc.out.Cvtsi2sd("xmm0", "rdx")       // xmm0 = 0.0
 		fc.out.MovXmmToMem("xmm0", "rax", 0) // [map] = 0.0
-		fc.out.MovRegToXmm("xmm0", "rax") // Return map pointer
+		fc.out.MovRegToXmm("xmm0", "rax")    // Return map pointer
 
 		// Patch end jump
 		endPos := fc.eb.text.Len()
@@ -8695,7 +8849,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// read_file(path) - Read entire file, return as Flap string
 		// Uses Linux syscalls (open/lseek/read/close) instead of libc for simplicity
 		if len(call.Args) != 1 {
-			fmt.Fprintf(os.Stderr, "Error: read_file() requires 1 argument (path)\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: read_file() requires 1 argument (path)\n")
+			}
 			os.Exit(1)
 		}
 
@@ -8714,11 +8870,11 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// syscall open(path, O_RDONLY=0, mode=0)
 		// rax=2 (sys_open), rdi=path, rsi=flags, rdx=mode
-		fc.out.MovRegToReg("rdi", "rax") // path from flap_string_to_cstr
+		fc.out.MovRegToReg("rdi", "rax")   // path from flap_string_to_cstr
 		fc.out.XorRegWithReg("rsi", "rsi") // O_RDONLY = 0
 		fc.out.XorRegWithReg("rdx", "rdx") // mode = 0
-		fc.out.MovImmToReg("rax", "2") // sys_open = 2
-		fc.out.Emit([]byte{0x0f, 0x05}) // syscall
+		fc.out.MovImmToReg("rax", "2")     // sys_open = 2
+		fc.out.Emit([]byte{0x0f, 0x05})    // syscall
 
 		// Check if open failed (fd < 0)
 		fc.out.TestRegReg("rax", "rax")
@@ -8730,25 +8886,25 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// syscall lseek(fd, 0, SEEK_END=2) to get file size
 		// rax=8 (sys_lseek), rdi=fd, rsi=offset, rdx=whence
-		fc.out.MovRegToReg("rdi", "rax") // fd
+		fc.out.MovRegToReg("rdi", "rax")   // fd
 		fc.out.XorRegWithReg("rsi", "rsi") // offset = 0
-		fc.out.MovImmToReg("rdx", "2") // SEEK_END = 2
-		fc.out.MovImmToReg("rax", "8") // sys_lseek = 8
-		fc.out.Emit([]byte{0x0f, 0x05}) // syscall
+		fc.out.MovImmToReg("rdx", "2")     // SEEK_END = 2
+		fc.out.MovImmToReg("rax", "8")     // sys_lseek = 8
+		fc.out.Emit([]byte{0x0f, 0x05})    // syscall
 
 		// Save size at [rsp+8]
 		fc.out.MovRegToMem("rax", "rsp", 8)
 
 		// syscall lseek(fd, 0, SEEK_SET=0) to rewind
 		fc.out.MovMemToReg("rdi", "rsp", 0) // fd from [rsp+0]
-		fc.out.XorRegWithReg("rsi", "rsi") // offset = 0
-		fc.out.XorRegWithReg("rdx", "rdx") // SEEK_SET = 0
-		fc.out.MovImmToReg("rax", "8") // sys_lseek = 8
-		fc.out.Emit([]byte{0x0f, 0x05}) // syscall
+		fc.out.XorRegWithReg("rsi", "rsi")  // offset = 0
+		fc.out.XorRegWithReg("rdx", "rdx")  // SEEK_SET = 0
+		fc.out.MovImmToReg("rax", "8")      // sys_lseek = 8
+		fc.out.Emit([]byte{0x0f, 0x05})     // syscall
 
 		// Allocate buffer: malloc(size + 1) for null terminator
 		fc.out.MovMemToReg("rdi", "rsp", 8) // size from [rsp+8]
-		fc.out.AddImmToReg("rdi", 1) // +1 for null terminator
+		fc.out.AddImmToReg("rdi", 1)        // +1 for null terminator
 		fc.trackFunctionCall("malloc")
 		fc.eb.GenerateCallInstruction("malloc")
 
@@ -8757,22 +8913,22 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// syscall read(fd, buffer, size)
 		// rax=0 (sys_read), rdi=fd, rsi=buffer, rdx=count
-		fc.out.MovMemToReg("rdi", "rsp", 0) // fd from [rsp+0]
+		fc.out.MovMemToReg("rdi", "rsp", 0)  // fd from [rsp+0]
 		fc.out.MovMemToReg("rsi", "rsp", 16) // buffer from [rsp+16]
-		fc.out.MovMemToReg("rdx", "rsp", 8) // size from [rsp+8]
-		fc.out.XorRegWithReg("rax", "rax") // sys_read = 0
-		fc.out.Emit([]byte{0x0f, 0x05}) // syscall
+		fc.out.MovMemToReg("rdx", "rsp", 8)  // size from [rsp+8]
+		fc.out.XorRegWithReg("rax", "rax")   // sys_read = 0
+		fc.out.Emit([]byte{0x0f, 0x05})      // syscall
 
 		// Add null terminator: buffer[size] = 0
-		fc.out.MovMemToReg("rdi", "rsp", 16) // buffer from [rsp+16]
-		fc.out.MovMemToReg("rdx", "rsp", 8) // size from [rsp+8]
+		fc.out.MovMemToReg("rdi", "rsp", 16)        // buffer from [rsp+16]
+		fc.out.MovMemToReg("rdx", "rsp", 8)         // size from [rsp+8]
 		fc.out.Emit([]byte{0xc6, 0x04, 0x17, 0x00}) // mov byte [rdi + rdx], 0
 
 		// syscall close(fd)
 		// rax=3 (sys_close), rdi=fd
 		fc.out.MovMemToReg("rdi", "rsp", 0) // fd from [rsp+0]
-		fc.out.MovImmToReg("rax", "3") // sys_close = 3
-		fc.out.Emit([]byte{0x0f, 0x05}) // syscall
+		fc.out.MovImmToReg("rax", "3")      // sys_close = 3
+		fc.out.Emit([]byte{0x0f, 0x05})     // syscall
 
 		// Convert buffer to Flap string
 		fc.out.MovMemToReg("rdi", "rsp", 16) // buffer from [rsp+16]
@@ -8820,7 +8976,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 	case "write_file":
 		// write_file(path, content) - Write string to file
 		if len(call.Args) != 2 {
-			fmt.Fprintf(os.Stderr, "Error: write_file() requires 2 arguments (path, content)\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: write_file() requires 2 arguments (path, content)\n")
+			}
 			os.Exit(1)
 		}
 
@@ -8866,9 +9024,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Write file: fwrite(content, 1, length, file)
 		fc.out.MovMemToReg("rdi", "rsp", StackSlotSize*2) // content
-		fc.out.MovImmToReg("rsi", "1") // element size = 1
-		fc.out.MovMemToReg("rdx", "rsp", 0) // length
-		fc.out.MovMemToReg("rcx", "rsp", StackSlotSize) // FILE*
+		fc.out.MovImmToReg("rsi", "1")                    // element size = 1
+		fc.out.MovMemToReg("rdx", "rsp", 0)               // length
+		fc.out.MovMemToReg("rcx", "rsp", StackSlotSize)   // FILE*
 		fc.trackFunctionCall("fwrite")
 		fc.eb.GenerateCallInstruction("fwrite")
 
@@ -8906,7 +9064,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 	case "sizeof_i8", "sizeof_u8":
 		// sizeof_i8() / sizeof_u8() - Return size of 8-bit integer (1 byte)
 		if len(call.Args) != 0 {
-			fmt.Fprintf(os.Stderr, "Error: %s() takes no arguments\n", call.Function)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: %s() takes no arguments\n", call.Function)
+			}
 			os.Exit(1)
 		}
 		// Load 1.0 into xmm0
@@ -8916,7 +9076,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 	case "sizeof_i16", "sizeof_u16":
 		// sizeof_i16() / sizeof_u16() - Return size of 16-bit integer (2 bytes)
 		if len(call.Args) != 0 {
-			fmt.Fprintf(os.Stderr, "Error: %s() takes no arguments\n", call.Function)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: %s() takes no arguments\n", call.Function)
+			}
 			os.Exit(1)
 		}
 		fc.out.MovImmToReg("rax", "2")
@@ -8925,7 +9087,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 	case "sizeof_i32", "sizeof_u32", "sizeof_f32":
 		// sizeof_i32() / sizeof_u32() / sizeof_f32() - Return size (4 bytes)
 		if len(call.Args) != 0 {
-			fmt.Fprintf(os.Stderr, "Error: %s() takes no arguments\n", call.Function)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: %s() takes no arguments\n", call.Function)
+			}
 			os.Exit(1)
 		}
 		fc.out.MovImmToReg("rax", "4")
@@ -8934,7 +9098,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 	case "sizeof_i64", "sizeof_u64", "sizeof_f64", "sizeof_ptr":
 		// sizeof_i64() / sizeof_u64() / sizeof_f64() / sizeof_ptr() - Return size (8 bytes)
 		if len(call.Args) != 0 {
-			fmt.Fprintf(os.Stderr, "Error: %s() takes no arguments\n", call.Function)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Error: %s() takes no arguments\n", call.Function)
+			}
 			os.Exit(1)
 		}
 		fc.out.MovImmToReg("rax", "8")
@@ -9045,8 +9211,12 @@ func (fc *FlapCompiler) compileConcurrentGatherExpr(expr *ConcurrentGatherExpr) 
 	// This requires goroutines or threads for true concurrency
 
 	// For now, print an error as this is not yet implemented
-	fmt.Fprintf(os.Stderr, "Error: concurrent gather operator ||| is not yet implemented\n")
-	fmt.Fprintf(os.Stderr, "This feature requires runtime support for concurrency\n")
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Error: concurrent gather operator ||| is not yet implemented\n")
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "This feature requires runtime support for concurrency\n")
+	}
 	os.Exit(1)
 }
 
@@ -9204,15 +9374,23 @@ func processImports(program *Program) error {
 		return nil // No imports to process
 	}
 
-	fmt.Fprintf(os.Stderr, "Processing %d import(s)\n", len(imports))
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Processing %d import(s)\n", len(imports))
+	}
 
 	// Process each import
 	for _, imp := range imports {
-		fmt.Fprintf(os.Stderr, "Importing %s", imp.URL)
-		if imp.Version != "" {
-			fmt.Fprintf(os.Stderr, "@%s", imp.Version)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Importing %s", imp.URL)
 		}
-		fmt.Fprintf(os.Stderr, " as %s\n", imp.Alias)
+		if imp.Version != "" {
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "@%s", imp.Version)
+			}
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " as %s\n", imp.Alias)
+		}
 
 		// Clone/cache the repository
 		repoPath, err := EnsureRepoClonedWithVersion(imp.URL, imp.Version, UpdateDepsFlag)
@@ -9230,7 +9408,9 @@ func processImports(program *Program) error {
 		for _, flapFile := range flapFiles {
 			depContent, err := os.ReadFile(flapFile)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to read %s: %v\n", flapFile, err)
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Warning: failed to read %s: %v\n", flapFile, err)
+				}
 				continue
 			}
 
@@ -9248,7 +9428,9 @@ func processImports(program *Program) error {
 
 			// Prepend dependency program to main program
 			program.Statements = append(depProgram.Statements, program.Statements...)
-			fmt.Fprintf(os.Stderr, "Loaded %s from %s\n", flapFile, imp.URL)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Loaded %s from %s\n", flapFile, imp.URL)
+			}
 		}
 	}
 
@@ -9263,9 +9445,13 @@ func processImports(program *Program) error {
 
 	// Debug: print final program
 	if os.Getenv("DEBUG_FLAP") != "" {
-		fmt.Fprintf(os.Stderr, "DEBUG processImports: final program after import processing:\n")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG processImports: final program after import processing:\n")
+		}
 		for i, stmt := range program.Statements {
-			fmt.Fprintf(os.Stderr, "  [%d] %s\n", i, stmt.String())
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "  [%d] %s\n", i, stmt.String())
+			}
 		}
 	}
 
@@ -9292,7 +9478,9 @@ func CompileFlap(inputPath string, outputPath string, machine Machine) error {
 	parser := NewParserWithFilename(string(content), inputPath)
 	program := parser.ParseProgram()
 
-	fmt.Fprintf(os.Stderr, "Parsed program:\n%s\n", program.String())
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Parsed program:\n%s\n", program.String())
+	}
 
 	// Process explicit import statements
 	err = processImports(program)
@@ -9305,12 +9493,16 @@ func CompileFlap(inputPath string, outputPath string, machine Machine) error {
 	var combinedSource string
 	unknownFuncs := getUnknownFunctions(program)
 	if len(unknownFuncs) > 0 {
-		fmt.Fprintf(os.Stderr, "Resolving dependencies for: %v\n", unknownFuncs)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Resolving dependencies for: %v\n", unknownFuncs)
+		}
 
 		// Resolve dependencies
 		repos := ResolveDependencies(unknownFuncs)
 		if len(repos) > 0 {
-			fmt.Fprintf(os.Stderr, "Loading dependencies from %d repositories\n", len(repos))
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Loading dependencies from %d repositories\n", len(repos))
+			}
 
 			// Ensure all repositories are cloned/updated
 			for _, repoURL := range repos {
@@ -9329,7 +9521,9 @@ func CompileFlap(inputPath string, outputPath string, machine Machine) error {
 				for _, flapFile := range flapFiles {
 					depContent, err := os.ReadFile(flapFile)
 					if err != nil {
-						fmt.Fprintf(os.Stderr, "Warning: failed to read %s: %v\n", flapFile, err)
+						if VerboseMode {
+							fmt.Fprintf(os.Stderr, "Warning: failed to read %s: %v\n", flapFile, err)
+						}
 						continue
 					}
 
@@ -9340,7 +9534,9 @@ func CompileFlap(inputPath string, outputPath string, machine Machine) error {
 					program.Statements = append(depProgram.Statements, program.Statements...)
 					// Prepend dependency source to combined source
 					combinedSource = string(depContent) + "\n" + combinedSource
-					fmt.Fprintf(os.Stderr, "Loaded %s from %s\n", flapFile, repoURL)
+					if VerboseMode {
+						fmt.Fprintf(os.Stderr, "Loaded %s from %s\n", flapFile, repoURL)
+					}
 				}
 			}
 		}
@@ -9409,8 +9605,12 @@ func (fc *FlapCompiler) writeMachOARM64(outputPath string) error {
 
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "-> Wrote ARM64 Mach-O executable: %s\n", outputPath)
-		fmt.Fprintf(os.Stderr, "   Text size: %d bytes\n", len(textBytes))
-		fmt.Fprintf(os.Stderr, "   Rodata size: %d bytes\n", len(rodataBytes))
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "   Text size: %d bytes\n", len(textBytes))
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "   Rodata size: %d bytes\n", len(rodataBytes))
+		}
 	}
 
 	return nil
@@ -9435,8 +9635,12 @@ func (fc *FlapCompiler) writeELFRiscv64(outputPath string) error {
 
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "-> Wrote RISC-V64 executable: %s\n", outputPath)
-		fmt.Fprintf(os.Stderr, "   Text size: %d bytes\n", len(textBytes))
-		fmt.Fprintf(os.Stderr, "   Rodata size: %d bytes\n", len(rodataBytes))
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "   Text size: %d bytes\n", len(textBytes))
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "   Rodata size: %d bytes\n", len(rodataBytes))
+		}
 	}
 
 	return nil

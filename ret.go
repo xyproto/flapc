@@ -42,17 +42,23 @@ func (o *Out) RetImm(popBytes uint16) {
 
 // x86-64 RET (near return)
 func (o *Out) retX86() {
-	fmt.Fprintf(os.Stderr, "ret:")
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "ret:")
+	}
 
 	// RET (opcode 0xC3)
 	o.Write(0xC3)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // x86-64 RET imm16 (return and pop imm16 bytes from stack)
 func (o *Out) retX86Imm(popBytes uint16) {
-	fmt.Fprintf(os.Stderr, "ret %d:", popBytes)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "ret %d:", popBytes)
+	}
 
 	// RET imm16 (opcode 0xC2)
 	o.Write(0xC2)
@@ -61,12 +67,16 @@ func (o *Out) retX86Imm(popBytes uint16) {
 	o.Write(uint8(popBytes & 0xFF))
 	o.Write(uint8((popBytes >> 8) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 RET (return using link register)
 func (o *Out) retARM64() {
-	fmt.Fprintf(os.Stderr, "ret:")
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "ret:")
+	}
 
 	// RET (actually BR X30, where X30 is the link register)
 	// Encoding: 1101011 0 0 10 11111 000000 Rn 00000
@@ -78,12 +88,16 @@ func (o *Out) retARM64() {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V RET (pseudo-instruction for JALR x0, x1, 0)
 func (o *Out) retRISCV() {
-	fmt.Fprintf(os.Stderr, "ret:")
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "ret:")
+	}
 
 	// RET is JALR x0, ra, 0
 	// Format: imm[11:0] rs1 000 rd 1100111
@@ -97,5 +111,7 @@ func (o *Out) retRISCV() {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

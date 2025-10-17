@@ -52,9 +52,15 @@ func (o *Out) vfmaddX86VectorToVector(dst, src1, src2, src3 string) {
 	// This requires: MOV dst, src3; VFMADD231 dst, src1, src2
 	// For simplicity, documenting the accumulator pattern
 
-	fmt.Fprintf(os.Stderr, "# fma %s = %s * %s + %s\n", dst, src1, src2, src3)
-	fmt.Fprintf(os.Stderr, "vmovupd %s, %s\n", dst, src3)
-	fmt.Fprintf(os.Stderr, "vfmadd231pd %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# fma %s = %s * %s + %s\n", dst, src1, src2, src3)
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vmovupd %s, %s\n", dst, src3)
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vfmadd231pd %s, %s, %s:", dst, src1, src2)
+	}
 
 	if dstReg.Size == 512 {
 		// AVX-512 VFMADD231PD
@@ -97,7 +103,9 @@ func (o *Out) vfmaddX86VectorToVector(dst, src1, src2, src3 string) {
 		o.Write(modrm)
 	} else if dstReg.Size == 256 {
 		// AVX2 FMA (VEX encoding)
-		fmt.Fprintf(os.Stderr, " (FMA 256-bit)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (FMA 256-bit)")
+		}
 
 		// VEX 3-byte prefix: C4 [RXB mm-mmm] [W vvvv L pp]
 		o.Write(0xC4)
@@ -126,7 +134,9 @@ func (o *Out) vfmaddX86VectorToVector(dst, src1, src2, src3 string) {
 		o.Write(modrm)
 	} else {
 		// XMM - FMA3 128-bit
-		fmt.Fprintf(os.Stderr, " (FMA 128-bit)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (FMA 128-bit)")
+		}
 
 		o.Write(0xC4)
 
@@ -151,7 +161,9 @@ func (o *Out) vfmaddX86VectorToVector(dst, src1, src2, src3 string) {
 		o.Write(modrm)
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -172,9 +184,15 @@ func (o *Out) vfmaddARM64VectorToVector(dst, src1, src2, src3 string) {
 	if dstReg.Size == 512 {
 		// SVE2 FMLA: dst = dst + src1 * src2
 		// To get dst = src1 * src2 + src3, we need: dst = src3 first, then FMLA
-		fmt.Fprintf(os.Stderr, "# fma %s = %s * %s + %s\n", dst, src1, src2, src3)
-		fmt.Fprintf(os.Stderr, "mov %s.d, p7/m, %s.d\n", dst, src3)
-		fmt.Fprintf(os.Stderr, "fmla %s.d, p7/m, %s.d, %s.d:", dst, src1, src2)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "# fma %s = %s * %s + %s\n", dst, src1, src2, src3)
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "mov %s.d, p7/m, %s.d\n", dst, src3)
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "fmla %s.d, p7/m, %s.d, %s.d:", dst, src1, src2)
+		}
 
 		// SVE FMLA encoding
 		// 01100101 11 Zm[4:0] 010 Pg[2:0] Zn[4:0] Zda[4:0]
@@ -193,9 +211,15 @@ func (o *Out) vfmaddARM64VectorToVector(dst, src1, src2, src3 string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
 		// NEON FMLA Vd.2D, Vn.2D, Vm.2D
-		fmt.Fprintf(os.Stderr, "# fma %s = %s * %s + %s\n", dst, src1, src2, src3)
-		fmt.Fprintf(os.Stderr, "mov %s.16b, %s.16b\n", dst, src3)
-		fmt.Fprintf(os.Stderr, "fmla %s.2d, %s.2d, %s.2d:", dst, src1, src2)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "# fma %s = %s * %s + %s\n", dst, src1, src2, src3)
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "mov %s.16b, %s.16b\n", dst, src3)
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "fmla %s.2d, %s.2d, %s.2d:", dst, src1, src2)
+		}
 
 		// NEON FMLA encoding
 		// 0 Q 0 01110 1 sz 1 Rm 11001 1 Rn Rd
@@ -211,7 +235,9 @@ func (o *Out) vfmaddARM64VectorToVector(dst, src1, src2, src3 string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -231,9 +257,15 @@ func (o *Out) vfmaddRISCVVectorToVector(dst, src1, src2, src3 string) {
 
 	// RISC-V vfmadd: vd = vd * vs1 + vs2
 	// To get vd = src1 * src2 + src3, need: vd=src1, then vfmadd vd, src2, src3
-	fmt.Fprintf(os.Stderr, "# fma %s = %s * %s + %s\n", dst, src1, src2, src3)
-	fmt.Fprintf(os.Stderr, "vmv.v.v %s, %s\n", dst, src1)
-	fmt.Fprintf(os.Stderr, "vfmadd.vv %s, %s, %s:", dst, src2, src3)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# fma %s = %s * %s + %s\n", dst, src1, src2, src3)
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vmv.v.v %s, %s\n", dst, src1)
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vfmadd.vv %s, %s, %s:", dst, src2, src3)
+	}
 
 	// RVV vfmadd.vv encoding
 	// funct6 vm vs2 vs1 funct3 vd opcode
@@ -253,5 +285,7 @@ func (o *Out) vfmaddRISCVVectorToVector(dst, src1, src2, src3 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

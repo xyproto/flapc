@@ -40,7 +40,9 @@ func (o *Out) CallRegister(reg string) {
 
 // x86-64 CALL relative
 func (o *Out) callX86Relative(offset int32) {
-	fmt.Fprintf(os.Stderr, "call %d:", offset)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "call %d:", offset)
+	}
 
 	// CALL rel32 (opcode 0xE8)
 	o.Write(0xE8)
@@ -51,7 +53,9 @@ func (o *Out) callX86Relative(offset int32) {
 	o.Write(uint8((offset >> 16) & 0xFF))
 	o.Write(uint8((offset >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // x86-64 CALL register (indirect)
@@ -61,7 +65,9 @@ func (o *Out) callX86Register(reg string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "call %s:", reg)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "call %s:", reg)
+	}
 
 	// CALL r/m64 (opcode 0xFF /2)
 	// Need REX prefix for 64-bit
@@ -77,18 +83,24 @@ func (o *Out) callX86Register(reg string) {
 	modrm := uint8(0xD0) | (regInfo.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 BL (Branch with Link) - relative call
 func (o *Out) callARM64Relative(offset int32) {
-	fmt.Fprintf(os.Stderr, "bl %d:", offset)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "bl %d:", offset)
+	}
 
 	// BL: 100101 imm26
 	// Offset is in instructions (4-byte units), signed 26-bit
 	immOffset := offset / 4
 	if immOffset < -33554432 || immOffset > 33554431 {
-		fmt.Fprintf(os.Stderr, " (offset out of range)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (offset out of range)")
+		}
 		immOffset = 0
 	}
 
@@ -99,7 +111,9 @@ func (o *Out) callARM64Relative(offset int32) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 BLR (Branch with Link to Register) - indirect call
@@ -109,7 +123,9 @@ func (o *Out) callARM64Register(reg string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "blr %s:", reg)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "blr %s:", reg)
+	}
 
 	// BLR: 1101011 0 0 01 11111 000000 Rn 00000
 	instr := uint32(0xD63F0000) | (uint32(regInfo.Encoding&31) << 5)
@@ -119,17 +135,23 @@ func (o *Out) callARM64Register(reg string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V JAL (Jump and Link) - relative call
 func (o *Out) callRISCVRelative(offset int32) {
-	fmt.Fprintf(os.Stderr, "jal ra, %d:", offset)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "jal ra, %d:", offset)
+	}
 
 	// JAL: imm[20|10:1|11|19:12] rd 1101111
 	// rd = ra (x1) for return address
 	if offset < -1048576 || offset > 1048574 || (offset&1) != 0 {
-		fmt.Fprintf(os.Stderr, " (offset out of range or misaligned)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (offset out of range or misaligned)")
+		}
 		offset = 0
 	}
 
@@ -145,7 +167,9 @@ func (o *Out) callRISCVRelative(offset int32) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V JALR (Jump and Link Register) - indirect call
@@ -155,7 +179,9 @@ func (o *Out) callRISCVRegister(reg string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "jalr ra, %s, 0:", reg)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "jalr ra, %s, 0:", reg)
+	}
 
 	// JALR: imm[11:0] rs1 000 rd 1100111
 	// rd = ra (x1), rs1 = target register, imm = 0
@@ -169,5 +195,7 @@ func (o *Out) callRISCVRegister(reg string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

@@ -106,11 +106,15 @@ func (eb *ExecutableBuilder) Emit(assembly string) error {
 	if len(all) == 1 {
 		switch head {
 		case "syscall", "ecall":
-			fmt.Fprint(os.Stderr, assembly+":")
+			if VerboseMode {
+				fmt.Fprint(os.Stderr, assembly+":")
+			}
 			if err := eb.arch.Syscall(w); err != nil {
 				return err
 			}
-			fmt.Fprintln(os.Stderr)
+			if VerboseMode {
+				fmt.Fprintln(os.Stderr)
+			}
 		}
 	} else if len(all) == 2 {
 		switch head {

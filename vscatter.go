@@ -52,7 +52,9 @@ func (o *Out) vscatterqpdX86ToMem(src, base, indices string, scale int32, mask s
 
 	// Validate scale (must be 1, 2, 4, or 8)
 	if scale != 1 && scale != 2 && scale != 4 && scale != 8 {
-		fmt.Fprintf(os.Stderr, "Error: Invalid scale %d (must be 1,2,4,8)\n", scale)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Error: Invalid scale %d (must be 1,2,4,8)\n", scale)
+		}
 		return
 	}
 
@@ -68,7 +70,9 @@ func (o *Out) vscatterqpdX86ToMem(src, base, indices string, scale int32, mask s
 		scaleEncoding = 3
 	}
 
-	fmt.Fprintf(os.Stderr, "vscatterqpd [%s + %s*%d]{%s}, %s:", base, indices, scale, mask, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vscatterqpd [%s + %s*%d]{%s}, %s:", base, indices, scale, mask, src)
+	}
 
 	if srcReg.Size == 512 {
 		// AVX-512 VSCATTERQPD with VSIB addressing
@@ -119,19 +123,29 @@ func (o *Out) vscatterqpdX86ToMem(src, base, indices string, scale int32, mask s
 		o.Write(sib)
 	} else if srcReg.Size == 256 {
 		// AVX2 doesn't have scatter - need AVX-512VL minimum
-		fmt.Fprintf(os.Stderr, " (requires AVX-512VL, not AVX2)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (requires AVX-512VL, not AVX2)")
+		}
 
 		// Would need emulation with multiple scalar stores
-		fmt.Fprintf(os.Stderr, "\n# AVX2 scatter not available, needs AVX-512VL or emulation\n")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "\n# AVX2 scatter not available, needs AVX-512VL or emulation\n")
+		}
 		return
 	} else {
 		// XMM version - no scatter available
-		fmt.Fprintf(os.Stderr, " (requires AVX-512VL)")
-		fmt.Fprintf(os.Stderr, "\n# SSE scatter not available\n")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (requires AVX-512VL)")
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "\n# SSE scatter not available\n")
+		}
 		return
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -152,7 +166,9 @@ func (o *Out) vscatterARM64ToMem(src, base, indices string, scale int32, mask st
 	if srcReg.Size == 512 {
 		// SVE scatter store with vector base
 		// ST1D {zt.d}, pg, [xn, zm.d, LSL #3]
-		fmt.Fprintf(os.Stderr, "st1d {%s.d}, %s, [%s, %s.d, lsl #3]:", src, mask, base, indices)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "st1d {%s.d}, %s, [%s, %s.d, lsl #3]:", src, mask, base, indices)
+		}
 
 		// SVE scatter store encoding
 		// 1110010 1 1 Zm 0 1 Pg Rn Zt
@@ -169,10 +185,14 @@ func (o *Out) vscatterARM64ToMem(src, base, indices string, scale int32, mask st
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
 		// NEON doesn't have scatter - would need to emulate with multiple stores
-		fmt.Fprintf(os.Stderr, "# NEON scatter not available, needs emulation\n")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "# NEON scatter not available, needs emulation\n")
+		}
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -191,7 +211,9 @@ func (o *Out) vscatterRISCVToMem(src, base, indices string, scale int32, mask st
 	}
 
 	// Note: RVV indices are byte offsets, so caller must scale appropriately
-	fmt.Fprintf(os.Stderr, "vsuxei64.v %s, (%s), %s:", src, base, indices)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vsuxei64.v %s, (%s), %s:", src, base, indices)
+	}
 
 	// vsuxei64.v encoding
 	// nf mew mop vm sumop rs1 width vs3 opcode
@@ -210,5 +232,7 @@ func (o *Out) vscatterRISCVToMem(src, base, indices string, scale int32, mask st
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

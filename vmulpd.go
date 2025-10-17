@@ -44,11 +44,15 @@ func (o *Out) vmulpdX86VectorToVector(dst, src1, src2 string) {
 	}
 
 	if dstReg.Size != 512 && dstReg.Size != 256 && dstReg.Size != 128 {
-		fmt.Fprintf(os.Stderr, "Error: %s is not a vector register\n", dst)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Error: %s is not a vector register\n", dst)
+		}
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vmulpd %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vmulpd %s, %s, %s:", dst, src1, src2)
+	}
 
 	if dstReg.Size == 512 {
 		// AVX-512 VMULPD zmm, zmm, zmm
@@ -91,7 +95,9 @@ func (o *Out) vmulpdX86VectorToVector(dst, src1, src2 string) {
 		o.Write(modrm)
 	} else if dstReg.Size == 256 {
 		// AVX2 VMULPD ymm, ymm, ymm
-		fmt.Fprintf(os.Stderr, " (AVX2 256-bit)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX2 256-bit)")
+		}
 
 		// VEX 3-byte prefix: C4 [RXB m-mmmm] [W vvvv L pp]
 		o.Write(0xC4)
@@ -116,7 +122,9 @@ func (o *Out) vmulpdX86VectorToVector(dst, src1, src2 string) {
 		o.Write(modrm)
 	} else {
 		// SSE2 MULPD xmm, xmm
-		fmt.Fprintf(os.Stderr, " (SSE2 128-bit)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (SSE2 128-bit)")
+		}
 
 		o.Write(0x66) // Operand-size prefix
 
@@ -138,7 +146,9 @@ func (o *Out) vmulpdX86VectorToVector(dst, src1, src2 string) {
 		o.Write(modrm)
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -156,7 +166,9 @@ func (o *Out) vmulpdARM64VectorToVector(dst, src1, src2 string) {
 
 	if dstReg.Size == 512 {
 		// SVE2 FMUL z0.d, p7/m, z1.d, z2.d
-		fmt.Fprintf(os.Stderr, "fmul %s.d, p7/m, %s.d, %s.d:", dst, src1, src2)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "fmul %s.d, p7/m, %s.d, %s.d:", dst, src1, src2)
+		}
 
 		// SVE FMUL encoding
 		// 01100101 11 Zm[4:0] 001 Pg[2:0] Zn[4:0] Zd[4:0]
@@ -175,7 +187,9 @@ func (o *Out) vmulpdARM64VectorToVector(dst, src1, src2 string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
 		// NEON FMUL v0.2d, v1.2d, v2.2d
-		fmt.Fprintf(os.Stderr, "fmul %s.2d, %s.2d, %s.2d:", dst, src1, src2)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "fmul %s.2d, %s.2d, %s.2d:", dst, src1, src2)
+		}
 
 		// NEON FMUL encoding
 		// 0 Q 1 01110 1 sz 1 Rm 11011 1 Rn Rd
@@ -191,7 +205,9 @@ func (o *Out) vmulpdARM64VectorToVector(dst, src1, src2 string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -207,7 +223,9 @@ func (o *Out) vmulpdRISCVVectorToVector(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vfmul.vv %s, %s, %s:", dst, src2, src1)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vfmul.vv %s, %s, %s:", dst, src2, src1)
+	}
 
 	// RVV vfmul.vv encoding
 	// funct6 vm vs2 vs1 funct3 vd opcode
@@ -227,5 +245,7 @@ func (o *Out) vmulpdRISCVVectorToVector(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

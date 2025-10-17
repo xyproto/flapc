@@ -60,7 +60,9 @@ func (o *Out) subX86RegFromReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "sub %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "sub %s, %s:", dst, src)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -79,7 +81,9 @@ func (o *Out) subX86RegFromReg(dst, src string) {
 	modrm := uint8(0xC0) | ((srcReg.Encoding & 7) << 3) | (dstReg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // x86-64 SUB reg, imm
@@ -89,7 +93,9 @@ func (o *Out) subX86ImmFromReg(dst string, imm int64) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "sub %s, %d:", dst, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "sub %s, %d:", dst, imm)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -119,7 +125,9 @@ func (o *Out) subX86ImmFromReg(dst string, imm int64) {
 		o.Write(uint8((imm32 >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 SUB Xd, Xn, Xm
@@ -130,7 +138,9 @@ func (o *Out) subARM64RegFromReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "sub %s, %s, %s:", dst, dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "sub %s, %s, %s:", dst, dst, src)
+	}
 
 	// SUB (shifted register): sf 1 0 01011 shift(2) 0 Rm imm6 Rn Rd
 	// sf=1 (64-bit), shift=00
@@ -144,7 +154,9 @@ func (o *Out) subARM64RegFromReg(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 SUB Xd, Xn, #imm
@@ -154,10 +166,14 @@ func (o *Out) subARM64ImmFromReg(dst string, imm int64) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "sub %s, %s, #%d:", dst, dst, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "sub %s, %s, #%d:", dst, dst, imm)
+	}
 
 	if imm < 0 || imm > 4095 {
-		fmt.Fprintf(os.Stderr, " (immediate out of range)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (immediate out of range)")
+		}
 		imm = 0
 	}
 
@@ -172,7 +188,9 @@ func (o *Out) subARM64ImmFromReg(dst string, imm int64) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 SUB Xd, Xn, Xm (3-operand form)
@@ -184,7 +202,9 @@ func (o *Out) subARM64RegFromRegToReg(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "sub %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "sub %s, %s, %s:", dst, src1, src2)
+	}
 
 	instr := uint32(0xCB000000) |
 		(uint32(src2Reg.Encoding&31) << 16) | // Rm
@@ -196,7 +216,9 @@ func (o *Out) subARM64RegFromRegToReg(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V SUB rd, rs1, rs2
@@ -207,7 +229,9 @@ func (o *Out) subRISCVRegFromReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "sub %s, %s, %s:", dst, dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "sub %s, %s, %s:", dst, dst, src)
+	}
 
 	// SUB: 0100000 rs2 rs1 000 rd 0110011
 	instr := uint32(0x40000033) |
@@ -220,7 +244,9 @@ func (o *Out) subRISCVRegFromReg(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V ADDI with negative immediate (no SUBI instruction)
@@ -231,10 +257,14 @@ func (o *Out) subRISCVImmFromReg(dst string, imm int64) {
 	}
 
 	negImm := -imm
-	fmt.Fprintf(os.Stderr, "addi %s, %s, %d:", dst, dst, negImm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "addi %s, %s, %d:", dst, dst, negImm)
+	}
 
 	if negImm < -2048 || negImm > 2047 {
-		fmt.Fprintf(os.Stderr, " (immediate out of range)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (immediate out of range)")
+		}
 		negImm = 0
 	}
 
@@ -249,7 +279,9 @@ func (o *Out) subRISCVImmFromReg(dst string, imm int64) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V SUB rd, rs1, rs2 (3-operand form)
@@ -261,7 +293,9 @@ func (o *Out) subRISCVRegFromRegToReg(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "sub %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "sub %s, %s, %s:", dst, src1, src2)
+	}
 
 	instr := uint32(0x40000033) |
 		(uint32(src2Reg.Encoding&31) << 20) | // rs2
@@ -273,5 +307,7 @@ func (o *Out) subRISCVRegFromRegToReg(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

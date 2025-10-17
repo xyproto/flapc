@@ -23,7 +23,9 @@ func (o *Out) shrClX86(dst string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "shr %s, cl: ", dst)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "shr %s, cl: ", dst)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -39,5 +41,7 @@ func (o *Out) shrClX86(dst string) {
 	modrm := uint8(0xE8) | (dstReg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

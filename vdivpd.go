@@ -37,7 +37,9 @@ func (o *Out) vdivpdX86VectorToVector(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vdivpd %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vdivpd %s, %s, %s:", dst, src1, src2)
+	}
 
 	if dstReg.Size == 512 {
 		p0 := uint8(0x62)
@@ -70,7 +72,9 @@ func (o *Out) vdivpdX86VectorToVector(dst, src1, src2 string) {
 		modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (src2Reg.Encoding & 7)
 		o.Write(modrm)
 	} else if dstReg.Size == 256 {
-		fmt.Fprintf(os.Stderr, " (AVX2)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX2)")
+		}
 		o.Write(0xC4)
 		vex1 := uint8(0x01)
 		if (dstReg.Encoding & 8) == 0 {
@@ -90,7 +94,9 @@ func (o *Out) vdivpdX86VectorToVector(dst, src1, src2 string) {
 		modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (src2Reg.Encoding & 7)
 		o.Write(modrm)
 	} else {
-		fmt.Fprintf(os.Stderr, " (SSE2)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (SSE2)")
+		}
 		o.Write(0x66)
 		if (dstReg.Encoding&8) != 0 || (src2Reg.Encoding&8) != 0 {
 			rex := uint8(0x40)
@@ -108,7 +114,9 @@ func (o *Out) vdivpdX86VectorToVector(dst, src1, src2 string) {
 		o.Write(modrm)
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 FDIV
@@ -121,7 +129,9 @@ func (o *Out) vdivpdARM64VectorToVector(dst, src1, src2 string) {
 	}
 
 	if dstReg.Size == 512 {
-		fmt.Fprintf(os.Stderr, "fdiv %s.d, p7/m, %s.d, %s.d:", dst, src1, src2)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "fdiv %s.d, p7/m, %s.d, %s.d:", dst, src1, src2)
+		}
 		// SVE FDIV: opc=011 for DIV
 		instr := uint32(0x65000000) |
 			(3 << 22) | // size=11
@@ -136,7 +146,9 @@ func (o *Out) vdivpdARM64VectorToVector(dst, src1, src2 string) {
 		o.Write(uint8((instr >> 16) & 0xFF))
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
-		fmt.Fprintf(os.Stderr, "fdiv %s.2d, %s.2d, %s.2d:", dst, src1, src2)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "fdiv %s.2d, %s.2d, %s.2d:", dst, src1, src2)
+		}
 		// NEON FDIV
 		instr := uint32(0x6E601C00) |
 			(uint32(src2Reg.Encoding&31) << 16) |
@@ -149,7 +161,9 @@ func (o *Out) vdivpdARM64VectorToVector(dst, src1, src2 string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V vfdiv.vv
@@ -161,7 +175,9 @@ func (o *Out) vdivpdRISCVVectorToVector(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vfdiv.vv %s, %s, %s:", dst, src2, src1)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vfdiv.vv %s, %s, %s:", dst, src2, src1)
+	}
 
 	// vfdiv.vv: funct6=100000
 	instr := uint32(0x57) |
@@ -177,5 +193,7 @@ func (o *Out) vdivpdRISCVVectorToVector(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

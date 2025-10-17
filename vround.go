@@ -65,11 +65,15 @@ func (o *Out) vroundpdX86VectorToVector(dst, src string, mode int) {
 		modeStr = "trunc"
 	}
 
-	fmt.Fprintf(os.Stderr, "vroundpd %s, %s, %s:", dst, src, modeStr)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vroundpd %s, %s, %s:", dst, src, modeStr)
+	}
 
 	if dstReg.Size == 512 {
 		// AVX-512 uses VRNDSCALEPD with different encoding
-		fmt.Fprintf(os.Stderr, " (AVX-512 VRNDSCALEPD)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX-512 VRNDSCALEPD)")
+		}
 
 		// EVEX.512.66.0F3A.W1 09 /r ib
 		p0 := uint8(0x62)
@@ -105,7 +109,9 @@ func (o *Out) vroundpdX86VectorToVector(dst, src string, mode int) {
 		// Immediate: rounding mode
 		o.Write(uint8(mode))
 	} else if dstReg.Size == 256 {
-		fmt.Fprintf(os.Stderr, " (AVX)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX)")
+		}
 
 		// AVX VROUNDPD
 		// VEX.256.66.0F3A.WIG 09 /r ib
@@ -131,7 +137,9 @@ func (o *Out) vroundpdX86VectorToVector(dst, src string, mode int) {
 
 		o.Write(uint8(mode))
 	} else {
-		fmt.Fprintf(os.Stderr, " (SSE4.1)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (SSE4.1)")
+		}
 
 		// SSE4.1 ROUNDPD
 		o.Write(0x66)
@@ -145,7 +153,9 @@ func (o *Out) vroundpdX86VectorToVector(dst, src string, mode int) {
 		o.Write(uint8(mode))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -182,7 +192,9 @@ func (o *Out) vroundARM64VectorToVector(dst, src string, mode int) {
 			name = "frintn"
 		}
 
-		fmt.Fprintf(os.Stderr, "%s %s.d, p7/m, %s.d:", name, dst, src)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "%s %s.d, p7/m, %s.d:", name, dst, src)
+		}
 
 		instr := opcode |
 			(7 << 10) | // Pg=p7
@@ -216,7 +228,9 @@ func (o *Out) vroundARM64VectorToVector(dst, src string, mode int) {
 			name = "frintn"
 		}
 
-		fmt.Fprintf(os.Stderr, "%s %s.2d, %s.2d:", name, dst, src)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "%s %s.2d, %s.2d:", name, dst, src)
+		}
 
 		instr := opcode |
 			(uint32(srcReg.Encoding&31) << 5) | // Rn
@@ -228,7 +242,9 @@ func (o *Out) vroundARM64VectorToVector(dst, src string, mode int) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -244,21 +260,39 @@ func (o *Out) vroundRISCVVectorToVector(dst, src string, mode int) {
 
 	// RVV doesn't have direct rounding instructions for float vectors
 	// Would need to convert to integer and back, or use vfrec7.v + operations
-	fmt.Fprintf(os.Stderr, "# RVV rounding (mode %d): convert to int then back\n", mode)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# RVV rounding (mode %d): convert to int then back\n", mode)
+	}
 
 	switch mode {
 	case RoundNearest:
-		fmt.Fprintf(os.Stderr, "vfcvt.x.f.v vtemp, %s  # round to int\n", src)
-		fmt.Fprintf(os.Stderr, "vfcvt.f.x.v %s, vtemp:", dst)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "vfcvt.x.f.v vtemp, %s  # round to int\n", src)
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "vfcvt.f.x.v %s, vtemp:", dst)
+		}
 	case RoundDown:
-		fmt.Fprintf(os.Stderr, "# floor: special rounding mode\n")
-		fmt.Fprintf(os.Stderr, "vfcvt.x.f.v %s, %s:", dst, src)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "# floor: special rounding mode\n")
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "vfcvt.x.f.v %s, %s:", dst, src)
+		}
 	case RoundUp:
-		fmt.Fprintf(os.Stderr, "# ceil: special rounding mode\n")
-		fmt.Fprintf(os.Stderr, "vfcvt.x.f.v %s, %s:", dst, src)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "# ceil: special rounding mode\n")
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "vfcvt.x.f.v %s, %s:", dst, src)
+		}
 	case RoundTrunc:
-		fmt.Fprintf(os.Stderr, "# trunc: rounding mode RTZ\n")
-		fmt.Fprintf(os.Stderr, "vfcvt.x.f.v %s, %s:", dst, src)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "# trunc: rounding mode RTZ\n")
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "vfcvt.x.f.v %s, %s:", dst, src)
+		}
 	}
 
 	// vfcvt.x.f.v encoding (simplified)
@@ -275,5 +309,7 @@ func (o *Out) vroundRISCVVectorToVector(dst, src string, mode int) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

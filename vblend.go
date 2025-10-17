@@ -50,7 +50,9 @@ func (o *Out) vblendmpdX86WithMask(dst, src1, src2, mask string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vblendmpd %s{%s}, %s, %s:", dst, mask, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vblendmpd %s{%s}, %s, %s:", dst, mask, src1, src2)
+	}
 
 	if dstReg.Size == 512 {
 		// AVX-512 VBLENDMPD
@@ -92,7 +94,9 @@ func (o *Out) vblendmpdX86WithMask(dst, src1, src2, mask string) {
 		o.Write(modrm)
 	} else if dstReg.Size == 256 {
 		// AVX2 VBLENDVPD (uses implicit XMM0 as mask - different semantics)
-		fmt.Fprintf(os.Stderr, " (AVX2 VBLENDVPD - mask in ymm)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX2 VBLENDVPD - mask in ymm)")
+		}
 
 		// Note: AVX2 VBLENDVPD uses top bit of each element in mask register
 		// Different from AVX-512's k register masks
@@ -122,7 +126,9 @@ func (o *Out) vblendmpdX86WithMask(dst, src1, src2, mask string) {
 		o.Write(uint8((maskReg.Encoding & 0x0F) << 4))
 	} else {
 		// SSE4.1 BLENDVPD (uses implicit XMM0)
-		fmt.Fprintf(os.Stderr, " (SSE4.1 BLENDVPD - mask must be in xmm0)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (SSE4.1 BLENDVPD - mask must be in xmm0)")
+		}
 
 		o.Write(0x66) // prefix
 		rex := uint8(0x40)
@@ -143,7 +149,9 @@ func (o *Out) vblendmpdX86WithMask(dst, src1, src2, mask string) {
 		o.Write(modrm)
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -163,7 +171,9 @@ func (o *Out) vblendARM64WithMask(dst, src1, src2, mask string) {
 
 	if dstReg.Size == 512 {
 		// SVE SEL (select)
-		fmt.Fprintf(os.Stderr, "sel %s.d, %s, %s.d, %s.d:", dst, mask, src1, src2)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "sel %s.d, %s, %s.d, %s.d:", dst, mask, src1, src2)
+		}
 
 		// SVE SEL encoding
 		// 00000101 11 1 Zm 11 Pg 0 Zn Zd
@@ -182,9 +192,15 @@ func (o *Out) vblendARM64WithMask(dst, src1, src2, mask string) {
 		// NEON BSL (bit select)
 		// dst = (dst & mask) | (src2 & ~mask)
 		// Requires mask to be in dst first
-		fmt.Fprintf(os.Stderr, "# NEON blend: use BSL sequence\n")
-		fmt.Fprintf(os.Stderr, "mov %s.16b, %s.16b  # mask to dst\n", dst, mask)
-		fmt.Fprintf(os.Stderr, "bsl %s.16b, %s.16b, %s.16b:", dst, src1, src2)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "# NEON blend: use BSL sequence\n")
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "mov %s.16b, %s.16b  # mask to dst\n", dst, mask)
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "bsl %s.16b, %s.16b, %s.16b:", dst, src1, src2)
+		}
 
 		// BSL encoding
 		// 0 Q 101110 01 1 Rm 0 00 1 01 Rn Rd
@@ -200,7 +216,9 @@ func (o *Out) vblendARM64WithMask(dst, src1, src2, mask string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -221,11 +239,17 @@ func (o *Out) vblendRISCVWithMask(dst, src1, src2, mask string) {
 
 	// Note: RVV vmerge uses v0 as implicit mask
 	// If mask != "v0", would need to move it first
-	fmt.Fprintf(os.Stderr, "# RVV merge uses v0 as mask\n")
-	if mask != "v0" {
-		fmt.Fprintf(os.Stderr, "vmv.v.v v0, %s  # move mask to v0\n", mask)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# RVV merge uses v0 as mask\n")
 	}
-	fmt.Fprintf(os.Stderr, "vmerge.vvm %s, %s, %s, v0:", dst, src2, src1)
+	if mask != "v0" {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "vmv.v.v v0, %s  # move mask to v0\n", mask)
+		}
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vmerge.vvm %s, %s, %s, v0:", dst, src2, src1)
+	}
 
 	// vmerge.vvm encoding
 	// funct6 vm=0 vs2 vs1 funct3 vd opcode
@@ -243,5 +267,7 @@ func (o *Out) vblendRISCVWithMask(dst, src1, src2, mask string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

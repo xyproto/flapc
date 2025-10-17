@@ -26,7 +26,9 @@ func (o *Out) incX86Reg(reg string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "inc %s: ", reg)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "inc %s: ", reg)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -42,7 +44,9 @@ func (o *Out) incX86Reg(reg string) {
 	modrm := uint8(0xC0) | (regInfo.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 ADD immediate: ADD Xd, Xn, #1
@@ -52,7 +56,9 @@ func (o *Out) incARM64Reg(reg string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "add %s, %s, #1: ", reg, reg)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "add %s, %s, #1: ", reg, reg)
+	}
 
 	// ADD Xd, Xn, #imm12
 	// Format: sf 0 0 10001 shift(2) imm12(12) Rn(5) Rd(5)
@@ -67,7 +73,9 @@ func (o *Out) incARM64Reg(reg string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V ADDI: ADDI rd, rs1, 1
@@ -77,7 +85,9 @@ func (o *Out) incRISCVReg(reg string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "addi %s, %s, 1: ", reg, reg)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "addi %s, %s, 1: ", reg, reg)
+	}
 
 	// ADDI rd, rs1, imm
 	// Format: imm[11:0] rs1 000 rd 0010011
@@ -91,5 +101,7 @@ func (o *Out) incRISCVReg(reg string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

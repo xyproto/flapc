@@ -49,13 +49,19 @@ func (o *Out) vabspdX86VectorToVector(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "# vabs %s, %s (using VANDPD)\n", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# vabs %s, %s (using VANDPD)\n", dst, src)
+	}
 
 	if dstReg.Size == 512 {
 		// AVX-512: Use VANDPD with broadcasted mask
 		// Mask = 0x7FFFFFFFFFFFFFFF (all bits except sign bit)
-		fmt.Fprintf(os.Stderr, "# Load abs mask 0x7FFFFFFFFFFFFFFF\n")
-		fmt.Fprintf(os.Stderr, "vandpd %s, %s, [abs_mask]:", dst, src)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "# Load abs mask 0x7FFFFFFFFFFFFFFF\n")
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "vandpd %s, %s, [abs_mask]:", dst, src)
+		}
 
 		// VANDPD zmm1, zmm2, m512
 		// EVEX.NDS.512.66.0F.W1 54 /r
@@ -94,14 +100,20 @@ func (o *Out) vabspdX86VectorToVector(dst, src string) {
 		o.Write(0x00)
 		o.Write(0x00)
 	} else if dstReg.Size == 256 {
-		fmt.Fprintf(os.Stderr, " (AVX2)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX2)")
+		}
 		// Similar pattern for AVX2
 	} else {
-		fmt.Fprintf(os.Stderr, " (SSE2)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (SSE2)")
+		}
 		// SSE2 ANDPD with mask
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -118,7 +130,9 @@ func (o *Out) vabsARM64VectorToVector(dst, src string) {
 
 	if dstReg.Size == 512 {
 		// SVE FABS
-		fmt.Fprintf(os.Stderr, "fabs %s.d, p7/m, %s.d:", dst, src)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "fabs %s.d, p7/m, %s.d:", dst, src)
+		}
 
 		// SVE FABS encoding
 		// 01100101 11 01 110 110 Pg Zn Zd
@@ -137,7 +151,9 @@ func (o *Out) vabsARM64VectorToVector(dst, src string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
 		// NEON FABS
-		fmt.Fprintf(os.Stderr, "fabs %s.2d, %s.2d:", dst, src)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "fabs %s.2d, %s.2d:", dst, src)
+		}
 
 		// NEON FABS encoding
 		// 0 Q 0 01110 1 sz 1 00000 11111 0 Rn Rd
@@ -155,7 +171,9 @@ func (o *Out) vabsARM64VectorToVector(dst, src string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -170,7 +188,9 @@ func (o *Out) vabsRISCVVectorToVector(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vfabs.v %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vfabs.v %s, %s:", dst, src)
+	}
 
 	// vfabs.v encoding (part of vfsgnjx with rs1=vs2)
 	// Actually uses vfsgnjx.vv with same source for both operands
@@ -189,5 +209,7 @@ func (o *Out) vabsRISCVVectorToVector(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

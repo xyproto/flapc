@@ -123,7 +123,9 @@ func EnsureRepoCloned(repoURL string, updateDeps bool) (string, error) {
 			if err := GitPull(repoPath); err != nil {
 				return "", fmt.Errorf("failed to update %s: %w", repoURL, err)
 			}
-			fmt.Fprintf(os.Stderr, "Updated dependency: %s\n", repoURL)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Updated dependency: %s\n", repoURL)
+			}
 		}
 		return repoPath, nil
 	}
@@ -133,7 +135,9 @@ func EnsureRepoCloned(repoURL string, updateDeps bool) (string, error) {
 		return "", fmt.Errorf("failed to clone %s: %w", repoURL, err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Cloned dependency: %s\n", repoURL)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Cloned dependency: %s\n", repoURL)
+	}
 	return repoPath, nil
 }
 
@@ -157,11 +161,17 @@ func EnsureRepoClonedWithVersion(repoURL, version string, updateDeps bool) (stri
 		if err := GitCloneWithVersion(repoURL, repoPath, version); err != nil {
 			return "", fmt.Errorf("failed to clone %s: %w", repoURL, err)
 		}
-		fmt.Fprintf(os.Stderr, "Cloned dependency: %s", repoURL)
-		if version != "" {
-			fmt.Fprintf(os.Stderr, " at %s", version)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Cloned dependency: %s", repoURL)
 		}
-		fmt.Fprintf(os.Stderr, "\n")
+		if version != "" {
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, " at %s", version)
+			}
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "\n")
+		}
 	} else {
 		// Repo exists
 		if updateDeps {
@@ -184,7 +194,9 @@ func EnsureRepoClonedWithVersion(repoURL, version string, updateDeps bool) (stri
 				return "", fmt.Errorf("failed to checkout %s in %s: %w", checkoutRef, repoURL, err)
 			}
 			if updateDeps {
-				fmt.Fprintf(os.Stderr, "Updated dependency: %s at %s\n", repoURL, checkoutRef)
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Updated dependency: %s at %s\n", repoURL, checkoutRef)
+				}
 			}
 		}
 	}
@@ -256,7 +268,9 @@ func GitCloneWithVersion(repoURL, destPath, version string) error {
 
 		// Clone with determined ref
 		if checkoutRef != "" {
-			fmt.Fprintf(os.Stderr, "Cloning %s at %s...\n", repoURL, checkoutRef)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Cloning %s at %s...\n", repoURL, checkoutRef)
+			}
 			cloneCmd := exec.Command("git", "clone", "--depth=1", "--branch", checkoutRef, cloneURL, destPath)
 			cloneCmd.Stdout = os.Stderr
 			cloneCmd.Stderr = os.Stderr
@@ -273,7 +287,9 @@ func GitCloneWithVersion(repoURL, destPath, version string) error {
 		}
 	} else {
 		// Try cloning with the specific version as a branch/tag first
-		fmt.Fprintf(os.Stderr, "Cloning %s at %s...\n", repoURL, version)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Cloning %s at %s...\n", repoURL, version)
+		}
 		cloneCmd := exec.Command("git", "clone", "--depth=1", "--branch", version, cloneURL, destPath)
 		cloneCmd.Stdout = os.Stderr
 		cloneCmd.Stderr = os.Stderr
@@ -281,7 +297,9 @@ func GitCloneWithVersion(repoURL, destPath, version string) error {
 		if err := cloneCmd.Run(); err != nil {
 			// Branch/tag didn't work, might be a commit hash
 			// Do a full clone and then checkout
-			fmt.Fprintf(os.Stderr, "Not a branch/tag, trying as commit...\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Not a branch/tag, trying as commit...\n")
+			}
 			cloneCmd = exec.Command("git", "clone", cloneURL, destPath)
 			cloneCmd.Stdout = os.Stderr
 			cloneCmd.Stderr = os.Stderr
@@ -342,7 +360,9 @@ func GitClone(repoURL, destPath string) error {
 	// Now clone with the determined ref
 	var cloneCmd *exec.Cmd
 	if checkoutRef != "" {
-		fmt.Fprintf(os.Stderr, "Cloning %s at %s...\n", repoURL, checkoutRef)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Cloning %s at %s...\n", repoURL, checkoutRef)
+		}
 		cloneCmd = exec.Command("git", "clone", "--depth=1", "--branch", checkoutRef, cloneURL, destPath)
 	} else {
 		// No specific ref, let git use default
@@ -441,7 +461,9 @@ func GitPull(repoPath string) error {
 		return fmt.Errorf("git checkout %s failed: %w", checkoutRef, err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Updated to %s\n", checkoutRef)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Updated to %s\n", checkoutRef)
+	}
 	return nil
 }
 

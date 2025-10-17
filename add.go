@@ -61,7 +61,9 @@ func (o *Out) addX86RegToReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "add %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "add %s, %s:", dst, src)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -80,7 +82,9 @@ func (o *Out) addX86RegToReg(dst, src string) {
 	modrm := uint8(0xC0) | ((srcReg.Encoding & 7) << 3) | (dstReg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // x86-64 ADD reg, imm
@@ -90,7 +94,9 @@ func (o *Out) addX86ImmToReg(dst string, imm int64) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "add %s, %d:", dst, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "add %s, %d:", dst, imm)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -120,7 +126,9 @@ func (o *Out) addX86ImmToReg(dst string, imm int64) {
 		o.Write(uint8((imm32 >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 ADD Xd, Xn, Xm
@@ -131,7 +139,9 @@ func (o *Out) addARM64RegToReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "add %s, %s, %s:", dst, dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "add %s, %s, %s:", dst, dst, src)
+	}
 
 	// ADD (shifted register): sf 0 0 01011 shift(2) 0 Rm imm6 Rn Rd
 	// sf=1 (64-bit), shift=00
@@ -145,7 +155,9 @@ func (o *Out) addARM64RegToReg(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 ADD Xd, Xn, #imm
@@ -155,10 +167,14 @@ func (o *Out) addARM64ImmToReg(dst string, imm int64) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "add %s, %s, #%d:", dst, dst, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "add %s, %s, #%d:", dst, dst, imm)
+	}
 
 	if imm < 0 || imm > 4095 {
-		fmt.Fprintf(os.Stderr, " (immediate out of range)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (immediate out of range)")
+		}
 		imm = 0
 	}
 
@@ -173,7 +189,9 @@ func (o *Out) addARM64ImmToReg(dst string, imm int64) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 ADD Xd, Xn, Xm (3-operand form)
@@ -185,7 +203,9 @@ func (o *Out) addARM64RegToRegToReg(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "add %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "add %s, %s, %s:", dst, src1, src2)
+	}
 
 	instr := uint32(0x8B000000) |
 		(uint32(src2Reg.Encoding&31) << 16) | // Rm
@@ -197,7 +217,9 @@ func (o *Out) addARM64RegToRegToReg(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V ADD rd, rs1, rs2
@@ -208,7 +230,9 @@ func (o *Out) addRISCVRegToReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "add %s, %s, %s:", dst, dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "add %s, %s, %s:", dst, dst, src)
+	}
 
 	// ADD: 0000000 rs2 rs1 000 rd 0110011
 	instr := uint32(0x33) |
@@ -221,7 +245,9 @@ func (o *Out) addRISCVRegToReg(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V ADDI rd, rs1, imm
@@ -231,10 +257,14 @@ func (o *Out) addRISCVImmToReg(dst string, imm int64) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "addi %s, %s, %d:", dst, dst, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "addi %s, %s, %d:", dst, dst, imm)
+	}
 
 	if imm < -2048 || imm > 2047 {
-		fmt.Fprintf(os.Stderr, " (immediate out of range)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (immediate out of range)")
+		}
 		imm = 0
 	}
 
@@ -249,7 +279,9 @@ func (o *Out) addRISCVImmToReg(dst string, imm int64) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V ADD rd, rs1, rs2 (3-operand form)
@@ -261,7 +293,9 @@ func (o *Out) addRISCVRegToRegToReg(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "add %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "add %s, %s, %s:", dst, src1, src2)
+	}
 
 	instr := uint32(0x33) |
 		(uint32(src2Reg.Encoding&31) << 20) | // rs2
@@ -273,5 +307,7 @@ func (o *Out) addRISCVRegToRegToReg(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

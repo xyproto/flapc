@@ -21,7 +21,9 @@ func (o *Out) Cvtsi2sd(dst, src string) {
 }
 
 func (o *Out) cvtsi2sdX86(dst, src string) {
-	fmt.Fprintf(os.Stderr, "cvtsi2sd %s, %s: ", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "cvtsi2sd %s, %s: ", dst, src)
+	}
 
 	// Get source register
 	srcReg, srcOk := GetRegister(o.machine, src)
@@ -54,12 +56,16 @@ func (o *Out) cvtsi2sdX86(dst, src string) {
 	modrm := uint8(0xC0) | (uint8(xmmNum&7) << 3) | (srcReg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // SCVTF - Signed Convert to Float (ARM64)
 func (o *Out) scvtfARM64(dst, src string) {
-	fmt.Fprintf(os.Stderr, "scvtf %s, %s: ", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "scvtf %s, %s: ", dst, src)
+	}
 
 	srcReg, srcOk := GetRegister(o.machine, src)
 	if !srcOk {
@@ -79,12 +85,16 @@ func (o *Out) scvtfARM64(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // FCVT.D.L - Float Convert Double from Long (RISC-V)
 func (o *Out) fcvtRISCV(dst, src string) {
-	fmt.Fprintf(os.Stderr, "fcvt.d.l %s, %s: ", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "fcvt.d.l %s, %s: ", dst, src)
+	}
 
 	srcReg, srcOk := GetRegister(o.machine, src)
 	if !srcOk {
@@ -104,7 +114,9 @@ func (o *Out) fcvtRISCV(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // AddpdXmm - Add Packed Double (SIMD addition)
@@ -120,7 +132,9 @@ func (o *Out) AddpdXmm(dst, src string) {
 }
 
 func (o *Out) addpdX86(dst, src string) {
-	fmt.Fprintf(os.Stderr, "addpd %s, %s: ", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "addpd %s, %s: ", dst, src)
+	}
 
 	var dstNum, srcNum int
 	fmt.Sscanf(dst, "xmm%d", &dstNum)
@@ -149,7 +163,9 @@ func (o *Out) addpdX86(dst, src string) {
 	modrm := uint8(0xC0) | (uint8(dstNum&7) << 3) | uint8(srcNum&7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // SubpdXmm - Subtract Packed Double
@@ -161,7 +177,9 @@ func (o *Out) SubpdXmm(dst, src string) {
 }
 
 func (o *Out) subpdX86(dst, src string) {
-	fmt.Fprintf(os.Stderr, "subpd %s, %s: ", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "subpd %s, %s: ", dst, src)
+	}
 
 	var dstNum, srcNum int
 	fmt.Sscanf(dst, "xmm%d", &dstNum)
@@ -174,7 +192,9 @@ func (o *Out) subpdX86(dst, src string) {
 	modrm := uint8(0xC0) | (uint8(dstNum&7) << 3) | uint8(srcNum&7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // MulpdXmm - Multiply Packed Double
@@ -186,7 +206,9 @@ func (o *Out) MulpdXmm(dst, src string) {
 }
 
 func (o *Out) mulpdX86(dst, src string) {
-	fmt.Fprintf(os.Stderr, "mulpd %s, %s: ", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "mulpd %s, %s: ", dst, src)
+	}
 
 	var dstNum, srcNum int
 	fmt.Sscanf(dst, "xmm%d", &dstNum)
@@ -199,7 +221,9 @@ func (o *Out) mulpdX86(dst, src string) {
 	modrm := uint8(0xC0) | (uint8(dstNum&7) << 3) | uint8(srcNum&7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // DivpdXmm - Divide Packed Double
@@ -211,7 +235,9 @@ func (o *Out) DivpdXmm(dst, src string) {
 }
 
 func (o *Out) divpdX86(dst, src string) {
-	fmt.Fprintf(os.Stderr, "divpd %s, %s: ", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "divpd %s, %s: ", dst, src)
+	}
 
 	var dstNum, srcNum int
 	fmt.Sscanf(dst, "xmm%d", &dstNum)
@@ -224,7 +250,9 @@ func (o *Out) divpdX86(dst, src string) {
 	modrm := uint8(0xC0) | (uint8(dstNum&7) << 3) | uint8(srcNum&7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // MovXmmToMem - Store XMM register to memory
@@ -236,7 +264,9 @@ func (o *Out) MovXmmToMem(xmm, base string, offset int) {
 }
 
 func (o *Out) movxmmToMemX86(xmm, base string, offset int) {
-	fmt.Fprintf(os.Stderr, "movsd [%s+%d], %s: ", base, offset, xmm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "movsd [%s+%d], %s: ", base, offset, xmm)
+	}
 
 	var xmmNum int
 	fmt.Sscanf(xmm, "xmm%d", &xmmNum)
@@ -283,7 +313,9 @@ func (o *Out) movxmmToMemX86(xmm, base string, offset int) {
 		o.WriteUnsigned(uint(offset))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // MovMemToXmm - Load from memory to XMM register
@@ -295,7 +327,9 @@ func (o *Out) MovMemToXmm(xmm, base string, offset int) {
 }
 
 func (o *Out) movMemToXmmX86(xmm, base string, offset int) {
-	fmt.Fprintf(os.Stderr, "movsd %s, [%s+%d]: ", xmm, base, offset)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "movsd %s, [%s+%d]: ", xmm, base, offset)
+	}
 
 	var xmmNum int
 	fmt.Sscanf(xmm, "xmm%d", &xmmNum)
@@ -340,21 +374,31 @@ func (o *Out) movMemToXmmX86(xmm, base string, offset int) {
 		o.WriteUnsigned(uint(offset))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 func (o *Out) faddARM64(dst, src string) {
 	// FADD Vd.2D, Vn.2D, Vm.2D for packed double
-	fmt.Fprintf(os.Stderr, "fadd %s, %s: ", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "fadd %s, %s: ", dst, src)
+	}
 	// Implementation would go here
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 func (o *Out) faddRISCV(dst, src string) {
 	// FADD.D fd, fs1, fs2
-	fmt.Fprintf(os.Stderr, "fadd.d %s, %s: ", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "fadd.d %s, %s: ", dst, src)
+	}
 	// Implementation would go here
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // Cvttsd2si - Convert float64 to int64 with truncation
@@ -366,7 +410,9 @@ func (o *Out) Cvttsd2si(dst, src string) {
 }
 
 func (o *Out) cvttsd2siX86(dst, src string) {
-	fmt.Fprintf(os.Stderr, "cvttsd2si %s, %s: ", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "cvttsd2si %s, %s: ", dst, src)
+	}
 
 	dstReg, _ := GetRegister(o.machine, dst)
 
@@ -394,7 +440,9 @@ func (o *Out) cvttsd2siX86(dst, src string) {
 	modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | uint8(xmmNum&7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // Ucomisd - Compare scalar double-precision floating-point values and set EFLAGS
@@ -407,7 +455,9 @@ func (o *Out) Ucomisd(xmm1, xmm2 string) {
 }
 
 func (o *Out) ucomisdX86(xmm1, xmm2 string) {
-	fmt.Fprintf(os.Stderr, "ucomisd %s, %s: ", xmm1, xmm2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "ucomisd %s, %s: ", xmm1, xmm2)
+	}
 
 	var xmm1Num, xmm2Num int
 	fmt.Sscanf(xmm1, "xmm%d", &xmm1Num)
@@ -437,7 +487,9 @@ func (o *Out) ucomisdX86(xmm1, xmm2 string) {
 	modrm := uint8(0xC0) | (uint8(xmm1Num&7) << 3) | uint8(xmm2Num&7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // Emit - Write raw bytes directly to output
@@ -458,7 +510,9 @@ func (o *Out) MovXmmToXmm(dst, src string) {
 }
 
 func (o *Out) movX86XmmToXmm(dst, src string) {
-	fmt.Fprintf(os.Stderr, "movsd %s, %s: ", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "movsd %s, %s: ", dst, src)
+	}
 
 	var dstNum, srcNum int
 	fmt.Sscanf(dst, "xmm%d", &dstNum)
@@ -487,5 +541,7 @@ func (o *Out) movX86XmmToXmm(dst, src string) {
 	modrm := uint8(0xC0) | (uint8(dstNum&7) << 3) | uint8(srcNum&7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

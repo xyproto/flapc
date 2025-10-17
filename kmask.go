@@ -89,7 +89,9 @@ func (o *Out) kandX86MaskToMask(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "kandw %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "kandw %s, %s, %s:", dst, src1, src2)
+	}
 
 	// VEX 3-byte encoding
 	o.Write(0xC4)
@@ -110,7 +112,9 @@ func (o *Out) kandX86MaskToMask(dst, src1, src2 string) {
 	modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (src2Reg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -127,7 +131,9 @@ func (o *Out) korX86MaskToMask(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "korw %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "korw %s, %s, %s:", dst, src1, src2)
+	}
 
 	o.Write(0xC4)
 
@@ -143,7 +149,9 @@ func (o *Out) korX86MaskToMask(dst, src1, src2 string) {
 	modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (src2Reg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -160,7 +168,9 @@ func (o *Out) kxorX86MaskToMask(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "kxorw %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "kxorw %s, %s, %s:", dst, src1, src2)
+	}
 
 	o.Write(0xC4)
 
@@ -176,7 +186,9 @@ func (o *Out) kxorX86MaskToMask(dst, src1, src2 string) {
 	modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (src2Reg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -192,7 +204,9 @@ func (o *Out) knotX86MaskToMask(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "knotw %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "knotw %s, %s:", dst, src)
+	}
 
 	o.Write(0xC4)
 
@@ -207,7 +221,9 @@ func (o *Out) knotX86MaskToMask(dst, src string) {
 	modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (srcReg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -223,7 +239,9 @@ func (o *Out) kandARM64MaskToMask(dst, src1, src2 string) {
 	}
 
 	// SVE predicate AND
-	fmt.Fprintf(os.Stderr, "and %s.b, %s/z, %s.b, %s.b:", dst, src1, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "and %s.b, %s/z, %s.b, %s.b:", dst, src1, src1, src2)
+	}
 
 	// SVE predicate AND encoding
 	// 00100101 00 0 Pm 01 0000 Pg 0 Pn Pd
@@ -238,7 +256,9 @@ func (o *Out) kandARM64MaskToMask(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 func (o *Out) korARM64MaskToMask(dst, src1, src2 string) {
@@ -250,7 +270,9 @@ func (o *Out) korARM64MaskToMask(dst, src1, src2 string) {
 	}
 
 	// SVE predicate ORR
-	fmt.Fprintf(os.Stderr, "orr %s.b, %s/z, %s.b, %s.b:", dst, src1, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "orr %s.b, %s/z, %s.b, %s.b:", dst, src1, src1, src2)
+	}
 
 	// SVE predicate ORR encoding
 	// 00100101 10 0 Pm 01 0000 Pg 0 Pn Pd
@@ -265,7 +287,9 @@ func (o *Out) korARM64MaskToMask(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 func (o *Out) kxorARM64MaskToMask(dst, src1, src2 string) {
@@ -277,7 +301,9 @@ func (o *Out) kxorARM64MaskToMask(dst, src1, src2 string) {
 	}
 
 	// SVE predicate EOR
-	fmt.Fprintf(os.Stderr, "eor %s.b, %s/z, %s.b, %s.b:", dst, src1, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "eor %s.b, %s/z, %s.b, %s.b:", dst, src1, src1, src2)
+	}
 
 	// SVE predicate EOR encoding
 	// 00100101 01 0 Pm 01 0000 Pg 0 Pn Pd
@@ -292,7 +318,9 @@ func (o *Out) kxorARM64MaskToMask(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 func (o *Out) knotARM64MaskToMask(dst, src string) {
@@ -303,7 +331,9 @@ func (o *Out) knotARM64MaskToMask(dst, src string) {
 	}
 
 	// SVE predicate NOT
-	fmt.Fprintf(os.Stderr, "not %s.b, p15/z, %s.b:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "not %s.b, p15/z, %s.b:", dst, src)
+	}
 
 	// SVE predicate NOT encoding
 	// 00100101 01 010000 01 Pg 0 Pn Pd
@@ -317,7 +347,9 @@ func (o *Out) knotARM64MaskToMask(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -332,7 +364,9 @@ func (o *Out) kandRISCVMaskToMask(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vmand.mm %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vmand.mm %s, %s, %s:", dst, src1, src2)
+	}
 
 	// vmand.mm encoding
 	// funct6=011001, vm=1, funct3=010 (OPMVV)
@@ -349,7 +383,9 @@ func (o *Out) kandRISCVMaskToMask(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 func (o *Out) korRISCVMaskToMask(dst, src1, src2 string) {
@@ -360,7 +396,9 @@ func (o *Out) korRISCVMaskToMask(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vmor.mm %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vmor.mm %s, %s, %s:", dst, src1, src2)
+	}
 
 	// vmor.mm encoding
 	// funct6=011010, vm=1, funct3=010 (OPMVV)
@@ -377,7 +415,9 @@ func (o *Out) korRISCVMaskToMask(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 func (o *Out) kxorRISCVMaskToMask(dst, src1, src2 string) {
@@ -388,7 +428,9 @@ func (o *Out) kxorRISCVMaskToMask(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vmxor.mm %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vmxor.mm %s, %s, %s:", dst, src1, src2)
+	}
 
 	// vmxor.mm encoding
 	// funct6=011011, vm=1, funct3=010 (OPMVV)
@@ -405,7 +447,9 @@ func (o *Out) kxorRISCVMaskToMask(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 func (o *Out) knotRISCVMaskToMask(dst, src string) {
@@ -415,7 +459,9 @@ func (o *Out) knotRISCVMaskToMask(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vmnot.m %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vmnot.m %s, %s:", dst, src)
+	}
 
 	// vmnot.m encoding (vmxor.mm with all-ones mask)
 	// funct6=011011, vm=1, funct3=010
@@ -432,5 +478,7 @@ func (o *Out) knotRISCVMaskToMask(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

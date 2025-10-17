@@ -56,7 +56,9 @@ func (o *Out) movX86RegToReg(dst, src string) {
 	srcIsXMM := (len(src) >= 3 && src[:3] == "xmm") || (len(src) >= 1 && src[:1] == "v")
 	if dstIsXMM && srcIsXMM {
 		// XMM to XMM move using MOVSD
-		fmt.Fprintf(os.Stderr, "movsd %s, %s: ", dst, src)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "movsd %s, %s: ", dst, src)
+		}
 
 		var dstNum, srcNum int
 		fmt.Sscanf(dst, "xmm%d", &dstNum)
@@ -84,7 +86,9 @@ func (o *Out) movX86RegToReg(dst, src string) {
 		modrm := uint8(0xC0) | (uint8(dstNum&7) << 3) | uint8(srcNum&7)
 		o.Write(modrm)
 
-		fmt.Fprintln(os.Stderr)
+		if VerboseMode {
+			fmt.Fprintln(os.Stderr)
+		}
 		return
 	}
 
@@ -95,7 +99,9 @@ func (o *Out) movX86RegToReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "mov %s, %s: ", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "mov %s, %s: ", dst, src)
+	}
 
 	// REX prefix for register-extension/operand width
 	needsRex := dstReg.Size == 64 || srcReg.Size == 64 || dstReg.Encoding >= 8 || srcReg.Encoding >= 8
@@ -120,7 +126,9 @@ func (o *Out) movX86RegToReg(dst, src string) {
 	modrm := uint8(0xC0) | ((srcReg.Encoding & 7) << 3) | (dstReg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // x86_64 immediate-to-register move
@@ -130,7 +138,9 @@ func (o *Out) movX86ImmToReg(dst, imm string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "mov %s, %s:", dst, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "mov %s, %s:", dst, imm)
+	}
 
 	// Parse immediate value (support both signed and unsigned)
 	var immVal uint64
@@ -164,7 +174,9 @@ func (o *Out) movX86ImmToReg(dst, imm string) {
 	// Write 32-bit immediate (sign-extended to 64-bit)
 	o.WriteUnsigned(uint(immVal))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 register-to-register move
@@ -176,7 +188,9 @@ func (o *Out) movARM64RegToReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "mov %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "mov %s, %s:", dst, src)
+	}
 
 	// ARM64 MOV (register): ORR Xd, XZR, Xm
 	var instr uint32
@@ -195,7 +209,9 @@ func (o *Out) movARM64RegToReg(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 immediate-to-register move
@@ -205,7 +221,9 @@ func (o *Out) movARM64ImmToReg(dst, imm string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "mov %s, %s:", dst, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "mov %s, %s:", dst, imm)
+	}
 
 	// Parse immediate value (support both signed and unsigned)
 	var immVal uint64
@@ -236,7 +254,9 @@ func (o *Out) movARM64ImmToReg(dst, imm string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V register-to-register move
@@ -248,7 +268,9 @@ func (o *Out) movRISCVRegToReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "mv %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "mv %s, %s:", dst, src)
+	}
 
 	// RISC-V MV is implemented as ADDI rd, rs1, 0
 	// Format: imm[11:0] | rs1 | 000 | rd | 0010011
@@ -265,7 +287,9 @@ func (o *Out) movRISCVRegToReg(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V immediate-to-register move
@@ -275,7 +299,9 @@ func (o *Out) movRISCVImmToReg(dst, imm string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "li %s, %s:", dst, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "li %s, %s:", dst, imm)
+	}
 
 	// Parse immediate value
 	var immVal int64
@@ -318,7 +344,9 @@ func (o *Out) movRISCVImmToReg(dst, imm string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // MovInstruction handles both register-to-register and immediate-to-register moves
@@ -355,7 +383,9 @@ func (o *Out) MovRegToXmm(dst, src string) {
 // x86-64 MOVQ GP register to XMM register
 func (o *Out) movX86RegToXmm(dst, src string) {
 	// For x86-64, use MOVQ xmm, r64 (66 REX.W 0F 6E /r)
-	fmt.Fprintf(os.Stderr, "movq %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "movq %s, %s:", dst, src)
+	}
 
 	srcReg, srcOk := GetRegister(o.machine, src)
 	if !srcOk {
@@ -387,12 +417,16 @@ func (o *Out) movX86RegToXmm(dst, src string) {
 	modrm := uint8(0xC0) | (uint8(xmmNum&7) << 3) | (srcReg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64: Move GP register to FP register
 func (o *Out) movARM64RegToFP(dst, src string) {
-	fmt.Fprintf(os.Stderr, "fmov %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "fmov %s, %s:", dst, src)
+	}
 
 	srcReg, srcOk := GetRegister(o.machine, src)
 	if !srcOk {
@@ -413,12 +447,16 @@ func (o *Out) movARM64RegToFP(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V: Move GP register to FP register
 func (o *Out) movRISCVRegToFP(dst, src string) {
-	fmt.Fprintf(os.Stderr, "fmv.d.x %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "fmv.d.x %s, %s:", dst, src)
+	}
 
 	srcReg, srcOk := GetRegister(o.machine, src)
 	if !srcOk {
@@ -440,7 +478,9 @@ func (o *Out) movRISCVRegToFP(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // CallSymbol generates a relative CALL instruction to a labeled symbol

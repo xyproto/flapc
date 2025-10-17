@@ -61,11 +61,15 @@ func (o *Out) vcvtqq2pdX86VectorToVector(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vcvtqq2pd %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vcvtqq2pd %s, %s:", dst, src)
+	}
 
 	if dstReg.Size == 512 {
 		// AVX-512DQ VCVTQQ2PD
-		fmt.Fprintf(os.Stderr, " (AVX-512DQ)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX-512DQ)")
+		}
 
 		p0 := uint8(0x62)
 
@@ -98,7 +102,9 @@ func (o *Out) vcvtqq2pdX86VectorToVector(dst, src string) {
 		o.Write(modrm)
 	} else if dstReg.Size == 256 {
 		// AVX-512VL VCVTQQ2PD (ymm from ymm)
-		fmt.Fprintf(os.Stderr, " (AVX-512VL)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX-512VL)")
+		}
 
 		p0 := uint8(0x62)
 
@@ -130,11 +136,17 @@ func (o *Out) vcvtqq2pdX86VectorToVector(dst, src string) {
 		modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (srcReg.Encoding & 7)
 		o.Write(modrm)
 	} else {
-		fmt.Fprintf(os.Stderr, " (no SSE2 int64→float64 vector conversion)")
-		fmt.Fprintf(os.Stderr, "\n# Use scalar CVTSI2SD in loop")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (no SSE2 int64→float64 vector conversion)")
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "\n# Use scalar CVTSI2SD in loop")
+		}
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -150,11 +162,15 @@ func (o *Out) vcvttpd2qqX86VectorToVector(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vcvttpd2qq %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vcvttpd2qq %s, %s:", dst, src)
+	}
 
 	if dstReg.Size == 512 {
 		// AVX-512DQ VCVTTPD2QQ
-		fmt.Fprintf(os.Stderr, " (AVX-512DQ)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX-512DQ)")
+		}
 
 		p0 := uint8(0x62)
 
@@ -187,7 +203,9 @@ func (o *Out) vcvttpd2qqX86VectorToVector(dst, src string) {
 		o.Write(modrm)
 	} else if dstReg.Size == 256 {
 		// AVX-512VL VCVTTPD2QQ
-		fmt.Fprintf(os.Stderr, " (AVX-512VL)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX-512VL)")
+		}
 
 		p0 := uint8(0x62)
 
@@ -219,11 +237,17 @@ func (o *Out) vcvttpd2qqX86VectorToVector(dst, src string) {
 		modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (srcReg.Encoding & 7)
 		o.Write(modrm)
 	} else {
-		fmt.Fprintf(os.Stderr, " (no SSE2 float64→int64 vector conversion)")
-		fmt.Fprintf(os.Stderr, "\n# Use scalar CVTTSD2SI in loop")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (no SSE2 float64→int64 vector conversion)")
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "\n# Use scalar CVTTSD2SI in loop")
+		}
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -239,7 +263,9 @@ func (o *Out) vcvtqq2pdARM64VectorToVector(dst, src string) {
 
 	if dstReg.Size == 512 {
 		// SVE SCVTF - signed convert to float
-		fmt.Fprintf(os.Stderr, "scvtf %s.d, p7/m, %s.d:", dst, src)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "scvtf %s.d, p7/m, %s.d:", dst, src)
+		}
 
 		// SVE SCVTF encoding
 		// 01100101 11 0 11010 101 Pg Zn Zd
@@ -254,7 +280,9 @@ func (o *Out) vcvtqq2pdARM64VectorToVector(dst, src string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
 		// NEON SCVTF
-		fmt.Fprintf(os.Stderr, "scvtf %s.2d, %s.2d:", dst, src)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "scvtf %s.2d, %s.2d:", dst, src)
+		}
 
 		// NEON SCVTF encoding
 		// 0 Q 0 01110 0 sz 1 00001 11101 10 Rn Rd
@@ -269,7 +297,9 @@ func (o *Out) vcvtqq2pdARM64VectorToVector(dst, src string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -285,7 +315,9 @@ func (o *Out) vcvttpd2qqARM64VectorToVector(dst, src string) {
 
 	if dstReg.Size == 512 {
 		// SVE FCVTZS - float convert to signed with truncation
-		fmt.Fprintf(os.Stderr, "fcvtzs %s.d, p7/m, %s.d:", dst, src)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "fcvtzs %s.d, p7/m, %s.d:", dst, src)
+		}
 
 		// SVE FCVTZS encoding
 		// 01100101 11 0 11010 101 Pg Zn Zd
@@ -300,7 +332,9 @@ func (o *Out) vcvttpd2qqARM64VectorToVector(dst, src string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
 		// NEON FCVTZS
-		fmt.Fprintf(os.Stderr, "fcvtzs %s.2d, %s.2d:", dst, src)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "fcvtzs %s.2d, %s.2d:", dst, src)
+		}
 
 		// NEON FCVTZS encoding
 		// 0 Q 0 01110 1 sz 1 00001 10111 10 Rn Rd
@@ -315,7 +349,9 @@ func (o *Out) vcvttpd2qqARM64VectorToVector(dst, src string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -331,7 +367,9 @@ func (o *Out) vcvtqq2pdRISCVVectorToVector(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vfcvt.f.x.v %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vfcvt.f.x.v %s, %s:", dst, src)
+	}
 
 	// vfcvt.f.x.v encoding
 	// funct6=010010, vm=1, rs1=00011, funct3=001
@@ -348,7 +386,9 @@ func (o *Out) vcvtqq2pdRISCVVectorToVector(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -364,7 +404,9 @@ func (o *Out) vcvttpd2qqRISCVVectorToVector(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vfcvt.rtz.x.f.v %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vfcvt.rtz.x.f.v %s, %s:", dst, src)
+	}
 
 	// vfcvt.rtz.x.f.v encoding (round toward zero)
 	// funct6=010010, vm=1, rs1=00111, funct3=001
@@ -381,5 +423,7 @@ func (o *Out) vcvttpd2qqRISCVVectorToVector(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

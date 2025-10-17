@@ -33,7 +33,9 @@ func (eb *ExecutableBuilder) WriteELFHeader() error {
 
 	w.Write4(1) // original ELF version (?)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 
 	entry := uint64(baseAddr + headerSize + rodataSize)
 
@@ -52,7 +54,9 @@ func (eb *ExecutableBuilder) WriteELFHeader() error {
 	const sectionHeaderTableEntryIndex = 0
 	w.Write2(sectionHeaderTableEntryIndex)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 
 	w.Write4(1)
 	w.Write4(7)
@@ -64,7 +68,9 @@ func (eb *ExecutableBuilder) WriteELFHeader() error {
 	w.Write8u(fileSize)
 	w.Write8u(0x1000)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 
 	return nil
 }

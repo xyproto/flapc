@@ -69,7 +69,9 @@ func (o *Out) vcmppdX86VectorToVector(dstMask, src1, src2 string, predicate Comp
 		CmpGE:  "ge",
 	}
 
-	fmt.Fprintf(os.Stderr, "vcmppd %s, %s, %s, %s:", dstMask, src1, src2, predicateNames[predicate])
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vcmppd %s, %s, %s, %s:", dstMask, src1, src2, predicateNames[predicate])
+	}
 
 	if src1Reg.Size == 512 {
 		// AVX-512 VCMPPD k1, zmm1, zmm2, imm8
@@ -113,7 +115,9 @@ func (o *Out) vcmppdX86VectorToVector(dstMask, src1, src2 string, predicate Comp
 		o.Write(uint8(predicate))
 	} else if src1Reg.Size == 256 {
 		// AVX VCMPPD ymm, ymm, ymm, imm8
-		fmt.Fprintf(os.Stderr, " (AVX2, produces vector mask)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX2, produces vector mask)")
+		}
 
 		o.Write(0xC4)
 
@@ -139,7 +143,9 @@ func (o *Out) vcmppdX86VectorToVector(dstMask, src1, src2 string, predicate Comp
 		o.Write(uint8(predicate))
 	} else {
 		// SSE2 CMPPD xmm, xmm, imm8
-		fmt.Fprintf(os.Stderr, " (SSE2, produces vector mask)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (SSE2, produces vector mask)")
+		}
 
 		o.Write(0x66)
 
@@ -163,7 +169,9 @@ func (o *Out) vcmppdX86VectorToVector(dstMask, src1, src2 string, predicate Comp
 		o.Write(uint8(predicate))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -208,11 +216,15 @@ func (o *Out) vcmppdARM64VectorToVector(dstMask, src1, src2 string, predicate Co
 			mnemonic = "fcmne"
 			opcode = 0x65202000 // Use EQ and invert
 		default:
-			fmt.Fprintf(os.Stderr, "# Unsupported comparison predicate\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "# Unsupported comparison predicate\n")
+			}
 			return
 		}
 
-		fmt.Fprintf(os.Stderr, "%s %s.d, p7/z, %s.d, %s.d:", mnemonic, dstMask, src1, src2)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "%s %s.d, p7/z, %s.d, %s.d:", mnemonic, dstMask, src1, src2)
+		}
 
 		// Build instruction
 		instr := opcode |
@@ -245,7 +257,9 @@ func (o *Out) vcmppdARM64VectorToVector(dstMask, src1, src2 string, predicate Co
 			opcode = 0x4E60E400
 		}
 
-		fmt.Fprintf(os.Stderr, "%s %s.2d, %s.2d, %s.2d:", mnemonic, dstMask, src1, src2)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "%s %s.2d, %s.2d, %s.2d:", mnemonic, dstMask, src1, src2)
+		}
 
 		instr := opcode |
 			(uint32(src2Reg.Encoding&31) << 16) |
@@ -258,7 +272,9 @@ func (o *Out) vcmppdARM64VectorToVector(dstMask, src1, src2 string, predicate Co
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -306,7 +322,9 @@ func (o *Out) vcmppdRISCVVectorToVector(dstMask, src1, src2 string, predicate Co
 		funct6 = 0x18
 	}
 
-	fmt.Fprintf(os.Stderr, "%s %s, %s, %s:", mnemonic, dstMask, src2, src1)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "%s %s, %s, %s:", mnemonic, dstMask, src2, src1)
+	}
 
 	// RVV compare encoding
 	// funct6 vm vs2 vs1 funct3 vd opcode
@@ -324,5 +342,7 @@ func (o *Out) vcmppdRISCVVectorToVector(dstMask, src1, src2 string, predicate Co
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

@@ -144,7 +144,9 @@ func (o *Out) andX86RegWithReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "and %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "and %s, %s:", dst, src)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -163,7 +165,9 @@ func (o *Out) andX86RegWithReg(dst, src string) {
 	modrm := uint8(0xC0) | ((srcReg.Encoding & 7) << 3) | (dstReg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // x86-64 AND with immediate
@@ -173,7 +177,9 @@ func (o *Out) andX86RegWithImm(dst string, imm int32) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "and %s, %d:", dst, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "and %s, %d:", dst, imm)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -202,7 +208,9 @@ func (o *Out) andX86RegWithImm(dst string, imm int32) {
 		o.Write(uint8((imm >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // x86-64 OR (register-register)
@@ -213,7 +221,9 @@ func (o *Out) orX86RegWithReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "or %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "or %s, %s:", dst, src)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -232,7 +242,9 @@ func (o *Out) orX86RegWithReg(dst, src string) {
 	modrm := uint8(0xC0) | ((srcReg.Encoding & 7) << 3) | (dstReg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // x86-64 OR with immediate
@@ -242,7 +254,9 @@ func (o *Out) orX86RegWithImm(dst string, imm int32) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "or %s, %d:", dst, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "or %s, %d:", dst, imm)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -271,7 +285,9 @@ func (o *Out) orX86RegWithImm(dst string, imm int32) {
 		o.Write(uint8((imm >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // x86-64 XOR (register-register)
@@ -282,7 +298,9 @@ func (o *Out) xorX86RegWithReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "xor %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "xor %s, %s:", dst, src)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -301,7 +319,9 @@ func (o *Out) xorX86RegWithReg(dst, src string) {
 	modrm := uint8(0xC0) | ((srcReg.Encoding & 7) << 3) | (dstReg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // x86-64 XOR with immediate
@@ -311,7 +331,9 @@ func (o *Out) xorX86RegWithImm(dst string, imm int32) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "xor %s, %d:", dst, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "xor %s, %d:", dst, imm)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -340,7 +362,9 @@ func (o *Out) xorX86RegWithImm(dst string, imm int32) {
 		o.Write(uint8((imm >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -355,7 +379,9 @@ func (o *Out) andARM64RegWithReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "and %s, %s, %s:", dst, dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "and %s, %s, %s:", dst, dst, src)
+	}
 
 	// AND Xd, Xn, Xm (shifted register)
 	// Format: sf 0 01010 shift 0 Rm imm6 Rn Rd
@@ -370,7 +396,9 @@ func (o *Out) andARM64RegWithReg(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 AND - 3 operand form
@@ -382,7 +410,9 @@ func (o *Out) andARM64RegWithRegToReg(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "and %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "and %s, %s, %s:", dst, src1, src2)
+	}
 
 	instr := uint32(0x8A000000) |
 		(uint32(src2Reg.Encoding&31) << 16) | // Rm
@@ -394,7 +424,9 @@ func (o *Out) andARM64RegWithRegToReg(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 AND with immediate
@@ -404,7 +436,9 @@ func (o *Out) andARM64RegWithImm(dst string, imm int32) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "and %s, %s, #%d:", dst, dst, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "and %s, %s, #%d:", dst, dst, imm)
+	}
 
 	// AND (immediate) uses a complex bitmask encoding
 	// For simplicity, we'll use a limited set of encodable immediates
@@ -420,7 +454,9 @@ func (o *Out) andARM64RegWithImm(dst string, imm int32) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 ORR (register-register, 2-operand form)
@@ -431,7 +467,9 @@ func (o *Out) orARM64RegWithReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "orr %s, %s, %s:", dst, dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "orr %s, %s, %s:", dst, dst, src)
+	}
 
 	// ORR Xd, Xn, Xm (shifted register)
 	// Format: sf 0 10101 shift 0 Rm imm6 Rn Rd
@@ -445,7 +483,9 @@ func (o *Out) orARM64RegWithReg(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 ORR - 3 operand form
@@ -457,7 +497,9 @@ func (o *Out) orARM64RegWithRegToReg(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "orr %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "orr %s, %s, %s:", dst, src1, src2)
+	}
 
 	instr := uint32(0xAA000000) |
 		(uint32(src2Reg.Encoding&31) << 16) | // Rm
@@ -469,7 +511,9 @@ func (o *Out) orARM64RegWithRegToReg(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 ORR with immediate
@@ -479,7 +523,9 @@ func (o *Out) orARM64RegWithImm(dst string, imm int32) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "orr %s, %s, #%d:", dst, dst, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "orr %s, %s, #%d:", dst, dst, imm)
+	}
 
 	// ORR (immediate) uses bitmask encoding
 	// Format: sf 1 01100 1 0 immr imms Rn Rd
@@ -492,7 +538,9 @@ func (o *Out) orARM64RegWithImm(dst string, imm int32) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 EOR (XOR) (register-register, 2-operand form)
@@ -503,7 +551,9 @@ func (o *Out) xorARM64RegWithReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "eor %s, %s, %s:", dst, dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "eor %s, %s, %s:", dst, dst, src)
+	}
 
 	// EOR Xd, Xn, Xm (shifted register)
 	// Format: sf 1 01010 shift 0 Rm imm6 Rn Rd
@@ -517,7 +567,9 @@ func (o *Out) xorARM64RegWithReg(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 EOR - 3 operand form
@@ -529,7 +581,9 @@ func (o *Out) xorARM64RegWithRegToReg(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "eor %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "eor %s, %s, %s:", dst, src1, src2)
+	}
 
 	instr := uint32(0xCA000000) |
 		(uint32(src2Reg.Encoding&31) << 16) | // Rm
@@ -541,7 +595,9 @@ func (o *Out) xorARM64RegWithRegToReg(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 EOR with immediate
@@ -551,7 +607,9 @@ func (o *Out) xorARM64RegWithImm(dst string, imm int32) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "eor %s, %s, #%d:", dst, dst, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "eor %s, %s, #%d:", dst, dst, imm)
+	}
 
 	// EOR (immediate) uses bitmask encoding
 	// Format: sf 1 10100 1 0 immr imms Rn Rd
@@ -564,7 +622,9 @@ func (o *Out) xorARM64RegWithImm(dst string, imm int32) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -579,7 +639,9 @@ func (o *Out) andRISCVRegWithReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "and %s, %s, %s:", dst, dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "and %s, %s, %s:", dst, dst, src)
+	}
 
 	// AND: 0000000 rs2 rs1 111 rd 0110011
 	instr := uint32(0x33) |
@@ -593,7 +655,9 @@ func (o *Out) andRISCVRegWithReg(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V AND - 3 operand form
@@ -605,7 +669,9 @@ func (o *Out) andRISCVRegWithRegToReg(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "and %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "and %s, %s, %s:", dst, src1, src2)
+	}
 
 	instr := uint32(0x33) |
 		(7 << 12) | // funct3 = 111 (AND)
@@ -618,7 +684,9 @@ func (o *Out) andRISCVRegWithRegToReg(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V ANDI (AND immediate)
@@ -628,7 +696,9 @@ func (o *Out) andRISCVRegWithImm(dst string, imm int32) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "andi %s, %s, %d:", dst, dst, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "andi %s, %s, %d:", dst, dst, imm)
+	}
 
 	// ANDI: imm[11:0] rs1 111 rd 0010011
 	instr := uint32(0x13) |
@@ -642,7 +712,9 @@ func (o *Out) andRISCVRegWithImm(dst string, imm int32) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V OR (register-register, 2-operand form)
@@ -653,7 +725,9 @@ func (o *Out) orRISCVRegWithReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "or %s, %s, %s:", dst, dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "or %s, %s, %s:", dst, dst, src)
+	}
 
 	// OR: 0000000 rs2 rs1 110 rd 0110011
 	instr := uint32(0x33) |
@@ -667,7 +741,9 @@ func (o *Out) orRISCVRegWithReg(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V OR - 3 operand form
@@ -679,7 +755,9 @@ func (o *Out) orRISCVRegWithRegToReg(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "or %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "or %s, %s, %s:", dst, src1, src2)
+	}
 
 	instr := uint32(0x33) |
 		(6 << 12) | // funct3 = 110 (OR)
@@ -692,7 +770,9 @@ func (o *Out) orRISCVRegWithRegToReg(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V ORI (OR immediate)
@@ -702,7 +782,9 @@ func (o *Out) orRISCVRegWithImm(dst string, imm int32) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "ori %s, %s, %d:", dst, dst, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "ori %s, %s, %d:", dst, dst, imm)
+	}
 
 	// ORI: imm[11:0] rs1 110 rd 0010011
 	instr := uint32(0x13) |
@@ -716,7 +798,9 @@ func (o *Out) orRISCVRegWithImm(dst string, imm int32) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V XOR (register-register, 2-operand form)
@@ -727,7 +811,9 @@ func (o *Out) xorRISCVRegWithReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "xor %s, %s, %s:", dst, dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "xor %s, %s, %s:", dst, dst, src)
+	}
 
 	// XOR: 0000000 rs2 rs1 100 rd 0110011
 	instr := uint32(0x33) |
@@ -741,7 +827,9 @@ func (o *Out) xorRISCVRegWithReg(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V XOR - 3 operand form
@@ -753,7 +841,9 @@ func (o *Out) xorRISCVRegWithRegToReg(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "xor %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "xor %s, %s, %s:", dst, src1, src2)
+	}
 
 	instr := uint32(0x33) |
 		(4 << 12) | // funct3 = 100 (XOR)
@@ -766,7 +856,9 @@ func (o *Out) xorRISCVRegWithRegToReg(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V XORI (XOR immediate)
@@ -776,7 +868,9 @@ func (o *Out) xorRISCVRegWithImm(dst string, imm int32) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "xori %s, %s, %d:", dst, dst, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "xori %s, %s, %d:", dst, dst, imm)
+	}
 
 	// XORI: imm[11:0] rs1 100 rd 0010011
 	instr := uint32(0x13) |
@@ -790,7 +884,9 @@ func (o *Out) xorRISCVRegWithImm(dst string, imm int32) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // NotReg generates NOT dst (dst = ~dst) - one's complement
@@ -812,7 +908,9 @@ func (o *Out) notX86Reg(dst string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "not %s:", dst)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "not %s:", dst)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -828,7 +926,9 @@ func (o *Out) notX86Reg(dst string) {
 	modrm := uint8(0xD0) | (dstReg.Encoding & 7) // 11 010 xxx
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 MVN (NOT) - bitwise NOT using MVN (Move NOT)
@@ -838,7 +938,9 @@ func (o *Out) notARM64Reg(dst string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "mvn %s, %s:", dst, dst)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "mvn %s, %s:", dst, dst)
+	}
 
 	// MVN Xd, Xm (ORR Xd, XZR, Xm, LSL #0, inverted)
 	// This is equivalent to: NOT Xd = ORN Xd, XZR, Xd
@@ -854,7 +956,9 @@ func (o *Out) notARM64Reg(dst string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V NOT (using XORI with -1)
@@ -864,7 +968,9 @@ func (o *Out) notRISCVReg(dst string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "not %s:", dst)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "not %s:", dst)
+	}
 
 	// RISC-V doesn't have a direct NOT instruction
 	// Use XORI dst, dst, -1 (XOR with all 1s)
@@ -880,5 +986,7 @@ func (o *Out) notRISCVReg(dst string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

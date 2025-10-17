@@ -93,7 +93,9 @@ func (o *Out) divX86RegByReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "# div %s, %s (cqo; idiv %s):", dst, src, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# div %s, %s (cqo; idiv %s):", dst, src, src)
+	}
 
 	// CQO: Sign-extend RAX into RDX:RAX
 	o.Write(0x48) // REX.W
@@ -112,7 +114,9 @@ func (o *Out) divX86RegByReg(dst, src string) {
 	modrm := uint8(0xF8) | (srcReg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // x86-64 IDIV for remainder
@@ -123,7 +127,9 @@ func (o *Out) remX86RegByReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "# rem %s, %s (cqo; idiv %s; mov %s, rdx):", dst, src, src, dst)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# rem %s, %s (cqo; idiv %s; mov %s, rdx):", dst, src, src, dst)
+	}
 
 	// CQO: Sign-extend RAX into RDX:RAX
 	o.Write(0x48) // REX.W
@@ -145,7 +151,9 @@ func (o *Out) remX86RegByReg(dst, src string) {
 	// Result is in RDX - would need to move to dst if dst != rdx
 	// This is simplified
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -160,7 +168,9 @@ func (o *Out) divARM64RegByReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "sdiv %s, %s, %s:", dst, dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "sdiv %s, %s, %s:", dst, dst, src)
+	}
 
 	// SDIV Xd, Xn, Xm
 	// Format: sf 0 011010110 Rm 000011 Rn Rd
@@ -175,7 +185,9 @@ func (o *Out) divARM64RegByReg(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 SDIV - 3 operand form
@@ -187,7 +199,9 @@ func (o *Out) divARM64RegByRegToReg(quotient, dividend, divisor string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "sdiv %s, %s, %s:", quotient, dividend, divisor)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "sdiv %s, %s, %s:", quotient, dividend, divisor)
+	}
 
 	instr := uint32(0x9AC00C00) |
 		(uint32(divisorReg.Encoding&31) << 16) | // Rm (divisor)
@@ -199,7 +213,9 @@ func (o *Out) divARM64RegByRegToReg(quotient, dividend, divisor string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 remainder - calculate using: rem = dividend - (quotient * divisor)
@@ -211,7 +227,9 @@ func (o *Out) remARM64RegByReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "# rem %s, %s (sdiv x9, %s, %s; msub %s, x9, %s, %s):", dst, src, dst, src, dst, src, dst)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# rem %s, %s (sdiv x9, %s, %s; msub %s, x9, %s, %s):", dst, src, dst, src, dst, src, dst)
+	}
 
 	// ARM64 has MSUB: Xd = Xa - Xn * Xm
 	// We want: remainder = dividend - (dividend/divisor) * divisor
@@ -245,7 +263,9 @@ func (o *Out) remARM64RegByReg(dst, src string) {
 	o.Write(uint8((msubInstr >> 16) & 0xFF))
 	o.Write(uint8((msubInstr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 remainder - 3 operand form
@@ -257,7 +277,9 @@ func (o *Out) remARM64RegByRegToReg(remainder, dividend, divisor string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "# rem %s, %s, %s (sdiv x9, %s, %s; msub %s, x9, %s, %s):", remainder, dividend, divisor, dividend, divisor, remainder, divisor, dividend)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# rem %s, %s, %s (sdiv x9, %s, %s; msub %s, x9, %s, %s):", remainder, dividend, divisor, dividend, divisor, remainder, divisor, dividend)
+	}
 
 	// MSUB: Xd = Xa - Xn * Xm
 	// remainder = dividend - (quotient * divisor)
@@ -290,7 +312,9 @@ func (o *Out) remARM64RegByRegToReg(remainder, dividend, divisor string) {
 	o.Write(uint8((msubInstr >> 16) & 0xFF))
 	o.Write(uint8((msubInstr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -305,7 +329,9 @@ func (o *Out) divRISCVRegByReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "div %s, %s, %s:", dst, dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "div %s, %s, %s:", dst, dst, src)
+	}
 
 	// DIV: 0000001 rs2 rs1 100 rd 0110011
 	instr := uint32(0x33) |
@@ -320,7 +346,9 @@ func (o *Out) divRISCVRegByReg(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V DIV - 3 operand form
@@ -332,7 +360,9 @@ func (o *Out) divRISCVRegByRegToReg(quotient, dividend, divisor string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "div %s, %s, %s:", quotient, dividend, divisor)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "div %s, %s, %s:", quotient, dividend, divisor)
+	}
 
 	instr := uint32(0x33) |
 		(4 << 12) | // funct3 = 100 (DIV)
@@ -346,7 +376,9 @@ func (o *Out) divRISCVRegByRegToReg(quotient, dividend, divisor string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V REM (signed remainder, requires M extension) - 2 operand form
@@ -357,7 +389,9 @@ func (o *Out) remRISCVRegByReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "rem %s, %s, %s:", dst, dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "rem %s, %s, %s:", dst, dst, src)
+	}
 
 	// REM: 0000001 rs2 rs1 110 rd 0110011
 	instr := uint32(0x33) |
@@ -372,7 +406,9 @@ func (o *Out) remRISCVRegByReg(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V REM - 3 operand form
@@ -384,7 +420,9 @@ func (o *Out) remRISCVRegByRegToReg(remainder, dividend, divisor string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "rem %s, %s, %s:", remainder, dividend, divisor)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "rem %s, %s, %s:", remainder, dividend, divisor)
+	}
 
 	instr := uint32(0x33) |
 		(6 << 12) | // funct3 = 110 (REM)
@@ -398,5 +436,7 @@ func (o *Out) remRISCVRegByRegToReg(remainder, dividend, divisor string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

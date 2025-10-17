@@ -62,7 +62,9 @@ func (o *Out) vminpdX86VectorToVector(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vminpd %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vminpd %s, %s, %s:", dst, src1, src2)
+	}
 
 	if dstReg.Size == 512 {
 		// AVX-512 VMINPD
@@ -97,7 +99,9 @@ func (o *Out) vminpdX86VectorToVector(dst, src1, src2 string) {
 		modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (src2Reg.Encoding & 7)
 		o.Write(modrm)
 	} else if dstReg.Size == 256 {
-		fmt.Fprintf(os.Stderr, " (AVX)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX)")
+		}
 		o.Write(0xC4)
 
 		vex1 := uint8(0x01)
@@ -118,7 +122,9 @@ func (o *Out) vminpdX86VectorToVector(dst, src1, src2 string) {
 		modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (src2Reg.Encoding & 7)
 		o.Write(modrm)
 	} else {
-		fmt.Fprintf(os.Stderr, " (SSE2)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (SSE2)")
+		}
 		o.Write(0x66)
 		rex := uint8(0x40)
 		if (dstReg.Encoding & 8) != 0 {
@@ -137,7 +143,9 @@ func (o *Out) vminpdX86VectorToVector(dst, src1, src2 string) {
 		o.Write(modrm)
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -154,7 +162,9 @@ func (o *Out) vmaxpdX86VectorToVector(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vmaxpd %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vmaxpd %s, %s, %s:", dst, src1, src2)
+	}
 
 	if dstReg.Size == 512 {
 		// AVX-512 VMAXPD
@@ -189,7 +199,9 @@ func (o *Out) vmaxpdX86VectorToVector(dst, src1, src2 string) {
 		modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (src2Reg.Encoding & 7)
 		o.Write(modrm)
 	} else if dstReg.Size == 256 {
-		fmt.Fprintf(os.Stderr, " (AVX)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX)")
+		}
 		o.Write(0xC4)
 
 		vex1 := uint8(0x01)
@@ -210,7 +222,9 @@ func (o *Out) vmaxpdX86VectorToVector(dst, src1, src2 string) {
 		modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (src2Reg.Encoding & 7)
 		o.Write(modrm)
 	} else {
-		fmt.Fprintf(os.Stderr, " (SSE2)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (SSE2)")
+		}
 		o.Write(0x66)
 		rex := uint8(0x40)
 		if (dstReg.Encoding & 8) != 0 {
@@ -229,7 +243,9 @@ func (o *Out) vmaxpdX86VectorToVector(dst, src1, src2 string) {
 		o.Write(modrm)
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -246,7 +262,9 @@ func (o *Out) vminARM64VectorToVector(dst, src1, src2 string) {
 
 	if dstReg.Size == 512 {
 		// SVE FMIN
-		fmt.Fprintf(os.Stderr, "fmin %s.d, p7/m, %s.d, %s.d:", dst, src1, src2)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "fmin %s.d, p7/m, %s.d, %s.d:", dst, src1, src2)
+		}
 
 		// SVE FMIN encoding
 		// 01100101 11 0 Zm 100 Pg 0 Zn Zd
@@ -262,7 +280,9 @@ func (o *Out) vminARM64VectorToVector(dst, src1, src2 string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
 		// NEON FMIN
-		fmt.Fprintf(os.Stderr, "fmin %s.2d, %s.2d, %s.2d:", dst, src1, src2)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "fmin %s.2d, %s.2d, %s.2d:", dst, src1, src2)
+		}
 
 		// NEON FMIN encoding
 		// 0 Q 1 01110 1 sz 1 Rm 11 110 1 Rn Rd
@@ -277,7 +297,9 @@ func (o *Out) vminARM64VectorToVector(dst, src1, src2 string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -294,7 +316,9 @@ func (o *Out) vmaxARM64VectorToVector(dst, src1, src2 string) {
 
 	if dstReg.Size == 512 {
 		// SVE FMAX
-		fmt.Fprintf(os.Stderr, "fmax %s.d, p7/m, %s.d, %s.d:", dst, src1, src2)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "fmax %s.d, p7/m, %s.d, %s.d:", dst, src1, src2)
+		}
 
 		// SVE FMAX encoding
 		// 01100101 11 0 Zm 011 Pg 0 Zn Zd
@@ -310,7 +334,9 @@ func (o *Out) vmaxARM64VectorToVector(dst, src1, src2 string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
 		// NEON FMAX
-		fmt.Fprintf(os.Stderr, "fmax %s.2d, %s.2d, %s.2d:", dst, src1, src2)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "fmax %s.2d, %s.2d, %s.2d:", dst, src1, src2)
+		}
 
 		// NEON FMAX encoding
 		// 0 Q 1 01110 1 sz 1 Rm 11 111 1 Rn Rd
@@ -325,7 +351,9 @@ func (o *Out) vmaxARM64VectorToVector(dst, src1, src2 string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -340,7 +368,9 @@ func (o *Out) vminRISCVVectorToVector(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vfmin.vv %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vfmin.vv %s, %s, %s:", dst, src1, src2)
+	}
 
 	// vfmin.vv encoding
 	// funct6 vm vs2 vs1 funct3 vd opcode
@@ -358,7 +388,9 @@ func (o *Out) vminRISCVVectorToVector(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -373,7 +405,9 @@ func (o *Out) vmaxRISCVVectorToVector(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vfmax.vv %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vfmax.vv %s, %s, %s:", dst, src1, src2)
+	}
 
 	// vfmax.vv encoding
 	// funct6=000110, funct3=001 (OPFVV)
@@ -390,5 +424,7 @@ func (o *Out) vmaxRISCVVectorToVector(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

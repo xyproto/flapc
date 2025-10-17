@@ -64,7 +64,9 @@ func (o *Out) vrcppdX86VectorToVector(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vrcp14pd %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vrcp14pd %s, %s:", dst, src)
+	}
 
 	if dstReg.Size == 512 {
 		// AVX-512 VRCP14PD (14-bit precision)
@@ -100,11 +102,17 @@ func (o *Out) vrcppdX86VectorToVector(dst, src string) {
 	} else {
 		// No native reciprocal for AVX/SSE with doubles
 		// Would need to use division or single-precision RCPPS
-		fmt.Fprintf(os.Stderr, " (no AVX/SSE double-precision RCP)")
-		fmt.Fprintf(os.Stderr, "\n# Use VDIVPD with 1.0 for exact division\n")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (no AVX/SSE double-precision RCP)")
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "\n# Use VDIVPD with 1.0 for exact division\n")
+		}
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -120,7 +128,9 @@ func (o *Out) vrsqrtpdX86VectorToVector(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vrsqrt14pd %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vrsqrt14pd %s, %s:", dst, src)
+	}
 
 	if dstReg.Size == 512 {
 		// AVX-512 VRSQRT14PD (14-bit precision)
@@ -154,11 +164,17 @@ func (o *Out) vrsqrtpdX86VectorToVector(dst, src string) {
 		modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (srcReg.Encoding & 7)
 		o.Write(modrm)
 	} else {
-		fmt.Fprintf(os.Stderr, " (no AVX/SSE double-precision RSQRT)")
-		fmt.Fprintf(os.Stderr, "\n# Use VSQRTPD + VDIVPD for exact result\n")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (no AVX/SSE double-precision RSQRT)")
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "\n# Use VSQRTPD + VDIVPD for exact result\n")
+		}
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -174,7 +190,9 @@ func (o *Out) vrcpARM64VectorToVector(dst, src string) {
 
 	if dstReg.Size == 512 {
 		// SVE FRECPE - reciprocal estimate
-		fmt.Fprintf(os.Stderr, "frecpe %s.d, %s.d:", dst, src)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "frecpe %s.d, %s.d:", dst, src)
+		}
 
 		// SVE FRECPE encoding
 		// 01100101 11 0 11110 001 110 Zn Zd
@@ -188,7 +206,9 @@ func (o *Out) vrcpARM64VectorToVector(dst, src string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
 		// NEON FRECPE
-		fmt.Fprintf(os.Stderr, "frecpe %s.2d, %s.2d:", dst, src)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "frecpe %s.2d, %s.2d:", dst, src)
+		}
 
 		// NEON FRECPE encoding
 		// 0 Q 0 01110 1 sz 1 00001 11011 10 Rn Rd
@@ -203,7 +223,9 @@ func (o *Out) vrcpARM64VectorToVector(dst, src string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -219,7 +241,9 @@ func (o *Out) vrsqrtARM64VectorToVector(dst, src string) {
 
 	if dstReg.Size == 512 {
 		// SVE FRSQRTE - reciprocal square root estimate
-		fmt.Fprintf(os.Stderr, "frsqrte %s.d, %s.d:", dst, src)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "frsqrte %s.d, %s.d:", dst, src)
+		}
 
 		// SVE FRSQRTE encoding
 		// 01100101 11 0 11111 001 110 Zn Zd
@@ -233,7 +257,9 @@ func (o *Out) vrsqrtARM64VectorToVector(dst, src string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
 		// NEON FRSQRTE
-		fmt.Fprintf(os.Stderr, "frsqrte %s.2d, %s.2d:", dst, src)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "frsqrte %s.2d, %s.2d:", dst, src)
+		}
 
 		// NEON FRSQRTE encoding
 		// 0 Q 1 01110 1 sz 1 00001 11011 10 Rn Rd
@@ -248,7 +274,9 @@ func (o *Out) vrsqrtARM64VectorToVector(dst, src string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -264,7 +292,9 @@ func (o *Out) vrcpRISCVVectorToVector(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vfrec7.v %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vfrec7.v %s, %s:", dst, src)
+	}
 
 	// vfrec7.v encoding
 	// funct6=010011, vm=1, rs1=00101, funct3=001
@@ -281,7 +311,9 @@ func (o *Out) vrcpRISCVVectorToVector(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -297,7 +329,9 @@ func (o *Out) vrsqrtRISCVVectorToVector(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vfrsqrt7.v %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vfrsqrt7.v %s, %s:", dst, src)
+	}
 
 	// vfrsqrt7.v encoding
 	// funct6=010011, vm=1, rs1=00100, funct3=001
@@ -314,5 +348,7 @@ func (o *Out) vrsqrtRISCVVectorToVector(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

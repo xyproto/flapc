@@ -53,7 +53,9 @@ func (o *Out) negX86Reg(dst string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "neg %s:", dst)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "neg %s:", dst)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -69,7 +71,9 @@ func (o *Out) negX86Reg(dst string) {
 	modrm := uint8(0xD8) | (dstReg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -83,7 +87,9 @@ func (o *Out) negARM64Reg(dst string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "neg %s, %s:", dst, dst)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "neg %s, %s:", dst, dst)
+	}
 
 	// NEG Xd, Xn is actually SUB Xd, XZR, Xn
 	// Format: sf 1 01011 shift 0 Rm imm6 Rn Rd
@@ -98,7 +104,9 @@ func (o *Out) negARM64Reg(dst string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 NEG - 3 operand form
@@ -109,7 +117,9 @@ func (o *Out) negARM64RegToReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "neg %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "neg %s, %s:", dst, src)
+	}
 
 	// NEG Xd, Xn is SUB Xd, XZR, Xn
 	instr := uint32(0xCB000000) |
@@ -122,7 +132,9 @@ func (o *Out) negARM64RegToReg(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -136,7 +148,9 @@ func (o *Out) negRISCVReg(dst string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "neg %s, %s:", dst, dst)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "neg %s, %s:", dst, dst)
+	}
 
 	// NEG rd, rs is SUB rd, x0, rs
 	// SUB: 0100000 rs2 rs1 000 rd 0110011
@@ -151,7 +165,9 @@ func (o *Out) negRISCVReg(dst string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V NEG - 3 operand form
@@ -162,7 +178,9 @@ func (o *Out) negRISCVRegToReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "neg %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "neg %s, %s:", dst, src)
+	}
 
 	// NEG rd, rs is SUB rd, x0, rs
 	instr := uint32(0x33) |
@@ -176,5 +194,7 @@ func (o *Out) negRISCVRegToReg(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

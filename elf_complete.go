@@ -13,13 +13,17 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	eb.elf.Reset()
 	eb.neededFunctions = functions // Store functions list for later use in patchTextInELF
 
-	fmt.Fprintf(os.Stderr, "DEBUG [WriteCompleteDynamicELF start]: rodata buffer size: %d bytes\n", eb.rodata.Len())
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG [WriteCompleteDynamicELF start]: rodata buffer size: %d bytes\n", eb.rodata.Len())
+	}
 	if eb.rodata.Len() > 0 {
 		previewLen := 32
 		if eb.rodata.Len() < previewLen {
 			previewLen = eb.rodata.Len()
 		}
-		fmt.Fprintf(os.Stderr, "DEBUG [WriteCompleteDynamicELF start]: rodata buffer first %d bytes: %q\n", previewLen, eb.rodata.Bytes()[:previewLen])
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG [WriteCompleteDynamicELF start]: rodata buffer first %d bytes: %q\n", previewLen, eb.rodata.Bytes()[:previewLen])
+		}
 	}
 
 	rodataSize := eb.rodata.Len()
@@ -73,8 +77,10 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 		addr   uint64
 		size   int
 	}{currentOffset, currentAddr, ds.dynsym.Len()}
-	fmt.Fprintf(os.Stderr, "dynsym: offset=0x%x, size=%d, aligned=%d\n",
-		currentOffset, ds.dynsym.Len(), (ds.dynsym.Len()+7) & ^7)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "dynsym: offset=0x%x, size=%d, aligned=%d\n",
+			currentOffset, ds.dynsym.Len(), (ds.dynsym.Len()+7) & ^7)
+	}
 	currentOffset += uint64((ds.dynsym.Len() + 7) & ^7)
 	currentAddr += uint64((ds.dynsym.Len() + 7) & ^7)
 
@@ -84,9 +90,11 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 		addr   uint64
 		size   int
 	}{currentOffset, currentAddr, ds.dynstr.Len()}
-	fmt.Fprintf(os.Stderr, "dynstr: offset=0x%x, size=%d, aligned=%d, next offset=0x%x\n",
-		currentOffset, ds.dynstr.Len(), (ds.dynstr.Len()+7) & ^7,
-		currentOffset+uint64((ds.dynstr.Len()+7) & ^7))
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "dynstr: offset=0x%x, size=%d, aligned=%d, next offset=0x%x\n",
+			currentOffset, ds.dynstr.Len(), (ds.dynstr.Len()+7) & ^7,
+			currentOffset+uint64((ds.dynstr.Len()+7) & ^7))
+	}
 	currentOffset += uint64((ds.dynstr.Len() + 7) & ^7)
 	currentAddr += uint64((ds.dynstr.Len() + 7) & ^7)
 
@@ -96,8 +104,10 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 		addr   uint64
 		size   int
 	}{currentOffset, currentAddr, ds.hash.Len()}
-	fmt.Fprintf(os.Stderr, "hash: offset=0x%x, size=%d, aligned=%d\n",
-		currentOffset, ds.hash.Len(), (ds.hash.Len()+7) & ^7)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "hash: offset=0x%x, size=%d, aligned=%d\n",
+			currentOffset, ds.hash.Len(), (ds.hash.Len()+7) & ^7)
+	}
 	currentOffset += uint64((ds.hash.Len() + 7) & ^7)
 	currentAddr += uint64((ds.hash.Len() + 7) & ^7)
 
@@ -185,8 +195,10 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 		symIndex := uint32(i + 1) // +1 because null symbol is at index 0
 		// GOT entries start after 3 reserved entries (24 bytes)
 		gotEntryAddr := gotBase + uint64(24+i*8)
-		fmt.Fprintf(os.Stderr, "Adding TEMPORARY relocation for %s: GOT entry at 0x%x, symIndex=%d\n",
-			functions[i], gotEntryAddr, symIndex)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Adding TEMPORARY relocation for %s: GOT entry at 0x%x, symIndex=%d\n",
+				functions[i], gotEntryAddr, symIndex)
+		}
 		ds.AddRelocation(gotEntryAddr, symIndex, R_X86_64_JUMP_SLOT)
 	}
 
@@ -231,14 +243,24 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	addrs["rela"] = layout["rela"].addr
 	addrs["got"] = layout["got"].addr
 
-	fmt.Fprintf(os.Stderr, "Hash layout: offset=0x%x, size=%d\n", layout["hash"].offset, layout["hash"].size)
-	fmt.Fprintf(os.Stderr, "Rela layout: offset=0x%x, addr=0x%x, size=%d\n",
-		layout["rela"].offset, layout["rela"].addr, layout["rela"].size)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Hash layout: offset=0x%x, size=%d\n", layout["hash"].offset, layout["hash"].size)
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Rela layout: offset=0x%x, addr=0x%x, size=%d\n",
+			layout["rela"].offset, layout["rela"].addr, layout["rela"].size)
+	}
 	ds.buildDynamicSection(addrs)
 
-	fmt.Fprintf(os.Stderr, "\n=== Dynamic Section Debug ===\n")
-	fmt.Fprintf(os.Stderr, "Dynamic section size: %d bytes\n", ds.dynamic.Len())
-	fmt.Fprintf(os.Stderr, "Needed libraries: %v\n", ds.needed)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "\n=== Dynamic Section Debug ===\n")
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Dynamic section size: %d bytes\n", ds.dynamic.Len())
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Needed libraries: %v\n", ds.needed)
+	}
 
 	layout["dynamic"] = struct {
 		offset uint64
@@ -256,20 +278,28 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	}{gotOffset, gotAddr, ds.got.Len()}
 
 	// Regenerate PLT with correct GOT address
-	fmt.Fprintf(os.Stderr, "Regenerating PLT with correct GOT address 0x%x\n", gotAddr)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Regenerating PLT with correct GOT address 0x%x\n", gotAddr)
+	}
 	ds.GeneratePLT(functions, gotAddr, pltBase)
 	ds.GenerateGOT(functions, dynamicAddr, pltBase)
 
 	// Update DT_PLTGOT in the dynamic section with the correct GOT address
-	fmt.Fprintf(os.Stderr, "Updating DT_PLTGOT from 0x%x to 0x%x\n", gotBase, gotAddr)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Updating DT_PLTGOT from 0x%x to 0x%x\n", gotBase, gotAddr)
+	}
 	ds.updatePLTGOT(gotAddr)
 
 	// Also update the relocations with the correct GOT addresses
-	fmt.Fprintf(os.Stderr, "Updating relocations with final GOT base 0x%x\n", gotAddr)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Updating relocations with final GOT base 0x%x\n", gotAddr)
+	}
 	for i := range functions {
 		oldGotEntryAddr := gotBase + uint64(24+i*8)
 		newGotEntryAddr := gotAddr + uint64(24+i*8)
-		fmt.Fprintf(os.Stderr, "  %s: reloction 0x%x -> 0x%x\n", functions[i], oldGotEntryAddr, newGotEntryAddr)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "  %s: reloction 0x%x -> 0x%x\n", functions[i], oldGotEntryAddr, newGotEntryAddr)
+		}
 		ds.updateRelocationAddress(oldGotEntryAddr, newGotEntryAddr)
 	}
 
@@ -367,12 +397,24 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	rwFileSize := layout["rodata"].offset + uint64(layout["rodata"].size) - rwStart
 	rwMemSize := rwFileSize
 
-	fmt.Fprintf(os.Stderr, "\n=== Writable Segment Debug ===\n")
-	fmt.Fprintf(os.Stderr, "rwStart (dynamic.offset): 0x%x\n", rwStart)
-	fmt.Fprintf(os.Stderr, "GOT offset: 0x%x, size: %d\n", layout["got"].offset, layout["got"].size)
-	fmt.Fprintf(os.Stderr, "Rodata offset: 0x%x, size: %d\n", layout["rodata"].offset, layout["rodata"].size)
-	fmt.Fprintf(os.Stderr, "Calculated rwFileSize: 0x%x\n", rwFileSize)
-	fmt.Fprintf(os.Stderr, "Calculated rwMemSize: 0x%x\n", rwMemSize)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "\n=== Writable Segment Debug ===\n")
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "rwStart (dynamic.offset): 0x%x\n", rwStart)
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "GOT offset: 0x%x, size: %d\n", layout["got"].offset, layout["got"].size)
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Rodata offset: 0x%x, size: %d\n", layout["rodata"].offset, layout["rodata"].size)
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Calculated rwFileSize: 0x%x\n", rwFileSize)
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Calculated rwMemSize: 0x%x\n", rwMemSize)
+	}
 
 	w.Write4(1) // PT_LOAD
 	w.Write4(6) // PF_R | PF_W
@@ -401,8 +443,10 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	// Write all sections
 	writePadded := func(buf *bytes.Buffer, targetSize int) {
 		currentPos := eb.elf.Len()
-		fmt.Fprintf(os.Stderr, "Writing buffer at offset 0x%x (%d bytes from buffer, padding to %d)\n",
-			currentPos, buf.Len(), targetSize)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Writing buffer at offset 0x%x (%d bytes from buffer, padding to %d)\n",
+				currentPos, buf.Len(), targetSize)
+		}
 		w.WriteBytes(buf.Bytes())
 		for i := buf.Len(); i < targetSize; i++ {
 			w.Write(0)
@@ -421,7 +465,9 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	writePadded(&ds.dynsym, (ds.dynsym.Len()+7)&^7)
 	writePadded(&ds.dynstr, (ds.dynstr.Len()+7)&^7)
 	writePadded(&ds.hash, (ds.hash.Len()+7)&^7)
-	fmt.Fprintf(os.Stderr, "Rela buffer contents (%d bytes): %x\n", ds.rela.Len(), ds.rela.Bytes())
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Rela buffer contents (%d bytes): %x\n", ds.rela.Len(), ds.rela.Bytes())
+	}
 	writePadded(&ds.rela, (ds.rela.Len()+7)&^7)
 
 	// Pad to next page
@@ -432,10 +478,14 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	}
 
 	// PLT and text
-	fmt.Fprintf(os.Stderr, "About to write PLT: expected offset=0x%x, actual buffer position=0x%x, PLT size=%d bytes\n",
-		layout["plt"].offset, eb.elf.Len(), ds.plt.Len())
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "About to write PLT: expected offset=0x%x, actual buffer position=0x%x, PLT size=%d bytes\n",
+			layout["plt"].offset, eb.elf.Len(), ds.plt.Len())
+	}
 	w.WriteBytes(ds.plt.Bytes())
-	fmt.Fprintf(os.Stderr, "After PLT, about to write _start\n")
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "After PLT, about to write _start\n")
+	}
 
 	// _start function (minimal entry point that clears registers and jumps to user code)
 	// xor rax, rax   ; clear rax
@@ -455,8 +505,10 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	startAddr := layout["_start"].addr
 	textAddrForJump := layout["text"].addr
 	jumpOffset := int32(textAddrForJump - (startAddr + 14)) // 14 = size of _start code
-	fmt.Fprintf(os.Stderr, "_start jump: startAddr=0x%x, textAddr=0x%x, jumpOffset=0x%x (%d)\n",
-		startAddr, textAddrForJump, uint32(jumpOffset), jumpOffset)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "_start jump: startAddr=0x%x, textAddr=0x%x, jumpOffset=0x%x (%d)\n",
+			startAddr, textAddrForJump, uint32(jumpOffset), jumpOffset)
+	}
 	binary.Write(w.(*BufferWrapper).buf, binary.LittleEndian, jumpOffset)
 
 	// Pad _start to aligned size
@@ -464,20 +516,30 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	for i := startActualSize; i < ((startSize + 7) & ^7); i++ {
 		w.Write(0)
 	}
-	fmt.Fprintf(os.Stderr, "Finished writing _start (%d bytes padded to %d), about to write text\n", startActualSize, ((startSize + 7) & ^7))
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Finished writing _start (%d bytes padded to %d), about to write text\n", startActualSize, ((startSize + 7) & ^7))
+	}
 
 	// Patch PC-relative relocations before writing text section
-	fmt.Fprintf(os.Stderr, "\n=== Patching PC-relative relocations ===\n")
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "\n=== Patching PC-relative relocations ===\n")
+	}
 	eb.PatchPCRelocations(layout["text"].addr, layout["rodata"].addr, rodataSize)
 
 	// Patch direct function calls
-	fmt.Fprintf(os.Stderr, "\n=== Patching function calls ===\n")
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "\n=== Patching function calls ===\n")
+	}
 	eb.PatchCallSites(layout["text"].addr)
 
-	fmt.Fprintf(os.Stderr, "About to write text: expected offset=0x%x, actual buffer position=0x%x, text size=%d bytes\n",
-		layout["text"].offset, eb.elf.Len(), eb.text.Len())
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "About to write text: expected offset=0x%x, actual buffer position=0x%x, text size=%d bytes\n",
+			layout["text"].offset, eb.elf.Len(), eb.text.Len())
+	}
 	w.WriteBytes(eb.text.Bytes())
-	fmt.Fprintf(os.Stderr, "Finished writing text section\n")
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Finished writing text section\n")
+	}
 	for i := codeSize; i < (codeSize+7)&^7; i++ {
 		w.Write(0)
 	}
@@ -490,28 +552,48 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	}
 
 	// Dynamic, GOT
-	fmt.Fprintf(os.Stderr, "Writing dynamic section (%d bytes) at file position ~0x%x (expected 0x%x)\n", ds.dynamic.Len(), eb.elf.Len(), layout["dynamic"].offset)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Writing dynamic section (%d bytes) at file position ~0x%x (expected 0x%x)\n", ds.dynamic.Len(), eb.elf.Len(), layout["dynamic"].offset)
+	}
 	writePadded(&ds.dynamic, (ds.dynamic.Len()+7)&^7)
-	fmt.Fprintf(os.Stderr, "Writing GOT section (%d bytes) at file position ~0x%x\n", ds.got.Len(), eb.elf.Len())
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Writing GOT section (%d bytes) at file position ~0x%x\n", ds.got.Len(), eb.elf.Len())
+	}
 	writePadded(&ds.got, (ds.got.Len()+7)&^7)
 
 	w.WriteBytes(eb.rodata.Bytes())
 
-	fmt.Fprintf(os.Stderr, "DEBUG [after writing rodata to ELF]: rodata buffer size: %d bytes\n", eb.rodata.Len())
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG [after writing rodata to ELF]: rodata buffer size: %d bytes\n", eb.rodata.Len())
+	}
 	if eb.rodata.Len() > 0 {
 		previewLen := 32
 		if eb.rodata.Len() < previewLen {
 			previewLen = eb.rodata.Len()
 		}
-		fmt.Fprintf(os.Stderr, "DEBUG [after writing rodata to ELF]: rodata buffer first %d bytes: %q\n", previewLen, eb.rodata.Bytes()[:previewLen])
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG [after writing rodata to ELF]: rodata buffer first %d bytes: %q\n", previewLen, eb.rodata.Bytes()[:previewLen])
+		}
 	}
 
-	fmt.Fprintf(os.Stderr, "\n=== Complete Dynamic ELF ===\n")
-	fmt.Fprintf(os.Stderr, "Entry point: 0x%x\n", entryPoint)
-	fmt.Fprintf(os.Stderr, "PLT base: 0x%x (%d bytes)\n", pltBase, ds.plt.Len())
-	fmt.Fprintf(os.Stderr, "GOT base: 0x%x (%d bytes)\n", gotAddr, ds.got.Len())
-	fmt.Fprintf(os.Stderr, "Rodata base: 0x%x (%d bytes)\n", layout["rodata"].addr, rodataSize)
-	fmt.Fprintf(os.Stderr, "Functions: %v\n", functions)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "\n=== Complete Dynamic ELF ===\n")
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Entry point: 0x%x\n", entryPoint)
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "PLT base: 0x%x (%d bytes)\n", pltBase, ds.plt.Len())
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "GOT base: 0x%x (%d bytes)\n", gotAddr, ds.got.Len())
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Rodata base: 0x%x (%d bytes)\n", layout["rodata"].addr, rodataSize)
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Functions: %v\n", functions)
+	}
 
 	return gotAddr, rodataAddr, textAddr, pltBase, nil
 }
@@ -533,7 +615,9 @@ func (eb *ExecutableBuilder) getInterpreterPath() string {
 func (eb *ExecutableBuilder) patchPLTCalls(ds *DynamicSections, textAddr uint64, pltBase uint64, functions []string) {
 	textBytes := eb.text.Bytes()
 
-	fmt.Fprintf(os.Stderr, "Text bytes (%d total): %x\n", len(textBytes), textBytes)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Text bytes (%d total): %x\n", len(textBytes), textBytes)
+	}
 
 	switch eb.machine {
 	case MachineX86_64:
@@ -556,9 +640,13 @@ func (eb *ExecutableBuilder) patchX86PLTCalls(textBytes []byte, ds *DynamicSecti
 	funcIndex := 0
 	for i := 0; i < len(textBytes); i++ {
 		if i > 0 && i+3 < len(textBytes) && textBytes[i-1] == 0xE8 {
-			fmt.Fprintf(os.Stderr, "Found 0xE8 at i-1=%d, checking placeholder at i=%d: %x\n", i-1, i, textBytes[i:i+4])
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Found 0xE8 at i-1=%d, checking placeholder at i=%d: %x\n", i-1, i, textBytes[i:i+4])
+			}
 			if bytes.Equal(textBytes[i:i+4], placeholder) {
-				fmt.Fprintf(os.Stderr, "  -> Placeholder matches!\n")
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "  -> Placeholder matches!\n")
+				}
 				if funcIndex < len(functions) {
 					pltOffset := ds.GetPLTOffset(functions[funcIndex])
 					if pltOffset >= 0 {
@@ -566,8 +654,10 @@ func (eb *ExecutableBuilder) patchX86PLTCalls(textBytes []byte, ds *DynamicSecti
 						currentAddr := textAddr + uint64(i)
 						relOffset := int32(targetAddr - (currentAddr + 4))
 
-						fmt.Fprintf(os.Stderr, "Patching x86-64 call #%d (%s): i=%d, currentAddr=0x%x, targetAddr=0x%x, relOffset=%d (0x%x)\n",
-							funcIndex, functions[funcIndex], i, currentAddr, targetAddr, relOffset, uint32(relOffset))
+						if VerboseMode {
+							fmt.Fprintf(os.Stderr, "Patching x86-64 call #%d (%s): i=%d, currentAddr=0x%x, targetAddr=0x%x, relOffset=%d (0x%x)\n",
+								funcIndex, functions[funcIndex], i, currentAddr, targetAddr, relOffset, uint32(relOffset))
+						}
 
 						textBytes[i] = byte(relOffset & 0xFF)
 						textBytes[i+1] = byte((relOffset >> 8) & 0xFF)
@@ -605,8 +695,10 @@ func (eb *ExecutableBuilder) patchARM64PLTCalls(textBytes []byte, ds *DynamicSec
 						imm26 := uint32(wordOffset) & 0x03FFFFFF
 						blInstr := 0x94000000 | imm26
 
-						fmt.Fprintf(os.Stderr, "Patching ARM64 call #%d (%s): offset=0x%x, currentAddr=0x%x, targetAddr=0x%x, wordOffset=%d\n",
-							funcIndex, functions[funcIndex], i, currentAddr, targetAddr, wordOffset)
+						if VerboseMode {
+							fmt.Fprintf(os.Stderr, "Patching ARM64 call #%d (%s): offset=0x%x, currentAddr=0x%x, targetAddr=0x%x, wordOffset=%d\n",
+								funcIndex, functions[funcIndex], i, currentAddr, targetAddr, wordOffset)
+						}
 
 						textBytes[i] = byte(blInstr & 0xFF)
 						textBytes[i+1] = byte((blInstr >> 8) & 0xFF)
@@ -649,8 +741,10 @@ func (eb *ExecutableBuilder) patchRISCVPLTCalls(textBytes []byte, ds *DynamicSec
 
 						jalInstr := imm20 | imm19_12 | imm11 | imm10_1 | (rd << 7) | 0x6F
 
-						fmt.Fprintf(os.Stderr, "Patching RISC-V call #%d (%s): offset=0x%x, currentAddr=0x%x, targetAddr=0x%x, pcOffset=%d\n",
-							funcIndex, functions[funcIndex], i, currentAddr, targetAddr, offset)
+						if VerboseMode {
+							fmt.Fprintf(os.Stderr, "Patching RISC-V call #%d (%s): offset=0x%x, currentAddr=0x%x, targetAddr=0x%x, pcOffset=%d\n",
+								funcIndex, functions[funcIndex], i, currentAddr, targetAddr, offset)
+						}
 
 						textBytes[i] = byte(jalInstr & 0xFF)
 						textBytes[i+1] = byte((jalInstr >> 8) & 0xFF)

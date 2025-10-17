@@ -63,11 +63,15 @@ func (o *Out) vpermpdX86VectorWithImm(dst, src string, imm8 uint8) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vpermpd %s, %s, 0x%02x:", dst, src, imm8)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vpermpd %s, %s, 0x%02x:", dst, src, imm8)
+	}
 
 	if dstReg.Size == 512 {
 		// AVX-512 VPERMPD
-		fmt.Fprintf(os.Stderr, " (AVX-512)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX-512)")
+		}
 
 		p0 := uint8(0x62)
 
@@ -102,7 +106,9 @@ func (o *Out) vpermpdX86VectorWithImm(dst, src string, imm8 uint8) {
 		o.Write(imm8)
 	} else if dstReg.Size == 256 {
 		// AVX2 VPERMPD
-		fmt.Fprintf(os.Stderr, " (AVX2)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX2)")
+		}
 
 		o.Write(0xC4)
 
@@ -126,10 +132,14 @@ func (o *Out) vpermpdX86VectorWithImm(dst, src string, imm8 uint8) {
 
 		o.Write(imm8)
 	} else {
-		fmt.Fprintf(os.Stderr, " (SSE - no permute for 128-bit doubles)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (SSE - no permute for 128-bit doubles)")
+		}
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -146,7 +156,9 @@ func (o *Out) vpermpdX86VectorWithIndex(dst, src, indices string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vpermpd %s, %s, %s:", dst, indices, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vpermpd %s, %s, %s:", dst, indices, src)
+	}
 
 	if dstReg.Size == 512 {
 		// AVX-512 variable permute
@@ -181,10 +193,14 @@ func (o *Out) vpermpdX86VectorWithIndex(dst, src, indices string) {
 		modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (srcReg.Encoding & 7)
 		o.Write(modrm)
 	} else {
-		fmt.Fprintf(os.Stderr, " (AVX2 - no variable permute)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX2 - no variable permute)")
+		}
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -201,13 +217,21 @@ func (o *Out) vpermARM64VectorWithImm(dst, src string, imm8 uint8) {
 	if dstReg.Size == 512 {
 		// SVE doesn't have immediate permute
 		// Would need to construct index vector first
-		fmt.Fprintf(os.Stderr, "# SVE permute with imm: need index vector\n")
-		fmt.Fprintf(os.Stderr, "# Would use TBL with constructed indices\n")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "# SVE permute with imm: need index vector\n")
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "# Would use TBL with constructed indices\n")
+		}
 	} else {
-		fmt.Fprintf(os.Stderr, "# NEON permute with imm: use TRN/UZP/ZIP\n")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "# NEON permute with imm: use TRN/UZP/ZIP\n")
+		}
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 func (o *Out) vpermARM64VectorWithIndex(dst, src, indices string) {
@@ -220,7 +244,9 @@ func (o *Out) vpermARM64VectorWithIndex(dst, src, indices string) {
 
 	if dstReg.Size == 512 {
 		// SVE TBL - table lookup (permute)
-		fmt.Fprintf(os.Stderr, "tbl %s.d, {%s.d}, %s.d:", dst, src, indices)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "tbl %s.d, {%s.d}, %s.d:", dst, src, indices)
+		}
 
 		// SVE TBL encoding
 		// 00000101 11 1 Zm 001 010 Zn Zd
@@ -235,7 +261,9 @@ func (o *Out) vpermARM64VectorWithIndex(dst, src, indices string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
 		// NEON TBL
-		fmt.Fprintf(os.Stderr, "tbl %s.16b, {%s.16b}, %s.16b:", dst, src, indices)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "tbl %s.16b, {%s.16b}, %s.16b:", dst, src, indices)
+		}
 
 		// NEON TBL encoding (single register)
 		// 0 Q 001110 00 0 Rm 0 len 00 0 Rn Rd
@@ -251,7 +279,9 @@ func (o *Out) vpermARM64VectorWithIndex(dst, src, indices string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -267,8 +297,12 @@ func (o *Out) vpermRISCVVectorWithImm(dst, src string, imm8 uint8) {
 
 	// RVV doesn't have immediate permute
 	// Would need to create index vector with vmv or vslideup
-	fmt.Fprintf(os.Stderr, "# RVV permute with imm 0x%02x: create index vector first\n", imm8)
-	fmt.Fprintf(os.Stderr, "# Then use vrgather.vv %s, %s, vindex:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# RVV permute with imm 0x%02x: create index vector first\n", imm8)
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# Then use vrgather.vv %s, %s, vindex:", dst, src)
+	}
 
 	// Placeholder - would need actual index vector
 	instr := uint32(0x57) |
@@ -283,7 +317,9 @@ func (o *Out) vpermRISCVVectorWithImm(dst, src string, imm8 uint8) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 func (o *Out) vpermRISCVVectorWithIndex(dst, src, indices string) {
@@ -295,7 +331,9 @@ func (o *Out) vpermRISCVVectorWithIndex(dst, src, indices string) {
 	}
 
 	// vrgather.vv - gather elements from src using indices
-	fmt.Fprintf(os.Stderr, "vrgather.vv %s, %s, %s:", dst, src, indices)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vrgather.vv %s, %s, %s:", dst, src, indices)
+	}
 
 	// vrgather.vv encoding
 	// funct6=001100, vm=1, funct3=000 (OPIVV)
@@ -312,5 +350,7 @@ func (o *Out) vpermRISCVVectorWithIndex(dst, src, indices string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

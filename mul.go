@@ -33,12 +33,20 @@ func (o *Out) MulRegWithImm(dst string, imm int32) {
 	case MachineARM64:
 		// ARM64 doesn't have MUL with immediate, need to load to register first
 		// For now, we'll just document this limitation
-		fmt.Fprintf(os.Stderr, "# mul %s, #%d (load to temp reg needed):", dst, imm)
-		fmt.Fprintln(os.Stderr)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "# mul %s, #%d (load to temp reg needed):", dst, imm)
+		}
+		if VerboseMode {
+			fmt.Fprintln(os.Stderr)
+		}
 	case MachineRiscv64:
 		// RISC-V doesn't have MUL with immediate either
-		fmt.Fprintf(os.Stderr, "# mul %s, %d (load to temp reg needed):", dst, imm)
-		fmt.Fprintln(os.Stderr)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "# mul %s, %d (load to temp reg needed):", dst, imm)
+		}
+		if VerboseMode {
+			fmt.Fprintln(os.Stderr)
+		}
 	}
 }
 
@@ -65,7 +73,9 @@ func (o *Out) mulX86RegWithReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "imul %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "imul %s, %s:", dst, src)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -85,7 +95,9 @@ func (o *Out) mulX86RegWithReg(dst, src string) {
 	modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (srcReg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // x86-64 IMUL with immediate (3-operand form: dst = src * imm)
@@ -95,7 +107,9 @@ func (o *Out) mulX86RegWithImm(dst string, imm int32) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "imul %s, %s, %d:", dst, dst, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "imul %s, %s, %d:", dst, dst, imm)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -124,7 +138,9 @@ func (o *Out) mulX86RegWithImm(dst string, imm int32) {
 		o.Write(uint8((imm >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 MUL (multiply) - 2 operand form
@@ -135,7 +151,9 @@ func (o *Out) mulARM64RegWithReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "mul %s, %s, %s:", dst, dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "mul %s, %s, %s:", dst, dst, src)
+	}
 
 	// MUL Xd, Xn, Xm (actually MADD with XZR)
 	// Format: sf 0 011011 000 Rm 0 11111 Rn Rd
@@ -150,7 +168,9 @@ func (o *Out) mulARM64RegWithReg(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 MUL - 3 operand form
@@ -162,7 +182,9 @@ func (o *Out) mulARM64RegWithRegToReg(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "mul %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "mul %s, %s, %s:", dst, src1, src2)
+	}
 
 	instr := uint32(0x9B007C00) |
 		(uint32(src2Reg.Encoding&31) << 16) | // Rm
@@ -174,7 +196,9 @@ func (o *Out) mulARM64RegWithRegToReg(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V MUL (requires M extension)
@@ -185,7 +209,9 @@ func (o *Out) mulRISCVRegWithReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "mul %s, %s, %s:", dst, dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "mul %s, %s, %s:", dst, dst, src)
+	}
 
 	// MUL: 0000001 rs2 rs1 000 rd 0110011
 	instr := uint32(0x2000033) |
@@ -198,7 +224,9 @@ func (o *Out) mulRISCVRegWithReg(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V MUL - 3 operand form
@@ -210,7 +238,9 @@ func (o *Out) mulRISCVRegWithRegToReg(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "mul %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "mul %s, %s, %s:", dst, src1, src2)
+	}
 
 	instr := uint32(0x2000033) |
 		(uint32(src2Reg.Encoding&31) << 20) | // rs2
@@ -222,5 +252,7 @@ func (o *Out) mulRISCVRegWithRegToReg(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

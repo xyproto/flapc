@@ -45,11 +45,15 @@ func (o *Out) vaddpdX86VectorToVector(dst, src1, src2 string) {
 
 	// Verify they are ZMM registers (or YMM/XMM for fallback)
 	if dstReg.Size != 512 && dstReg.Size != 256 && dstReg.Size != 128 {
-		fmt.Fprintf(os.Stderr, "Error: %s is not a vector register\n", dst)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Error: %s is not a vector register\n", dst)
+		}
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vaddpd %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vaddpd %s, %s, %s:", dst, src1, src2)
+	}
 
 	// EVEX encoding for AVX-512 is complex (4-byte prefix)
 	// Format: [EVEX P0] [EVEX P1] [EVEX P2] [EVEX P3] [opcode] [ModR/M]
@@ -116,7 +120,9 @@ func (o *Out) vaddpdX86VectorToVector(dst, src1, src2 string) {
 		// AVX2 VADDPD ymm, ymm, ymm fallback
 		// VEX.NDS.256.66.0F.WIG 58 /r
 		// Simplified VEX encoding
-		fmt.Fprintf(os.Stderr, " (AVX2 256-bit)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX2 256-bit)")
+		}
 
 		// VEX 3-byte prefix
 		// C4 [RXB m-mmmm] [W vvvv L pp] [opcode] [ModR/M]
@@ -150,7 +156,9 @@ func (o *Out) vaddpdX86VectorToVector(dst, src1, src2 string) {
 		o.Write(modrm)
 	} else { // XMM (128-bit)
 		// SSE2 ADDPD xmm, xmm fallback
-		fmt.Fprintf(os.Stderr, " (SSE2 128-bit)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (SSE2 128-bit)")
+		}
 
 		// 66 0F 58 /r
 		o.Write(0x66) // Operand-size prefix
@@ -174,7 +182,9 @@ func (o *Out) vaddpdX86VectorToVector(dst, src1, src2 string) {
 		o.Write(modrm)
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -195,7 +205,9 @@ func (o *Out) vaddpdARM64VectorToVector(dst, src1, src2 string) {
 	if dstReg.Size == 512 {
 		// SVE2 FADD z0.d, p0/m, z1.d, z2.d
 		// Using predicate p7 as "all true" by convention
-		fmt.Fprintf(os.Stderr, "fadd %s.d, p7/m, %s.d, %s.d:", dst, src1, src2)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "fadd %s.d, p7/m, %s.d, %s.d:", dst, src1, src2)
+		}
 
 		// SVE FADD encoding
 		// 01100101 11 Zm[4:0] 000 Pg[2:0] Zn[4:0] Zd[4:0]
@@ -213,7 +225,9 @@ func (o *Out) vaddpdARM64VectorToVector(dst, src1, src2 string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
 		// NEON FADD v0.2d, v1.2d, v2.2d (128-bit)
-		fmt.Fprintf(os.Stderr, "fadd %s.2d, %s.2d, %s.2d:", dst, src1, src2)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "fadd %s.2d, %s.2d, %s.2d:", dst, src1, src2)
+		}
 
 		// NEON FADD encoding
 		// 0 Q 0 01110 1 sz 1 Rm 11010 1 Rn Rd
@@ -229,7 +243,9 @@ func (o *Out) vaddpdARM64VectorToVector(dst, src1, src2 string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -246,7 +262,9 @@ func (o *Out) vaddpdRISCVVectorToVector(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vfadd.vv %s, %s, %s:", dst, src2, src1)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vfadd.vv %s, %s, %s:", dst, src2, src1)
+	}
 
 	// RVV vfadd.vv encoding
 	// funct6 vm vs2 vs1 funct3 vd opcode
@@ -266,5 +284,7 @@ func (o *Out) vaddpdRISCVVectorToVector(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

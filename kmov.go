@@ -75,7 +75,9 @@ func (o *Out) kmovX86MaskToGP(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "kmovw %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "kmovw %s, %s:", dst, src)
+	}
 
 	// VEX.L0.0F.W0 93 /r
 	o.Write(0xC5)
@@ -91,7 +93,9 @@ func (o *Out) kmovX86MaskToGP(dst, src string) {
 	modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (srcMask.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -107,7 +111,9 @@ func (o *Out) kmovX86GPToMask(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "kmovw %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "kmovw %s, %s:", dst, src)
+	}
 
 	// VEX.L0.0F.W0 92 /r
 	o.Write(0xC5)
@@ -123,7 +129,9 @@ func (o *Out) kmovX86GPToMask(dst, src string) {
 	modrm := uint8(0xC0) | ((dstMask.Encoding & 7) << 3) | (srcReg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -139,7 +147,9 @@ func (o *Out) kmovX86MaskToMask(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "kmovw %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "kmovw %s, %s:", dst, src)
+	}
 
 	// VEX.L0.0F.W0 90 /r
 	o.Write(0xC5)
@@ -149,7 +159,9 @@ func (o *Out) kmovX86MaskToMask(dst, src string) {
 	modrm := uint8(0xC0) | ((dstMask.Encoding & 7) << 3) | (srcMask.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -165,9 +177,15 @@ func (o *Out) kmovARM64MaskToGP(dst, src string) {
 
 	// SVE doesn't have direct predicate→GP move
 	// Would use PTEST to set flags, then CSET to capture
-	fmt.Fprintf(os.Stderr, "# SVE predicate to GP requires PTEST + CSET\\n")
-	fmt.Fprintf(os.Stderr, "ptest p7, %s.b  # Test predicate\\n", src)
-	fmt.Fprintf(os.Stderr, "cset %s, ne:", dst)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# SVE predicate to GP requires PTEST + CSET\\n")
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "ptest p7, %s.b  # Test predicate\\n", src)
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "cset %s, ne:", dst)
+	}
 
 	// CSET encoding - conditional set
 	// 1 0 0 11010100 cond 0 0 0 0 1 11111 Rd
@@ -181,7 +199,9 @@ func (o *Out) kmovARM64MaskToGP(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -197,10 +217,16 @@ func (o *Out) kmovARM64GPToMask(dst, src string) {
 
 	// SVE doesn't have direct GP→predicate move
 	// Would need to create vector with bits, then compare
-	fmt.Fprintf(os.Stderr, "# SVE GP to predicate requires vector construction\\n")
-	fmt.Fprintf(os.Stderr, "# Use WHILELO or comparison to create predicate mask\\n")
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# SVE GP to predicate requires vector construction\\n")
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# Use WHILELO or comparison to create predicate mask\\n")
+	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -215,7 +241,9 @@ func (o *Out) kmovARM64MaskToMask(dst, src string) {
 	}
 
 	// SVE predicate move via ORR
-	fmt.Fprintf(os.Stderr, "mov %s.b, %s.b:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "mov %s.b, %s.b:", dst, src)
+	}
 
 	// SVE ORR predicates (implemented as mov)
 	// 00100101 10 00 0000 01 0 Pm 0 Pg Pdn
@@ -229,7 +257,9 @@ func (o *Out) kmovARM64MaskToMask(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -245,7 +275,9 @@ func (o *Out) kmovRISCVMaskToGP(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vpopc.m %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vpopc.m %s, %s:", dst, src)
+	}
 
 	// vpopc.m encoding
 	// funct6=010000, vm=1, rs1=10000, funct3=010 (mask dest)
@@ -262,7 +294,9 @@ func (o *Out) kmovRISCVMaskToGP(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -278,10 +312,16 @@ func (o *Out) kmovRISCVGPToMask(dst, src string) {
 
 	// RVV doesn't have direct GP→mask move
 	// Would create vector from scalar and compare
-	fmt.Fprintf(os.Stderr, "# RVV GP to mask requires vector construction\\n")
-	fmt.Fprintf(os.Stderr, "# Use vmv.v.x + comparison to create mask\\n")
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# RVV GP to mask requires vector construction\\n")
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# Use vmv.v.x + comparison to create mask\\n")
+	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -297,7 +337,9 @@ func (o *Out) kmovRISCVMaskToMask(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vmand.mm %s, %s, %s:", dst, src, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vmand.mm %s, %s, %s:", dst, src, src)
+	}
 
 	// vmand.mm encoding (and mask with itself = copy)
 	// funct6=011001, vm=1, funct3=010
@@ -314,5 +356,7 @@ func (o *Out) kmovRISCVMaskToMask(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

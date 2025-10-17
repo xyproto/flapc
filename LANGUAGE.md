@@ -347,8 +347,6 @@ unary_expr              = ("not" | "-" | "#" | "~b") unary_expr
 
 postfix_expr            = primary_expr { "[" expression "]"
                                        | "(" [ argument_list ] ")"
-                                       | "++"
-                                       | "--"
                                        | "as" cast_type } ;
 
 cast_type               = "i8" | "i16" | "i32" | "i64"
@@ -481,7 +479,7 @@ filter = predicate, list => {
     result := []
     @+ x in list {
         predicate(x) {
-            -> result := result ++ x
+            -> result := result + x
         }
     }
     result
@@ -524,6 +522,107 @@ write_f32(point_ptr, 1, 20.3)   // y field at index 1
 x_val = read_f32(point_ptr, 0)
 y_val = read_f32(point_ptr, 1)
 call("free", point_ptr as ptr)
+```
+
+## Testing Convention
+
+Flap uses a simple, file-based testing convention for writing and running tests.
+
+### Test File Naming
+
+Test files follow the pattern `test_*.flap` and should be placed in a `tests/` directory or alongside the code they test.
+
+### Test Structure
+
+Each test is a separate Flap program that:
+1. **Returns 0 on success** - The program should exit with code 0 when all tests pass
+2. **Returns non-zero on failure** - Any non-zero exit code indicates test failure
+3. **Prints descriptive messages** - Use `printf` or `println` to describe what failed
+
+### Basic Test Example
+
+```flap
+// tests/test_math.flap
+// Test basic arithmetic operations
+
+// Test addition
+result := 2 + 2
+result != 4 {
+    -> printf("FAIL: 2 + 2 expected 4, got %v\n", result) :: exit(1)
+}
+
+// Test multiplication
+result := 3 * 4
+result != 12 {
+    -> printf("FAIL: 3 * 4 expected 12, got %v\n", result) :: exit(1)
+}
+
+println("PASS: All tests passed")
+exit(0)
+```
+
+### Test Helper Functions
+
+Create reusable assertion functions in your test files:
+
+```flap
+// Assert that two values are equal
+assert_eq = actual, expected, message => actual != expected {
+    -> printf("FAIL: %s\n  Expected: %v\n  Got: %v\n", message, expected, actual) :: exit(1)
+}
+
+// Assert that a condition is yes (non-zero)
+assert = condition, message => condition == 0 {
+    -> printf("FAIL: %s\n", message) :: exit(1)
+}
+
+// Usage
+assert_eq(square(5), 25, "square(5) should equal 25")
+assert(5 > 3, "5 should be greater than 3")
+```
+
+### Running Tests
+
+Tests can be run individually or in batch:
+
+```bash
+# Run a single test
+./flapc tests/test_math.flap && ./test_math
+echo "Exit code: $?"
+
+# Run all tests in a directory
+for test in tests/test_*.flap; do
+    name=$(basename "$test" .flap)
+    ./flapc "$test" && ./"$name" && echo "✓ $name" || echo "✗ $name"
+done
+```
+
+### Package Testing Convention
+
+For packages (like flap_math, flap_core):
+1. Place tests in a `tests/` subdirectory
+2. Each test should import the package and test its public functions
+3. Use descriptive test names that indicate what is being tested
+
+```flap
+// tests/test_sum.flap
+import "github.com/xyproto/flap_core" as core
+
+assert_eq = actual, expected => actual != expected {
+    -> printf("Expected %v, got %v\n", expected, actual) :: exit(1)
+}
+
+// Test sum with positive numbers
+assert_eq(core.sum([1, 2, 3, 4]), 10)
+
+// Test sum with empty list
+assert_eq(core.sum([]), 0)
+
+// Test sum with negative numbers
+assert_eq(core.sum([-1, -2, -3]), -6)
+
+println("PASS: sum tests")
+exit(0)
 ```
 
 ## Module System

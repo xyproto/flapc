@@ -54,7 +54,9 @@ func (o *Out) vmovupdX86LoadFromMem(dst, base string, offset int32) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vmovupd %s, [%s + %d]:", dst, base, offset)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vmovupd %s, [%s + %d]:", dst, base, offset)
+	}
 
 	if dstReg.Size == 512 {
 		// AVX-512 VMOVUPD zmm, m512
@@ -113,7 +115,9 @@ func (o *Out) vmovupdX86LoadFromMem(dst, base string, offset int32) {
 			o.Write(uint8((offset >> 24) & 0xFF))
 		}
 	} else if dstReg.Size == 256 {
-		fmt.Fprintf(os.Stderr, " (AVX2)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX2)")
+		}
 		// VEX VMOVUPD ymm, m256
 		o.Write(0xC5)
 		vex := uint8(0xFD) // vvvv=1111, L=1, pp=01
@@ -133,7 +137,9 @@ func (o *Out) vmovupdX86LoadFromMem(dst, base string, offset int32) {
 			o.Write(uint8(offset & 0xFF))
 		}
 	} else {
-		fmt.Fprintf(os.Stderr, " (SSE2)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (SSE2)")
+		}
 		// SSE2 MOVUPD xmm, m128
 		o.Write(0x66)
 		if (dstReg.Encoding&8) != 0 || (baseReg.Encoding&8) != 0 {
@@ -159,7 +165,9 @@ func (o *Out) vmovupdX86LoadFromMem(dst, base string, offset int32) {
 		}
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // x86-64 VMOVUPD [mem], zmm (store)
@@ -171,7 +179,9 @@ func (o *Out) vmovupdX86StoreToMem(src, base string, offset int32) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vmovupd [%s + %d], %s:", base, offset, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vmovupd [%s + %d], %s:", base, offset, src)
+	}
 
 	if srcReg.Size == 512 {
 		// AVX-512 VMOVUPD m512, zmm
@@ -226,7 +236,9 @@ func (o *Out) vmovupdX86StoreToMem(src, base string, offset int32) {
 			o.Write(uint8((offset >> 24) & 0xFF))
 		}
 	} else if srcReg.Size == 256 {
-		fmt.Fprintf(os.Stderr, " (AVX2)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX2)")
+		}
 		o.Write(0xC5)
 		vex := uint8(0xFD)
 		if (srcReg.Encoding & 8) == 0 {
@@ -244,7 +256,9 @@ func (o *Out) vmovupdX86StoreToMem(src, base string, offset int32) {
 			o.Write(uint8(offset & 0xFF))
 		}
 	} else {
-		fmt.Fprintf(os.Stderr, " (SSE2)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (SSE2)")
+		}
 		o.Write(0x66)
 		if (srcReg.Encoding&8) != 0 || (baseReg.Encoding&8) != 0 {
 			rex := uint8(0x40)
@@ -269,7 +283,9 @@ func (o *Out) vmovupdX86StoreToMem(src, base string, offset int32) {
 		}
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -286,7 +302,9 @@ func (o *Out) vmovupdARM64LoadFromMem(dst, base string, offset int32) {
 
 	if dstReg.Size == 512 {
 		// SVE LD1D
-		fmt.Fprintf(os.Stderr, "ld1d {%s.d}, p7/z, [%s, #%d]:", dst, base, offset)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "ld1d {%s.d}, p7/z, [%s, #%d]:", dst, base, offset)
+		}
 
 		// Simplified: offset must be multiple of 8 and fit in immediate
 		// Full implementation would handle complex addressing
@@ -301,7 +319,9 @@ func (o *Out) vmovupdARM64LoadFromMem(dst, base string, offset int32) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
 		// NEON LDR
-		fmt.Fprintf(os.Stderr, "ldr %s, [%s, #%d]:", dst, base, offset)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "ldr %s, [%s, #%d]:", dst, base, offset)
+		}
 
 		// LDR Qt, [Xn, #imm]
 		instr := uint32(0x3DC00000) |
@@ -314,7 +334,9 @@ func (o *Out) vmovupdARM64LoadFromMem(dst, base string, offset int32) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 ST1D {zt.d}, pg, [xn, #imm] (SVE2)
@@ -327,7 +349,9 @@ func (o *Out) vmovupdARM64StoreToMem(src, base string, offset int32) {
 
 	if srcReg.Size == 512 {
 		// SVE ST1D
-		fmt.Fprintf(os.Stderr, "st1d {%s.d}, p7, [%s, #%d]:", src, base, offset)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "st1d {%s.d}, p7, [%s, #%d]:", src, base, offset)
+		}
 
 		// ST1D encoding
 		instr := uint32(0xE5E00000) |
@@ -340,7 +364,9 @@ func (o *Out) vmovupdARM64StoreToMem(src, base string, offset int32) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
 		// NEON STR
-		fmt.Fprintf(os.Stderr, "str %s, [%s, #%d]:", src, base, offset)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "str %s, [%s, #%d]:", src, base, offset)
+		}
 
 		instr := uint32(0x3D800000) |
 			(uint32(baseReg.Encoding&31) << 5) |
@@ -352,7 +378,9 @@ func (o *Out) vmovupdARM64StoreToMem(src, base string, offset int32) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -369,7 +397,9 @@ func (o *Out) vmovupdRISCVLoadFromMem(dst, base string, offset int32) {
 
 	// Note: RVV unit-stride doesn't support immediate offset directly
 	// Would need to ADD offset to base first if offset != 0
-	fmt.Fprintf(os.Stderr, "vle64.v %s, (%s):", dst, base)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vle64.v %s, (%s):", dst, base)
+	}
 
 	// vle64.v encoding
 	// nf=0 mew=0 mop=00 vm=1 lumop=00000 rs1 width=111 vd opcode
@@ -385,7 +415,9 @@ func (o *Out) vmovupdRISCVLoadFromMem(dst, base string, offset int32) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V vse64.v vs3, (rs1) - unit-stride store
@@ -396,7 +428,9 @@ func (o *Out) vmovupdRISCVStoreToMem(src, base string, offset int32) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vse64.v %s, (%s):", src, base)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vse64.v %s, (%s):", src, base)
+	}
 
 	// vse64.v encoding
 	// nf=0 mew=0 mop=00 vm=1 sumop=00000 rs1 width=111 vs3 opcode
@@ -412,5 +446,7 @@ func (o *Out) vmovupdRISCVStoreToMem(src, base string, offset int32) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

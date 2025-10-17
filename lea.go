@@ -26,7 +26,9 @@ func (o *Out) leaX86SymbolToReg(dst, symbol string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "lea %s, [rip + %s]:", dst, symbol)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "lea %s, [rip + %s]:", dst, symbol)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -52,7 +54,9 @@ func (o *Out) leaX86SymbolToReg(dst, symbol string) {
 	// 32-bit displacement (will be patched later with actual RIP-relative offset)
 	o.WriteUnsigned(0xDEADBEEF)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 ADRP + ADD for loading symbol addresses
@@ -62,7 +66,9 @@ func (o *Out) leaARM64SymbolToReg(dst, symbol string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "adrp %s, %s; add %s, %s, :lo12:%s:", dst, symbol, dst, dst, symbol)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "adrp %s, %s; add %s, %s, :lo12:%s:", dst, symbol, dst, dst, symbol)
+	}
 
 	// Record position for relocation (ADRP is at this offset)
 	adrpOffset := uint64(o.eb.text.Len())
@@ -93,7 +99,9 @@ func (o *Out) leaARM64SymbolToReg(dst, symbol string) {
 	o.Write(uint8((addInstr >> 16) & 0xFF))
 	o.Write(uint8((addInstr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V AUIPC + ADDI for loading symbol addresses
@@ -103,7 +111,9 @@ func (o *Out) leaRISCVSymbolToReg(dst, symbol string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "auipc %s, %%pcrel_hi(%s); addi %s, %s, %%pcrel_lo:", dst, symbol, dst, dst)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "auipc %s, %%pcrel_hi(%s); addi %s, %s, %%pcrel_lo:", dst, symbol, dst, dst)
+	}
 
 	// Record position for relocation (AUIPC is at this offset)
 	auipcOffset := uint64(o.eb.text.Len())
@@ -134,7 +144,9 @@ func (o *Out) leaRISCVSymbolToReg(dst, symbol string) {
 	o.Write(uint8((addiInstr >> 16) & 0xFF))
 	o.Write(uint8((addiInstr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // LeaImmToReg generates a LEA instruction with an immediate offset
@@ -161,7 +173,9 @@ func (o *Out) leaX86ImmToReg(dst, base string, offset int64) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "lea %s, [%s + %d]:", dst, base, offset)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "lea %s, [%s + %d]:", dst, base, offset)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -193,7 +207,9 @@ func (o *Out) leaX86ImmToReg(dst, base string, offset int64) {
 		o.WriteUnsigned(uint(offset & 0xFFFFFFFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 ADD for address calculation
@@ -205,7 +221,9 @@ func (o *Out) leaARM64ImmToReg(dst, base string, offset int64) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "add %s, %s, #%d:", dst, base, offset)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "add %s, %s, #%d:", dst, base, offset)
+	}
 
 	// ADD Xd, Xn, #imm
 	// Format: sf 0 0 10001 shift[1:0] imm12[11:0] Rn[4:0] Rd[4:0]
@@ -223,7 +241,9 @@ func (o *Out) leaARM64ImmToReg(dst, base string, offset int64) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V ADDI for address calculation
@@ -235,7 +255,9 @@ func (o *Out) leaRISCVImmToReg(dst, base string, offset int64) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "addi %s, %s, %d:", dst, base, offset)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "addi %s, %s, %d:", dst, base, offset)
+	}
 
 	// ADDI rd, rs1, imm
 	// Format: imm[11:0] rs1[4:0] 000 rd[4:0] 0010011
@@ -250,7 +272,9 @@ func (o *Out) leaRISCVImmToReg(dst, base string, offset int64) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // Helper to check if a value is a symbol name

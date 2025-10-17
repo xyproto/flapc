@@ -45,7 +45,9 @@ func (o *Out) VZeroUpper() {
 // x86-64 VZEROUPPER
 // VEX.128.0F.WIG 77
 func (o *Out) vzeroupperX86() {
-	fmt.Fprintf(os.Stderr, "vzeroupper:")
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vzeroupper:")
+	}
 
 	// VEX prefix: C5 F8 77
 	// C5 = 2-byte VEX
@@ -55,7 +57,9 @@ func (o *Out) vzeroupperX86() {
 	o.Write(0xF8)
 	o.Write(0x77)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -65,8 +69,12 @@ func (o *Out) vzeroupperX86() {
 func (o *Out) vzeroupperARM64() {
 	// ARM64 SVE/NEON doesn't have AVX-SSE transition penalty
 	// No equivalent instruction needed
-	fmt.Fprintf(os.Stderr, "# ARM64: no vzeroupper needed (no AVX-SSE transition)\\n")
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# ARM64: no vzeroupper needed (no AVX-SSE transition)\\n")
+	}
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -76,8 +84,12 @@ func (o *Out) vzeroupperARM64() {
 func (o *Out) vzeroupperRISCV() {
 	// RISC-V RVV doesn't have AVX-SSE transition penalty
 	// No equivalent instruction needed
-	fmt.Fprintf(os.Stderr, "# RISC-V: no vzeroupper needed (no AVX-SSE transition)\\n")
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# RISC-V: no vzeroupper needed (no AVX-SSE transition)\\n")
+	}
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // VZeroAll zeros all vector registers
@@ -100,7 +112,9 @@ func (o *Out) VZeroAll() {
 // x86-64 VZEROALL
 // VEX.256.0F.WIG 77
 func (o *Out) vzeroallX86() {
-	fmt.Fprintf(os.Stderr, "vzeroall:")
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vzeroall:")
+	}
 
 	// VEX prefix: C5 FC 77
 	// C5 = 2-byte VEX
@@ -110,7 +124,9 @@ func (o *Out) vzeroallX86() {
 	o.Write(0xFC)
 	o.Write(0x77)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -118,8 +134,12 @@ func (o *Out) vzeroallX86() {
 // ============================================================================
 
 func (o *Out) vzeroallARM64() {
-	fmt.Fprintf(os.Stderr, "# ARM64: no vzeroall needed\\n")
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# ARM64: no vzeroall needed\\n")
+	}
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -127,6 +147,10 @@ func (o *Out) vzeroallARM64() {
 // ============================================================================
 
 func (o *Out) vzeroallRISCV() {
-	fmt.Fprintf(os.Stderr, "# RISC-V: no vzeroall needed\\n")
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# RISC-V: no vzeroall needed\\n")
+	}
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

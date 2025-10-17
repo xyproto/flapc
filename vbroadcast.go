@@ -61,7 +61,9 @@ func (o *Out) vbroadcastsdX86ScalarToVector(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vbroadcastsd %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vbroadcastsd %s, %s:", dst, src)
+	}
 
 	if dstReg.Size == 512 {
 		// AVX-512 VBROADCASTSD
@@ -99,7 +101,9 @@ func (o *Out) vbroadcastsdX86ScalarToVector(dst, src string) {
 		o.Write(modrm)
 	} else if dstReg.Size == 256 {
 		// AVX2 VBROADCASTSD ymm, xmm
-		fmt.Fprintf(os.Stderr, " (AVX2)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX2)")
+		}
 
 		// VEX 3-byte prefix: C4 [RXB mm-mmm] [W vvvv L pp]
 		o.Write(0xC4)
@@ -127,7 +131,9 @@ func (o *Out) vbroadcastsdX86ScalarToVector(dst, src string) {
 		o.Write(modrm)
 	} else {
 		// XMM - just copy (no broadcast needed for 128-bit with single element)
-		fmt.Fprintf(os.Stderr, " (SSE - movsd)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (SSE - movsd)")
+		}
 		// Use MOVSD for 128-bit scalar copy
 		o.Write(0xF2) // MOVSD prefix
 		rex := uint8(0x40)
@@ -146,7 +152,9 @@ func (o *Out) vbroadcastsdX86ScalarToVector(dst, src string) {
 		o.Write(modrm)
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // x86-64 VBROADCASTSD zmm1, m64 (memory to vector)
@@ -158,7 +166,9 @@ func (o *Out) vbroadcastsdX86MemToVector(dst, base string, offset int32) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vbroadcastsd %s, [%s + %d]:", dst, base, offset)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vbroadcastsd %s, [%s + %d]:", dst, base, offset)
+	}
 
 	if dstReg.Size == 512 {
 		// AVX-512 VBROADCASTSD with memory operand
@@ -203,7 +213,9 @@ func (o *Out) vbroadcastsdX86MemToVector(dst, base string, offset int32) {
 		}
 	} else if dstReg.Size == 256 {
 		// AVX2 version
-		fmt.Fprintf(os.Stderr, " (AVX2)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX2)")
+		}
 		o.Write(0xC4)
 
 		vex1 := uint8(0x02)
@@ -237,11 +249,15 @@ func (o *Out) vbroadcastsdX86MemToVector(dst, base string, offset int32) {
 		}
 	} else {
 		// SSE - load scalar
-		fmt.Fprintf(os.Stderr, " (SSE)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (SSE)")
+		}
 		// MOVSD for 128-bit
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -258,7 +274,9 @@ func (o *Out) vbroadcastARM64ScalarToVector(dst, src string) {
 
 	if dstReg.Size == 512 {
 		// SVE DUP zd.d, zn.d[0]
-		fmt.Fprintf(os.Stderr, "dup %s.d, %s.d[0]:", dst, src)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "dup %s.d, %s.d[0]:", dst, src)
+		}
 
 		// SVE DUP encoding
 		// 00000101 10 1 imm2 001 000 Zn Zd
@@ -273,7 +291,9 @@ func (o *Out) vbroadcastARM64ScalarToVector(dst, src string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
 		// NEON DUP vd.2d, vn.d[0]
-		fmt.Fprintf(os.Stderr, "dup %s.2d, %s.d[0]:", dst, src)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "dup %s.2d, %s.d[0]:", dst, src)
+		}
 
 		// NEON DUP (element) encoding
 		// 0 Q 001110 imm5 0 0000 1 Rn Rd
@@ -288,7 +308,9 @@ func (o *Out) vbroadcastARM64ScalarToVector(dst, src string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 LD1RD {zt.d}, pg/z, [xn, #imm]
@@ -301,7 +323,9 @@ func (o *Out) vbroadcastARM64MemToVector(dst, base string, offset int32) {
 
 	if dstReg.Size == 512 {
 		// SVE LD1RD - load and replicate doubleword
-		fmt.Fprintf(os.Stderr, "ld1rd {%s.d}, p7/z, [%s, #%d]:", dst, base, offset)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "ld1rd {%s.d}, p7/z, [%s, #%d]:", dst, base, offset)
+		}
 
 		// SVE LD1RD encoding
 		// 1000010 1 1 imm6 111 Pg Rn Zt
@@ -319,10 +343,14 @@ func (o *Out) vbroadcastARM64MemToVector(dst, base string, offset int32) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
 		// NEON - load then duplicate
-		fmt.Fprintf(os.Stderr, "# NEON broadcast from mem needs LD1R\n")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "# NEON broadcast from mem needs LD1R\n")
+		}
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -338,7 +366,9 @@ func (o *Out) vbroadcastRISCVScalarToVector(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vfmv.v.f %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vfmv.v.f %s, %s:", dst, src)
+	}
 
 	// vfmv.v.f encoding (note: src should be an f register, not v register)
 	// For now, assuming scalar register encoding
@@ -358,7 +388,9 @@ func (o *Out) vbroadcastRISCVScalarToVector(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V vle64.v + vrgather for broadcast from memory
@@ -371,9 +403,15 @@ func (o *Out) vbroadcastRISCVMemToVector(dst, base string, offset int32) {
 
 	// RVV doesn't have direct broadcast-from-memory
 	// Would need: load scalar, then broadcast
-	fmt.Fprintf(os.Stderr, "# RVV broadcast from mem: load then vfmv.v.f\n")
-	fmt.Fprintf(os.Stderr, "fld ft0, %d(%s)\n", offset, base)
-	fmt.Fprintf(os.Stderr, "vfmv.v.f %s, ft0:", dst)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# RVV broadcast from mem: load then vfmv.v.f\n")
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "fld ft0, %d(%s)\n", offset, base)
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vfmv.v.f %s, ft0:", dst)
+	}
 
 	// Just emit the broadcast part
 	instr := uint32(0x57) |
@@ -387,5 +425,7 @@ func (o *Out) vbroadcastRISCVMemToVector(dst, base string, offset int32) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

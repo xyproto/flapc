@@ -94,7 +94,9 @@ func (o *Out) jmpX86Conditional(condition JumpCondition, offset int32) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "%s %d:", name, offset)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "%s %d:", name, offset)
+	}
 
 	// Use near jump (32-bit offset) with 0x0F prefix
 	o.Write(0x0F)
@@ -106,12 +108,16 @@ func (o *Out) jmpX86Conditional(condition JumpCondition, offset int32) {
 	o.Write(uint8((offset >> 16) & 0xFF))
 	o.Write(uint8((offset >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // x86-64 unconditional jump
 func (o *Out) jmpX86Unconditional(offset int32) {
-	fmt.Fprintf(os.Stderr, "jmp %d:", offset)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "jmp %d:", offset)
+	}
 
 	// Use near jump (32-bit offset)
 	o.Write(0xE9)
@@ -122,7 +128,9 @@ func (o *Out) jmpX86Unconditional(offset int32) {
 	o.Write(uint8((offset >> 16) & 0xFF))
 	o.Write(uint8((offset >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 conditional jump (B.cond)
@@ -165,13 +173,17 @@ func (o *Out) jmpARM64Conditional(condition JumpCondition, offset int32) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "%s %d:", name, offset)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "%s %d:", name, offset)
+	}
 
 	// B.cond: 01010100 imm19 0 cond
 	// Offset is in instructions (4-byte units), signed 19-bit
 	immOffset := offset / 4
 	if immOffset < -262144 || immOffset > 262143 {
-		fmt.Fprintf(os.Stderr, " (offset out of range)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (offset out of range)")
+		}
 		immOffset = 0
 	}
 
@@ -184,18 +196,24 @@ func (o *Out) jmpARM64Conditional(condition JumpCondition, offset int32) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 unconditional jump (B)
 func (o *Out) jmpARM64Unconditional(offset int32) {
-	fmt.Fprintf(os.Stderr, "b %d:", offset)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "b %d:", offset)
+	}
 
 	// B: 000101 imm26
 	// Offset is in instructions (4-byte units), signed 26-bit
 	immOffset := offset / 4
 	if immOffset < -33554432 || immOffset > 33554431 {
-		fmt.Fprintf(os.Stderr, " (offset out of range)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (offset out of range)")
+		}
 		immOffset = 0
 	}
 
@@ -206,7 +224,9 @@ func (o *Out) jmpARM64Unconditional(offset int32) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V conditional jump (BEQ, BNE, BLT, BGE, etc.)
@@ -243,15 +263,21 @@ func (o *Out) jmpRISCVConditional(condition JumpCondition, offset int32) {
 		name = "bge" // Actually BGE zero, t0
 		rs1, rs2 = 0, 5
 	default:
-		fmt.Fprintf(os.Stderr, "# unsupported condition")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "# unsupported condition")
+		}
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "%s t0, zero, %d:", name, offset)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "%s t0, zero, %d:", name, offset)
+	}
 
 	// Branch format: imm[12|10:5] rs2 rs1 funct3 imm[4:1|11] 1100011
 	if offset < -4096 || offset > 4094 || (offset&1) != 0 {
-		fmt.Fprintf(os.Stderr, " (offset out of range or misaligned)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (offset out of range or misaligned)")
+		}
 		offset = 0
 	}
 
@@ -268,16 +294,22 @@ func (o *Out) jmpRISCVConditional(condition JumpCondition, offset int32) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V unconditional jump (JAL with x0 as destination)
 func (o *Out) jmpRISCVUnconditional(offset int32) {
-	fmt.Fprintf(os.Stderr, "jal zero, %d:", offset)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "jal zero, %d:", offset)
+	}
 
 	// JAL: imm[20|10:1|11|19:12] rd 1101111
 	if offset < -1048576 || offset > 1048574 || (offset&1) != 0 {
-		fmt.Fprintf(os.Stderr, " (offset out of range or misaligned)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (offset out of range or misaligned)")
+		}
 		offset = 0
 	}
 
@@ -293,5 +325,7 @@ func (o *Out) jmpRISCVUnconditional(offset int32) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

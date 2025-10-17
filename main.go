@@ -14,7 +14,7 @@ import (
 
 // A tiny compiler for x86_64, aarch64, and riscv64 ELF files for Linux
 
-const versionString = "flapc 0.1.0"
+const versionString = "flapc 1.0.0"
 
 // Machine architecture constants
 type Machine int
@@ -123,10 +123,14 @@ func (eb *ExecutableBuilder) PatchPCRelocations(textAddr, rodataAddr uint64, rod
 		if c, ok := eb.consts[reloc.symbolName]; ok {
 			targetAddr = c.addr
 			if strings.HasPrefix(reloc.symbolName, "str_") {
-				fmt.Fprintf(os.Stderr, "DEBUG PatchPCRelocations: %s using address 0x%x\n", reloc.symbolName, targetAddr)
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "DEBUG PatchPCRelocations: %s using address 0x%x\n", reloc.symbolName, targetAddr)
+				}
 			}
 		} else {
-			fmt.Fprintf(os.Stderr, "Warning: Symbol %s not found for PC relocation\n", reloc.symbolName)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Warning: Symbol %s not found for PC relocation\n", reloc.symbolName)
+			}
 			continue
 		}
 
@@ -146,7 +150,9 @@ func (eb *ExecutableBuilder) PatchPCRelocations(textAddr, rodataAddr uint64, rod
 func (eb *ExecutableBuilder) patchX86_64PCRel(textBytes []byte, offset int, textAddr, targetAddr uint64, symbolName string) {
 	// x86-64 RIP-relative: displacement is at offset, instruction ends at offset+4
 	if offset+4 > len(textBytes) {
-		fmt.Fprintf(os.Stderr, "Warning: Relocation offset %d out of bounds\n", offset)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Warning: Relocation offset %d out of bounds\n", offset)
+		}
 		return
 	}
 
@@ -154,7 +160,9 @@ func (eb *ExecutableBuilder) patchX86_64PCRel(textBytes []byte, offset int, text
 	displacement := int64(targetAddr) - int64(ripAddr)
 
 	if displacement < -0x80000000 || displacement > 0x7FFFFFFF {
-		fmt.Fprintf(os.Stderr, "Warning: x86-64 displacement too large: %d\n", displacement)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Warning: x86-64 displacement too large: %d\n", displacement)
+		}
 		return
 	}
 
@@ -164,8 +172,10 @@ func (eb *ExecutableBuilder) patchX86_64PCRel(textBytes []byte, offset int, text
 	textBytes[offset+2] = byte((disp32 >> 16) & 0xFF)
 	textBytes[offset+3] = byte((disp32 >> 24) & 0xFF)
 
-	fmt.Fprintf(os.Stderr, "Patched x86-64 PC relocation: %s at offset 0x%x, target 0x%x, RIP 0x%x, displacement %d\n",
-		symbolName, offset, targetAddr, ripAddr, displacement)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Patched x86-64 PC relocation: %s at offset 0x%x, target 0x%x, RIP 0x%x, displacement %d\n",
+			symbolName, offset, targetAddr, ripAddr, displacement)
+	}
 }
 
 func (eb *ExecutableBuilder) patchARM64PCRel(textBytes []byte, offset int, textAddr, targetAddr uint64, symbolName string) {
@@ -173,7 +183,9 @@ func (eb *ExecutableBuilder) patchARM64PCRel(textBytes []byte, offset int, textA
 	// ADRP loads page-aligned address (upper 52 bits)
 	// ADD adds the low 12 bits
 	if offset+8 > len(textBytes) {
-		fmt.Fprintf(os.Stderr, "Warning: ARM64 relocation offset %d out of bounds\n", offset)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Warning: ARM64 relocation offset %d out of bounds\n", offset)
+		}
 		return
 	}
 
@@ -186,7 +198,9 @@ func (eb *ExecutableBuilder) patchARM64PCRel(textBytes []byte, offset int, textA
 
 	// Check if page offset fits in 21 bits (signed, shifted)
 	if pageOffset < -0x100000000 || pageOffset > 0xFFFFFFFF {
-		fmt.Fprintf(os.Stderr, "Warning: ARM64 page offset too large: %d\n", pageOffset)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Warning: ARM64 page offset too large: %d\n", pageOffset)
+		}
 		return
 	}
 
@@ -223,8 +237,10 @@ func (eb *ExecutableBuilder) patchARM64PCRel(textBytes []byte, offset int, textA
 	textBytes[offset+6] = byte((addInstr >> 16) & 0xFF)
 	textBytes[offset+7] = byte((addInstr >> 24) & 0xFF)
 
-	fmt.Fprintf(os.Stderr, "Patched ARM64 PC relocation: %s at offset 0x%x, target 0x%x, page offset %d, low12 0x%x\n",
-		symbolName, offset, targetAddr, pageOffset, low12)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Patched ARM64 PC relocation: %s at offset 0x%x, target 0x%x, page offset %d, low12 0x%x\n",
+			symbolName, offset, targetAddr, pageOffset, low12)
+	}
 }
 
 func (eb *ExecutableBuilder) patchRISCV64PCRel(textBytes []byte, offset int, textAddr, targetAddr uint64, symbolName string) {
@@ -232,7 +248,9 @@ func (eb *ExecutableBuilder) patchRISCV64PCRel(textBytes []byte, offset int, tex
 	// AUIPC loads upper 20 bits of PC-relative offset
 	// ADDI adds the lower 12 bits
 	if offset+8 > len(textBytes) {
-		fmt.Fprintf(os.Stderr, "Warning: RISC-V relocation offset %d out of bounds\n", offset)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Warning: RISC-V relocation offset %d out of bounds\n", offset)
+		}
 		return
 	}
 
@@ -240,7 +258,9 @@ func (eb *ExecutableBuilder) patchRISCV64PCRel(textBytes []byte, offset int, tex
 	pcOffset := int64(targetAddr) - int64(instrAddr)
 
 	if pcOffset < -0x80000000 || pcOffset > 0x7FFFFFFF {
-		fmt.Fprintf(os.Stderr, "Warning: RISC-V offset too large: %d\n", pcOffset)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Warning: RISC-V offset too large: %d\n", pcOffset)
+		}
 		return
 	}
 
@@ -275,8 +295,10 @@ func (eb *ExecutableBuilder) patchRISCV64PCRel(textBytes []byte, offset int, tex
 	textBytes[offset+6] = byte((addiInstr >> 16) & 0xFF)
 	textBytes[offset+7] = byte((addiInstr >> 24) & 0xFF)
 
-	fmt.Fprintf(os.Stderr, "Patched RISC-V PC relocation: %s at offset 0x%x, target 0x%x, PC 0x%x, offset %d (upper=0x%x, lower=0x%x)\n",
-		symbolName, offset, targetAddr, instrAddr, pcOffset, upper, lower)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Patched RISC-V PC relocation: %s at offset 0x%x, target 0x%x, PC 0x%x, offset %d (upper=0x%x, lower=0x%x)\n",
+			symbolName, offset, targetAddr, instrAddr, pcOffset, upper, lower)
+	}
 }
 
 func New(machineStr string) (*ExecutableBuilder, error) {
@@ -332,7 +354,9 @@ func (eb *ExecutableBuilder) PatchCallSites(textAddr uint64) {
 		// Find the target symbol address (should be a label in the text section)
 		targetOffset := eb.LabelOffset(patch.targetName)
 		if targetOffset < 0 {
-			fmt.Fprintf(os.Stderr, "Warning: Label %s not found for call patch\n", patch.targetName)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Warning: Label %s not found for call patch\n", patch.targetName)
+			}
 			continue
 		}
 
@@ -343,7 +367,9 @@ func (eb *ExecutableBuilder) PatchCallSites(textAddr uint64) {
 		displacement := int64(targetAddr) - int64(ripAddr)
 
 		if displacement < -0x80000000 || displacement > 0x7FFFFFFF {
-			fmt.Fprintf(os.Stderr, "Warning: Call displacement too large: %d\n", displacement)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Warning: Call displacement too large: %d\n", displacement)
+			}
 			continue
 		}
 
@@ -354,8 +380,10 @@ func (eb *ExecutableBuilder) PatchCallSites(textAddr uint64) {
 		textBytes[patch.position+2] = byte((disp32 >> 16) & 0xFF)
 		textBytes[patch.position+3] = byte((disp32 >> 24) & 0xFF)
 
-		fmt.Fprintf(os.Stderr, "Patched call to %s at position 0x%x: target offset 0x%x, displacement %d\n",
-			patch.targetName, patch.position, targetOffset, displacement)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Patched call to %s at position 0x%x: target offset 0x%x, displacement %d\n",
+				patch.targetName, patch.position, targetOffset, displacement)
+		}
 	}
 }
 
@@ -376,22 +404,30 @@ func (eb *ExecutableBuilder) Bytes() []byte {
 	// For Mach-O format (macOS)
 	if eb.useMachO {
 		if err := eb.WriteMachO(); err != nil {
-			fmt.Fprintf(os.Stderr, "ERROR: Failed to write Mach-O: %v\n", err)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "ERROR: Failed to write Mach-O: %v\n", err)
+			}
 			// Fallback to ELF
 		} else {
-			fmt.Fprintf(os.Stderr, "DEBUG Bytes(): Using Mach-O format (size=%d)\n", eb.elf.Len())
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG Bytes(): Using Mach-O format (size=%d)\n", eb.elf.Len())
+			}
 			return eb.elf.Bytes()
 		}
 	}
 
 	// For dynamic ELFs, everything is already in eb.elf
 	if eb.useDynamicLinking {
-		fmt.Fprintf(os.Stderr, "DEBUG Bytes(): Using dynamic ELF, returning eb.elf only (size=%d)\n", eb.elf.Len())
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG Bytes(): Using dynamic ELF, returning eb.elf only (size=%d)\n", eb.elf.Len())
+		}
 		return eb.elf.Bytes()
 	}
 
 	// For static ELFs, concatenate sections
-	fmt.Fprintf(os.Stderr, "DEBUG Bytes(): Using static ELF, concatenating sections\n")
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG Bytes(): Using static ELF, concatenating sections\n")
+	}
 	var result bytes.Buffer
 	result.Write(eb.elf.Bytes())
 	result.Write(eb.rodata.Bytes())
@@ -413,13 +449,17 @@ func (eb *ExecutableBuilder) Define(symbol, value string) {
 func (eb *ExecutableBuilder) DefineAddr(symbol string, addr uint64) {
 	if c, ok := eb.consts[symbol]; ok {
 		if strings.HasPrefix(symbol, "str_") || strings.HasPrefix(symbol, "lambda_") {
-			fmt.Fprintf(os.Stderr, "DEBUG DefineAddr: %s set to 0x%x\n", symbol, addr)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG DefineAddr: %s set to 0x%x\n", symbol, addr)
+			}
 		}
 		c.addr = addr
 	} else {
 		// Symbol doesn't exist yet - create it first
 		if strings.HasPrefix(symbol, "lambda_") {
-			fmt.Fprintf(os.Stderr, "DEBUG DefineAddr: Creating missing symbol %s with addr 0x%x\n", symbol, addr)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG DefineAddr: Creating missing symbol %s with addr 0x%x\n", symbol, addr)
+			}
 		}
 		eb.consts[symbol] = &Const{value: "", addr: addr}
 	}
@@ -556,7 +596,9 @@ func (eb *ExecutableBuilder) GenerateGlibcHelloWorld() error {
 // when we have complete PLT information
 func (eb *ExecutableBuilder) GenerateCallInstruction(funcName string) error {
 	w := eb.TextWriter()
-	fmt.Fprint(os.Stderr, funcName+"@plt:")
+	if VerboseMode {
+		fmt.Fprint(os.Stderr, funcName+"@plt:")
+	}
 
 	// Generate architecture-specific call instruction with placeholder
 	switch eb.machine {
@@ -569,7 +611,9 @@ func (eb *ExecutableBuilder) GenerateCallInstruction(funcName string) error {
 		w.WriteUnsigned(0x000000EF) // JAL placeholder
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 	return nil
 }
 
@@ -621,6 +665,7 @@ func main() {
 	var outputFilenameFlag = flag.String("o", defaultOutputFilename, "output executable filename")
 	var outputFilenameLongFlag = flag.String("output", defaultOutputFilename, "output executable filename")
 	var formatFlag = flag.String("format", "auto", "output format: auto, elf, macho (auto detects based on OS)")
+	var versionShort = flag.Bool("V", false, "print version information and exit")
 	var version = flag.Bool("version", false, "print version information and exit")
 	var verbose = flag.Bool("v", false, "verbose mode (show detailed compilation info)")
 	var verboseLong = flag.Bool("verbose", false, "verbose mode (show detailed compilation info)")
@@ -632,7 +677,7 @@ func main() {
 	// Set global update-deps flag (use whichever was specified)
 	UpdateDepsFlag = *updateDeps || *updateDepsLong
 
-	if *version {
+	if *version || *versionShort {
 		fmt.Println(versionString)
 		os.Exit(0)
 	}
@@ -707,17 +752,23 @@ func main() {
 		if err != nil {
 			log.Fatalf("Flap compilation error: %v", err)
 		}
-		fmt.Fprintf(os.Stderr, "-> Wrote executable: %s\n", writeToFilename)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "-> Wrote executable: %s\n", writeToFilename)
+		}
 		return
 	}
 
 	if len(inputFiles) > 0 {
 		for _, file := range inputFiles {
-			log.Printf("source file: %s", file)
+			if VerboseMode {
+				log.Printf("source file: %s", file)
+			}
 
 			// Check if this is a Flap source file
 			if strings.HasSuffix(file, ".flap") {
-				fmt.Fprintln(os.Stderr, "-> Compiling Flap source")
+				if VerboseMode {
+					fmt.Fprintln(os.Stderr, "-> Compiling Flap source")
+				}
 
 				writeToFilename := outputFilename
 				if outputFilename == defaultOutputFilename {
@@ -729,7 +780,9 @@ func main() {
 				if err != nil {
 					log.Fatalf("Flap compilation error: %v", err)
 				}
-				fmt.Fprintf(os.Stderr, "-> Wrote executable: %s\n", writeToFilename)
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "-> Wrote executable: %s\n", writeToFilename)
+				}
 				return
 			}
 		}

@@ -48,7 +48,9 @@ func (o *Out) vsqrtpdX86VectorToVector(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vsqrtpd %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vsqrtpd %s, %s:", dst, src)
+	}
 
 	if dstReg.Size == 512 {
 		// AVX-512 VSQRTPD
@@ -89,7 +91,9 @@ func (o *Out) vsqrtpdX86VectorToVector(dst, src string) {
 		o.Write(modrm)
 	} else if dstReg.Size == 256 {
 		// AVX VSQRTPD ymm, ymm
-		fmt.Fprintf(os.Stderr, " (AVX)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX)")
+		}
 
 		o.Write(0xC4)
 
@@ -112,7 +116,9 @@ func (o *Out) vsqrtpdX86VectorToVector(dst, src string) {
 		o.Write(modrm)
 	} else {
 		// SSE2 SQRTPD xmm, xmm
-		fmt.Fprintf(os.Stderr, " (SSE2)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (SSE2)")
+		}
 
 		o.Write(0x66) // prefix
 		rex := uint8(0x40)
@@ -132,7 +138,9 @@ func (o *Out) vsqrtpdX86VectorToVector(dst, src string) {
 		o.Write(modrm)
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -149,7 +157,9 @@ func (o *Out) vsqrtARM64VectorToVector(dst, src string) {
 
 	if dstReg.Size == 512 {
 		// SVE FSQRT
-		fmt.Fprintf(os.Stderr, "fsqrt %s.d, p7/m, %s.d:", dst, src)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "fsqrt %s.d, p7/m, %s.d:", dst, src)
+		}
 
 		// SVE FSQRT encoding
 		// 01100101 11 01 101 101 Pg Zn Zd
@@ -165,7 +175,9 @@ func (o *Out) vsqrtARM64VectorToVector(dst, src string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
 		// NEON FSQRT
-		fmt.Fprintf(os.Stderr, "fsqrt %s.2d, %s.2d:", dst, src)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "fsqrt %s.2d, %s.2d:", dst, src)
+		}
 
 		// NEON FSQRT encoding
 		// 0 Q 1 01110 1 sz 1 00001 11111 0 Rn Rd
@@ -180,7 +192,9 @@ func (o *Out) vsqrtARM64VectorToVector(dst, src string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -195,7 +209,9 @@ func (o *Out) vsqrtRISCVVectorToVector(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vfsqrt.v %s, %s:", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vfsqrt.v %s, %s:", dst, src)
+	}
 
 	// vfsqrt.v encoding
 	// funct6 vm vs2=00000 rs1(sqrt) funct3 vd opcode
@@ -213,5 +229,7 @@ func (o *Out) vsqrtRISCVVectorToVector(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

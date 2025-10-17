@@ -25,7 +25,9 @@ func (o *Out) orX86RegToReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "or %s, %s: ", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "or %s, %s: ", dst, src)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -44,7 +46,9 @@ func (o *Out) orX86RegToReg(dst, src string) {
 	modrm := uint8(0xC0) | ((srcReg.Encoding & 7) << 3) | (dstReg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 func (o *Out) orARM64RegToReg(dst, src string) {
@@ -55,7 +59,9 @@ func (o *Out) orARM64RegToReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "orr %s, %s, %s: ", dst, dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "orr %s, %s, %s: ", dst, dst, src)
+	}
 
 	// ORR Xd, Xn, Xm (sf=1 for 64-bit)
 	instr := uint32(0xAA000000) | (uint32(srcReg.Encoding&31) << 16) | (uint32(dstReg.Encoding&31) << 5) | uint32(dstReg.Encoding&31)
@@ -65,7 +71,9 @@ func (o *Out) orARM64RegToReg(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 func (o *Out) orRISCVRegToReg(dst, src string) {
@@ -76,7 +84,9 @@ func (o *Out) orRISCVRegToReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "or %s, %s, %s: ", dst, dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "or %s, %s, %s: ", dst, dst, src)
+	}
 
 	// OR rd, rs1, rs2: opcode=0110011, funct3=110, funct7=0000000
 	instr := uint32(0x00006033) | (uint32(dstReg.Encoding&31) << 7) | (uint32(dstReg.Encoding&31) << 15) | (uint32(srcReg.Encoding&31) << 20)
@@ -86,7 +96,9 @@ func (o *Out) orRISCVRegToReg(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // XorRegToReg - XOR dst with src, result in dst
@@ -109,7 +121,9 @@ func (o *Out) xorX86RegToReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "xor %s, %s: ", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "xor %s, %s: ", dst, src)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -128,7 +142,9 @@ func (o *Out) xorX86RegToReg(dst, src string) {
 	modrm := uint8(0xC0) | ((srcReg.Encoding & 7) << 3) | (dstReg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 func (o *Out) xorARM64RegToReg(dst, src string) {
@@ -139,7 +155,9 @@ func (o *Out) xorARM64RegToReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "eor %s, %s, %s: ", dst, dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "eor %s, %s, %s: ", dst, dst, src)
+	}
 
 	// EOR Xd, Xn, Xm (sf=1 for 64-bit)
 	instr := uint32(0xCA000000) | (uint32(srcReg.Encoding&31) << 16) | (uint32(dstReg.Encoding&31) << 5) | uint32(dstReg.Encoding&31)
@@ -149,7 +167,9 @@ func (o *Out) xorARM64RegToReg(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 func (o *Out) xorRISCVRegToReg(dst, src string) {
@@ -160,7 +180,9 @@ func (o *Out) xorRISCVRegToReg(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "xor %s, %s, %s: ", dst, dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "xor %s, %s, %s: ", dst, dst, src)
+	}
 
 	// XOR rd, rs1, rs2: opcode=0110011, funct3=100, funct7=0000000
 	instr := uint32(0x00004033) | (uint32(dstReg.Encoding&31) << 7) | (uint32(dstReg.Encoding&31) << 15) | (uint32(srcReg.Encoding&31) << 20)
@@ -170,7 +192,9 @@ func (o *Out) xorRISCVRegToReg(dst, src string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // TestRegReg - Test (bitwise AND without storing result, sets flags)
@@ -193,7 +217,9 @@ func (o *Out) testX86RegReg(src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "test %s, %s: ", src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "test %s, %s: ", src1, src2)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -212,7 +238,9 @@ func (o *Out) testX86RegReg(src1, src2 string) {
 	modrm := uint8(0xC0) | ((src2Reg.Encoding & 7) << 3) | (src1Reg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 func (o *Out) testARM64RegReg(src1, src2 string) {
@@ -223,7 +251,9 @@ func (o *Out) testARM64RegReg(src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "tst %s, %s: ", src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "tst %s, %s: ", src1, src2)
+	}
 
 	// ANDS XZR, Xn, Xm (sets flags, discards result)
 	instr := uint32(0xEA00001F) | (uint32(src2Reg.Encoding&31) << 16) | (uint32(src1Reg.Encoding&31) << 5)
@@ -233,7 +263,9 @@ func (o *Out) testARM64RegReg(src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 func (o *Out) testRISCVRegReg(src1, src2 string) {
@@ -245,7 +277,9 @@ func (o *Out) testRISCVRegReg(src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "# test %s, %s (and t0, %s, %s): ", src1, src2, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# test %s, %s (and t0, %s, %s): ", src1, src2, src1, src2)
+	}
 
 	// AND t0, src1, src2 (t0 = x5)
 	instr := uint32(0x00007033) | (uint32(5) << 7) | (uint32(src1Reg.Encoding&31) << 15) | (uint32(src2Reg.Encoding&31) << 20)
@@ -255,7 +289,9 @@ func (o *Out) testRISCVRegReg(src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ShlRegImm - Shift left by immediate
@@ -277,7 +313,9 @@ func (o *Out) shlX86RegImm(dst, imm string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "shl %s, %s: ", dst, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "shl %s, %s: ", dst, imm)
+	}
 
 	// Parse immediate value
 	var immVal uint8
@@ -300,7 +338,9 @@ func (o *Out) shlX86RegImm(dst, imm string) {
 	// Immediate byte
 	o.Write(immVal)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 func (o *Out) shlARM64RegImm(dst, imm string) {
@@ -309,7 +349,9 @@ func (o *Out) shlARM64RegImm(dst, imm string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "lsl %s, %s, #%s: ", dst, dst, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "lsl %s, %s, #%s: ", dst, dst, imm)
+	}
 
 	// Parse immediate value
 	var immVal uint32
@@ -328,7 +370,9 @@ func (o *Out) shlARM64RegImm(dst, imm string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 func (o *Out) shlRISCVRegImm(dst, imm string) {
@@ -337,7 +381,9 @@ func (o *Out) shlRISCVRegImm(dst, imm string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "slli %s, %s, %s: ", dst, dst, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "slli %s, %s, %s: ", dst, dst, imm)
+	}
 
 	// Parse immediate value
 	var immVal uint32
@@ -351,10 +397,14 @@ func (o *Out) shlRISCVRegImm(dst, imm string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // Comment - Emit a comment (only to stderr, not in binary)
 func (o *Out) Comment(text string) {
-	fmt.Fprintf(os.Stderr, "# %s\n", text)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# %s\n", text)
+	}
 }

@@ -52,7 +52,9 @@ func (o *Out) loadX86RegFromMem(dst, base string, offset int32) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "mov %s, [%s + %d]:", dst, base, offset)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "mov %s, [%s + %d]:", dst, base, offset)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -110,7 +112,9 @@ func (o *Out) loadX86RegFromMem(dst, base string, offset int32) {
 		o.Write(uint8((offset >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // x86-64 MOV [reg + offset], reg (store)
@@ -121,7 +125,9 @@ func (o *Out) storeX86RegToMem(src, base string, offset int32) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "mov [%s + %d], %s:", base, offset, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "mov [%s + %d], %s:", base, offset, src)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -170,7 +176,9 @@ func (o *Out) storeX86RegToMem(src, base string, offset int32) {
 		o.Write(uint8((offset >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -185,7 +193,9 @@ func (o *Out) loadARM64RegFromMem(dst, base string, offset int32) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "ldr %s, [%s, #%d]:", dst, base, offset)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "ldr %s, [%s, #%d]:", dst, base, offset)
+	}
 
 	// LDR Xt, [Xn, #offset]
 	// Format: 11 111 0 01 01 imm12 Rn Rt
@@ -218,10 +228,14 @@ func (o *Out) loadARM64RegFromMem(dst, base string, offset int32) {
 		o.Write(uint8((instr >> 16) & 0xFF))
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
-		fmt.Fprintf(os.Stderr, " (offset out of range)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (offset out of range)")
+		}
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 STR Xt, [Xn, #offset] (store)
@@ -232,7 +246,9 @@ func (o *Out) storeARM64RegToMem(src, base string, offset int32) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "str %s, [%s, #%d]:", src, base, offset)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "str %s, [%s, #%d]:", src, base, offset)
+	}
 
 	// STR Xt, [Xn, #offset]
 	// Format: 11 111 0 01 00 imm12 Rn Rt
@@ -263,10 +279,14 @@ func (o *Out) storeARM64RegToMem(src, base string, offset int32) {
 		o.Write(uint8((instr >> 16) & 0xFF))
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
-		fmt.Fprintf(os.Stderr, " (offset out of range)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (offset out of range)")
+		}
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -281,13 +301,19 @@ func (o *Out) loadRISCVRegFromMem(dst, base string, offset int32) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "ld %s, %d(%s):", dst, offset, base)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "ld %s, %d(%s):", dst, offset, base)
+	}
 
 	// LD: imm[11:0] rs1 011 rd 0000011
 	// 12-bit signed immediate
 	if offset < -2048 || offset > 2047 {
-		fmt.Fprintf(os.Stderr, " (offset out of range)")
-		fmt.Fprintln(os.Stderr)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (offset out of range)")
+		}
+		if VerboseMode {
+			fmt.Fprintln(os.Stderr)
+		}
 		return
 	}
 
@@ -302,7 +328,9 @@ func (o *Out) loadRISCVRegFromMem(dst, base string, offset int32) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V SD rs2, offset(rs1) (store)
@@ -313,13 +341,19 @@ func (o *Out) storeRISCVRegToMem(src, base string, offset int32) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "sd %s, %d(%s):", src, offset, base)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "sd %s, %d(%s):", src, offset, base)
+	}
 
 	// SD: imm[11:5] rs2 rs1 011 imm[4:0] 0100011
 	// 12-bit signed immediate split into two fields
 	if offset < -2048 || offset > 2047 {
-		fmt.Fprintf(os.Stderr, " (offset out of range)")
-		fmt.Fprintln(os.Stderr)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (offset out of range)")
+		}
+		if VerboseMode {
+			fmt.Fprintln(os.Stderr)
+		}
 		return
 	}
 
@@ -338,5 +372,7 @@ func (o *Out) storeRISCVRegToMem(src, base string, offset int32) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

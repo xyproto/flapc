@@ -15,13 +15,17 @@ func (ds *DynamicSections) GeneratePLT(functions []string, gotBase uint64, pltBa
 	// pushq GOT[1]
 	ds.plt.Write([]byte{0xff, 0x35})
 	offset1 := uint32(gotBase + 8 - pltBase - 6) // offset to GOT[1]
-	fmt.Fprintf(os.Stderr, "PLT[0] push offset: gotBase=0x%x, pltBase=0x%x, offset=0x%x\n", gotBase, pltBase, offset1)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "PLT[0] push offset: gotBase=0x%x, pltBase=0x%x, offset=0x%x\n", gotBase, pltBase, offset1)
+	}
 	binary.Write(&ds.plt, binary.LittleEndian, offset1)
 
 	// jmpq *GOT[2]
 	ds.plt.Write([]byte{0xff, 0x25})
 	offset2 := uint32(gotBase + 16 - pltBase - 12) // offset to GOT[2]
-	fmt.Fprintf(os.Stderr, "PLT[0] jmp offset: offset=0x%x\n", offset2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "PLT[0] jmp offset: offset=0x%x\n", offset2)
+	}
 	binary.Write(&ds.plt, binary.LittleEndian, offset2)
 
 	// padding

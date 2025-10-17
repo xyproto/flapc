@@ -48,7 +48,9 @@ func (o *Out) cmpX86RegToReg(src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "cmp %s, %s:", src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "cmp %s, %s:", src1, src2)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -67,7 +69,9 @@ func (o *Out) cmpX86RegToReg(src1, src2 string) {
 	modrm := uint8(0xC0) | ((src2Reg.Encoding & 7) << 3) | (src1Reg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // x86-64 CMP with immediate: CMP reg, imm
@@ -77,7 +81,9 @@ func (o *Out) cmpX86RegToImm(reg string, imm int64) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "cmp %s, %d:", reg, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "cmp %s, %d:", reg, imm)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -107,7 +113,9 @@ func (o *Out) cmpX86RegToImm(reg string, imm int64) {
 		o.Write(uint8((imm32 >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 CMP instruction: CMP Xn, Xm (actually SUBS XZR, Xn, Xm)
@@ -118,7 +126,9 @@ func (o *Out) cmpARM64RegToReg(src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "cmp %s, %s:", src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "cmp %s, %s:", src1, src2)
+	}
 
 	// CMP is encoded as SUBS XZR, Xn, Xm
 	// Format: sf 1 1 01011 shift(2) 0 Rm(5) imm6(6) Rn(5) Rd(5)
@@ -133,7 +143,9 @@ func (o *Out) cmpARM64RegToReg(src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 CMP with immediate: CMP Xn, #imm (SUBS XZR, Xn, #imm)
@@ -143,11 +155,15 @@ func (o *Out) cmpARM64RegToImm(reg string, imm int64) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "cmp %s, #%d:", reg, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "cmp %s, #%d:", reg, imm)
+	}
 
 	// ARM64 immediate must be 12-bit unsigned
 	if imm < 0 || imm > 4095 {
-		fmt.Fprintf(os.Stderr, " (immediate out of range, using 0)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (immediate out of range, using 0)")
+		}
 		imm = 0
 	}
 
@@ -163,7 +179,9 @@ func (o *Out) cmpARM64RegToImm(reg string, imm int64) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V doesn't have a direct CMP instruction
@@ -176,7 +194,9 @@ func (o *Out) cmpRISCVRegToReg(src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "# cmp %s, %s (sub t0, %s, %s):", src1, src2, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# cmp %s, %s (sub t0, %s, %s):", src1, src2, src1, src2)
+	}
 
 	// Use SUB t0, src1, src2 to compare (result in t0)
 	// Format: funct7(7) rs2(5) rs1(5) funct3(3) rd(5) opcode(7)
@@ -191,7 +211,9 @@ func (o *Out) cmpRISCVRegToReg(src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V CMP with immediate using ADDI with negated immediate
@@ -201,13 +223,17 @@ func (o *Out) cmpRISCVRegToImm(reg string, imm int64) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "# cmp %s, %d (addi t0, %s, %d):", reg, imm, reg, -imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# cmp %s, %d (addi t0, %s, %d):", reg, imm, reg, -imm)
+	}
 
 	// Use ADDI t0, reg, -imm to compare
 	// Format: imm[11:0] rs1 000 rd 0010011
 	negImm := -imm
 	if negImm < -2048 || negImm > 2047 {
-		fmt.Fprintf(os.Stderr, " (immediate out of range)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (immediate out of range)")
+		}
 		negImm = 0
 	}
 
@@ -221,7 +247,9 @@ func (o *Out) cmpRISCVRegToImm(reg string, imm int64) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // Cmove - Conditional Move if Equal (ZF=1)
@@ -240,7 +268,9 @@ func (o *Out) cmoveX86(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "cmove %s, %s: ", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "cmove %s, %s: ", dst, src)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -260,7 +290,9 @@ func (o *Out) cmoveX86(dst, src string) {
 	modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (srcReg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // Cmovne - Conditional Move if Not Equal (ZF=0)
@@ -279,7 +311,9 @@ func (o *Out) cmovneX86(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "cmovne %s, %s: ", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "cmovne %s, %s: ", dst, src)
+	}
 
 	// REX prefix for 64-bit operation
 	rex := uint8(0x48)
@@ -299,7 +333,9 @@ func (o *Out) cmovneX86(dst, src string) {
 	modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (srcReg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // Cmova - Conditional Move if Above (CF=0 and ZF=0) - for unsigned >
@@ -318,7 +354,9 @@ func (o *Out) cmovaX86(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "cmova %s, %s: ", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "cmova %s, %s: ", dst, src)
+	}
 
 	rex := uint8(0x48)
 	if (dstReg.Encoding & 8) != 0 {
@@ -335,7 +373,9 @@ func (o *Out) cmovaX86(dst, src string) {
 	modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (srcReg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // Cmovae - Conditional Move if Above or Equal (CF=0) - for unsigned >=
@@ -354,7 +394,9 @@ func (o *Out) cmovaeX86(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "cmovae %s, %s: ", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "cmovae %s, %s: ", dst, src)
+	}
 
 	rex := uint8(0x48)
 	if (dstReg.Encoding & 8) != 0 {
@@ -371,7 +413,9 @@ func (o *Out) cmovaeX86(dst, src string) {
 	modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (srcReg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // Cmovb - Conditional Move if Below (CF=1) - for unsigned <
@@ -390,7 +434,9 @@ func (o *Out) cmovbX86(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "cmovb %s, %s: ", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "cmovb %s, %s: ", dst, src)
+	}
 
 	rex := uint8(0x48)
 	if (dstReg.Encoding & 8) != 0 {
@@ -407,7 +453,9 @@ func (o *Out) cmovbX86(dst, src string) {
 	modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (srcReg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // Cmovbe - Conditional Move if Below or Equal (CF=1 or ZF=1) - for unsigned <=
@@ -426,7 +474,9 @@ func (o *Out) cmovbeX86(dst, src string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "cmovbe %s, %s: ", dst, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "cmovbe %s, %s: ", dst, src)
+	}
 
 	rex := uint8(0x48)
 	if (dstReg.Encoding & 8) != 0 {
@@ -443,5 +493,7 @@ func (o *Out) cmovbeX86(dst, src string) {
 	modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (srcReg.Encoding & 7)
 	o.Write(modrm)
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

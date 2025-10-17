@@ -52,7 +52,9 @@ func (o *Out) vgatherqpdX86FromMem(dst, base, indices string, scale int32, mask 
 
 	// Validate scale (must be 1, 2, 4, or 8)
 	if scale != 1 && scale != 2 && scale != 4 && scale != 8 {
-		fmt.Fprintf(os.Stderr, "Error: Invalid scale %d (must be 1,2,4,8)\n", scale)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Error: Invalid scale %d (must be 1,2,4,8)\n", scale)
+		}
 		return
 	}
 
@@ -68,7 +70,9 @@ func (o *Out) vgatherqpdX86FromMem(dst, base, indices string, scale int32, mask 
 		scaleEncoding = 3
 	}
 
-	fmt.Fprintf(os.Stderr, "vgatherqpd %s{%s}, [%s + %s*%d]:", dst, mask, base, indices, scale)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vgatherqpd %s{%s}, [%s + %s*%d]:", dst, mask, base, indices, scale)
+	}
 
 	if dstReg.Size == 512 {
 		// AVX-512 VGATHERQPD with VSIB addressing
@@ -119,7 +123,9 @@ func (o *Out) vgatherqpdX86FromMem(dst, base, indices string, scale int32, mask 
 		o.Write(sib)
 	} else if dstReg.Size == 256 {
 		// AVX2 VGATHERQPD ymm1, [base + ymm2*8], ymm3 (mask)
-		fmt.Fprintf(os.Stderr, " (AVX2)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX2)")
+		}
 
 		// AVX2 uses VEX encoding and vector mask (not k register)
 		o.Write(0xC4)
@@ -152,7 +158,9 @@ func (o *Out) vgatherqpdX86FromMem(dst, base, indices string, scale int32, mask 
 		o.Write(sib)
 	} else {
 		// XMM version (AVX2 128-bit)
-		fmt.Fprintf(os.Stderr, " (AVX2 128-bit)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX2 128-bit)")
+		}
 
 		o.Write(0xC4)
 
@@ -183,7 +191,9 @@ func (o *Out) vgatherqpdX86FromMem(dst, base, indices string, scale int32, mask 
 		o.Write(sib)
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -205,7 +215,9 @@ func (o *Out) vgatherARM64FromMem(dst, base, indices string, scale int32, mask s
 		// SVE gather load with vector base
 		// LD1D {zt.d}, pg/z, [zn.d, xm]
 		// Alternative: LD1D {zt.d}, pg/z, [xn, zm.d, LSL #3]
-		fmt.Fprintf(os.Stderr, "ld1d {%s.d}, %s/z, [%s, %s.d, lsl #3]:", dst, mask, base, indices)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "ld1d {%s.d}, %s/z, [%s, %s.d, lsl #3]:", dst, mask, base, indices)
+		}
 
 		// SVE gather encoding (simplified)
 		// 1100010 1 1 Zm 0 1 Pg Zn Zt
@@ -222,10 +234,14 @@ func (o *Out) vgatherARM64FromMem(dst, base, indices string, scale int32, mask s
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
 		// NEON doesn't have gather - would need to emulate with multiple loads
-		fmt.Fprintf(os.Stderr, "# NEON gather not available, needs emulation\n")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "# NEON gather not available, needs emulation\n")
+		}
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -244,7 +260,9 @@ func (o *Out) vgatherRISCVFromMem(dst, base, indices string, scale int32, mask s
 	}
 
 	// Note: RVV indices are byte offsets, so caller must scale appropriately
-	fmt.Fprintf(os.Stderr, "vluxei64.v %s, (%s), %s:", dst, base, indices)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vluxei64.v %s, (%s), %s:", dst, base, indices)
+	}
 
 	// vluxei64.v encoding
 	// nf mew mop vm lumop rs1 width vd opcode
@@ -263,5 +281,7 @@ func (o *Out) vgatherRISCVFromMem(dst, base, indices string, scale int32, mask s
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

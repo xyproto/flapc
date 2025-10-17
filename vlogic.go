@@ -74,7 +74,9 @@ func (o *Out) vandpdX86VectorToVector(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vandpd %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vandpd %s, %s, %s:", dst, src1, src2)
+	}
 
 	if dstReg.Size == 512 {
 		// AVX-512 VANDPD
@@ -110,7 +112,9 @@ func (o *Out) vandpdX86VectorToVector(dst, src1, src2 string) {
 		modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (src2Reg.Encoding & 7)
 		o.Write(modrm)
 	} else if dstReg.Size == 256 {
-		fmt.Fprintf(os.Stderr, " (AVX)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX)")
+		}
 		o.Write(0xC4)
 
 		vex1 := uint8(0x01)
@@ -131,7 +135,9 @@ func (o *Out) vandpdX86VectorToVector(dst, src1, src2 string) {
 		modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (src2Reg.Encoding & 7)
 		o.Write(modrm)
 	} else {
-		fmt.Fprintf(os.Stderr, " (SSE2)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (SSE2)")
+		}
 		o.Write(0x66)
 		o.Write(0x0F)
 		o.Write(0x54)
@@ -140,7 +146,9 @@ func (o *Out) vandpdX86VectorToVector(dst, src1, src2 string) {
 		o.Write(modrm)
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -155,7 +163,9 @@ func (o *Out) vorpdX86VectorToVector(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vorpd %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vorpd %s, %s, %s:", dst, src1, src2)
+	}
 
 	if dstReg.Size == 512 {
 		// AVX-512 VORPD
@@ -191,7 +201,9 @@ func (o *Out) vorpdX86VectorToVector(dst, src1, src2 string) {
 		modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (src2Reg.Encoding & 7)
 		o.Write(modrm)
 	} else if dstReg.Size == 256 {
-		fmt.Fprintf(os.Stderr, " (AVX)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX)")
+		}
 		o.Write(0xC4)
 
 		vex1 := uint8(0x01)
@@ -212,7 +224,9 @@ func (o *Out) vorpdX86VectorToVector(dst, src1, src2 string) {
 		modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (src2Reg.Encoding & 7)
 		o.Write(modrm)
 	} else {
-		fmt.Fprintf(os.Stderr, " (SSE2)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (SSE2)")
+		}
 		o.Write(0x66)
 		o.Write(0x0F)
 		o.Write(0x56)
@@ -221,7 +235,9 @@ func (o *Out) vorpdX86VectorToVector(dst, src1, src2 string) {
 		o.Write(modrm)
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -236,7 +252,9 @@ func (o *Out) vxorpdX86VectorToVector(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vxorpd %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vxorpd %s, %s, %s:", dst, src1, src2)
+	}
 
 	if dstReg.Size == 512 {
 		// AVX-512 VXORPD
@@ -272,7 +290,9 @@ func (o *Out) vxorpdX86VectorToVector(dst, src1, src2 string) {
 		modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (src2Reg.Encoding & 7)
 		o.Write(modrm)
 	} else if dstReg.Size == 256 {
-		fmt.Fprintf(os.Stderr, " (AVX)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX)")
+		}
 		o.Write(0xC4)
 
 		vex1 := uint8(0x01)
@@ -293,7 +313,9 @@ func (o *Out) vxorpdX86VectorToVector(dst, src1, src2 string) {
 		modrm := uint8(0xC0) | ((dstReg.Encoding & 7) << 3) | (src2Reg.Encoding & 7)
 		o.Write(modrm)
 	} else {
-		fmt.Fprintf(os.Stderr, " (SSE2)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (SSE2)")
+		}
 		o.Write(0x66)
 		o.Write(0x0F)
 		o.Write(0x57)
@@ -302,7 +324,9 @@ func (o *Out) vxorpdX86VectorToVector(dst, src1, src2 string) {
 		o.Write(modrm)
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -319,7 +343,9 @@ func (o *Out) vandARM64VectorToVector(dst, src1, src2 string) {
 
 	if dstReg.Size == 512 {
 		// SVE AND
-		fmt.Fprintf(os.Stderr, "and %s.d, %s.d, %s.d:", dst, src1, src2)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "and %s.d, %s.d, %s.d:", dst, src1, src2)
+		}
 
 		// SVE AND encoding
 		// 00000100 01 1 Zm 0011 00 Zn Zd
@@ -334,7 +360,9 @@ func (o *Out) vandARM64VectorToVector(dst, src1, src2 string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
 		// NEON AND
-		fmt.Fprintf(os.Stderr, "and %s.16b, %s.16b, %s.16b:", dst, src1, src2)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "and %s.16b, %s.16b, %s.16b:", dst, src1, src2)
+		}
 
 		// NEON AND encoding
 		// 0 Q 001110 001 Rm 00011 1 Rn Rd
@@ -350,7 +378,9 @@ func (o *Out) vandARM64VectorToVector(dst, src1, src2 string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 func (o *Out) vorARM64VectorToVector(dst, src1, src2 string) {
@@ -363,7 +393,9 @@ func (o *Out) vorARM64VectorToVector(dst, src1, src2 string) {
 
 	if dstReg.Size == 512 {
 		// SVE ORR
-		fmt.Fprintf(os.Stderr, "orr %s.d, %s.d, %s.d:", dst, src1, src2)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "orr %s.d, %s.d, %s.d:", dst, src1, src2)
+		}
 
 		// SVE ORR encoding
 		// 00000100 01 1 Zm 0011 10 Zn Zd
@@ -378,7 +410,9 @@ func (o *Out) vorARM64VectorToVector(dst, src1, src2 string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
 		// NEON ORR
-		fmt.Fprintf(os.Stderr, "orr %s.16b, %s.16b, %s.16b:", dst, src1, src2)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "orr %s.16b, %s.16b, %s.16b:", dst, src1, src2)
+		}
 
 		// NEON ORR encoding
 		// 0 Q 001110 101 Rm 00011 1 Rn Rd
@@ -394,7 +428,9 @@ func (o *Out) vorARM64VectorToVector(dst, src1, src2 string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 func (o *Out) vxorARM64VectorToVector(dst, src1, src2 string) {
@@ -407,7 +443,9 @@ func (o *Out) vxorARM64VectorToVector(dst, src1, src2 string) {
 
 	if dstReg.Size == 512 {
 		// SVE EOR
-		fmt.Fprintf(os.Stderr, "eor %s.d, %s.d, %s.d:", dst, src1, src2)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "eor %s.d, %s.d, %s.d:", dst, src1, src2)
+		}
 
 		// SVE EOR encoding
 		// 00000100 01 1 Zm 0011 01 Zn Zd
@@ -422,7 +460,9 @@ func (o *Out) vxorARM64VectorToVector(dst, src1, src2 string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	} else {
 		// NEON EOR
-		fmt.Fprintf(os.Stderr, "eor %s.16b, %s.16b, %s.16b:", dst, src1, src2)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "eor %s.16b, %s.16b, %s.16b:", dst, src1, src2)
+		}
 
 		// NEON EOR encoding
 		// 0 Q 101110 001 Rm 00011 1 Rn Rd
@@ -438,7 +478,9 @@ func (o *Out) vxorARM64VectorToVector(dst, src1, src2 string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -453,7 +495,9 @@ func (o *Out) vandRISCVVectorToVector(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vand.vv %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vand.vv %s, %s, %s:", dst, src1, src2)
+	}
 
 	// vand.vv encoding
 	// funct6=001001, funct3=000 (OPIVV)
@@ -470,7 +514,9 @@ func (o *Out) vandRISCVVectorToVector(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 func (o *Out) vorRISCVVectorToVector(dst, src1, src2 string) {
@@ -481,7 +527,9 @@ func (o *Out) vorRISCVVectorToVector(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vor.vv %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vor.vv %s, %s, %s:", dst, src1, src2)
+	}
 
 	// vor.vv encoding
 	// funct6=001010, funct3=000 (OPIVV)
@@ -498,7 +546,9 @@ func (o *Out) vorRISCVVectorToVector(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 func (o *Out) vxorRISCVVectorToVector(dst, src1, src2 string) {
@@ -509,7 +559,9 @@ func (o *Out) vxorRISCVVectorToVector(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vxor.vv %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vxor.vv %s, %s, %s:", dst, src1, src2)
+	}
 
 	// vxor.vv encoding
 	// funct6=001011, funct3=000 (OPIVV)
@@ -526,5 +578,7 @@ func (o *Out) vxorRISCVVectorToVector(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

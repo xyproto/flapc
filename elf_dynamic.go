@@ -97,9 +97,15 @@ func (eb *ExecutableBuilder) WriteDynamicELF() error {
 	}
 	w.Write(0) // null terminator
 
-	fmt.Fprintf(os.Stderr, "\n=== Dynamic ELF ===\n")
-	fmt.Fprintf(os.Stderr, "Interpreter: %s\n", interp)
-	fmt.Fprintf(os.Stderr, "Entry: 0x%x\n", entry)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "\n=== Dynamic ELF ===\n")
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Interpreter: %s\n", interp)
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Entry: 0x%x\n", entry)
+	}
 
 	return nil
 }

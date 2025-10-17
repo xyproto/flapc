@@ -16,7 +16,9 @@ func (o *Out) MovRegToMem(src, base string, offset int) {
 }
 
 func (o *Out) movRegToMemX86(src, base string, offset int) {
-	fmt.Fprintf(os.Stderr, "mov [%s+%d], %s: ", base, offset, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "mov [%s+%d], %s: ", base, offset, src)
+	}
 
 	srcReg, _ := GetRegister(o.machine, src)
 	baseReg, _ := GetRegister(o.machine, base)
@@ -57,7 +59,9 @@ func (o *Out) movRegToMemX86(src, base string, offset int) {
 		o.WriteUnsigned(uint(offset))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // MovMemToReg - Load from memory [base+offset] to register
@@ -69,7 +73,9 @@ func (o *Out) MovMemToReg(dst, base string, offset int) {
 }
 
 func (o *Out) movMemToRegX86(dst, base string, offset int) {
-	fmt.Fprintf(os.Stderr, "mov %s, [%s+%d]: ", dst, base, offset)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "mov %s, [%s+%d]: ", dst, base, offset)
+	}
 
 	dstReg, _ := GetRegister(o.machine, dst)
 	baseReg, _ := GetRegister(o.machine, base)
@@ -109,7 +115,9 @@ func (o *Out) movMemToRegX86(dst, base string, offset int) {
 		o.WriteUnsigned(uint(offset))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ShlImmReg - Shift left by immediate
@@ -121,7 +129,9 @@ func (o *Out) ShlImmReg(dst string, imm int) {
 }
 
 func (o *Out) shlImmX86(dst string, imm int) {
-	fmt.Fprintf(os.Stderr, "shl %s, %d: ", dst, imm)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "shl %s, %d: ", dst, imm)
+	}
 
 	dstReg, _ := GetRegister(o.machine, dst)
 
@@ -144,7 +154,9 @@ func (o *Out) shlImmX86(dst string, imm int) {
 		o.Write(uint8(imm))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // MovByteRegToMem - Store byte from register to memory [base+offset]
@@ -156,7 +168,9 @@ func (o *Out) MovByteRegToMem(src, base string, offset int) {
 }
 
 func (o *Out) movByteRegToMemX86(src, base string, offset int) {
-	fmt.Fprintf(os.Stderr, "mov byte [%s+%d], %s: ", base, offset, src)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "mov byte [%s+%d], %s: ", base, offset, src)
+	}
 
 	srcReg, _ := GetRegister(o.machine, src)
 	baseReg, _ := GetRegister(o.machine, base)
@@ -200,7 +214,9 @@ func (o *Out) movByteRegToMemX86(src, base string, offset int) {
 		o.WriteUnsigned(uint(offset))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // LeaMemToReg - Load effective address [base+offset] to register
@@ -212,7 +228,9 @@ func (o *Out) LeaMemToReg(dst, base string, offset int) {
 }
 
 func (o *Out) leaMemToRegX86(dst, base string, offset int) {
-	fmt.Fprintf(os.Stderr, "lea %s, [%s+%d]: ", dst, base, offset)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "lea %s, [%s+%d]: ", dst, base, offset)
+	}
 
 	dstReg, _ := GetRegister(o.machine, dst)
 	baseReg, _ := GetRegister(o.machine, base)
@@ -252,5 +270,7 @@ func (o *Out) leaMemToRegX86(dst, base string, offset int) {
 		o.WriteUnsigned(uint(offset))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

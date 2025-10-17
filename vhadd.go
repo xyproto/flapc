@@ -54,16 +54,24 @@ func (o *Out) vhaddpdX86VectorToVector(dst, src1, src2 string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "vhaddpd %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vhaddpd %s, %s, %s:", dst, src1, src2)
+	}
 
 	if dstReg.Size == 512 {
 		// AVX-512 removed VHADDPD
 		// Use shuffles + regular add instead
-		fmt.Fprintf(os.Stderr, " (no AVX-512 VHADDPD)")
-		fmt.Fprintf(os.Stderr, "\n# Use VSHUFPD + VADDPD for horizontal add")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (no AVX-512 VHADDPD)")
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "\n# Use VSHUFPD + VADDPD for horizontal add")
+		}
 	} else if dstReg.Size == 256 {
 		// AVX VHADDPD
-		fmt.Fprintf(os.Stderr, " (AVX)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (AVX)")
+		}
 
 		o.Write(0xC4)
 
@@ -87,7 +95,9 @@ func (o *Out) vhaddpdX86VectorToVector(dst, src1, src2 string) {
 		o.Write(modrm)
 	} else {
 		// SSE3 HADDPD
-		fmt.Fprintf(os.Stderr, " (SSE3)")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, " (SSE3)")
+		}
 
 		o.Write(0x66) // mandatory prefix
 		o.Write(0x0F)
@@ -97,7 +107,9 @@ func (o *Out) vhaddpdX86VectorToVector(dst, src1, src2 string) {
 		o.Write(modrm)
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -114,8 +126,12 @@ func (o *Out) vhaddARM64VectorToVector(dst, src1, src2 string) {
 
 	if dstReg.Size == 512 {
 		// SVE FADDP - pairwise add
-		fmt.Fprintf(os.Stderr, "# SVE horizontal add: use FADDP\\n")
-		fmt.Fprintf(os.Stderr, "faddp %s.d, p7/m, %s.d:", dst, src1)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "# SVE horizontal add: use FADDP\\n")
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "faddp %s.d, p7/m, %s.d:", dst, src1)
+		}
 
 		// SVE FADDP encoding
 		// 01100100 11 0 10000 101 Pg Zn Zd
@@ -129,10 +145,14 @@ func (o *Out) vhaddARM64VectorToVector(dst, src1, src2 string) {
 		o.Write(uint8((instr >> 16) & 0xFF))
 		o.Write(uint8((instr >> 24) & 0xFF))
 
-		fmt.Fprintf(os.Stderr, "\n# Note: SVE FADDP only uses one source\\n")
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "\n# Note: SVE FADDP only uses one source\\n")
+		}
 	} else {
 		// NEON FADDP
-		fmt.Fprintf(os.Stderr, "faddp %s.2d, %s.2d, %s.2d:", dst, src1, src2)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "faddp %s.2d, %s.2d, %s.2d:", dst, src1, src2)
+		}
 
 		// NEON FADDP encoding
 		// 0 Q 1 01110 0 sz 1 Rm 110 1 01 Rn Rd
@@ -148,7 +168,9 @@ func (o *Out) vhaddARM64VectorToVector(dst, src1, src2 string) {
 		o.Write(uint8((instr >> 24) & 0xFF))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ============================================================================
@@ -165,9 +187,15 @@ func (o *Out) vhaddRISCVVectorToVector(dst, src1, src2 string) {
 
 	// RVV doesn't have native horizontal add
 	// Would need to shuffle and add manually
-	fmt.Fprintf(os.Stderr, "# RVV horizontal add: shuffle + add\\n")
-	fmt.Fprintf(os.Stderr, "# vslidedown + vfadd.vv\\n")
-	fmt.Fprintf(os.Stderr, "vfadd.vv %s, %s, %s:", dst, src1, src2)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# RVV horizontal add: shuffle + add\\n")
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "# vslidedown + vfadd.vv\\n")
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "vfadd.vv %s, %s, %s:", dst, src1, src2)
+	}
 
 	// vfadd.vv encoding (placeholder - would need shuffle first)
 	// funct6=000000, vm=1, funct3=001 (OPFVV)
@@ -184,5 +212,7 @@ func (o *Out) vhaddRISCVVectorToVector(dst, src1, src2 string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }

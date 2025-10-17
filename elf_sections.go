@@ -169,7 +169,9 @@ func (ds *DynamicSections) AddNeeded(lib string) {
 func (ds *DynamicSections) AddRelocation(offset uint64, symIndex uint32, relType uint32) {
 	info := (uint64(symIndex) << 32) | uint64(relType)
 
-	fmt.Fprintf(os.Stderr, "AddRelocation: offset=0x%x, symIndex=%d, relType=%d, info=0x%x\n", offset, symIndex, relType, info)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "AddRelocation: offset=0x%x, symIndex=%d, relType=%d, info=0x%x\n", offset, symIndex, relType, info)
+	}
 
 	binary.Write(&ds.rela, binary.LittleEndian, offset)
 	binary.Write(&ds.rela, binary.LittleEndian, info)

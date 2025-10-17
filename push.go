@@ -44,7 +44,9 @@ func (o *Out) pushX86Reg(reg string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "push %s:", reg)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "push %s:", reg)
+	}
 
 	// PUSH uses compact encoding: 0x50 + reg
 	// For extended registers (R8-R15), need REX prefix
@@ -55,7 +57,9 @@ func (o *Out) pushX86Reg(reg string) {
 		o.Write(0x50 + uint8(regInfo.Encoding))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // x86-64 POP reg
@@ -65,7 +69,9 @@ func (o *Out) popX86Reg(reg string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "pop %s:", reg)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "pop %s:", reg)
+	}
 
 	// POP uses compact encoding: 0x58 + reg
 	if regInfo.Encoding >= 8 {
@@ -75,7 +81,9 @@ func (o *Out) popX86Reg(reg string) {
 		o.Write(0x58 + uint8(regInfo.Encoding))
 	}
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 doesn't have dedicated PUSH/POP, uses STR/LDR with pre/post-indexing
@@ -86,7 +94,9 @@ func (o *Out) pushARM64Reg(reg string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "str %s, [sp, #-16]!:", reg)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "str %s, [sp, #-16]!:", reg)
+	}
 
 	// STR Xt, [SP, #-16]! (pre-indexed)
 	// Format: 11 111 0 00 00 0 imm9 01 Rn Rt
@@ -98,7 +108,9 @@ func (o *Out) pushARM64Reg(reg string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // ARM64 POP
@@ -108,7 +120,9 @@ func (o *Out) popARM64Reg(reg string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "ldr %s, [sp], #16:", reg)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "ldr %s, [sp], #16:", reg)
+	}
 
 	// LDR Xt, [SP], #16 (post-indexed)
 	// Format: 11 111 0 00 01 0 imm9 01 Rn Rt
@@ -119,7 +133,9 @@ func (o *Out) popARM64Reg(reg string) {
 	o.Write(uint8((instr >> 16) & 0xFF))
 	o.Write(uint8((instr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V doesn't have dedicated PUSH/POP, uses SD/LD with stack pointer
@@ -129,7 +145,9 @@ func (o *Out) pushRISCVReg(reg string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "addi sp, sp, -8; sd %s, 0(sp):", reg)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "addi sp, sp, -8; sd %s, 0(sp):", reg)
+	}
 
 	// ADDI sp, sp, -8
 	addiInstr := uint32(0x13) |
@@ -155,7 +173,9 @@ func (o *Out) pushRISCVReg(reg string) {
 	o.Write(uint8((sdInstr >> 16) & 0xFF))
 	o.Write(uint8((sdInstr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
 
 // RISC-V POP
@@ -165,7 +185,9 @@ func (o *Out) popRISCVReg(reg string) {
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "ld %s, 0(sp); addi sp, sp, 8:", reg)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "ld %s, 0(sp); addi sp, sp, 8:", reg)
+	}
 
 	// LD reg, 0(sp)
 	// Format: imm[11:0] rs1 011 rd 0000011
@@ -191,5 +213,7 @@ func (o *Out) popRISCVReg(reg string) {
 	o.Write(uint8((addiInstr >> 16) & 0xFF))
 	o.Write(uint8((addiInstr >> 24) & 0xFF))
 
-	fmt.Fprintln(os.Stderr)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
 }
