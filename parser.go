@@ -31,6 +31,7 @@ const (
 	TOKEN_RPAREN
 	TOKEN_COMMA
 	TOKEN_COLON
+	TOKEN_SEMICOLON
 	TOKEN_NEWLINE
 	TOKEN_LT            // <
 	TOKEN_GT            // >
@@ -100,6 +101,7 @@ const (
 	TOKEN_NUMBER_TYPE // number
 	TOKEN_STRING_TYPE // string (type)
 	TOKEN_LIST_TYPE   // list (type)
+	TOKEN_USE         // use (import)
 )
 
 // Code generation constants
@@ -250,6 +252,8 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_ME, Value: value, Line: l.line}
 		case "ret":
 			return Token{Type: TOKEN_RET, Value: value, Line: l.line}
+		case "use":
+			return Token{Type: TOKEN_USE, Value: value, Line: l.line}
 		case "xor":
 			return Token{Type: TOKEN_XOR, Value: value, Line: l.line}
 		case "shl":
@@ -395,6 +399,9 @@ func (l *Lexer) NextToken() Token {
 	case ',':
 		l.pos++
 		return Token{Type: TOKEN_COMMA, Value: ",", Line: l.line}
+	case ';':
+		l.pos++
+		return Token{Type: TOKEN_SEMICOLON, Value: ";", Line: l.line}
 	case '@':
 		// Check for @first, @last, @-, @+, @=
 		if l.peek() >= 'a' && l.peek() <= 'z' {
@@ -531,6 +538,13 @@ func (a *AssignStmt) String() string {
 	return result + " " + op + " " + a.Value.String()
 }
 func (a *AssignStmt) statementNode() {}
+
+type UseStmt struct {
+	Path string // Import path: "./file.flap" or "package_name"
+}
+
+func (u *UseStmt) String() string { return "use " + u.Path }
+func (u *UseStmt) statementNode()  {}
 
 type ExpressionStmt struct {
 	Expr Expression
@@ -973,7 +987,7 @@ func (p *Parser) nextToken() {
 }
 
 func (p *Parser) skipNewlines() {
-	for p.current.Type == TOKEN_NEWLINE {
+	for p.current.Type == TOKEN_NEWLINE || p.current.Type == TOKEN_SEMICOLON {
 		p.nextToken()
 	}
 }
@@ -1134,6 +1148,16 @@ func foldConstantExpr(expr Expression) Expression {
 }
 
 func (p *Parser) parseStatement() Statement {
+	// Check for use keyword (imports)
+	if p.current.Type == TOKEN_USE {
+		p.nextToken() // skip 'use'
+		if p.current.Type != TOKEN_STRING {
+			p.error("expected string after 'use'")
+		}
+		path := p.current.Value
+		return &UseStmt{Path: path}
+	}
+
 	// Check for ret keyword
 	if p.current.Type == TOKEN_RET {
 		return p.parseJumpStatement()
@@ -3249,7 +3273,11 @@ func (fc *FlapCompiler) getExprType(expr Expression) string {
 		return "number"
 	case *CallExpr:
 		// Function calls - check if function returns a string
-		if e.Function == "str" || e.Function == "read_file" || e.Function == "readln" {
+		stringFuncs := map[string]bool{
+			"str": true, "read_file": true, "readln": true,
+			"upper": true, "lower": true, "trim": true,
+		}
+		if stringFuncs[e.Function] {
 			return "string"
 		}
 		// Other functions return numbers by default
@@ -5841,6 +5869,376 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbx")
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
+
+	// Generate upper_string(flap_string_ptr) -> uppercase_flap_string_ptr
+	// Converts a Flap string to uppercase
+	// Argument: rdi = Flap string pointer (as integer)
+	// Returns: xmm0 = uppercase Flap string pointer (as float64)
+	fc.eb.MarkLabel("upper_string")
+
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+	fc.out.PushReg("rbx")
+	fc.out.PushReg("r12")
+	fc.out.PushReg("r13")
+	fc.out.PushReg("r14")
+
+	fc.out.MovRegToReg("r12", "rdi") // r12 = input string
+
+	// Get string length
+	fc.out.MovMemToXmm("xmm0", "r12", 0)
+	fc.out.Cvttsd2si("r14", "xmm0") // r14 = count
+
+	// Allocate new string map
+	fc.out.MovRegToReg("rdi", "r14")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe7, 0x04}) // shl rdi, 4
+	fc.out.Emit([]byte{0x48, 0x83, 0xc7, 0x08}) // add rdi, 8
+	fc.trackFunctionCall("malloc")
+	fc.eb.GenerateCallInstruction("malloc")
+	fc.out.MovRegToReg("r13", "rax") // r13 = output string
+
+	// Copy count
+	fc.out.MovRegToReg("rax", "r14")
+	fc.out.Cvtsi2sd("xmm0", "rax")
+	fc.out.MovXmmToMem("xmm0", "r13", 0)
+
+	// Loop through characters
+	fc.out.XorRegWithReg("rbx", "rbx")
+	upperLoopStart := fc.eb.text.Len()
+	fc.out.Emit([]byte{0x4c, 0x39, 0xf3})              // cmp rbx, r14
+	upperLoopEnd := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreaterOrEqual, 0)
+
+	// Calculate offset
+	fc.out.MovRegToReg("rax", "rbx")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x04})        // shl rax, 4
+	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x08})        // add rax, 8
+
+	// Copy key
+	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x10, 0x04, 0x04})       // movsd xmm0, [r12 + rax]
+	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x11, 0x04, 0x05})       // movsd [r13 + rax], xmm0
+
+	// Load character value
+	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x10, 0x44, 0x04, 0x08}) // movsd xmm0, [r12 + rax + 8]
+	fc.out.Cvttsd2si("r10", "xmm0")
+
+	// Convert to uppercase: if (c >= 'a' && c <= 'z') c -= 32
+	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x61})        // cmp r10, 'a'
+	notLowerJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpLess, 0)
+	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x7a})        // cmp r10, 'z'
+	notLowerJump2 := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreater, 0)
+	fc.out.Emit([]byte{0x49, 0x83, 0xea, 0x20})        // sub r10, 32
+
+	// Store uppercase character
+	notLowerPos := fc.eb.text.Len()
+	fc.out.Cvtsi2sd("xmm0", "r10")
+	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x11, 0x44, 0x05, 0x08}) // movsd [r13 + rax + 8], xmm0
+
+	fc.out.Emit([]byte{0x48, 0xff, 0xc3})              // inc rbx
+	jumpBack := int32(upperLoopStart - (fc.eb.text.Len() + 2))
+	fc.out.Emit([]byte{0xeb, byte(jumpBack)})
+
+	upperDone := fc.eb.text.Len()
+	fc.patchJumpImmediate(upperLoopEnd+2, int32(upperDone-(upperLoopEnd+6)))
+	fc.patchJumpImmediate(notLowerJump+2, int32(notLowerPos-(notLowerJump+6)))
+	fc.patchJumpImmediate(notLowerJump2+2, int32(notLowerPos-(notLowerJump2+6)))
+
+	fc.out.MovRegToReg("rax", "r13")
+	fc.out.Cvtsi2sd("xmm0", "rax")
+	fc.out.PopReg("r14")
+	fc.out.PopReg("r13")
+	fc.out.PopReg("r12")
+	fc.out.PopReg("rbx")
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
+
+	// Generate lower_string(flap_string_ptr) -> lowercase_flap_string_ptr
+	// Converts a Flap string to lowercase
+	// Argument: rdi = Flap string pointer (as integer)
+	// Returns: xmm0 = lowercase Flap string pointer (as float64)
+	fc.eb.MarkLabel("lower_string")
+
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+	fc.out.PushReg("rbx")
+	fc.out.PushReg("r12")
+	fc.out.PushReg("r13")
+	fc.out.PushReg("r14")
+
+	fc.out.MovRegToReg("r12", "rdi") // r12 = input string
+
+	// Get string length
+	fc.out.MovMemToXmm("xmm0", "r12", 0)
+	fc.out.Cvttsd2si("r14", "xmm0") // r14 = count
+
+	// Allocate new string map
+	fc.out.MovRegToReg("rdi", "r14")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe7, 0x04}) // shl rdi, 4
+	fc.out.Emit([]byte{0x48, 0x83, 0xc7, 0x08}) // add rdi, 8
+	fc.trackFunctionCall("malloc")
+	fc.eb.GenerateCallInstruction("malloc")
+	fc.out.MovRegToReg("r13", "rax") // r13 = output string
+
+	// Copy count
+	fc.out.MovRegToReg("rax", "r14")
+	fc.out.Cvtsi2sd("xmm0", "rax")
+	fc.out.MovXmmToMem("xmm0", "r13", 0)
+
+	// Loop through characters
+	fc.out.XorRegWithReg("rbx", "rbx")
+	lowerLoopStart := fc.eb.text.Len()
+	fc.out.Emit([]byte{0x4c, 0x39, 0xf3})              // cmp rbx, r14
+	lowerLoopEnd := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreaterOrEqual, 0)
+
+	// Calculate offset
+	fc.out.MovRegToReg("rax", "rbx")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x04})        // shl rax, 4
+	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x08})        // add rax, 8
+
+	// Copy key
+	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x10, 0x04, 0x04})       // movsd xmm0, [r12 + rax]
+	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x11, 0x04, 0x05})       // movsd [r13 + rax], xmm0
+
+	// Load character value
+	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x10, 0x44, 0x04, 0x08}) // movsd xmm0, [r12 + rax + 8]
+	fc.out.Cvttsd2si("r10", "xmm0")
+
+	// Convert to lowercase: if (c >= 'A' && c <= 'Z') c += 32
+	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x41})        // cmp r10, 'A'
+	notUpperJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpLess, 0)
+	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x5a})        // cmp r10, 'Z'
+	notUpperJump2 := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreater, 0)
+	fc.out.Emit([]byte{0x49, 0x83, 0xc2, 0x20})        // add r10, 32
+
+	// Store lowercase character
+	notUpperPos := fc.eb.text.Len()
+	fc.out.Cvtsi2sd("xmm0", "r10")
+	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x11, 0x44, 0x05, 0x08}) // movsd [r13 + rax + 8], xmm0
+
+	fc.out.Emit([]byte{0x48, 0xff, 0xc3})              // inc rbx
+	jumpBack = int32(lowerLoopStart - (fc.eb.text.Len() + 2))
+	fc.out.Emit([]byte{0xeb, byte(jumpBack)})
+
+	lowerDone := fc.eb.text.Len()
+	fc.patchJumpImmediate(lowerLoopEnd+2, int32(lowerDone-(lowerLoopEnd+6)))
+	fc.patchJumpImmediate(notUpperJump+2, int32(notUpperPos-(notUpperJump+6)))
+	fc.patchJumpImmediate(notUpperJump2+2, int32(notUpperPos-(notUpperJump2+6)))
+
+	fc.out.MovRegToReg("rax", "r13")
+	fc.out.Cvtsi2sd("xmm0", "rax")
+	fc.out.PopReg("r14")
+	fc.out.PopReg("r13")
+	fc.out.PopReg("r12")
+	fc.out.PopReg("rbx")
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
+
+	// Generate trim_string(flap_string_ptr) -> trimmed_flap_string_ptr
+	// Removes leading and trailing whitespace
+	// Argument: rdi = Flap string pointer (as integer)
+	// Returns: xmm0 = trimmed Flap string pointer (as float64)
+	fc.eb.MarkLabel("trim_string")
+
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+	fc.out.PushReg("rbx")
+	fc.out.PushReg("r12")
+	fc.out.PushReg("r13")
+	fc.out.PushReg("r14")
+	fc.out.PushReg("r15")
+
+	fc.out.MovRegToReg("r12", "rdi") // r12 = input string
+
+	// Get string length
+	fc.out.MovMemToXmm("xmm0", "r12", 0)
+	fc.out.Cvttsd2si("r14", "xmm0") // r14 = original count
+
+	// Find start (skip leading whitespace)
+	fc.out.XorRegWithReg("rbx", "rbx") // rbx = start index
+	trimStartLoop := fc.eb.text.Len()
+	fc.out.Emit([]byte{0x4c, 0x39, 0xf3})              // cmp rbx, r14
+	trimStartDone := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreaterOrEqual, 0)
+
+	// Load character at rbx
+	fc.out.MovRegToReg("rax", "rbx")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x04})        // shl rax, 4
+	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x10})        // add rax, 16 (skip count and key)
+	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x10, 0x04, 0x04})       // movsd xmm0, [r12 + rax]
+	fc.out.Cvttsd2si("r10", "xmm0")
+
+	// Check if whitespace (space=32, tab=9, newline=10, cr=13)
+	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x20})        // cmp r10, 32
+	notWhitespace1 := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpNotEqual, 0)
+	fc.out.Emit([]byte{0x48, 0xff, 0xc3})              // inc rbx
+	jumpStartLoop := int32(trimStartLoop - (fc.eb.text.Len() + 2))
+	fc.out.Emit([]byte{0xeb, byte(jumpStartLoop)})
+
+	notWS1Pos := fc.eb.text.Len()
+	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x09})        // cmp r10, 9
+	notWhitespace2 := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpNotEqual, 0)
+	fc.out.Emit([]byte{0x48, 0xff, 0xc3})              // inc rbx
+	jumpStartLoop2 := int32(trimStartLoop - (fc.eb.text.Len() + 2))
+	fc.out.Emit([]byte{0xeb, byte(jumpStartLoop2)})
+
+	notWS2Pos := fc.eb.text.Len()
+	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x0a})        // cmp r10, 10
+	notWhitespace3 := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpNotEqual, 0)
+	fc.out.Emit([]byte{0x48, 0xff, 0xc3})              // inc rbx
+	jumpStartLoop3 := int32(trimStartLoop - (fc.eb.text.Len() + 2))
+	fc.out.Emit([]byte{0xeb, byte(jumpStartLoop3)})
+
+	notWS3Pos := fc.eb.text.Len()
+	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x0d})        // cmp r10, 13
+	trimStartFound := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpNotEqual, 0)
+	fc.out.Emit([]byte{0x48, 0xff, 0xc3})              // inc rbx
+	jumpStartLoop4 := int32(trimStartLoop - (fc.eb.text.Len() + 2))
+	fc.out.Emit([]byte{0xeb, byte(jumpStartLoop4)})
+
+	// Start found - rbx = start index
+	trimFoundStart := fc.eb.text.Len()
+	fc.patchJumpImmediate(trimStartDone+2, int32(trimFoundStart-(trimStartDone+6)))
+	fc.patchJumpImmediate(notWhitespace1+2, int32(notWS1Pos-(notWhitespace1+6)))
+	fc.patchJumpImmediate(notWhitespace2+2, int32(notWS2Pos-(notWhitespace2+6)))
+	fc.patchJumpImmediate(notWhitespace3+2, int32(notWS3Pos-(notWhitespace3+6)))
+	fc.patchJumpImmediate(trimStartFound+2, int32(trimFoundStart-(trimStartFound+6)))
+
+	// Find end (skip trailing whitespace) - work backwards from r14-1
+	fc.out.MovRegToReg("r15", "r14")                   // r15 = end index (exclusive)
+	// Handle empty or all-whitespace case
+	fc.out.Emit([]byte{0x4c, 0x39, 0xfb})              // cmp rbx, r15
+	emptyResult := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreaterOrEqual, 0)
+
+	trimEndLoop := fc.eb.text.Len()
+	fc.out.Emit([]byte{0x49, 0x83, 0xff, 0x00})        // cmp r15, 0
+	trimEndDone := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpLessOrEqual, 0)
+	fc.out.Emit([]byte{0x49, 0x83, 0xef, 0x01})        // dec r15
+
+	// Load character at r15
+	fc.out.MovRegToReg("rax", "r15")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x04})        // shl rax, 4
+	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x10})        // add rax, 16
+	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x10, 0x04, 0x04})       // movsd xmm0, [r12 + rax]
+	fc.out.Cvttsd2si("r10", "xmm0")
+
+	// Check if whitespace
+	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x20})        // cmp r10, 32
+	trimWSJump1 := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0)
+	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x09})        // cmp r10, 9
+	trimWSJump2 := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0)
+	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x0a})        // cmp r10, 10
+	trimWSJump3 := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0)
+	fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x0d})        // cmp r10, 13
+	trimWSJump4 := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0)
+
+	// Not whitespace - found end
+	fc.out.Emit([]byte{0x49, 0xff, 0xc7})              // inc r15 (make exclusive)
+	trimFoundEnd := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0)
+
+	// Was whitespace - continue loop
+	trimWSTarget := fc.eb.text.Len()
+	jumpEndLoop := int32(trimEndLoop - (fc.eb.text.Len() + 2))
+	fc.out.Emit([]byte{0xeb, byte(jumpEndLoop)})
+
+	// Patch jumps
+	trimRealEnd := fc.eb.text.Len()
+	fc.patchJumpImmediate(trimEndDone+2, int32(trimRealEnd-(trimEndDone+6)))
+	fc.patchJumpImmediate(trimWSJump1+2, int32(trimWSTarget-(trimWSJump1+6)))
+	fc.patchJumpImmediate(trimWSJump2+2, int32(trimWSTarget-(trimWSJump2+6)))
+	fc.patchJumpImmediate(trimWSJump3+2, int32(trimWSTarget-(trimWSJump3+6)))
+	fc.patchJumpImmediate(trimWSJump4+2, int32(trimWSTarget-(trimWSJump4+6)))
+	fc.patchJumpImmediate(trimFoundEnd+1, int32(trimRealEnd-(trimFoundEnd+5)))
+
+	// Now rbx = start, r15 = end (exclusive), create substring
+	// new_len = r15 - rbx
+	fc.out.MovRegToReg("r14", "r15")
+	fc.out.Emit([]byte{0x4c, 0x29, 0xde})              // sub r14, rbx
+
+	// Allocate new string
+	fc.out.MovRegToReg("rdi", "r14")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe7, 0x04})        // shl rdi, 4
+	fc.out.Emit([]byte{0x48, 0x83, 0xc7, 0x08})        // add rdi, 8
+	fc.trackFunctionCall("malloc")
+	fc.eb.GenerateCallInstruction("malloc")
+	fc.out.MovRegToReg("r13", "rax")
+
+	// Copy count
+	fc.out.MovRegToReg("rax", "r14")
+	fc.out.Cvtsi2sd("xmm0", "rax")
+	fc.out.MovXmmToMem("xmm0", "r13", 0)
+
+	// Copy characters from rbx to r15
+	fc.out.XorRegWithReg("rcx", "rcx") // rcx = output index
+	trimCopyLoop := fc.eb.text.Len()
+	fc.out.Emit([]byte{0x4c, 0x39, 0xf1})              // cmp rcx, r14
+	trimCopyDone := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreaterOrEqual, 0)
+
+	// Calculate source offset (rbx + rcx)
+	fc.out.MovRegToReg("rax", "rbx")
+	fc.out.Emit([]byte{0x48, 0x01, 0xc8})              // add rax, rcx
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x04})        // shl rax, 4
+	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x08})        // add rax, 8
+
+	// Calculate dest offset (rcx)
+	fc.out.MovRegToReg("rdx", "rcx")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe2, 0x04})        // shl rdx, 4
+	fc.out.Emit([]byte{0x48, 0x83, 0xc2, 0x08})        // add rdx, 8
+
+	// Copy key
+	fc.out.Cvtsi2sd("xmm0", "rcx")
+	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x11, 0x04, 0x15})       // movsd [r13 + rdx], xmm0
+
+	// Copy value
+	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x10, 0x44, 0x04, 0x08}) // movsd xmm0, [r12 + rax + 8]
+	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x11, 0x44, 0x15, 0x08}) // movsd [r13 + rdx + 8], xmm0
+
+	fc.out.Emit([]byte{0x48, 0xff, 0xc1})              // inc rcx
+	jumpCopyLoop := int32(trimCopyLoop - (fc.eb.text.Len() + 2))
+	fc.out.Emit([]byte{0xeb, byte(jumpCopyLoop)})
+
+	// Handle empty result case
+	emptyPos := fc.eb.text.Len()
+	fc.patchJumpImmediate(emptyResult+2, int32(emptyPos-(emptyResult+6)))
+
+	// Allocate empty string
+	fc.out.MovImmToReg("rdi", "8")
+	fc.trackFunctionCall("malloc")
+	fc.eb.GenerateCallInstruction("malloc")
+	fc.out.MovRegToReg("r13", "rax")
+	fc.out.XorRegWithReg("rax", "rax")
+	fc.out.Cvtsi2sd("xmm0", "rax")
+	fc.out.MovXmmToMem("xmm0", "r13", 0)
+
+	// Done
+	trimAllDone := fc.eb.text.Len()
+	fc.patchJumpImmediate(trimCopyDone+2, int32(trimAllDone-(trimCopyDone+6)))
+
+	fc.out.MovRegToReg("rax", "r13")
+	fc.out.Cvtsi2sd("xmm0", "rax")
+	fc.out.PopReg("r15")
+	fc.out.PopReg("r14")
+	fc.out.PopReg("r13")
+	fc.out.PopReg("r12")
+	fc.out.PopReg("rbx")
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
 }
 
 func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
@@ -7406,6 +7804,89 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Clean up
 		fc.out.AddImmToReg("rsp", 32)
+
+	case "num":
+		// Parse string to number
+		// num(string) converts a Flap string to a number
+		if len(call.Args) != 1 {
+			fmt.Fprintf(os.Stderr, "Error: num() requires exactly 1 argument\n")
+			os.Exit(1)
+		}
+
+		// Compile argument (Flap string pointer in xmm0)
+		fc.compileExpression(call.Args[0])
+
+		// Convert Flap string to C string
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovMemToReg("rdi", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+		fc.out.CallSymbol("flap_string_to_cstr")
+
+		// Call strtod(str, NULL) to parse the string
+		// rdi = C string (already in rax from flap_string_to_cstr)
+		fc.out.MovRegToReg("rdi", "rax")
+		fc.out.XorRegWithReg("rsi", "rsi") // endptr = NULL
+		fc.trackFunctionCall("strtod")
+		fc.eb.GenerateCallInstruction("strtod")
+		// Result in xmm0
+
+	case "upper":
+		// Convert string to uppercase
+		// upper(string) returns a new uppercase string
+		if len(call.Args) != 1 {
+			fmt.Fprintf(os.Stderr, "Error: upper() requires exactly 1 argument\n")
+			os.Exit(1)
+		}
+
+		// Compile argument (Flap string pointer in xmm0)
+		fc.compileExpression(call.Args[0])
+
+		// Call runtime helper upper_string
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovMemToReg("rdi", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+		fc.out.CallSymbol("upper_string")
+		// Result in xmm0
+
+	case "lower":
+		// Convert string to lowercase
+		// lower(string) returns a new lowercase string
+		if len(call.Args) != 1 {
+			fmt.Fprintf(os.Stderr, "Error: lower() requires exactly 1 argument\n")
+			os.Exit(1)
+		}
+
+		// Compile argument (Flap string pointer in xmm0)
+		fc.compileExpression(call.Args[0])
+
+		// Call runtime helper lower_string
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovMemToReg("rdi", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+		fc.out.CallSymbol("lower_string")
+		// Result in xmm0
+
+	case "trim":
+		// Remove leading/trailing whitespace
+		// trim(string) returns a new trimmed string
+		if len(call.Args) != 1 {
+			fmt.Fprintf(os.Stderr, "Error: trim() requires exactly 1 argument\n")
+			os.Exit(1)
+		}
+
+		// Compile argument (Flap string pointer in xmm0)
+		fc.compileExpression(call.Args[0])
+
+		// Call runtime helper trim_string
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovMemToReg("rdi", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+		fc.out.CallSymbol("trim_string")
+		// Result in xmm0
 
 	case "write_i8", "write_i16", "write_i32", "write_i64",
 		"write_u8", "write_u16", "write_u32", "write_u64", "write_f64":

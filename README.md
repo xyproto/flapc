@@ -96,6 +96,18 @@ make test
 - **File Reading**: `read_file(path)` - Read entire files as strings (uses Linux syscalls)
 - **Console I/O**: `println()`, `printf()` - Syscall-based output (no libc dependencies)
 
+### String Builtins
+- **num(string)** - Parse string to number (uses strtod from libc)
+- **upper(string)** - Convert string to uppercase (in progress)
+- **lower(string)** - Convert string to lowercase (in progress)
+- **trim(string)** - Remove leading/trailing whitespace (in progress)
+- **str(number)** - Convert number to string
+
+### Package System (In Development)
+- **use statement**: Import external Flap files with `use "./path.flap"` or `use "packagename"`
+- **Planned**: Support for external packages like Raylib5
+- **Future**: Package manager and Git integration
+
 ### Data Structures
 - **Strings**: Stored as `map[uint64]float64` (index → char code)
   - `s := "Hello"` creates map `{0: 72.0, 1: 101.0, 2: 108.0, ...}`
@@ -370,3 +382,31 @@ For Flap's philosophy of "performance by default," SSE2 provides the best balanc
 - ✅ Runtime SIMD selection (no recompilation needed)
 
 **Tested on**: x86-64 without AVX-512 (falls back to SSE2 correctly)
+
+---
+
+## Key Technical Learnings
+
+### 1. C Library vs Linux Syscalls for Direct Code Generation
+
+**Problem**: C library functions (fopen/fread/fclose) caused persistent segfaults due to complex stack management requirements (16-byte alignment, red zone, callee-saved registers).
+
+**Solution**: Use Linux syscalls directly (open/lseek/read/close) for simpler calling conventions.
+
+**Result**: What took hours to debug with C library functions worked immediately with syscalls. Syscalls require fewer registers, no hidden state, and simpler stack alignment.
+
+### 2. x86-64 Stack Alignment Rules
+
+**Critical Rule**: Stack pointer must be 16-byte aligned immediately before CALL instruction.
+
+**Calculation**: Entry has `rsp % 16 = 8` (return address). After odd number of pushes → aligned. After even number → misaligned.
+
+**Common Bug**: Adding `sub rsp, 8` after 5 pushes (which is already aligned) causes misalignment and segfaults.
+
+### 3. Function Arguments Must Be In Correct Registers
+
+**Bug Found**: In `cstr_to_flap_string`, saved the C string pointer from `rdi` to `r12`, but didn't restore `rdi` before calling `strlen`.
+
+**Fix**: Add `mov rdi, r12` to restore the argument before the call.
+
+**Impact**: This one-line fix made all I/O functions work. Without it, `strlen` received an undefined argument, causing immediate segfault.
