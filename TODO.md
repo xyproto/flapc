@@ -73,7 +73,7 @@ Need proper dynamic linking to call libSystem.B.dylib functions instead.
 
 ### 📋 TODO (Immediate Next Steps)
 
-1. **Add Dynamic Linking Support** (4-6 hours) - **BLOCKS EXECUTION**
+1. **Add Dynamic Linking Support** - **BLOCKS EXECUTION**
    - [ ] Research Mach-O lazy binding (otool -l analysis)
    - [ ] Implement symbol tables (LC_SYMTAB, LC_DYSYMTAB)
    - [ ] Create __LINKEDIT segment
@@ -81,12 +81,12 @@ Need proper dynamic linking to call libSystem.B.dylib functions instead.
    - [ ] Test calling printf() and other libSystem functions
    - **Critical**: Required for any ARM64 program to execute on macOS
 
-2. **Additional Expression Types** (2-3 hours)
+2. **Additional Expression Types**
    - [ ] SliceExpr: List/string slicing implementation
    - [ ] InExpr: Membership testing `x in list`
    - [ ] UnaryExpr: Head (^) and Tail (&) operators
 
-3. **Testing and Validation** (ongoing)
+3. **Testing and Validation**
    - [ ] Run integration tests for ARM64
    - [ ] Verify programs execute correctly (blocked by dynamic linking)
    - [ ] Compare output with x86-64 version
