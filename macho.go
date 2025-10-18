@@ -425,7 +425,8 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		// 2. Add undefined external symbols (must come after defined symbols)
 		for _, funcName := range eb.neededFunctions {
 			strOffset := uint32(strtab.Len())
-			strtab.WriteString(funcName)
+			// macOS symbols need underscore prefix
+			strtab.WriteString("_" + funcName)
 			strtab.WriteByte(0)
 
 			sym := Nlist64{
