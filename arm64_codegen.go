@@ -804,6 +804,8 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 		return acg.compilePrint(call)
 	case "getpid":
 		return acg.compileGetPid(call)
+	case "printf":
+		return acg.compilePrintf(call)
 	default:
 		// Check if it's a variable holding a function pointer
 		if _, exists := acg.stackVars[call.Function]; exists {
@@ -858,8 +860,8 @@ func (acg *ARM64CodeGen) compilePrint(call *CallExpr) error {
 			return err
 		}
 
-		// svc #0
-		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4})
+		// svc #0x80 (macOS syscall)
+		acg.out.out.writer.WriteBytes([]byte{0x01, 0x10, 0x00, 0xd4})
 
 	default:
 		return fmt.Errorf("unsupported print argument type for ARM64: %T", arg)
@@ -908,8 +910,8 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 			return err
 		}
 
-		// svc #0
-		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4})
+		// svc #0x80 (macOS syscall)
+		acg.out.out.writer.WriteBytes([]byte{0x01, 0x10, 0x00, 0xd4})
 
 	case *NumberExpr:
 		// For numbers, convert to string and print
@@ -944,8 +946,8 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 			return err
 		}
 
-		// svc #0
-		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4})
+		// svc #0x80 (macOS syscall)
+		acg.out.out.writer.WriteBytes([]byte{0x01, 0x10, 0x00, 0xd4})
 
 	default:
 		// For other expressions, compile them and then convert the result (in d0) to a string
@@ -988,8 +990,8 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 			return err
 		}
 
-		// svc #0
-		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4})
+		// svc #0x80 (macOS syscall)
+		acg.out.out.writer.WriteBytes([]byte{0x01, 0x10, 0x00, 0xd4})
 	}
 
 	return nil
@@ -1314,10 +1316,11 @@ func (acg *ARM64CodeGen) compileListLoop(stmt *LoopStmt) error {
 	return nil
 }
 
-// compileExit compiles an exit call
+// compileExit compiles an exit call via dynamic linking
 func (acg *ARM64CodeGen) compileExit(call *CallExpr) error {
 	exitCode := uint64(0)
 
+	// Evaluate exit code argument
 	if len(call.Args) > 0 {
 		if num, ok := call.Args[0].(*NumberExpr); ok {
 			exitCode = uint64(int64(num.Value))
@@ -1328,30 +1331,46 @@ func (acg *ARM64CodeGen) compileExit(call *CallExpr) error {
 			}
 			// Convert d0 to integer in x0: fcvtzs x0, d0
 			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x78, 0x9e})
-			// We'll use x0 as exit code below
-			// mov x16, #1 (exit syscall)
-			if err := acg.out.MovImm64("x16", 1); err != nil {
-				return err
-			}
-			// svc #0
-			acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4})
-			return nil
+			// x0 now contains exit code, ready for function call
+			// Skip the constant load below
+			goto callExit
 		}
 	}
 
-	// mov x0, exitCode
+	// Load constant exit code into x0 (first argument register for ARM64)
 	if err := acg.out.MovImm64("x0", exitCode); err != nil {
 		return err
 	}
 
-	// mov x16, #1 (exit syscall)
-	if err := acg.out.MovImm64("x16", 1); err != nil {
-		return err
+callExit:
+	// Mark that we need dynamic linking
+	acg.eb.useDynamicLinking = true
+
+	// Add exit to needed functions list if not already there
+	funcName := "_exit" // macOS uses underscore prefix
+	found := false
+	for _, f := range acg.eb.neededFunctions {
+		if f == funcName {
+			found = true
+			break
+		}
+	}
+	if !found {
+		acg.eb.neededFunctions = append(acg.eb.neededFunctions, funcName)
 	}
 
-	// svc #0
-	acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4})
+	// Generate call to exit stub
+	stubLabel := funcName + "$stub"
+	position := acg.eb.text.Len()
+	acg.eb.callPatches = append(acg.eb.callPatches, CallPatch{
+		position:   position,
+		targetName: stubLabel,
+	})
 
+	// Emit placeholder bl instruction (will be patched)
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x94}) // bl #0
+
+	// exit() doesn't return, but we'll never reach here anyway
 	return nil
 }
 
@@ -1415,6 +1434,75 @@ func (acg *ARM64CodeGen) compileDirectCall(call *DirectCallExpr) error {
 	acg.out.out.writer.WriteBytes([]byte{0x00, 0x02, 0x3f, 0xd6})
 
 	// Result is in d0
+	return nil
+}
+
+// compilePrintf compiles a printf() call via dynamic linking
+func (acg *ARM64CodeGen) compilePrintf(call *CallExpr) error {
+	if len(call.Args) == 0 {
+		return fmt.Errorf("printf requires at least a format string")
+	}
+
+	// First argument must be a string (format string)
+	formatArg := call.Args[0]
+	strExpr, ok := formatArg.(*StringExpr)
+	if !ok {
+		return fmt.Errorf("printf first argument must be a string literal")
+	}
+
+	// Store format string in rodata
+	labelName := fmt.Sprintf("str_%d", acg.stringCounter)
+	acg.stringCounter++
+
+	// Add null terminator for C string
+	formatStr := strExpr.Value + "\x00"
+	acg.eb.Define(labelName, formatStr)
+
+	// Mark that we need dynamic linking
+	acg.eb.useDynamicLinking = true
+
+	// Add printf to needed functions list if not already there
+	funcName := "_printf" // macOS uses underscore prefix
+	found := false
+	for _, f := range acg.eb.neededFunctions {
+		if f == funcName {
+			found = true
+			break
+		}
+	}
+	if !found {
+		acg.eb.neededFunctions = append(acg.eb.neededFunctions, funcName)
+	}
+
+	// Load format string address into x0 (first argument register for ARM64)
+	offset := uint64(acg.eb.text.Len())
+	acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
+		offset:     offset,
+		symbolName: labelName,
+	})
+	// ADRP x0, label@PAGE
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x90})
+	// ADD x0, x0, label@PAGEOFF
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x91})
+
+	// For now, only support format string without additional arguments
+	// TODO: Add support for printf arguments
+
+	// Generate call to printf stub
+	stubLabel := funcName + "$stub"
+	position := acg.eb.text.Len()
+	acg.eb.callPatches = append(acg.eb.callPatches, CallPatch{
+		position:   position,
+		targetName: stubLabel,
+	})
+
+	// Emit placeholder bl instruction (will be patched)
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x94}) // bl #0
+
+	// printf returns int in x0, convert to float64 in d0
+	// scvtf d0, x0
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
+
 	return nil
 }
 

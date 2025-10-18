@@ -376,15 +376,53 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	rodataFileOffset := textFileOffset + textSizeAligned
 	gotFileOffset := rodataFileOffset + rodataSize
 
-	// Calculate LINKEDIT segment offset and size
-	linkeditFileOffset := rodataFileOffset + rodataSizeAligned
+	// Calculate LINKEDIT segment offset and size (after all data sections including GOT)
+	dataEndOffset := rodataFileOffset + rodataSize
+	if eb.useDynamicLinking && numImports > 0 {
+		dataEndOffset += gotSize
+	}
+	linkeditFileOffset := (dataEndOffset + pageSize - 1) &^ (pageSize - 1) // Page align
 
 	// Build symbol table and string table
+	// Symbol ordering: defined external symbols first, undefined external symbols last
 	var symtab []Nlist64
 	var strtab bytes.Buffer
 	strtab.WriteByte(0) // First byte must be null
 
+	numDefinedSyms := uint32(0)
+	numUndefSyms := uint32(0)
+
 	if eb.useDynamicLinking && numImports > 0 {
+		// 1. Add defined external symbols (must come first)
+		// __mh_execute_header - the Mach-O header symbol
+		mhStrOffset := uint32(strtab.Len())
+		strtab.WriteString("__mh_execute_header")
+		strtab.WriteByte(0)
+		mhSym := Nlist64{
+			N_strx:  mhStrOffset,
+			N_type:  N_SECT | N_EXT, // Defined external symbol in section 1
+			N_sect:  1,              // Section 1 (__text)
+			N_desc:  0,
+			N_value: textAddr, // Address of Mach-O header
+		}
+		symtab = append(symtab, mhSym)
+		numDefinedSyms++
+
+		// main - the program entry point
+		mainStrOffset := uint32(strtab.Len())
+		strtab.WriteString("main")
+		strtab.WriteByte(0)
+		mainSym := Nlist64{
+			N_strx:  mainStrOffset,
+			N_type:  N_SECT | N_EXT, // Defined external symbol in section 1
+			N_sect:  1,              // Section 1 (__text)
+			N_desc:  0,
+			N_value: textSectAddr, // Entry point at start of __text
+		}
+		symtab = append(symtab, mainSym)
+		numDefinedSyms++
+
+		// 2. Add undefined external symbols (must come after defined symbols)
 		for _, funcName := range eb.neededFunctions {
 			strOffset := uint32(strtab.Len())
 			strtab.WriteString(funcName)
@@ -398,17 +436,21 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 				N_value: 0,
 			}
 			symtab = append(symtab, sym)
+			numUndefSyms++
 		}
 	}
 
 	// Build indirect symbol table (maps GOT/stub entries to symbol indices)
+	// Indirect symbols must point to the correct symbol indices based on final ordering
 	var indirectSymTab []uint32
 	if eb.useDynamicLinking && numImports > 0 {
+		// Undefined symbols start at index numDefinedSyms (after defined symbols)
+		undefSymStartIdx := numDefinedSyms
 		for i := uint32(0); i < numImports; i++ {
-			indirectSymTab = append(indirectSymTab, i) // GOT entries
+			indirectSymTab = append(indirectSymTab, undefSymStartIdx+i) // GOT entries
 		}
 		for i := uint32(0); i < numImports; i++ {
-			indirectSymTab = append(indirectSymTab, i) // Stub entries
+			indirectSymTab = append(indirectSymTab, undefSymStartIdx+i) // Stub entries
 		}
 	}
 
@@ -421,12 +463,12 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	if eb.useDynamicLinking && numImports > 0 {
 		// DyldChainedFixupsHeader
 		chainedFixupsSize += uint32(binary.Size(DyldChainedFixupsHeader{}))
-		// DyldChainedStartsInImage + segment offsets (2 segments: __DATA, __LINKEDIT)
-		chainedFixupsSize += 4 + (2 * 4) // seg_count + 2 offsets
+		// DyldChainedStartsInImage + segment offsets (1 segment: __DATA)
+		chainedFixupsSize += 4 + (1 * 4) // seg_count + 1 offset
 		// DyldChainedStartsInSegment for __DATA + page starts (1 page)
 		chainedFixupsSize += uint32(binary.Size(DyldChainedStartsInSegment{})) + 2 // + 1 page_start
 		// Imports table (DyldChainedImport * numImports)
-		chainedFixupsSize += 6 * numImports // Each import is 6 bytes
+		chainedFixupsSize += 4 * numImports // Each import is 4 bytes (packed bitfield)
 		// Symbol strings (copy from strtab)
 		chainedFixupsSize += strtabSize
 		// Align to 8 bytes
@@ -686,10 +728,10 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 			CmdSize:        uint32(binary.Size(DysymtabCommand{})),
 			ILocalSym:      0,
 			NLocalSym:      0,
-			IExtDefSym:     0,
-			NExtDefSym:     0,
-			IUndefSym:      0,
-			NUndefSym:      uint32(len(symtab)),
+			IExtDefSym:     0,              // External defined symbols start at index 0
+			NExtDefSym:     numDefinedSyms, // Count of external defined symbols
+			IUndefSym:      numDefinedSyms, // Undefined symbols start after defined symbols
+			NUndefSym:      numUndefSyms,   // Count of undefined symbols
 			TOCOff:         0,
 			NTOC:           0,
 			ModTabOff:      0,
@@ -885,10 +927,10 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		// Calculate offsets within the chained fixups data
 		headerSize := uint32(binary.Size(DyldChainedFixupsHeader{}))
 		startsOffset := headerSize
-		startsImageSize := uint32(4 + (2 * 4))                                     // seg_count + 2 segment offsets
+		startsImageSize := uint32(4 + (1 * 4))                                     // seg_count + 1 segment offset
 		startsSegmentSize := uint32(binary.Size(DyldChainedStartsInSegment{}) + 2) // + 1 page_start
 		importsOffset := startsOffset + startsImageSize + startsSegmentSize
-		symbolsOffset := importsOffset + (6 * numImports)
+		symbolsOffset := importsOffset + (4 * numImports) // 4 bytes per import
 
 		// 1. Write DyldChainedFixupsHeader
 		chainedHeader := DyldChainedFixupsHeader{
@@ -935,13 +977,13 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 				}
 			}
 
-			// Write DyldChainedImport (6 bytes total)
-			libOrdinal := uint8(1) // libSystem.B.dylib is library ordinal 1
-			weakImport := uint8(0) // Not a weak import
-			binary.Write(&buf, binary.LittleEndian, libOrdinal)
-			binary.Write(&buf, binary.LittleEndian, weakImport)
-			// NameOffset is 32-bit but only uses lower 24 bits
-			binary.Write(&buf, binary.LittleEndian, nameOffset)
+			// Write DyldChainedImport (4 bytes total - bitfield packed into uint32)
+			// Format: lib_ordinal:8, weak_import:1, name_offset:23
+			libOrdinal := uint32(1) // libSystem.B.dylib is library ordinal 1
+			weakImport := uint32(0) // Not a weak import
+			// Pack into uint32: [lib_ordinal:8][weak_import:1][name_offset:23]
+			importValue := (libOrdinal & 0xFF) | ((weakImport & 0x1) << 8) | ((nameOffset & 0x7FFFFF) << 9)
+			binary.Write(&buf, binary.LittleEndian, importValue)
 
 			_ = i // Suppress unused variable warning
 		}
@@ -949,8 +991,10 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		// 5. Write symbol strings (copy from strtab)
 		buf.Write(strtab.Bytes())
 
-		// 6. Align to 8 bytes
-		for buf.Len()%8 != 0 {
+		// 6. Align to 8 bytes (pad to match chainedFixupsSize calculation)
+		chainedFixupsStart := linkeditFileOffset + uint64(symtabSize) + uint64(strtabSize) + uint64(indirectSymTabSize)
+		chainedFixupsEnd := chainedFixupsStart + uint64(chainedFixupsSize)
+		for uint64(buf.Len()) < chainedFixupsEnd {
 			buf.WriteByte(0)
 		}
 	}

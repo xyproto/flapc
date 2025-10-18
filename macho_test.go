@@ -357,9 +357,9 @@ func TestMachOExecutable(t *testing.T) {
 	// Exit with code 42 - architecture specific code
 	if runtime.GOARCH == "arm64" || runtime.GOARCH == "aarch64" {
 		// ARM64 exit syscall
-		eb.Emit("mov x16, #1")  // sys_exit syscall number
-		eb.Emit("mov x0, #42")  // exit code
-		eb.Emit("svc #0x80")    // syscall
+		eb.Emit("mov x16, #1") // sys_exit syscall number
+		eb.Emit("mov x0, #42") // exit code
+		eb.Emit("svc #0x80")   // syscall
 	} else {
 		// x86_64 exit syscall
 		eb.Emit("mov rax, 0x2000001") // sys_exit on macOS
