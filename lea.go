@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // LeaSymbolToReg generates a load effective address instruction for a symbol
@@ -279,8 +280,13 @@ func (o *Out) leaRISCVImmToReg(dst, base string, offset int64) {
 
 // Helper to check if a value is a symbol name
 func isSymbolName(s string) bool {
+	// Strip immediate prefix if present (ARM64/RISC-V style)
+	s = strings.TrimPrefix(s, "#")
 	if _, err := strconv.ParseUint(s, 0, 64); err == nil {
 		return false // It's a number
+	}
+	if _, err := strconv.ParseInt(s, 0, 64); err == nil {
+		return false // It's a number (signed)
 	}
 	return true // It's a symbol
 }

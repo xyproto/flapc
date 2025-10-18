@@ -305,10 +305,10 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 
 	// Align sizes
 	textSizeAligned := (textSize + pageSize - 1) &^ (pageSize - 1)
-	rodataSizeAligned := (rodataSize + pageSize - 1) &^ (pageSize - 1)
-	stubsSizeAligned := (stubsSize + 15) &^ 15 // 16-byte align
-	_ = stubsSizeAligned                       // May be used for stub alignment
-	_ = (gotSize + 15) &^ 15                   // May be used for GOT alignment
+	_ = (rodataSize + pageSize - 1) &^ (pageSize - 1) // rodataSizeAligned - may be used later
+	stubsSizeAligned := (stubsSize + 15) &^ 15        // 16-byte align
+	_ = stubsSizeAligned                              // May be used for stub alignment
+	_ = (gotSize + 15) &^ 15                          // May be used for GOT alignment
 
 	// Calculate addresses - __TEXT starts after zero page
 	textAddr := zeroPageSize         // __TEXT segment starts at 4GB
@@ -475,7 +475,12 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		chainedFixupsSize = (chainedFixupsSize + 7) &^ 7
 	}
 
-	linkeditSize := symtabSize + strtabSize + indirectSymTabSize + chainedFixupsSize
+	// Calculate code signature size - macOS codesign tool writes this, but we must allocate space
+	// The size needs to account for the SuperBlob header, CodeDirectory, and other blobs
+	// For a simple binary, 416 bytes is typical (observed from reference binary)
+	codeSignatureSize := uint32(416)
+
+	linkeditSize := symtabSize + strtabSize + indirectSymTabSize + chainedFixupsSize + codeSignatureSize
 
 	// 1. LC_SEGMENT_64 for __PAGEZERO (required on macOS)
 	{
@@ -569,11 +574,12 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 			dataNSects++
 		}
 
-		dataSegSize := rodataSizeAligned
 		dataFileSize := rodataSize
 		if eb.useDynamicLinking && numImports > 0 {
 			dataFileSize += gotSize
 		}
+		// VMSize must be page-aligned and include all data
+		dataSegSize := (dataFileSize + pageSize - 1) &^ (pageSize - 1)
 
 		seg := SegmentCommand64{
 			Cmd:      LC_SEGMENT_64,
@@ -676,7 +682,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		entry := EntryPointCommand{
 			Cmd:       LC_MAIN,
 			CmdSize:   uint32(binary.Size(EntryPointCommand{})),
-			EntryOff:  0, // Entry is at start of __text
+			EntryOff:  textFileOffset, // Entry is at start of __text section (file offset)
 			StackSize: 0,
 		}
 		binary.Write(&loadCmdsBuf, binary.LittleEndian, &entry)
@@ -995,6 +1001,13 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		chainedFixupsStart := linkeditFileOffset + uint64(symtabSize) + uint64(strtabSize) + uint64(indirectSymTabSize)
 		chainedFixupsEnd := chainedFixupsStart + uint64(chainedFixupsSize)
 		for uint64(buf.Len()) < chainedFixupsEnd {
+			buf.WriteByte(0)
+		}
+
+		// 7. Allocate space for code signature (macOS codesign tool will fill this)
+		// Pad to the end of LINKEDIT segment (which includes code signature space)
+		linkeditEnd := linkeditFileOffset + uint64(linkeditSize)
+		for uint64(buf.Len()) < linkeditEnd {
 			buf.WriteByte(0)
 		}
 	}

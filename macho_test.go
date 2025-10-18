@@ -346,7 +346,7 @@ func TestMachOExecutable(t *testing.T) {
 	}
 
 	tmpfile := "/tmp/flapc_macho_exec_test"
-	defer os.Remove(tmpfile)
+	// defer os.Remove(tmpfile) // Keep for debugging
 
 	// Use host architecture for execution test
 	eb, err := New(runtime.GOARCH + "-darwin")
@@ -354,17 +354,19 @@ func TestMachOExecutable(t *testing.T) {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
 
-	// Exit with code 42 - architecture specific code
+	// Enable dynamic linking and set up exit() call
+	eb.useDynamicLinking = true
+	eb.neededFunctions = []string{"exit"}
+
+	// Exit with code 42 - using proper library call
 	if runtime.GOARCH == "arm64" || runtime.GOARCH == "aarch64" {
-		// ARM64 exit syscall
-		eb.Emit("mov x16, #1") // sys_exit syscall number
-		eb.Emit("mov x0, #42") // exit code
-		eb.Emit("svc #0x80")   // syscall
+		// ARM64: mov w0, #42 then call exit
+		eb.Emit("mov w0, #42") // exit code in w0
+		eb.Emit("bl _exit")    // call exit stub
 	} else {
-		// x86_64 exit syscall
-		eb.Emit("mov rax, 0x2000001") // sys_exit on macOS
-		eb.Emit("mov rdi, 42")
-		eb.Emit("syscall")
+		// x86_64: mov edi, 42 then call exit
+		eb.Emit("mov edi, 42") // exit code
+		eb.Emit("call _exit")  // call exit stub
 	}
 
 	err = eb.WriteMachO()
@@ -375,6 +377,13 @@ func TestMachOExecutable(t *testing.T) {
 	err = os.WriteFile(tmpfile, eb.Bytes(), 0755)
 	if err != nil {
 		t.Fatalf("Failed to write executable: %v", err)
+	}
+
+	// Sign the binary (required on modern macOS)
+	signCmd := exec.Command("codesign", "-f", "-s", "-", tmpfile)
+	signErr := signCmd.Run()
+	if signErr != nil {
+		t.Logf("Warning: Failed to sign binary: %v", signErr)
 	}
 
 	// Execute and check exit code

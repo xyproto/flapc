@@ -118,9 +118,25 @@ func (eb *ExecutableBuilder) Emit(assembly string) error {
 		}
 	} else if len(all) == 2 {
 		switch head {
-		case "call":
+		case "call", "bl":
 			funcName := strings.TrimSpace(tail[0])
 			return eb.GenerateCallInstruction(funcName)
+		case "svc":
+			// ARM64 svc instruction with immediate (e.g., svc #0x80)
+			immStr := strings.TrimSpace(tail[0])
+			immStr = strings.TrimPrefix(immStr, "#")
+			var immVal uint64
+			if val, err := strconv.ParseUint(immStr, 0, 16); err == nil {
+				immVal = val
+			}
+			// ARM64 SVC instruction: 1101 0100 000 imm16 000 01
+			// Encoding: 0xD4000001 | (imm16 << 5)
+			instr := uint32(0xD4000001) | (uint32(immVal&0xFFFF) << 5)
+			w.Write(uint8(instr & 0xFF))
+			w.Write(uint8((instr >> 8) & 0xFF))
+			w.Write(uint8((instr >> 16) & 0xFF))
+			w.Write(uint8((instr >> 24) & 0xFF))
+			return nil
 		}
 	} else if len(all) == 3 {
 		switch head {

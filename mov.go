@@ -225,6 +225,9 @@ func (o *Out) movARM64ImmToReg(dst, imm string) {
 		fmt.Fprintf(os.Stderr, "mov %s, %s:", dst, imm)
 	}
 
+	// Strip ARM64 immediate prefix (#) if present
+	imm = strings.TrimPrefix(imm, "#")
+
 	// Parse immediate value (support both signed and unsigned)
 	var immVal uint64
 	if val, err := strconv.ParseInt(imm, 0, 64); err == nil {

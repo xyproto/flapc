@@ -754,6 +754,19 @@ func (eb *ExecutableBuilder) GenerateCallInstruction(funcName string) error {
 		fmt.Fprint(os.Stderr, funcName+"@plt:")
 	}
 
+	// Strip leading underscore if present (for Mach-O compatibility)
+	targetName := funcName
+	if strings.HasPrefix(funcName, "_") {
+		targetName = funcName[1:] // Remove underscore
+	}
+
+	// Register the call patch for later resolution
+	position := eb.text.Len()
+	eb.callPatches = append(eb.callPatches, CallPatch{
+		position:   position,
+		targetName: targetName + "$stub",
+	})
+
 	// Generate architecture-specific call instruction with placeholder
 	switch eb.platform.Arch {
 	case ArchX86_64:
