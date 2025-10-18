@@ -1474,6 +1474,46 @@ func (acg *ARM64CodeGen) compilePrintf(call *CallExpr) error {
 		acg.eb.neededFunctions = append(acg.eb.neededFunctions, funcName)
 	}
 
+	// Compile additional arguments and push them onto the stack
+	// For variadic functions like printf on ARM64, arguments go on the stack
+	numArgs := len(call.Args) - 1 // Excluding format string
+
+	// Calculate stack space needed (8 bytes per argument, 16-byte aligned)
+	stackSize := ((numArgs * 8) + 15) &^ 15
+
+	if numArgs > 0 {
+		// Allocate stack space: sub sp, sp, #stackSize
+		// Encoding: 0xd10003ff | (stackSize << 10)
+		subInstr := uint32(0xd10003ff) | (uint32(stackSize) << 10)
+		acg.out.out.writer.WriteBytes([]byte{
+			byte(subInstr),
+			byte(subInstr >> 8),
+			byte(subInstr >> 16),
+			byte(subInstr >> 24),
+		})
+
+		// Compile each argument and store on stack
+		for i := 0; i < numArgs; i++ {
+			arg := call.Args[i+1]
+
+			// Compile the argument expression (result will be in d0)
+			if err := acg.compileExpression(arg); err != nil {
+				return err
+			}
+
+			// Store d0 at [sp, #(i*8)]
+			// STR d0, [sp, #offset] - encoding: 0xfd000000 | (offset/8 << 10) | 0x3e0
+			offset := uint32(i * 8)
+			strInstr := uint32(0xfd0003e0) | ((offset / 8) << 10)
+			acg.out.out.writer.WriteBytes([]byte{
+				byte(strInstr),
+				byte(strInstr >> 8),
+				byte(strInstr >> 16),
+				byte(strInstr >> 24),
+			})
+		}
+	}
+
 	// Load format string address into x0 (first argument register for ARM64)
 	offset := uint64(acg.eb.text.Len())
 	acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
@@ -1485,9 +1525,6 @@ func (acg *ARM64CodeGen) compilePrintf(call *CallExpr) error {
 	// ADD x0, x0, label@PAGEOFF
 	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x91})
 
-	// For now, only support format string without additional arguments
-	// TODO: Add support for printf arguments
-
 	// Generate call to printf stub
 	stubLabel := funcName + "$stub"
 	position := acg.eb.text.Len()
@@ -1498,6 +1535,19 @@ func (acg *ARM64CodeGen) compilePrintf(call *CallExpr) error {
 
 	// Emit placeholder bl instruction (will be patched)
 	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x94}) // bl #0
+
+	// Clean up stack if we allocated space for arguments
+	if numArgs > 0 {
+		// Restore stack: add sp, sp, #stackSize
+		// Encoding: 0x910003ff | (stackSize << 10)
+		addInstr := uint32(0x910003ff) | (uint32(stackSize) << 10)
+		acg.out.out.writer.WriteBytes([]byte{
+			byte(addInstr),
+			byte(addInstr >> 8),
+			byte(addInstr >> 16),
+			byte(addInstr >> 24),
+		})
+	}
 
 	// printf returns int in x0, convert to float64 in d0
 	// scvtf d0, x0
