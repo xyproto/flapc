@@ -396,19 +396,9 @@ func TestMachOExecutable(t *testing.T) {
 		t.Logf("After write, bytes at offset 816 in file: %x", writtenBytes[816:824])
 	}
 
-	// Sign the binary (required on modern macOS)
-	signCmd := exec.Command("codesign", "-f", "-s", "-", tmpfile)
-	signErr := signCmd.Run()
-	if signErr != nil {
-		t.Logf("Warning: Failed to sign binary: %v", signErr)
-	}
-
-	// Debug: check file after codesign
-	signedBytes, _ := os.ReadFile(tmpfile)
-	t.Logf("After codesign, file size=%d", len(signedBytes))
-	if len(signedBytes) >= 824 {
-		t.Logf("After codesign, bytes at offset 816 in file: %x", signedBytes[816:824])
-	}
+	// Binary is now self-signed by flapc's generateCodeSignature()
+	// No external codesign tool needed!
+	t.Logf("Binary self-signed by flapc")
 
 	// Execute and check exit code
 	cmd := exec.Command(tmpfile)

@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"os"
 )
 
@@ -196,6 +198,48 @@ type SourceVersionCommand struct {
 	Version uint64
 }
 
+// CodeSignature structures
+
+// SuperBlob is the container for all signature blobs
+type SuperBlob struct {
+	Magic  uint32 // CS_MAGIC_EMBEDDED_SIGNATURE
+	Length uint32 // Total length of SuperBlob
+	Count  uint32 // Number of BlobIndex entries
+	// Followed by BlobIndex entries
+}
+
+// BlobIndex points to a blob within the SuperBlob
+type BlobIndex struct {
+	Type   uint32 // Slot type (e.g., CSSLOT_CODEDIRECTORY)
+	Offset uint32 // Offset from start of SuperBlob
+}
+
+// CodeDirectory is the main signing information
+type CodeDirectory struct {
+	Magic         uint32   // CS_MAGIC_CODEDIRECTORY
+	Length        uint32   // Total length of CodeDirectory blob
+	Version       uint32   // Version (0x20400 for modern binaries)
+	Flags         uint32   // Flags (CS_ADHOC = 0x2)
+	HashOffset    uint32   // Offset of hash data from start of CodeDirectory
+	IdentOffset   uint32   // Offset of identifier string
+	NSpecialSlots uint32   // Number of special hash slots
+	NCodeSlots    uint32   // Number of code hash slots
+	CodeLimit     uint32   // Limit to main image signature
+	HashSize      uint8    // Size of each hash (32 for SHA-256)
+	HashType      uint8    // Type of hash (CS_HASHTYPE_SHA256 = 2)
+	Platform      uint8    // Platform identifier
+	PageSize      uint8    // Log2(page size) = 12 for 4096 bytes
+	Spare2        uint32   // Reserved
+	ScatterOffset uint32   // Optional scatter vector offset
+	TeamOffset    uint32   // Optional team identifier offset
+	Spare3        uint32   // Reserved
+	CodeLimit64   uint64   // 64-bit code limit
+	ExecSegBase   uint64   // Start of executable segment
+	ExecSegLimit  uint64   // Limit of executable segment
+	ExecSegFlags  uint64   // Exec segment flags
+	// Followed by identifier string, then hashes
+}
+
 // BuildVersionCommand represents LC_BUILD_VERSION
 type BuildVersionCommand struct {
 	Cmd      uint32
@@ -275,6 +319,114 @@ const (
 	DYLD_CHAINED_IMPORT_ADDEND   = 2
 	DYLD_CHAINED_IMPORT_ADDEND64 = 3
 )
+
+// Code signature constants
+const (
+	CS_MAGIC_EMBEDDED_SIGNATURE = 0xfade0cc0 // SuperBlob magic
+	CS_MAGIC_CODEDIRECTORY      = 0xfade0c02 // CodeDirectory magic
+	CS_MAGIC_BLOBWRAPPER        = 0xfade0b01 // CMS signature blob
+
+	CSSLOT_CODEDIRECTORY = 0 // Slot index for CodeDirectory
+	CSSLOT_SIGNATURESLOT = 0x10000 // CMS signature slot
+
+	CS_HASHTYPE_SHA256 = 2 // SHA-256 hash type
+	CS_PAGE_SIZE       = 4096 // Page size for hashing (4KB)
+
+	CS_EXECSEG_MAIN_BINARY = 0x1 // Main binary exec segment flag
+	CS_ADHOC               = 0x2 // Ad-hoc signed
+)
+
+// generateCodeSignature creates an ad-hoc code signature for a Mach-O binary
+// identifier: the executable name (e.g., "a.out")
+// binaryData: the complete binary data to sign
+// execSegBase: file offset where executable code starts (usually 0 for __TEXT)
+// execSegLimit: size of the executable segment
+// Returns: signature bytes to be placed in __LINKEDIT
+func generateCodeSignature(identifier string, binaryData []byte, execSegBase, execSegLimit uint64) ([]byte, error) {
+	var sigBuf bytes.Buffer
+
+	// Calculate number of pages to hash
+	codeLimit := uint32(len(binaryData))
+	nPages := int(math.Ceil(float64(codeLimit) / float64(CS_PAGE_SIZE)))
+
+	// Identifier string (null-terminated)
+	identBytes := []byte(identifier + "\x00")
+
+	// Calculate sizes
+	cdHeaderSize := uint32(binary.Size(CodeDirectory{}))
+	identSize := uint32(len(identBytes))
+	hashSize := uint32(32) // SHA-256 = 32 bytes
+	nCodeSlots := uint32(nPages)
+	nSpecialSlots := uint32(0) // We don't use special slots for ad-hoc signing
+
+	// CodeDirectory structure size
+	cdLength := cdHeaderSize + identSize + (nCodeSlots * hashSize)
+
+	// SuperBlob: contains 1 blob (CodeDirectory)
+	sbHeaderSize := uint32(binary.Size(SuperBlob{}))
+	indexSize := uint32(binary.Size(BlobIndex{}))
+	sbLength := sbHeaderSize + indexSize + cdLength
+
+	// Write SuperBlob header
+	sb := SuperBlob{
+		Magic:  CS_MAGIC_EMBEDDED_SIGNATURE,
+		Length: sbLength,
+		Count:  1, // Just CodeDirectory for ad-hoc
+	}
+	binary.Write(&sigBuf, binary.BigEndian, &sb)
+
+	// Write BlobIndex for CodeDirectory
+	cdOffset := sbHeaderSize + indexSize
+	idx := BlobIndex{
+		Type:   CSSLOT_CODEDIRECTORY,
+		Offset: cdOffset,
+	}
+	binary.Write(&sigBuf, binary.BigEndian, &idx)
+
+	// Write CodeDirectory header
+	cd := CodeDirectory{
+		Magic:         CS_MAGIC_CODEDIRECTORY,
+		Length:        cdLength,
+		Version:       0x20400, // Modern version
+		Flags:         CS_ADHOC,
+		HashOffset:    cdHeaderSize + identSize,
+		IdentOffset:   cdHeaderSize,
+		NSpecialSlots: nSpecialSlots,
+		NCodeSlots:    nCodeSlots,
+		CodeLimit:     codeLimit,
+		HashSize:      32,
+		HashType:      CS_HASHTYPE_SHA256,
+		Platform:      0,
+		PageSize:      12, // log2(4096) = 12
+		Spare2:        0,
+		ScatterOffset: 0,
+		TeamOffset:    0,
+		Spare3:        0,
+		CodeLimit64:   uint64(codeLimit),
+		ExecSegBase:   execSegBase,
+		ExecSegLimit:  execSegLimit,
+		ExecSegFlags:  CS_EXECSEG_MAIN_BINARY,
+	}
+	binary.Write(&sigBuf, binary.BigEndian, &cd)
+
+	// Write identifier string
+	sigBuf.Write(identBytes)
+
+	// Write code hashes (hash each 4KB page)
+	for i := 0; i < nPages; i++ {
+		pageStart := i * CS_PAGE_SIZE
+		pageEnd := pageStart + CS_PAGE_SIZE
+		if pageEnd > len(binaryData) {
+			pageEnd = len(binaryData)
+		}
+
+		page := binaryData[pageStart:pageEnd]
+		hash := sha256.Sum256(page)
+		sigBuf.Write(hash[:])
+	}
+
+	return sigBuf.Bytes(), nil
+}
 
 // WriteMachO writes a Mach-O executable for macOS
 func (eb *ExecutableBuilder) WriteMachO() error {
@@ -515,10 +667,11 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		chainedFixupsSize = (chainedFixupsSize + 7) &^ 7
 	}
 
-	// Calculate code signature size - macOS codesign tool writes this, but we must allocate space
-	// The size needs to account for the SuperBlob header, CodeDirectory, and other blobs
-	// For a simple binary, 416 bytes is typical (observed from reference binary)
-	codeSignatureSize := uint32(416)
+	// Calculate code signature size - flapc generates ad-hoc signatures
+	// The size needs to account for the SuperBlob header, CodeDirectory, identifier, and code hashes
+	// We'll allocate enough space for a reasonable number of pages
+	// For a simple binary, 416 bytes is typical (observed from reference binaries)
+	codeSignatureSize := uint32(4096) // Allocate 4KB - plenty for most binaries
 
 	linkeditSize := symtabSize + strtabSize + indirectSymTabSize + chainedFixupsSize + codeSignatureSize
 
@@ -836,7 +989,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		}
 
 		// 11. LC_CODE_SIGNATURE - must come LAST in load commands
-		// The signature will be written by codesign tool, we just allocate space
+		// The signature will be generated by flapc's generateCodeSignature()
 		codeSignatureCmd := LinkEditDataCommand{
 			Cmd:      LC_CODE_SIGNATURE,
 			CmdSize:  uint32(binary.Size(LinkEditDataCommand{})),
@@ -1088,11 +1241,35 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 			buf.WriteByte(0)
 		}
 
-		// 7. Allocate space for code signature (macOS codesign tool will fill this)
-		// Pad to the end of LINKEDIT segment (which includes code signature space)
-		linkeditEnd := linkeditFileOffset + uint64(linkeditSize)
-		for uint64(buf.Len()) < linkeditEnd {
+		// 7. Generate and write code signature
+		// Get the identifier for the binary (use "a.out" as default)
+		identifier := "a.out"
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Generating code signature for %s\n", identifier)
+		}
+
+		// Generate signature for the current binary data
+		binaryData := buf.Bytes()
+		execSegBase := uint64(0)                 // __TEXT starts at file offset 0
+		execSegLimit := uint64(len(binaryData))  // Size up to this point (before signature)
+
+		signature, err := generateCodeSignature(identifier, binaryData, execSegBase, execSegLimit)
+		if err != nil {
+			return fmt.Errorf("failed to generate code signature: %v", err)
+		}
+
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Generated signature size: %d bytes (allocated: %d)\n",
+				len(signature), codeSignatureSize)
+		}
+
+		// Write the signature
+		buf.Write(signature)
+
+		// Pad to allocated size if needed
+		for uint32(len(signature)) < codeSignatureSize {
 			buf.WriteByte(0)
+			signature = append(signature, 0)
 		}
 	}
 
