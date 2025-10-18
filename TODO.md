@@ -19,8 +19,13 @@
 - [ ] Test with `DYLD_PRINT_APIS=1` to see what dyld is doing
 - [ ] Examine stub code generation vs. working binaries
 
+**Recent Progress**:
+- ✅ Fixed segment count mismatch in chained fixups (commit 06d00de)
+- ✅ Switched to DYLD_CHAINED_PTR_64 format (commit 8f02b98)
+- ✅ Self-signing working perfectly
+- ⚠️ Still getting SIGKILL (exit 137) on execution
+
 **References**:
-- See `MACHO_STATUS.md` for detailed status
 - Commit history: Multiple attempts since `0e1e705`
 - Working: Self-signing, binary structure (9/10 tests pass)
 - Broken: Actual execution of dynamically linked code
@@ -191,8 +196,7 @@
 ## 📖 Documentation
 
 ### 21. Update Documentation
-- [ ] Update README.md with macOS signing status
-- [ ] Document known limitations in MACHO_STATUS.md (already exists)
+- [x] Update README.md with macOS signing status
 - [ ] Add architecture comparison guide
 - [ ] Document calling conventions for each architecture
 

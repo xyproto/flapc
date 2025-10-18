@@ -33,19 +33,25 @@ Flap is a functional programming language built on a `map[uint64]float64` founda
 - **Operating Systems**: Linux (ELF), macOS (Mach-O)
 - **Architectures**:
   - ✅ x86-64: Full support (Linux/macOS)
-  - ⚠️ ARM64 (aarch64): Partial (instruction encoders ready, code generation needs work)
+  - ⚠️ ARM64 (aarch64): Partial support
+    - ✅ Core language features working (arithmetic, control flow, loops, functions)
+    - ✅ Self-signing implemented (no external codesign needed)
+    - ⚠️ Dynamic linking in progress (exit code 137/SIGKILL)
   - ⚠️ RISC-V 64-bit: Partial (instruction encoders ready, code generation needs work)
 
 ### macOS Support
 
-Flap now supports macOS via Mach-O executable format:
-```bash
-# Auto-detects Mach-O on macOS, ELF on Linux
-./flapc -m x86_64 -o program program.flap
+**Status**: x86-64 fully working, ARM64 in development
 
-# Force specific format
-./flapc --format macho -o program program.flap  # macOS
-./flapc --format elf -o program program.flap    # Linux
+Flap supports macOS via Mach-O executable format with automatic code signing:
+- ✅ **Self-signing**: Binaries are automatically signed with ad-hoc signatures (no codesign tool needed)
+- ✅ **Binary structure**: Proper Mach-O format with all required load commands
+- ✅ **9/10 tests passing**: All structure tests pass
+- ⚠️ **Dynamic linking**: ARM64 execution currently blocked (investigating chained fixups)
+
+```bash
+# Compiles to Mach-O on macOS, ELF on Linux
+./flapc program.flap
 ```
 
 ## Quick Start
