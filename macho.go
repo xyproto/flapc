@@ -1136,11 +1136,15 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 
 	// Write __got section (if dynamic linking)
 	if eb.useDynamicLinking && numImports > 0 {
-		// GOT entries use chained fixup format for ARM64E
-		// Format: bit 63=1 (bind), bits 15-0=ordinal (import index)
+		// GOT entries use chained fixup format DYLD_CHAINED_PTR_64
+		// Bind format: bit 63=1, bits 62-51=next (0xFFF=end), bits 50-24=addend, bits 23-0=ordinal
 		for i := uint32(0); i < numImports; i++ {
-			// ARM64E chained bind pointer: 0x8000000000000000 | ordinal
-			chainedPtr := uint64(0x8000000000000000) | uint64(i)
+			// Bind pointer with no next (0xFFF), no addend (0), and ordinal i
+			next := uint64(0xFFF) // End of chain
+			addend := uint64(0)   // No addend
+			ordinal := uint64(i)  // Import index
+
+			chainedPtr := (uint64(1) << 63) | (next << 51) | (addend << 24) | ordinal
 			binary.Write(&buf, binary.LittleEndian, chainedPtr)
 		}
 	}
@@ -1206,7 +1210,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		startsSegment := DyldChainedStartsInSegment{
 			Size:            uint32(binary.Size(DyldChainedStartsInSegment{}) + 2),
 			PageSize:        0x4000, // 16KB pages
-			PointerFormat:   DYLD_CHAINED_PTR_ARM64E,
+			PointerFormat:   DYLD_CHAINED_PTR_64, // Generic 64-bit format (not ARM64E)
 			SegmentOffset:   0,
 			MaxValidPointer: 0,
 			PageCount:       1, // GOT fits in one page
