@@ -563,10 +563,14 @@ func (eb *ExecutableBuilder) Bytes() []byte {
 			}
 			// Fallback to ELF
 		} else {
+			result := eb.elf.Bytes()
 			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "DEBUG Bytes(): Using Mach-O format (size=%d)\n", eb.elf.Len())
+				fmt.Fprintf(os.Stderr, "DEBUG Bytes(): Using Mach-O format (size=%d)\n", len(result))
+				if len(result) >= 824 {
+					fmt.Fprintf(os.Stderr, "DEBUG Bytes(): bytes at offset 816: %x\n", result[816:824])
+				}
 			}
-			return eb.elf.Bytes()
+			return result
 		}
 	}
 

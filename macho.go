@@ -280,6 +280,10 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 
 	debug := os.Getenv("FLAP_DEBUG") != ""
 
+	if debug || VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: WriteMachO() called, text.Len()=%d, text=%x\n", eb.text.Len(), eb.text.Bytes())
+	}
+
 	var buf bytes.Buffer
 
 	// Determine CPU type
@@ -901,12 +905,18 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		}
 	}
 
-	// Pad to page boundary
+	// Pad to text file offset (should be right after headers)
+	if debug || VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Before padding, buf.Len()=%d, textFileOffset=%d\n", buf.Len(), textFileOffset)
+	}
 	for uint64(buf.Len()) < textFileOffset {
 		buf.WriteByte(0)
 	}
 
 	// Write __text section
+	if debug || VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Writing __text at offset %d, size=%d bytes: %x\n", buf.Len(), eb.text.Len(), eb.text.Bytes())
+	}
 	buf.Write(eb.text.Bytes())
 
 	// Write __stubs section (if dynamic linking)
@@ -1069,5 +1079,14 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	}
 
 	eb.elf = buf
+
+	// Debug: check final buffer
+	if debug || VerboseMode {
+		finalBytes := buf.Bytes()
+		if len(finalBytes) >= 824 {
+			fmt.Fprintf(os.Stderr, "DEBUG: Final buffer, bytes at offset 816: %x\n", finalBytes[816:824])
+		}
+	}
+
 	return nil
 }

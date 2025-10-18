@@ -349,6 +349,7 @@ func TestMachOExecutable(t *testing.T) {
 	// defer os.Remove(tmpfile) // Keep for debugging
 
 	// Use host architecture for execution test
+	VerboseMode = true // Enable debug output
 	eb, err := New(runtime.GOARCH + "-darwin")
 	if err != nil {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
@@ -374,16 +375,43 @@ func TestMachOExecutable(t *testing.T) {
 		t.Fatalf("Failed to write Mach-O: %v", err)
 	}
 
-	err = os.WriteFile(tmpfile, eb.Bytes(), 0755)
+	bytesToWrite := eb.Bytes()
+	t.Logf("About to write %d bytes to %s", len(bytesToWrite), tmpfile)
+	if len(bytesToWrite) >= 824 {
+		t.Logf("Bytes at offset 816: %x", bytesToWrite[816:824])
+	}
+
+	// Debug: write to alternate file for comparison
+	os.WriteFile("/tmp/test_bytes_direct", bytesToWrite, 0755)
+
+	err = os.WriteFile(tmpfile, bytesToWrite, 0755)
 	if err != nil {
 		t.Fatalf("Failed to write executable: %v", err)
 	}
 
+	// Debug: immediately read back what was written
+	writtenBytes, _ := os.ReadFile(tmpfile)
+	t.Logf("After write, file size=%d", len(writtenBytes))
+	if len(writtenBytes) >= 824 {
+		t.Logf("After write, bytes at offset 816 in file: %x", writtenBytes[816:824])
+	}
+
 	// Sign the binary (required on modern macOS)
+	// TEMPORARY: Skip codesign to test if binary works without it
+	_ = tmpfile // Suppress unused warning
+	/*
 	signCmd := exec.Command("codesign", "-f", "-s", "-", tmpfile)
 	signErr := signCmd.Run()
 	if signErr != nil {
 		t.Logf("Warning: Failed to sign binary: %v", signErr)
+	}
+	*/
+
+	// Debug: check file after codesign
+	signedBytes, _ := os.ReadFile(tmpfile)
+	t.Logf("After codesign, file size=%d", len(signedBytes))
+	if len(signedBytes) >= 824 {
+		t.Logf("After codesign, bytes at offset 816 in file: %x", signedBytes[816:824])
 	}
 
 	// Execute and check exit code
