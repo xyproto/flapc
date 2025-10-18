@@ -798,7 +798,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		FileType:   MH_EXECUTE,
 		NCmds:      ncmds,
 		SizeOfCmds: loadCmdsSize,
-		Flags:      MH_NOUNDEFS | MH_DYLDLINK | MH_TWOLEVEL,
+		Flags:      MH_NOUNDEFS | MH_DYLDLINK | MH_TWOLEVEL | MH_PIE,
 		Reserved:   0,
 	}
 	binary.Write(&buf, binary.LittleEndian, &header)
@@ -904,9 +904,12 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 
 	// Write __got section (if dynamic linking)
 	if eb.useDynamicLinking && numImports > 0 {
-		// GOT entries are initially zero (dyld will fill them at runtime)
+		// GOT entries use chained fixup format for ARM64E
+		// Format: bit 63=1 (bind), bits 15-0=ordinal (import index)
 		for i := uint32(0); i < numImports; i++ {
-			binary.Write(&buf, binary.LittleEndian, uint64(0))
+			// ARM64E chained bind pointer: 0x8000000000000000 | ordinal
+			chainedPtr := uint64(0x8000000000000000) | uint64(i)
+			binary.Write(&buf, binary.LittleEndian, chainedPtr)
 		}
 	}
 
@@ -974,8 +977,9 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		// 4. Write imports table (DyldChainedImport entries)
 		for i, funcName := range eb.neededFunctions {
 			// Find symbol name offset in strtab
+			// Note: symbol names have underscore prefix on macOS
 			nameOffset := uint32(0)
-			searchBytes := []byte(funcName + "\x00")
+			searchBytes := []byte("_" + funcName + "\x00")
 			strtabBytes := strtab.Bytes()
 			for j := 0; j < len(strtabBytes)-len(searchBytes)+1; j++ {
 				if bytes.Equal(strtabBytes[j:j+len(searchBytes)], searchBytes) {
