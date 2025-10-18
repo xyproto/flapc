@@ -1,319 +1,236 @@
 # Flap Compiler TODO
 
-## Current Status
+## 🚨 Critical Issues
 
-**Version**: 1.1.0-dev (ARM64/Mach-O in progress)
-**Platform**: x86-64 Linux/macOS (complete), ARM64 macOS (partial)
-**x86-64 Tests**: 178/178 (100%) ✓
-**ARM64 Tests**: ~45/178 (core features + control flow + loops + InExpr)
-**Production Ready**: x86-64 only
+### 1. Fix macOS Mach-O Dynamic Linking (SIGBUS Crash)
+**Priority**: HIGH - Blocks all macOS ARM64 execution
+**Status**: All binaries with dynamic linking crash with SIGBUS (exit code 138)
+
+**Affected**:
+- Any program calling `exit()`, `printf()`, `getpid()`, or other libc functions
+- TestMachOExecutable test fails
+- All .flap programs that use standard library functions
+
+**Investigation Steps**:
+- [ ] Use lldb to trace execution and identify crash location
+- [ ] Compare GOT/PLT structure with working GCC-generated binary
+- [ ] Verify chained fixups structure with `dyld_info -fixups`
+- [ ] Check if GOT pointers are being resolved correctly by dyld
+- [ ] Test with `DYLD_PRINT_APIS=1` to see what dyld is doing
+- [ ] Examine stub code generation vs. working binaries
+
+**References**:
+- See `MACHO_STATUS.md` for detailed status
+- Commit history: Multiple attempts since `0e1e705`
+- Working: Self-signing, binary structure (9/10 tests pass)
+- Broken: Actual execution of dynamically linked code
 
 ---
 
-## Active Work: ARM64 + Mach-O Support (Version 1.1.0)
+## 📋 Language Syntax Improvements
 
-### ✅ Completed (ARM64 Backend)
+### 2. Simplify Loop Syntax
+- [ ] Allow `@` instead of `@+` for loops (if parseable)
+  - Current: `@+ i in range(10) { }`
+  - Proposed: `@ i in range(10) { }`
 
-**Core Expression Types:**
-- ✅ NumberExpr (integers and floats with scvtf conversion)
-- ✅ StringExpr (Flap's map representation)
-- ✅ IdentExpr (variable references from stack)
-- ✅ BinaryExpr (arithmetic: +, -, *, /)
-- ✅ BinaryExpr (comparisons: ==, !=, <, <=, >, >=)
-- ✅ ListExpr (list literals `[1, 2, 3]`)
-- ✅ IndexExpr (list/map indexing with `list[0]`)
-- ✅ AssignStmt (variable assignments to stack)
-- ✅ CallExpr (println, print, exit functions)
+### 3. Add Compound Assignment Operators
+- [ ] Implement `+=`, `-=`, `*=`, `/=`
+  - Current: `sum := sum + i`
+  - Proposed: `sum += i`
+  - Files to modify: `parser.go` (lexer + parser), `*_codegen.go` (all architectures)
 
-**ARM64 Instructions:**
-- ✅ Floating-point arithmetic (fadd, fsub, fmul, fdiv)
-- ✅ Floating-point comparisons (fcmp + cset)
-- ✅ Integer/float conversions (scvtf, fcvtzs)
-- ✅ Load/store with negative offsets (LDUR/STUR)
-- ✅ PC-relative addressing (ADRP + ADD for data access)
-- ✅ Function prologue/epilogue (ARM64 ABI)
+### 4. Remove Requirement for exit(0)
+- [ ] Make `exit(0)` implicit at end of programs
+  - Programs should automatically return/exit if they reach the end
+  - Requires: Check if last statement is already exit(), if not, emit exit(0)
 
-**Mach-O Generation:**
-- ✅ Valid ARM64 Mach-O headers
-- ✅ Correct segment layout (__PAGEZERO, __TEXT, __DATA)
-- ✅ 4GB zero page for security
-- ✅ LC_LOAD_DYLIB for libSystem.B.dylib
-- ✅ LC_MAIN entry point command
-- ✅ Proper file structure (verified by `file` command)
+### 5. Simplify Match Block Syntax
+- [ ] Allow implicit `->` in match blocks when there's only one branch
+  - Current: `x < y { -> println("yes") }`
+  - Proposed: `x < y { println("yes") }`
 
-### 🚧 In Progress (ARM64 Backend)
+### 6. Fix Lambda Assignment Syntax
+- [ ] Require `=>` for lambda assignments, not `->`
+  - Current: `double = (x) -> x * 2` (should fail)
+  - Proposed: `double = x => x * 2` (correct)
+  - Also allow dropping parentheses for single parameter
 
-**Additional Expression Types:**
-- [ ] **SliceExpr**: List/string slicing `list[start:end:step]` (requires runtime functions)
-- [x] **InExpr**: Membership testing `x in list` ✓
+---
+
+## 🏗️ ARM64 Backend Completion
+
+### 7. Implement Missing Expression Types
+- [ ] **SliceExpr**: List/string slicing `list[start:end:step]`
+  - Requires runtime functions for slice operations
+  - File: `arm64_codegen.go`
+
 - [ ] **UnaryExpr**: Head (^) and Tail (&) operators
+  - `^list` - get first element
+  - `&list` - get all but first element
+  - File: `arm64_codegen.go`
 
-**Loop Enhancements:**
-- [ ] Implement break/continue (ret @N, @N)
-- [ ] Support @first, @last, @counter, @i special variables
+### 8. Loop Enhancements
+- [ ] Implement break/continue (`ret @N`, `@N`)
+  - Requires jump label tracking per loop
+  - File: `arm64_codegen.go`
+
+- [ ] Support `@first`, `@last`, `@counter`, `@i` special variables
+  - Stack-allocated iteration state
+  - File: `arm64_codegen.go`
+
 - [ ] Handle nested match blocks
+  - Label generation for nested scopes
+  - File: `arm64_codegen.go`
 
-**Function Enhancements:**
+### 9. Function Enhancements
 - [ ] **Recursive calls**: Proper stack frame management
+  - Test: factorial, fibonacci functions
+
 - [ ] **Tail call optimization**: Jump instead of call for tail position
-
-### 🔴 Blocked/Needs Work (Mach-O Dynamic Linking)
-
-**Critical for Execution:**
-- [ ] **LC_SYMTAB**: Symbol table for exported/imported symbols
-- [ ] **LC_DYSYMTAB**: Dynamic symbol table
-- [ ] **__LINKEDIT segment**: Link-edit data segment
-- [ ] **Lazy binding stubs**: PLT-equivalent for ARM64
-- [ ] **GOT entries**: Global offset table for function pointers
-- [ ] **Dynamic function calls**: Call printf, malloc, etc. via libSystem
-- [ ] **Relocation entries**: Fix up symbol references at load time
-
-**Current Blocker**: macOS kills executables using raw syscalls with SIGKILL.
-Need proper dynamic linking to call libSystem.B.dylib functions instead.
-
-### 📋 TODO (Immediate Next Steps)
-
-1. **Add Dynamic Linking Support** - **BLOCKS EXECUTION**
-   - [ ] Research Mach-O lazy binding (otool -l analysis)
-   - [ ] Implement symbol tables (LC_SYMTAB, LC_DYSYMTAB)
-   - [ ] Create __LINKEDIT segment
-   - [ ] Generate lazy binding stubs for imported functions
-   - [ ] Test calling printf() and other libSystem functions
-   - **Critical**: Required for any ARM64 program to execute on macOS
-
-2. **Additional Expression Types**
-   - [ ] SliceExpr: List/string slicing implementation
-   - [ ] InExpr: Membership testing `x in list`
-   - [ ] UnaryExpr: Head (^) and Tail (&) operators
-
-3. **Testing and Validation**
-   - [ ] Run integration tests for ARM64
-   - [ ] Verify programs execute correctly (blocked by dynamic linking)
-   - [ ] Compare output with x86-64 version
-   - [ ] Document known limitations
-
-### 🎯 Success Criteria for ARM64 Support
-
-**Minimum Viable (v1.1.0 Alpha):** ✅ **ACHIEVED**
-- ✅ Core expressions (numbers, strings, lists, maps, indexing, arithmetic)
-- ✅ Control flow (match blocks)
-- ✅ Loops (basic @+ loops - break/continue deferred)
-- ✅ User-defined functions (lambdas)
-- ✅ Essential operators (unary, length)
-- ✅ 40+ tests passing (basic programs work) - ESTIMATED
-
-**Full Support (v1.1.0 Beta):**
-- [ ] All expression types implemented
-- [ ] Dynamic linking working (can call libSystem functions)
-- [ ] 150+ tests passing (most programs work)
-- [ ] printf() works via dynamic linking
-
-**Production Ready (v1.1.0 Release):**
-- [ ] All 178 tests passing
-- [ ] Feature parity with x86-64
-- [ ] macOS code signing support
-- [ ] Documentation updated
+  - Replace `BL` with `B` when function ends with call
 
 ---
 
-## Version 1.0.0 - COMPLETE ✓
+## 🧪 Testing and Quality
 
-The 1.0.0 release is feature-complete and production-ready for x86-64 Linux/macOS!
+### 10. Fix Integration Test Failures
+- [ ] Debug printf test failures (currently failing due to SIGBUS)
+- [ ] Run full test suite on ARM64 once dynamic linking works
+- [ ] Verify output matches x86-64 version
 
-### What's Included in 1.0.0
-
-- ✅ Complete language specification (LANGUAGE.md)
-- ✅ Module system with Git-based dependencies
-- ✅ FFI with comprehensive type casting
-- ✅ SIMD-optimized map operations (SSE2 + AVX-512)
-- ✅ Tail call optimization
-- ✅ File I/O with syscalls
-- ✅ Standard library packages (flap_core, flap_math)
-- ✅ Testing convention and documentation
-- ✅ 178/178 tests passing
-- ✅ ELF (Linux) and Mach-O (macOS x86-64) support
+### 11. Code Quality Improvements
+- [ ] Fix O(n²) CString conversion in `parser.go:5737`
+  - Current implementation is quadratic
+  - Should be linear with proper buffer management
 
 ---
 
-## Post-1.1.0 Work Items (Sorted by Priority)
+## 🏗️ RISC-V Support (Version 1.2.0)
 
-### 1. RISC-V Support (Version 1.2.0)
-
-**Phase 1: RISC-V Backend**
-- [ ] **Implement RISC-V register allocation**: x0-x31 (GP), f0-f31 (FP)
-- [ ] **Implement RISC-V calling convention**: a0-a7, fa0-fa7
-- [ ] **Implement RISC-V instruction selection**: FADD.D, FSUB.D, FMUL.D, FDIV.D
-- [ ] **Implement RISC-V branches**: BEQ, BNE, BLT, BGE
-- [ ] **Test on RISC-V hardware/emulator**: Verify ELF executables run
-
-### 2. Builtin Functions (Standard Library)
-
-**I/O Functions:**
-- [x] **Implement write_file(path, content)**: Write string to file ✓
-- [ ] **Fix read_file(path)**: Files read successfully, but cstr_to_flap_string has bug
-- [ ] **Implement readln()**: Read line from stdin
-
-**String Functions:**
-- [ ] **Implement num(string)**: Parse string to float64
-- [ ] **Implement split(string, delimiter)**: Split into list
-- [ ] **Implement join(list, delimiter)**: Join with delimiter
-- [ ] **Implement upper/lower/trim(string)**: String manipulation
-
-**Collection Functions:**
-- [ ] **Implement map(f, list)**: Apply function to elements
-- [ ] **Implement filter(f, list)**: Filter by predicate
-- [ ] **Implement reduce(f, list, init)**: Fold with binary function
-- [ ] **Implement keys/values(map)**: Extract keys/values
-- [ ] **Implement sort(list)**: Sort in ascending order
-
-### 3. Polymorphic Operators
-
-**String Operations:**
-- [ ] **Implement string < and >**: Lexicographic comparison
-- [ ] **Implement string slicing**: SliceExpr for strings
-
-**List/Map Operations:**
-- [ ] **Implement list + list**: Runtime concatenation
-- [ ] **Implement map + map**: Merge maps
-- [ ] **Implement list/map - list/map**: Set difference
-
-### 4. Error Reporting Improvements
-
-- [ ] **Add line numbers to errors**: Include source location
-- [ ] **Improve type error messages**: Show expected vs actual
-- [ ] **Check function argument counts**: Report arity errors
-- [ ] **Add undefined variable detection**: Better error messages
-
-### 5. Performance Optimizations (Post-1.2.0)
-
-- [ ] **Implement AVX-512 map lookup**: 8 keys/iteration
-- [ ] **Add perfect hashing**: For compile-time constant maps
-- [ ] **Implement binary search**: For maps with 32+ keys
-- [ ] **Optimize CString conversion**: O(n²) → O(n)
-- [ ] **Add constant folding**: Compile-time evaluation
-
-### 6. Standard Library Expansion (1.3.0)
-
-- [ ] **String package**: Advanced string manipulation
-- [ ] **Collections package**: Advanced data structures
-- [ ] **HTTP package**: Basic HTTP client
-- [ ] **JSON package**: Parsing and serialization
-- [ ] **Testing package**: Assert functions and framework
-
-### 7. Advanced Features (2.0.0)
-
-- [ ] **Multiple lambda dispatch**: Overloading by arity
-- [ ] **Pattern matching**: Destructuring in match
-- [ ] **Method call sugar**: `obj.method(args)` syntax
-- [ ] **Regex matching**: `=~` and `!~` operators
-- [ ] **Gather/scatter**: `@[indices]` syntax
-- [ ] **SIMD annotations**: Explicit vectorization hints
+### 12. RISC-V Backend Implementation
+- [ ] Implement RISC-V register allocation (x0-x31, f0-f31)
+- [ ] Implement RISC-V calling convention (a0-a7, fa0-fa7)
+- [ ] Add floating-point instructions (FADD.D, FSUB.D, FMUL.D, FDIV.D)
+  - File: `riscv64_instructions.go:380-385`
+- [ ] Add multiply/divide instructions (MUL, MULH, DIV, REM)
+- [ ] Add logical instructions (AND, OR, XOR)
+- [ ] Add shift instructions (SLL, SRL, SRA)
+- [ ] Add atomic instructions (LR, SC, AMO*)
+- [ ] Add CSR instructions
+- [ ] Fix PC-relative load for rodata symbols
+  - File: `riscv64_codegen.go:153`
+- [ ] Fix identifier loading
+  - File: `riscv64_codegen.go:83`
 
 ---
 
-## Test Status Summary
+## 📚 Standard Library
 
-**x86-64**: 178/178 tests (100%) ✓
-**ARM64**: ~45/178 tests (25% - core features + lambdas + essential ops + InExpr)
+### 13. I/O Functions
+- [ ] Fix `read_file(path)` - Files read successfully but `cstr_to_flap_string` has bug
+  - File: `parser.go:4097`
+- [ ] Implement `readln()` - Read line from stdin
+  - File: `parser.go:4108`
 
-**ARM64 Test Coverage**:
-- ✓ Number expressions (integers, floats)
-- ✓ String literals
-- ✓ Arithmetic (+, -, *, /)
-- ✓ Comparisons (==, !=, <, <=, >, >=)
-- ✓ List literals and indexing
-- ✓ Map literals ({key: value})
-- ✓ Variable assignment and references
-- ✓ println(), print(), exit()
-- ✓ Control flow (match blocks with -> and ~>)
-- ✓ Range loops (@+ i in range(N))
-- ✓ List loops (@+ elem in [1,2,3])
-- ✓ User-defined functions (lambdas)
-- ✓ DirectCallExpr (function pointers)
-- ✓ UnaryExpr (-, not, ~b)
-- ✓ LengthExpr (#list, #map)
-- ⚠ Break/continue - NOT YET IMPLEMENTED
-- ✗ SliceExpr - NOT YET IMPLEMENTED
-- ✓ InExpr (x in list)
-- ✗ Most advanced features - NOT YET IMPLEMENTED
+### 14. String Functions
+- [ ] Implement `num(string)` - Parse string to float64
+- [ ] Implement `split(string, delimiter)` - Split into list
+- [ ] Implement `join(list, delimiter)` - Join with delimiter
+- [ ] Implement `upper/lower/trim(string)` - String manipulation
+
+### 15. Collection Functions
+- [ ] Implement `map(f, list)` - Apply function to elements
+- [ ] Implement `filter(f, list)` - Filter by predicate
+- [ ] Implement `reduce(f, list, init)` - Fold with binary function
+- [ ] Implement `keys/values(map)` - Extract keys/values from maps
+- [ ] Implement `sort(list)` - Sort in ascending order
 
 ---
 
-## Development Philosophy
+## 🚀 ARM64 Additional Instructions
 
-- **Platform Priority**: Get ARM64 to feature parity before RISC-V
-- **Quality First**: Each architecture must pass all 178 tests before "done"
-- **Incremental Progress**: Ship alpha/beta releases as features stabilize
-- **Backward Compatibility**: x86-64 must remain 100% working
-- **Code Organization**: One .go file per instruction mnemonic (like x86-64)
+### 16. ARM64 Floating-Point Instructions
+- [ ] Add more FP instructions (beyond current FADD, FSUB, FMUL, FDIV, FCMP)
+  - File: `arm64_instructions.go:434`
+- [ ] Implement SIMD/NEON instructions for vectorization
+  - File: `arm64_instructions.go:435`
+
+### 17. ARM64 Memory and Arithmetic
+- [ ] Add load/store pair instructions (STP, LDP)
+  - File: `arm64_instructions.go:436`
+- [ ] Add multiply/divide (MUL, UDIV, SDIV)
+  - File: `arm64_instructions.go:437`
+- [ ] Add logical instructions (AND, OR, EOR)
+  - File: `arm64_instructions.go:438`
+- [ ] Add shift instructions (LSL, LSR, ASR, ROR)
+  - File: `arm64_instructions.go:439`
+
+### 18. ARM64 Printf Enhancements
+- [ ] Add support for printf arguments beyond format string
+  - File: `arm64_codegen.go:1489`
+- [ ] Implement proper float-to-string conversion
+  - File: `arm64_codegen.go:963`
 
 ---
 
-## Session Progress (Latest)
+## 🎯 Performance Optimizations
 
-### Session 2025-10-17: Control Flow, Loops, Functions & Essential Ops
+### 19. Map Operations
+- [ ] Implement AVX-512 map lookup (8 keys/iteration)
+- [ ] Add perfect hashing for compile-time constant maps
+- [ ] Implement binary search for maps with 32+ keys
 
-**Major Achievements:**
-- ✅ Match expressions (conditional control flow) - COMPLETE
-- ✅ Range loops (@+ i in range(N)) - COMPLETE
-- ✅ List loops (@+ elem in list) - COMPLETE
-- ✅ User-defined functions (lambdas) - COMPLETE
-- ✅ DirectCallExpr (function pointer calls) - COMPLETE
-- ✅ UnaryExpr (-, not, ~b) - COMPLETE
-- ✅ LengthExpr (#) - COMPLETE
-- ✅ MapExpr ({key: value}) - COMPLETE
-- ✅ Enhanced ARM64 instructions (LDUR/STUR, fneg, mvn)
-- ✅ Jump offset patching infrastructure
+### 20. Compiler Optimizations
+- [ ] Add constant folding (compile-time evaluation)
+- [ ] Optimize CString conversion from O(n²) to O(n)
+- [ ] Implement dead code elimination
 
-**Test Coverage Improvement:**
-- Session start: ~10/178 tests (5.6%)
-- After loops: ~25/178 tests (14.0%)
-- After lambdas: ~35/178 tests (19.7%)
-- After essential ops: ~40/178 tests (22.5%)
-- **Progress: +300% test coverage**
+---
 
-**Files Modified:**
-- `arm64_codegen.go`: +500 lines (control flow, loops)
-- `arm64_instructions.go`: Enhanced LDR/STR instructions
-- `TODO.md`: Updated roadmap and progress tracking
+## 📖 Documentation
 
-**Commits:**
-1. Add ARM64 loop support (range loops)
-2. Update TODO.md with ARM64 loop progress
-3. Add ARM64 list loop support
-4. Update TODO.md with completed loop support
-5. Add ARM64 lambda function support
-6. Update TODO.md with lambda function completion
-7. Add ARM64 UnaryExpr and LengthExpr support
-8. Add ARM64 MapExpr support
-9. Update TODO.md with final session achievements
+### 21. Update Documentation
+- [ ] Update README.md with macOS signing status
+- [ ] Document known limitations in MACHO_STATUS.md (already exists)
+- [ ] Add architecture comparison guide
+- [ ] Document calling conventions for each architecture
 
-**Code Quality:**
-- All code compiles cleanly
-- Generated assembly verified with otool -tv
-- Test programs compile successfully
-- Proper ARM64 AAPCS64 conventions followed
+---
 
-**Next Session Goals:**
-- Add SliceExpr and InExpr support
-- Implement additional expression types as needed
-- Consider dynamic linking research (blocking execution)
-- Target: Reach 60+ tests passing (34% coverage)
+## 🔧 Future Features (Version 2.0+)
 
-## Notes
+### 22. Advanced Language Features
+- [ ] Multiple lambda dispatch (overloading by arity)
+- [ ] Pattern matching with destructuring
+- [ ] Method call sugar: `obj.method(args)` syntax
+- [ ] Regex matching: `=~` and `!~` operators
+- [ ] Gather/scatter: `@[indices]` syntax
+- [ ] SIMD annotations for explicit vectorization
 
-- **Current Status**: ARM64 backend at v1.1.0 Alpha (Minimum Viable achieved!)
-- **Next Milestone**: 60+ ARM64 tests passing (move toward Beta status)
-- **Recent Progress**: Essential operators implemented - unary, length, maps all working!
-- **macOS Blocker**: Dynamic linking required for execution (raw syscalls blocked)
-- **Code Quality**: Use otool, lldb, and comparison with clang for ARM64 debugging
-- **Test Coverage**: 40/178 tests (22.5%) - 300% increase from session start
+### 23. Standard Library Packages
+- [ ] HTTP package (basic HTTP client)
+- [ ] JSON package (parsing and serialization)
+- [ ] Testing package (assert functions and framework)
+- [ ] Collections package (advanced data structures)
 
-# Additional required changes (to LANGUAGE.md and *.go):
+---
 
-* Let "@+" just be "@", if it is possible to parse clearly.
-* "sum := sum + i" should be possible to write as "sum += i". Also add -=, *= and /=.
-* exit(0) at the end of programs should not be needed. If it's not there, the program should be able to simply ret?
-* "x < y { -> println("yes")
-}" should be possible to write as simply "x < y { println("yes") }
-* "double = (x) -> x * 2" should fail, because it should require => insted of ->. Also (x) could be just x.
+## 📊 Current Status
+
+**Version**: 1.0.0 (x86-64 complete), 1.1.0-dev (ARM64 in progress)
+
+**Test Results**:
+- x86-64: 178/178 (100%) ✅
+- ARM64: ~45/178 (25%) - Core features working, execution blocked by #1
+- Mach-O: 9/10 tests pass (structure correct, execution blocked by #1)
+
+**Blockers**:
+1. macOS dynamic linking (SIGBUS) - **CRITICAL**
+2. RISC-V backend incomplete - Medium priority
+3. Missing ARM64 expression types - Low priority (workarounds exist)
+
+**Recent Wins**:
+- ✅ Self-signing implementation complete (no codesign tool needed)
+- ✅ Symbol naming fixed (single underscore)
+- ✅ ARM64 core features working (when using syscalls)
