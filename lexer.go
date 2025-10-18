@@ -209,6 +209,8 @@ func (l *Lexer) NextToken() Token {
 		}
 		value := l.input[start:l.pos]
 		l.pos++ // skip closing "
+		// Process escape sequences like \n, \t, etc.
+		value = processEscapeSequences(value)
 		return Token{Type: TOKEN_STRING, Value: value, Line: l.line}
 	}
 
