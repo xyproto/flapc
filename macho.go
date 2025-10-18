@@ -566,10 +566,18 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	// It comes after the __TEXT segment content (headers + text + stubs)
 	textSegContentEnd := stubsFileOffset + stubsSize
 	rodataFileOffset := (textSegContentEnd + pageSize - 1) &^ (pageSize - 1)
-	gotFileOffset := rodataFileOffset + rodataSize
+
+	// Calculate padding needed to align GOT to 8 bytes
+	gotPadding := uint64(0)
+	if eb.useDynamicLinking && numImports > 0 {
+		afterRodata := rodataFileOffset + rodataSize
+		gotPadding = (8 - (afterRodata % 8)) % 8
+	}
+
+	gotFileOffset := rodataFileOffset + rodataSize + gotPadding
 
 	// Calculate LINKEDIT segment offset and size (after all data sections including GOT)
-	dataEndOffset := rodataFileOffset + rodataSize
+	dataEndOffset := rodataFileOffset + rodataSize + gotPadding
 	if eb.useDynamicLinking && numImports > 0 {
 		dataEndOffset += gotSize
 	}
@@ -724,7 +732,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		// Now we can calculate __DATA segment addresses (comes after __TEXT segment)
 		rodataAddr = textAddr + textSegVMSize
 		rodataSectAddr = rodataAddr
-		gotAddr = rodataAddr + rodataSize
+		gotAddr = rodataAddr + rodataSize + gotPadding
 
 		seg := SegmentCommand64{
 			Cmd:      LC_SEGMENT_64,
@@ -1153,6 +1161,13 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		buf.Write(eb.rodata.Bytes())
 	}
 
+	// Align to 8 bytes before GOT (GOT entries must be 8-byte aligned)
+	if eb.useDynamicLinking && numImports > 0 {
+		for buf.Len()%8 != 0 {
+			buf.WriteByte(0)
+		}
+	}
+
 	// Write __got section (if dynamic linking)
 	if eb.useDynamicLinking && numImports > 0 {
 		// GOT entries use chained fixup format DYLD_CHAINED_PTR_ARM64E_FIRMWARE
@@ -1239,8 +1254,8 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		}
 		binary.Write(&buf, binary.LittleEndian, &startsSegment)
 		// Page start: offset to GOT within __DATA segment
-		// GOT comes after rodata in __DATA segment
-		gotOffsetInDataSeg := uint16(rodataSize)
+		// GOT comes after rodata + padding in __DATA segment
+		gotOffsetInDataSeg := uint16(rodataSize + gotPadding)
 		binary.Write(&buf, binary.LittleEndian, gotOffsetInDataSeg)
 
 		// 4. Write imports table (DyldChainedImport entries)
