@@ -107,12 +107,12 @@ func TestBufferWrapper(t *testing.T) {
 
 // TestLookup tests symbol lookup
 func TestLookup(t *testing.T) {
-	eb, err := New("x86_64")
+	eb, err := New("x86_64-linux")
 	if err != nil {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
 
-	// Test syscall number lookup
+	// Test syscall number lookup (Linux syscalls)
 	writeNum := eb.Lookup("SYS_WRITE")
 	if writeNum != "1" {
 		t.Errorf("SYS_WRITE = %s, want 1", writeNum)
@@ -141,12 +141,12 @@ func TestLookup(t *testing.T) {
 
 // TestARM64Syscall tests ARM64 syscall numbers
 func TestARM64Syscall(t *testing.T) {
-	eb, err := New("aarch64")
+	eb, err := New("aarch64-linux")
 	if err != nil {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
 
-	// ARM64 uses different syscall numbers
+	// ARM64 Linux uses different syscall numbers than x86_64
 	writeNum := eb.Lookup("SYS_WRITE")
 	if writeNum != "64" {
 		t.Errorf("ARM64 SYS_WRITE = %s, want 64", writeNum)
