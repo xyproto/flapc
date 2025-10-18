@@ -346,7 +346,7 @@ func TestMachOExecutable(t *testing.T) {
 	}
 
 	tmpfile := "/tmp/flapc_macho_exec_test"
-	defer os.Remove(tmpfile)
+	// defer os.Remove(tmpfile) // Keep for debugging
 
 	// Use host architecture for execution test
 	eb, err := New(runtime.GOARCH + "-darwin")

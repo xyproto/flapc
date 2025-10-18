@@ -111,10 +111,13 @@ func (eb *ExecutableBuilder) CompileDefaultProgram(outputFile string) error {
 			eb.SysWrite("hello")
 			eb.SysExit()
 		}
-		if len(eb.dynlinker.Libraries) > 0 {
-			eb.WriteDynamicELF()
-		} else {
-			eb.WriteELFHeader()
+		// Only write ELF headers for non-Mach-O platforms
+		if !eb.platform.IsMachO() {
+			if len(eb.dynlinker.Libraries) > 0 {
+				eb.WriteDynamicELF()
+			} else {
+				eb.WriteELFHeader()
+			}
 		}
 	}
 	// Output the executable file

@@ -817,6 +817,10 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	if debug {
 		fmt.Fprintf(os.Stderr, "DEBUG: About to write Mach-O header with NCmds=%d, SizeOfCmds=%d\n", ncmds, loadCmdsSize)
 	}
+	flags := uint32(MH_NOUNDEFS | MH_DYLDLINK | MH_TWOLEVEL | MH_PIE)
+	if debug || VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Mach-O header flags = 0x%08x (MH_PIE=0x%x)\n", flags, MH_PIE)
+	}
 	header := MachOHeader64{
 		Magic:      MH_MAGIC_64,
 		CPUType:    cpuType,
@@ -824,7 +828,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		FileType:   MH_EXECUTE,
 		NCmds:      ncmds,
 		SizeOfCmds: loadCmdsSize,
-		Flags:      MH_NOUNDEFS | MH_DYLDLINK | MH_TWOLEVEL | MH_PIE,
+		Flags:      flags,
 		Reserved:   0,
 	}
 	binary.Write(&buf, binary.LittleEndian, &header)
@@ -837,9 +841,10 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	if len(bufBytes) >= 32 {
 		ncmdsInBuf := binary.LittleEndian.Uint32(bufBytes[16:20])
 		sizeofcmdsInBuf := binary.LittleEndian.Uint32(bufBytes[20:24])
-		if debug {
-			fmt.Fprintf(os.Stderr, "DEBUG: Header in buffer has NCmds=%d, SizeOfCmds=%d (NCmds bytes: %v)\n",
-				ncmdsInBuf, sizeofcmdsInBuf, bufBytes[16:20])
+		flagsInBuf := binary.LittleEndian.Uint32(bufBytes[24:28])
+		if debug || VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Header in buffer has NCmds=%d, SizeOfCmds=%d, Flags=0x%08x\n",
+				ncmdsInBuf, sizeofcmdsInBuf, flagsInBuf)
 		}
 	}
 
