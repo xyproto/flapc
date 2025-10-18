@@ -39,6 +39,7 @@ const (
 	LC_DATA_IN_CODE        = 0x29
 	LC_DYLD_CHAINED_FIXUPS = 0x80000034
 	LC_DYLD_EXPORTS_TRIE   = 0x80000033
+	LC_BUILD_VERSION       = 0x32
 
 	// Protection flags
 	VM_PROT_NONE    = 0x00
@@ -192,6 +193,16 @@ type SourceVersionCommand struct {
 	Cmd     uint32
 	CmdSize uint32
 	Version uint64
+}
+
+// BuildVersionCommand represents LC_BUILD_VERSION
+type BuildVersionCommand struct {
+	Cmd      uint32
+	CmdSize  uint32
+	Platform uint32
+	Minos    uint32 // Minimum OS version (X.Y.Z encoded as nibbles)
+	Sdk      uint32 // SDK version
+	NTools   uint32 // Number of tool entries following this
 }
 
 // LinkEditDataCommand represents function starts / data in code load command
@@ -355,7 +366,8 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	dylinkerPath := "/usr/lib/dyld\x00"
 	dylinkerCmdSize := (uint32(binary.Size(LoadCommand{})+4+len(dylinkerPath)) + 7) &^ 7
 	prelimLoadCmdsSize += dylinkerCmdSize                          // LC_LOAD_DYLINKER
-	prelimLoadCmdsSize += uint32(binary.Size(EntryPointCommand{})) // LC_MAIN
+	prelimLoadCmdsSize += uint32(binary.Size(BuildVersionCommand{})) // LC_BUILD_VERSION
+	prelimLoadCmdsSize += uint32(binary.Size(EntryPointCommand{}))  // LC_MAIN
 
 	if eb.useDynamicLinking {
 		dylibPath := "/usr/lib/libSystem.B.dylib\x00"
@@ -678,7 +690,21 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		ncmds++
 	}
 
-	// 6. LC_MAIN (entry point)
+	// 6. LC_BUILD_VERSION
+	{
+		buildVer := BuildVersionCommand{
+			Cmd:      LC_BUILD_VERSION,
+			CmdSize:  uint32(binary.Size(BuildVersionCommand{})),
+			Platform: 1,        // 1 = macOS
+			Minos:    0x000c0000, // macOS 12.0 (0x000c = 12, 0x0000 = 0.0)
+			Sdk:      0x000c0000, // SDK 12.0
+			NTools:   0,        // No tool entries
+		}
+		binary.Write(&loadCmdsBuf, binary.LittleEndian, &buildVer)
+		ncmds++
+	}
+
+	// 7. LC_MAIN (entry point)
 	{
 		entry := EntryPointCommand{
 			Cmd:       LC_MAIN,
