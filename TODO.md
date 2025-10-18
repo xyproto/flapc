@@ -1,36 +1,23 @@
 # Flap Compiler TODO
 
-## 🚨 Critical Issues
+## ✅ Recently Completed
 
-### 1. Fix macOS Mach-O Dynamic Linking (SIGBUS Crash)
-**Priority**: HIGH - Blocks all macOS ARM64 execution
-**Status**: All binaries with dynamic linking crash with SIGBUS (exit code 138)
+### 1. ✅ FIXED: macOS Mach-O Dynamic Linking
+**Status**: WORKING! (commit 0870c56)
 
-**Affected**:
-- Any program calling `exit()`, `printf()`, `getpid()`, or other libc functions
-- TestMachOExecutable test fails
-- All .flap programs that use standard library functions
+**What was fixed**:
+- ✅ Indirect symbol table 8-byte alignment (required by dyld)
+- ✅ Separate import-only string table for chained fixups
+- ✅ Correct page_start offset to GOT within __DATA segment
+- ✅ Updated chained fixups size calculation for 4 segments
+- ✅ TestMachOExecutable now passes
+- ✅ Dynamic linking fully functional
 
-**Investigation Steps**:
-- [ ] Use lldb to trace execution and identify crash location
-- [ ] Compare GOT/PLT structure with working GCC-generated binary
-- [ ] Verify chained fixups structure with `dyld_info -fixups`
-- [ ] Check if GOT pointers are being resolved correctly by dyld
-- [ ] Test with `DYLD_PRINT_APIS=1` to see what dyld is doing
-- [ ] Examine stub code generation vs. working binaries
-
-**Recent Progress**:
-- ✅ Fixed segment count mismatch in chained fixups (commit 06d00de)
-- ✅ Switched to DYLD_CHAINED_PTR_64 format (commit 8f02b98)
-- ✅ Self-signing working perfectly
-- ⚠️ Still getting SIGKILL (exit 137) on execution
-
-**References**:
-- Commit history: Multiple attempts since `0e1e705`
-- Working: Self-signing, binary structure (9/10 tests pass)
-- Broken: Actual execution of dynamically linked code
+**Result**: ARM64 binaries with `printf()`, `exit()`, etc. now execute successfully!
 
 ---
+
+## 🚨 Current Issues
 
 ## 📋 Language Syntax Improvements
 
@@ -226,15 +213,16 @@
 
 **Test Results**:
 - x86-64: 178/178 (100%) ✅
-- ARM64: ~45/178 (25%) - Core features working, execution blocked by #1
-- Mach-O: 9/10 tests pass (structure correct, execution blocked by #1)
+- ARM64: Testing in progress (dynamic linking now working!)
+- Mach-O: 10/10 tests pass ✅ (TestMachOExecutable now passes!)
 
 **Blockers**:
-1. macOS dynamic linking (SIGBUS) - **CRITICAL**
+1. ~~macOS dynamic linking (SIGKILL)~~ - ✅ **FIXED!** (commit 0870c56)
 2. RISC-V backend incomplete - Medium priority
 3. Missing ARM64 expression types - Low priority (workarounds exist)
 
 **Recent Wins**:
+- ✅ **macOS ARM64 dynamic linking FIXED!** (commit 0870c56)
 - ✅ Self-signing implementation complete (no codesign tool needed)
 - ✅ Symbol naming fixed (single underscore)
-- ✅ ARM64 core features working (when using syscalls)
+- ✅ ARM64 binaries with printf(), exit() now execute successfully
