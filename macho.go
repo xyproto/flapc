@@ -314,21 +314,24 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		gotSize = uint64(numImports * 8)    // 8 bytes per GOT entry
 	}
 
-	// Align sizes
-	textSizeAligned := (textSize + pageSize - 1) &^ (pageSize - 1)
+	// Align sizes (for reference, but mostly calculated dynamically now)
+	_ = (textSize + pageSize - 1) &^ (pageSize - 1)  // textSizeAligned - calculated dynamically in segment
 	_ = (rodataSize + pageSize - 1) &^ (pageSize - 1) // rodataSizeAligned - may be used later
-	stubsSizeAligned := (stubsSize + 15) &^ 15        // 16-byte align
-	_ = stubsSizeAligned                              // May be used for stub alignment
+	_ = (stubsSize + 15) &^ 15                       // stubsSizeAligned - may be used for stub alignment
 	_ = (gotSize + 15) &^ 15                          // May be used for GOT alignment
 
 	// Calculate addresses - __TEXT starts after zero page
-	textAddr := zeroPageSize         // __TEXT segment starts at 4GB
-	textSectAddr := textAddr         // __text section
-	stubsAddr := textAddr + textSize // __stubs right after __text
+	textAddr := zeroPageSize // __TEXT segment starts at 4GB (includes headers at start)
 
-	rodataAddr := textAddr + textSizeAligned
-	rodataSectAddr := rodataAddr       // __data section (rodata)
-	gotAddr := rodataAddr + rodataSize // __got right after __data
+	// Calculate where __text section starts (after Mach-O header + load commands)
+	// This is computed later after we know the size of load commands, so use a placeholder
+	var textSectAddr uint64 // Will be set after we know header size
+	var stubsAddr uint64    // Will be set relative to textSectAddr
+
+	// These will be calculated after we know textSegVMSize
+	var rodataAddr uint64
+	var rodataSectAddr uint64
+	var gotAddr uint64
 
 	// Build load commands in a temporary buffer
 	var loadCmdsBuf bytes.Buffer
@@ -382,10 +385,23 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	}
 
 	fileHeaderSize := headerSize + prelimLoadCmdsSize
-	// Align to page boundary for first segment
-	textFileOffset := uint64((fileHeaderSize + uint32(pageSize) - 1) &^ (uint32(pageSize) - 1))
+
+	// __text section comes right after headers in file (no page alignment needed for file offset)
+	// The __TEXT segment starts at file offset 0 and includes the headers
+	textFileOffset := uint64(fileHeaderSize)
+
+	// Now we can calculate VM addresses
+	// __TEXT segment is at textAddr (0x100000000), headers are at start of segment
+	// __text section VM address = segment base + file offset within segment
+	textSectAddr = textAddr + textFileOffset
+	stubsAddr = textSectAddr + textSize
+
 	stubsFileOffset := textFileOffset + textSize
-	rodataFileOffset := textFileOffset + textSizeAligned
+
+	// __DATA segment file offset must be page-aligned
+	// It comes after the __TEXT segment content (headers + text + stubs)
+	textSegContentEnd := stubsFileOffset + stubsSize
+	rodataFileOffset := (textSegContentEnd + pageSize - 1) &^ (pageSize - 1)
 	gotFileOffset := rodataFileOffset + rodataSize
 
 	// Calculate LINKEDIT segment offset and size (after all data sections including GOT)
@@ -516,19 +532,23 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 
 	// 2. LC_SEGMENT_64 for __TEXT with __text and __stubs sections
 	{
-		// FileSize must not exceed VMSize
 		// __TEXT segment maps from file offset 0 (includes headers) to end of stubs
 		textSegFileSize := stubsFileOffset + stubsSize
-		if textSegFileSize > textSizeAligned {
-			textSegFileSize = textSizeAligned // Cap at vmsize
-		}
+
+		// VMSize must be page-aligned and include headers + text + stubs
+		textSegVMSize := ((textSegFileSize + pageSize - 1) &^ (pageSize - 1))
+
+		// Now we can calculate __DATA segment addresses (comes after __TEXT segment)
+		rodataAddr = textAddr + textSegVMSize
+		rodataSectAddr = rodataAddr
+		gotAddr = rodataAddr + rodataSize
 
 		seg := SegmentCommand64{
 			Cmd:      LC_SEGMENT_64,
 			CmdSize:  uint32(binary.Size(SegmentCommand64{}) + int(textNSects)*binary.Size(Section64{})),
 			VMAddr:   textAddr,
-			VMSize:   textSizeAligned,
-			FileOff:  0, // __TEXT starts at beginning of file
+			VMSize:   textSegVMSize,
+			FileOff:  0, // __TEXT starts at beginning of file (includes headers)
 			FileSize: textSegFileSize,
 			MaxProt:  VM_PROT_READ | VM_PROT_EXECUTE,
 			InitProt: VM_PROT_READ | VM_PROT_EXECUTE,
