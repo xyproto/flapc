@@ -560,7 +560,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 			VMAddr:   textAddr,
 			VMSize:   textSegVMSize,
 			FileOff:  0, // __TEXT starts at beginning of file (includes headers)
-			FileSize: textSegFileSize,
+			FileSize: textSegVMSize, // FileSize should match VMSize for __TEXT
 			MaxProt:  VM_PROT_READ | VM_PROT_EXECUTE,
 			InitProt: VM_PROT_READ | VM_PROT_EXECUTE,
 			NSects:   textNSects,
