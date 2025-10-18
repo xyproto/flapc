@@ -12,7 +12,7 @@ func TestDynamicELFStructure(t *testing.T) {
 	tmpfile := "/tmp/flapc_dynamic_test"
 	defer os.Remove(tmpfile)
 
-	eb, err := New("x86_64")
+	eb, err := New("x86_64-linux")
 	if err != nil {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestLDDOutput(t *testing.T) {
 	tmpfile := "/tmp/flapc_ldd_test"
 	defer os.Remove(tmpfile)
 
-	eb, err := New("x86_64")
+	eb, err := New("x86_64-linux")
 	if err != nil {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
@@ -283,7 +283,11 @@ func TestLDDOutput(t *testing.T) {
 		t.Fatalf("Failed to write executable: %v", err)
 	}
 
-	// Run ldd
+	// Run ldd (Linux only)
+	if GetDefaultPlatform().OS != OSLinux {
+		t.Skip("Skipping ldd test on non-Linux platform")
+	}
+
 	cmd := exec.Command("ldd", tmpfile)
 	output, err := cmd.CombinedOutput()
 	if err != nil {

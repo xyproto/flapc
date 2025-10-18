@@ -9,7 +9,7 @@ import (
 
 // TestBasicCompilation tests that flapc can compile and generate an executable
 func TestBasicCompilation(t *testing.T) {
-	eb, err := New("x86_64")
+	eb, err := New("x86_64-linux")
 	if err != nil {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestArchitectures(t *testing.T) {
 
 // TestDynamicLinking tests basic dynamic linking setup
 func TestDynamicLinking(t *testing.T) {
-	eb, err := New("x86_64")
+	eb, err := New("x86_64-linux")
 	if err != nil {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestExecutableGeneration(t *testing.T) {
 	tmpfile := "/tmp/flapc_test_output"
 	defer os.Remove(tmpfile)
 
-	eb, err := New("x86_64")
+	eb, err := New("x86_64-linux")
 	if err != nil {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}

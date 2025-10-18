@@ -9,7 +9,7 @@ import (
 
 // TestELFMagicNumber verifies basic ELF magic number
 func TestELFMagicNumber(t *testing.T) {
-	eb, err := New("x86_64")
+	eb, err := New("x86_64-linux")
 	if err != nil {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
@@ -28,7 +28,7 @@ func TestELFMagicNumber(t *testing.T) {
 
 // TestELFClass verifies ELF is 64-bit
 func TestELFClass(t *testing.T) {
-	eb, err := New("x86_64")
+	eb, err := New("x86_64-linux")
 	if err != nil {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestELFClass(t *testing.T) {
 
 // TestELFEndianness verifies little-endian
 func TestELFEndianness(t *testing.T) {
-	eb, err := New("x86_64")
+	eb, err := New("x86_64-linux")
 	if err != nil {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestELFEndianness(t *testing.T) {
 
 // TestELFOSABI verifies Linux ABI
 func TestELFOSABI(t *testing.T) {
-	eb, err := New("x86_64")
+	eb, err := New("x86_64-linux")
 	if err != nil {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestMinimalELFSize(t *testing.T) {
 	tmpfile := "/tmp/flapc_size_test"
 	defer os.Remove(tmpfile)
 
-	eb, err := New("x86_64")
+	eb, err := New("x86_64-linux")
 	if err != nil {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
@@ -129,10 +129,15 @@ func TestMinimalELFSize(t *testing.T) {
 
 // TestDynamicELFExecutable verifies generated ELF can be executed
 func TestDynamicELFExecutable(t *testing.T) {
+	// Skip on non-Linux systems since we're generating ELF binaries
+	if GetDefaultPlatform().OS != OSLinux {
+		t.Skip("Skipping ELF execution test on non-Linux platform")
+	}
+
 	tmpfile := "/tmp/flapc_exec_test"
 	defer os.Remove(tmpfile)
 
-	eb, err := New("x86_64")
+	eb, err := New("x86_64-linux")
 	if err != nil {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
@@ -180,7 +185,7 @@ func TestELFSegmentAlignment(t *testing.T) {
 	tmpfile := "/tmp/flapc_align_test"
 	defer os.Remove(tmpfile)
 
-	eb, err := New("x86_64")
+	eb, err := New("x86_64-linux")
 	if err != nil {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
@@ -231,7 +236,7 @@ func TestELFInterpSegment(t *testing.T) {
 	tmpfile := "/tmp/flapc_interp_test"
 	defer os.Remove(tmpfile)
 
-	eb, err := New("x86_64")
+	eb, err := New("x86_64-linux")
 	if err != nil {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
@@ -299,7 +304,7 @@ func TestELFDynamicSegment(t *testing.T) {
 	tmpfile := "/tmp/flapc_dynamic_seg_test"
 	defer os.Remove(tmpfile)
 
-	eb, err := New("x86_64")
+	eb, err := New("x86_64-linux")
 	if err != nil {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
@@ -358,7 +363,7 @@ func TestELFType(t *testing.T) {
 	tmpfile := "/tmp/flapc_type_test"
 	defer os.Remove(tmpfile)
 
-	eb, err := New("x86_64")
+	eb, err := New("x86_64-linux")
 	if err != nil {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
@@ -401,10 +406,10 @@ func TestELFMachine(t *testing.T) {
 		arch     string
 		expected elf.Machine
 	}{
-		{"x86_64", elf.EM_X86_64},
-		{"amd64", elf.EM_X86_64},
-		{"aarch64", elf.EM_AARCH64},
-		{"arm64", elf.EM_AARCH64},
+		{"x86_64-linux", elf.EM_X86_64},
+		{"amd64-linux", elf.EM_X86_64},
+		{"aarch64-linux", elf.EM_AARCH64},
+		{"arm64-linux", elf.EM_AARCH64},
 	}
 
 	for _, tt := range tests {
@@ -425,7 +430,7 @@ func TestELFMachine(t *testing.T) {
 			ds.AddSymbol("exit", STB_GLOBAL, STT_FUNC)
 
 			// Architecture-specific exit code
-			if tt.arch == "x86_64" || tt.arch == "amd64" {
+			if tt.arch == "x86_64-linux" || tt.arch == "amd64-linux" {
 				eb.Emit("xor rdi, rdi")
 				eb.Emit("call exit@plt")
 			} else {
@@ -462,7 +467,7 @@ func TestELFPermissions(t *testing.T) {
 	tmpfile := "/tmp/flapc_perms_test"
 	defer os.Remove(tmpfile)
 
-	eb, err := New("x86_64")
+	eb, err := New("x86_64-linux")
 	if err != nil {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
