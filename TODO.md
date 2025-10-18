@@ -2,22 +2,37 @@
 
 ## ✅ Recently Completed
 
-### 1. ✅ FIXED: macOS Mach-O Dynamic Linking
-**Status**: WORKING! (commit 0870c56)
-
-**What was fixed**:
+### 1. ✅ FIXED: macOS Mach-O Dynamic Linking (commit 0870c56)
 - ✅ Indirect symbol table 8-byte alignment (required by dyld)
 - ✅ Separate import-only string table for chained fixups
 - ✅ Correct page_start offset to GOT within __DATA segment
 - ✅ Updated chained fixups size calculation for 4 segments
 - ✅ TestMachOExecutable now passes
-- ✅ Dynamic linking fully functional
 
-**Result**: ARM64 binaries with `printf()`, `exit()`, etc. now execute successfully!
+### 2. ✅ FIXED: String Escape Sequences (commit 863f5a9)
+- ✅ Strings now properly interpret `\n`, `\t`, `\r`, `\\`, `\"`
+- ✅ Added call to processEscapeSequences() in lexer
+
+### 3. ✅ FIXED: GOT Alignment (commit 7425394)
+- ✅ GOT now properly 8-byte aligned after variable-sized rodata
+- ✅ Added padding calculation between rodata and GOT
+- ✅ Fixes SIGBUS crashes when string sizes change
+
+### 4. ✅ IMPLEMENTED: Printf with Numeric Arguments (commit 78cefb8)
+- ✅ Variadic function calling with stack-based argument passing
+- ✅ Follows ARM64 calling convention (args on stack, not registers)
+- ✅ Works for %g, %f, etc. format specifiers
+- ⚠️ String arguments (%s) not yet implemented
+
+**Result**: ARM64 dynamic linking fully functional! Printf works with numeric args!
 
 ---
 
 ## 🚨 Current Issues
+
+### 1. Printf String Arguments (%s)
+- [ ] Implement pointer handling for string arguments
+- Currently %s format crashes because strings need pointers, not floats
 
 ## 📋 Language Syntax Improvements
 
@@ -213,16 +228,20 @@
 
 **Test Results**:
 - x86-64: 178/178 (100%) ✅
-- ARM64: Testing in progress (dynamic linking now working!)
-- Mach-O: 10/10 tests pass ✅ (TestMachOExecutable now passes!)
+- ARM64: Core features working, printf with numeric args working
+- Mach-O: 10/10 tests pass ✅
 
 **Blockers**:
-1. ~~macOS dynamic linking (SIGKILL)~~ - ✅ **FIXED!** (commit 0870c56)
-2. RISC-V backend incomplete - Medium priority
-3. Missing ARM64 expression types - Low priority (workarounds exist)
+1. ~~macOS dynamic linking~~ - ✅ **FIXED!**
+2. Printf string arguments (%s) - High priority for tests
+3. RISC-V backend incomplete - Medium priority
+4. Missing ARM64 expression types - Low priority
 
-**Recent Wins**:
-- ✅ **macOS ARM64 dynamic linking FIXED!** (commit 0870c56)
-- ✅ Self-signing implementation complete (no codesign tool needed)
-- ✅ Symbol naming fixed (single underscore)
-- ✅ ARM64 binaries with printf(), exit() now execute successfully
+**Recent Wins (Today's Session)**:
+- ✅ **macOS ARM64 dynamic linking FIXED!** - No more SIGKILL!
+- ✅ **String escape sequences working** - `\n`, `\t`, etc. now work
+- ✅ **GOT alignment fixed** - Handles variable-sized rodata correctly
+- ✅ **Printf with numeric arguments** - Variadic functions working!
+- ✅ Self-signing implementation (no external codesign needed)
+- ✅ TestMachOExecutable passes
+- ✅ ARM64 binaries execute successfully with dynamic linking
