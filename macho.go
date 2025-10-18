@@ -649,6 +649,24 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 
 	symtabSize := uint32(len(symtab) * binary.Size(Nlist64{}))
 	strtabSize := uint32(strtab.Len())
+
+	// Create separate string table for chained fixups imports (only import names, not all symbols)
+	var importsStrtab bytes.Buffer
+	importsStrtab.WriteByte(0) // Null string at offset 0
+	for _, funcName := range eb.neededFunctions {
+		importsStrtab.WriteString("_" + funcName) // macOS needs underscore prefix
+		importsStrtab.WriteByte(0)
+	}
+	importsStrtabSize := uint32(importsStrtab.Len())
+
+	// Calculate padding needed to align indirect symbol table to 8 bytes
+	// Padding comes after: symtab + strtab
+	alignmentPadding := uint32(0)
+	if len(indirectSymTab) > 0 {
+		currentOffset := symtabSize + strtabSize
+		alignmentPadding = (8 - (currentOffset % 8)) % 8
+	}
+
 	indirectSymTabSize := uint32(len(indirectSymTab) * 4)
 
 	// Calculate chained fixups size
@@ -656,14 +674,14 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	if eb.useDynamicLinking && numImports > 0 {
 		// DyldChainedFixupsHeader
 		chainedFixupsSize += uint32(binary.Size(DyldChainedFixupsHeader{}))
-		// DyldChainedStartsInImage + segment offsets (1 segment: __DATA)
-		chainedFixupsSize += 4 + (1 * 4) // seg_count + 1 offset
+		// DyldChainedStartsInImage + segment offsets (4 segments: __PAGEZERO, __TEXT, __DATA, __LINKEDIT)
+		chainedFixupsSize += 4 + (4 * 4) // seg_count + 4 segment offsets
 		// DyldChainedStartsInSegment for __DATA + page starts (1 page)
 		chainedFixupsSize += uint32(binary.Size(DyldChainedStartsInSegment{})) + 2 // + 1 page_start
 		// Imports table (DyldChainedImport * numImports)
 		chainedFixupsSize += 4 * numImports // Each import is 4 bytes (packed bitfield)
-		// Symbol strings (copy from strtab)
-		chainedFixupsSize += strtabSize
+		// Symbol strings (import names only, not full symbol table)
+		chainedFixupsSize += importsStrtabSize
 		// Align to 8 bytes
 		chainedFixupsSize = (chainedFixupsSize + 7) &^ 7
 	}
@@ -674,7 +692,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	// For a simple binary, 416 bytes is typical (observed from reference binaries)
 	codeSignatureSize := uint32(4096) // Allocate 4KB - plenty for most binaries
 
-	linkeditSize := symtabSize + strtabSize + indirectSymTabSize + chainedFixupsSize + codeSignatureSize
+	linkeditSize := symtabSize + strtabSize + alignmentPadding + indirectSymTabSize + chainedFixupsSize + codeSignatureSize
 
 	// 1. LC_SEGMENT_64 for __PAGEZERO (required on macOS)
 	{
@@ -956,7 +974,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 			NModTab:        0,
 			ExtRefSymOff:   0,
 			NExtRefSyms:    0,
-			IndirectSymOff: uint32(linkeditFileOffset) + symtabSize + strtabSize,
+			IndirectSymOff: uint32(linkeditFileOffset) + symtabSize + strtabSize + alignmentPadding,
 			NIndirectSyms:  uint32(len(indirectSymTab)),
 			ExtRelOff:      0,
 			NExtRel:        0,
@@ -976,12 +994,12 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		chainedFixupsCmd := LinkEditDataCommand{
 			Cmd:      LC_DYLD_CHAINED_FIXUPS,
 			CmdSize:  uint32(binary.Size(LinkEditDataCommand{})),
-			DataOff:  uint32(linkeditFileOffset) + symtabSize + strtabSize + indirectSymTabSize,
+			DataOff:  uint32(linkeditFileOffset) + symtabSize + strtabSize + alignmentPadding + indirectSymTabSize,
 			DataSize: chainedFixupsSize,
 		}
 		if debug {
 			fmt.Fprintf(os.Stderr, "DEBUG: Writing LC_DYLD_CHAINED_FIXUPS with DataSize=%d, DataOff=%d\n",
-				chainedFixupsSize, uint32(linkeditFileOffset)+symtabSize+strtabSize+indirectSymTabSize)
+				chainedFixupsSize, uint32(linkeditFileOffset)+symtabSize+strtabSize+alignmentPadding+indirectSymTabSize)
 		}
 		binary.Write(&loadCmdsBuf, binary.LittleEndian, &chainedFixupsCmd)
 		ncmds++
@@ -994,7 +1012,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		codeSignatureCmd := LinkEditDataCommand{
 			Cmd:      LC_CODE_SIGNATURE,
 			CmdSize:  uint32(binary.Size(LinkEditDataCommand{})),
-			DataOff:  uint32(linkeditFileOffset) + symtabSize + strtabSize + indirectSymTabSize + chainedFixupsSize,
+			DataOff:  uint32(linkeditFileOffset) + symtabSize + strtabSize + alignmentPadding + indirectSymTabSize + chainedFixupsSize,
 			DataSize: codeSignatureSize,
 		}
 		binary.Write(&loadCmdsBuf, binary.LittleEndian, &codeSignatureCmd)
@@ -1163,6 +1181,11 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		// Write string table
 		buf.Write(strtab.Bytes())
 
+		// Align to 8 bytes before indirect symbol table (required by dyld)
+		for buf.Len()%8 != 0 {
+			buf.WriteByte(0)
+		}
+
 		// Write indirect symbol table
 		for _, idx := range indirectSymTab {
 			binary.Write(&buf, binary.LittleEndian, idx)
@@ -1215,18 +1238,20 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 			PageCount:       1, // GOT fits in one page
 		}
 		binary.Write(&buf, binary.LittleEndian, &startsSegment)
-		// Page start: first fixup at offset 0 in GOT
-		binary.Write(&buf, binary.LittleEndian, uint16(0))
+		// Page start: offset to GOT within __DATA segment
+		// GOT comes after rodata in __DATA segment
+		gotOffsetInDataSeg := uint16(rodataSize)
+		binary.Write(&buf, binary.LittleEndian, gotOffsetInDataSeg)
 
 		// 4. Write imports table (DyldChainedImport entries)
 		for i, funcName := range eb.neededFunctions {
-			// Find symbol name offset in strtab
+			// Find symbol name offset in importsStrtab (import-only string table)
 			// Note: symbol names have underscore prefix on macOS
 			nameOffset := uint32(0)
 			searchBytes := []byte("_" + funcName + "\x00")
-			strtabBytes := strtab.Bytes()
-			for j := 0; j < len(strtabBytes)-len(searchBytes)+1; j++ {
-				if bytes.Equal(strtabBytes[j:j+len(searchBytes)], searchBytes) {
+			importsStrtabBytes := importsStrtab.Bytes()
+			for j := 0; j < len(importsStrtabBytes)-len(searchBytes)+1; j++ {
+				if bytes.Equal(importsStrtabBytes[j:j+len(searchBytes)], searchBytes) {
 					nameOffset = uint32(j)
 					break
 				}
@@ -1243,17 +1268,23 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 			_ = i // Suppress unused variable warning
 		}
 
-		// 5. Write symbol strings (copy from strtab)
-		buf.Write(strtab.Bytes())
+		// 5. Write symbol strings (import names only)
+		buf.Write(importsStrtab.Bytes())
 
 		// 6. Align to 8 bytes (pad to match chainedFixupsSize calculation)
-		chainedFixupsStart := linkeditFileOffset + uint64(symtabSize) + uint64(strtabSize) + uint64(indirectSymTabSize)
+		chainedFixupsStart := linkeditFileOffset + uint64(symtabSize) + uint64(strtabSize) + uint64(alignmentPadding) + uint64(indirectSymTabSize)
 		chainedFixupsEnd := chainedFixupsStart + uint64(chainedFixupsSize)
 		for uint64(buf.Len()) < chainedFixupsEnd {
 			buf.WriteByte(0)
 		}
 
-		// 7. Generate and write code signature
+		// 7. Pad to code signature offset
+		codeSignatureStart := linkeditFileOffset + uint64(symtabSize) + uint64(strtabSize) + uint64(alignmentPadding) + uint64(indirectSymTabSize) + uint64(chainedFixupsSize)
+		for uint64(buf.Len()) < codeSignatureStart {
+			buf.WriteByte(0)
+		}
+
+		// 8. Generate and write code signature
 		// Get the identifier for the binary (use "a.out" as default)
 		identifier := "a.out"
 		if VerboseMode {
