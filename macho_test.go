@@ -397,15 +397,11 @@ func TestMachOExecutable(t *testing.T) {
 	}
 
 	// Sign the binary (required on modern macOS)
-	// TEMPORARY: Skip codesign to test if binary works without it
-	_ = tmpfile // Suppress unused warning
-	/*
 	signCmd := exec.Command("codesign", "-f", "-s", "-", tmpfile)
 	signErr := signCmd.Run()
 	if signErr != nil {
 		t.Logf("Warning: Failed to sign binary: %v", signErr)
 	}
-	*/
 
 	// Debug: check file after codesign
 	signedBytes, _ := os.ReadFile(tmpfile)

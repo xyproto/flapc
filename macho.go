@@ -37,6 +37,7 @@ const (
 	LC_LOAD_DYLIB          = 0xc
 	LC_FUNCTION_STARTS     = 0x26
 	LC_DATA_IN_CODE        = 0x29
+	LC_CODE_SIGNATURE      = 0x1d
 	LC_DYLD_CHAINED_FIXUPS = 0x80000034
 	LC_DYLD_EXPORTS_TRIE   = 0x80000033
 	LC_BUILD_VERSION       = 0x32
@@ -385,10 +386,16 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 			prelimLoadCmdsSize += uint32(binary.Size(SymtabCommand{}))       // LC_SYMTAB
 			prelimLoadCmdsSize += uint32(binary.Size(DysymtabCommand{}))     // LC_DYSYMTAB
 			prelimLoadCmdsSize += uint32(binary.Size(LinkEditDataCommand{})) // LC_DYLD_CHAINED_FIXUPS
+			prelimLoadCmdsSize += uint32(binary.Size(LinkEditDataCommand{})) // LC_CODE_SIGNATURE
 		}
 	}
 
 	fileHeaderSize := headerSize + prelimLoadCmdsSize
+
+	if debug || VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: headerSize=%d, prelimLoadCmdsSize=%d, fileHeaderSize=%d\n",
+			headerSize, prelimLoadCmdsSize, fileHeaderSize)
+	}
 
 	// __text section comes right after headers in file (no page alignment needed for file offset)
 	// The __TEXT segment starts at file offset 0 and includes the headers
@@ -827,6 +834,17 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		if debug {
 			fmt.Fprintf(os.Stderr, "DEBUG: After writing LC_DYLD_CHAINED_FIXUPS, ncmds=%d\n", ncmds)
 		}
+
+		// 11. LC_CODE_SIGNATURE - must come LAST in load commands
+		// The signature will be written by codesign tool, we just allocate space
+		codeSignatureCmd := LinkEditDataCommand{
+			Cmd:      LC_CODE_SIGNATURE,
+			CmdSize:  uint32(binary.Size(LinkEditDataCommand{})),
+			DataOff:  uint32(linkeditFileOffset) + symtabSize + strtabSize + indirectSymTabSize + chainedFixupsSize,
+			DataSize: codeSignatureSize,
+		}
+		binary.Write(&loadCmdsBuf, binary.LittleEndian, &codeSignatureCmd)
+		ncmds++
 	}
 
 	// Verify our preliminary calculation was correct
