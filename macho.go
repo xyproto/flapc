@@ -1169,7 +1169,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		// Calculate offsets within the chained fixups data
 		headerSize := uint32(binary.Size(DyldChainedFixupsHeader{}))
 		startsOffset := headerSize
-		startsImageSize := uint32(4 + (1 * 4))                                     // seg_count + 1 segment offset
+		startsImageSize := uint32(4 + (4 * 4))                                     // seg_count + 4 segment offsets
 		startsSegmentSize := uint32(binary.Size(DyldChainedStartsInSegment{}) + 2) // + 1 page_start
 		importsOffset := startsOffset + startsImageSize + startsSegmentSize
 		symbolsOffset := importsOffset + (4 * numImports) // 4 bytes per import
@@ -1187,11 +1187,20 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		binary.Write(&buf, binary.LittleEndian, &chainedHeader)
 
 		// 2. Write DyldChainedStartsInImage
-		segCount := uint32(1) // Only __DATA segment has fixups
+		// We have 4 segments: __PAGEZERO, __TEXT, __DATA, __LINKEDIT
+		// Only __DATA (index 2) has fixups, others are 0
+		segCount := uint32(4)
 		binary.Write(&buf, binary.LittleEndian, segCount)
-		// Offset to __DATA segment starts (relative to StartsOffset)
+
+		// Segment 0: __PAGEZERO - no fixups
+		binary.Write(&buf, binary.LittleEndian, uint32(0))
+		// Segment 1: __TEXT - no fixups
+		binary.Write(&buf, binary.LittleEndian, uint32(0))
+		// Segment 2: __DATA - has fixups
 		dataSegStartsOffset := uint32(startsImageSize)
 		binary.Write(&buf, binary.LittleEndian, dataSegStartsOffset)
+		// Segment 3: __LINKEDIT - no fixups
+		binary.Write(&buf, binary.LittleEndian, uint32(0))
 
 		// 3. Write DyldChainedStartsInSegment for __DATA
 		startsSegment := DyldChainedStartsInSegment{
