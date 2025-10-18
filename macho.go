@@ -311,6 +311,7 @@ type DyldChainedImport struct {
 const (
 	DYLD_CHAINED_PTR_ARM64E            = 1
 	DYLD_CHAINED_PTR_64                = 2
+	DYLD_CHAINED_PTR_ARM64E_FIRMWARE   = 6
 	DYLD_CHAINED_PTR_ARM64E_KERNEL     = 7
 	DYLD_CHAINED_PTR_64_KERNEL_CACHE   = 8
 	DYLD_CHAINED_PTR_ARM64E_USERLAND24 = 12
@@ -1136,15 +1137,13 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 
 	// Write __got section (if dynamic linking)
 	if eb.useDynamicLinking && numImports > 0 {
-		// GOT entries use chained fixup format DYLD_CHAINED_PTR_64
-		// Bind format: bit 63=1, bits 62-51=next (0xFFF=end), bits 50-24=addend, bits 23-0=ordinal
+		// GOT entries use chained fixup format DYLD_CHAINED_PTR_ARM64E_FIRMWARE
+		// This format matches what GCC generates
+		// Bind format: bit 63=1 (bind), bits 31-0=ordinal (simplified - no auth)
 		for i := uint32(0); i < numImports; i++ {
-			// Bind pointer with no next (0xFFF), no addend (0), and ordinal i
-			next := uint64(0xFFF) // End of chain
-			addend := uint64(0)   // No addend
-			ordinal := uint64(i)  // Import index
-
-			chainedPtr := (uint64(1) << 63) | (next << 51) | (addend << 24) | ordinal
+			// Simple bind pointer: 0x8000000000000000 | ordinal
+			// Matches GCC's format exactly
+			chainedPtr := uint64(0x8000000000000000) | uint64(i)
 			binary.Write(&buf, binary.LittleEndian, chainedPtr)
 		}
 	}
@@ -1210,8 +1209,8 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		startsSegment := DyldChainedStartsInSegment{
 			Size:            uint32(binary.Size(DyldChainedStartsInSegment{}) + 2),
 			PageSize:        0x4000, // 16KB pages
-			PointerFormat:   DYLD_CHAINED_PTR_64, // Generic 64-bit format (not ARM64E)
-			SegmentOffset:   0,
+			PointerFormat:   DYLD_CHAINED_PTR_ARM64E_FIRMWARE, // Format 6 - matches GCC
+			SegmentOffset:   uint64(0x4000), // File offset to __DATA segment (16KB page boundary)
 			MaxValidPointer: 0,
 			PageCount:       1, // GOT fits in one page
 		}
