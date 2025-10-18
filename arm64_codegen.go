@@ -1347,7 +1347,7 @@ callExit:
 	acg.eb.useDynamicLinking = true
 
 	// Add exit to needed functions list if not already there
-	funcName := "_exit" // macOS uses underscore prefix
+	funcName := "exit" // Note: macho.go will add underscore prefix for macOS
 	found := false
 	for _, f := range acg.eb.neededFunctions {
 		if f == funcName {
@@ -1462,7 +1462,7 @@ func (acg *ARM64CodeGen) compilePrintf(call *CallExpr) error {
 	acg.eb.useDynamicLinking = true
 
 	// Add printf to needed functions list if not already there
-	funcName := "_printf" // macOS uses underscore prefix
+	funcName := "printf" // Note: macho.go will add underscore prefix for macOS
 	found := false
 	for _, f := range acg.eb.neededFunctions {
 		if f == funcName {
@@ -1512,7 +1512,7 @@ func (acg *ARM64CodeGen) compileGetPid(call *CallExpr) error {
 	acg.eb.useDynamicLinking = true
 
 	// Add getpid to needed functions list if not already there
-	funcName := "_getpid" // macOS/BSD uses underscore prefix
+	funcName := "getpid" // Note: macho.go will add underscore prefix for macOS
 	found := false
 	for _, f := range acg.eb.neededFunctions {
 		if f == funcName {
