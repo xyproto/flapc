@@ -348,15 +348,24 @@ func TestMachOExecutable(t *testing.T) {
 	tmpfile := "/tmp/flapc_macho_exec_test"
 	defer os.Remove(tmpfile)
 
-	eb, err := New("x86_64")
+	// Use host architecture for execution test
+	eb, err := New(runtime.GOARCH + "-darwin")
 	if err != nil {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
 
-	// Exit with code 42
-	eb.Emit("mov rax, 0x2000001") // sys_exit on macOS
-	eb.Emit("mov rdi, 42")
-	eb.Emit("syscall")
+	// Exit with code 42 - architecture specific code
+	if runtime.GOARCH == "arm64" || runtime.GOARCH == "aarch64" {
+		// ARM64 exit syscall
+		eb.Emit("mov x16, #1")  // sys_exit syscall number
+		eb.Emit("mov x0, #42")  // exit code
+		eb.Emit("svc #0x80")    // syscall
+	} else {
+		// x86_64 exit syscall
+		eb.Emit("mov rax, 0x2000001") // sys_exit on macOS
+		eb.Emit("mov rdi, 42")
+		eb.Emit("syscall")
+	}
 
 	err = eb.WriteMachO()
 	if err != nil {
