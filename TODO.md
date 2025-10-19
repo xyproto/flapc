@@ -40,18 +40,20 @@
 - ✅ String literals still use efficient syscall path
 - ✅ Fixed issue where println(num) would print "?"
 
-**Result**: ARM64 dynamic linking fully functional! Printf works with all args! Multiple function calls work!
+### 8. ✅ FIXED: ARM64 Variable Storage and Binary Expressions (commit 63a266d)
+- ✅ Fixed SIGBUS crashes when using variables in binary expressions
+- ✅ Increased stack frame from 32 to 272 bytes (16 for saved regs + 256 for locals)
+- ✅ Changed variable storage from negative to positive offsets from x29
+- ✅ Fixed BinaryExpr to maintain 16-byte stack alignment
+- ✅ `a = 10; b = 20; c = a + b; println(c)` now outputs "30" correctly
+
+**Result**: ARM64 dynamic linking fully functional! Printf works with all args! Multiple function calls work! Variables and binary expressions work!
 
 ---
 
 ## 🚨 Current Issues
 
-### 1. ARM64 Binary Expressions with Variables
-- [ ] Debug SIGBUS crash when using variables in binary expressions
-- `a = 10; b = 20; c = a + b` crashes with exit code 138
-- Direct expressions work: `println(10 + 20)` outputs "30" ✅
-- Single variables work: `a = 42; println(a)` outputs "42" ✅
-- Issue appears when loading two variables for binary operation
+(None currently - all known ARM64 blockers resolved!)
 
 ## 📋 Language Syntax Improvements
 
@@ -255,7 +257,7 @@
 2. ~~Printf string arguments (%s)~~ - ✅ **FIXED!**
 3. ~~Multiple dynamic function calls~~ - ✅ **FIXED!**
 4. ~~ARM64 println() numeric arguments~~ - ✅ **FIXED!**
-5. ARM64 binary expressions with variables - Medium priority
+5. ~~ARM64 binary expressions with variables~~ - ✅ **FIXED!**
 6. RISC-V backend incomplete - Medium priority
 7. Missing ARM64 expression types - Low priority
 
@@ -267,8 +269,10 @@
 - ✅ **Printf with string arguments** - Mixed string/numeric args working!
 - ✅ **Multiple dynamic function calls FIXED!** - Chained fixups work!
 - ✅ **Println numeric conversion FIXED!** - No more "?" output!
+- ✅ **ARM64 variable storage FIXED!** - Binary expressions with variables work!
 - ✅ Self-signing implementation (no external codesign needed)
 - ✅ TestMachOExecutable passes
 - ✅ ARM64 binaries execute successfully with dynamic linking
 - ✅ Can now call `printf()` then `exit()` without crashes!
 - ✅ `println(42)` now outputs "42" instead of "?"!
+- ✅ `a = 10; b = 20; c = a + b; println(c)` outputs "30" correctly!
