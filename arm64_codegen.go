@@ -114,6 +114,11 @@ func (acg *ARM64CodeGen) CompileProgram(program *Program) error {
 		return err
 	}
 
+	// Generate runtime helper functions
+	if err := acg.generateRuntimeHelpers(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -261,14 +266,110 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 
 			if leftType == "list" && rightType == "list" {
 				// List concatenation: [1, 2] + [3, 4] -> [1, 2, 3, 4]
-				// For now, return an error as this requires runtime support
-				return fmt.Errorf("list concatenation not yet implemented for ARM64")
+				// Compile left list (result in d0)
+				if err := acg.compileExpression(e.Left); err != nil {
+					return err
+				}
+				// Convert d0 (float) to x0 (pointer)
+				acg.out.SubImm64("sp", "sp", 16)
+				acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x00, 0xfd}) // str d0, [sp]
+				if err := acg.out.LdrImm64("x0", "sp", 0); err != nil {
+					return err
+				}
+				acg.out.AddImm64("sp", "sp", 16)
+
+				// Push x0 (left ptr) to stack
+				acg.out.SubImm64("sp", "sp", 16)
+				if err := acg.out.StrImm64("x0", "sp", 0); err != nil {
+					return err
+				}
+
+				// Compile right list (result in d0)
+				if err := acg.compileExpression(e.Right); err != nil {
+					return err
+				}
+				// Convert d0 to x1
+				acg.out.SubImm64("sp", "sp", 16)
+				acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x00, 0xfd}) // str d0, [sp]
+				if err := acg.out.LdrImm64("x1", "sp", 0); err != nil {
+					return err
+				}
+				acg.out.AddImm64("sp", "sp", 16)
+
+				// Restore left ptr to x0
+				if err := acg.out.LdrImm64("x0", "sp", 0); err != nil {
+					return err
+				}
+				acg.out.AddImm64("sp", "sp", 16)
+
+				// Call _flap_list_concat(x0, x1) -> x0
+				if err := acg.eb.GenerateCallInstruction("_flap_list_concat"); err != nil {
+					return err
+				}
+
+				// Convert result x0 back to d0
+				acg.out.SubImm64("sp", "sp", 16)
+				if err := acg.out.StrImm64("x0", "sp", 0); err != nil {
+					return err
+				}
+				acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x40, 0xfd}) // ldr d0, [sp]
+				acg.out.AddImm64("sp", "sp", 16)
+
+				return nil
 			}
 
 			if leftType == "string" && rightType == "string" {
 				// String concatenation
-				// For now, return an error as this requires runtime support
-				return fmt.Errorf("string concatenation not yet implemented for ARM64")
+				// Compile left string (result in d0)
+				if err := acg.compileExpression(e.Left); err != nil {
+					return err
+				}
+				// Convert d0 to x0
+				acg.out.SubImm64("sp", "sp", 16)
+				acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x00, 0xfd}) // str d0, [sp]
+				if err := acg.out.LdrImm64("x0", "sp", 0); err != nil {
+					return err
+				}
+				acg.out.AddImm64("sp", "sp", 16)
+
+				// Push x0 to stack
+				acg.out.SubImm64("sp", "sp", 16)
+				if err := acg.out.StrImm64("x0", "sp", 0); err != nil {
+					return err
+				}
+
+				// Compile right string (result in d0)
+				if err := acg.compileExpression(e.Right); err != nil {
+					return err
+				}
+				// Convert d0 to x1
+				acg.out.SubImm64("sp", "sp", 16)
+				acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x00, 0xfd}) // str d0, [sp]
+				if err := acg.out.LdrImm64("x1", "sp", 0); err != nil {
+					return err
+				}
+				acg.out.AddImm64("sp", "sp", 16)
+
+				// Restore left ptr to x0
+				if err := acg.out.LdrImm64("x0", "sp", 0); err != nil {
+					return err
+				}
+				acg.out.AddImm64("sp", "sp", 16)
+
+				// Call _flap_string_concat(x0, x1) -> x0
+				if err := acg.eb.GenerateCallInstruction("_flap_string_concat"); err != nil {
+					return err
+				}
+
+				// Convert result x0 back to d0
+				acg.out.SubImm64("sp", "sp", 16)
+				if err := acg.out.StrImm64("x0", "sp", 0); err != nil {
+					return err
+				}
+				acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x40, 0xfd}) // ldr d0, [sp]
+				acg.out.AddImm64("sp", "sp", 16)
+
+				return nil
 			}
 		}
 
@@ -2361,4 +2462,287 @@ func (acg *ARM64CodeGen) getExprType(expr Expression) string {
 	default:
 		return "unknown"
 	}
+}
+
+// generateRuntimeHelpers generates ARM64 runtime helper functions
+func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
+	// Generate _flap_list_concat(left_ptr, right_ptr) -> new_ptr
+	// Arguments: x0 = left_ptr, x1 = right_ptr
+	// Returns: x0 = pointer to new concatenated list
+	// List format: [length (8 bytes)][elem0 (8 bytes)][elem1 (8 bytes)]...
+
+	acg.eb.MarkLabel("_flap_list_concat")
+
+	// Function prologue
+	// stp x29, x30, [sp, #-N]! (save fp and lr, pre-decrement sp by N)
+	// We need to save: x29, x30, x19-x28 (callee-saved)
+	// For simplicity, save x29, x30, x19, x20, x21, x22, x23 (7 regs = 56 bytes, round to 64)
+	acg.out.out.writer.WriteBytes([]byte{0xfd, 0x7b, 0xbc, 0xa9}) // stp x29, x30, [sp, #-64]!
+	acg.out.out.writer.WriteBytes([]byte{0xf3, 0x53, 0x01, 0xa9}) // stp x19, x20, [sp, #16]
+	acg.out.out.writer.WriteBytes([]byte{0xf5, 0x5b, 0x02, 0xa9}) // stp x21, x22, [sp, #32]
+	acg.out.out.writer.WriteBytes([]byte{0xf7, 0x03, 0x03, 0xa9}) // stp x23, x0, [sp, #48] (save x23 and use remaining slot for alignment)
+	acg.out.out.writer.WriteBytes([]byte{0xfd, 0x03, 0x00, 0x91}) // mov x29, sp
+
+	// Save arguments
+	// x19 = left_ptr, x20 = right_ptr
+	acg.out.out.writer.WriteBytes([]byte{0xf3, 0x03, 0x00, 0xaa}) // mov x19, x0
+	acg.out.out.writer.WriteBytes([]byte{0xf4, 0x03, 0x01, 0xaa}) // mov x20, x1
+
+	// Get left list length: ldr d0, [x19] then fcvtzs x21, d0
+	if err := acg.out.LdrImm64Double("d0", "x19", 0); err != nil {
+		return err
+	}
+	acg.out.out.writer.WriteBytes([]byte{0x15, 0x00, 0x78, 0x9e}) // fcvtzs x21, d0
+
+	// Get right list length: ldr d0, [x20] then fcvtzs x22, d0
+	if err := acg.out.LdrImm64Double("d0", "x20", 0); err != nil {
+		return err
+	}
+	acg.out.out.writer.WriteBytes([]byte{0x16, 0x00, 0x78, 0x9e}) // fcvtzs x22, d0
+
+	// Calculate total length: x23 = x21 + x22
+	acg.out.out.writer.WriteBytes([]byte{0xb7, 0x02, 0x16, 0x8b}) // add x23, x21, x22
+
+	// Calculate allocation size: x0 = 8 + x23 * 8
+	acg.out.out.writer.WriteBytes([]byte{0xe0, 0x1e, 0x40, 0xd3}) // lsl x0, x23, #3 (multiply by 8)
+	acg.out.AddImm64("x0", "x0", 8)                               // add x0, x0, #8
+
+	// Align to 16 bytes: x0 = (x0 + 15) & ~15
+	acg.out.AddImm64("x0", "x0", 15) // add x0, x0, #15
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x3c, 0x00, 0x92}) // and x0, x0, #0xfffffffffffffff0
+
+	// Call malloc(x0)
+	if err := acg.eb.GenerateCallInstruction("malloc"); err != nil {
+		return err
+	}
+	// x0 now contains result pointer, save it to x9
+	acg.out.out.writer.WriteBytes([]byte{0xe9, 0x03, 0x00, 0xaa}) // mov x9, x0
+
+	// Write total length to result: scvtf d0, x23 then str d0, [x9]
+	acg.out.out.writer.WriteBytes([]byte{0xe0, 0x02, 0x62, 0x9e}) // scvtf d0, x23
+	if err := acg.out.StrImm64Double("d0", "x9", 0); err != nil {
+		return err
+	}
+
+	// Copy left list elements
+	// x10 = counter (x21), x11 = src (x19 + 8), x12 = dst (x9 + 8)
+	acg.out.out.writer.WriteBytes([]byte{0xaa, 0x02, 0x15, 0x8b}) // add x10, x21, x21 (x10 = x21, counter)
+	acg.out.out.writer.WriteBytes([]byte{0x6b, 0x22, 0x00, 0x91}) // add x11, x19, #8
+	acg.out.out.writer.WriteBytes([]byte{0x2c, 0x21, 0x00, 0x91}) // add x12, x9, #8
+
+	// Actually just use x10 = x21 for counter
+	acg.out.out.writer.WriteBytes([]byte{0xea, 0x03, 0x15, 0xaa}) // mov x10, x21
+
+	// Loop to copy left elements
+	acg.eb.MarkLabel("_list_concat_copy_left_loop")
+	leftLoopStart := acg.eb.text.Len()
+
+	// cbz x10, skip_left (if zero, skip this loop)
+	leftSkipJumpPos := acg.eb.text.Len()
+	acg.out.out.writer.WriteBytes([]byte{0x0a, 0x00, 0x00, 0xb4}) // cbz x10, +0 (placeholder)
+
+	// ldr d0, [x11], str d0, [x12], increment pointers
+	if err := acg.out.LdrImm64Double("d0", "x11", 0); err != nil {
+		return err
+	}
+	if err := acg.out.StrImm64Double("d0", "x12", 0); err != nil {
+		return err
+	}
+	acg.out.AddImm64("x11", "x11", 8) // add x11, x11, #8
+	acg.out.AddImm64("x12", "x12", 8) // add x12, x12, #8
+	acg.out.SubImm64("x10", "x10", 1) // sub x10, x10, #1
+
+	// Branch back to loop start
+	leftLoopEnd := acg.eb.text.Len()
+	acg.out.Branch(int32(leftLoopStart - leftLoopEnd))
+
+	// Patch the cbz to jump here
+	leftSkipEndPos := acg.eb.text.Len()
+	acg.patchJumpOffset(leftSkipJumpPos, int32(leftSkipEndPos-leftSkipJumpPos))
+
+	// Copy right list elements
+	// x10 = counter (x22), x11 = src (x20 + 8), x12 already points to correct position
+	acg.out.out.writer.WriteBytes([]byte{0xea, 0x03, 0x16, 0xaa}) // mov x10, x22
+	acg.out.out.writer.WriteBytes([]byte{0x8b, 0x22, 0x00, 0x91}) // add x11, x20, #8
+
+	// Loop to copy right elements
+	acg.eb.MarkLabel("_list_concat_copy_right_loop")
+	rightLoopStart := acg.eb.text.Len()
+
+	// cbz x10, skip_right
+	rightSkipJumpPos := acg.eb.text.Len()
+	acg.out.out.writer.WriteBytes([]byte{0x0a, 0x00, 0x00, 0xb4}) // cbz x10, +0 (placeholder)
+
+	// ldr d0, [x11], str d0, [x12], increment pointers
+	if err := acg.out.LdrImm64Double("d0", "x11", 0); err != nil {
+		return err
+	}
+	if err := acg.out.StrImm64Double("d0", "x12", 0); err != nil {
+		return err
+	}
+	acg.out.AddImm64("x11", "x11", 8) // add x11, x11, #8
+	acg.out.AddImm64("x12", "x12", 8) // add x12, x12, #8
+	acg.out.SubImm64("x10", "x10", 1) // sub x10, x10, #1
+
+	// Branch back to loop start
+	rightLoopEnd := acg.eb.text.Len()
+	acg.out.Branch(int32(rightLoopStart - rightLoopEnd))
+
+	// Patch the cbz
+	rightSkipEndPos := acg.eb.text.Len()
+	acg.patchJumpOffset(rightSkipJumpPos, int32(rightSkipEndPos-rightSkipJumpPos))
+
+	// Return result pointer in x0
+	acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x09, 0xaa}) // mov x0, x9
+
+	// Function epilogue - restore registers and return
+	acg.out.out.writer.WriteBytes([]byte{0xf7, 0x03, 0x43, 0xa9}) // ldp x23, x0, [sp, #48]
+	acg.out.out.writer.WriteBytes([]byte{0xf5, 0x5b, 0x42, 0xa9}) // ldp x21, x22, [sp, #32]
+	acg.out.out.writer.WriteBytes([]byte{0xf3, 0x53, 0x41, 0xa9}) // ldp x19, x20, [sp, #16]
+	acg.out.out.writer.WriteBytes([]byte{0xfd, 0x7b, 0xc4, 0xa8}) // ldp x29, x30, [sp], #64
+	acg.out.Return("x30")
+
+	// Generate _flap_string_concat(left_ptr, right_ptr) -> new_ptr
+	// Arguments: x0 = left_ptr, x1 = right_ptr
+	// Returns: x0 = pointer to new concatenated string
+	// String format (map): [count (8 bytes)][key0 (8)][val0 (8)]...
+
+	acg.eb.MarkLabel("_flap_string_concat")
+
+	// Function prologue - same as list concat
+	acg.out.out.writer.WriteBytes([]byte{0xfd, 0x7b, 0xbc, 0xa9}) // stp x29, x30, [sp, #-64]!
+	acg.out.out.writer.WriteBytes([]byte{0xf3, 0x53, 0x01, 0xa9}) // stp x19, x20, [sp, #16]
+	acg.out.out.writer.WriteBytes([]byte{0xf5, 0x5b, 0x02, 0xa9}) // stp x21, x22, [sp, #32]
+	acg.out.out.writer.WriteBytes([]byte{0xf7, 0x03, 0x03, 0xa9}) // stp x23, x0, [sp, #48]
+	acg.out.out.writer.WriteBytes([]byte{0xfd, 0x03, 0x00, 0x91}) // mov x29, sp
+
+	// Save arguments: x19 = left_ptr, x20 = right_ptr
+	acg.out.out.writer.WriteBytes([]byte{0xf3, 0x03, 0x00, 0xaa}) // mov x19, x0
+	acg.out.out.writer.WriteBytes([]byte{0xf4, 0x03, 0x01, 0xaa}) // mov x20, x1
+
+	// Get left string length: ldr d0, [x19] then fcvtzs x21, d0
+	if err := acg.out.LdrImm64Double("d0", "x19", 0); err != nil {
+		return err
+	}
+	acg.out.out.writer.WriteBytes([]byte{0x15, 0x00, 0x78, 0x9e}) // fcvtzs x21, d0
+
+	// Get right string length: ldr d0, [x20] then fcvtzs x22, d0
+	if err := acg.out.LdrImm64Double("d0", "x20", 0); err != nil {
+		return err
+	}
+	acg.out.out.writer.WriteBytes([]byte{0x16, 0x00, 0x78, 0x9e}) // fcvtzs x22, d0
+
+	// Calculate total length: x23 = x21 + x22
+	acg.out.out.writer.WriteBytes([]byte{0xb7, 0x02, 0x16, 0x8b}) // add x23, x21, x22
+
+	// Calculate allocation size: x0 = 8 + x23 * 16 (strings use key-value pairs)
+	acg.out.out.writer.WriteBytes([]byte{0xe0, 0x1e, 0x40, 0xd3}) // lsl x0, x23, #3 (multiply by 8)
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x1e, 0x40, 0xd3}) // lsl x0, x0, #1 (multiply by 2, total *16)
+	acg.out.AddImm64("x0", "x0", 8)                               // add x0, x0, #8
+
+	// Align to 16 bytes
+	acg.out.AddImm64("x0", "x0", 15)
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x3c, 0x00, 0x92}) // and x0, x0, #0xfffffffffffffff0
+
+	// Call malloc(x0)
+	if err := acg.eb.GenerateCallInstruction("malloc"); err != nil {
+		return err
+	}
+	acg.out.out.writer.WriteBytes([]byte{0xe9, 0x03, 0x00, 0xaa}) // mov x9, x0
+
+	// Write total count to result
+	acg.out.out.writer.WriteBytes([]byte{0xe0, 0x02, 0x62, 0x9e}) // scvtf d0, x23
+	if err := acg.out.StrImm64Double("d0", "x9", 0); err != nil {
+		return err
+	}
+
+	// Copy left string entries (key-value pairs)
+	// x10 = counter, x11 = src, x12 = dst
+	acg.out.out.writer.WriteBytes([]byte{0xea, 0x03, 0x15, 0xaa}) // mov x10, x21
+	acg.out.out.writer.WriteBytes([]byte{0x6b, 0x22, 0x00, 0x91}) // add x11, x19, #8
+	acg.out.out.writer.WriteBytes([]byte{0x2c, 0x21, 0x00, 0x91}) // add x12, x9, #8
+
+	acg.eb.MarkLabel("_string_concat_copy_left_loop")
+	strLeftLoopStart := acg.eb.text.Len()
+
+	strLeftSkipJumpPos := acg.eb.text.Len()
+	acg.out.out.writer.WriteBytes([]byte{0x0a, 0x00, 0x00, 0xb4}) // cbz x10, +0 (placeholder)
+
+	// Copy key and value (16 bytes total)
+	if err := acg.out.LdrImm64Double("d0", "x11", 0); err != nil {
+		return err
+	}
+	if err := acg.out.StrImm64Double("d0", "x12", 0); err != nil {
+		return err
+	}
+	if err := acg.out.LdrImm64Double("d0", "x11", 8); err != nil {
+		return err
+	}
+	if err := acg.out.StrImm64Double("d0", "x12", 8); err != nil {
+		return err
+	}
+	acg.out.AddImm64("x11", "x11", 16)
+	acg.out.AddImm64("x12", "x12", 16)
+	acg.out.SubImm64("x10", "x10", 1)
+
+	// Branch back
+	strLeftLoopEnd := acg.eb.text.Len()
+	acg.out.Branch(int32(strLeftLoopStart - strLeftLoopEnd))
+
+	// Patch cbz
+	strLeftSkipEndPos := acg.eb.text.Len()
+	acg.patchJumpOffset(strLeftSkipJumpPos, int32(strLeftSkipEndPos-strLeftSkipJumpPos))
+
+	// Copy right string entries with offset keys
+	// x10 = counter (x22), x11 = src (x20 + 8), x12 already positioned, x21 = offset
+	acg.out.out.writer.WriteBytes([]byte{0xea, 0x03, 0x16, 0xaa}) // mov x10, x22
+	acg.out.out.writer.WriteBytes([]byte{0x8b, 0x22, 0x00, 0x91}) // add x11, x20, #8
+
+	acg.eb.MarkLabel("_string_concat_copy_right_loop")
+	strRightLoopStart := acg.eb.text.Len()
+
+	strRightSkipJumpPos := acg.eb.text.Len()
+	acg.out.out.writer.WriteBytes([]byte{0x0a, 0x00, 0x00, 0xb4}) // cbz x10, +0 (placeholder)
+
+	// Load key, add offset, store
+	if err := acg.out.LdrImm64Double("d0", "x11", 0); err != nil {
+		return err
+	}
+	acg.out.out.writer.WriteBytes([]byte{0xa1, 0x02, 0x62, 0x9e}) // scvtf d1, x21 (convert offset to float)
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x28, 0x61, 0x1e}) // fadd d0, d0, d1
+	if err := acg.out.StrImm64Double("d0", "x12", 0); err != nil {
+		return err
+	}
+
+	// Copy value
+	if err := acg.out.LdrImm64Double("d0", "x11", 8); err != nil {
+		return err
+	}
+	if err := acg.out.StrImm64Double("d0", "x12", 8); err != nil {
+		return err
+	}
+
+	acg.out.AddImm64("x11", "x11", 16)
+	acg.out.AddImm64("x12", "x12", 16)
+	acg.out.SubImm64("x10", "x10", 1)
+
+	// Branch back
+	strRightLoopEnd := acg.eb.text.Len()
+	acg.out.Branch(int32(strRightLoopStart - strRightLoopEnd))
+
+	// Patch cbz
+	strRightSkipEndPos := acg.eb.text.Len()
+	acg.patchJumpOffset(strRightSkipJumpPos, int32(strRightSkipEndPos-strRightSkipJumpPos))
+
+	// Return result
+	acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x09, 0xaa}) // mov x0, x9
+
+	// Epilogue
+	acg.out.out.writer.WriteBytes([]byte{0xf7, 0x03, 0x43, 0xa9}) // ldp x23, x0, [sp, #48]
+	acg.out.out.writer.WriteBytes([]byte{0xf5, 0x5b, 0x42, 0xa9}) // ldp x21, x22, [sp, #32]
+	acg.out.out.writer.WriteBytes([]byte{0xf3, 0x53, 0x41, 0xa9}) // ldp x19, x20, [sp, #16]
+	acg.out.out.writer.WriteBytes([]byte{0xfd, 0x7b, 0xc4, 0xa8}) // ldp x29, x30, [sp], #64
+	acg.out.Return("x30")
+
+	return nil
 }
