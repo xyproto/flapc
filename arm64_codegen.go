@@ -1496,21 +1496,53 @@ func (acg *ARM64CodeGen) compilePrintf(call *CallExpr) error {
 		for i := 0; i < numArgs; i++ {
 			arg := call.Args[i+1]
 
-			// Compile the argument expression (result will be in d0)
-			if err := acg.compileExpression(arg); err != nil {
-				return err
-			}
+			// Check if this is a string argument
+			if strExpr, ok := arg.(*StringExpr); ok {
+				// String argument - need to pass pointer, not float
+				// Store string in rodata and get its address
+				strLabel := fmt.Sprintf("str_%d", acg.stringCounter)
+				acg.stringCounter++
+				strValue := strExpr.Value + "\x00" // Add null terminator
+				acg.eb.Define(strLabel, strValue)
 
-			// Store d0 at [sp, #(i*8)]
-			// STR d0, [sp, #offset] - encoding: 0xfd000000 | (offset/8 << 10) | 0x3e0
-			offset := uint32(i * 8)
-			strInstr := uint32(0xfd0003e0) | ((offset / 8) << 10)
-			acg.out.out.writer.WriteBytes([]byte{
-				byte(strInstr),
-				byte(strInstr >> 8),
-				byte(strInstr >> 16),
-				byte(strInstr >> 24),
-			})
+				// Load string address into x9 using PC-relative addressing
+				strOffset := uint64(acg.eb.text.Len())
+				acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
+					offset:     strOffset,
+					symbolName: strLabel,
+				})
+				// ADRP x9, label@PAGE
+				acg.out.out.writer.WriteBytes([]byte{0x09, 0x00, 0x00, 0x90})
+				// ADD x9, x9, label@PAGEOFF
+				acg.out.out.writer.WriteBytes([]byte{0x29, 0x01, 0x00, 0x91})
+
+				// Store x9 (pointer) at [sp, #offset]
+				// STR x9, [sp, #offset] - encoding: 0xf9000000 | (offset/8 << 10) | (9 << 0) | (31 << 5)
+				stackOffset := uint32(i * 8)
+				strInstr := uint32(0xf90003e9) | ((stackOffset / 8) << 10)
+				acg.out.out.writer.WriteBytes([]byte{
+					byte(strInstr),
+					byte(strInstr >> 8),
+					byte(strInstr >> 16),
+					byte(strInstr >> 24),
+				})
+			} else {
+				// Numeric argument - compile and store as float
+				if err := acg.compileExpression(arg); err != nil {
+					return err
+				}
+
+				// Store d0 at [sp, #(i*8)]
+				// STR d0, [sp, #offset] - encoding: 0xfd000000 | (offset/8 << 10) | 0x3e0
+				stackOffset := uint32(i * 8)
+				strInstr := uint32(0xfd0003e0) | ((stackOffset / 8) << 10)
+				acg.out.out.writer.WriteBytes([]byte{
+					byte(strInstr),
+					byte(strInstr >> 8),
+					byte(strInstr >> 16),
+					byte(strInstr >> 24),
+				})
+			}
 		}
 	}
 
