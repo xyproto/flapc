@@ -280,42 +280,42 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 			// fcmp d0, d1
 			acg.out.out.writer.WriteBytes([]byte{0x00, 0x20, 0x61, 0x1e})
 			// cset x0, eq (x0 = 1 if equal, else 0)
-			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x9f, 0x9a})
+			acg.out.out.writer.WriteBytes([]byte{0xe0, 0x17, 0x9f, 0x9a})
 			// scvtf d0, x0 (convert to float)
 			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
 		case "!=":
 			// fcmp d0, d1
 			acg.out.out.writer.WriteBytes([]byte{0x00, 0x20, 0x61, 0x1e})
 			// cset x0, ne
-			acg.out.out.writer.WriteBytes([]byte{0x00, 0x10, 0x9f, 0x9a})
+			acg.out.out.writer.WriteBytes([]byte{0xe0, 0x07, 0x9f, 0x9a})
 			// scvtf d0, x0
 			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
 		case "<":
 			// fcmp d0, d1
 			acg.out.out.writer.WriteBytes([]byte{0x00, 0x20, 0x61, 0x1e})
 			// cset x0, lt
-			acg.out.out.writer.WriteBytes([]byte{0x00, 0xb0, 0x9f, 0x9a})
+			acg.out.out.writer.WriteBytes([]byte{0xe0, 0xa7, 0x9f, 0x9a})
 			// scvtf d0, x0
 			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
 		case "<=":
 			// fcmp d0, d1
 			acg.out.out.writer.WriteBytes([]byte{0x00, 0x20, 0x61, 0x1e})
 			// cset x0, le
-			acg.out.out.writer.WriteBytes([]byte{0x00, 0xd0, 0x9f, 0x9a})
+			acg.out.out.writer.WriteBytes([]byte{0xe0, 0xc7, 0x9f, 0x9a})
 			// scvtf d0, x0
 			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
 		case ">":
 			// fcmp d0, d1
 			acg.out.out.writer.WriteBytes([]byte{0x00, 0x20, 0x61, 0x1e})
 			// cset x0, gt
-			acg.out.out.writer.WriteBytes([]byte{0x00, 0xc0, 0x9f, 0x9a})
+			acg.out.out.writer.WriteBytes([]byte{0xe0, 0xd7, 0x9f, 0x9a})
 			// scvtf d0, x0
 			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
 		case ">=":
 			// fcmp d0, d1
 			acg.out.out.writer.WriteBytes([]byte{0x00, 0x20, 0x61, 0x1e})
 			// cset x0, ge
-			acg.out.out.writer.WriteBytes([]byte{0x00, 0xa0, 0x9f, 0x9a})
+			acg.out.out.writer.WriteBytes([]byte{0xe0, 0xb7, 0x9f, 0x9a})
 			// scvtf d0, x0
 			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
 		case "mod", "%":
@@ -566,12 +566,12 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 		case "not":
 			// Logical NOT: returns 1.0 if operand is 0.0, else 0.0
 			// Compare d0 with 0.0
-			// fmov d1, #0.0
-			acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x60, 0x1e})
+			// fmov d1, xzr (d1 = 0.0)
+			acg.out.out.writer.WriteBytes([]byte{0xe1, 0x03, 0x67, 0x9e})
 			// fcmp d0, d1
 			acg.out.out.writer.WriteBytes([]byte{0x00, 0x20, 0x61, 0x1e})
 			// cset x0, eq (x0 = 1 if equal, else 0)
-			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x9f, 0x9a})
+			acg.out.out.writer.WriteBytes([]byte{0xe0, 0x17, 0x9f, 0x9a})
 			// scvtf d0, x0 (convert to float64)
 			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
 
