@@ -13,6 +13,7 @@ const (
 	TOKEN_IDENT
 	TOKEN_NUMBER
 	TOKEN_STRING
+	TOKEN_FSTRING // f"..." interpolated string
 	TOKEN_PLUS
 	TOKEN_MINUS
 	TOKEN_STAR
@@ -20,6 +21,11 @@ const (
 	TOKEN_MOD
 	TOKEN_EQUALS
 	TOKEN_COLON_EQUALS
+	TOKEN_PLUS_EQUALS  // +=
+	TOKEN_MINUS_EQUALS // -=
+	TOKEN_STAR_EQUALS  // *=
+	TOKEN_SLASH_EQUALS // /=
+	TOKEN_MOD_EQUALS   // %=
 	TOKEN_LPAREN
 	TOKEN_RPAREN
 	TOKEN_COMMA
@@ -266,8 +272,6 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_ROL, Value: value, Line: l.line}
 		case "ror":
 			return Token{Type: TOKEN_ROR, Value: value, Line: l.line}
-		case "mod":
-			return Token{Type: TOKEN_MOD, Value: value, Line: l.line}
 			// Note: All type keywords (i8, i16, i32, i64, u8, u16, u32, u64, f32, f64,
 			// cstr, ptr, number, string, list) are contextual keywords.
 			// They are only treated as type keywords after "as" in cast expressions.
@@ -286,6 +290,11 @@ func (l *Lexer) NextToken() Token {
 			l.pos++
 			return Token{Type: TOKEN_INCREMENT, Value: "++", Line: l.line}
 		}
+		// Check for +=
+		if l.pos < len(l.input) && l.input[l.pos] == '=' {
+			l.pos++
+			return Token{Type: TOKEN_PLUS_EQUALS, Value: "+=", Line: l.line}
+		}
 		return Token{Type: TOKEN_PLUS, Value: "+", Line: l.line}
 	case '-':
 		// Check for ->
@@ -297,6 +306,11 @@ func (l *Lexer) NextToken() Token {
 		if l.peek() == '-' {
 			l.pos += 2
 			return Token{Type: TOKEN_DECREMENT, Value: "--", Line: l.line}
+		}
+		// Check for -=
+		if l.peek() == '=' {
+			l.pos += 2
+			return Token{Type: TOKEN_MINUS_EQUALS, Value: "-=", Line: l.line}
 		}
 		// Check for negative number literal
 		if l.pos+1 < len(l.input) && unicode.IsDigit(rune(l.peek())) {
@@ -316,10 +330,28 @@ func (l *Lexer) NextToken() Token {
 			l.pos++
 			return Token{Type: TOKEN_FMA, Value: "*+", Line: l.line}
 		}
+		// Check for *=
+		if l.pos < len(l.input) && l.input[l.pos] == '=' {
+			l.pos++
+			return Token{Type: TOKEN_STAR_EQUALS, Value: "*=", Line: l.line}
+		}
 		return Token{Type: TOKEN_STAR, Value: "*", Line: l.line}
 	case '/':
 		l.pos++
+		// Check for /=
+		if l.pos < len(l.input) && l.input[l.pos] == '=' {
+			l.pos++
+			return Token{Type: TOKEN_SLASH_EQUALS, Value: "/=", Line: l.line}
+		}
 		return Token{Type: TOKEN_SLASH, Value: "/", Line: l.line}
+	case '%':
+		l.pos++
+		// Check for %=
+		if l.pos < len(l.input) && l.input[l.pos] == '=' {
+			l.pos++
+			return Token{Type: TOKEN_MOD_EQUALS, Value: "%=", Line: l.line}
+		}
+		return Token{Type: TOKEN_MOD, Value: "%", Line: l.line}
 	case ':':
 		// Check for := before advancing
 		if l.peek() == '=' {

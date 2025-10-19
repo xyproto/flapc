@@ -152,7 +152,7 @@ func foldConstantExpr(expr Expression) Expression {
 				} else {
 					return e // Don't fold division by zero
 				}
-			case "mod":
+			case "mod", "%":
 				if rightNum.Value != 0 {
 					result = math.Mod(leftNum.Value, rightNum.Value)
 				} else {
@@ -315,8 +315,10 @@ func (p *Parser) parseStatement() Statement {
 		p.error("expected number after @ (e.g., @1, @2, @0)")
 	}
 
-	// Check for assignment (both = and :=, with optional type annotation)
-	if p.current.Type == TOKEN_IDENT && (p.peek.Type == TOKEN_EQUALS || p.peek.Type == TOKEN_COLON_EQUALS || p.peek.Type == TOKEN_COLON) {
+	// Check for assignment (both = and :=, with optional type annotation, and compound assignments)
+	if p.current.Type == TOKEN_IDENT && (p.peek.Type == TOKEN_EQUALS || p.peek.Type == TOKEN_COLON_EQUALS || p.peek.Type == TOKEN_COLON ||
+		p.peek.Type == TOKEN_PLUS_EQUALS || p.peek.Type == TOKEN_MINUS_EQUALS ||
+		p.peek.Type == TOKEN_STAR_EQUALS || p.peek.Type == TOKEN_SLASH_EQUALS || p.peek.Type == TOKEN_MOD_EQUALS) {
 		return p.parseAssignment()
 	}
 
@@ -402,8 +404,23 @@ func (p *Parser) parseAssignment() *AssignStmt {
 		p.nextToken() // skip precision identifier
 	}
 
+	// Check for compound assignment operators (+=, -=, *=, /=, %=)
+	var compoundOp string
+	switch p.current.Type {
+	case TOKEN_PLUS_EQUALS:
+		compoundOp = "+"
+	case TOKEN_MINUS_EQUALS:
+		compoundOp = "-"
+	case TOKEN_STAR_EQUALS:
+		compoundOp = "*"
+	case TOKEN_SLASH_EQUALS:
+		compoundOp = "/"
+	case TOKEN_MOD_EQUALS:
+		compoundOp = "%"
+	}
+
 	mutable := p.current.Type == TOKEN_COLON_EQUALS
-	p.nextToken() // skip '=' or ':='
+	p.nextToken() // skip '=' or ':=' or compound operator
 
 	// Check for non-parenthesized lambda: x -> expr or x y -> expr
 	var value Expression
@@ -452,6 +469,15 @@ func (p *Parser) parseAssignment() *AssignStmt {
 
 		// Wrap in MultiLambdaExpr
 		value = &MultiLambdaExpr{Lambdas: lambdas}
+	}
+
+	// Transform compound assignment: x += 5  =>  x = x + 5
+	if compoundOp != "" {
+		value = &BinaryExpr{
+			Left:     &IdentExpr{Name: name},
+			Operator: compoundOp,
+			Right:    value,
+		}
 	}
 
 	return &AssignStmt{Name: name, Value: value, Mutable: mutable, Precision: precision}
@@ -3129,7 +3155,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.Write(0xC1) // ModR/M: 11 000 001 (xmm0, xmm0, xmm1)
 		case "/":
 			fc.out.DivsdXmm("xmm0", "xmm1") // divsd xmm0, xmm1
-		case "mod":
+		case "mod", "%":
 			// Modulo: a mod b = a - b * floor(a / b)
 			// xmm0 = dividend (a), xmm1 = divisor (b)
 			fc.out.MovXmmToXmm("xmm2", "xmm0") // Save dividend in xmm2

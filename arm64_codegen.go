@@ -316,6 +316,23 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 			acg.out.out.writer.WriteBytes([]byte{0x00, 0xa0, 0x9f, 0x9a})
 			// scvtf d0, x0
 			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
+		case "mod", "%":
+			// Modulo: a % b = a - b * floor(a / b)
+			// d0 = dividend (a), d1 = divisor (b)
+			// fmov d2, d0 (save dividend in d2)
+			acg.out.out.writer.WriteBytes([]byte{0x02, 0x40, 0x60, 0x1e})
+			// fmov d3, d1 (save divisor in d3)
+			acg.out.out.writer.WriteBytes([]byte{0x23, 0x40, 0x60, 0x1e})
+			// fdiv d0, d0, d1 (d0 = a / b)
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x18, 0x61, 0x1e})
+			// fcvtzs x0, d0 (x0 = floor(a / b) as int)
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x78, 0x9e})
+			// scvtf d0, x0 (d0 = floor(a / b) as float)
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
+			// fmul d0, d0, d3 (d0 = floor(a / b) * b)
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x08, 0x63, 0x1e})
+			// fsub d0, d2, d0 (d0 = a - floor(a / b) * b)
+			acg.out.out.writer.WriteBytes([]byte{0x40, 0x38, 0x60, 0x1e})
 		default:
 			return fmt.Errorf("unsupported binary operator for ARM64: %s", e.Operator)
 		}

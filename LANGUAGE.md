@@ -100,6 +100,8 @@ sum := 0
 sum += 10     // sum = sum + 10
 count -= 1    // count = count - 1
 value *= 2    // value = value * 2
+x /= 3        // x = x / 3
+x %= 5        // x = x % 5
 ```
 
 **Comparison:** `<` `<=` `>` `>=` `==` `!=`
