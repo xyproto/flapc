@@ -141,13 +141,13 @@ func TestPLTGOT(t *testing.T) {
 // TestExecutableGeneration tests full executable generation
 func TestExecutableGeneration(t *testing.T) {
 	// Only run if we have write permissions
-	tmpfilePath, err := os.CreateTemp("", "flapc_test_output")
+	tmpfile, err := os.CreateTemp("", "flapc_test_output")
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	tmpfilePathPath := tmpfilePath.Name()
-	tmpfilePath.Close()
-	defer os.Remove(tmpfilePathPath)
+	tmpfilePath := tmpfile.Name()
+	tmpfile.Close()
+	defer os.Remove(tmpfilePath)
 
 	eb, err := New("x86_64-linux")
 	if err != nil {

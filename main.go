@@ -829,14 +829,11 @@ var VerboseMode bool
 var UpdateDepsFlag bool
 
 func main() {
-	fmt.Fprintln(os.Stderr, "TRACE: main() entry")
 	// Create default output filename in system temp directory
 	defaultOutputFilename := filepath.Join(os.TempDir(), "main")
-	fmt.Fprintln(os.Stderr, "TRACE: got temp dir")
 
 	// Get default platform
 	defaultPlatform := GetDefaultPlatform()
-	fmt.Fprintln(os.Stderr, "TRACE: got default platform")
 	defaultArchStr := "amd64"
 	if defaultPlatform.Arch == ArchARM64 {
 		defaultArchStr = "arm64"
@@ -844,10 +841,8 @@ func main() {
 		defaultArchStr = "riscv64"
 	}
 	defaultOSStr := defaultPlatform.OS.String()
-	fmt.Fprintln(os.Stderr, "TRACE: about to define flags")
 
 	var archFlag = flag.String("arch", defaultArchStr, "target architecture (amd64, arm64, riscv64)")
-	fmt.Fprintln(os.Stderr, "TRACE: defined arch flag")
 	var osFlag = flag.String("os", defaultOSStr, "target OS (linux, darwin, freebsd)")
 	var targetFlag = flag.String("target", "", "target platform (e.g., arm64-macos, amd64-linux, riscv64-linux)")
 	var outputFilenameFlag = flag.String("o", defaultOutputFilename, "output executable filename")
@@ -859,9 +854,7 @@ func main() {
 	var updateDeps = flag.Bool("u", false, "update all dependency repositories from Git")
 	var updateDepsLong = flag.Bool("update-deps", false, "update all dependency repositories from Git")
 	var codeFlag = flag.String("c", "", "execute Flap code from command line")
-	fmt.Fprintln(os.Stderr, "TRACE: all flags defined, about to parse")
 	flag.Parse()
-	fmt.Fprintln(os.Stderr, "TRACE: flags parsed")
 
 	// Set global update-deps flag (use whichever was specified)
 	UpdateDepsFlag = *updateDeps || *updateDepsLong

@@ -415,7 +415,7 @@ func TestELFMachine(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.arch, func(t *testing.T) {
-			tmpfile := filepath.Join(os.TempDir(), "flapc_machine_test_" + tt.arch)
+			tmpfile := filepath.Join(os.TempDir(), "flapc_machine_test_"+tt.arch)
 			defer os.Remove(tmpfile)
 
 			eb, err := New(tt.arch)
