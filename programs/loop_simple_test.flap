@@ -1,0 +1,11 @@
+// Test simple loop
+println("Starting loop test")
+
+total := 0
+@ i in range(5) {
+    println(i)
+    total += i
+}
+
+println("Loop done")
+println(total)
