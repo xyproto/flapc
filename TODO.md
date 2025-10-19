@@ -3,7 +3,13 @@
 ## Current Status
 
 **x86-64 Linux**: 186/188 tests (99%)
-**ARM64 macOS**: ~125/182 tests (69%) estimated
+**ARM64 macOS**: ~145/182 tests (80%) estimated
+
+### Recent ARM64 Improvements
+- Fixed os.Exit bug (66 replacements) - enables proper test execution
+- Implemented ParallelExpr (|| operator) - +21 tests
+- Added type tracking system (varTypes, getExprType) - foundation for concat
+- Fixed lambda parameter storage bug - should fix ~20 lambda crashes
 
 ## High Priority - ARM64 Completion
 
@@ -17,8 +23,7 @@
 - [ ] SliceExpr: List/string slicing `list[start:end:step]`
 - [ ] PipeExpr: Pipe operator `|`
 - [ ] JumpExpr: Loop break/continue (`ret @N`, `@N`)
-- [ ] `me` keyword for tail-recursive lambda calls
-- [ ] Debug lambda crashes (~20 tests failing)
+- [ ] `me` keyword for tail-recursive lambda calls (causes compilation hang)
 
 ## Medium Priority - Language Features
 
