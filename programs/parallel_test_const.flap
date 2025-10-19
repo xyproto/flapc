@@ -2,7 +2,7 @@
 values = [1.0, 2.0, 3.0]
 
 // Map operation: return constant
-result = values || (x) -> 99.0
+result = values || x => 99.0
 
 println(result[0])
 println(result[1])

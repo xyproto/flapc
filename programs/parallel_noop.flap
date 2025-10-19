@@ -1,6 +1,6 @@
 // parallel_noop.flap - test if parallel expr itself crashes
 numbers = [1, 2, 3]
-doubled = numbers || (x) -> x * 2
+doubled = numbers || x => x * 2
 
 // Don't use the result, just exit
 println(42)

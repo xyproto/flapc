@@ -42,8 +42,8 @@ printf("  Key 1 in ages: %b\n\n", key_exists)
 
 // 6. Lambdas
 printf("→ Lambdas\n")
-square := (x) -> x * x
-cube := (x) -> x * x * x
+square := x => x * x
+cube := x => x * x * x
 printf("  square(4) = %v\n", square(4.0))
 printf("  cube(3) = %v\n\n", cube(3.0))
 

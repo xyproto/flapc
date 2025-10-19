@@ -1,6 +1,6 @@
 // manual_map.flap - manually implement what parallel should do
 numbers := [1, 2, 3]
-double := (x) -> x * 2
+double := x => x * 2
 
 // Manually call double on each element
 a := double(numbers[0])

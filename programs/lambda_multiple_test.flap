@@ -1,7 +1,7 @@
 // lambda_multiple_test.flap - test multiple lambdas
-double := (x) -> x * 2
-triple := (x) -> x * 3
-add := (x, y) -> x + y
+double := x => x * 2
+triple := x => x * 3
+add := x, y => x + y
 
 a := double(5)
 b := triple(4)

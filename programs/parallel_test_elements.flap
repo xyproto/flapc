@@ -2,7 +2,7 @@
 values = [1.0, 2.0, 3.0]
 
 // Map operation: double each value
-doubled = values || (x) -> x * 2
+doubled = values || x => x * 2
 
 // Print individual elements
 println(doubled[0])

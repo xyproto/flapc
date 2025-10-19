@@ -1,7 +1,7 @@
 program_tokens := [43, 43, 42, 128515, 45, 47]
 program_string := "+ + * 😃 - /"
 
-update := (value, token) -> token {
+update := value, token => token {
     43     -> value + 1
     45     -> value - 1
     42     -> value * 2
