@@ -976,11 +976,10 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 		return acg.compileGetPid(call)
 	case "printf":
 		return acg.compilePrintf(call)
-	// TODO: Math functions compile but have runtime issues - needs debugging
-	// case "sin", "cos", "tan", "asin", "acos", "atan", "sinh", "cosh", "tanh", "exp", "log", "log10", "sqrt", "ceil", "floor", "fabs", "round":
-	// 	return acg.compileMathFunction(call)
-	// case "pow":
-	// 	return acg.compilePowFunction(call)
+	case "sin", "cos", "tan", "asin", "acos", "atan", "sinh", "cosh", "tanh", "exp", "log", "log10", "sqrt", "ceil", "floor", "fabs", "round", "abs":
+		return acg.compileMathFunction(call)
+	case "pow", "atan2":
+		return acg.compilePowFunction(call)
 	default:
 		// Check if it's a variable holding a function pointer
 		if _, exists := acg.stackVars[call.Function]; exists {
@@ -1790,8 +1789,8 @@ func (acg *ARM64CodeGen) compilePowFunction(call *CallExpr) error {
 	// Mark that we need dynamic linking
 	acg.eb.useDynamicLinking = true
 
-	// Add pow to needed functions list
-	funcName := "pow"
+	// Add function to needed functions list (pow, atan2, etc.)
+	funcName := call.Function
 	found := false
 	for _, f := range acg.eb.neededFunctions {
 		if f == funcName {
@@ -1803,7 +1802,7 @@ func (acg *ARM64CodeGen) compilePowFunction(call *CallExpr) error {
 		acg.eb.neededFunctions = append(acg.eb.neededFunctions, funcName)
 	}
 
-	// Generate call to pow stub
+	// Generate call to function stub
 	stubLabel := funcName + "$stub"
 	position := acg.eb.text.Len()
 	acg.eb.callPatches = append(acg.eb.callPatches, CallPatch{
