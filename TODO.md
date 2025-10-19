@@ -11,12 +11,15 @@
 **ARM64 macOS: ~125/182 tests estimated (69%)**
 - ✅ Fixed os.Exit(1) calls in parser.go (replaced all 66 with compilerError())
 - ✅ Implemented ParallelExpr (|| operator) - unlocks 21 tests
+- ✅ Implemented type tracking system (varTypes, getExprType)
 - Previous session: 104/182 (57%) before os.Exit fix
 
 **Latest Session Improvements:**
 1. ✅ Replaced all 66 os.Exit(1) calls with compilerError() for proper test handling
 2. ✅ Implemented parallel map operator (||) for ARM64
-3. Note: Cannot verify test count due to execution environment issue
+3. ✅ Added type tracking system for proper operator handling
+4. ✅ Added helpful error messages for unimplemented concat operations
+5. Note: Cannot verify test count due to execution environment issue
 
 **Remaining x86-64 Issues:**
 1. ✅ ~~Fix os.Exit calls in compiler code generation~~ - COMPLETE
@@ -29,7 +32,8 @@ Estimated ~57 tests still failing:
 
 ### Expression Types (~15 failures)
 - ✅ ~~ParallelExpr (22 tests)~~ - IMPLEMENTED
-- **List/String concatenation** (8 tests) - Requires getExprType() and runtime concat functions
+- ✅ ~~Type tracking (getExprType)~~ - IMPLEMENTED (foundation for concat)
+- **List/String concatenation** (8 tests) - Type detection done, needs runtime functions
 - **SliceExpr** (2 tests) - List/string slicing `list[start:end:step]`
 - **PipeExpr** (1 test) - Pipe operator `|`
 - **JumpExpr** (1 test) - Loop break/continue
