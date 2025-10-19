@@ -968,8 +968,9 @@ func (acg *ARM64CodeGen) compileRangeLoop(stmt *LoopStmt, funcCall *CallExpr) er
 	// Allocate stack space for loop limit
 	acg.stackSize += 8
 	limitOffset := acg.stackSize
-	// Store limit: str x0, [x29, #-limitOffset]
-	if err := acg.out.StrImm64("x0", "x29", int32(-limitOffset)); err != nil {
+	// Store limit: str x0, [x29, #offset] (positive offset from x29)
+	offset := int32(16 + limitOffset - 8)
+	if err := acg.out.StrImm64("x0", "x29", offset); err != nil {
 		return err
 	}
 
@@ -985,8 +986,9 @@ func (acg *ARM64CodeGen) compileRangeLoop(stmt *LoopStmt, funcCall *CallExpr) er
 	}
 	// scvtf d0, x0 (convert to float64)
 	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
-	// Store iterator: str d0, [x29, #-iterOffset]
-	if err := acg.out.StrImm64Double("d0", "x29", int32(-iterOffset)); err != nil {
+	// Store iterator: str d0, [x29, #offset] (positive offset from x29)
+	offset = int32(16 + iterOffset - 8)
+	if err := acg.out.StrImm64Double("d0", "x29", offset); err != nil {
 		return err
 	}
 
@@ -1006,16 +1008,18 @@ func (acg *ARM64CodeGen) compileRangeLoop(stmt *LoopStmt, funcCall *CallExpr) er
 	}
 	acg.activeLoops = append(acg.activeLoops, loopInfo)
 
-	// Load iterator value as float: ldr d0, [x29, #-iterOffset]
-	if err := acg.out.LdrImm64Double("d0", "x29", int32(-iterOffset)); err != nil {
+	// Load iterator value as float: ldr d0, [x29, #offset] (positive offset)
+	offset = int32(16 + iterOffset - 8)
+	if err := acg.out.LdrImm64Double("d0", "x29", offset); err != nil {
 		return err
 	}
 
 	// Convert iterator to integer for comparison: fcvtzs x0, d0
 	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x78, 0x9e})
 
-	// Load limit value: ldr x1, [x29, #-limitOffset]
-	if err := acg.out.LdrImm64("x1", "x29", int32(-limitOffset)); err != nil {
+	// Load limit value: ldr x1, [x29, #offset] (positive offset)
+	offset = int32(16 + limitOffset - 8)
+	if err := acg.out.LdrImm64("x1", "x29", offset); err != nil {
 		return err
 	}
 
@@ -1050,8 +1054,9 @@ func (acg *ARM64CodeGen) compileRangeLoop(stmt *LoopStmt, funcCall *CallExpr) er
 	}
 
 	// Increment iterator (add 1.0 to float64 value)
-	// ldr d0, [x29, #-iterOffset]
-	if err := acg.out.LdrImm64Double("d0", "x29", int32(-iterOffset)); err != nil {
+	// ldr d0, [x29, #offset] (positive offset)
+	offset = int32(16 + iterOffset - 8)
+	if err := acg.out.LdrImm64Double("d0", "x29", offset); err != nil {
 		return err
 	}
 	// Load 1.0 into d1
@@ -1063,8 +1068,9 @@ func (acg *ARM64CodeGen) compileRangeLoop(stmt *LoopStmt, funcCall *CallExpr) er
 	acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x62, 0x9e})
 	// fadd d0, d0, d1
 	acg.out.out.writer.WriteBytes([]byte{0x00, 0x28, 0x61, 0x1e})
-	// Store incremented value: str d0, [x29, #-iterOffset]
-	if err := acg.out.StrImm64Double("d0", "x29", int32(-iterOffset)); err != nil {
+	// Store incremented value: str d0, [x29, #offset] (positive offset)
+	offset = int32(16 + iterOffset - 8)
+	if err := acg.out.StrImm64Double("d0", "x29", offset); err != nil {
 		return err
 	}
 
@@ -1101,7 +1107,8 @@ func (acg *ARM64CodeGen) compileListLoop(stmt *LoopStmt) error {
 	// Save list pointer to stack
 	acg.stackSize += 8
 	listPtrOffset := acg.stackSize
-	if err := acg.out.StrImm64Double("d0", "x29", int32(-listPtrOffset)); err != nil {
+	offset := int32(16 + listPtrOffset - 8)
+	if err := acg.out.StrImm64Double("d0", "x29", offset); err != nil {
 		return err
 	}
 
@@ -1118,7 +1125,8 @@ func (acg *ARM64CodeGen) compileListLoop(stmt *LoopStmt) error {
 	// Store length in stack
 	acg.stackSize += 8
 	lengthOffset := acg.stackSize
-	if err := acg.out.StrImm64("x0", "x29", int32(-lengthOffset)); err != nil {
+	offset = int32(16 + lengthOffset - 8)
+	if err := acg.out.StrImm64("x0", "x29", offset); err != nil {
 		return err
 	}
 
@@ -1129,7 +1137,8 @@ func (acg *ARM64CodeGen) compileListLoop(stmt *LoopStmt) error {
 	if err := acg.out.MovImm64("x0", 0); err != nil {
 		return err
 	}
-	if err := acg.out.StrImm64("x0", "x29", int32(-indexOffset)); err != nil {
+	offset = int32(16 + indexOffset - 8)
+	if err := acg.out.StrImm64("x0", "x29", offset); err != nil {
 		return err
 	}
 
@@ -1156,13 +1165,15 @@ func (acg *ARM64CodeGen) compileListLoop(stmt *LoopStmt) error {
 	}
 	acg.activeLoops = append(acg.activeLoops, loopInfo)
 
-	// Load index: ldr x0, [x29, #-indexOffset]
-	if err := acg.out.LdrImm64("x0", "x29", int32(-indexOffset)); err != nil {
+	// Load index: ldr x0, [x29, #offset] (positive offset)
+	offset = int32(16 + indexOffset - 8)
+	if err := acg.out.LdrImm64("x0", "x29", offset); err != nil {
 		return err
 	}
 
-	// Load length: ldr x1, [x29, #-lengthOffset]
-	if err := acg.out.LdrImm64("x1", "x29", int32(-lengthOffset)); err != nil {
+	// Load length: ldr x1, [x29, #offset] (positive offset)
+	offset = int32(16 + lengthOffset - 8)
+	if err := acg.out.LdrImm64("x1", "x29", offset); err != nil {
 		return err
 	}
 
@@ -1180,7 +1191,8 @@ func (acg *ARM64CodeGen) compileListLoop(stmt *LoopStmt) error {
 	)
 
 	// Load list pointer from stack to x2
-	if err := acg.out.LdrImm64Double("d0", "x29", int32(-listPtrOffset)); err != nil {
+	offset = int32(16 + listPtrOffset - 8)
+	if err := acg.out.LdrImm64Double("d0", "x29", offset); err != nil {
 		return err
 	}
 	// Convert to integer: fcvtzs x2, d0
@@ -1192,7 +1204,8 @@ func (acg *ARM64CodeGen) compileListLoop(stmt *LoopStmt) error {
 	}
 
 	// Load index into x0
-	if err := acg.out.LdrImm64("x0", "x29", int32(-indexOffset)); err != nil {
+	offset = int32(16 + indexOffset - 8)
+	if err := acg.out.LdrImm64("x0", "x29", offset); err != nil {
 		return err
 	}
 
@@ -1205,8 +1218,9 @@ func (acg *ARM64CodeGen) compileListLoop(stmt *LoopStmt) error {
 	// Load element value: ldr d0, [x2]
 	acg.out.out.writer.WriteBytes([]byte{0x40, 0x00, 0x40, 0xfd}) // ldr d0, [x2]
 
-	// Store iterator value: str d0, [x29, #-iterOffset]
-	if err := acg.out.StrImm64Double("d0", "x29", int32(-iterOffset)); err != nil {
+	// Store iterator value: str d0, [x29, #offset] (positive offset)
+	offset = int32(16 + iterOffset - 8)
+	if err := acg.out.StrImm64Double("d0", "x29", offset); err != nil {
 		return err
 	}
 
@@ -1228,13 +1242,15 @@ func (acg *ARM64CodeGen) compileListLoop(stmt *LoopStmt) error {
 	}
 
 	// Increment index
-	if err := acg.out.LdrImm64("x0", "x29", int32(-indexOffset)); err != nil {
+	offset = int32(16 + indexOffset - 8)
+	if err := acg.out.LdrImm64("x0", "x29", offset); err != nil {
 		return err
 	}
 	if err := acg.out.AddImm64("x0", "x0", 1); err != nil {
 		return err
 	}
-	if err := acg.out.StrImm64("x0", "x29", int32(-indexOffset)); err != nil {
+	offset = int32(16 + indexOffset - 8)
+	if err := acg.out.StrImm64("x0", "x29", offset); err != nil {
 		return err
 	}
 
