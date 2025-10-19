@@ -1,0 +1,11 @@
+// Test F-string interpolation
+name := "Alice"
+age := 30
+
+println(f"Hello, {name}! You are {age} years old.")
+
+a := 5
+b := 7
+println(f"Sum: {a + b}, Product: {a * b}")
+
+println("F-string tests passed!")
