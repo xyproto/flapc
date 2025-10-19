@@ -202,12 +202,19 @@ numbers[::-1]        // [3, 2, 1] (reversed)
 
 ### Maps
 
+Maps are **ordered** - they preserve insertion order.
+
 ```flap
 ages = {1: 25, 2: 30, 3: 35}
 empty = {}
 count = #ages        // returns 3.0
 price = ages[1]      // returns 25.0
 missing = ages[999]  // returns 0.0 (key doesn't exist)
+
+// Maps preserve insertion order
+@ key, value in ages {
+    println(f"{key}: {value}")  // Always prints in order: 1: 25, 2: 30, 3: 35
+}
 ```
 
 ### Membership Testing
