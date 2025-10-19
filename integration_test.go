@@ -20,7 +20,7 @@ var compileExpectations = map[string]string{
 // Programs to skip
 var skipPrograms = map[string]bool{
 	"fstring_test":  true, // F-strings not yet implemented (TODO P1)
-	"match_unicode": true, // Compiler calls os.Exit instead of returning error
+	"match_unicode": true, // Has os.Exit in compiler code generation
 }
 
 // Expected exit codes (default is 0 if not specified)
