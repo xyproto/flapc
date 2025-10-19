@@ -37,13 +37,6 @@ func TestFlapPrograms(t *testing.T) {
 		t.Fatal("No .flap files found in programs/ directory")
 	}
 
-	// Create build directory
-	buildDir := "build"
-	if err := os.MkdirAll(buildDir, 0755); err != nil {
-		t.Fatalf("Failed to create build directory: %v", err)
-	}
-	defer os.RemoveAll(buildDir)
-
 	// Test each program
 	for _, srcPath := range matches {
 		base := strings.TrimSuffix(filepath.Base(srcPath), ".flap")
@@ -55,6 +48,10 @@ func TestFlapPrograms(t *testing.T) {
 
 		t.Run(base, func(t *testing.T) {
 			t.Parallel() // Run tests in parallel for speed
+
+			// Use t.TempDir() for thread-safe temporary directory
+			buildDir := t.TempDir()
+
 			testFlapProgram(t, base, srcPath, buildDir)
 		})
 	}
