@@ -2508,7 +2508,7 @@ func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
 	acg.out.AddImm64("x0", "x0", 8)                               // add x0, x0, #8
 
 	// Align to 16 bytes: x0 = (x0 + 15) & ~15
-	acg.out.AddImm64("x0", "x0", 15) // add x0, x0, #15
+	acg.out.AddImm64("x0", "x0", 15)                              // add x0, x0, #15
 	acg.out.out.writer.WriteBytes([]byte{0x00, 0x3c, 0x00, 0x92}) // and x0, x0, #0xfffffffffffffff0
 
 	// Call malloc(x0)
