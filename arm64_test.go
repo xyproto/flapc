@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 )
 
@@ -28,8 +29,8 @@ func TestARM64BasicCompilation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tmpFile := "/tmp/test_arm64_" + tt.name + ".flap"
-			outFile := "/tmp/test_arm64_" + tt.name
+			tmpFile := filepath.Join(os.TempDir(), "test_arm64_"+tt.name+".flap")
+			outFile := filepath.Join(os.TempDir(), "test_arm64_"+tt.name)
 			defer os.Remove(tmpFile)
 			defer os.Remove(outFile)
 

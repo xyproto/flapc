@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"testing"
 )
@@ -113,8 +114,13 @@ func TestMachOSegments(t *testing.T) {
 		t.Skip("Mach-O tests only run on macOS")
 	}
 
-	tmpfile := "/tmp/flapc_macho_seg_test"
-	defer os.Remove(tmpfile)
+	tmpfilePath, err := os.CreateTemp("", "flapc_macho_seg_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tmpfilePathPath := tmpfilePath.Name()
+	tmpfilePath.Close()
+	defer os.Remove(tmpfilePathPath)
 
 	eb, err := New("x86_64")
 	if err != nil {
@@ -131,13 +137,13 @@ func TestMachOSegments(t *testing.T) {
 		t.Fatalf("Failed to write Mach-O: %v", err)
 	}
 
-	err = os.WriteFile(tmpfile, eb.Bytes(), 0755)
+	err = os.WriteFile(tmpfilePathPath, eb.Bytes(), 0755)
 	if err != nil {
 		t.Fatalf("Failed to write executable: %v", err)
 	}
 
 	// Parse with debug/macho
-	f, err := macho.Open(tmpfile)
+	f, err := macho.Open(tmpfilePathPath)
 	if err != nil {
 		t.Fatalf("Failed to open Mach-O: %v", err)
 	}
@@ -170,8 +176,13 @@ func TestMachOPageZero(t *testing.T) {
 		t.Skip("Mach-O tests only run on macOS")
 	}
 
-	tmpfile := "/tmp/flapc_macho_zero_test"
-	defer os.Remove(tmpfile)
+	tmpfilePath, err := os.CreateTemp("", "flapc_macho_zero_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tmpfilePathPath := tmpfilePath.Name()
+	tmpfilePath.Close()
+	defer os.Remove(tmpfilePathPath)
 
 	eb, err := New("x86_64")
 	if err != nil {
@@ -183,12 +194,12 @@ func TestMachOPageZero(t *testing.T) {
 		t.Fatalf("Failed to write Mach-O: %v", err)
 	}
 
-	err = os.WriteFile(tmpfile, eb.Bytes(), 0755)
+	err = os.WriteFile(tmpfilePath, eb.Bytes(), 0755)
 	if err != nil {
 		t.Fatalf("Failed to write executable: %v", err)
 	}
 
-	f, err := macho.Open(tmpfile)
+	f, err := macho.Open(tmpfilePath)
 	if err != nil {
 		t.Fatalf("Failed to open Mach-O: %v", err)
 	}
@@ -229,8 +240,13 @@ func TestMachOTextSegment(t *testing.T) {
 		t.Skip("Mach-O tests only run on macOS")
 	}
 
-	tmpfile := "/tmp/flapc_macho_text_test"
-	defer os.Remove(tmpfile)
+	tmpfile, err := os.CreateTemp("", "flapc_macho_text_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tmpfilePath := tmpfile.Name()
+	tmpfile.Close()
+	defer os.Remove(tmpfilePath)
 
 	eb, err := New("x86_64")
 	if err != nil {
@@ -247,12 +263,12 @@ func TestMachOTextSegment(t *testing.T) {
 		t.Fatalf("Failed to write Mach-O: %v", err)
 	}
 
-	err = os.WriteFile(tmpfile, eb.Bytes(), 0755)
+	err = os.WriteFile(tmpfilePath, eb.Bytes(), 0755)
 	if err != nil {
 		t.Fatalf("Failed to write executable: %v", err)
 	}
 
-	f, err := macho.Open(tmpfile)
+	f, err := macho.Open(tmpfilePath)
 	if err != nil {
 		t.Fatalf("Failed to open Mach-O: %v", err)
 	}
@@ -292,8 +308,13 @@ func TestMachOMinimalSize(t *testing.T) {
 		t.Skip("Mach-O tests only run on macOS")
 	}
 
-	tmpfile := "/tmp/flapc_macho_size_test"
-	defer os.Remove(tmpfile)
+	tmpfile, err := os.CreateTemp("", "flapc_macho_size_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tmpfilePath := tmpfile.Name()
+	tmpfile.Close()
+	defer os.Remove(tmpfilePath)
 
 	eb, err := New("x86_64")
 	if err != nil {
@@ -310,12 +331,12 @@ func TestMachOMinimalSize(t *testing.T) {
 		t.Fatalf("Failed to write Mach-O: %v", err)
 	}
 
-	err = os.WriteFile(tmpfile, eb.Bytes(), 0755)
+	err = os.WriteFile(tmpfilePath, eb.Bytes(), 0755)
 	if err != nil {
 		t.Fatalf("Failed to write executable: %v", err)
 	}
 
-	info, err := os.Stat(tmpfile)
+	info, err := os.Stat(tmpfilePath)
 	if err != nil {
 		t.Fatalf("Failed to stat file: %v", err)
 	}
@@ -345,8 +366,13 @@ func TestMachOExecutable(t *testing.T) {
 		t.Skip("Mach-O execution tests only run on macOS")
 	}
 
-	tmpfile := "/tmp/flapc_macho_exec_test"
-	// defer os.Remove(tmpfile) // Keep for debugging
+	tmpfile, err := os.CreateTemp("", "flapc_macho_exec_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tmpfilePath := tmpfile.Name()
+	tmpfile.Close()
+	// defer os.Remove(tmpfilePath) // Keep for debugging
 
 	// Use host architecture for execution test
 	VerboseMode = true // Enable debug output
@@ -376,21 +402,22 @@ func TestMachOExecutable(t *testing.T) {
 	}
 
 	bytesToWrite := eb.Bytes()
-	t.Logf("About to write %d bytes to %s", len(bytesToWrite), tmpfile)
+	t.Logf("About to write %d bytes to %s", len(bytesToWrite), tmpfilePath)
 	if len(bytesToWrite) >= 824 {
 		t.Logf("Bytes at offset 816: %x", bytesToWrite[816:824])
 	}
 
 	// Debug: write to alternate file for comparison
-	os.WriteFile("/tmp/test_bytes_direct", bytesToWrite, 0755)
+	debugFile := filepath.Join(os.TempDir(), "test_bytes_direct")
+	os.WriteFile(debugFile, bytesToWrite, 0755)
 
-	err = os.WriteFile(tmpfile, bytesToWrite, 0755)
+	err = os.WriteFile(tmpfilePath, bytesToWrite, 0755)
 	if err != nil {
 		t.Fatalf("Failed to write executable: %v", err)
 	}
 
 	// Debug: immediately read back what was written
-	writtenBytes, _ := os.ReadFile(tmpfile)
+	writtenBytes, _ := os.ReadFile(tmpfilePath)
 	t.Logf("After write, file size=%d", len(writtenBytes))
 	if len(writtenBytes) >= 824 {
 		t.Logf("After write, bytes at offset 816 in file: %x", writtenBytes[816:824])
@@ -401,7 +428,7 @@ func TestMachOExecutable(t *testing.T) {
 	t.Logf("Binary self-signed by flapc")
 
 	// Execute and check exit code
-	cmd := exec.Command(tmpfile)
+	cmd := exec.Command(tmpfilePath)
 	err = cmd.Run()
 
 	// Should exit with code 42
@@ -422,8 +449,13 @@ func TestMachOFileCommand(t *testing.T) {
 		t.Skip("Mach-O tests only run on macOS")
 	}
 
-	tmpfile := "/tmp/flapc_macho_file_test"
-	defer os.Remove(tmpfile)
+	tmpfile, err := os.CreateTemp("", "flapc_macho_file_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tmpfilePath := tmpfile.Name()
+	tmpfile.Close()
+	defer os.Remove(tmpfilePath)
 
 	eb, err := New("x86_64")
 	if err != nil {
@@ -435,13 +467,13 @@ func TestMachOFileCommand(t *testing.T) {
 		t.Fatalf("Failed to write Mach-O: %v", err)
 	}
 
-	err = os.WriteFile(tmpfile, eb.Bytes(), 0755)
+	err = os.WriteFile(tmpfilePath, eb.Bytes(), 0755)
 	if err != nil {
 		t.Fatalf("Failed to write executable: %v", err)
 	}
 
 	// Run file command
-	cmd := exec.Command("file", tmpfile)
+	cmd := exec.Command("file", tmpfilePath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Logf("file output: %s", output)
@@ -463,8 +495,13 @@ func TestMachOPermissions(t *testing.T) {
 		t.Skip("Mach-O tests only run on macOS")
 	}
 
-	tmpfile := "/tmp/flapc_macho_perms_test"
-	defer os.Remove(tmpfile)
+	tmpfile, err := os.CreateTemp("", "flapc_macho_perms_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tmpfilePath := tmpfile.Name()
+	tmpfile.Close()
+	defer os.Remove(tmpfilePath)
 
 	eb, err := New("x86_64")
 	if err != nil {
@@ -476,12 +513,12 @@ func TestMachOPermissions(t *testing.T) {
 		t.Fatalf("Failed to write Mach-O: %v", err)
 	}
 
-	err = os.WriteFile(tmpfile, eb.Bytes(), 0755)
+	err = os.WriteFile(tmpfilePath, eb.Bytes(), 0755)
 	if err != nil {
 		t.Fatalf("Failed to write executable: %v", err)
 	}
 
-	info, err := os.Stat(tmpfile)
+	info, err := os.Stat(tmpfilePath)
 	if err != nil {
 		t.Fatalf("Failed to stat file: %v", err)
 	}

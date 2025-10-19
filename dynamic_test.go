@@ -9,8 +9,13 @@ import (
 
 // TestDynamicELFStructure tests the structure of dynamically-linked ELF
 func TestDynamicELFStructure(t *testing.T) {
-	tmpfile := "/tmp/flapc_dynamic_test"
-	defer os.Remove(tmpfile)
+	tmpfile, err := os.CreateTemp("", "flapc_dynamic_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tmpfilePath := tmpfile.Name()
+	tmpfile.Close()
+	defer os.Remove(tmpfilePath)
 
 	eb, err := New("x86_64-linux")
 	if err != nil {
@@ -39,13 +44,13 @@ func TestDynamicELFStructure(t *testing.T) {
 	}
 
 	// Write to file
-	err = os.WriteFile(tmpfile, eb.Bytes(), 0755)
+	err = os.WriteFile(tmpfilePath, eb.Bytes(), 0755)
 	if err != nil {
 		t.Fatalf("Failed to write executable: %v", err)
 	}
 
 	// Parse ELF to verify structure
-	f, err := elf.Open(tmpfile)
+	f, err := elf.Open(tmpfilePath)
 	if err != nil {
 		t.Fatalf("Failed to open ELF: %v", err)
 	}
@@ -252,8 +257,13 @@ func TestStringTableDeduplication(t *testing.T) {
 
 // TestLDDOutput tests that ldd can analyze the generated executable
 func TestLDDOutput(t *testing.T) {
-	tmpfile := "/tmp/flapc_ldd_test"
-	defer os.Remove(tmpfile)
+	tmpfile, err := os.CreateTemp("", "flapc_ldd_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tmpfilePath := tmpfile.Name()
+	tmpfile.Close()
+	defer os.Remove(tmpfilePath)
 
 	eb, err := New("x86_64-linux")
 	if err != nil {
@@ -278,7 +288,7 @@ func TestLDDOutput(t *testing.T) {
 		t.Fatalf("Failed to write dynamic ELF: %v", err)
 	}
 
-	err = os.WriteFile(tmpfile, eb.Bytes(), 0755)
+	err = os.WriteFile(tmpfilePath, eb.Bytes(), 0755)
 	if err != nil {
 		t.Fatalf("Failed to write executable: %v", err)
 	}
@@ -288,7 +298,7 @@ func TestLDDOutput(t *testing.T) {
 		t.Skip("Skipping ldd test on non-Linux platform")
 	}
 
-	cmd := exec.Command("ldd", tmpfile)
+	cmd := exec.Command("ldd", tmpfilePath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Logf("ldd output: %s", output)

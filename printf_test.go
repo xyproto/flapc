@@ -78,7 +78,7 @@ func TestPrintfWithStringLiteral(t *testing.T) {
 			}
 
 			// Run the binary
-			cmd = exec.Command("/tmp/flapc_inline")
+			cmd = exec.Command(filepath.Join(os.TempDir(), "flapc_inline"))
 			output, err := cmd.CombinedOutput()
 			if err != nil {
 				t.Fatalf("Execution failed: %v\nOutput: %s", err, output)

@@ -4,6 +4,7 @@ import (
 	"debug/elf"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 )
 
@@ -73,7 +74,7 @@ func TestELFOSABI(t *testing.T) {
 
 // TestMinimalELFSize ensures we stay under size targets
 func TestMinimalELFSize(t *testing.T) {
-	tmpfile := "/tmp/flapc_size_test"
+	tmpfile := filepath.Join(os.TempDir(), "flapc_size_test")
 	defer os.Remove(tmpfile)
 
 	eb, err := New("x86_64-linux")
@@ -134,7 +135,7 @@ func TestDynamicELFExecutable(t *testing.T) {
 		t.Skip("Skipping ELF execution test on non-Linux platform")
 	}
 
-	tmpfile := "/tmp/flapc_exec_test"
+	tmpfile := filepath.Join(os.TempDir(), "flapc_exec_test")
 	defer os.Remove(tmpfile)
 
 	eb, err := New("x86_64-linux")
@@ -182,7 +183,7 @@ func TestDynamicELFExecutable(t *testing.T) {
 
 // TestELFSegmentAlignment verifies proper segment alignment
 func TestELFSegmentAlignment(t *testing.T) {
-	tmpfile := "/tmp/flapc_align_test"
+	tmpfile := filepath.Join(os.TempDir(), "flapc_align_test")
 	defer os.Remove(tmpfile)
 
 	eb, err := New("x86_64-linux")
@@ -233,7 +234,7 @@ func TestELFSegmentAlignment(t *testing.T) {
 
 // TestELFInterpSegment verifies interpreter segment exists and is valid
 func TestELFInterpSegment(t *testing.T) {
-	tmpfile := "/tmp/flapc_interp_test"
+	tmpfile := filepath.Join(os.TempDir(), "flapc_interp_test")
 	defer os.Remove(tmpfile)
 
 	eb, err := New("x86_64-linux")
@@ -301,7 +302,7 @@ func TestELFInterpSegment(t *testing.T) {
 
 // TestELFDynamicSegment verifies dynamic segment structure
 func TestELFDynamicSegment(t *testing.T) {
-	tmpfile := "/tmp/flapc_dynamic_seg_test"
+	tmpfile := filepath.Join(os.TempDir(), "flapc_dynamic_seg_test")
 	defer os.Remove(tmpfile)
 
 	eb, err := New("x86_64-linux")
@@ -360,7 +361,7 @@ func TestELFDynamicSegment(t *testing.T) {
 
 // TestELFType verifies ET_DYN type for PIE executables
 func TestELFType(t *testing.T) {
-	tmpfile := "/tmp/flapc_type_test"
+	tmpfile := filepath.Join(os.TempDir(), "flapc_type_test")
 	defer os.Remove(tmpfile)
 
 	eb, err := New("x86_64-linux")
@@ -414,7 +415,7 @@ func TestELFMachine(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.arch, func(t *testing.T) {
-			tmpfile := "/tmp/flapc_machine_test_" + tt.arch
+			tmpfile := filepath.Join(os.TempDir(), "flapc_machine_test_" + tt.arch)
 			defer os.Remove(tmpfile)
 
 			eb, err := New(tt.arch)
@@ -464,7 +465,7 @@ func TestELFMachine(t *testing.T) {
 
 // TestELFPermissions verifies executable permissions
 func TestELFPermissions(t *testing.T) {
-	tmpfile := "/tmp/flapc_perms_test"
+	tmpfile := filepath.Join(os.TempDir(), "flapc_perms_test")
 	defer os.Remove(tmpfile)
 
 	eb, err := New("x86_64-linux")

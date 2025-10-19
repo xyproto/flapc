@@ -141,8 +141,13 @@ func TestPLTGOT(t *testing.T) {
 // TestExecutableGeneration tests full executable generation
 func TestExecutableGeneration(t *testing.T) {
 	// Only run if we have write permissions
-	tmpfile := "/tmp/flapc_test_output"
-	defer os.Remove(tmpfile)
+	tmpfilePath, err := os.CreateTemp("", "flapc_test_output")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tmpfilePathPath := tmpfilePath.Name()
+	tmpfilePath.Close()
+	defer os.Remove(tmpfilePathPath)
 
 	eb, err := New("x86_64-linux")
 	if err != nil {
@@ -156,20 +161,20 @@ func TestExecutableGeneration(t *testing.T) {
 	eb.WriteELFHeader()
 
 	// Write to file
-	err = os.WriteFile(tmpfile, eb.Bytes(), 0755)
+	err = os.WriteFile(tmpfilePath, eb.Bytes(), 0755)
 	if err != nil {
 		t.Fatalf("Failed to write executable: %v", err)
 	}
 
 	// Check that it's a valid ELF
-	cmd := exec.Command("file", tmpfile)
+	cmd := exec.Command("file", tmpfilePath)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Logf("file output: %s", output)
 	}
 
 	// Just verify the file was created with executable permissions
-	info, err := os.Stat(tmpfile)
+	info, err := os.Stat(tmpfilePath)
 	if err != nil {
 		t.Fatalf("Failed to stat file: %v", err)
 	}

@@ -970,7 +970,7 @@ func main() {
 		writeToFilename := outputFilename
 		inlineFlagProvided := outputFlagProvided
 		if outputFilename == defaultOutputFilename {
-			writeToFilename = "/tmp/flapc_inline"
+			writeToFilename = filepath.Join(os.TempDir(), "flapc_inline")
 			inlineFlagProvided = false
 		}
 
@@ -1017,7 +1017,7 @@ func main() {
 		}
 	}
 
-	if err := eb.CompileDefaultProgram("/tmp/main"); err != nil {
+	if err := eb.CompileDefaultProgram(filepath.Join(os.TempDir(), "main")); err != nil {
 		log.Fatalf("Flap compilation error: %v", err)
 	}
 
