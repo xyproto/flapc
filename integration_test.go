@@ -13,8 +13,8 @@ import (
 
 // Programs that are expected to fail compilation
 var compileExpectations = map[string]string{
-	"const":                    "cannot update immutable variable",
-	"lambda_bad_syntax_test":   "lambda definitions must use '=>'",
+	"const":                  "cannot update immutable variable",
+	"lambda_bad_syntax_test": "lambda definitions must use '=>'",
 }
 
 // Programs to skip

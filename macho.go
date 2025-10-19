@@ -216,27 +216,27 @@ type BlobIndex struct {
 
 // CodeDirectory is the main signing information
 type CodeDirectory struct {
-	Magic         uint32   // CS_MAGIC_CODEDIRECTORY
-	Length        uint32   // Total length of CodeDirectory blob
-	Version       uint32   // Version (0x20400 for modern binaries)
-	Flags         uint32   // Flags (CS_ADHOC = 0x2)
-	HashOffset    uint32   // Offset of hash data from start of CodeDirectory
-	IdentOffset   uint32   // Offset of identifier string
-	NSpecialSlots uint32   // Number of special hash slots
-	NCodeSlots    uint32   // Number of code hash slots
-	CodeLimit     uint32   // Limit to main image signature
-	HashSize      uint8    // Size of each hash (32 for SHA-256)
-	HashType      uint8    // Type of hash (CS_HASHTYPE_SHA256 = 2)
-	Platform      uint8    // Platform identifier
-	PageSize      uint8    // Log2(page size) = 12 for 4096 bytes
-	Spare2        uint32   // Reserved
-	ScatterOffset uint32   // Optional scatter vector offset
-	TeamOffset    uint32   // Optional team identifier offset
-	Spare3        uint32   // Reserved
-	CodeLimit64   uint64   // 64-bit code limit
-	ExecSegBase   uint64   // Start of executable segment
-	ExecSegLimit  uint64   // Limit of executable segment
-	ExecSegFlags  uint64   // Exec segment flags
+	Magic         uint32 // CS_MAGIC_CODEDIRECTORY
+	Length        uint32 // Total length of CodeDirectory blob
+	Version       uint32 // Version (0x20400 for modern binaries)
+	Flags         uint32 // Flags (CS_ADHOC = 0x2)
+	HashOffset    uint32 // Offset of hash data from start of CodeDirectory
+	IdentOffset   uint32 // Offset of identifier string
+	NSpecialSlots uint32 // Number of special hash slots
+	NCodeSlots    uint32 // Number of code hash slots
+	CodeLimit     uint32 // Limit to main image signature
+	HashSize      uint8  // Size of each hash (32 for SHA-256)
+	HashType      uint8  // Type of hash (CS_HASHTYPE_SHA256 = 2)
+	Platform      uint8  // Platform identifier
+	PageSize      uint8  // Log2(page size) = 12 for 4096 bytes
+	Spare2        uint32 // Reserved
+	ScatterOffset uint32 // Optional scatter vector offset
+	TeamOffset    uint32 // Optional team identifier offset
+	Spare3        uint32 // Reserved
+	CodeLimit64   uint64 // 64-bit code limit
+	ExecSegBase   uint64 // Start of executable segment
+	ExecSegLimit  uint64 // Limit of executable segment
+	ExecSegFlags  uint64 // Exec segment flags
 	// Followed by identifier string, then hashes
 }
 
@@ -327,10 +327,10 @@ const (
 	CS_MAGIC_CODEDIRECTORY      = 0xfade0c02 // CodeDirectory magic
 	CS_MAGIC_BLOBWRAPPER        = 0xfade0b01 // CMS signature blob
 
-	CSSLOT_CODEDIRECTORY = 0 // Slot index for CodeDirectory
+	CSSLOT_CODEDIRECTORY = 0       // Slot index for CodeDirectory
 	CSSLOT_SIGNATURESLOT = 0x10000 // CMS signature slot
 
-	CS_HASHTYPE_SHA256 = 2 // SHA-256 hash type
+	CS_HASHTYPE_SHA256 = 2    // SHA-256 hash type
 	CS_PAGE_SIZE       = 4096 // Page size for hashing (4KB)
 
 	CS_EXECSEG_MAIN_BINARY = 0x1 // Main binary exec segment flag
@@ -473,9 +473,9 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	}
 
 	// Align sizes (for reference, but mostly calculated dynamically now)
-	_ = (textSize + pageSize - 1) &^ (pageSize - 1)  // textSizeAligned - calculated dynamically in segment
+	_ = (textSize + pageSize - 1) &^ (pageSize - 1)   // textSizeAligned - calculated dynamically in segment
 	_ = (rodataSize + pageSize - 1) &^ (pageSize - 1) // rodataSizeAligned - may be used later
-	_ = (stubsSize + 15) &^ 15                       // stubsSizeAligned - may be used for stub alignment
+	_ = (stubsSize + 15) &^ 15                        // stubsSizeAligned - may be used for stub alignment
 	_ = (gotSize + 15) &^ 15                          // May be used for GOT alignment
 
 	// Calculate addresses - __TEXT starts after zero page
@@ -526,9 +526,9 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 
 	dylinkerPath := "/usr/lib/dyld\x00"
 	dylinkerCmdSize := (uint32(binary.Size(LoadCommand{})+4+len(dylinkerPath)) + 7) &^ 7
-	prelimLoadCmdsSize += dylinkerCmdSize                          // LC_LOAD_DYLINKER
+	prelimLoadCmdsSize += dylinkerCmdSize                            // LC_LOAD_DYLINKER
 	prelimLoadCmdsSize += uint32(binary.Size(BuildVersionCommand{})) // LC_BUILD_VERSION
-	prelimLoadCmdsSize += uint32(binary.Size(EntryPointCommand{}))  // LC_MAIN
+	prelimLoadCmdsSize += uint32(binary.Size(EntryPointCommand{}))   // LC_MAIN
 
 	if eb.useDynamicLinking {
 		dylibPath := "/usr/lib/libSystem.B.dylib\x00"
@@ -739,7 +739,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 			CmdSize:  uint32(binary.Size(SegmentCommand64{}) + int(textNSects)*binary.Size(Section64{})),
 			VMAddr:   textAddr,
 			VMSize:   textSegVMSize,
-			FileOff:  0, // __TEXT starts at beginning of file (includes headers)
+			FileOff:  0,             // __TEXT starts at beginning of file (includes headers)
 			FileSize: textSegVMSize, // FileSize should match VMSize for __TEXT
 			MaxProt:  VM_PROT_READ | VM_PROT_EXECUTE,
 			InitProt: VM_PROT_READ | VM_PROT_EXECUTE,
@@ -906,10 +906,10 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		buildVer := BuildVersionCommand{
 			Cmd:      LC_BUILD_VERSION,
 			CmdSize:  uint32(binary.Size(BuildVersionCommand{})),
-			Platform: 1,        // 1 = macOS
+			Platform: 1,          // 1 = macOS
 			Minos:    0x000c0000, // macOS 12.0 (0x000c = 12, 0x0000 = 0.0)
 			Sdk:      0x000c0000, // SDK 12.0
-			NTools:   0,        // No tool entries
+			NTools:   0,          // No tool entries
 		}
 		binary.Write(&loadCmdsBuf, binary.LittleEndian, &buildVer)
 		ncmds++
@@ -1251,9 +1251,9 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		// 3. Write DyldChainedStartsInSegment for __DATA
 		startsSegment := DyldChainedStartsInSegment{
 			Size:            uint32(binary.Size(DyldChainedStartsInSegment{}) + 2),
-			PageSize:        0x4000, // 16KB pages
+			PageSize:        0x4000,                           // 16KB pages
 			PointerFormat:   DYLD_CHAINED_PTR_ARM64E_FIRMWARE, // Format 6 - matches GCC
-			SegmentOffset:   uint64(0x4000), // File offset to __DATA segment (16KB page boundary)
+			SegmentOffset:   uint64(0x4000),                   // File offset to __DATA segment (16KB page boundary)
 			MaxValidPointer: 0,
 			PageCount:       1, // GOT fits in one page
 		}
@@ -1313,8 +1313,8 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 
 		// Generate signature for the current binary data
 		binaryData := buf.Bytes()
-		execSegBase := uint64(0)                 // __TEXT starts at file offset 0
-		execSegLimit := uint64(len(binaryData))  // Size up to this point (before signature)
+		execSegBase := uint64(0)                // __TEXT starts at file offset 0
+		execSegLimit := uint64(len(binaryData)) // Size up to this point (before signature)
 
 		signature, err := generateCodeSignature(identifier, binaryData, execSegBase, execSegLimit)
 		if err != nil {
