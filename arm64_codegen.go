@@ -8,16 +8,17 @@ import (
 
 // ARM64CodeGen handles ARM64 code generation for macOS
 type ARM64CodeGen struct {
-	out           *ARM64Out
-	eb            *ExecutableBuilder
-	stackVars     map[string]int    // variable name -> stack offset from fp
-	stackSize     int               // current stack size
-	stringCounter int               // counter for string labels
-	labelCounter  int               // counter for jump labels
-	activeLoops   []ARM64LoopInfo   // stack of active loops for break/continue
-	lambdaFuncs   []ARM64LambdaFunc // list of lambda functions to generate
-	lambdaCounter int               // counter for lambda names
-	currentLambda *ARM64LambdaFunc  // current lambda being compiled (for recursion)
+	out            *ARM64Out
+	eb             *ExecutableBuilder
+	stackVars      map[string]int    // variable name -> stack offset from fp
+	stackSize      int               // current stack size
+	stackFrameSize uint64            // total stack frame size allocated in prologue
+	stringCounter  int               // counter for string labels
+	labelCounter   int               // counter for jump labels
+	activeLoops    []ARM64LoopInfo   // stack of active loops for break/continue
+	lambdaFuncs    []ARM64LambdaFunc // list of lambda functions to generate
+	lambdaCounter  int               // counter for lambda names
+	currentLambda  *ARM64LambdaFunc  // current lambda being compiled (for recursion)
 }
 
 // ARM64LambdaFunc represents a lambda function for ARM64
@@ -56,8 +57,10 @@ func NewARM64CodeGen(eb *ExecutableBuilder) *ARM64CodeGen {
 // CompileProgram compiles a Flap program to ARM64
 func (acg *ARM64CodeGen) CompileProgram(program *Program) error {
 	// Function prologue - follow ARM64 ABI
-	// Allocate initial stack frame
-	if err := acg.out.SubImm64("sp", "sp", 32); err != nil {
+	// Allocate stack frame: 16 bytes for saved registers + 256 bytes for local variables
+	// Total: 272 bytes, rounded to 16-byte alignment = 272 bytes
+	stackFrameSize := uint64(272)
+	if err := acg.out.SubImm64("sp", "sp", uint32(stackFrameSize)); err != nil {
 		return err
 	}
 	// Save frame pointer and link register
@@ -71,6 +74,9 @@ func (acg *ARM64CodeGen) CompileProgram(program *Program) error {
 	if err := acg.out.AddImm64("x29", "sp", 0); err != nil {
 		return err
 	}
+
+	// Store stack frame size for epilogue
+	acg.stackFrameSize = stackFrameSize
 
 	// Compile each statement
 	for _, stmt := range program.Statements {
@@ -89,7 +95,7 @@ func (acg *ARM64CodeGen) CompileProgram(program *Program) error {
 	if err := acg.out.LdrImm64("x29", "sp", 0); err != nil {
 		return err
 	}
-	if err := acg.out.AddImm64("sp", "sp", 32); err != nil {
+	if err := acg.out.AddImm64("sp", "sp", uint32(acg.stackFrameSize)); err != nil {
 		return err
 	}
 	if err := acg.out.Return("x30"); err != nil {
@@ -216,15 +222,17 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 
 	case *IdentExpr:
 		// Load variable from stack into d0
-		offset, exists := acg.stackVars[e.Name]
+		stackOffset, exists := acg.stackVars[e.Name]
 		if !exists {
 			if VerboseMode {
 				fmt.Fprintf(os.Stderr, "Error: undefined variable '%s'\n", e.Name)
 			}
 			return fmt.Errorf("undefined variable: %s", e.Name)
 		}
-		// ldr d0, [x29, #-offset]
-		if err := acg.out.LdrImm64Double("d0", "x29", int32(-offset)); err != nil {
+		// ldr d0, [x29, #offset]
+		// x29 points to saved fp location, variables start at offset 16
+		offset := int32(16 + stackOffset - 8)
+		if err := acg.out.LdrImm64Double("d0", "x29", offset); err != nil {
 			return err
 		}
 
@@ -234,8 +242,8 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 			return err
 		}
 
-		// Push d0 onto stack to save left operand
-		acg.out.SubImm64("sp", "sp", 8)
+		// Push d0 onto stack to save left operand (maintain 16-byte alignment)
+		acg.out.SubImm64("sp", "sp", 16)
 		// str d0, [sp]
 		acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x00, 0xfd}) // str d0, [sp]
 
@@ -250,7 +258,7 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 
 		// Pop left operand into d0
 		acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x40, 0xfd}) // ldr d0, [sp]
-		acg.out.AddImm64("sp", "sp", 8)
+		acg.out.AddImm64("sp", "sp", 16)
 
 		// Perform operation: d0 = d0 op d1
 		switch e.Operator {
@@ -649,11 +657,14 @@ func (acg *ARM64CodeGen) compileAssignment(assign *AssignStmt) error {
 	}
 
 	// Allocate stack space for variable (8-byte aligned)
+	// Variables are stored at positive offsets from frame pointer
 	acg.stackSize += 8
 	acg.stackVars[assign.Name] = acg.stackSize
 
-	// Store result on stack: str d0, [x29, #-offset]
-	return acg.out.StrImm64Double("d0", "x29", int32(-acg.stackSize))
+	// Store result on stack: str d0, [x29, #offset]
+	// x29 points to saved fp location, variables start at offset 16
+	offset := int32(16 + acg.stackSize - 8)
+	return acg.out.StrImm64Double("d0", "x29", offset)
 }
 
 // compileMatchExpr compiles a match expression (if/else equivalent)
