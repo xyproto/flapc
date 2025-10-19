@@ -1170,13 +1170,18 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 
 	// Write __got section (if dynamic linking)
 	if eb.useDynamicLinking && numImports > 0 {
-		// GOT entries use chained fixup format DYLD_CHAINED_PTR_ARM64E_FIRMWARE
-		// This format matches what GCC generates
-		// Bind format: bit 63=1 (bind), bits 31-0=ordinal (simplified - no auth)
+		// GOT entries use chained fixup format DYLD_CHAINED_PTR_ARM64E_FIRMWARE (format 6)
+		// Format: bit 63=1 (bind), bits 51-62=next (offset to next in 8-byte units),
+		//         bits 0-23=ordinal (import index)
 		for i := uint32(0); i < numImports; i++ {
-			// Simple bind pointer: 0x8000000000000000 | ordinal
-			// Matches GCC's format exactly
-			chainedPtr := uint64(0x8000000000000000) | uint64(i)
+			// Calculate next offset: if not last entry, next is index difference
+			// Based on GCC output, seems to use next=2 for sequential 8-byte entries
+			next := uint64(0)
+			if i < numImports-1 {
+				next = 2 // GCC uses 2, likely because it's a word (4-byte) index
+			}
+			// Pack: bind(1) | next(bits 51-62) | ordinal(bits 0-23)
+			chainedPtr := uint64(0x8000000000000000) | (next << 51) | uint64(i)
 			binary.Write(&buf, binary.LittleEndian, chainedPtr)
 		}
 	}
