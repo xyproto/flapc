@@ -1,0 +1,8 @@
+// Test math functions
+x := sqrt(16.0)
+println(x)
+
+y := sin(0.0)
+println(y)
+
+println("Math tests done!")
