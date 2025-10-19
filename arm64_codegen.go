@@ -488,8 +488,8 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 		// Convert to integer pointer: fcvtzs x0, d0
 		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x78, 0x9e})
 
-		// Save list pointer
-		acg.out.SubImm64("sp", "sp", 8)
+		// Save list pointer (maintain 16-byte stack alignment)
+		acg.out.SubImm64("sp", "sp", 16)
 		acg.out.StrImm64("x0", "sp", 0)
 
 		// Compile index expression
@@ -502,13 +502,13 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 
 		// Restore list pointer
 		acg.out.LdrImm64("x0", "sp", 0)
-		acg.out.AddImm64("sp", "sp", 8)
+		acg.out.AddImm64("sp", "sp", 16)
 
 		// x0 = list pointer, x1 = index
 		// Skip past count (8 bytes) and index by (index * 8)
 		acg.out.AddImm64("x0", "x0", 8)
 		// x1 = x1 << 3 (multiply by 8)
-		acg.out.out.writer.WriteBytes([]byte{0x21, 0x1c, 0x00, 0xd3}) // lsl x1, x1, #3
+		acg.out.out.writer.WriteBytes([]byte{0x21, 0xf0, 0x7d, 0xd3}) // lsl x1, x1, #3
 		// x0 = x0 + x1
 		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x01, 0x8b}) // add x0, x0, x1
 
