@@ -2,11 +2,22 @@
 
 ## 🚨 Current High-Priority Issues
 
-1. ARM64 test failures (62/183 passing):
-   - Lambda operations failing
-   - List/map operations failing
-   - Parallel expressions not implemented
-   - String operations incomplete
+ARM64 test failures - 54 tests failing due to unimplemented features:
+
+### Expression Types (26 failures)
+- **ParallelExpr** (22 tests) - Parallel comprehensions not implemented
+- **SliceExpr** (2 tests) - List/string slicing `list[start:end:step]`
+- **PipeExpr** (1 test) - Pipe operator `|`
+- **JumpExpr** (1 test) - Loop break/continue
+
+### Missing Functions (22 failures)
+- **Math functions** (15 tests): acos, asin, atan, ceil, cos, exp, floor, log, pow, round, sin, sqrt, tan
+- **Recursion** (4 tests): `me` keyword for recursive calls
+- **Type conversion** (3 tests): `str` function
+
+### Missing Operators (7 failures)
+- **Bitwise**: xor, shl (<<), shr (>>), rol, ror
+- **Logical**: and, or
 
 ## 📋 Language Syntax Improvements (Priority Order)
 
