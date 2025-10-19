@@ -704,7 +704,7 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 
 		// Calculate element address: x0 + 8 + (x2 * 8)
 		// x3 = x2 * 8
-		acg.out.out.writer.WriteBytes([]byte{0x43, 0x1c, 0x00, 0xd3}) // lsl x3, x2, #3
+		acg.out.out.writer.WriteBytes([]byte{0x43, 0xf0, 0x7d, 0xd3}) // lsl x3, x2, #3
 		// x3 = x0 + x3
 		acg.out.out.writer.WriteBytes([]byte{0x03, 0x00, 0x00, 0x8b}) // add x3, x0, x3
 		// x3 = x3 + 8 (skip count)
@@ -733,7 +733,7 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 
 		// Not found: return 0.0
 		notFoundPos := acg.eb.text.Len()
-		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x60, 0x1e}) // fmov d0, #0.0
+		acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x67, 0x9e}) // fmov d0, xzr
 
 		// Jump to end
 		endJumpPos := acg.eb.text.Len()
@@ -1363,7 +1363,7 @@ func (acg *ARM64CodeGen) compileListLoop(stmt *LoopStmt) error {
 	}
 
 	// Calculate offset: x0 = x0 << 3 (x0 * 8)
-	acg.out.out.writer.WriteBytes([]byte{0x00, 0x1c, 0x00, 0xd3}) // lsl x0, x0, #3
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0xf0, 0x7d, 0xd3}) // lsl x0, x0, #3
 
 	// Add to base: x2 = x2 + x0
 	acg.out.out.writer.WriteBytes([]byte{0x42, 0x00, 0x00, 0x8b}) // add x2, x2, x0
