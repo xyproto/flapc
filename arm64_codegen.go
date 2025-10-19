@@ -26,9 +26,10 @@ type ARM64CodeGen struct {
 
 // ARM64LambdaFunc represents a lambda function for ARM64
 type ARM64LambdaFunc struct {
-	Name   string
-	Params []string
-	Body   Expression
+	Name      string
+	Params    []string
+	Body      Expression
+	BodyStart int // Position where lambda body code starts (for tail recursion)
 }
 
 // ARM64LoopInfo tracks information about an active loop
@@ -1168,6 +1169,12 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 		return acg.compileGetPid(call)
 	case "printf":
 		return acg.compilePrintf(call)
+	case "me":
+		// Tail recursion - only valid inside a lambda
+		if acg.currentLambda == nil {
+			return fmt.Errorf("'me' keyword can only be used inside a lambda")
+		}
+		return acg.compileTailCall(call)
 	case "sin", "cos", "tan", "asin", "acos", "atan", "sinh", "cosh", "tanh", "exp", "log", "log10", "sqrt", "ceil", "floor", "fabs", "round", "abs":
 		return acg.compileMathFunction(call)
 	case "pow", "atan2":
@@ -1685,6 +1692,59 @@ callExit:
 	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x94}) // bl #0
 
 	// exit() doesn't return, but we'll never reach here anyway
+	return nil
+}
+
+// compileTailCall compiles a tail-recursive call using the "me" keyword
+func (acg *ARM64CodeGen) compileTailCall(call *CallExpr) error {
+	// Verify we're in a lambda
+	if acg.currentLambda == nil {
+		return fmt.Errorf("'me' can only be used inside a lambda")
+	}
+
+	// Verify argument count matches parameter count
+	if len(call.Args) != len(acg.currentLambda.Params) {
+		return fmt.Errorf("'me' called with %d arguments, but lambda has %d parameters", len(call.Args), len(acg.currentLambda.Params))
+	}
+
+	// Strategy: Evaluate all arguments, then update parameters, then jump to body start
+	// We need to avoid overwriting parameters before we're done evaluating arguments
+
+	// Evaluate all arguments and push them on the stack
+	for _, arg := range call.Args {
+		if err := acg.compileExpression(arg); err != nil {
+			return err
+		}
+		// Push d0 onto stack
+		acg.out.SubImm64("sp", "sp", 8)
+		// str d0, [sp]
+		acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x00, 0xfd})
+	}
+
+	// Pop arguments from stack and store them in parameter locations
+	// Parameters are stored at [x29, #16 + paramOffset - 8]
+	for i := len(call.Args) - 1; i >= 0; i-- {
+		// Pop d0 from stack
+		// ldr d0, [sp]
+		acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x40, 0xfd})
+		acg.out.AddImm64("sp", "sp", 8)
+
+		// Get parameter offset
+		paramName := acg.currentLambda.Params[i]
+		paramStackOffset := acg.stackVars[paramName]
+		offset := int32(16 + paramStackOffset - 8)
+
+		// Store to parameter location: str d0, [x29, #offset]
+		if err := acg.out.StrImm64Double("d0", "x29", offset); err != nil {
+			return err
+		}
+	}
+
+	// Jump back to the start of the lambda body
+	currentPos := acg.eb.text.Len()
+	jumpOffset := int32(acg.currentLambda.BodyStart - currentPos)
+	acg.out.Branch(jumpOffset)
+
 	return nil
 }
 
@@ -2213,6 +2273,10 @@ func (acg *ARM64CodeGen) generateLambdaFunctions() error {
 				return err
 			}
 		}
+
+		// Record where the lambda body starts (for tail recursion with "me")
+		bodyStart := acg.eb.text.Len()
+		acg.currentLambda.BodyStart = bodyStart
 
 		// Compile lambda body (result in d0)
 		if err := acg.compileExpression(lambda.Body); err != nil {
