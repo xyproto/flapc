@@ -110,19 +110,14 @@ func (acg *ARM64CodeGen) CompileProgram(program *Program) error {
 	}
 
 	// Generate lambda functions after main program
-	fmt.Fprintln(os.Stderr, "DEBUG: Starting generateLambdaFunctions")
 	if err := acg.generateLambdaFunctions(); err != nil {
 		return err
 	}
-	fmt.Fprintln(os.Stderr, "DEBUG: Finished generateLambdaFunctions")
 
 	// Generate runtime helper functions
-	fmt.Fprintln(os.Stderr, "DEBUG: Starting generateRuntimeHelpers")
 	if err := acg.generateRuntimeHelpers(); err != nil {
 		return err
 	}
-	fmt.Fprintln(os.Stderr, "DEBUG: Finished generateRuntimeHelpers")
-	fmt.Fprintln(os.Stderr, "DEBUG: CompileProgram completed")
 
 	return nil
 }

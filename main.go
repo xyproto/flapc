@@ -829,15 +829,11 @@ var VerboseMode bool
 var UpdateDepsFlag bool
 
 func main() {
-	fmt.Fprintln(os.Stderr, "DEBUG: main() started")
-
 	// Create default output filename in system temp directory
 	defaultOutputFilename := filepath.Join(os.TempDir(), "main")
 
 	// Get default platform
-	fmt.Fprintln(os.Stderr, "DEBUG: Getting default platform")
 	defaultPlatform := GetDefaultPlatform()
-	fmt.Fprintf(os.Stderr, "DEBUG: Default platform: %v\n", defaultPlatform)
 	defaultArchStr := "amd64"
 	if defaultPlatform.Arch == ArchARM64 {
 		defaultArchStr = "arm64"
