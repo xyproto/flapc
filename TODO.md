@@ -218,20 +218,20 @@ ARM64 test failures - 54 tests failing due to unimplemented features:
 
 **Test Results**:
 - x86-64: 178/178 (100%) ✅
-- ARM64: 85/182 passing (47%) ✅
+- ARM64: 104/182 passing (57%) ✅ 🎉
 - Mach-O: 10/10 tests pass ✅
 
 **ARM64 Test Failures by Category**:
 - ParallelExpr not implemented (21 tests)
 - Math functions runtime crash (13 tests) - dynamic linking issues
-- String comparison broken - compares pointers not contents (many tests)
+- String concatenation not implemented (8+ tests)
 - Recursion `me` keyword (4 tests)
 - Functions `str`, `call` (5 tests)
 - SliceExpr (2 tests)
-- Printf `%v` and `%b` format specifiers missing (several tests)
-- Lambda/function-related failures (~40 tests)
+- Lambda/function-related failures (~25 tests)
 
 **Major Recent Wins**:
+- ✅ **Printf %v and %b formats** - Smart formatting and booleans! (+19 tests)
 - ✅ **Printf argument order** - Fixed reverse evaluation! (+3 tests)
 - ✅ **String interning** - String literals now reuse same address! (+2 tests)
 - ✅ **IN operator** - Fixed LSL and FMOV encodings! (+4 tests)
