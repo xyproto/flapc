@@ -1,5 +1,18 @@
 # Flap Compiler TODO
 
+## ✅ Recent Progress (2025-10-19)
+
+**x86-64 Linux: 186/188 tests passing (99%)**
+- Fixed parser error handling (panic/recover instead of os.Exit)
+- Standardized lambda syntax to `=>` across all test files
+- Math functions working via x87 FPU hardware instructions
+- Only 2 tests skipped: fstring_test (not implemented), match_unicode (compiler issue)
+
+**Remaining x86-64 Issues:**
+1. Fix os.Exit calls in compiler code generation (affects match_unicode)
+2. Implement F-string interpolation (P1 priority)
+3. Fix compiler race conditions for parallel test execution
+
 ## 🚨 Current High-Priority Issues
 
 ARM64 test failures - 54 tests failing due to unimplemented features:
