@@ -8494,6 +8494,12 @@ func getUnknownFunctions(program *Program) []string {
 		"printf": true, "exit": true, "syscall": true,
 		"getpid": true, "range": true, "me": true,
 		"println": true, // println is a builtin optimization, not a dependency
+		// Math functions (hardware instructions)
+		"sqrt": true, "sin": true, "cos": true, "tan": true,
+		"asin": true, "acos": true, "atan": true, "atan2": true,
+		"exp": true, "log": true, "pow": true,
+		"floor": true, "ceil": true, "round": true,
+		"abs": true,
 	}
 
 	// Collect all function calls
