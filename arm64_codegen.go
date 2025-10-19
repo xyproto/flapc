@@ -12,6 +12,7 @@ type ARM64CodeGen struct {
 	eb             *ExecutableBuilder
 	stackVars      map[string]int    // variable name -> stack offset from fp
 	mutableVars    map[string]bool   // variable name -> is mutable
+	varTypes       map[string]string // variable name -> type (for type tracking)
 	stackSize      int               // current stack size
 	stackFrameSize uint64            // total stack frame size allocated in prologue
 	stringCounter  int               // counter for string labels
@@ -51,6 +52,7 @@ func NewARM64CodeGen(eb *ExecutableBuilder) *ARM64CodeGen {
 		eb:            eb,
 		stackVars:     make(map[string]int),
 		mutableVars:   make(map[string]bool),
+		varTypes:      make(map[string]string),
 		stackSize:     0,
 		stringCounter: 0,
 		stringInterns: make(map[string]string),
@@ -251,6 +253,24 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 		}
 
 	case *BinaryExpr:
+		// Check for list concatenation with + operator
+		if e.Operator == "+" {
+			leftType := acg.getExprType(e.Left)
+			rightType := acg.getExprType(e.Right)
+
+			if leftType == "list" && rightType == "list" {
+				// List concatenation: [1, 2] + [3, 4] -> [1, 2, 3, 4]
+				// For now, return an error as this requires runtime support
+				return fmt.Errorf("list concatenation not yet implemented for ARM64")
+			}
+
+			if leftType == "string" && rightType == "string" {
+				// String concatenation
+				// For now, return an error as this requires runtime support
+				return fmt.Errorf("string concatenation not yet implemented for ARM64")
+			}
+		}
+
 		// Compile left operand (result in d0)
 		if err := acg.compileExpression(e.Left); err != nil {
 			return err
@@ -822,6 +842,8 @@ func (acg *ARM64CodeGen) compileAssignment(assign *AssignStmt) error {
 		acg.stackSize += 8
 		acg.stackVars[assign.Name] = acg.stackSize
 		acg.mutableVars[assign.Name] = assign.Mutable
+		// Track the type of the value being assigned
+		acg.varTypes[assign.Name] = acg.getExprType(assign.Value)
 		// x29 points to saved fp location, variables start at offset 16
 		offset = int32(16 + acg.stackSize - 8)
 	}
@@ -2219,4 +2241,57 @@ func (acg *ARM64CodeGen) generateLambdaFunctions() error {
 	}
 
 	return nil
+}
+
+// getExprType returns the type of an expression for ARM64 code generation
+func (acg *ARM64CodeGen) getExprType(expr Expression) string {
+	switch e := expr.(type) {
+	case *StringExpr:
+		return "string"
+	case *NumberExpr:
+		return "number"
+	case *ListExpr:
+		return "list"
+	case *MapExpr:
+		return "map"
+	case *IdentExpr:
+		// Look up in varTypes
+		if typ, exists := acg.varTypes[e.Name]; exists {
+			return typ
+		}
+		// Default to number if not tracked (most variables are numbers)
+		return "number"
+	case *BinaryExpr:
+		// Binary expressions between strings return strings if operator is "+"
+		if e.Operator == "+" {
+			leftType := acg.getExprType(e.Left)
+			rightType := acg.getExprType(e.Right)
+			if leftType == "string" && rightType == "string" {
+				return "string"
+			}
+			if leftType == "list" && rightType == "list" {
+				return "list"
+			}
+		}
+		return "number"
+	case *CallExpr:
+		// Function calls - check if function returns a string
+		stringFuncs := map[string]bool{
+			"str": true, "read_file": true, "readln": true,
+			"upper": true, "lower": true, "trim": true,
+		}
+		if stringFuncs[e.Function] {
+			return "string"
+		}
+		// Other functions return numbers by default
+		return "number"
+	case *SliceExpr:
+		// Slicing preserves the type of the list
+		return acg.getExprType(e.List)
+	case *ParallelExpr:
+		// Parallel expr returns a list
+		return "list"
+	default:
+		return "unknown"
+	}
 }
