@@ -1,88 +1,32 @@
 # Flap Compiler TODO
 
-## ✅ Recently Completed
+## 🚨 Current High-Priority Issues
 
-### 1. ✅ FIXED: macOS Mach-O Dynamic Linking (commit 0870c56)
-- ✅ Indirect symbol table 8-byte alignment (required by dyld)
-- ✅ Separate import-only string table for chained fixups
-- ✅ Correct page_start offset to GOT within __DATA segment
-- ✅ Updated chained fixups size calculation for 4 segments
-- ✅ TestMachOExecutable now passes
+1. ARM64 test failures (62/183 passing):
+   - Lambda operations failing
+   - List/map operations failing
+   - Parallel expressions not implemented
+   - String operations incomplete
 
-### 2. ✅ FIXED: String Escape Sequences (commit 863f5a9)
-- ✅ Strings now properly interpret `\n`, `\t`, `\r`, `\\`, `\"`
-- ✅ Added call to processEscapeSequences() in lexer
+## 📋 Language Syntax Improvements (Priority Order)
 
-### 3. ✅ FIXED: GOT Alignment (commit 7425394)
-- ✅ GOT now properly 8-byte aligned after variable-sized rodata
-- ✅ Added padding calculation between rodata and GOT
-- ✅ Fixes SIGBUS crashes when string sizes change
+### P1: F-String Interpolation
+- [ ] Add Python-style f-strings
+  - `f"Hello, {name}! You are {age} years old"`
+  - Compile-time string interpolation
+  - File: `lexer.go`, `parser.go`
 
-### 4. ✅ IMPLEMENTED: Printf with Numeric Arguments (commit 78cefb8)
-- ✅ Variadic function calling with stack-based argument passing
-- ✅ Follows ARM64 calling convention (args on stack, not registers)
-- ✅ Works for %g, %f, etc. format specifiers
-
-### 5. ✅ IMPLEMENTED: Printf with String Arguments (commit 4b17dcc)
-- ✅ Type detection for string vs numeric arguments
-- ✅ String arguments passed as pointers (in x registers)
-- ✅ Numeric arguments passed as floats (on stack)
-- ✅ Mixed arguments work: `printf("String: %s, Number: %g\n", "test", 42)`
-
-### 6. ✅ FIXED: Multiple Dynamic Function Calls (commit 3e52809)
-- ✅ Fixed chained fixups "next" field in GOT entries
-- ✅ dyld now processes all GOT entries, not just the first
-- ✅ Programs can call multiple dynamic functions: `printf(); exit(0)`
-
-### 7. ✅ IMPLEMENTED: Println Numeric Conversion (commit de8b0cf)
-- ✅ println() now handles all numeric types and expressions
-- ✅ Delegates to printf("%g\n", value) for non-string arguments
-- ✅ String literals still use efficient syscall path
-- ✅ Fixed issue where println(num) would print "?"
-
-### 8. ✅ FIXED: ARM64 Variable Storage and Binary Expressions (commit 63a266d)
-- ✅ Fixed SIGBUS crashes when using variables in binary expressions
-- ✅ Increased stack frame from 32 to 272 bytes (16 for saved regs + 256 for locals)
-- ✅ Changed variable storage from negative to positive offsets from x29
-- ✅ Fixed BinaryExpr to maintain 16-byte stack alignment
-- ✅ `a = 10; b = 20; c = a + b; println(c)` now outputs "30" correctly
-
-**Result**: ARM64 dynamic linking fully functional! Printf works with all args! Multiple function calls work! Variables and binary expressions work!
-
----
-
-## 🚨 Current Issues
-
-(None currently - all known ARM64 blockers resolved!)
-
-## 📋 Language Syntax Improvements
-
-### 2. Simplify Loop Syntax
-- [ ] Allow `@` instead of `@+` for loops (if parseable)
-  - Current: `@+ i in range(10) { }`
-  - Proposed: `@ i in range(10) { }`
-
-### 3. Add Compound Assignment Operators
-- [ ] Implement `+=`, `-=`, `*=`, `/=`
-  - Current: `sum := sum + i`
-  - Proposed: `sum += i`
-  - Files to modify: `parser.go` (lexer + parser), `*_codegen.go` (all architectures)
-
-### 4. Remove Requirement for exit(0)
-- [ ] Make `exit(0)` implicit at end of programs
-  - Programs should automatically return/exit if they reach the end
-  - Requires: Check if last statement is already exit(), if not, emit exit(0)
-
-### 5. Simplify Match Block Syntax
-- [ ] Allow implicit `->` in match blocks when there's only one branch
-  - Current: `x < y { -> println("yes") }`
-  - Proposed: `x < y { println("yes") }`
-
-### 6. Fix Lambda Assignment Syntax
-- [ ] Require `=>` for lambda assignments, not `->`
-  - Current: `double = (x) -> x * 2` (should fail)
-  - Proposed: `double = x => x * 2` (correct)
+### P2: Lambda Assignment Syntax
+- [ ] Standardize lambda arrow to `=>`
+  - Current: `double = (x) -> x * 2`
+  - Proposed: `double = x => x * 2`
   - Also allow dropping parentheses for single parameter
+  - File: `lexer.go`, `parser.go`
+
+### P2: Fix O(n²) CString Conversion
+- [ ] Optimize CString conversion from O(n²) to O(n)
+  - Current implementation does linear search for each character
+  - File: `parser.go:5774` (compileMapToCString)
 
 ---
 
@@ -245,34 +189,32 @@
 
 ## 📊 Current Status
 
-**Version**: 1.0.0 (x86-64 complete), 1.1.0-dev (ARM64 in progress)
+**Version**: 1.1.0 (ARM64 mostly complete, new assignment semantics)
 
 **Test Results**:
 - x86-64: 178/178 (100%) ✅
-- ARM64: Core features working, multiple dynamic calls working!
+- ARM64: 62/183 passing (34%), many failures due to unimplemented features
 - Mach-O: 10/10 tests pass ✅
+
+**Major Recent Wins**:
+- ✅ **Three-operator assignment system** - Prevents variable shadowing bugs!
+- ✅ **macOS ARM64 dynamic linking** - No more SIGKILL!
+- ✅ **Printf with all argument types** - Variadic functions working!
+- ✅ **Variable storage and binary expressions** - Core arithmetic works!
+- ✅ **Compound assignments** - `+=`, `-=`, etc. fully functional
+- ✅ **Loop syntax simplified** - `@` instead of `@+`
+- ✅ **Auto exit(0)** - No need to write explicit exit calls
 
 **Blockers**:
 1. ~~macOS dynamic linking~~ - ✅ **FIXED!**
-2. ~~Printf string arguments (%s)~~ - ✅ **FIXED!**
-3. ~~Multiple dynamic function calls~~ - ✅ **FIXED!**
-4. ~~ARM64 println() numeric arguments~~ - ✅ **FIXED!**
-5. ~~ARM64 binary expressions with variables~~ - ✅ **FIXED!**
-6. RISC-V backend incomplete - Medium priority
-7. Missing ARM64 expression types - Low priority
+2. ~~Variable shadowing bugs~~ - ✅ **FIXED!**
+3. Parallel expressions not implemented for ARM64 - Medium priority
+4. Many lambda/list/string tests failing - Medium priority
+5. RISC-V backend incomplete - Low priority
 
-**Recent Wins (Today's Session)**:
-- ✅ **macOS ARM64 dynamic linking FIXED!** - No more SIGKILL!
-- ✅ **String escape sequences working** - `\n`, `\t`, etc. now work
-- ✅ **GOT alignment fixed** - Handles variable-sized rodata correctly
-- ✅ **Printf with numeric arguments** - Variadic functions working!
-- ✅ **Printf with string arguments** - Mixed string/numeric args working!
-- ✅ **Multiple dynamic function calls FIXED!** - Chained fixups work!
-- ✅ **Println numeric conversion FIXED!** - No more "?" output!
-- ✅ **ARM64 variable storage FIXED!** - Binary expressions with variables work!
-- ✅ Self-signing implementation (no external codesign needed)
-- ✅ TestMachOExecutable passes
-- ✅ ARM64 binaries execute successfully with dynamic linking
-- ✅ Can now call `printf()` then `exit()` without crashes!
-- ✅ `println(42)` now outputs "42" instead of "?"!
-- ✅ `a = 10; b = 20; c = a + b; println(c)` outputs "30" correctly!
+**Next Steps**:
+1. Fix remaining ARM64 test failures (lambda, list, string operations)
+2. Implement ParallelExpr for ARM64
+3. Add f-string interpolation (P1)
+4. Standardize lambda syntax to `=>` (P2)
+5. Fix O(n²) CString conversion (P2)

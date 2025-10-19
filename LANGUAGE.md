@@ -65,39 +65,63 @@ x = [10,20][1]    // 20.0
 
 ### Variables
 
+Flap has **three distinct assignment operators** to make mutability and updates explicit:
+
 ```flap
-// Immutable (default) - first assignment with =
+// = defines IMMUTABLE variable
 x = 10
-x = 20  // ERROR: cannot reassign immutable variable
+x <- 20   // ERROR: cannot update immutable variable
 
-// Mutable (requires :=) - declares AND assigns
+// := defines MUTABLE variable
 y := 20
-y = y + 5   // Use = for updates (not :=)
-y += 5      // Compound assignment (sugar for y = y + 5)
+y <- y + 5   // ✓ Use <- to update mutable variables
+y += 5       // ✓ Compound assignment (also uses <-)
 
-// Shadowing protection
+// Immutable variables can be shadowed
+x = 10
+x = 20    // ✓ Creates new immutable variable (shadows previous)
+
+// Mutable variables CANNOT be shadowed
+y := 5
+y := 10   // ERROR: variable already defined
+
+// This prevents shadowing bugs in loops
 sum := 0
 @ i in range(5) {
-    sum := sum + i  // ERROR: ':=' cannot shadow existing variable
-    sum = sum + i   // ✓ Correct: use = to update outer variable
+    sum := sum + i  // ERROR: variable already defined
+    sum <- sum + i  // ✓ Correct: use <- to update
 }
 ```
 
-**Rules:**
-- First assignment with `=` creates **immutable** variable
-- Use `:=` to declare **mutable** variable
-- Use `=` to **update** mutable variables (not `:=`)
-- `:=` in nested scope (loop, match, lambda) **errors** if variable exists in outer scope
-- This prevents accidental shadowing bugs
+**The Three Operators:**
+1. **`=`** - Define/initialize **immutable** variable
+   - Can shadow existing immutable variables
+   - Cannot shadow mutable variables
+   - Cannot be updated with `<-`
+
+2. **`:=`** - Define/initialize **mutable** variable
+   - Cannot shadow any existing variable
+   - Can be updated with `<-` or compound operators
+
+3. **`<-`** - Update **existing mutable** variable
+   - Requires variable to exist
+   - Requires variable to be mutable
+   - Makes mutations explicit and visible
+
+**Why three operators?**
+- Prevents accidental variable shadowing bugs (the #1 cause of logic errors in loops)
+- Makes mutability explicit at definition site
+- Makes mutations explicit at update site
+- Compiler catches common mistakes at compile time
 
 ### Operators
 
 **Arithmetic:** `+` `-` `*` `/` `%` `**` (power)
 
-**Compound Assignment:** `+=` `-=` `*=` `/=` `%=`
+**Compound Assignment:** `+=` `-=` `*=` `/=` `%=` (equivalent to `<-`)
 ```flap
 sum := 0
-sum += 10     // sum = sum + 10
+sum += 10     // Equivalent to: sum <- sum + 10
 count -= 1    // count = count - 1
 value *= 2    // value = value * 2
 x /= 3        // x = x / 3
