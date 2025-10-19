@@ -66,6 +66,16 @@ func (p *Parser) error(msg string) {
 	panic(fmt.Errorf("%s", errMsg))
 }
 
+// compilerError prints an error message and panics (to be recovered by CompileFlap)
+// Use this instead of fmt.Fprintf + os.Exit in code generation
+func compilerError(format string, args ...interface{}) {
+	msg := fmt.Sprintf(format, args...)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr, "Error:", msg)
+	}
+	panic(fmt.Errorf("%s", msg))
+}
+
 func (p *Parser) nextToken() {
 	p.current = p.peek
 	p.peek = p.lexer.NextToken()
