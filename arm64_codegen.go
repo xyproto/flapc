@@ -2193,6 +2193,7 @@ func (acg *ARM64CodeGen) generateLambdaFunctions() error {
 
 		// Store parameters from d0-d7 registers to stack
 		// Parameters come in d0, d1, d2, d3, d4, d5, d6, d7 (AAPCS64)
+		// Store them at positive offsets after saved registers (like regular variables)
 		for i, paramName := range lambda.Params {
 			if i >= 8 {
 				return fmt.Errorf("lambda has too many parameters (max 8)")
@@ -2203,10 +2204,12 @@ func (acg *ARM64CodeGen) generateLambdaFunctions() error {
 			paramOffset := acg.stackSize
 			acg.stackVars[paramName] = paramOffset
 
-			// Store parameter from d register to stack
-			// str dN, [x29, #-paramOffset]
+			// Store parameter from d register to stack at positive offset
+			// x29 points to saved fp, variables start at offset 16
+			// str dN, [x29, #(16 + paramOffset - 8)]
 			regName := fmt.Sprintf("d%d", i)
-			if err := acg.out.StrImm64Double(regName, "x29", int32(-paramOffset)); err != nil {
+			offset := int32(16 + paramOffset - 8)
+			if err := acg.out.StrImm64Double(regName, "x29", offset); err != nil {
 				return err
 			}
 		}
