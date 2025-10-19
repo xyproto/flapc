@@ -1,6 +1,6 @@
 // Test tail recursion with countdown - tests single parameter
 // Returns 0 when countdown reaches 0
-countdown := (n) -> n <= 0.0 {
+countdown := n => n <= 0.0 {
     -> 0.0
     ~> me(n - 1.0)
 }

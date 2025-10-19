@@ -1,4 +1,4 @@
 // test_parallel_null_return.flap - Test parallel operator with null input
 numbers = []
-mapped = numbers || (x) -> x * 2
+mapped = numbers || (x => x * 2)
 println(mapped)

@@ -10,7 +10,7 @@ update := value, token => token {
     ~> value
 }
 
-accumulator := 0
+accumulator = 0
 
 @ token in program_tokens {
     accumulator = update(accumulator, token)

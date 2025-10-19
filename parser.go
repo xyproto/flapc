@@ -57,12 +57,13 @@ func (p *Parser) formatError(line int, msg string) string {
 		p.filename, line, msg, lineNum, sourceLine, marker)
 }
 
-// error prints a formatted error and exits
+// error prints a formatted error and panics (to be recovered by CompileFlap)
 func (p *Parser) error(msg string) {
+	errMsg := p.formatError(p.current.Line, msg)
 	if VerboseMode {
-		fmt.Fprintln(os.Stderr, p.formatError(p.current.Line, msg))
+		fmt.Fprintln(os.Stderr, errMsg)
 	}
-	os.Exit(1)
+	panic(fmt.Errorf("%s", errMsg))
 }
 
 func (p *Parser) nextToken() {
@@ -8647,11 +8648,22 @@ func addNamespaceToFunctions(program *Program, namespace string) {
 	}
 }
 
-func CompileFlap(inputPath string, outputPath string, platform Platform) error {
+func CompileFlap(inputPath string, outputPath string, platform Platform) (err error) {
+	// Recover from parser panics and convert to errors
+	defer func() {
+		if r := recover(); r != nil {
+			if e, ok := r.(error); ok {
+				err = e
+			} else {
+				err = fmt.Errorf("panic during compilation: %v", r)
+			}
+		}
+	}()
+
 	// Read input file
-	content, err := os.ReadFile(inputPath)
-	if err != nil {
-		return fmt.Errorf("failed to read %s: %v", inputPath, err)
+	content, readErr := os.ReadFile(inputPath)
+	if readErr != nil {
+		return fmt.Errorf("failed to read %s: %v", inputPath, readErr)
 	}
 
 	// Parse main file

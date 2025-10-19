@@ -1,6 +1,6 @@
 // Test tail recursion with Fibonacci using accumulator pattern
 // fib(n) using tail recursion
-fib := (n, a, b) -> n <= 0.0 {
+fib := (n, a, b) => n <= 0.0 {
     -> a
     ~> me(n - 1.0, b, a + b)
 }

@@ -1,5 +1,5 @@
 // test_lambda_ptr.flap - verify lambda pointer is non-zero
-double = (x) -> x * 2
+double = x => x * 2
 
 // Call it to make sure it works
 result = double(5)
