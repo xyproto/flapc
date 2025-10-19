@@ -868,10 +868,11 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 		return acg.compileGetPid(call)
 	case "printf":
 		return acg.compilePrintf(call)
-	case "sin", "cos", "tan", "asin", "acos", "atan", "sinh", "cosh", "tanh", "exp", "log", "log10", "sqrt", "ceil", "floor", "fabs", "round":
-		return acg.compileMathFunction(call)
-	case "pow":
-		return acg.compilePowFunction(call)
+	// TODO: Math functions compile but have runtime issues - needs debugging
+	// case "sin", "cos", "tan", "asin", "acos", "atan", "sinh", "cosh", "tanh", "exp", "log", "log10", "sqrt", "ceil", "floor", "fabs", "round":
+	// 	return acg.compileMathFunction(call)
+	// case "pow":
+	// 	return acg.compilePowFunction(call)
 	default:
 		// Check if it's a variable holding a function pointer
 		if _, exists := acg.stackVars[call.Function]; exists {
