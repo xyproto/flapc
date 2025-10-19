@@ -34,16 +34,24 @@
 - ✅ dyld now processes all GOT entries, not just the first
 - ✅ Programs can call multiple dynamic functions: `printf(); exit(0)`
 
+### 7. ✅ IMPLEMENTED: Println Numeric Conversion (commit de8b0cf)
+- ✅ println() now handles all numeric types and expressions
+- ✅ Delegates to printf("%g\n", value) for non-string arguments
+- ✅ String literals still use efficient syscall path
+- ✅ Fixed issue where println(num) would print "?"
+
 **Result**: ARM64 dynamic linking fully functional! Printf works with all args! Multiple function calls work!
 
 ---
 
 ## 🚨 Current Issues
 
-### 1. ARM64 Println Numeric Arguments
-- [ ] Implement float-to-string conversion for println()
-- Currently `println(42)` prints "?" because float-to-string not implemented
-- Workaround: Use `printf("%g\n", 42)` instead
+### 1. ARM64 Binary Expressions with Variables
+- [ ] Debug SIGBUS crash when using variables in binary expressions
+- `a = 10; b = 20; c = a + b` crashes with exit code 138
+- Direct expressions work: `println(10 + 20)` outputs "30" ✅
+- Single variables work: `a = 42; println(a)` outputs "42" ✅
+- Issue appears when loading two variables for binary operation
 
 ## 📋 Language Syntax Improvements
 
@@ -246,9 +254,10 @@
 1. ~~macOS dynamic linking~~ - ✅ **FIXED!**
 2. ~~Printf string arguments (%s)~~ - ✅ **FIXED!**
 3. ~~Multiple dynamic function calls~~ - ✅ **FIXED!**
-4. ARM64 println() numeric arguments - Low priority (workaround: use printf)
-5. RISC-V backend incomplete - Medium priority
-6. Missing ARM64 expression types - Low priority
+4. ~~ARM64 println() numeric arguments~~ - ✅ **FIXED!**
+5. ARM64 binary expressions with variables - Medium priority
+6. RISC-V backend incomplete - Medium priority
+7. Missing ARM64 expression types - Low priority
 
 **Recent Wins (Today's Session)**:
 - ✅ **macOS ARM64 dynamic linking FIXED!** - No more SIGKILL!
@@ -257,7 +266,9 @@
 - ✅ **Printf with numeric arguments** - Variadic functions working!
 - ✅ **Printf with string arguments** - Mixed string/numeric args working!
 - ✅ **Multiple dynamic function calls FIXED!** - Chained fixups work!
+- ✅ **Println numeric conversion FIXED!** - No more "?" output!
 - ✅ Self-signing implementation (no external codesign needed)
 - ✅ TestMachOExecutable passes
 - ✅ ARM64 binaries execute successfully with dynamic linking
 - ✅ Can now call `printf()` then `exit()` without crashes!
+- ✅ `println(42)` now outputs "42" instead of "?"!
