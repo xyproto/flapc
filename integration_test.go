@@ -54,6 +54,7 @@ func TestFlapPrograms(t *testing.T) {
 		}
 
 		t.Run(base, func(t *testing.T) {
+			t.Parallel() // Run tests in parallel for speed
 			testFlapProgram(t, base, srcPath, buildDir)
 		})
 	}
