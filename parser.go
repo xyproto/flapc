@@ -8565,15 +8565,20 @@ func CompileFlap(inputPath string, outputPath string, platform Platform) (err er
 
 // compileARM64 compiles a program for ARM64 architecture (macOS)
 func (fc *FlapCompiler) compileARM64(program *Program, outputPath string) error {
+	fmt.Fprintf(os.Stderr, "DEBUG: compileARM64 started\n")
 	// Create ARM64 code generator
 	acg := NewARM64CodeGen(fc.eb)
+	fmt.Fprintf(os.Stderr, "DEBUG: Created ARM64CodeGen\n")
 
 	// Generate code
+	fmt.Fprintf(os.Stderr, "DEBUG: About to call CompileProgram\n")
 	if err := acg.CompileProgram(program); err != nil {
 		return err
 	}
+	fmt.Fprintf(os.Stderr, "DEBUG: CompileProgram returned successfully\n")
 
 	// Write Mach-O file
+	fmt.Fprintf(os.Stderr, "DEBUG: About to write Mach-O file\n")
 	return fc.writeMachOARM64(outputPath)
 }
 
@@ -8593,6 +8598,7 @@ func (fc *FlapCompiler) compileRiscv64(program *Program, outputPath string) erro
 
 // writeMachOARM64 writes an ARM64 Mach-O executable for macOS
 func (fc *FlapCompiler) writeMachOARM64(outputPath string) error {
+	fmt.Fprintf(os.Stderr, "DEBUG: writeMachOARM64 started for %s\n", outputPath)
 	// First, write all rodata symbols to the rodata buffer and assign addresses
 	pageSize := uint64(0x4000) // 16KB page size for ARM64
 	textSize := uint64(fc.eb.text.Len())

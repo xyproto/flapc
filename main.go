@@ -829,10 +829,15 @@ var VerboseMode bool
 var UpdateDepsFlag bool
 
 func main() {
-	const defaultOutputFilename = "/tmp/main"
+	fmt.Fprintln(os.Stderr, "DEBUG: main() started")
+
+	// Create default output filename in system temp directory
+	defaultOutputFilename := filepath.Join(os.TempDir(), "main")
 
 	// Get default platform
+	fmt.Fprintln(os.Stderr, "DEBUG: Getting default platform")
 	defaultPlatform := GetDefaultPlatform()
+	fmt.Fprintf(os.Stderr, "DEBUG: Default platform: %v\n", defaultPlatform)
 	defaultArchStr := "amd64"
 	if defaultPlatform.Arch == ArchARM64 {
 		defaultArchStr = "arm64"
@@ -843,6 +848,7 @@ func main() {
 
 	var archFlag = flag.String("arch", defaultArchStr, "target architecture (amd64, arm64, riscv64)")
 	var osFlag = flag.String("os", defaultOSStr, "target OS (linux, darwin, freebsd)")
+	var targetFlag = flag.String("target", "", "target platform (e.g., arm64-macos, amd64-linux, riscv64-linux)")
 	var outputFilenameFlag = flag.String("o", defaultOutputFilename, "output executable filename")
 	var outputFilenameLongFlag = flag.String("output", defaultOutputFilename, "output executable filename")
 	var versionShort = flag.Bool("V", false, "print version information and exit")
@@ -866,14 +872,43 @@ func main() {
 	VerboseMode = *verbose || *verboseLong
 
 	// Parse target platform
-	targetArch, err := ParseArch(*archFlag)
-	if err != nil {
-		log.Fatalf("Invalid architecture: %v", err)
-	}
+	var targetArch Arch
+	var targetOS OS
+	var err error
 
-	targetOS, err := ParseOS(*osFlag)
-	if err != nil {
-		log.Fatalf("Invalid OS: %v", err)
+	// If --target is specified, parse it; otherwise use --arch and --os
+	if *targetFlag != "" {
+		// Parse target string like "arm64-macos" or "amd64-linux"
+		parts := strings.Split(*targetFlag, "-")
+		if len(parts) != 2 {
+			log.Fatalf("Invalid --target format '%s'. Expected format: ARCH-OS (e.g., arm64-macos, amd64-linux)", *targetFlag)
+		}
+
+		targetArch, err = ParseArch(parts[0])
+		if err != nil {
+			log.Fatalf("Invalid architecture in --target '%s': %v", *targetFlag, err)
+		}
+
+		// Handle OS aliases (macos -> darwin)
+		osStr := parts[1]
+		if osStr == "macos" {
+			osStr = "darwin"
+		}
+		targetOS, err = ParseOS(osStr)
+		if err != nil {
+			log.Fatalf("Invalid OS in --target '%s': %v (use 'darwin' instead of 'macos')", *targetFlag, err)
+		}
+	} else {
+		// Use separate --arch and --os flags
+		targetArch, err = ParseArch(*archFlag)
+		if err != nil {
+			log.Fatalf("Invalid --arch '%s': %v", *archFlag, err)
+		}
+
+		targetOS, err = ParseOS(*osFlag)
+		if err != nil {
+			log.Fatalf("Invalid --os '%s': %v", *osFlag, err)
+		}
 	}
 
 	targetPlatform := Platform{Arch: targetArch, OS: targetOS}
