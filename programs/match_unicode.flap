@@ -12,7 +12,7 @@ update := (value, token) -> token {
 
 accumulator := 0
 
-@+ token in program_tokens {
+@ token in program_tokens {
     accumulator = update(accumulator, token)
 }
 

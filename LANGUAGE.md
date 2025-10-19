@@ -77,7 +77,7 @@ y += 5      // Compound assignment (sugar for y = y + 5)
 
 // Shadowing protection
 sum := 0
-@+ i in range(5) {
+@ i in range(5) {
     sum := sum + i  // ERROR: ':=' cannot shadow existing variable
     sum = sum + i   // ✓ Correct: use = to update outer variable
 }
@@ -232,7 +232,7 @@ result = 5 in mylist  // returns 1.0 or 0.0
 
 ### Loops
 
-Loops use `@` for iteration (simplified from `@+` in v1.0):
+Loops use `@` for iteration (simplified from `@` in v1.0):
 
 ```flap
 // Basic loop - iterates from 0 (inclusive) to 5 (exclusive): 0,1,2,3,4
@@ -279,7 +279,7 @@ numbers = [10, 20, 30]
 
 **Example:**
 ```flap
-@+ item in ["a", "b", "c"] {
+@ item in ["a", "b", "c"] {
     @first { printf("[") }
     printf("%v", item)
     @last { printf("]") ~> printf(", ") }
@@ -402,7 +402,7 @@ statement       = loop_statement
                 | assignment
                 | expression_statement ;
 
-loop_statement  = "@+" identifier "in" expression block
+loop_statement  = "@" identifier "in" expression block
                 | "@" number identifier "in" expression block ;
 
 jump_statement  = "ret" [ "@" number ] [ expression ]
@@ -508,7 +508,7 @@ escape_sequence         = "\\" ( "n" | "t" | "r" | "\\" | '"' ) ;
 
 ### Grammar Notes
 
-* `@+` introduces auto-labeled loops. The loop label is the current nesting depth (1, 2, 3, ...).
+* `@` introduces auto-labeled loops. The loop label is the current nesting depth (1, 2, 3, ...).
 * `@1`, `@2`, `@3`, ... continues the loop at that nesting level by jumping to its top.
 * When used in a loop statement (`@1 identifier in expression`), it explicitly labels that loop.
 * `ret` returns from the current function. `ret @1`, `ret @2`, `ret @3`, ... exits the loop at that nesting level and all inner loops.
@@ -557,7 +557,7 @@ println(factorial(5))  // 120
 ### FizzBuzz
 
 ```flap
-@+ i in 1..<101 {
+@ i in 1..<101 {
     i % 15 == 0 {
         -> println("FizzBuzz")
     }
@@ -576,7 +576,7 @@ println(factorial(5))  // 120
 ```flap
 sum = list => {
     result := 0
-    @+ x in list {
+    @ x in list {
         result := result + x
     }
     result
@@ -590,7 +590,7 @@ println(sum([1, 2, 3, 4, 5]))  // 15
 ```flap
 filter = predicate, list => {
     result := []
-    @+ x in list {
+    @ x in list {
         predicate(x) {
             -> result := result + x
         }

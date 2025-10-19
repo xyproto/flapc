@@ -1,13 +1,13 @@
 // test_for_break.flap - test @ syntax for loops
-printf("Testing @+ loop:\n")
-@+ i in range(5) {
+printf("Testing @ loop:\n")
+@ i in range(5) {
     printf("%.0f ", i)
 }
 printf("\n")
 
-printf("Testing nested @+:\n")
-@+ i in range(2) {
-    @+ j in range(3) {
+printf("Testing nested @:\n")
+@ i in range(2) {
+    @ j in range(3) {
         printf("(%.0f,%.0f) ", i, j)
     }
     printf("\n")

@@ -2,7 +2,7 @@
 numbers = [1, 2, 3, 4, 5]
 doubled = numbers || (x) -> x * 2
 
-@+ val in doubled {
+@ val in doubled {
     println(val)
 }
 

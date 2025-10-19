@@ -1,9 +1,9 @@
 // nested_break_test.flap - test nested loops with ret and continue
 printf("Nested loop with ret (exit inner loop):\n")
 
-@+ i in range(3) {
+@ i in range(3) {
     printf("i=%.0f: ", i)
-    @+ j in range(5) {
+    @ j in range(5) {
         (j == 3) {
             -> ret @2
             ~> printf("%.0f ", j)
@@ -13,9 +13,9 @@ printf("Nested loop with ret (exit inner loop):\n")
 }
 
 printf("\nNested loop with continue (continue inner loop):\n")
-@+ i in range(3) {
+@ i in range(3) {
     printf("i=%.0f: ", i)
-    @+ j in range(5) {
+    @ j in range(5) {
         (j == 2) {
             -> @2
             ~> printf("%.0f ", j)

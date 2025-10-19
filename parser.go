@@ -293,26 +293,26 @@ func (p *Parser) parseStatement() Statement {
 		return p.parseLoopStatement()
 	}
 
-	// Check for @+ (start loop at @(N+1))
+	// Check for @ or @+ (loop)
 	if p.current.Type == TOKEN_AT_PLUS {
 		return p.parseLoopStatement()
 	}
 
-	// Check for @ (either loop @N or jump @N)
+	// Check for @ (either loop @N, loop @ ident, or jump @N)
 	if p.current.Type == TOKEN_AT {
 		// Look ahead to distinguish loop vs jump
-		// Loop: @N identifier in ...
+		// Loop: @N identifier in ... or @ identifier in ...
 		// Jump: @N (followed by newline, semicolon, or })
-		if p.peek.Type == TOKEN_NUMBER {
+		if p.peek.Type == TOKEN_NUMBER || p.peek.Type == TOKEN_IDENT {
 			// We need to peek further to distinguish loop from jump
 			// For now, let's just parse as loop if it matches the pattern
 			// Otherwise treat as jump
 
-			// Simple heuristic: if @ NUMBER IDENTIFIER, it's a loop
+			// Simple heuristic: if @ NUMBER IDENTIFIER or @ IDENTIFIER, it's a loop
 			// We can't easily look 2 tokens ahead, so we'll just try parsing as loop first
 			return p.parseLoopStatement()
 		}
-		p.error("expected number after @ (e.g., @1, @2, @0)")
+		p.error("expected number or identifier after @ (e.g., @1 i in..., @ i in...)")
 	}
 
 	// Check for assignment (both = and :=, with optional type annotation, and compound assignments)
@@ -680,15 +680,25 @@ func (p *Parser) parseLoopStatement() Statement {
 		return &JumpStmt{IsBreak: false, Label: p.loopDepth, Value: nil}
 	}
 
-	// Handle @+ token (start loop at @(N+1))
-	if p.current.Type == TOKEN_AT_PLUS {
-		// @+ means start a loop at @(N+1) where N is current loop depth
+	// Handle @+ or @ token (start loop at @(N+1))
+	if p.current.Type == TOKEN_AT_PLUS || p.current.Type == TOKEN_AT {
+		// @+ or @ means start a loop at @(N+1) where N is current loop depth
 		label := p.loopDepth + 1
-		p.nextToken() // skip '@+'
+		isAt := p.current.Type == TOKEN_AT
+		p.nextToken() // skip '@+' or '@'
+
+		// If we used @, check if this is @N (numbered loop) or @ ident (simple loop)
+		if isAt && p.current.Type == TOKEN_NUMBER {
+			// This is @N syntax, handle it in the jump statement section below
+			// by re-parsing this TOKEN_AT
+			p.current.Type = TOKEN_AT // restore token type (it's already @, but for clarity)
+			// Fall through to the jump statement section
+			goto handleJump
+		}
 
 		// Expect identifier for loop variable
 		if p.current.Type != TOKEN_IDENT {
-			p.error("expected identifier after @+")
+			p.error("expected identifier after @ or @+")
 		}
 		iterator := p.current.Value
 		p.nextToken() // skip identifier
@@ -749,6 +759,7 @@ func (p *Parser) parseLoopStatement() Statement {
 		}
 	}
 
+handleJump:
 	// If we reach here, must be @N for a jump statement
 	p.nextToken() // skip '@'
 
@@ -1431,46 +1442,52 @@ func (p *Parser) parsePrimary() Expression {
 		return p.parseLoopExpr()
 
 	case TOKEN_AT:
-		// Jump expression: @N [value]
-		// Returns JumpExpr for continuing loops (IsBreak=false)
-		p.nextToken() // skip '@'
-		if p.current.Type != TOKEN_NUMBER {
-			p.error("expected number after @")
+		// Could be loop expression (@ i in...) or jump expression (@N)
+		// Look ahead to decide
+		if p.peek.Type == TOKEN_NUMBER {
+			// Jump expression: @N [value]
+			// Returns JumpExpr for continuing loops (IsBreak=false)
+			p.nextToken() // skip '@'
+			if p.current.Type != TOKEN_NUMBER {
+				p.error("expected number after @")
+			}
+			labelNum, _ := strconv.ParseFloat(p.current.Value, 64)
+			label := int(labelNum)
+			p.nextToken() // skip number
+			var value Expression
+			if p.current.Type != TOKEN_NEWLINE && p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+				value = p.parseExpression()
+				p.nextToken()
+			}
+			return &JumpExpr{Label: label, Value: value, IsBreak: false}
 		}
-		labelNum, _ := strconv.ParseFloat(p.current.Value, 64)
-		label := int(labelNum)
-		p.nextToken() // skip number
-		var value Expression
-		if p.current.Type != TOKEN_NEWLINE && p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
-			value = p.parseExpression()
-			p.nextToken()
-		}
-		return &JumpExpr{Label: label, Value: value, IsBreak: false}
+		// Must be loop expression: @ ident in...
+		return p.parseLoopExpr()
 	}
 
 	return nil
 }
 
 // isLoopExpr checks if current position looks like a loop expression
-// Pattern: @+ ident in
+// Pattern: @ ident in or @+ ident in
 func (p *Parser) isLoopExpr() bool {
-	// Loop expressions always start with @+
-	return p.current.Type == TOKEN_AT_PLUS
+	// Loop expressions start with @ or @+
+	return p.current.Type == TOKEN_AT_PLUS || p.current.Type == TOKEN_AT
 }
 
-// parseLoopExpr parses a loop expression: @+ i in iterable { body }
+// parseLoopExpr parses a loop expression: @ i in iterable { body } or @+ i in iterable { body }
 func (p *Parser) parseLoopExpr() Expression {
-	// Must be @+
-	if p.current.Type != TOKEN_AT_PLUS {
-		p.error("expected @+ to start loop expression")
+	// Must be @ or @+
+	if p.current.Type != TOKEN_AT_PLUS && p.current.Type != TOKEN_AT {
+		p.error("expected @ or @+ to start loop expression")
 	}
 
 	label := p.loopDepth + 1
-	p.nextToken() // skip '@+'
+	p.nextToken() // skip '@' or '@+'
 
 	// Expect identifier for loop variable
 	if p.current.Type != TOKEN_IDENT {
-		p.error("expected identifier after @+")
+		p.error("expected identifier after @ or @+")
 	}
 	iterator := p.current.Value
 	p.nextToken() // skip iterator

@@ -1,0 +1,9 @@
+// Test @ loop syntax (simplified from @)
+println("Testing @ loop syntax:")
+
+@ i in range(5) {
+    println(i)
+}
+
+println("Done!")
+exit(0)
