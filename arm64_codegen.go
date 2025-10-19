@@ -1615,8 +1615,8 @@ func (acg *ARM64CodeGen) compilePrintf(call *CallExpr) error {
 			byte(subInstr >> 24),
 		})
 
-		// Compile each argument and store on stack
-		for i := 0; i < numArgs; i++ {
+		// Compile each argument and store on stack (in reverse order to match x86-64 behavior)
+		for i := numArgs - 1; i >= 0; i-- {
 			arg := call.Args[i+1]
 
 			// Check if this is a string argument
@@ -1641,7 +1641,8 @@ func (acg *ARM64CodeGen) compilePrintf(call *CallExpr) error {
 
 				// Store x9 (pointer) at [sp, #offset]
 				// STR x9, [sp, #offset] - encoding: 0xf9000000 | (offset/8 << 10) | (9 << 0) | (31 << 5)
-				stackOffset := uint32(i * 8)
+				// Use (numArgs-1-i) to reverse the order: first evaluated (last arg) goes to highest offset
+				stackOffset := uint32((numArgs - 1 - i) * 8)
 				strInstr := uint32(0xf90003e9) | ((stackOffset / 8) << 10)
 				acg.out.out.writer.WriteBytes([]byte{
 					byte(strInstr),
@@ -1657,7 +1658,8 @@ func (acg *ARM64CodeGen) compilePrintf(call *CallExpr) error {
 
 				// Store d0 at [sp, #(i*8)]
 				// STR d0, [sp, #offset] - encoding: 0xfd000000 | (offset/8 << 10) | 0x3e0
-				stackOffset := uint32(i * 8)
+				// Use (numArgs-1-i) to reverse the order: first evaluated (last arg) goes to highest offset
+				stackOffset := uint32((numArgs - 1 - i) * 8)
 				strInstr := uint32(0xfd0003e0) | ((stackOffset / 8) << 10)
 				acg.out.out.writer.WriteBytes([]byte{
 					byte(strInstr),
