@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"strconv"
 	"unsafe"
 )
 
@@ -878,12 +877,12 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 
 	arg := call.Args[0]
 
-	switch a := arg.(type) {
-	case *StringExpr:
+	// For string literals, use syscall directly (more efficient)
+	if strExpr, ok := arg.(*StringExpr); ok {
 		// Store string in rodata
 		label := fmt.Sprintf("str_%d", acg.stringCounter)
 		acg.stringCounter++
-		content := a.Value + "\n"
+		content := strExpr.Value + "\n"
 		acg.eb.Define(label, content)
 
 		// mov x16, #4 (write syscall)
@@ -913,88 +912,20 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 		// svc #0x80 (macOS syscall)
 		acg.out.out.writer.WriteBytes([]byte{0x01, 0x10, 0x00, 0xd4})
 
-	case *NumberExpr:
-		// For numbers, convert to string and print
-		// This is complex - for now, just print the integer part
-		numStr := strconv.FormatInt(int64(a.Value), 10) + "\n"
-
-		label := fmt.Sprintf("str_%d", acg.stringCounter)
-		acg.stringCounter++
-		acg.eb.Define(label, numStr)
-
-		// mov x16, #4
-		if err := acg.out.MovImm64("x16", 4); err != nil {
-			return err
-		}
-
-		// mov x0, #1
-		if err := acg.out.MovImm64("x0", 1); err != nil {
-			return err
-		}
-
-		// Load string address
-		offset := uint64(acg.eb.text.Len())
-		acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
-			offset:     offset,
-			symbolName: label,
-		})
-		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0x90})
-		acg.out.out.writer.WriteBytes([]byte{0x21, 0x00, 0x00, 0x91})
-
-		// mov x2, length
-		if err := acg.out.MovImm64("x2", uint64(len(numStr))); err != nil {
-			return err
-		}
-
-		// svc #0x80 (macOS syscall)
-		acg.out.out.writer.WriteBytes([]byte{0x01, 0x10, 0x00, 0xd4})
-
-	default:
-		// For other expressions, compile them and then convert the result (in d0) to a string
-		if err := acg.compileExpression(arg); err != nil {
-			return err
-		}
-
-		// d0 contains the result as float64
-		// Convert to integer: fcvtzs x0, d0
-		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x78, 0x9e})
-
-		// For now, just convert to decimal string (simplified - only handles positive integers)
-		// TODO: Implement proper float-to-string conversion
-		// For now, we'll just print "?\n" as a placeholder
-		label := fmt.Sprintf("str_%d", acg.stringCounter)
-		acg.stringCounter++
-		acg.eb.Define(label, "?\n")
-
-		// mov x16, #4
-		if err := acg.out.MovImm64("x16", 4); err != nil {
-			return err
-		}
-
-		// mov x0, #1
-		if err := acg.out.MovImm64("x0", 1); err != nil {
-			return err
-		}
-
-		// Load string address
-		offset := uint64(acg.eb.text.Len())
-		acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
-			offset:     offset,
-			symbolName: label,
-		})
-		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0x90})
-		acg.out.out.writer.WriteBytes([]byte{0x21, 0x00, 0x00, 0x91})
-
-		// mov x2, 2 (length of "?\n")
-		if err := acg.out.MovImm64("x2", 2); err != nil {
-			return err
-		}
-
-		// svc #0x80 (macOS syscall)
-		acg.out.out.writer.WriteBytes([]byte{0x01, 0x10, 0x00, 0xd4})
+		return nil
 	}
 
-	return nil
+	// For everything else (numbers, expressions), use printf("%g\n", value)
+	// This reuses the existing printf implementation which handles all types correctly
+
+	// Create a synthetic printf call with format "%g\n" and the original argument
+	formatStr := &StringExpr{Value: "%g\n"}
+	printfCall := &CallExpr{
+		Function: "printf",
+		Args:     []Expression{formatStr, arg},
+	}
+
+	return acg.compilePrintf(printfCall)
 }
 
 // compileLoopStatement compiles a loop statement
