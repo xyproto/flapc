@@ -335,6 +335,102 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 			acg.out.out.writer.WriteBytes([]byte{0x00, 0x08, 0x63, 0x1e})
 			// fsub d0, d2, d0 (d0 = a - floor(a / b) * b)
 			acg.out.out.writer.WriteBytes([]byte{0x40, 0x38, 0x60, 0x1e})
+		case "and":
+			// Logical AND: returns 1.0 if both non-zero, else 0.0
+			// Compare d0 with 0.0
+			// fmov d2, xzr (d2 = 0.0)
+			acg.out.out.writer.WriteBytes([]byte{0xe2, 0x03, 0x67, 0x9e})
+			// fcmp d0, d2
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x20, 0x62, 0x1e})
+			// cset x0, ne (x0 = 1 if d0 != 0, else 0)
+			acg.out.out.writer.WriteBytes([]byte{0xe0, 0x07, 0x9f, 0x9a})
+			// Compare d1 with 0.0
+			// fcmp d1, d2
+			acg.out.out.writer.WriteBytes([]byte{0x20, 0x20, 0x62, 0x1e})
+			// cset x1, ne (x1 = 1 if d1 != 0, else 0)
+			acg.out.out.writer.WriteBytes([]byte{0xe1, 0x07, 0x9f, 0x9a})
+			// and x0, x0, x1
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x01, 0x8a})
+			// scvtf d0, x0 (convert result to float)
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
+		case "or":
+			// Logical OR: returns 1.0 if either non-zero, else 0.0
+			// Compare d0 with 0.0
+			// fmov d2, xzr (d2 = 0.0)
+			acg.out.out.writer.WriteBytes([]byte{0xe2, 0x03, 0x67, 0x9e})
+			// fcmp d0, d2
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x20, 0x62, 0x1e})
+			// cset x0, ne (x0 = 1 if d0 != 0, else 0)
+			acg.out.out.writer.WriteBytes([]byte{0xe0, 0x07, 0x9f, 0x9a})
+			// Compare d1 with 0.0
+			// fcmp d1, d2
+			acg.out.out.writer.WriteBytes([]byte{0x20, 0x20, 0x62, 0x1e})
+			// cset x1, ne (x1 = 1 if d1 != 0, else 0)
+			acg.out.out.writer.WriteBytes([]byte{0xe1, 0x07, 0x9f, 0x9a})
+			// orr x0, x0, x1
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x01, 0xaa})
+			// scvtf d0, x0 (convert result to float)
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
+		case "xor":
+			// Logical XOR: returns 1.0 if exactly one non-zero, else 0.0
+			// Compare d0 with 0.0
+			// fmov d2, xzr (d2 = 0.0)
+			acg.out.out.writer.WriteBytes([]byte{0xe2, 0x03, 0x67, 0x9e})
+			// fcmp d0, d2
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x20, 0x62, 0x1e})
+			// cset x0, ne (x0 = 1 if d0 != 0, else 0)
+			acg.out.out.writer.WriteBytes([]byte{0xe0, 0x07, 0x9f, 0x9a})
+			// Compare d1 with 0.0
+			// fcmp d1, d2
+			acg.out.out.writer.WriteBytes([]byte{0x20, 0x20, 0x62, 0x1e})
+			// cset x1, ne (x1 = 1 if d1 != 0, else 0)
+			acg.out.out.writer.WriteBytes([]byte{0xe1, 0x07, 0x9f, 0x9a})
+			// eor x0, x0, x1
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x01, 0xca})
+			// scvtf d0, x0 (convert result to float)
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
+		case "shl":
+			// Shift left: convert to int64, shift, convert back
+			// fcvtzs x0, d0 (x0 = int64(d0))
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x78, 0x9e})
+			// fcvtzs x1, d1 (x1 = int64(d1))
+			acg.out.out.writer.WriteBytes([]byte{0x21, 0x00, 0x78, 0x9e})
+			// lsl x0, x0, x1 (x0 <<= x1)
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x20, 0xc1, 0x9a})
+			// scvtf d0, x0 (d0 = float64(x0))
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
+		case "shr":
+			// Shift right: convert to int64, shift, convert back
+			// fcvtzs x0, d0 (x0 = int64(d0))
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x78, 0x9e})
+			// fcvtzs x1, d1 (x1 = int64(d1))
+			acg.out.out.writer.WriteBytes([]byte{0x21, 0x00, 0x78, 0x9e})
+			// lsr x0, x0, x1 (x0 >>= x1)
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x24, 0xc1, 0x9a})
+			// scvtf d0, x0 (d0 = float64(x0))
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
+		case "rol":
+			// Rotate left: convert to int64, rotate, convert back
+			// fcvtzs x0, d0 (x0 = int64(d0))
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x78, 0x9e})
+			// fcvtzs x1, d1 (x1 = int64(d1))
+			acg.out.out.writer.WriteBytes([]byte{0x21, 0x00, 0x78, 0x9e})
+			// neg x2, x1 (x2 = -x1 for rotate)
+			acg.out.out.writer.WriteBytes([]byte{0xe2, 0x03, 0x01, 0xcb})
+			// ror x0, x0, x2 (rotate left by negating right rotate)
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x2c, 0xc2, 0x9a})
+			// scvtf d0, x0 (d0 = float64(x0))
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
+		case "ror":
+			// Rotate right: convert to int64, rotate, convert back
+			// fcvtzs x0, d0 (x0 = int64(d0))
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x78, 0x9e})
+			// fcvtzs x1, d1 (x1 = int64(d1))
+			acg.out.out.writer.WriteBytes([]byte{0x21, 0x00, 0x78, 0x9e})
+			// ror x0, x0, x1 (x0 rotate right by x1)
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x2c, 0xc1, 0x9a})
+			// scvtf d0, x0 (d0 = float64(x0))
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
 		default:
 			return fmt.Errorf("unsupported binary operator for ARM64: %s", e.Operator)
 		}
