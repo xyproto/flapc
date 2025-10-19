@@ -1,10 +1,10 @@
-# The Flap Programming Language spec
+# The Flap Programming Language
 
-### Version 1.0.0
+### Version 1.1.0
 
 ## Language Philosophy
 
-Flap is a functional programming language designed for high-performance numerical computing. Built on a `map[uint64]float64` foundation, it provides elegant abstractions for modern CPU architectures while maintaining simplicity and clarity.
+Flap is a functional programming language designed for high-performance numerical computing with ergonomic modern syntax. Built on a `map[uint64]float64` foundation, it provides elegant abstractions for modern CPU architectures while maintaining simplicity and clarity.
 
 **Core Principle:** Everything is `map[uint64]float64`:
 - Numbers are `map[uint64]float64` (e.g., 42 is `{0: 42.0}`)
@@ -15,22 +15,92 @@ Flap is a functional programming language designed for high-performance numerica
 
 This unified type system with a single underlying representation enables consistent optimization and uniform operations across all data structures.
 
+## Why Flap? Three Killer Features
+
+### 1. **Zero-Cost Abstractions with Predictable Performance**
+Unlike Python's interpreter overhead, Go's GC pauses, or C++'s template bloat, Flap compiles directly to native machine code with **zero runtime**. Every abstraction (loops, maps, strings) compiles to tight assembly. You get Python-like ergonomics with C-like speed.
+
+```flap
+// This compiles to 5 AVX-512 instructions, no loops
+numbers = [1, 2, 3, 4, 5]
+sum := numbers | fold(+)  // SIMD vectorized automatically
+```
+
+### 2. **Railway-Oriented Programming Built-In**
+Error handling that's cleaner than Rust's `?`, Go's `if err != nil`, or C++'s exceptions. The `or!` operator creates error handling railways:
+
+```flap
+// Clean error propagation - one line per operation
+file = open("data.txt") or! "Failed to open file"
+data = read(file) or! "Failed to read data"
+result = process(data) or! "Failed to process data"
+
+// Compare to Go:
+// file, err := os.Open("data.txt")
+// if err != nil { return err }
+// data, err := ioutil.ReadFile(file)
+// if err != nil { return err }
+// ... (10+ lines of if err != nil)
+```
+
+### 3. **Everything is `map[uint64]float64` - Ultimate Simplicity**
+No type system complexity like Rust, no polymorphism confusion like C++, no boxing overhead like Go. One type, infinite flexibility:
+
+```flap
+// Same operations work on numbers, strings, lists, maps
+len(42)           // 1.0 (number has one element)
+len("hello")      // 5.0
+len([1,2,3])      // 3.0
+len({a: 1, b: 2}) // 2.0
+
+// Everything is indexable
+x = 42.5[0]       // 42.5 (number[0] is itself)
+x = "hi"[0]       // 104.0 (char code for 'h')
+x = [10,20][1]    // 20.0
+```
+
+**Bonus:** F-strings, compound assignments, no required semicolons/exit calls, shadowing protection - all the modern niceties without the baggage.
+
 ## Language Spec
 
 ### Variables
 
 ```flap
-// Immutable (default)
+// Immutable (default) - first assignment with =
 x = 10
+x = 20  // ERROR: cannot reassign immutable variable
 
-// Mutable (requires :=)
+// Mutable (requires :=) - declares AND assigns
 y := 20
-y := y + 5
+y = y + 5   // Use = for updates (not :=)
+y += 5      // Compound assignment (sugar for y = y + 5)
+
+// Shadowing protection
+sum := 0
+@+ i in range(5) {
+    sum := sum + i  // ERROR: ':=' cannot shadow existing variable
+    sum = sum + i   // ✓ Correct: use = to update outer variable
+}
 ```
+
+**Rules:**
+- First assignment with `=` creates **immutable** variable
+- Use `:=` to declare **mutable** variable
+- Use `=` to **update** mutable variables (not `:=`)
+- `:=` in nested scope (loop, match, lambda) **errors** if variable exists in outer scope
+- This prevents accidental shadowing bugs
 
 ### Operators
 
 **Arithmetic:** `+` `-` `*` `/` `%` `**` (power)
+
+**Compound Assignment:** `+=` `-=` `*=` `/=` `%=`
+```flap
+sum := 0
+sum += 10     // sum = sum + 10
+count -= 1    // count = count - 1
+value *= 2    // value = value * 2
+```
 
 **Comparison:** `<` `<=` `>` `>=` `==` `!=`
 
@@ -101,6 +171,12 @@ char := s[1]         // returns 101.0 (ASCII 'e')
 println("Hello")     // String literals optimized for direct output
 result := "Hello, " + "World!"  // Compile-time concatenation
 
+// F-strings (interpolation with f"..." prefix)
+name := "Alice"
+age := 30
+println(f"Hello, {name}! You are {age} years old.")
+println(f"Sum: {a + b}, Product: {a * b}")  // Expressions in {}
+
 // Slicing (Python-style with start:end:step)
 s[0:2]               // "He" (indices 0, 1)
 s[1:4]               // "ell" (indices 1, 2, 3)
@@ -147,23 +223,34 @@ result = 5 in mylist  // returns 1.0 or 0.0
 
 ### Loops
 
-Loops use `@+` for auto-labeling by nesting depth (would be "for" in other languages):
+Loops use `@` for iteration (simplified from `@+` in v1.0):
 
 ```flap
-// Basic loop (implicitly labeled @1), 5 in this case means from 0 (inclusive) up to 5 (exclusive), so 0,1,2,3,4
-@+ i in 5 {
+// Basic loop - iterates from 0 (inclusive) to 5 (exclusive): 0,1,2,3,4
+@ i in 5 {
     println(i)
 }
 
-// Nested loops (labeled @1, @2, @3, ...)
-@+ i in 3 {       // @1
-    @+ j in 3 {   // @2
-        printf("%v,%v ", i, j)
+// Iterate over range
+@ i in range(10) {
+    println(i)
+}
+
+// Nested loops (auto-labeled @1, @2, @3, ...)
+@ i in 3 {       // @1
+    @ j in 3 {   // @2
+        printf(f"{i},{j} ")
     }
 }
 
+// Iterate over lists
+numbers = [10, 20, 30]
+@ n in numbers {
+    println(n)
+}
+
 // Range operator ..<
-@+ i in 0..<3 {   // 0, 1, 2
+@ i in 0..<3 {   // 0, 1, 2
     println(i)
 }
 ```
@@ -227,15 +314,30 @@ data == 0 {
 
 ### Lambdas
 
+Lambdas use `=>` arrow syntax (consistent with JavaScript, Rust, C#):
+
 ```flap
 double = x => x * 2
-add = x, y => x + y
+add = (x, y) => x + y
 result = double(5)
+
+// Single parameter doesn't need parentheses
+square = x => x * x
+
+// Multiple parameters need parentheses
+multiply = (x, y) => x * y
 
 // Lambdas can have match blocks
 classify = x => x > 0 {
     -> "positive"
     ~> "non-positive"
+}
+
+// Block body for complex logic
+process = x => {
+    temp := x * 2
+    result := temp + 10
+    result  // Last expression is return value
 }
 ```
 
@@ -244,8 +346,10 @@ classify = x => x > 0 {
 **I/O:**
 - `println(x)` - print with newline (syscall-based)
 - `printf(fmt, ...)` - formatted print (libc-based)
-- `exit(code)` - exit program (syscall-based)
-- `cexit(code)` - exit program (libc-based)
+- `exit(code)` - exit program explicitly (syscall-based)
+- `cexit(code)` - exit program explicitly (libc-based)
+
+**Note:** Programs automatically call `exit(0)` at the end if no explicit exit is present
 
 **FFI:**
 - `call(fn_name, ...)` - call C function with type-cast arguments
