@@ -13,7 +13,7 @@ import (
 
 // Programs that are expected to fail compilation
 var compileExpectations = map[string]string{
-	"const": "cannot reassign immutable variable",
+	"const": "cannot update immutable variable",
 }
 
 // Programs to skip - none, we want to see all failures
