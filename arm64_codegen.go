@@ -769,6 +769,9 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 		acg.patchJumpOffset(foundJumpPos, int32(foundPos-foundJumpPos))
 		acg.patchJumpOffset(endJumpPos, int32(endPos-endJumpPos))
 
+	case *ParallelExpr:
+		return acg.compileParallelExpr(e)
+
 	default:
 		return fmt.Errorf("unsupported expression type for ARM64: %T", expr)
 	}
@@ -961,6 +964,173 @@ func (acg *ARM64CodeGen) patchJumpOffset(pos int, offset int32) {
 	textBytes[pos+1] = byte(instr >> 8)
 	textBytes[pos+2] = byte(instr >> 16)
 	textBytes[pos+3] = byte(instr >> 24)
+}
+
+// compileParallelExpr compiles a parallel map operation (||)
+func (acg *ARM64CodeGen) compileParallelExpr(expr *ParallelExpr) error {
+	// For now, only support: list || lambda
+	lambda, ok := expr.Operation.(*LambdaExpr)
+	if !ok {
+		return fmt.Errorf("parallel operator (||) currently only supports lambda expressions")
+	}
+
+	if len(lambda.Params) != 1 {
+		return fmt.Errorf("parallel operator lambda must have exactly one parameter")
+	}
+
+	const (
+		parallelResultAlloc    = 2080
+		lambdaScratchOffset    = parallelResultAlloc - 8
+		savedLambdaSpillOffset = parallelResultAlloc + 8
+	)
+
+	// Compile the lambda to get its function pointer (result in d0)
+	if err := acg.compileExpression(expr.Operation); err != nil {
+		return err
+	}
+
+	// Save lambda function pointer (currently in d0) to stack
+	// str d0, [sp, #-16]!
+	acg.out.out.writer.WriteBytes([]byte{0xe0, 0x0f, 0x1f, 0xfd})
+	// Convert d0 to integer pointer: fmov x11, d0
+	acg.out.out.writer.WriteBytes([]byte{0x0b, 0x00, 0x67, 0x9e})
+	// Save integer pointer: str x11, [sp, #8]
+	acg.out.out.writer.WriteBytes([]byte{0xeb, 0x07, 0x00, 0xf9})
+
+	// Compile the input list expression (returns pointer as float64 in d0)
+	if err := acg.compileExpression(expr.List); err != nil {
+		return err
+	}
+
+	// Save list pointer and load as integer pointer
+	// str d0, [sp, #-8]!
+	acg.out.out.writer.WriteBytes([]byte{0xe0, 0x87, 0x1f, 0xfd})
+	// Load as integer: ldr x13, [sp]
+	acg.out.out.writer.WriteBytes([]byte{0xed, 0x03, 0x40, 0xf9})
+
+	// Load list length from [x13] into x14
+	// ldr d0, [x13]
+	acg.out.out.writer.WriteBytes([]byte{0xa0, 0x01, 0x40, 0xfd})
+	// fcvtzs x14, d0 - convert float64 to int64
+	acg.out.out.writer.WriteBytes([]byte{0x0e, 0x00, 0x78, 0x9e})
+
+	// Allocate result list on stack
+	// sub sp, sp, #parallelResultAlloc
+	if err := acg.out.SubImm64("sp", "sp", parallelResultAlloc); err != nil {
+		return err
+	}
+
+	// Store result list pointer in x12
+	// mov x12, sp
+	acg.out.out.writer.WriteBytes([]byte{0xec, 0x03, 0x00, 0x91})
+
+	// Move the saved lambda pointer into the reserved scratch slot
+	// ldr x10, [x12, #savedLambdaSpillOffset]
+	spillOffsetImm := (savedLambdaSpillOffset / 8) << 10
+	strInstr := uint32(0xf9400000) | uint32(10) | uint32(12<<5) | uint32(spillOffsetImm)
+	acg.out.out.writer.WriteBytes([]byte{
+		byte(strInstr),
+		byte(strInstr >> 8),
+		byte(strInstr >> 16),
+		byte(strInstr >> 24),
+	})
+	// str x10, [x12, #lambdaScratchOffset]
+	scratchOffsetImm := (lambdaScratchOffset / 8) << 10
+	strInstr = uint32(0xf9000000) | uint32(10) | uint32(12<<5) | uint32(scratchOffsetImm)
+	acg.out.out.writer.WriteBytes([]byte{
+		byte(strInstr),
+		byte(strInstr >> 8),
+		byte(strInstr >> 16),
+		byte(strInstr >> 24),
+	})
+
+	// Store length in result list
+	// ldr d0, [x13]
+	acg.out.out.writer.WriteBytes([]byte{0xa0, 0x01, 0x40, 0xfd})
+	// str d0, [x12]
+	acg.out.out.writer.WriteBytes([]byte{0x80, 0x01, 0x00, 0xfd})
+
+	// Initialize loop counter to 0
+	// mov x15, xzr
+	acg.out.out.writer.WriteBytes([]byte{0xef, 0x03, 0x1f, 0xaa})
+
+	// Loop start
+	loopStart := acg.eb.text.Len()
+
+	// Check if index >= length: cmp x15, x14
+	acg.out.out.writer.WriteBytes([]byte{0xdf, 0x01, 0x0e, 0xeb})
+	// b.ge loop_end
+	loopEndJumpPos := acg.eb.text.Len()
+	acg.out.BranchCond("ge", 0) // Placeholder
+
+	// Load element from input list: input_list[index]
+	// Element address = x13 + 8 + (x15 * 8)
+	// mov x0, x15
+	acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x0f, 0xaa})
+	// lsl x0, x0, #3 (multiply by 8)
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0xfc, 0x43, 0xd3})
+	// add x0, x0, #8 (skip length)
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x20, 0x00, 0x91})
+	// add x0, x0, x13 (x0 = address of element)
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x0d, 0x8b})
+
+	// Load element into d0
+	// ldr d0, [x0]
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x40, 0xfd})
+
+	// Load lambda function pointer and call it
+	// ldr x11, [x12, #lambdaScratchOffset]
+	scratchOffsetImm = (lambdaScratchOffset / 8) << 10
+	ldrInstr := uint32(0xf9400000) | uint32(11) | uint32(12<<5) | uint32(scratchOffsetImm)
+	acg.out.out.writer.WriteBytes([]byte{
+		byte(ldrInstr),
+		byte(ldrInstr >> 8),
+		byte(ldrInstr >> 16),
+		byte(ldrInstr >> 24),
+	})
+
+	// Call the lambda function: blr x11
+	acg.out.out.writer.WriteBytes([]byte{0x60, 0x01, 0x3f, 0xd6})
+
+	// Result is in d0, store it in output list: result_list[index]
+	// mov x0, x15
+	acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x0f, 0xaa})
+	// lsl x0, x0, #3
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0xfc, 0x43, 0xd3})
+	// add x0, x0, #8
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x20, 0x00, 0x91})
+	// add x0, x0, x12
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x0c, 0x8b})
+	// str d0, [x0]
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0xfd})
+
+	// Increment index: add x15, x15, #1
+	acg.out.out.writer.WriteBytes([]byte{0xef, 0x05, 0x00, 0x91})
+
+	// Jump back to loop start
+	loopBackJumpPos := acg.eb.text.Len()
+	backOffset := int32(loopStart - loopBackJumpPos)
+	acg.out.Branch(backOffset)
+
+	// Loop end
+	loopEndPos := acg.eb.text.Len()
+
+	// Patch conditional jump
+	acg.patchJumpOffset(loopEndJumpPos, int32(loopEndPos-loopEndJumpPos))
+
+	// Return result list pointer as float64 in d0
+	// mov x0, x12
+	acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x0c, 0xaa})
+	// scvtf d0, x0 - convert pointer to float64
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
+
+	// Adjust stack pointer
+	// add sp, sp, #(parallelResultAlloc + 16 + 8)
+	if err := acg.out.AddImm64("sp", "sp", parallelResultAlloc+24); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // compileCall compiles a function call
