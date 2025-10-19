@@ -1572,12 +1572,56 @@ func (acg *ARM64CodeGen) compilePrintf(call *CallExpr) error {
 		return fmt.Errorf("printf first argument must be a string literal")
 	}
 
+	// Process format string: %v -> %.15g (smart float), %b -> %s (boolean)
+	processedFormat := processEscapeSequences(strExpr.Value)
+	boolPositions := make(map[int]bool) // Track which args are %b (boolean)
+
+	argPos := 0
+	result := ""
+	i := 0
+	for i < len(processedFormat) {
+		if processedFormat[i] == '%' && i+1 < len(processedFormat) {
+			next := processedFormat[i+1]
+			if next == '%' {
+				// Escaped %% - keep as is
+				result += "%%"
+				i += 2
+				continue
+			} else if next == 'v' {
+				// %v = smart value format (uses %.15g for precision with no trailing zeros)
+				result += "%.15g"
+				argPos++
+				i += 2
+				continue
+			} else if next == 'b' {
+				// %b = boolean (yes/no)
+				result += "%s"
+				boolPositions[argPos] = true
+				argPos++
+				i += 2
+				continue
+			}
+		}
+		result += string(processedFormat[i])
+		i++
+	}
+	processedFormat = result
+
+	// If we have boolean arguments, create yes/no string labels
+	var yesLabel, noLabel string
+	if len(boolPositions) > 0 {
+		yesLabel = fmt.Sprintf("bool_yes_%d", acg.stringCounter)
+		noLabel = fmt.Sprintf("bool_no_%d", acg.stringCounter)
+		acg.eb.Define(yesLabel, "yes\x00")
+		acg.eb.Define(noLabel, "no\x00")
+	}
+
 	// Store format string in rodata
 	labelName := fmt.Sprintf("str_%d", acg.stringCounter)
 	acg.stringCounter++
 
 	// Add null terminator for C string
-	formatStr := strExpr.Value + "\x00"
+	formatStr := processedFormat + "\x00"
 	acg.eb.Define(labelName, formatStr)
 
 	// Mark that we need dynamic linking
@@ -1655,17 +1699,74 @@ func (acg *ARM64CodeGen) compilePrintf(call *CallExpr) error {
 					return err
 				}
 
-				// Store d0 at [sp, #(i*8)]
-				// STR d0, [sp, #offset] - encoding: 0xfd000000 | (offset/8 << 10) | 0x3e0
-				// Use (numArgs-1-i) to reverse the order: first evaluated (last arg) goes to highest offset
-				stackOffset := uint32((numArgs - 1 - i) * 8)
-				strInstr := uint32(0xfd0003e0) | ((stackOffset / 8) << 10)
-				acg.out.out.writer.WriteBytes([]byte{
-					byte(strInstr),
-					byte(strInstr >> 8),
-					byte(strInstr >> 16),
-					byte(strInstr >> 24),
-				})
+				// Check if this is a boolean position (%b)
+				if boolPositions[i] {
+					// Convert float in d0 to yes/no string pointer
+					// Compare d0 with 0.0
+					// fmov d1, xzr (d1 = 0.0)
+					acg.out.out.writer.WriteBytes([]byte{0xe1, 0x03, 0x67, 0x9e})
+					// fcmp d0, d1
+					acg.out.out.writer.WriteBytes([]byte{0x00, 0x20, 0x61, 0x1e})
+
+					// Branch if not equal (non-zero -> "yes")
+					acg.labelCounter++
+					yesJumpPos := acg.eb.text.Len()
+					acg.out.BranchCond("ne", 0) // Placeholder
+
+					// 0.0 -> "no"
+					noOffset := uint64(acg.eb.text.Len())
+					acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
+						offset:     noOffset,
+						symbolName: noLabel,
+					})
+					// ADRP x9, no_label@PAGE
+					acg.out.out.writer.WriteBytes([]byte{0x09, 0x00, 0x00, 0x90})
+					// ADD x9, x9, no_label@PAGEOFF
+					acg.out.out.writer.WriteBytes([]byte{0x29, 0x01, 0x00, 0x91})
+
+					// Jump over "yes" case
+					endJumpPos := acg.eb.text.Len()
+					acg.out.Branch(0) // Placeholder
+
+					// Non-zero -> "yes"
+					yesPos := acg.eb.text.Len()
+					yesOffset := uint64(acg.eb.text.Len())
+					acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
+						offset:     yesOffset,
+						symbolName: yesLabel,
+					})
+					// ADRP x9, yes_label@PAGE
+					acg.out.out.writer.WriteBytes([]byte{0x09, 0x00, 0x00, 0x90})
+					// ADD x9, x9, yes_label@PAGEOFF
+					acg.out.out.writer.WriteBytes([]byte{0x29, 0x01, 0x00, 0x91})
+
+					// Patch jumps
+					endPos := acg.eb.text.Len()
+					acg.patchJumpOffset(yesJumpPos, int32(yesPos-yesJumpPos))
+					acg.patchJumpOffset(endJumpPos, int32(endPos-endJumpPos))
+
+					// Store x9 (pointer) at [sp, #offset]
+					stackOffset := uint32((numArgs - 1 - i) * 8)
+					strInstr := uint32(0xf90003e9) | ((stackOffset / 8) << 10)
+					acg.out.out.writer.WriteBytes([]byte{
+						byte(strInstr),
+						byte(strInstr >> 8),
+						byte(strInstr >> 16),
+						byte(strInstr >> 24),
+					})
+				} else {
+					// Regular float argument - store d0 at [sp, #(i*8)]
+					// STR d0, [sp, #offset] - encoding: 0xfd000000 | (offset/8 << 10) | 0x3e0
+					// Use (numArgs-1-i) to reverse the order: first evaluated (last arg) goes to highest offset
+					stackOffset := uint32((numArgs - 1 - i) * 8)
+					strInstr := uint32(0xfd0003e0) | ((stackOffset / 8) << 10)
+					acg.out.out.writer.WriteBytes([]byte{
+						byte(strInstr),
+						byte(strInstr >> 8),
+						byte(strInstr >> 16),
+						byte(strInstr >> 24),
+					})
+				}
 			}
 		}
 	}
