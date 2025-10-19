@@ -15,6 +15,7 @@ type ARM64CodeGen struct {
 	stackSize      int               // current stack size
 	stackFrameSize uint64            // total stack frame size allocated in prologue
 	stringCounter  int               // counter for string labels
+	stringInterns  map[string]string // string value -> label (for string interning)
 	labelCounter   int               // counter for jump labels
 	activeLoops    []ARM64LoopInfo   // stack of active loops for break/continue
 	lambdaFuncs    []ARM64LambdaFunc // list of lambda functions to generate
@@ -52,6 +53,7 @@ func NewARM64CodeGen(eb *ExecutableBuilder) *ARM64CodeGen {
 		mutableVars:   make(map[string]bool),
 		stackSize:     0,
 		stringCounter: 0,
+		stringInterns: make(map[string]string),
 		labelCounter:  0,
 	}
 }
@@ -175,40 +177,50 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 	case *StringExpr:
 		// Strings are represented as map[uint64]float64
 		// Map format: [count][key0][val0][key1][val1]...
-		labelName := fmt.Sprintf("str_%d", acg.stringCounter)
-		acg.stringCounter++
 
-		// Build map data: count followed by key-value pairs
-		var mapData []byte
+		// Check if we've already interned this string
+		var labelName string
+		if existingLabel, exists := acg.stringInterns[e.Value]; exists {
+			// Reuse existing label for this string
+			labelName = existingLabel
+		} else {
+			// Create new label and intern it
+			labelName = fmt.Sprintf("str_%d", acg.stringCounter)
+			acg.stringCounter++
+			acg.stringInterns[e.Value] = labelName
 
-		// Count (number of characters)
-		count := float64(len(e.Value))
-		countBits := uint64(0)
-		*(*float64)(unsafe.Pointer(&countBits)) = count
-		for i := 0; i < 8; i++ {
-			mapData = append(mapData, byte((countBits>>(i*8))&0xFF))
-		}
+			// Build map data: count followed by key-value pairs
+			var mapData []byte
 
-		// Add each character as a key-value pair
-		for idx, ch := range e.Value {
-			// Key: character index as float64
-			keyVal := float64(idx)
-			keyBits := uint64(0)
-			*(*float64)(unsafe.Pointer(&keyBits)) = keyVal
+			// Count (number of characters)
+			count := float64(len(e.Value))
+			countBits := uint64(0)
+			*(*float64)(unsafe.Pointer(&countBits)) = count
 			for i := 0; i < 8; i++ {
-				mapData = append(mapData, byte((keyBits>>(i*8))&0xFF))
+				mapData = append(mapData, byte((countBits>>(i*8))&0xFF))
 			}
 
-			// Value: character code as float64
-			charVal := float64(ch)
-			charBits := uint64(0)
-			*(*float64)(unsafe.Pointer(&charBits)) = charVal
-			for i := 0; i < 8; i++ {
-				mapData = append(mapData, byte((charBits>>(i*8))&0xFF))
-			}
-		}
+			// Add each character as a key-value pair
+			for idx, ch := range e.Value {
+				// Key: character index as float64
+				keyVal := float64(idx)
+				keyBits := uint64(0)
+				*(*float64)(unsafe.Pointer(&keyBits)) = keyVal
+				for i := 0; i < 8; i++ {
+					mapData = append(mapData, byte((keyBits>>(i*8))&0xFF))
+				}
 
-		acg.eb.Define(labelName, string(mapData))
+				// Value: character code as float64
+				charVal := float64(ch)
+				charBits := uint64(0)
+				*(*float64)(unsafe.Pointer(&charBits)) = charVal
+				for i := 0; i < 8; i++ {
+					mapData = append(mapData, byte((charBits>>(i*8))&0xFF))
+				}
+			}
+
+			acg.eb.Define(labelName, string(mapData))
+		}
 
 		// Load address into x0
 		offset := uint64(acg.eb.text.Len())
