@@ -27,12 +27,13 @@ ARM64 test failures - 54 tests failing due to unimplemented features:
   - Compile-time string interpolation
   - File: `lexer.go`, `parser.go`
 
-### P2: Lambda Assignment Syntax
-- [ ] Standardize lambda arrow to `=>`
+### P2: Lambda Assignment Syntax ✅ COMPLETE
+- [x] Standardize lambda arrow to `=>`
   - Current: `double = (x) -> x * 2`
   - Proposed: `double = x => x * 2`
   - Also allow dropping parentheses for single parameter
   - File: `lexer.go`, `parser.go`
+  - **Status**: Implemented and all test files updated
 
 ### P2: Fix O(n²) CString Conversion
 - [ ] Optimize CString conversion from O(n²) to O(n)
