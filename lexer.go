@@ -51,6 +51,7 @@ const (
 	TOKEN_RBRACKET      // ]
 	TOKEN_ARROW         // ->
 	TOKEN_FAT_ARROW     // =>
+	TOKEN_LEFT_ARROW    // <-
 	TOKEN_PIPE          // |
 	TOKEN_PIPEPIPE      // ||
 	TOKEN_PIPEPIPEPIPE  // |||
@@ -375,7 +376,11 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_EQUALS, Value: "=", Line: l.line}
 	case '<':
-		// Check for <<b (rotate left), then <b (shift left), then <=, then <
+		// Check for <-, then <<b (rotate left), then <b (shift left), then <=, then <
+		if l.peek() == '-' {
+			l.pos += 2
+			return Token{Type: TOKEN_LEFT_ARROW, Value: "<-", Line: l.line}
+		}
 		if l.peek() == '<' && l.pos+2 < len(l.input) && l.input[l.pos+2] == 'b' {
 			l.pos += 3
 			return Token{Type: TOKEN_LTLT_B, Value: "<<b", Line: l.line}

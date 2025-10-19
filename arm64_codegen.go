@@ -11,6 +11,7 @@ type ARM64CodeGen struct {
 	out            *ARM64Out
 	eb             *ExecutableBuilder
 	stackVars      map[string]int    // variable name -> stack offset from fp
+	mutableVars    map[string]bool   // variable name -> is mutable
 	stackSize      int               // current stack size
 	stackFrameSize uint64            // total stack frame size allocated in prologue
 	stringCounter  int               // counter for string labels
@@ -48,6 +49,7 @@ func NewARM64CodeGen(eb *ExecutableBuilder) *ARM64CodeGen {
 		out:           &ARM64Out{out: &Out{machine: Platform{Arch: ArchARM64, OS: OSDarwin}, writer: eb.TextWriter(), eb: eb}},
 		eb:            eb,
 		stackVars:     make(map[string]int),
+		mutableVars:   make(map[string]bool),
 		stackSize:     0,
 		stringCounter: 0,
 		labelCounter:  0,
@@ -668,19 +670,52 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 
 // compileAssignment compiles an assignment statement
 func (acg *ARM64CodeGen) compileAssignment(assign *AssignStmt) error {
+	// Validate assignment semantics
+	_, exists := acg.stackVars[assign.Name]
+	isMutable := acg.mutableVars[assign.Name]
+
+	if assign.IsUpdate {
+		// <- Update existing mutable variable
+		if !exists {
+			return fmt.Errorf("cannot update undefined variable '%s'", assign.Name)
+		}
+		if !isMutable {
+			return fmt.Errorf("cannot update immutable variable '%s' (use <- only for mutable variables)", assign.Name)
+		}
+	} else if assign.Mutable {
+		// := Define mutable variable
+		if exists {
+			return fmt.Errorf("variable '%s' already defined (use <- to update)", assign.Name)
+		}
+	} else {
+		// = Define immutable variable (can shadow existing immutable, but not mutable)
+		if exists && isMutable {
+			return fmt.Errorf("cannot shadow mutable variable '%s' with immutable variable", assign.Name)
+		}
+	}
+
 	// Compile the value
 	if err := acg.compileExpression(assign.Value); err != nil {
 		return err
 	}
 
-	// Allocate stack space for variable (8-byte aligned)
-	// Variables are stored at positive offsets from frame pointer
-	acg.stackSize += 8
-	acg.stackVars[assign.Name] = acg.stackSize
+	var offset int32
+	if assign.IsUpdate {
+		// <- Update existing mutable variable - look up its offset
+		stackOffset := acg.stackVars[assign.Name]
+		offset = int32(16 + stackOffset - 8)
+	} else {
+		// = or := - Allocate stack space for new variable (8-byte aligned)
+		// This includes shadowing for immutable variables
+		// Variables are stored at positive offsets from frame pointer
+		acg.stackSize += 8
+		acg.stackVars[assign.Name] = acg.stackSize
+		acg.mutableVars[assign.Name] = assign.Mutable
+		// x29 points to saved fp location, variables start at offset 16
+		offset = int32(16 + acg.stackSize - 8)
+	}
 
 	// Store result on stack: str d0, [x29, #offset]
-	// x29 points to saved fp location, variables start at offset 16
-	offset := int32(16 + acg.stackSize - 8)
 	return acg.out.StrImm64Double("d0", "x29", offset)
 }
 

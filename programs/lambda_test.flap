@@ -1,12 +1,12 @@
 // lambda_test.flap - Test lambda without parallel operator
-double = (x) -> x * 2
+double := (x) -> x * 2
 
-result = double(1.0)
+result := double(1.0)
 println(result)
 
-result2 = double(2.0)
+result2 := double(2.0)
 println(result2)
 
-result3 = double(3.0)
+result3 := double(3.0)
 println(result3)
 

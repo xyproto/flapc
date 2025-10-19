@@ -1,3 +1,3 @@
 // lambda_store_only.flap - just store lambda without calling
-double = (x) -> x * 2
+double := (x) -> x * 2
 println("Stored lambda")

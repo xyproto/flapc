@@ -1,6 +1,6 @@
 // Test 'in' operator for membership testing
 
-numbers = [10, 20, 30, 40, 50]
+numbers := [10, 20, 30, 40, 50]
 
 // Test with values in the list
 10 in numbers {
@@ -20,14 +20,14 @@ numbers = [10, 20, 30, 40, 50]
 }
 
 // Test with empty list
-empty = []
+empty := []
 5 in empty {
     -> println("Found in empty list")
     ~> println("Empty list is empty")
 }
 
 // Test with maps
-ages = {1: 25, 2: 30, 3: 35}
+ages := {1: 25, 2: 30, 3: 35}
 
 1 in ages {
     -> println("Key 1 exists in ages")

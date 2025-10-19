@@ -1,11 +1,11 @@
 // manual_map.flap - manually implement what parallel should do
-numbers = [1, 2, 3]
-double = (x) -> x * 2
+numbers := [1, 2, 3]
+double := (x) -> x * 2
 
 // Manually call double on each element
-a = double(numbers[0])
-b = double(numbers[1])
-c = double(numbers[2])
+a := double(numbers[0])
+b := double(numbers[1])
+c := double(numbers[2])
 
 println(a)
 println(b)

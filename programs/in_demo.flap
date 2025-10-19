@@ -3,7 +3,7 @@
 printf("=== The Power of 'in' ===\n\n")
 
 // 1. Safe map access pattern
-cache = {1: 100, 2: 200, 3: 300}
+cache := {1: 100, 2: 200, 3: 300}
 key := 2
 
 key in cache {
@@ -12,7 +12,7 @@ key in cache {
 }
 
 // 2. List membership
-allowed = [10, 20, 30, 40, 50]
+allowed := [10, 20, 30, 40, 50]
 value := 30
 
 value in allowed {
@@ -21,7 +21,7 @@ value in allowed {
 }
 
 // 3. Guard pattern
-users = [1, 2, 3, 4, 5]
+users := [1, 2, 3, 4, 5]
 user_id := 3
 
 user_id in users {
@@ -30,7 +30,7 @@ user_id in users {
 }
 
 // 4. Empty container check
-empty_list = []
+empty_list := []
 test_val := 5
 
 test_val in empty_list {
@@ -39,7 +39,7 @@ test_val in empty_list {
 }
 
 // 5. Multiple checks
-admin_ids = [1, 2, 3]
+admin_ids := [1, 2, 3]
 user := 1
 guest := 99
 

@@ -1,5 +1,5 @@
 // len_empty.flap - test len with empty list
-empty = []
-length = #empty
+empty := []
+length := #empty
 println(length)
 

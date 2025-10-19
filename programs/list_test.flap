@@ -1,5 +1,5 @@
 // list_test.flap - Test list creation and indexing
-mylist = [2.0, 4.0, 6.0]
+mylist := [2.0, 4.0, 6.0]
 
 println(mylist[0])
 println(mylist[1])

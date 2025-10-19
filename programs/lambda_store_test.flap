@@ -1,4 +1,4 @@
 // lambda_store_test.flap - test storing lambda in variable
-double = (x) -> x * 2
-result = double(5)
+double := (x) -> x * 2
+result := double(5)
 println(result)

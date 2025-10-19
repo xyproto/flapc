@@ -8,7 +8,7 @@ printf("Boolean false (0.0): %v\n", 0.0)
 printf("With %%b - true: %b, false: %b\n", 1.0, 0.0)
 
 // Test with 'in' operator results
-numbers = [10, 20, 30]
+numbers := [10, 20, 30]
 
 found := 10 in numbers
 printf("10 in numbers: %v\n", found)

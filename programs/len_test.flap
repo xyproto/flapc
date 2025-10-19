@@ -1,10 +1,10 @@
 // len_test.flap - test list length function
-numbers = [1, 2, 3, 4, 5]
+numbers := [1, 2, 3, 4, 5]
 
-length = #numbers
+length := #numbers
 println(length)
 
-empty = []
-empty_len = #empty
+empty := []
+empty_len := #empty
 println(empty_len)
 

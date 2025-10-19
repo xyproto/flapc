@@ -31,13 +31,16 @@ type Statement interface {
 type AssignStmt struct {
 	Name      string
 	Value     Expression
-	Mutable   bool   // true for :=, false for =
+	Mutable   bool   // true for := or <-, false for =
+	IsUpdate  bool   // true for <-, false for = and :=
 	Precision string // Type annotation: "b64", "f32", etc. (empty if none)
 }
 
 func (a *AssignStmt) String() string {
 	op := "="
-	if a.Mutable {
+	if a.IsUpdate {
+		op = "<-"
+	} else if a.Mutable {
 		op = ":="
 	}
 	result := a.Name

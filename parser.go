@@ -341,8 +341,8 @@ func (p *Parser) parseStatement() Statement {
 		p.error("expected number or identifier after @ (e.g., @1 i in..., @ i in...)")
 	}
 
-	// Check for assignment (both = and :=, with optional type annotation, and compound assignments)
-	if p.current.Type == TOKEN_IDENT && (p.peek.Type == TOKEN_EQUALS || p.peek.Type == TOKEN_COLON_EQUALS || p.peek.Type == TOKEN_COLON ||
+	// Check for assignment (=, :=, <-, with optional type annotation, and compound assignments)
+	if p.current.Type == TOKEN_IDENT && (p.peek.Type == TOKEN_EQUALS || p.peek.Type == TOKEN_COLON_EQUALS || p.peek.Type == TOKEN_LEFT_ARROW || p.peek.Type == TOKEN_COLON ||
 		p.peek.Type == TOKEN_PLUS_EQUALS || p.peek.Type == TOKEN_MINUS_EQUALS ||
 		p.peek.Type == TOKEN_STAR_EQUALS || p.peek.Type == TOKEN_SLASH_EQUALS || p.peek.Type == TOKEN_MOD_EQUALS) {
 		return p.parseAssignment()
@@ -445,8 +445,14 @@ func (p *Parser) parseAssignment() *AssignStmt {
 		compoundOp = "%"
 	}
 
-	mutable := p.current.Type == TOKEN_COLON_EQUALS
-	p.nextToken() // skip '=' or ':=' or compound operator
+	// Determine assignment type
+	// := - mutable definition
+	// = - immutable definition
+	// <- - update (requires existing mutable variable)
+	isUpdate := p.current.Type == TOKEN_LEFT_ARROW
+	mutable := p.current.Type == TOKEN_COLON_EQUALS || isUpdate
+
+	p.nextToken() // skip '=' or ':=' or '<-' or compound operator
 
 	// Check for non-parenthesized lambda: x -> expr or x y -> expr
 	var value Expression
@@ -504,9 +510,12 @@ func (p *Parser) parseAssignment() *AssignStmt {
 			Operator: compoundOp,
 			Right:    value,
 		}
+		// Compound assignments are updates
+		isUpdate = true
+		mutable = true
 	}
 
-	return &AssignStmt{Name: name, Value: value, Mutable: mutable, Precision: precision}
+	return &AssignStmt{Name: name, Value: value, Mutable: mutable, IsUpdate: isUpdate, Precision: precision}
 }
 
 func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
@@ -2048,15 +2057,28 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 	case *AssignStmt:
 		// Check if variable already exists
 		_, exists := fc.variables[s.Name]
-		if !exists {
-			// First assignment - allocate stack space (16 bytes for alignment)
+
+		if s.IsUpdate {
+			// Update operation (<-) requires existing mutable variable
+			if !exists {
+				return fmt.Errorf("cannot update undefined variable '%s'", s.Name)
+			}
+			if !fc.mutableVars[s.Name] {
+				return fmt.Errorf("cannot update immutable variable '%s' (use <- only for mutable variables)", s.Name)
+			}
+		} else if s.Mutable {
+			// := - Define mutable variable (error if already exists)
+			if exists {
+				return fmt.Errorf("variable '%s' already defined (use <- to update)", s.Name)
+			}
+			// Allocate stack space (16 bytes for alignment)
 			fc.stackOffset += 16
 			offset := fc.stackOffset
 			fc.variables[s.Name] = offset
-			fc.mutableVars[s.Name] = s.Mutable
+			fc.mutableVars[s.Name] = true
 			if fc.debug {
 				if VerboseMode {
-					fmt.Fprintf(os.Stderr, "DEBUG collectSymbols: storing variable '%s' at offset %d\n", s.Name, offset)
+					fmt.Fprintf(os.Stderr, "DEBUG collectSymbols: storing mutable variable '%s' at offset %d\n", s.Name, offset)
 				}
 			}
 
@@ -2066,9 +2088,25 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 				fc.varTypes[s.Name] = exprType
 			}
 		} else {
-			// Variable already exists - check if trying to reassign immutable variable
-			if !fc.mutableVars[s.Name] {
-				return fmt.Errorf("cannot reassign immutable variable '%s'", s.Name)
+			// = - Define immutable variable (can shadow existing immutable, but not mutable)
+			if exists && fc.mutableVars[s.Name] {
+				return fmt.Errorf("cannot shadow mutable variable '%s' with immutable variable", s.Name)
+			}
+			// Allocate stack space (16 bytes for alignment) - even if shadowing
+			fc.stackOffset += 16
+			offset := fc.stackOffset
+			fc.variables[s.Name] = offset
+			fc.mutableVars[s.Name] = false
+			if fc.debug {
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "DEBUG collectSymbols: storing immutable variable '%s' at offset %d\n", s.Name, offset)
+				}
+			}
+
+			// Track type if we can determine it from the expression
+			exprType := fc.getExprType(s.Value)
+			if exprType != "number" && exprType != "unknown" {
+				fc.varTypes[s.Name] = exprType
 			}
 		}
 	case *LoopStmt:

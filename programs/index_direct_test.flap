@@ -1,5 +1,5 @@
 // index_direct_test.flap - Test direct indexing vs variable
-mylist = [2.0, 4.0, 6.0]
+mylist := [2.0, 4.0, 6.0]
 
 println(mylist[0])
 println(mylist[1])

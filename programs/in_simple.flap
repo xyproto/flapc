@@ -1,8 +1,8 @@
 // Simple test
-numbers = [10, 20, 30]
+numbers := [10, 20, 30]
 
-result1 = 10 in numbers
+result1 := 10 in numbers
 printf("10 in numbers: %f\n", result1)
 
-result2 = 99 in numbers
+result2 := 99 in numbers
 printf("99 in numbers: %f\n", result2)

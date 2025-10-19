@@ -2,29 +2,29 @@
 // Demonstrates first-class functions in Flap
 
 // Define some lambda functions
-square = (x) -> x * x
-double = (x) -> x * 2
-add = (x, y) -> x + y
-multiply = (x, y) -> x * y
+square := (x) -> x * x
+double := (x) -> x * 2
+add := (x, y) -> x + y
+multiply := (x, y) -> x * y
 
 // Use them
-a = square(5)
+a := square(5)
 println(a)
 
-b = double(7)
+b := double(7)
 println(b)
 
-c = add(3, 4)
+c := add(3, 4)
 println(c)
 
-d = multiply(6, 7)
+d := multiply(6, 7)
 println(d)
 
 // Combine results
-result = add(square(3), double(4))
+result := add(square(3), double(4))
 println(result)
 
 // More complex: (3^2) + (2 * 5) + 7 = 9 + 10 + 7 = 26
-final = add(add(square(3), multiply(2, 5)), 7)
+final := add(add(square(3), multiply(2, 5)), 7)
 println(final)
 
