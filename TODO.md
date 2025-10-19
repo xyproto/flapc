@@ -14,9 +14,20 @@
 
 ## High Priority - ARM64 Completion
 
-### Implement Missing Runtime Functions
-- [ ] List concatenation runtime function `_flap_list_concat(left, right)`
-- [ ] String concatenation runtime function `_flap_string_concat(left, right)`
+### Critical Issue - Compilation Hang
+- [ ] **BLOCKING**: ARM64 flapc binary hangs immediately on execution (even `--version`)
+  - Hang occurs before main() debug prints execute
+  - Affects all ARM64 compilation attempts
+  - Not caused by runtime helper functions (persists when disabled)
+  - Not caused by BinaryExpr changes (persists when reverted)
+  - Process enters sleep state with minimal memory usage
+  - Likely a macOS-specific issue (permissions, signing, or dyld)
+  - Requires investigation with proper macOS debugging tools
+  - **Action needed**: Test on different macOS system or with SIP disabled
+
+### Implement Missing Runtime Functions (Blocked by hang)
+- [x] List concatenation runtime function `_flap_list_concat(left, right)` - **IMPLEMENTED**
+- [x] String concatenation runtime function `_flap_string_concat(left, right)` - **IMPLEMENTED**
 - [ ] Float-to-string conversion for `str()` function
 - [ ] Debug and fix math function compilation hanging issue
 
