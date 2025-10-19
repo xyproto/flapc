@@ -5,4 +5,3 @@ println(test[0])
 println(test[1])
 println(test[2])
 
-exit(0)

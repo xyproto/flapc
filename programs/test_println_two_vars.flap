@@ -3,4 +3,3 @@ println("Starting")
 s1 := "A"
 s2 := "B"
 println("Done")
-exit(0)

@@ -6,4 +6,3 @@ println("Testing @ loop syntax:")
 }
 
 println("Done!")
-exit(0)

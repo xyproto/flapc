@@ -5,4 +5,3 @@
         println(j)
     }
 }
-exit(0)

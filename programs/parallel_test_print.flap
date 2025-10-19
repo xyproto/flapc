@@ -7,4 +7,3 @@ doubled = values || (x) -> x * 2
 // Print the whole list
 println(doubled)
 
-exit(0)

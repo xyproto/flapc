@@ -2,4 +2,3 @@
 double = (x) -> x * 2
 result = double(5)
 println(result)
-exit(0)

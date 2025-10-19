@@ -11,4 +11,3 @@ println(first)
 println(second)
 println(third)
 
-exit(0)

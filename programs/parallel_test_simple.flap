@@ -10,4 +10,3 @@ doubled = values || (x) -> x * 2
 // For now, print results
 println(doubled)
 
-exit(0)

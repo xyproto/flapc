@@ -3,4 +3,3 @@ pi = 3
 radius := 5
 area := pi * radius * radius
 println(area)
-exit(0)

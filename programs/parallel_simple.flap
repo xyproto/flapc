@@ -5,4 +5,3 @@ doubled = numbers || (x) -> x * 2
 // Just print the first element
 println(doubled[0])
 
-exit(0)

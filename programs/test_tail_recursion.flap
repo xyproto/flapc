@@ -7,4 +7,3 @@ factorial := (n, acc) -> n <= 1.0 {
 
 result := factorial(5.0, 1.0)
 println(result)  // Should print 120
-exit(0)

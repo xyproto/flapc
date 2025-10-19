@@ -1,4 +1,3 @@
 // lambda_parse_test2.flap - test lambda parsing (will error in codegen)
 f = (x) -> x * 2
 println("This should not execute")
-exit(0)

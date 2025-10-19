@@ -1,4 +1,3 @@
 // Test str() with zero
 result := str(0)
 println(result)
-exit(0)

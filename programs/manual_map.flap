@@ -11,4 +11,3 @@ println(a)
 println(b)
 println(c)
 
-exit(0)

@@ -6,4 +6,3 @@ double = (x) -> x * 2
     println(result)
 }
 
-exit(0)

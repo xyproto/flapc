@@ -10,4 +10,3 @@ empty = []
 empty_len = #empty
 println(empty_len)
 
-exit(0)

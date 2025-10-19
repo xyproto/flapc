@@ -9,4 +9,3 @@ println(result[0])
 println(result[1])
 println(result[2])
 
-exit(0)

@@ -13,4 +13,3 @@ printf("Testing nested @:\n")
     printf("\n")
 }
 
-exit(0)

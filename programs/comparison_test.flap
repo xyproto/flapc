@@ -39,4 +39,3 @@ y >= x {
     ~> println("20 >= 10: false")
 }
 
-exit(0)

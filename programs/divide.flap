@@ -1,4 +1,3 @@
 // divide.flap - test division
 result = 84 / 2
 println(result)
-exit(0)

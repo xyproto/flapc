@@ -4,4 +4,3 @@ sum := 0
     sum := sum + i
 }
 println(sum)
-exit(0)

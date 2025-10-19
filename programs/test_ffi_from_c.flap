@@ -35,4 +35,3 @@ user_ptr != 0 {
     -> printf("USER is set\n")
 }
 
-exit(0)

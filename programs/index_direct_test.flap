@@ -5,4 +5,3 @@ println(mylist[0])
 println(mylist[1])
 println(mylist[2])
 
-exit(0)

@@ -1,0 +1,3 @@
+// Test program without explicit exit(0)
+println("Hello, world!")
+println("Program should exit implicitly")

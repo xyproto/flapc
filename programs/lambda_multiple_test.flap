@@ -8,4 +8,3 @@ b = triple(4)
 c = add(a, b)
 
 println(c)
-exit(0)

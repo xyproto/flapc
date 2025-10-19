@@ -10,4 +10,3 @@ add3 = (x) -> x + 3
 result = (value | (x) -> x * 2) | add3
 println(result)
 
-exit(0)

@@ -2,4 +2,3 @@
 numbers = []
 result = #numbers
 println(result)
-exit(0)

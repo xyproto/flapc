@@ -3,4 +3,3 @@
     x := i * 2
     println(x)
 }
-exit(0)

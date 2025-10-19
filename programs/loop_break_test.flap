@@ -5,4 +5,3 @@ printf("Simple loop with @:\n")
 }
 printf("\n")
 
-exit(0)

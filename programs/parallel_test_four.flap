@@ -8,4 +8,3 @@ println(doubled[1])
 println(doubled[2])
 println(doubled[3])
 
-exit(0)

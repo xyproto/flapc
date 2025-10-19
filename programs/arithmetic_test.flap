@@ -3,4 +3,3 @@ x := 5
 y := 3
 sum := x + y
 println(sum)
-exit(0)

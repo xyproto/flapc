@@ -7,4 +7,3 @@ fib := (n, a, b) -> n <= 0.0 {
 
 result := fib(10.0, 0.0, 1.0)
 println(result)  // Should print 55 (10th Fibonacci number)
-exit(0)

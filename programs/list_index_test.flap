@@ -6,4 +6,3 @@ second = numbers[1]
 println(second)
 last = numbers[4]
 println(last)
-exit(0)

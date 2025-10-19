@@ -6,4 +6,3 @@ doubled = numbers || (x) -> x * 2
     println(val)
 }
 
-exit(0)

@@ -3,4 +3,3 @@ empty = []
 length = #empty
 println(length)
 
-exit(0)

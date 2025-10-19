@@ -7,4 +7,3 @@ doubled = values || (x) -> x * 2
 // Print the element
 println(doubled[0])
 
-exit(0)

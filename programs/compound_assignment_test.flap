@@ -17,4 +17,3 @@ println(x)
 x %= 5
 println(x)
 
-exit(0)

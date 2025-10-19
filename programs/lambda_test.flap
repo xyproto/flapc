@@ -10,4 +10,3 @@ println(result2)
 result3 = double(3.0)
 println(result3)
 
-exit(0)

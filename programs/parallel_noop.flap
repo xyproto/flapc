@@ -4,4 +4,3 @@ doubled = numbers || (x) -> x * 2
 
 // Don't use the result, just exit
 println(42)
-exit(0)

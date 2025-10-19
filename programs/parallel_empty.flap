@@ -2,4 +2,3 @@
 numbers = []
 mapped = numbers || (x) -> x * 3
 println(#mapped)
-exit(0)

@@ -7,4 +7,3 @@ println(doubled[2])
 println(doubled[1])
 println(doubled[0])
 
-exit(0)

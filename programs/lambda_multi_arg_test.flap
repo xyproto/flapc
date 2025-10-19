@@ -2,4 +2,3 @@
 add = (x, y) -> x + y
 result = add(3, 7)
 println(result)
-exit(0)

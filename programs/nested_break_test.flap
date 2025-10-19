@@ -24,4 +24,3 @@ printf("\nNested loop with continue (continue inner loop):\n")
     printf("\n")
 }
 
-exit(0)

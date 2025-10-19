@@ -28,4 +28,3 @@ printf("Read i64: %f\n", val_i64)
 call("free", ptr as ptr)
 printf("Memory freed\n")
 
-exit(0)

@@ -28,4 +28,3 @@ println(result)
 final = add(add(square(3), multiply(2, 5)), 7)
 println(final)
 
-exit(0)

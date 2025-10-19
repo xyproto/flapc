@@ -14,4 +14,3 @@ println(prod)
 quot := a / b
 println(quot)
 
-exit(0)

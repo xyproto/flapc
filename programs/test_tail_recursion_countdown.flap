@@ -7,4 +7,3 @@ countdown := (n) -> n <= 0.0 {
 
 result := countdown(100.0)
 println(result)  // Should print 0
-exit(0)

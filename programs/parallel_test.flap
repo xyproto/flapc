@@ -4,4 +4,3 @@ doubled = numbers || (x) -> x * 2
 @ val in doubled {
     println(val)
 }
-exit(0)

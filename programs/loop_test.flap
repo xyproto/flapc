@@ -2,4 +2,3 @@
 @ i in range(5) {
     println(i)
 }
-exit(0)

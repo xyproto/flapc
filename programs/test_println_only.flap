@@ -1,3 +1,2 @@
 // Test println only
 println("Hello")
-exit(0)
