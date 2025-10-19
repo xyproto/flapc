@@ -204,19 +204,22 @@ ARM64 test failures - 54 tests failing due to unimplemented features:
 
 **Test Results**:
 - x86-64: 178/178 (100%) ✅
-- ARM64: 76/182 passing (42%) ✅
+- ARM64: 80/182 passing (44%) ✅
 - Mach-O: 10/10 tests pass ✅
 
 **ARM64 Test Failures by Category**:
 - ParallelExpr not implemented (21 tests)
-- Math functions runtime crash (13 tests) - infrastructure ready, needs debugging
+- Math functions runtime crash (13 tests) - dynamic linking issues
+- String comparison broken - compares pointers not contents (many tests)
 - Recursion `me` keyword (4 tests)
 - Functions `str`, `call` (5 tests)
 - SliceExpr (2 tests)
+- Printf `%v` and `%b` format specifiers missing (several tests)
 - Lambda/function-related failures (~40 tests)
-- Runtime failures (remaining tests)
 
 **Major Recent Wins**:
+- ✅ **IN operator** - Fixed LSL and FMOV encodings! (+4 tests)
+- ✅ **Comparison operators** - Fixed all CSET encodings! (+3 tests)
 - ✅ **List indexing** - Fixed stack alignment and LSL encoding!
 - ✅ **Logical/bitwise operators** - and, or, xor, shl, shr, rol, ror working!
 - ✅ **Three-operator assignment system** - Prevents variable shadowing bugs!
