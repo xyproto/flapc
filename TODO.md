@@ -22,17 +22,28 @@
 - ✅ Variadic function calling with stack-based argument passing
 - ✅ Follows ARM64 calling convention (args on stack, not registers)
 - ✅ Works for %g, %f, etc. format specifiers
-- ⚠️ String arguments (%s) not yet implemented
 
-**Result**: ARM64 dynamic linking fully functional! Printf works with numeric args!
+### 5. ✅ IMPLEMENTED: Printf with String Arguments (commit 4b17dcc)
+- ✅ Type detection for string vs numeric arguments
+- ✅ String arguments passed as pointers (in x registers)
+- ✅ Numeric arguments passed as floats (on stack)
+- ✅ Mixed arguments work: `printf("String: %s, Number: %g\n", "test", 42)`
+
+### 6. ✅ FIXED: Multiple Dynamic Function Calls (commit 3e52809)
+- ✅ Fixed chained fixups "next" field in GOT entries
+- ✅ dyld now processes all GOT entries, not just the first
+- ✅ Programs can call multiple dynamic functions: `printf(); exit(0)`
+
+**Result**: ARM64 dynamic linking fully functional! Printf works with all args! Multiple function calls work!
 
 ---
 
 ## 🚨 Current Issues
 
-### 1. Printf String Arguments (%s)
-- [ ] Implement pointer handling for string arguments
-- Currently %s format crashes because strings need pointers, not floats
+### 1. ARM64 Println Numeric Arguments
+- [ ] Implement float-to-string conversion for println()
+- Currently `println(42)` prints "?" because float-to-string not implemented
+- Workaround: Use `printf("%g\n", 42)` instead
 
 ## 📋 Language Syntax Improvements
 
@@ -228,20 +239,25 @@
 
 **Test Results**:
 - x86-64: 178/178 (100%) ✅
-- ARM64: Core features working, printf with numeric args working
+- ARM64: Core features working, multiple dynamic calls working!
 - Mach-O: 10/10 tests pass ✅
 
 **Blockers**:
 1. ~~macOS dynamic linking~~ - ✅ **FIXED!**
-2. Printf string arguments (%s) - High priority for tests
-3. RISC-V backend incomplete - Medium priority
-4. Missing ARM64 expression types - Low priority
+2. ~~Printf string arguments (%s)~~ - ✅ **FIXED!**
+3. ~~Multiple dynamic function calls~~ - ✅ **FIXED!**
+4. ARM64 println() numeric arguments - Low priority (workaround: use printf)
+5. RISC-V backend incomplete - Medium priority
+6. Missing ARM64 expression types - Low priority
 
 **Recent Wins (Today's Session)**:
 - ✅ **macOS ARM64 dynamic linking FIXED!** - No more SIGKILL!
 - ✅ **String escape sequences working** - `\n`, `\t`, etc. now work
 - ✅ **GOT alignment fixed** - Handles variable-sized rodata correctly
 - ✅ **Printf with numeric arguments** - Variadic functions working!
+- ✅ **Printf with string arguments** - Mixed string/numeric args working!
+- ✅ **Multiple dynamic function calls FIXED!** - Chained fixups work!
 - ✅ Self-signing implementation (no external codesign needed)
 - ✅ TestMachOExecutable passes
 - ✅ ARM64 binaries execute successfully with dynamic linking
+- ✅ Can now call `printf()` then `exit()` without crashes!
