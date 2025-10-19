@@ -868,6 +868,10 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 		return acg.compileGetPid(call)
 	case "printf":
 		return acg.compilePrintf(call)
+	case "sin", "cos", "tan", "asin", "acos", "atan", "sinh", "cosh", "tanh", "exp", "log", "log10", "sqrt", "ceil", "floor", "fabs", "round":
+		return acg.compileMathFunction(call)
+	case "pow":
+		return acg.compilePowFunction(call)
 	default:
 		// Check if it's a variable holding a function pointer
 		if _, exists := acg.stackVars[call.Function]; exists {
@@ -1595,6 +1599,111 @@ func (acg *ARM64CodeGen) compilePrintf(call *CallExpr) error {
 	// scvtf d0, x0
 	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
 
+	return nil
+}
+
+// compileMathFunction compiles a call to a C math library function (sin, cos, sqrt, etc.)
+func (acg *ARM64CodeGen) compileMathFunction(call *CallExpr) error {
+	if len(call.Args) != 1 {
+		return fmt.Errorf("%s requires exactly 1 argument", call.Function)
+	}
+
+	// Compile the argument - result will be in d0
+	if err := acg.compileExpression(call.Args[0]); err != nil {
+		return err
+	}
+
+	// Argument is already in d0 (ARM64 ABI: first float arg in d0)
+
+	// Mark that we need dynamic linking
+	acg.eb.useDynamicLinking = true
+
+	// Add function to needed functions list if not already there
+	funcName := call.Function // e.g., "sin", "cos", "sqrt"
+	found := false
+	for _, f := range acg.eb.neededFunctions {
+		if f == funcName {
+			found = true
+			break
+		}
+	}
+	if !found {
+		acg.eb.neededFunctions = append(acg.eb.neededFunctions, funcName)
+	}
+
+	// Generate call to function stub
+	stubLabel := funcName + "$stub"
+	position := acg.eb.text.Len()
+	acg.eb.callPatches = append(acg.eb.callPatches, CallPatch{
+		position:   position,
+		targetName: stubLabel,
+	})
+
+	// Emit placeholder bl instruction (will be patched later)
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x94}) // bl #0
+
+	// Result is returned in d0 (ARM64 ABI: float return value in d0)
+	// No conversion needed, d0 already has the result
+
+	return nil
+}
+
+// compilePowFunction compiles a call to pow(x, y)
+func (acg *ARM64CodeGen) compilePowFunction(call *CallExpr) error {
+	if len(call.Args) != 2 {
+		return fmt.Errorf("pow requires exactly 2 arguments")
+	}
+
+	// Compile first argument (base) - result will be in d0
+	if err := acg.compileExpression(call.Args[0]); err != nil {
+		return err
+	}
+
+	// Save first argument to d1 temporarily (we'll move it back)
+	// fmov d8, d0 (use callee-saved register d8)
+	acg.out.out.writer.WriteBytes([]byte{0x08, 0x40, 0x60, 0x1e})
+
+	// Compile second argument (exponent) - result will be in d0
+	if err := acg.compileExpression(call.Args[1]); err != nil {
+		return err
+	}
+
+	// Move second argument to d1 (ARM64 ABI: second float arg in d1)
+	// fmov d1, d0
+	acg.out.out.writer.WriteBytes([]byte{0x01, 0x40, 0x60, 0x1e})
+
+	// Move first argument back to d0 (ARM64 ABI: first float arg in d0)
+	// fmov d0, d8
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x41, 0x60, 0x1e})
+
+	// Mark that we need dynamic linking
+	acg.eb.useDynamicLinking = true
+
+	// Add pow to needed functions list
+	funcName := "pow"
+	found := false
+	for _, f := range acg.eb.neededFunctions {
+		if f == funcName {
+			found = true
+			break
+		}
+	}
+	if !found {
+		acg.eb.neededFunctions = append(acg.eb.neededFunctions, funcName)
+	}
+
+	// Generate call to pow stub
+	stubLabel := funcName + "$stub"
+	position := acg.eb.text.Len()
+	acg.eb.callPatches = append(acg.eb.callPatches, CallPatch{
+		position:   position,
+		targetName: stubLabel,
+	})
+
+	// Emit placeholder bl instruction
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x94}) // bl #0
+
+	// Result is returned in d0
 	return nil
 }
 
