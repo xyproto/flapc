@@ -204,7 +204,7 @@ ARM64 test failures - 54 tests failing due to unimplemented features:
 
 **Test Results**:
 - x86-64: 178/178 (100%) ✅
-- ARM64: 80/182 passing (44%) ✅
+- ARM64: 85/182 passing (47%) ✅
 - Mach-O: 10/10 tests pass ✅
 
 **ARM64 Test Failures by Category**:
@@ -218,6 +218,8 @@ ARM64 test failures - 54 tests failing due to unimplemented features:
 - Lambda/function-related failures (~40 tests)
 
 **Major Recent Wins**:
+- ✅ **Printf argument order** - Fixed reverse evaluation! (+3 tests)
+- ✅ **String interning** - String literals now reuse same address! (+2 tests)
 - ✅ **IN operator** - Fixed LSL and FMOV encodings! (+4 tests)
 - ✅ **Comparison operators** - Fixed all CSET encodings! (+3 tests)
 - ✅ **List indexing** - Fixed stack alignment and LSL encoding!
