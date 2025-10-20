@@ -42,7 +42,6 @@ const (
 	TOKEN_DEFAULT_ARROW // ~>
 	TOKEN_AT            // @
 	TOKEN_AT_MINUS      // @-
-	TOKEN_AT_PLUS       // @+
 	TOKEN_AT_EQUALS     // @=
 	TOKEN_IN            // in keyword
 	TOKEN_LBRACE        // {
@@ -520,7 +519,7 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_DOT, Value: ".", Line: l.line}
 	case '@':
-		// Check for @first, @last, @-, @+, @=
+		// Check for @first, @last, @-, @=
 		if l.peek() >= 'a' && l.peek() <= 'z' {
 			start := l.pos
 			l.pos++ // skip @
@@ -547,10 +546,6 @@ func (l *Lexer) NextToken() Token {
 		if l.peek() == '-' {
 			l.pos += 2
 			return Token{Type: TOKEN_AT_MINUS, Value: "@-", Line: l.line}
-		}
-		if l.peek() == '+' {
-			l.pos += 2
-			return Token{Type: TOKEN_AT_PLUS, Value: "@+", Line: l.line}
 		}
 		if l.peek() == '=' {
 			l.pos += 2

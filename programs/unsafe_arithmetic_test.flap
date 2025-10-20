@@ -71,13 +71,13 @@ printf("0xF0 | 0x0F = %.0f\n", result4)
 // Test NOT
 result5 := unsafe {
     rax <- 0
-    rax <- ~rax
+    rax <- ~b rax
 } {
     x0 <- 0
-    x0 <- ~x0
+    x0 <- ~b x0
 } {
     a0 <- 0
-    a0 <- ~a0
+    a0 <- ~b a0
 }
 
-printf("~0 = %.0f\n", result5)
+printf("~b 0 = %.0f\n", result5)

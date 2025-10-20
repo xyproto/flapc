@@ -94,27 +94,27 @@ func (e *ExpressionStmt) String() string { return e.Expr.String() }
 func (e *ExpressionStmt) statementNode() {}
 
 type LoopStmt struct {
-	// No explicit label - determined by nesting depth when created with @+
+	// No explicit label - determined by nesting depth when created with @
 	Iterator string     // Variable name (e.g., "i")
 	Iterable Expression // Expression to iterate over (e.g., range(10))
 	Body     []Statement
 }
 
 type LoopExpr struct {
-	// No explicit label - determined by nesting depth when created with @+
+	// No explicit label - determined by nesting depth when created with @
 	Iterator string      // Variable name (e.g., "i")
 	Iterable Expression  // Expression to iterate over (e.g., range(10))
 	Body     []Statement // Body statements
 }
 
 func (l *LoopExpr) String() string {
-	return fmt.Sprintf("@+ %s in %s { ... }", l.Iterator, l.Iterable.String())
+	return fmt.Sprintf("@ %s in %s { ... }", l.Iterator, l.Iterable.String())
 }
 func (l *LoopExpr) expressionNode() {}
 
 func (l *LoopStmt) String() string {
 	var out strings.Builder
-	out.WriteString("@+ ")
+	out.WriteString("@ ")
 	out.WriteString(l.Iterator)
 	out.WriteString(" in ")
 	out.WriteString(l.Iterable.String())

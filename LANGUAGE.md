@@ -2,64 +2,26 @@
 
 ### Version 1.4.0
 
-## Language Philosophy
+## Type System
 
-Flap is a functional programming language designed for high-performance numerical computing with ergonomic modern syntax. Built on a `map[uint64]float64` foundation, it provides elegant abstractions for modern CPU architectures while maintaining simplicity and clarity.
+Flap uses `map[uint64]float64` as its unified type representation:
 
-**Core Principle:** Everything is `map[uint64]float64`:
-- Numbers are `map[uint64]float64` (e.g., 42 is `{0: 42.0}`)
-- Strings are `map[uint64]float64` (character indices → char codes)
-- Lists are `map[uint64]float64` (element indices → values)
-- Maps are `map[uint64]float64` (keys → values)
-- Functions are `map[uint64]float64` (pointers stored as float values)
+- **Numbers**: `{0: 42.0}`
+- **Strings**: `{0: 72.0, 1: 101.0, ...}` (index → character code)
+- **Lists**: `{0: 1.0, 1: 2.0, ...}` (index → element value)
+- **Maps**: Direct representation
+- **Functions**: Pointers stored as float64 values
 
-This unified type system with a single underlying representation enables consistent optimization and uniform operations across all data structures.
+All values use IEEE 754 double-precision floating point. This single underlying type enables uniform operations and consistent SIMD optimization.
 
-## Why Flap? Three Killer Features
+## Compilation
 
-### 1. **Zero-Cost Abstractions with Predictable Performance**
-Unlike Python's interpreter overhead, Go's GC pauses, or C++'s template bloat, Flap compiles directly to native machine code with **zero runtime**. Every abstraction (loops, maps, strings) compiles to tight assembly. You get Python-like ergonomics with C-like speed.
-
-```flap
-// This compiles to 5 AVX-512 instructions, no loops
-numbers = [1, 2, 3, 4, 5]
-sum := numbers | fold(+)  // SIMD vectorized automatically
-```
-
-### 2. **Railway-Oriented Programming Built-In**
-Error handling that's cleaner than Rust's `?`, Go's `if err != nil`, or C++'s exceptions. The `or!` operator creates error handling railways:
-
-```flap
-// Clean error propagation - one line per operation
-file = open("data.txt") or! "Failed to open file"
-data = read(file) or! "Failed to read data"
-result = process(data) or! "Failed to process data"
-
-// Compare to Go:
-// file, err := os.Open("data.txt")
-// if err != nil { return err }
-// data, err := ioutil.ReadFile(file)
-// if err != nil { return err }
-// ... (10+ lines of if err != nil)
-```
-
-### 3. **Everything is `map[uint64]float64` - Ultimate Simplicity**
-No type system complexity like Rust, no polymorphism confusion like C++, no boxing overhead like Go. One type, infinite flexibility:
-
-```flap
-// Same operations work on numbers, strings, lists, maps
-len(42)           // 1.0 (number has one element)
-len("hello")      // 5.0
-len([1,2,3])      // 3.0
-len({a: 1, b: 2}) // 2.0
-
-// Everything is indexable
-x = 42.5[0]       // 42.5 (number[0] is itself)
-x = "hi"[0]       // 104.0 (char code for 'h')
-x = [10,20][1]    // 20.0
-```
-
-**Bonus:** F-strings, compound assignments, no required semicolons/exit calls, shadowing protection - all the modern niceties without the baggage.
+- **Direct code generation**: x86-64, ARM64, RISC-V machine code (no LLVM, no GCC)
+- **Binary format**: ELF64 (Linux), Mach-O (macOS)
+- **No runtime system**: No garbage collector, no bytecode interpreter
+- **SIMD optimization**: Runtime CPUID detection selects SSE2 or AVX-512
+- **FFI**: PLT/GOT dynamic linking for C library calls
+- **Calling convention**: System V AMD64 ABI
 
 ## Language Spec
 
@@ -1344,7 +1306,7 @@ arena {
 ```flap
 // Per-frame arena for temporary allocations
 game_loop = () -> {
-    @+ frame in range(1000000) {
+    @ frame in range(1000000) {
         arena {
             // Allocate temporary structures
             visible_entities := alloc(entity_size * max_visible)
@@ -1537,7 +1499,7 @@ update_physics = (entities, dt) -> {
         grid := alloc(grid_size * 8)
 
         // Build acceleration structure
-        @+ entity in entities {
+        @ entity in entities {
             cell := get_grid_cell(entity.x, entity.y)
             add_to_cell(grid, cell, entity)
         }

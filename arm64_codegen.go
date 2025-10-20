@@ -1416,7 +1416,7 @@ func (acg *ARM64CodeGen) compileLoopStatement(stmt *LoopStmt) error {
 	}
 }
 
-// compileRangeLoop compiles a range-based loop (@+ i in range(10) { ... })
+// compileRangeLoop compiles a range-based loop (@ i in range(10) { ... })
 func (acg *ARM64CodeGen) compileRangeLoop(stmt *LoopStmt, funcCall *CallExpr) error {
 	// Increment label counter for uniqueness
 	acg.labelCounter++
@@ -1558,7 +1558,7 @@ func (acg *ARM64CodeGen) compileRangeLoop(stmt *LoopStmt, funcCall *CallExpr) er
 	return nil
 }
 
-// compileListLoop compiles a list iteration loop (@+ elem in [1,2,3] { ... })
+// compileListLoop compiles a list iteration loop (@ elem in [1,2,3] { ... })
 func (acg *ARM64CodeGen) compileListLoop(stmt *LoopStmt) error {
 	// Increment label counter for uniqueness
 	acg.labelCounter++

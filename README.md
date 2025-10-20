@@ -161,7 +161,7 @@ exit(0)
 
 ### Control Flow
 - **Match expressions**: `x > 0 { println("positive") ~> println("non-positive") }`
-- **Loops**: `@+ i in range(10) { println(i) }`
+- **Loops**: `@ i in range(10) { println(i) }`
 - **Loop control**: `ret @label` (break), `@label` (continue)
 - **Loop vars**: `@first`, `@last`, `@counter`, `@i`
 

@@ -461,10 +461,7 @@ func (p *Parser) parseStatement() Statement {
 		return p.parseLoopStatement()
 	}
 
-	// Check for @ or @+ (loop)
-	if p.current.Type == TOKEN_AT_PLUS {
-		return p.parseLoopStatement()
-	}
+	// Check for @ (loop)
 
 	// Check for @ (either loop @N, loop @ ident, or jump @N)
 	if p.current.Type == TOKEN_AT {
@@ -988,15 +985,14 @@ func (p *Parser) parseLoopStatement() Statement {
 		return &JumpStmt{IsBreak: false, Label: p.loopDepth, Value: nil}
 	}
 
-	// Handle @+ or @ token (start loop at @(N+1))
-	if p.current.Type == TOKEN_AT_PLUS || p.current.Type == TOKEN_AT {
-		// @+ or @ means start a loop at @(N+1) where N is current loop depth
+	// Handle @ token (start loop at @(N+1))
+	if p.current.Type == TOKEN_AT {
+		// @ means start a loop at @(N+1) where N is current loop depth
 		label := p.loopDepth + 1
-		isAt := p.current.Type == TOKEN_AT
-		p.nextToken() // skip '@+' or '@'
+		p.nextToken() // skip '@'
 
-		// If we used @, check if this is @N (numbered loop) or @ ident (simple loop)
-		if isAt && p.current.Type == TOKEN_NUMBER {
+		// Check if this is @N (numbered loop) or @ ident (simple loop)
+		if p.current.Type == TOKEN_NUMBER {
 			// This is @N syntax, handle it in the jump statement section below
 			// by re-parsing this TOKEN_AT
 			p.current.Type = TOKEN_AT // restore token type (it's already @, but for clarity)
@@ -1006,7 +1002,7 @@ func (p *Parser) parseLoopStatement() Statement {
 
 		// Expect identifier for loop variable
 		if p.current.Type != TOKEN_IDENT {
-			p.error("expected identifier after @ or @+")
+			p.error("expected identifier after @")
 		}
 		iterator := p.current.Value
 		p.nextToken() // skip identifier
@@ -1841,9 +1837,6 @@ func (p *Parser) parsePrimary() Expression {
 		p.nextToken() // move to '}'
 		return &MapExpr{Keys: keys, Values: values}
 
-	case TOKEN_AT_PLUS:
-		// Loop expression: @+ i in iterable { body }
-		return p.parseLoopExpr()
 
 	case TOKEN_AT:
 		// Could be loop expression (@ i in...) or jump expression (@N)
@@ -1907,25 +1900,25 @@ func (p *Parser) parseArenaExpr() Expression {
 }
 
 // isLoopExpr checks if current position looks like a loop expression
-// Pattern: @ ident in or @+ ident in
+// Pattern: @ ident in
 func (p *Parser) isLoopExpr() bool {
-	// Loop expressions start with @ or @+
-	return p.current.Type == TOKEN_AT_PLUS || p.current.Type == TOKEN_AT
+	// Loop expressions start with @
+	return p.current.Type == TOKEN_AT
 }
 
-// parseLoopExpr parses a loop expression: @ i in iterable { body } or @+ i in iterable { body }
+// parseLoopExpr parses a loop expression: @ i in iterable { body }
 func (p *Parser) parseLoopExpr() Expression {
-	// Must be @ or @+
-	if p.current.Type != TOKEN_AT_PLUS && p.current.Type != TOKEN_AT {
-		p.error("expected @ or @+ to start loop expression")
+	// Must be @
+	if p.current.Type != TOKEN_AT {
+		p.error("expected @ to start loop expression")
 	}
 
 	label := p.loopDepth + 1
-	p.nextToken() // skip '@' or '@+'
+	p.nextToken() // skip '@'
 
 	// Expect identifier for loop variable
 	if p.current.Type != TOKEN_IDENT {
-		p.error("expected identifier after @ or @+")
+		p.error("expected identifier after @")
 	}
 	iterator := p.current.Value
 	p.nextToken() // skip iterator
@@ -2186,15 +2179,15 @@ func (p *Parser) parseUnsafeValue() interface{} {
 		return &MemoryLoad{Size: size, Address: addrReg, Offset: offset}
 	}
 
-	// Check for unary operation: ~rax
-	if p.current.Type == TOKEN_TILDE {
-		p.nextToken() // skip '~'
+	// Check for unary operation: ~b rax (bitwise NOT)
+	if p.current.Type == TOKEN_TILDE_B {
+		p.nextToken() // skip '~b'
 		if p.current.Type != TOKEN_IDENT {
-			p.error("expected register name after '~'")
+			p.error("expected register name after '~b'")
 		}
 		reg := p.current.Value
 		p.nextToken() // skip register
-		return &RegisterOp{Left: "", Operator: "~", Right: reg}
+		return &RegisterOp{Left: "", Operator: "~b", Right: reg}
 	}
 
 	// Parse left operand (register or immediate)
@@ -2231,8 +2224,8 @@ func (p *Parser) parseUnsafeValue() interface{} {
 		op = "&"
 	case TOKEN_PIPE:
 		op = "|"
-	case TOKEN_CARET:
-		op = "^"
+	case TOKEN_CARET_B:
+		op = "^b"
 	case TOKEN_LT:
 		// Check if it's << (shift left)
 		if p.peek.Type == TOKEN_LT {
@@ -5214,8 +5207,8 @@ func (fc *FlapCompiler) compileRegisterAssignment(stmt *RegisterAssignStmt) {
 func (fc *FlapCompiler) compileRegisterOp(dest string, op *RegisterOp) {
 	// Unary operations
 	if op.Left == "" {
-		if op.Operator == "~" {
-			// NOT: dest <- ~src
+		if op.Operator == "~b" {
+			// NOT: dest <- ~b src
 			srcReg := op.Right.(string)
 			if dest != srcReg {
 				fc.out.MovRegToReg(dest, srcReg)
@@ -5248,10 +5241,31 @@ func (fc *FlapCompiler) compileRegisterOp(dest string, op *RegisterOp) {
 		case *NumberExpr:
 			fc.out.SubImmFromReg(dest, int64(r.Value))
 		}
-	// TODO v1.4.0: Implement remaining operations (*, &, |, ^, <<, >>)
-	// These require new instruction files (imul.go, and.go, or.go, xor.go, shift.go)
+	case "&":
+		switch r := op.Right.(type) {
+		case string:
+			fc.out.AndRegWithReg(dest, r)
+		case *NumberExpr:
+			fc.out.AndRegWithImm(dest, int32(r.Value))
+		}
+	case "|":
+		switch r := op.Right.(type) {
+		case string:
+			fc.out.OrRegWithReg(dest, r)
+		case *NumberExpr:
+			fc.out.OrRegWithImm(dest, int32(r.Value))
+		}
+	case "^b":
+		switch r := op.Right.(type) {
+		case string:
+			fc.out.XorRegWithReg(dest, r)
+		case *NumberExpr:
+			fc.out.XorRegWithImm(dest, int32(r.Value))
+		}
+	// TODO v1.5.0: Implement remaining operations (*, /, <<, >>)
+	// These require new instruction files (imul.go, div.go, shift.go)
 	default:
-		compilerError("operator %s not yet implemented in v1.3.0 (coming in v1.4.0)", op.Operator)
+		compilerError("operator %s not yet implemented in v1.4.0 (coming in v1.5.0)", op.Operator)
 	}
 }
 
