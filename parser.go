@@ -5262,8 +5262,22 @@ func (fc *FlapCompiler) compileRegisterOp(dest string, op *RegisterOp) {
 		case *NumberExpr:
 			fc.out.XorRegWithImm(dest, int32(r.Value))
 		}
-	// TODO v1.5.0: Implement remaining operations (*, /, <<, >>)
-	// These require new instruction files (imul.go, div.go, shift.go)
+	case "*":
+		switch r := op.Right.(type) {
+		case string:
+			fc.out.ImulRegWithReg(dest, r)
+		case *NumberExpr:
+			fc.out.ImulImmToReg(dest, int64(r.Value))
+		}
+	case "/":
+		switch r := op.Right.(type) {
+		case string:
+			fc.out.DivRegByReg(dest, r)
+		case *NumberExpr:
+			fc.out.DivRegByImm(dest, int64(r.Value))
+		}
+	// TODO v1.5.0: Implement remaining operations (<<, >>)
+	// These require new instruction file (shift.go)
 	default:
 		compilerError("operator %s not yet implemented in v1.4.0 (coming in v1.5.0)", op.Operator)
 	}
