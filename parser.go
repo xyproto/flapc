@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
+	"hash/fnv"
 	"math"
 	"os"
 	"sort"
@@ -10,6 +11,21 @@ import (
 	"strings"
 	"unsafe"
 )
+
+// hashStringKey hashes a string identifier to a uint64 for use as a map key.
+// Uses FNV-1a hash algorithm for deterministic, collision-resistant hashing.
+// Currently limited to 30-bit hash due to compiler integer literal limitations.
+// Sets bit 30 to distinguish symbolic keys from typical numeric indices.
+func hashStringKey(s string) uint64 {
+	h := fnv.New64a()
+	h.Write([]byte(s))
+	// Use FNV-1a 32-bit variant for now, mask to 30 bits (0x3FFFFFFF)
+	// Then set bit 30 (0x40000000) to distinguish symbolic keys
+	// This gives us range 0x40000000 to 0x7FFFFFFF (1073741824 to 2147483647)
+	h32 := fnv.New32a()
+	h32.Write([]byte(s))
+	return uint64((h32.Sum32() & 0x3FFFFFFF) | 0x40000000)
+}
 
 type Parser struct {
 	lexer     *Lexer
@@ -1355,6 +1371,44 @@ func (p *Parser) parsePostfix() Expression {
 			}
 
 			expr = &CastExpr{Expr: expr, Type: castType}
+		} else if p.peek.Type == TOKEN_DOT {
+			// Handle dot notation: obj.field or namespace.func()
+			p.nextToken() // skip current expr
+			p.nextToken() // skip '.'
+
+			if p.current.Type != TOKEN_IDENT {
+				p.error("expected field name after '.'")
+			}
+
+			fieldName := p.current.Value
+
+			// Check if this is a namespaced function call: namespace.func(...)
+			// This requires expr to be an IdentExpr
+			if ident, ok := expr.(*IdentExpr); ok && p.peek.Type == TOKEN_LPAREN {
+				// Namespaced function call - combine identifiers
+				namespacedName := ident.Name + "." + fieldName
+				p.nextToken() // skip second identifier
+				p.nextToken() // skip '('
+				args := []Expression{}
+
+				if p.current.Type != TOKEN_RPAREN {
+					args = append(args, p.parseExpression())
+					for p.peek.Type == TOKEN_COMMA {
+						p.nextToken() // skip current
+						p.nextToken() // skip ','
+						args = append(args, p.parseExpression())
+					}
+					p.nextToken() // move to ')'
+				}
+				expr = &CallExpr{Function: namespacedName, Args: args}
+			} else {
+				// Regular field access - hash the field name and create index expression
+				hashValue := hashStringKey(fieldName)
+				expr = &IndexExpr{
+					List:  expr,
+					Index: &NumberExpr{Value: float64(hashValue)},
+				}
+			}
 		} else {
 			break
 		}
@@ -1403,15 +1457,8 @@ func (p *Parser) parsePrimary() Expression {
 			p.error("lambda definitions must use '=>' not '->' (e.g., x => x * 2)")
 		}
 
-		// Check for namespaced identifier (namespace.identifier)
-		if p.peek.Type == TOKEN_DOT {
-			p.nextToken() // skip first identifier (namespace)
-			p.nextToken() // skip '.'
-			if p.current.Type != TOKEN_IDENT {
-				p.error("expected identifier after '.'")
-			}
-			name = name + "." + p.current.Value // Combine namespace.identifier
-		}
+		// Dot notation is now handled entirely in parsePostfix
+		// This includes both field access (obj.field) and namespaced calls (namespace.func())
 
 		// Check for function call
 		if p.peek.Type == TOKEN_LPAREN {
@@ -1560,14 +1607,25 @@ func (p *Parser) parsePrimary() Expression {
 
 	case TOKEN_LBRACE:
 		// Map literal: {key: value, key2: value2, ...}
+		// Supports both numeric keys and string identifier keys
+		// String identifiers are automatically hashed to uint64
 		p.nextToken() // skip '{'
 		keys := []Expression{}
 		values := []Expression{}
 
 		if p.current.Type != TOKEN_RBRACE {
 			// Parse first key
-			key := p.parseExpression()
-			p.nextToken() // move past key
+			var key Expression
+			if p.current.Type == TOKEN_IDENT && p.peek.Type == TOKEN_COLON {
+				// String key: hash identifier to uint64
+				hashValue := hashStringKey(p.current.Value)
+				key = &NumberExpr{Value: float64(hashValue)}
+				p.nextToken() // move past identifier
+			} else {
+				// Numeric key or expression
+				key = p.parseExpression()
+				p.nextToken() // move past key
+			}
 
 			// Must have ':'
 			if p.current.Type != TOKEN_COLON {
@@ -1585,8 +1643,17 @@ func (p *Parser) parsePrimary() Expression {
 				p.nextToken() // skip current value
 				p.nextToken() // skip ','
 
-				key := p.parseExpression()
-				p.nextToken() // move past key
+				// Parse key (string or numeric)
+				if p.current.Type == TOKEN_IDENT && p.peek.Type == TOKEN_COLON {
+					// String key: hash identifier to uint64
+					hashValue := hashStringKey(p.current.Value)
+					key = &NumberExpr{Value: float64(hashValue)}
+					p.nextToken() // move past identifier
+				} else {
+					// Numeric key or expression
+					key = p.parseExpression()
+					p.nextToken() // move past key
+				}
 
 				if p.current.Type != TOKEN_COLON {
 					p.error("expected ':' in map literal")

@@ -243,6 +243,42 @@ missing = ages[999]  // returns 0.0 (key doesn't exist)
 }
 ```
 
+#### String Keys and Dot Notation
+
+String identifiers used as keys are **automatically hashed to uint64** at compile time. This enables ergonomic dot notation for field access while maintaining the `map[uint64]float64` data structure.
+
+```flap
+// String keys in map literals (identifiers without quotes)
+player = {health: 100, x: 10.0, y: 20.0}
+
+// Dot notation for field access (syntax sugar for map indexing)
+player.health        // Same as player[hash("health")]
+player.x <- 50.0     // Same as player[hash("x")] <- 50.0
+
+// Nested maps with dot notation
+player = {
+    pos: {x: 100.0, y: 200.0},
+    vel: {x: 0.0, y: 0.0},
+    health: 100
+}
+
+player.pos.x         // Chained access
+player.vel.y <- 5.0  // Update nested fields
+
+// Mixed numeric and string keys (both work)
+data = {0: "numeric", name: "Alice", age: 30}
+data[0]              // Access by numeric key
+data.name            // Access by string key
+```
+
+**Implementation Details:**
+- String keys are hashed at **compile time** using FNV-1a hash algorithm
+- Hash values use a 30-bit range (`0x40000000` to `0x7FFFFFFF`) to work within current compiler limitations
+- Dot notation (`obj.field`) is syntax sugar that compiles to map indexing (`obj[hash("field")]`)
+- At runtime, everything is still `map[uint64]float64` - no new data types
+- String keys preserve insertion order just like numeric keys
+- Namespaced function calls (`SDL.init()`) are supported through dot notation
+
 ### Membership Testing
 
 ```flap
