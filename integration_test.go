@@ -20,7 +20,8 @@ var compileExpectations = map[string]string{
 // Programs to skip entirely
 var skipPrograms = map[string]bool{}
 
-// Programs to compile but not run (e.g., require runtime libraries not available in CI)
+// Programs to compile but not run (require external libraries beyond libc/libm)
+// Note: All FFI tests that only use libc/libm should run in CI (both Arch Linux and Ubuntu)
 var compileOnlyPrograms = map[string]bool{
 	"c_ffi_test":       true, // SDL3/RayLib - compile-only (requires libsdl3.so at runtime)
 	"c_string_test":    true, // SDL3 strings - compile-only (requires libsdl3.so at runtime)
