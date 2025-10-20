@@ -1,70 +1,117 @@
 # Flap Compiler TODO
 
+## Version 1.3.0 - RELEASED ✓
+
+### Completed Features
+- ✅ **Constants**: Uppercase identifiers (PI, MAX_HEALTH) with compile-time substitution
+- ✅ **Hex/Binary Literals**: 0xFF and 0b11110000 syntax for colors and bitmasks
+- ✅ **Unsafe Blocks**: Three-architecture blocks (x86_64, ARM64, RISC-V) with register operations
+  - Register loads: `rax <- 42`, `rax <- rbx`
+  - Stack operations: `stack <- rax`, `rax <- stack`
+  - Arithmetic: `rax <- rax + rbx`, `rax <- rax - 10`
+  - Memory loads (u64 only): `rax <- [rbx]`, `rax <- [rbx + 16]`
+- ✅ **Memory Management Syntax**: `arena`, `defer`, `alloc()` keywords recognized and parsed
+- ✅ **Documentation**: Comprehensive LANGUAGE.md updates with examples
+
+### Deferred to v1.4.0
+- Arena allocator runtime (bump pointer, growth, cleanup)
+- Defer statement code generation
+- alloc() runtime implementation
+- Extended unsafe operations (multiply, bitwise, shifts, sized loads/stores, syscall)
+
+## Version 1.4.0 - Memory Management Runtime & C Imports
+
+### C Library Import Syntax ⭐ HIGH PRIORITY
+- [ ] Implement `import <lib> from C as <alias>` syntax
+  - [ ] Add lexer support for `from` keyword
+  - [ ] Parse C import statements
+  - [ ] Use pkg-config to discover library info
+  - [ ] Automatic dlopen/dlsym wrapper generation
+  - [ ] Example: `import sdl2 from C as sdl` → `sdl.SDL_Init(0 as uint32)`
+- [ ] Support for common libraries
+  - [ ] SDL2, SDL3
+  - [ ] Raylib
+  - [ ] OpenGL
+  - [ ] SQLite
+- [ ] Type inference for C function signatures
+
+### Arena Allocator Implementation
+- [ ] Implement arena runtime (using malloc/realloc/free)
+  - [ ] Add `flap_arena_create(size)` - allocate initial arena
+  - [ ] Add `flap_arena_alloc(size)` - bump pointer allocation with growth
+  - [ ] Add `flap_arena_destroy(arena)` - free entire arena
+  - [ ] Add global arena stack in .data section
+- [ ] Implement arena runtime in ARM64 assembly
+- [ ] Implement arena runtime in RISC-V assembly
+- [ ] Add arena block code generation
+  - [ ] Push new arena on entry
+  - [ ] Destroy arena on exit
+  - [ ] Handle nested arenas
+- [ ] Test arena blocks with various allocation patterns
+
+### Defer Statement Implementation
+- [ ] Add defer tracking to FlapCompiler
+  - [ ] Track deferred expressions per scope
+  - [ ] Emit deferred code in LIFO order
+- [ ] Implement defer code generation
+  - [ ] Execute at end of scope
+  - [ ] Execute before ret statements
+  - [ ] Handle nested defer statements
+- [ ] Test defer with various scenarios
+
+### Unsafe Language Extensions (Missing Operations)
+- [ ] Implement missing arithmetic operations
+  - [ ] `ImulRegWithReg` - multiply register with register
+  - [ ] `ImulRegWithImm` - multiply register with immediate
+- [ ] Implement missing bitwise operations
+  - [ ] `AndImmToReg` - AND immediate to register
+  - [ ] `OrImmToReg` - OR immediate to register
+  - [ ] `XorImmToReg` - XOR immediate to register
+- [ ] Implement missing shift operations
+  - [ ] `ShlReg` - shift left with immediate
+  - [ ] `ShrReg` - shift right with immediate
+  - [ ] `ShlRegByCL` - shift left by CL register
+  - [ ] `ShrRegByCL` - shift right by CL register
+- [ ] Implement memory operations
+  - [ ] `MovMemToReg8/16/32` - load 8/16/32-bit values
+  - [ ] `MovsxdMemToReg` - sign-extend 32->64
+  - [ ] `MovImmToMem` - store immediate to memory
+- [ ] Implement syscall instruction
+  - [ ] x86_64: `syscall`
+  - [ ] ARM64: `svc #0`
+  - [ ] RISC-V: `ecall`
+- [ ] Test all unsafe operations
+
+### Documentation
+- [ ] Update LANGUAGE.md to version 1.3.0
+  - [ ] Document arena blocks
+  - [ ] Document defer keyword
+  - [ ] Document alloc() builtin
+  - [ ] Update unsafe operations list
+- [ ] Add examples for arena usage
+- [ ] Add examples for defer usage
+
 ## Current Status
 
-**x86-64 Linux**: 186/188 tests (99%)
-**ARM64 macOS**: ~149/182 tests (82%) estimated
+**x86-64 Linux**: 197/197 tests (100%) ✓
+**ARM64 macOS**: Compilation hang issue (binary execution blocked)
 
-### Recent ARM64 Improvements
-- Fixed os.Exit bug (66 replacements) - enables proper test execution
-- Implemented ParallelExpr (|| operator) - +21 tests
-- Added type tracking system (varTypes, getExprType) - foundation for concat
-- Fixed lambda parameter storage bug - should fix ~20 lambda crashes
-- Implemented me keyword for tail recursion - +4 tests
+## Deferred Issues
 
-## High Priority - ARM64 Completion
-
-### Critical Issue - Compilation Hang
-- [ ] **BLOCKING**: ARM64 flapc binary hangs immediately on execution (even `--version`)
+### Critical Issue - ARM64 Binary Hang
+- **BLOCKING**: ARM64 flapc binary hangs immediately on execution
   - Hang occurs before main() debug prints execute
-  - Affects all ARM64 compilation attempts
-  - Not caused by runtime helper functions (persists when disabled)
-  - Not caused by BinaryExpr changes (persists when reverted)
   - Process enters sleep state with minimal memory usage
-  - Likely a macOS-specific issue (permissions, signing, or dyld)
-  - Requires investigation with proper macOS debugging tools
-  - **Action needed**: Test on different macOS system or with SIP disabled
+  - Likely macOS-specific issue (permissions, signing, or dyld)
+  - **Deferred until x86_64 features complete**
 
-### Implement Missing Runtime Functions (Blocked by hang)
-- [x] List concatenation runtime function `_flap_list_concat(left, right)` - **IMPLEMENTED**
-- [x] String concatenation runtime function `_flap_string_concat(left, right)` - **IMPLEMENTED**
-- [ ] Float-to-string conversion for `str()` function
-- [ ] Debug and fix math function compilation hanging issue
+### Missing ARM64 Features (Blocked by hang)
+- [ ] SliceExpr: List/string slicing
+- [ ] PipeExpr: Pipe operator
+- [ ] JumpExpr: Loop break/continue
+- [ ] Float-to-string conversion for str()
 
-### Implement Missing Features
-- [ ] SliceExpr: List/string slicing `list[start:end:step]`
-- [ ] PipeExpr: Pipe operator `|`
-- [ ] JumpExpr: Loop break/continue (`ret @N`, `@N`)
-
-## Medium Priority - Language Features
-
-### F-String Interpolation
-- [ ] Implement Python-style f-strings: `f"Hello, {name}!"`
-- [ ] Add lexer support for f-string tokens
-- [ ] Add parser support for compile-time interpolation
-
-### Performance
-- [ ] Optimize CString conversion from O(n²) to O(n) in `parser.go`
-
-## Low Priority - Additional Backends
-
-### RISC-V Support
-- [ ] Implement RISC-V register allocation
-- [ ] Implement RISC-V calling convention
-- [ ] Add floating-point instructions
-- [ ] Fix PC-relative load for rodata symbols
-
-## Standard Library Extensions
-
-### String Functions
-- [ ] `num(string)` - Parse string to float64
-- [ ] `split(string, delimiter)`
-- [ ] `join(list, delimiter)`
-- [ ] `upper/lower/trim(string)`
-
-### Collection Functions
-- [ ] `map(f, list)`
-- [ ] `filter(f, list)`
-- [ ] `reduce(f, list, init)`
-- [ ] `keys/values(map)`
-- [ ] `sort(list)`
+### Low Priority
+- [ ] RISC-V backend completion
+- [ ] Standard library extensions (map, filter, reduce, etc.)
+- [ ] Performance optimizations

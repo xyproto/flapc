@@ -76,6 +76,16 @@ func (i *ImportStmt) String() string {
 }
 func (i *ImportStmt) statementNode() {}
 
+type CImportStmt struct {
+	Library string // C library name: "sdl2", "raylib", "sqlite3"
+	Alias   string // Namespace alias: "sdl", "rl", "sql"
+}
+
+func (c *CImportStmt) String() string {
+	return "import " + c.Library + " from C as " + c.Alias
+}
+func (c *CImportStmt) statementNode() {}
+
 type ExpressionStmt struct {
 	Expr Expression
 }
@@ -494,8 +504,8 @@ func (u *UnsafeExpr) String() string {
 func (u *UnsafeExpr) expressionNode() {}
 
 type RegisterAssignStmt struct {
-	Register string      // Register name (e.g., "rax", "x0", "a0")
-	Value    interface{} // Either Expression (for immediate) or string (for register name)
+	Register string      // Register name (e.g., "rax", "x0", "a0") or memory address like "[rax]"
+	Value    interface{} // Either Expression, string (register), *RegisterOp, or *MemoryLoad
 }
 
 func (r *RegisterAssignStmt) String() string {
@@ -504,8 +514,111 @@ func (r *RegisterAssignStmt) String() string {
 		return r.Register + " <- " + v.String()
 	case string:
 		return r.Register + " <- " + v
+	case *RegisterOp:
+		return r.Register + " <- " + v.String()
+	case *MemoryLoad:
+		return r.Register + " <- " + v.String()
 	default:
 		return r.Register + " <- <unknown>"
 	}
 }
 func (r *RegisterAssignStmt) statementNode() {}
+
+type RegisterOp struct {
+	Left     string // Register name or empty for unary
+	Operator string // +, -, *, /, %, &, |, ^, <<, >>, ~
+	Right    interface{} // Register name (string) or immediate (NumberExpr)
+}
+
+func (r *RegisterOp) String() string {
+	if r.Left == "" {
+		// Unary operation
+		switch v := r.Right.(type) {
+		case string:
+			return r.Operator + v
+		default:
+			return r.Operator + "<unknown>"
+		}
+	}
+	// Binary operation
+	switch v := r.Right.(type) {
+	case Expression:
+		return r.Left + " " + r.Operator + " " + v.String()
+	case string:
+		return r.Left + " " + r.Operator + " " + v
+	default:
+		return r.Left + " " + r.Operator + " <unknown>"
+	}
+}
+
+type MemoryLoad struct {
+	Size    string // "u8", "u16", "u32", "u64", "i8", "i16", "i32", "i64" (empty = u64)
+	Address string // Register containing address (e.g., "rax", "rbx")
+	Offset  int64  // Optional offset (e.g., [rax + 16])
+}
+
+func (m *MemoryLoad) String() string {
+	sizeStr := ""
+	if m.Size != "" && m.Size != "u64" {
+		sizeStr = m.Size + " "
+	}
+	offsetStr := ""
+	if m.Offset != 0 {
+		offsetStr = fmt.Sprintf(" + %d", m.Offset)
+	}
+	return sizeStr + "[" + m.Address + offsetStr + "]"
+}
+
+type SyscallStmt struct{}
+
+func (s *SyscallStmt) String() string { return "syscall" }
+func (s *SyscallStmt) statementNode() {}
+
+// ArenaStmt represents an arena memory block: arena { ... }
+// All allocations within the block are freed when the arena exits
+type ArenaStmt struct {
+	Body []Statement // Statements executed within the arena
+}
+
+func (a *ArenaStmt) String() string {
+	var out strings.Builder
+	out.WriteString("arena {\n")
+	for _, stmt := range a.Body {
+		out.WriteString("  ")
+		out.WriteString(stmt.String())
+		out.WriteString("\n")
+	}
+	out.WriteString("}")
+	return out.String()
+}
+func (a *ArenaStmt) statementNode() {}
+
+// ArenaExpr represents an arena block used as an expression
+type ArenaExpr struct {
+	Body []Statement // Statements executed within the arena
+}
+
+func (a *ArenaExpr) String() string {
+	var out strings.Builder
+	out.WriteString("arena { ")
+	for i, stmt := range a.Body {
+		if i > 0 {
+			out.WriteString("; ")
+		}
+		out.WriteString(stmt.String())
+	}
+	out.WriteString(" }")
+	return out.String()
+}
+func (a *ArenaExpr) expressionNode() {}
+
+// DeferStmt represents a deferred expression: defer expr
+// Executed at the end of the current scope in LIFO order
+type DeferStmt struct {
+	Call Expression // Expression to execute at scope exit (typically a function call)
+}
+
+func (d *DeferStmt) String() string {
+	return "defer " + d.Call.String()
+}
+func (d *DeferStmt) statementNode() {}

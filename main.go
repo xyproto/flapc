@@ -14,7 +14,7 @@ import (
 
 // A tiny compiler for x86_64, aarch64, and riscv64 for Linux, macOS, FreeBSD
 
-const versionString = "flapc 1.0.0"
+const versionString = "flapc 1.3.0"
 
 // Architecture type
 type Arch int
@@ -786,6 +786,16 @@ func (eb *ExecutableBuilder) GenerateCallInstruction(funcName string) error {
 		fmt.Fprintln(os.Stderr)
 	}
 	return nil
+}
+
+// EmitArenaRuntimeCode emits arena allocator runtime functions
+// Version 1.3.0: Simplified implementation - arena blocks tracked, alloc() calls malloc
+// Full arena allocator with growth will be in version 1.4.0
+func (eb *ExecutableBuilder) EmitArenaRuntimeCode() {
+	// For v1.3.0, arena runtime is minimal:
+	// - alloc() just calls malloc
+	// - Arena blocks compile to scope tracking for defer
+	// - Full bump allocator deferred to v1.4.0
 }
 
 // patchTextInELF replaces the .text section in the ELF buffer with the current text buffer

@@ -325,11 +325,48 @@ func foldConstantExpr(expr Expression) Expression {
 	}
 }
 
-func (p *Parser) parseImport() *ImportStmt {
+func (p *Parser) parseImport() Statement {
 	p.nextToken() // skip 'import'
 
+	// Check if this is a C library import: import <lib> from C as <alias>
+	if p.current.Type == TOKEN_IDENT {
+		// Could be: import sdl2 from C as sdl
+		libName := p.current.Value
+		p.nextToken()
+
+		if p.current.Type == TOKEN_FROM {
+			// This is a C import
+			p.nextToken() // skip 'from'
+
+			// Expect 'C'
+			if p.current.Type != TOKEN_IDENT || p.current.Value != "C" {
+				p.error("expected 'C' after 'from' in C library import")
+			}
+			p.nextToken() // skip 'C'
+
+			// Expect 'as'
+			if p.current.Type != TOKEN_AS {
+				p.error("expected 'as' after 'from C'")
+			}
+			p.nextToken() // skip 'as'
+
+			// Get alias
+			if p.current.Type != TOKEN_IDENT {
+				p.error("expected alias after 'as'")
+			}
+			alias := p.current.Value
+			p.nextToken()
+
+			return &CImportStmt{Library: libName, Alias: alias}
+		}
+
+		// Not a C import, must be malformed
+		p.error("expected 'from C' or string URL after 'import'")
+	}
+
+	// Git import: import "url@version" as alias
 	if p.current.Type != TOKEN_STRING {
-		p.error("expected git URL string after 'import'")
+		p.error("expected library name or git URL string after 'import'")
 	}
 	urlWithVersion := p.current.Value
 	p.nextToken()
@@ -356,6 +393,44 @@ func (p *Parser) parseImport() *ImportStmt {
 	return &ImportStmt{URL: url, Version: version, Alias: alias}
 }
 
+func (p *Parser) parseArenaStmt() *ArenaStmt {
+	p.nextToken() // skip 'arena'
+
+	if p.current.Type != TOKEN_LBRACE {
+		p.error("expected '{' after 'arena'")
+	}
+	p.nextToken() // skip '{'
+	p.skipNewlines()
+
+	var body []Statement
+	for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+		stmt := p.parseStatement()
+		if stmt != nil {
+			body = append(body, stmt)
+		}
+		p.nextToken()
+		p.skipNewlines()
+	}
+
+	if p.current.Type != TOKEN_RBRACE {
+		p.error("expected '}' at end of arena block")
+	}
+
+	return &ArenaStmt{Body: body}
+}
+
+func (p *Parser) parseDeferStmt() *DeferStmt {
+	p.nextToken() // skip 'defer'
+
+	// Parse the expression to be deferred (typically a function call)
+	expr := p.parseExpression()
+	if expr == nil {
+		p.error("expected expression after 'defer'")
+	}
+
+	return &DeferStmt{Call: expr}
+}
+
 func (p *Parser) parseStatement() Statement {
 	// Check for use keyword (imports)
 	if p.current.Type == TOKEN_USE {
@@ -370,6 +445,16 @@ func (p *Parser) parseStatement() Statement {
 	// Check for import keyword (git URL imports)
 	if p.current.Type == TOKEN_IMPORT {
 		return p.parseImport()
+	}
+
+	// Check for arena keyword
+	if p.current.Type == TOKEN_ARENA {
+		return p.parseArenaStmt()
+	}
+
+	// Check for defer keyword
+	if p.current.Type == TOKEN_DEFER {
+		return p.parseDeferStmt()
 	}
 
 	// Check for ret keyword
@@ -1797,9 +1882,39 @@ func (p *Parser) parsePrimary() Expression {
 	case TOKEN_UNSAFE:
 		// unsafe { x86_64 } { arm64 } { riscv64 }
 		return p.parseUnsafeExpr()
+
+	case TOKEN_ARENA:
+		// arena { ... }
+		return p.parseArenaExpr()
 	}
 
 	return nil
+}
+
+func (p *Parser) parseArenaExpr() Expression {
+	p.nextToken() // skip 'arena'
+
+	if p.current.Type != TOKEN_LBRACE {
+		p.error("expected '{' after 'arena'")
+	}
+	p.nextToken() // skip '{'
+	p.skipNewlines()
+
+	var body []Statement
+	for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+		stmt := p.parseStatement()
+		if stmt != nil {
+			body = append(body, stmt)
+		}
+		p.nextToken()
+		p.skipNewlines()
+	}
+
+	if p.current.Type != TOKEN_RBRACE {
+		p.error("expected '}' at end of arena block")
+	}
+
+	return &ArenaExpr{Body: body}
 }
 
 // isLoopExpr checks if current position looks like a loop expression
@@ -1899,7 +2014,7 @@ func (p *Parser) parseUnsafeExpr() Expression {
 	}
 }
 
-// parseUnsafeBlock parses a single architecture block: { reg1 <- reg2; reg3 <- 42; ... }
+// parseUnsafeBlock parses a single architecture block with extended syntax
 func (p *Parser) parseUnsafeBlock() []Statement {
 	p.nextToken() // skip '{'
 	p.skipNewlines()
@@ -1907,11 +2022,84 @@ func (p *Parser) parseUnsafeBlock() []Statement {
 	statements := []Statement{}
 
 	for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
-		// Inside unsafe blocks, we parse register assignments
-		// Format: register <- value (where value can be number or another register)
+		// Check for syscall
+		if p.current.Type == TOKEN_SYSCALL {
+			statements = append(statements, &SyscallStmt{})
+			p.nextToken() // skip 'syscall'
+			p.skipNewlines()
+			continue
+		}
 
+		// Check for memory store: [rax] <- value or u8 [rax] <- value
+		isMemoryStore := false
+		storeReg := ""
+
+		if p.current.Type == TOKEN_LBRACKET {
+			// [rax] <- value
+			isMemoryStore = true
+			p.nextToken() // skip '['
+			if p.current.Type != TOKEN_IDENT {
+				p.error("expected register name in memory address")
+			}
+			storeReg = p.current.Value
+			p.nextToken() // skip register name
+			if p.current.Type != TOKEN_RBRACKET {
+				p.error("expected ']' after memory address")
+			}
+			p.nextToken() // skip ']'
+		} else if p.current.Type == TOKEN_U8 || p.current.Type == TOKEN_U16 ||
+			p.current.Type == TOKEN_U32 || p.current.Type == TOKEN_U64 ||
+			p.current.Type == TOKEN_I8 || p.current.Type == TOKEN_I16 ||
+			p.current.Type == TOKEN_I32 || p.current.Type == TOKEN_I64 {
+			// u8 [rax] <- value (TODO v1.4.0: implement sized stores)
+			_ = p.current.Value // storeSize - unused for now
+			p.nextToken() // skip size
+			if p.current.Type != TOKEN_LBRACKET {
+				p.error("expected '[' after size specifier")
+			}
+			p.nextToken() // skip '['
+			if p.current.Type != TOKEN_IDENT {
+				p.error("expected register name in memory address")
+			}
+			storeReg = p.current.Value
+			isMemoryStore = true
+			p.nextToken() // skip register
+			if p.current.Type != TOKEN_RBRACKET {
+				p.error("expected ']'")
+			}
+			p.nextToken() // skip ']'
+		}
+
+		if isMemoryStore {
+			// Parse: [rax] <- value
+			if p.current.Type != TOKEN_LEFT_ARROW {
+				p.error("expected '<-' after memory address")
+			}
+			p.nextToken() // skip '<-'
+
+			var value interface{}
+			if p.current.Type == TOKEN_NUMBER {
+				val := p.parseNumberLiteral(p.current.Value)
+				value = &NumberExpr{Value: val}
+				p.nextToken()
+			} else if p.current.Type == TOKEN_IDENT {
+				value = p.current.Value
+				p.nextToken()
+			} else {
+				p.error("expected number or register after '<-' in memory store")
+			}
+
+			statements = append(statements, &RegisterAssignStmt{
+				Register: "[" + storeReg + "]",
+				Value:    value,
+			})
+			p.skipNewlines()
+			continue
+		}
+
+		// Regular register assignment
 		if p.current.Type != TOKEN_IDENT {
-			p.error("expected register name in unsafe block")
+			p.error("expected register name, memory address, or syscall in unsafe block")
 		}
 
 		regName := p.current.Value
@@ -1922,19 +2110,8 @@ func (p *Parser) parseUnsafeBlock() []Statement {
 		}
 		p.nextToken() // skip '<-'
 
-		// Parse the value (either a number or another register)
-		var value interface{}
-		if p.current.Type == TOKEN_NUMBER {
-			val := p.parseNumberLiteral(p.current.Value)
-			value = &NumberExpr{Value: val}
-			p.nextToken() // skip number
-		} else if p.current.Type == TOKEN_IDENT {
-			// Another register
-			value = p.current.Value
-			p.nextToken() // skip register name
-		} else {
-			p.error("expected number or register name after '<-' in unsafe block")
-		}
+		// Parse the right-hand side
+		value := p.parseUnsafeValue()
 
 		statements = append(statements, &RegisterAssignStmt{
 			Register: regName,
@@ -1950,6 +2127,166 @@ func (p *Parser) parseUnsafeBlock() []Statement {
 	p.nextToken() // skip '}'
 
 	return statements
+}
+
+// parseUnsafeValue parses the RHS of a register assignment in unsafe blocks
+func (p *Parser) parseUnsafeValue() interface{} {
+	// Check for memory load: [rax], u8 [rax], etc.
+	if p.current.Type == TOKEN_LBRACKET {
+		// [rax] or [rax + offset]
+		p.nextToken() // skip '['
+		if p.current.Type != TOKEN_IDENT {
+			p.error("expected register name in memory load")
+		}
+		addrReg := p.current.Value
+		p.nextToken() // skip register
+
+		var offset int64 = 0
+		if p.current.Type == TOKEN_PLUS {
+			p.nextToken() // skip '+'
+			if p.current.Type != TOKEN_NUMBER {
+				p.error("expected number after '+' in memory address")
+			}
+			offset = int64(p.parseNumberLiteral(p.current.Value))
+			p.nextToken() // skip number
+		}
+
+		if p.current.Type != TOKEN_RBRACKET {
+			p.error("expected ']' after memory address")
+		}
+		p.nextToken() // skip ']'
+
+		return &MemoryLoad{Size: "u64", Address: addrReg, Offset: offset}
+	}
+
+	// Check for sized memory load: u8 [rax], u32 [rbx + 16], etc.
+	if p.current.Type == TOKEN_U8 || p.current.Type == TOKEN_U16 ||
+		p.current.Type == TOKEN_U32 || p.current.Type == TOKEN_U64 ||
+		p.current.Type == TOKEN_I8 || p.current.Type == TOKEN_I16 ||
+		p.current.Type == TOKEN_I32 || p.current.Type == TOKEN_I64 {
+
+		size := p.current.Value
+		p.nextToken() // skip size
+
+		if p.current.Type != TOKEN_LBRACKET {
+			p.error("expected '[' after size specifier")
+		}
+		p.nextToken() // skip '['
+
+		if p.current.Type != TOKEN_IDENT {
+			p.error("expected register name in memory load")
+		}
+		addrReg := p.current.Value
+		p.nextToken() // skip register
+
+		var offset int64 = 0
+		if p.current.Type == TOKEN_PLUS {
+			p.nextToken() // skip '+'
+			if p.current.Type != TOKEN_NUMBER {
+				p.error("expected number after '+' in memory address")
+			}
+			offset = int64(p.parseNumberLiteral(p.current.Value))
+			p.nextToken() // skip number
+		}
+
+		if p.current.Type != TOKEN_RBRACKET {
+			p.error("expected ']'")
+		}
+		p.nextToken() // skip ']'
+
+		return &MemoryLoad{Size: size, Address: addrReg, Offset: offset}
+	}
+
+	// Check for unary operation: ~rax
+	if p.current.Type == TOKEN_TILDE {
+		p.nextToken() // skip '~'
+		if p.current.Type != TOKEN_IDENT {
+			p.error("expected register name after '~'")
+		}
+		reg := p.current.Value
+		p.nextToken() // skip register
+		return &RegisterOp{Left: "", Operator: "~", Right: reg}
+	}
+
+	// Parse left operand (register or immediate)
+	var left string
+	var leftIsImmediate bool
+	var leftValue *NumberExpr
+
+	if p.current.Type == TOKEN_NUMBER {
+		val := p.parseNumberLiteral(p.current.Value)
+		leftValue = &NumberExpr{Value: val}
+		leftIsImmediate = true
+		p.nextToken() // skip number
+	} else if p.current.Type == TOKEN_IDENT {
+		left = p.current.Value
+		p.nextToken() // skip register name
+	} else {
+		p.error("expected number, register, memory load, or unary operator")
+	}
+
+	// Check for binary operator
+	var op string
+	switch p.current.Type {
+	case TOKEN_PLUS:
+		op = "+"
+	case TOKEN_MINUS:
+		op = "-"
+	case TOKEN_STAR:
+		op = "*"
+	case TOKEN_SLASH:
+		op = "/"
+	case TOKEN_MOD:
+		op = "%"
+	case TOKEN_AMP:
+		op = "&"
+	case TOKEN_PIPE:
+		op = "|"
+	case TOKEN_CARET:
+		op = "^"
+	case TOKEN_LT:
+		// Check if it's << (shift left)
+		if p.peek.Type == TOKEN_LT {
+			p.nextToken() // skip first '<'
+			op = "<<"
+		}
+	case TOKEN_GT:
+		// Check if it's >> (shift right)
+		if p.peek.Type == TOKEN_GT {
+			p.nextToken() // skip first '>'
+			op = ">>"
+		}
+	}
+
+	if op != "" {
+		// Binary operation
+		p.nextToken() // skip operator
+
+		// Parse right operand
+		var right interface{}
+		if p.current.Type == TOKEN_NUMBER {
+			val := p.parseNumberLiteral(p.current.Value)
+			right = &NumberExpr{Value: val}
+			p.nextToken()
+		} else if p.current.Type == TOKEN_IDENT {
+			right = p.current.Value
+			p.nextToken()
+		} else {
+			p.error("expected number or register after operator")
+		}
+
+		if leftIsImmediate {
+			p.error("left operand of binary operation must be a register")
+		}
+
+		return &RegisterOp{Left: left, Operator: op, Right: right}
+	}
+
+	// No operator - just a simple value
+	if leftIsImmediate {
+		return leftValue
+	}
+	return left
 }
 
 // LoopInfo tracks information about an active loop during compilation
@@ -1979,6 +2316,8 @@ type FlapCompiler struct {
 	usedFunctions    map[string]bool   // Track which functions are called
 	unknownFunctions map[string]bool   // Track functions called but not defined
 	callOrder        []string          // Track order of function calls
+	cImports         map[string]string // Track C imports: alias -> library name
+	cLibHandles      map[string]string // Track library handles: library -> handle var name
 	stringCounter    int               // Counter for unique string labels
 	stackOffset      int               // Current stack offset for variables
 	labelCounter     int               // Counter for unique labels (if/else, loops, etc)
@@ -2028,6 +2367,8 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 		usedFunctions:    make(map[string]bool),
 		unknownFunctions: make(map[string]bool),
 		callOrder:        []string{},
+		cImports:         make(map[string]string),
+		cLibHandles:      make(map[string]string),
 		lambdaOffsets:    make(map[string]int),
 		debug:            debugEnabled,
 	}, nil
@@ -2100,6 +2441,16 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.out.XorRegWithReg("rbx", "rbx")
 	fc.out.XorRegWithReg("rcx", "rcx")
 	// ===== END AVX-512 DETECTION =====
+
+	// Pre-pass: Collect C imports to set up library handles
+	for _, stmt := range program.Statements {
+		if cImport, ok := stmt.(*CImportStmt); ok {
+			fc.cImports[cImport.Alias] = cImport.Library
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Registered C import: %s -> %s\n", cImport.Alias, cImport.Library)
+			}
+		}
+	}
 
 	// Two-pass compilation: First pass collects all variable declarations
 	// so that function/constant order doesn't matter
@@ -4777,13 +5128,16 @@ func (fc *FlapCompiler) compileUnsafeExpr(expr *UnsafeExpr) {
 		compilerError("unsupported architecture: %s", arch)
 	}
 
-	// Compile each register assignment statement
+	// Compile each statement in the unsafe block
 	for _, stmt := range block {
-		regStmt, ok := stmt.(*RegisterAssignStmt)
-		if !ok {
-			compilerError("unsafe blocks can only contain register assignments")
+		switch s := stmt.(type) {
+		case *RegisterAssignStmt:
+			fc.compileRegisterAssignment(s)
+		case *SyscallStmt:
+			fc.compileSyscall()
+		default:
+			compilerError("unsupported statement type in unsafe block: %T", s)
 		}
-		fc.compileRegisterAssignment(regStmt)
 	}
 
 	// The result of an unsafe block is the value in the accumulator register
@@ -4792,9 +5146,21 @@ func (fc *FlapCompiler) compileUnsafeExpr(expr *UnsafeExpr) {
 	fc.out.Cvtsi2sd("xmm0", "rax")
 }
 
-func (fc *FlapCompiler) compileRegisterAssignment(stmt *RegisterAssignStmt) {
-	// Handle: register <- value (where value is number, another register, or stack)
+func (fc *FlapCompiler) compileSyscall() {
+	// TODO v1.4.0: Emit syscall instruction
+	// fc.out.Syscall()
+	compilerError("syscall not yet implemented in v1.3.0")
+}
 
+func (fc *FlapCompiler) compileRegisterAssignment(stmt *RegisterAssignStmt) {
+	// Handle memory stores: [rax] <- value
+	if len(stmt.Register) > 2 && stmt.Register[0] == '[' && stmt.Register[len(stmt.Register)-1] == ']' {
+		addr := stmt.Register[1:len(stmt.Register)-1]
+		fc.compileMemoryStore(addr, stmt.Value)
+		return
+	}
+
+	// Handle various value types
 	switch v := stmt.Value.(type) {
 	case *NumberExpr:
 		// Immediate value: register <- 42
@@ -4819,8 +5185,82 @@ func (fc *FlapCompiler) compileRegisterAssignment(stmt *RegisterAssignStmt) {
 			fc.out.MovRegToReg(stmt.Register, v)
 		}
 
+	case *RegisterOp:
+		// Arithmetic or bitwise operation
+		fc.compileRegisterOp(stmt.Register, v)
+
+	case *MemoryLoad:
+		// Memory load: rax <- [rbx] or rax <- u8 [rbx + 16]
+		fc.compileMemoryLoad(stmt.Register, v)
+
 	default:
 		compilerError("unsupported value type in register assignment: %T", v)
+	}
+}
+
+func (fc *FlapCompiler) compileRegisterOp(dest string, op *RegisterOp) {
+	// Unary operations
+	if op.Left == "" {
+		if op.Operator == "~" {
+			// NOT: dest <- ~src
+			srcReg := op.Right.(string)
+			if dest != srcReg {
+				fc.out.MovRegToReg(dest, srcReg)
+			}
+			fc.out.NotReg(dest)
+			return
+		}
+		compilerError("unsupported unary operator in unsafe block: %s", op.Operator)
+	}
+
+	// Binary operations: dest <- left OP right
+	// First, ensure left operand is in dest
+	if dest != op.Left {
+		fc.out.MovRegToReg(dest, op.Left)
+	}
+
+	// Now apply the operation
+	switch op.Operator {
+	case "+":
+		switch r := op.Right.(type) {
+		case string:
+			fc.out.AddRegToReg(dest, r)
+		case *NumberExpr:
+			fc.out.AddImmToReg(dest, int64(r.Value))
+		}
+	case "-":
+		switch r := op.Right.(type) {
+		case string:
+			fc.out.SubRegFromReg(dest, r)
+		case *NumberExpr:
+			fc.out.SubImmFromReg(dest, int64(r.Value))
+		}
+	// TODO v1.4.0: Implement remaining operations (*, &, |, ^, <<, >>)
+	// These require new instruction files (imul.go, and.go, or.go, xor.go, shift.go)
+	default:
+		compilerError("operator %s not yet implemented in v1.3.0 (coming in v1.4.0)", op.Operator)
+	}
+}
+
+func (fc *FlapCompiler) compileMemoryLoad(dest string, load *MemoryLoad) {
+	// Memory load: dest <- [addr + offset]
+	// TODO v1.4.0: Implement sized loads (u8, u16, u32, i32)
+	// For now, only support u64
+	if load.Size != "u64" && load.Size != "" {
+		compilerError("sized memory loads not yet implemented in v1.3.0 (coming in v1.4.0)")
+	}
+	fc.out.MovMemToReg(dest, load.Address, int(load.Offset))
+}
+
+func (fc *FlapCompiler) compileMemoryStore(addr string, value interface{}) {
+	// Memory store: [addr] <- value
+	// TODO v1.4.0: Implement immediate stores
+	switch v := value.(type) {
+	case string:
+		// Store register: [rax] <- rbx
+		fc.out.MovRegToMem(v, addr, 0)
+	default:
+		compilerError("immediate memory stores not yet implemented in v1.3.0 (coming in v1.4.0)")
 	}
 }
 
@@ -5021,6 +5461,9 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 }
 
 func (fc *FlapCompiler) generateRuntimeHelpers() {
+	// Generate arena allocator runtime functions
+	fc.eb.EmitArenaRuntimeCode()
+
 	// Generate _flap_string_concat(left_ptr, right_ptr) -> new_ptr
 	// Arguments: rdi = left_ptr, rsi = right_ptr
 	// Returns: rax = pointer to new concatenated string
@@ -8116,6 +8559,25 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			fc.out.Cvtsi2sd("xmm0", "rax")
 		}
 
+	case "alloc":
+		// alloc(size) - Allocate memory (v1.3.0: calls malloc, arena tracking in v1.4.0)
+		// size: number (bytes to allocate)
+		// Returns: pointer as float64
+		if len(call.Args) != 1 {
+			compilerError("alloc() requires 1 argument (size)")
+		}
+
+		// Evaluate size argument
+		fc.compileExpression(call.Args[0])
+		// Convert size to integer in rdi
+		fc.out.Cvttsd2si("rdi", "xmm0")
+
+		// v1.3.0: Just call malloc (full arena allocator in v1.4.0)
+		fc.eb.GenerateCallInstruction("malloc")
+
+		// Convert pointer to float64 in xmm0
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
 	case "dlopen":
 		// dlopen(path, flags) - Open a dynamic library
 		// path: string (Flap string), flags: number (RTLD_LAZY=1, RTLD_NOW=2)
@@ -8837,20 +9299,38 @@ func filterPrivateFunctions(program *Program) {
 }
 
 func processImports(program *Program) error {
-	// Find all import statements
+	// Find all import statements (both Git and C imports)
 	var imports []*ImportStmt
+	var cImports []*CImportStmt
 	for _, stmt := range program.Statements {
 		if importStmt, ok := stmt.(*ImportStmt); ok {
 			imports = append(imports, importStmt)
 		}
+		if cImportStmt, ok := stmt.(*CImportStmt); ok {
+			cImports = append(cImports, cImportStmt)
+		}
+	}
+
+	// Process C imports first (simpler, no dependency resolution)
+	if len(cImports) > 0 {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Processing %d C import(s)\n", len(cImports))
+		}
+		for _, cImp := range cImports {
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Importing C library %s as %s\n", cImp.Library, cImp.Alias)
+			}
+			// C imports are handled during compilation, not here
+			// They just need to be tracked for namespace resolution
+		}
 	}
 
 	if len(imports) == 0 {
-		return nil // No imports to process
+		return nil // No Git imports to process
 	}
 
 	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "Processing %d import(s)\n", len(imports))
+		fmt.Fprintf(os.Stderr, "Processing %d Git import(s)\n", len(imports))
 	}
 
 	// Process each import

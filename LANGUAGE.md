@@ -1,6 +1,6 @@
 # The Flap Programming Language
 
-### Version 1.1.0
+### Version 1.3.0
 
 ## Language Philosophy
 
@@ -1165,4 +1165,262 @@ flapc --update-deps myprogram.flap
 
 # Clear cache
 rm -rf ~/.cache/flapc/
+```
+
+## Memory Management
+
+**Status (v1.3.0):** Syntax and documentation complete. Full runtime implementation coming in v1.4.0.
+
+Flap 1.3.0 introduces syntax for arena allocators and defer statements. The compiler recognizes the keywords and parses the constructs, with full runtime implementation planned for v1.4.0.
+
+### Arena Allocators
+
+Arena allocators provide fast bump-pointer allocation with bulk deallocation. All memory allocated within an `arena` block is automatically freed when the block exits.
+
+**Key Benefits:**
+- **Fast allocation**: O(1) bump pointer, no per-allocation overhead
+- **Automatic cleanup**: No manual free() calls needed
+- **Cache friendly**: Contiguous memory allocation
+- **Perfect for**: Temporary data structures, per-frame game allocations, parser ASTs
+
+**Syntax:**
+
+```flap
+arena {
+    buffer := alloc(1024)        // Allocate 1KB
+    particles := alloc(8 * 100)  // Allocate 100 particles (8 bytes each)
+    // Use buffer and particles...
+}  // All memory automatically freed here
+```
+
+**Implementation:**
+- Initial size: 4096 bytes (4KB)
+- Growth strategy: Double on overflow (4KB → 8KB → 16KB → 32KB...)
+- Uses `malloc()` for initial allocation, `realloc()` for growth
+- Thread-local arena stack for nested arenas
+
+**Nested Arenas:**
+
+```flap
+arena {
+    outer_data := alloc(100)
+
+    arena {
+        inner_data := alloc(200)
+        // Both inner_data and outer_data available
+    }  // inner_data freed
+
+    // outer_data still available
+}  // outer_data freed
+```
+
+**Game Development Example:**
+
+```flap
+// Per-frame arena for temporary allocations
+game_loop = () -> {
+    @+ frame in range(1000000) {
+        arena {
+            // Allocate temporary structures
+            visible_entities := alloc(entity_size * max_visible)
+            render_commands := alloc(command_size * max_commands)
+
+            // Render frame using temporary data...
+            render_frame(visible_entities, render_commands)
+        }  // All temporary memory freed - zero fragmentation
+    }
+}
+```
+
+### The `alloc()` Builtin
+
+Allocates memory from the current arena.
+
+**Signature:** `alloc(size: number) -> pointer`
+
+**Parameters:**
+- `size`: Number of bytes to allocate
+
+**Returns:** Pointer to allocated memory (as float64)
+
+**Example:**
+
+```flap
+arena {
+    // Allocate structure
+    player := alloc(64)  // 64 bytes
+
+    // Write to memory
+    write_f64(player, 0, 100.0)      // health at offset 0
+    write_f64(player, 8, 50.0)       // mana at offset 8
+    write_f64(player, 16, 250.5)     // x position
+    write_f64(player, 24, 128.3)     // y position
+
+    // Read from memory
+    health := read_f64(player, 0)
+    printf("Player health: %.0f\n", health)
+}
+```
+
+**Interaction with malloc/free:**
+
+You can still use `malloc()` and `free()` via FFI for manual memory management:
+
+```flap
+// Load libc
+libc := dlopen("libc.so.6", 2)  // RTLD_NOW
+malloc_fn := dlsym(libc, "malloc")
+free_fn := dlsym(libc, "free")
+
+// Manual allocation
+ptr := call(malloc_fn, 1024 as u64) as ptr
+defer call(free_fn, ptr)  // Cleanup with defer
+
+// Use ptr...
+```
+
+### Defer Statements
+
+The `defer` keyword schedules an expression to execute at the end of the current scope, regardless of how the scope exits (normal return, early return, or implicit fall-through).
+
+**Execution Order:** LIFO (Last-In-First-Out) - like a stack
+
+**Syntax:**
+
+```flap
+defer expression
+```
+
+**Example:**
+
+```flap
+open_and_process = (filename) -> {
+    file := fopen(filename, "r")
+    defer fclose(file)  // Always executed
+
+    // If this fails, fclose still called
+    data := read_file(file)
+
+    // Process data...
+    ret process(data)  // fclose called before return
+}
+```
+
+**Multiple Defers:**
+
+```flap
+process_resources = () -> {
+    file1 := fopen("data.txt", "r")
+    defer fclose(file1)
+
+    file2 := fopen("config.txt", "r")
+    defer fclose(file2)
+
+    connection := connect("localhost", 8080)
+    defer disconnect(connection)
+
+    // On exit, calls in order:
+    // 1. disconnect(connection)
+    // 2. fclose(file2)
+    // 3. fclose(file1)
+}
+```
+
+**With Arena:**
+
+```flap
+load_level = (level_file) -> {
+    arena {
+        // Temporary allocations for loading
+        temp_buffer := alloc(1024 * 1024)  // 1MB temp buffer
+
+        file := fopen(level_file, "rb")
+        defer fclose(file)  // Called before arena cleanup
+
+        // Load and process...
+        level_data := parse_level(file, temp_buffer)
+
+        ret level_data
+    }  // Arena freed, then fclose called (LIFO)
+}
+```
+
+**Common Patterns:**
+
+```flap
+// Resource cleanup
+handle_request = (request) -> {
+    lock := acquire_lock()
+    defer release_lock(lock)
+
+    // Critical section...
+}
+
+// Profiling
+profile_function = () -> {
+    start := get_time()
+    defer {
+        duration := get_time() - start
+        printf("Function took %.2fms\n", duration)
+    }
+
+    // Function body...
+}
+
+// Error handling with manual memory
+allocate_and_process = () -> {
+    libc := dlopen("libc.so.6", 2)
+    malloc_fn := dlsym(libc, "malloc")
+    free_fn := dlsym(libc, "free")
+
+    ptr1 := call(malloc_fn, 1024 as u64) as ptr
+    defer call(free_fn, ptr1)
+
+    ptr2 := call(malloc_fn, 2048 as u64) as ptr
+    defer call(free_fn, ptr2)
+
+    // Both freed automatically, even if early return
+}
+```
+
+### Best Practices
+
+**Use arenas for:**
+- Temporary allocations (per-frame game data)
+- Parser/compiler intermediate structures
+- Request-scoped data in servers
+- Any data with clear lifetime boundaries
+
+**Use defer for:**
+- File handles (fopen/fclose)
+- Network connections
+- Locks (acquire/release)
+- Manual memory cleanup (malloc/free)
+- Resource handles from C libraries
+
+**Avoid:**
+- Long-lived data in arenas (arena blocks should be scoped)
+- Mixing arena alloc() with manual free() (undefined behavior)
+- Returning pointers from arena blocks (dangling pointer)
+
+**Example: Game Entity System**
+
+```flap
+update_physics = (entities, dt) -> {
+    arena {
+        // Temporary spatial partitioning
+        grid := alloc(grid_size * 8)
+
+        // Build acceleration structure
+        @+ entity in entities {
+            cell := get_grid_cell(entity.x, entity.y)
+            add_to_cell(grid, cell, entity)
+        }
+
+        // Process collisions using grid
+        collisions := check_collisions(grid)
+        apply_collision_responses(collisions, dt)
+
+    }  // Grid freed automatically
+}
 ```

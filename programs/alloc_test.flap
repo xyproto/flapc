@@ -1,0 +1,12 @@
+// Test alloc() builtin (v1.3.0: calls malloc)
+
+// Allocate 64 bytes
+buffer := alloc(64)
+
+// Just test that alloc returns a non-zero pointer
+buffer > 0 {
+    println("SUCCESS: alloc returned pointer")
+    ~> println("FAIL: alloc returned null")
+}
+
+exit(0)

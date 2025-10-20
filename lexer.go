@@ -104,8 +104,12 @@ const (
 	TOKEN_LIST_TYPE   // list (type)
 	TOKEN_USE         // use (import)
 	TOKEN_IMPORT      // import (with git URL)
+	TOKEN_FROM        // from (C library imports)
 	TOKEN_DOT         // . (for namespaced calls)
 	TOKEN_UNSAFE      // unsafe (architecture-specific code blocks)
+	TOKEN_SYSCALL     // syscall (system call in unsafe blocks)
+	TOKEN_ARENA       // arena (arena memory blocks)
+	TOKEN_DEFER       // defer (deferred execution)
 )
 
 // Code generation constants
@@ -319,10 +323,18 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_USE, Value: value, Line: l.line}
 		case "import":
 			return Token{Type: TOKEN_IMPORT, Value: value, Line: l.line}
+		case "from":
+			return Token{Type: TOKEN_FROM, Value: value, Line: l.line}
 		case "as":
 			return Token{Type: TOKEN_AS, Value: value, Line: l.line}
 		case "unsafe":
 			return Token{Type: TOKEN_UNSAFE, Value: value, Line: l.line}
+		case "syscall":
+			return Token{Type: TOKEN_SYSCALL, Value: value, Line: l.line}
+		case "arena":
+			return Token{Type: TOKEN_ARENA, Value: value, Line: l.line}
+		case "defer":
+			return Token{Type: TOKEN_DEFER, Value: value, Line: l.line}
 		case "xor":
 			return Token{Type: TOKEN_XOR, Value: value, Line: l.line}
 		case "shl":

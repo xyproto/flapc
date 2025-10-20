@@ -160,3 +160,11 @@ func (fr *FlapRuntime) CreateString() {
 	// Loop would go here, but for now using simpler approach
 	// (In production, would use SIMD VCVTDQ2PD to convert multiple bytes to floats)
 }
+
+// Arena allocator runtime functions
+// These functions need to be emitted as assembly code in the executable
+
+// EmitArenaRuntime emits the arena allocator runtime code
+func (fr *FlapRuntime) EmitArenaRuntime() {
+	fr.eb.EmitArenaRuntimeCode()
+}
