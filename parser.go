@@ -8780,6 +8780,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.Cvttsd2si("rdi", "xmm0")
 
 		// v1.3.0: Just call malloc (full arena allocator in v1.4.0)
+		fc.trackFunctionCall("malloc")
 		fc.eb.GenerateCallInstruction("malloc")
 
 		// Convert pointer to float64 in xmm0
