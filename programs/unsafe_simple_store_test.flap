@@ -1,0 +1,32 @@
+// Simple test of memory stores using stack pointer
+
+// Test storing and loading a value via RSP
+result := unsafe {
+    rax <- rsp
+    rax <- rax - 16    // Make space on stack
+    rsp <- rax         // Update stack pointer
+    rbx <- 42
+    [rax] <- rbx       // Store 42
+    rcx <- [rax]       // Load it back
+    rax <- rcx         // Return value
+} {
+    x0 <- sp
+    x0 <- x0 - 16
+    sp <- x0
+    x1 <- 42
+    [x0] <- x1
+    x2 <- [x0]
+    x0 <- x2
+} {
+    a0 <- sp
+    a0 <- a0 - 16
+    sp <- a0
+    a1 <- 42
+    [a0] <- a1
+    a2 <- [a0]
+    a0 <- a2
+}
+
+printf("Store/load test: %.0f\n", result)
+
+exit(0)

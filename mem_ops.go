@@ -219,6 +219,65 @@ func (o *Out) movByteRegToMemX86(src, base string, offset int) {
 	}
 }
 
+// MovImmToMem - Store immediate to memory [base+offset]
+func (o *Out) MovImmToMem(imm int64, base string, offset int) {
+	switch o.machine.Arch {
+	case ArchX86_64:
+		o.movImmToMemX86(imm, base, offset)
+	}
+}
+
+func (o *Out) movImmToMemX86(imm int64, base string, offset int) {
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "mov qword [%s+%d], %d: ", base, offset, imm)
+	}
+
+	baseReg, _ := GetRegister(o.machine.Arch, base)
+
+	// REX.W for 64-bit operation
+	rex := uint8(0x48)
+	if baseReg.Encoding >= 8 {
+		rex |= 0x01 // REX.B
+	}
+	o.Write(rex)
+
+	// 0xC7 - MOV r/m64, imm32 (sign-extended to 64-bit)
+	o.Write(0xC7)
+
+	// ModR/M byte with /0 (reg field = 000)
+	if offset == 0 && (baseReg.Encoding&7) != 5 { // rbp/r13 needs displacement
+		modrm := uint8(0x00) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 { // rsp/r12 needs SIB
+			o.Write(0x24)
+		}
+	} else if offset < 128 && offset >= -128 {
+		modrm := uint8(0x40) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.Write(uint8(offset))
+	} else {
+		modrm := uint8(0x80) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.WriteUnsigned(uint(offset))
+	}
+
+	// Write 32-bit immediate (sign-extended to 64-bit)
+	o.Write(uint8(imm & 0xFF))
+	o.Write(uint8((imm >> 8) & 0xFF))
+	o.Write(uint8((imm >> 16) & 0xFF))
+	o.Write(uint8((imm >> 24) & 0xFF))
+
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
+}
+
 // LeaMemToReg - Load effective address [base+offset] to register
 func (o *Out) LeaMemToReg(dst, base string, offset int) {
 	switch o.machine.Arch {

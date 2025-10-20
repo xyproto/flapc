@@ -2200,9 +2200,35 @@ func (p *Parser) parseUnsafeValue() interface{} {
 		leftValue = &NumberExpr{Value: val}
 		leftIsImmediate = true
 		p.nextToken() // skip number
+
+		// Check for cast: 42 as uint8
+		if p.current.Type == TOKEN_AS {
+			p.nextToken() // skip 'as'
+			if p.current.Type == TOKEN_IDENT {
+				castType := p.current.Value
+				p.nextToken() // skip type
+				// Wrap in cast expression
+				return &CastExpr{Expr: leftValue, Type: castType}
+			} else {
+				p.error("expected type after 'as'")
+			}
+		}
 	} else if p.current.Type == TOKEN_IDENT {
 		left = p.current.Value
 		p.nextToken() // skip register name
+
+		// Check for cast: rax as pointer
+		if p.current.Type == TOKEN_AS {
+			p.nextToken() // skip 'as'
+			if p.current.Type == TOKEN_IDENT {
+				castType := p.current.Value
+				p.nextToken() // skip type
+				// Return cast of variable reference
+				return &CastExpr{Expr: &IdentExpr{Name: left}, Type: castType}
+			} else {
+				p.error("expected type after 'as'")
+			}
+		}
 	} else {
 		p.error("expected number, register, memory load, or unary operator")
 	}
@@ -5264,6 +5290,10 @@ func (fc *FlapCompiler) compileRegisterAssignment(stmt *RegisterAssignStmt) {
 		// Memory load: rax <- [rbx] or rax <- u8 [rbx + 16]
 		fc.compileMemoryLoad(stmt.Register, v)
 
+	case *CastExpr:
+		// Type cast: rax <- 42 as uint8, rax <- ptr as pointer
+		fc.compileUnsafeCast(stmt.Register, v)
+
 	default:
 		compilerError("unsupported value type in register assignment: %T", v)
 	}
@@ -5372,13 +5402,42 @@ func (fc *FlapCompiler) compileMemoryLoad(dest string, load *MemoryLoad) {
 
 func (fc *FlapCompiler) compileMemoryStore(addr string, value interface{}) {
 	// Memory store: [addr] <- value
-	// TODO v1.4.0: Implement immediate stores
 	switch v := value.(type) {
 	case string:
 		// Store register: [rax] <- rbx
 		fc.out.MovRegToMem(v, addr, 0)
+	case *NumberExpr:
+		// Store immediate: [rax] <- 42
+		fc.out.MovImmToMem(int64(v.Value), addr, 0)
 	default:
-		compilerError("immediate memory stores not yet implemented in v1.3.0 (coming in v1.4.0)")
+		compilerError("unsupported memory store value type: %T", value)
+	}
+}
+
+func (fc *FlapCompiler) compileUnsafeCast(dest string, cast *CastExpr) {
+	// Handle type casts in unsafe blocks
+	// Examples: rax <- 42 as uint8, rax <- ptr as pointer
+
+	switch expr := cast.Expr.(type) {
+	case *NumberExpr:
+		// Immediate cast: rax <- 42 as uint8
+		val := int64(expr.Value)
+		// For integer types, just load the value (truncation happens naturally)
+		fc.out.MovImmToReg(dest, strconv.FormatInt(val, 10))
+
+	case *IdentExpr:
+		// Variable cast: rax <- ptr as pointer
+		// Load the variable value into dest
+		if offset, ok := fc.variables[expr.Name]; ok {
+			// Stack variable - load as float, convert to int
+			fc.out.MovMemToXmm("xmm0", "rbp", -offset)
+			fc.out.Cvttsd2si(dest, "xmm0")
+		} else {
+			compilerError("undefined variable in unsafe cast: %s", expr.Name)
+		}
+
+	default:
+		compilerError("unsupported cast expression type in unsafe block: %T", expr)
 	}
 }
 
