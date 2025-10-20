@@ -4,7 +4,7 @@
 
 **Version 1.4.0**
 
-Compiler for Flap, a functional programming language that compiles directly to native x86_64/ELF, and soon also to ARM64/Mach-O and RISC-V 64/ELF.
+Compiler for Flap, a functional programming language that compiles directly to native x86_64/ELF, for Linux. ARM64/Mach-O for macOS and RISC-V 64/ELF for Linux is in progress. 
 
 ## Technical Overview
 
