@@ -19,21 +19,27 @@
 - alloc() runtime implementation
 - Extended unsafe operations (multiply, bitwise, shifts, sized loads/stores, syscall)
 
-## Version 1.4.0 - Memory Management Runtime & C Imports
+## Version 1.4.0 - C Library FFI ✓ RELEASED
 
-### C Library Import Syntax ⭐ HIGH PRIORITY
-- [ ] Implement `import <lib> from C as <alias>` syntax
-  - [ ] Add lexer support for `from` keyword
-  - [ ] Parse C import statements
-  - [ ] Use pkg-config to discover library info
-  - [ ] Automatic dlopen/dlsym wrapper generation
-  - [ ] Example: `import sdl2 from C as sdl` → `sdl.SDL_Init(0 as uint32)`
-- [ ] Support for common libraries
-  - [ ] SDL2, SDL3
-  - [ ] Raylib
-  - [ ] OpenGL
-  - [ ] SQLite
-- [ ] Type inference for C function signatures
+### C Library Import Syntax ✅ COMPLETE
+- ✅ Auto-detect C imports (identifier without "/")
+- ✅ Namespace-based function calls: `import sdl2 as sdl` → `sdl.SDL_Init(0)`
+- ✅ PLT/GOT dynamic linking
+- ✅ System V AMD64 ABI calling convention
+- ✅ Support for up to 6 integer arguments
+- ✅ Automatic ELF DT_NEEDED library dependencies
+- ✅ Working with SDL2, SDL3, standard C library
+
+### Deferred to v1.4.1
+- [ ] pkg-config integration for library discovery
+- [ ] String arguments (C char pointers)
+- [ ] Struct and pointer support
+- [ ] Float return values
+- [ ] >6 argument support
+
+## Version 1.4.1 - Memory Management Runtime
+
+### Arena Allocator Implementation (Deferred from v1.3.0)
 
 ### Arena Allocator Implementation
 - [ ] Implement arena runtime (using malloc/realloc/free)

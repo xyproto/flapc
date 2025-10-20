@@ -328,69 +328,58 @@ func foldConstantExpr(expr Expression) Expression {
 func (p *Parser) parseImport() Statement {
 	p.nextToken() // skip 'import'
 
-	// Check if this is a C library import: import <lib> from C as <alias>
+	// Auto-detect import type:
+	// - String with "/" -> Flap package (Git): import "github.com/user/pkg" as alias
+	// - Identifier -> C library: import sdl2 as sdl
+
+	if p.current.Type == TOKEN_STRING {
+		// Git import: import "url@version" as alias
+		urlWithVersion := p.current.Value
+		p.nextToken()
+
+		// Parse URL and optional version (URL@version)
+		url := urlWithVersion
+		version := ""
+		if atIndex := strings.LastIndex(urlWithVersion, "@"); atIndex != -1 {
+			url = urlWithVersion[:atIndex]
+			version = urlWithVersion[atIndex+1:]
+		}
+
+		if p.current.Type != TOKEN_AS {
+			p.error("expected 'as' after import URL")
+		}
+		p.nextToken()
+
+		if p.current.Type != TOKEN_IDENT && p.current.Type != TOKEN_STAR {
+			p.error("expected alias or '*' after 'as'")
+		}
+		alias := p.current.Value
+		p.nextToken()
+
+		return &ImportStmt{URL: url, Version: version, Alias: alias}
+	}
+
 	if p.current.Type == TOKEN_IDENT {
-		// Could be: import sdl2 from C as sdl
+		// C library import: import sdl2 as sdl
 		libName := p.current.Value
 		p.nextToken()
 
-		if p.current.Type == TOKEN_FROM {
-			// This is a C import
-			p.nextToken() // skip 'from'
-
-			// Expect 'C'
-			if p.current.Type != TOKEN_IDENT || p.current.Value != "C" {
-				p.error("expected 'C' after 'from' in C library import")
-			}
-			p.nextToken() // skip 'C'
-
-			// Expect 'as'
-			if p.current.Type != TOKEN_AS {
-				p.error("expected 'as' after 'from C'")
-			}
-			p.nextToken() // skip 'as'
-
-			// Get alias
-			if p.current.Type != TOKEN_IDENT {
-				p.error("expected alias after 'as'")
-			}
-			alias := p.current.Value
-			p.nextToken()
-
-			return &CImportStmt{Library: libName, Alias: alias}
+		if p.current.Type != TOKEN_AS {
+			p.error("expected 'as' after library name")
 		}
+		p.nextToken()
 
-		// Not a C import, must be malformed
-		p.error("expected 'from C' or string URL after 'import'")
+		if p.current.Type != TOKEN_IDENT {
+			p.error("expected alias after 'as'")
+		}
+		alias := p.current.Value
+		p.nextToken()
+
+		return &CImportStmt{Library: libName, Alias: alias}
 	}
 
-	// Git import: import "url@version" as alias
-	if p.current.Type != TOKEN_STRING {
-		p.error("expected library name or git URL string after 'import'")
-	}
-	urlWithVersion := p.current.Value
-	p.nextToken()
-
-	// Parse URL and optional version (URL@version)
-	url := urlWithVersion
-	version := ""
-	if atIndex := strings.LastIndex(urlWithVersion, "@"); atIndex != -1 {
-		url = urlWithVersion[:atIndex]
-		version = urlWithVersion[atIndex+1:]
-	}
-
-	if p.current.Type != TOKEN_AS {
-		p.error("expected 'as' after import URL")
-	}
-	p.nextToken()
-
-	if p.current.Type != TOKEN_IDENT && p.current.Type != TOKEN_STAR {
-		p.error("expected alias or '*' after 'as'")
-	}
-	alias := p.current.Value
-	p.nextToken()
-
-	return &ImportStmt{URL: url, Version: version, Alias: alias}
+	p.error("expected library name or git URL string after 'import'")
+	return nil
 }
 
 func (p *Parser) parseArenaStmt() *ArenaStmt {
@@ -2535,6 +2524,30 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	}
 	if needsLibm {
 		ds.AddNeeded("libm.so.6")
+	}
+
+	// Add C library dependencies from imports
+	for libName := range fc.cLibHandles {
+		if libName != "linked" { // Skip our marker value
+			// Skip "c" - standard C library functions are already in libc.so.6
+			if libName == "c" {
+				continue
+			}
+
+			// Add .so.X suffix if not present
+			libSoName := libName
+			if !strings.Contains(libSoName, ".so") {
+				// Common library naming: libsdl2 -> libSDL2.so, sdl2 -> libSDL2.so
+				if !strings.HasPrefix(libSoName, "lib") {
+					libSoName = "lib" + libSoName
+				}
+				libSoName += ".so"
+			}
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Adding C library dependency: %s\n", libSoName)
+			}
+			ds.AddNeeded(libSoName)
+		}
 	}
 
 	// Note: dlopen/dlsym/dlclose are part of libc.so.6 on modern glibc (2.34+)
@@ -7353,11 +7366,100 @@ func (fc *FlapCompiler) compileTailCall(call *CallExpr) {
 	fc.out.JumpUnconditional(jumpOffset)
 }
 
+func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, args []Expression) {
+	// Generate C FFI call
+	// Strategy for v1.4.0:
+	// 1. Marshal arguments according to System V AMD64 ABI
+	// 2. Call function using PLT (dynamic linking)
+	// 3. Convert result to float64 in xmm0
+	//
+	// Note: Library is linked dynamically via DT_NEEDED in ELF
+
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Generating C FFI call: %s.%s with %d args\n", libName, funcName, len(args))
+	}
+
+	// Track library dependency for ELF generation
+	fc.cLibHandles[libName] = "linked" // Mark as needing dynamic linking
+
+	// Track function usage for PLT generation and call order patching
+	fc.trackFunctionCall(funcName)
+
+	// Marshal arguments according to System V AMD64 ABI:
+	// Integer/pointer args: rdi, rsi, rdx, rcx, r8, r9, then stack
+	// Float args: xmm0-xmm7, then stack
+
+	// For simplicity in v1.4.0: support up to 6 integer arguments
+	if len(args) > 6 {
+		compilerError("C FFI calls with >6 arguments not yet supported in v1.4.0")
+	}
+
+	// System V AMD64 ABI register sequence for integer/pointer arguments
+	intArgRegs := []string{"rdi", "rsi", "rdx", "rcx", "r8", "r9"}
+
+	// Allocate stack space to save arguments temporarily
+	if len(args) > 0 {
+		argStackOffset := len(args) * 8
+		fc.out.SubImmFromReg("rsp", int64(argStackOffset))
+
+		// Compile each argument and store on stack
+		for i, arg := range args {
+			// Compile argument expression (result in xmm0)
+			fc.compileExpression(arg)
+
+			// Convert float64 to integer (Flap uses float64 for all values)
+			// C functions typically expect integer types (int, uint32, etc.)
+			fc.out.Cvttsd2si("rax", "xmm0")
+
+			// Store on stack at offset i*8
+			fc.out.MovRegToMem("rax", "rsp", i*8)
+		}
+
+		// Load arguments from stack into ABI registers
+		for i := 0; i < len(args) && i < 6; i++ {
+			fc.out.MovMemToReg(intArgRegs[i], "rsp", i*8)
+		}
+
+		// Clean up argument stack space
+		fc.out.AddImmToReg("rsp", int64(argStackOffset))
+	}
+
+	// Align stack to 16 bytes before call (System V ABI requirement)
+	// The stack must be 16-byte aligned at function call entry
+	fc.out.SubImmFromReg("rsp", 8)
+
+	// Generate PLT call to external C function
+	fc.eb.GenerateCallInstruction(funcName)
+
+	// Restore stack alignment
+	fc.out.AddImmToReg("rsp", 8)
+
+	// Convert result to float64 for Flap
+	// Assuming integer return value (in rax)
+	// TODO v1.4.1: Handle float returns, pointers, etc.
+	fc.out.Cvtsi2sd("xmm0", "rax")
+}
+
 func (fc *FlapCompiler) compileCall(call *CallExpr) {
 	// Check for "me" self-reference (tail recursion candidate)
 	if call.Function == "me" && fc.currentLambda != nil {
 		fc.compileTailCall(call)
 		return
+	}
+
+	// Check if this is a C library function call (namespace.function)
+	if strings.Contains(call.Function, ".") {
+		parts := strings.Split(call.Function, ".")
+		if len(parts) == 2 {
+			namespace := parts[0]
+			funcName := parts[1]
+
+			// Check if namespace is a registered C import
+			if libName, ok := fc.cImports[namespace]; ok {
+				fc.compileCFunctionCall(libName, funcName, call.Args)
+				return
+			}
+		}
 	}
 
 	// Check if this is a stored function (variable containing function pointer)

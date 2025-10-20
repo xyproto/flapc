@@ -1,0 +1,11 @@
+// Test C FFI with standard library function (no external dependencies)
+// getpid() returns the process ID
+
+import c as libc
+
+pid := libc.getpid()
+
+println("Process ID:")
+println(pid)
+
+exit(0)

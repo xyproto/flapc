@@ -1,0 +1,10 @@
+// Test C library FFI (Foreign Function Interface)
+import sdl2 as sdl
+
+// Test calling SDL_Init (should return 0 on success)
+result := sdl.SDL_Init(0)
+
+println("SDL_Init result:")
+println(result)
+
+exit(0)

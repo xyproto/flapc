@@ -1,6 +1,6 @@
 # The Flap Programming Language
 
-### Version 1.3.0
+### Version 1.4.0
 
 ## Language Philosophy
 
@@ -1139,6 +1139,102 @@ import "github.com/xyproto/flap_math@v1.0.0" as math
 import "github.com/xyproto/flap_math@latest" as math
 import "github.com/xyproto/flap_math@HEAD" as math
 ```
+
+### C Library Imports
+
+**Status (v1.4.0):** C library FFI is fully functional for basic use cases.
+
+Flap can call C library functions directly using a simple import syntax. The compiler automatically handles dynamic linking via PLT/GOT on Linux.
+
+**Syntax:**
+
+```flap
+// Import C library (auto-detected by lack of "/" in name)
+import sdl2 as sdl
+import raylib as rl
+import c as libc  // Standard C library
+
+// Call C functions with namespace prefix
+sdl.SDL_Init(0)
+window := sdl.SDL_CreateWindow("Game", 100, 100, 800, 600, 0)
+
+// Standard library functions
+pid := libc.getpid()
+time := libc.time(0)
+```
+
+**How It Works:**
+
+1. **Auto-detection**: Imports without `/` are treated as C libraries, imports with URLs are Flap packages
+2. **Dynamic linking**: C libraries are added to ELF `DT_NEEDED` (e.g., `libsdl2.so`)
+3. **PLT calls**: Functions are called through the Procedure Linkage Table
+4. **ABI compatibility**: Arguments are marshaled to System V AMD64 calling convention
+
+**Current Limitations (v1.4.0):**
+
+- Maximum 6 arguments per function call
+- Arguments are converted to integers (uint32/int64)
+- Return values are converted to Flap's `float64`
+- No support for strings, structs, or pointers yet
+
+**Example: SDL2 Game Initialization**
+
+```flap
+import sdl2 as sdl
+
+// Initialize SDL
+result := sdl.SDL_Init(0x00000020)  // SDL_INIT_VIDEO = 0x20
+result > 0 {
+    println("SDL_Init failed")
+    exit(1)
+}
+
+// Create window
+window := sdl.SDL_CreateWindow(
+    "My Game",  // title (will be supported in v1.4.1)
+    100,        // x
+    100,        // y
+    800,        // width
+    600,        // height
+    0           // flags
+)
+
+// Game loop would go here...
+
+sdl.SDL_Quit()
+exit(0)
+```
+
+**Example: Standard C Library**
+
+```flap
+import c as libc
+
+pid := libc.getpid()
+println("Process ID:")
+println(pid)
+
+time := libc.time(0)
+println("Unix timestamp:")
+println(time)
+```
+
+**Library Naming:**
+
+The compiler automatically converts library names:
+- `sdl2` → `libsdl2.so`
+- `raylib` → `libraylib.so`
+- `c` → (uses already-linked `libc.so.6`)
+- `m` → (math library, link automatically if needed)
+
+**Roadmap (v1.4.1+):**
+
+- String arguments (C char pointers)
+- Struct support
+- Pointer handling
+- Float return values
+- pkg-config integration for automatic library discovery
+- >6 argument support
 
 ### Private Functions
 

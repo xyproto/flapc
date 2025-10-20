@@ -1,5 +1,5 @@
 // Test C library import syntax
-import sdl2 from C as sdl
+import sdl2 as sdl
 
 println("C import syntax test")
 exit(0)
