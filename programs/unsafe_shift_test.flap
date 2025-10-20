@@ -1,0 +1,63 @@
+// Test unsafe blocks with shift operations
+
+// Test shift left by immediate
+result1 := unsafe {
+    rax <- 5
+    rax <- rax << 2
+} {
+    x0 <- 5
+    x0 <- x0 << 2
+} {
+    a0 <- 5
+    a0 <- a0 << 2
+}
+
+printf("5 << 2 = %.0f\n", result1)
+
+// Test shift right by immediate
+result2 := unsafe {
+    rax <- 32
+    rax <- rax >> 3
+} {
+    x0 <- 32
+    x0 <- x0 >> 3
+} {
+    a0 <- 32
+    a0 <- a0 >> 3
+}
+
+printf("32 >> 3 = %.0f\n", result2)
+
+// Test shift left by register
+result3 := unsafe {
+    rax <- 7
+    rbx <- 4
+    rax <- rax << rbx
+} {
+    x0 <- 7
+    x1 <- 4
+    x0 <- x0 << x1
+} {
+    a0 <- 7
+    a1 <- 4
+    a0 <- a0 << a1
+}
+
+printf("7 << 4 = %.0f\n", result3)
+
+// Test shift right by register
+result4 := unsafe {
+    rax <- 128
+    rbx <- 2
+    rax <- rax >> rbx
+} {
+    x0 <- 128
+    x1 <- 2
+    x0 <- x0 >> x1
+} {
+    a0 <- 128
+    a1 <- 2
+    a0 <- a0 >> a1
+}
+
+printf("128 >> 2 = %.0f\n", result4)

@@ -24,7 +24,8 @@ var skipPrograms = map[string]bool{
 
 // Expected exit codes (default is 0 if not specified)
 var expectedExitCodes = map[string]int{
-	"first": 0,
+	"first":         0,
+	"div_zero_test": 1, // Tests division-by-zero error handling
 }
 
 // TestFlapPrograms is an integration test that compiles and runs all .flap programs

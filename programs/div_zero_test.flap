@@ -1,0 +1,4 @@
+// Test division by zero error handling
+
+result := 100 / 0
+println(result)

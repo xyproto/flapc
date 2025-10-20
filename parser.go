@@ -4011,10 +4011,75 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.Write(0xA9) // Opcode: VFMADD213SD
 			fc.out.Write(0xC1) // ModR/M: 11 000 001 (xmm0, xmm0, xmm1)
 		case "/":
+			// Check for division by zero (xmm1 == 0.0)
+			fc.out.XorpdXmm("xmm2", "xmm2")  // xmm2 = 0.0
+			fc.out.Ucomisd("xmm1", "xmm2")   // Compare divisor with 0
+
+			// Jump to division if not zero
+			jumpPos := fc.eb.text.Len()
+			fc.out.JumpConditional(JumpNotEqual, 0) // Placeholder, will patch later
+
+			// Division by zero: print error and exit
+			errorMsg := "Error: division by zero\n"
+			errorLabel := fmt.Sprintf("div_zero_error_%d", fc.stringCounter)
+			fc.stringCounter++
+			fc.eb.Define(errorLabel, errorMsg)
+
+			// syscall: write(2, msg, len)
+			fc.out.MovImmToReg("rax", "1")                              // syscall number for write
+			fc.out.MovImmToReg("rdi", "2")                              // fd = 2 (stderr)
+			fc.out.LeaSymbolToReg("rsi", errorLabel)                    // msg = error string
+			fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", len(errorMsg))) // len
+			fc.eb.Emit("syscall")
+
+			// syscall: exit(1)
+			fc.out.MovImmToReg("rax", "60") // syscall number for exit
+			fc.out.MovImmToReg("rdi", "1")  // exit code = 1
+			fc.eb.Emit("syscall")
+
+			// Patch jump to here (safe division)
+			safePos := fc.eb.text.Len()
+			jumpEndPos := jumpPos + 6
+			offset := int32(safePos - jumpEndPos)
+			fc.patchJumpImmediate(jumpPos+2, offset)
+
 			fc.out.DivsdXmm("xmm0", "xmm1") // divsd xmm0, xmm1
 		case "mod", "%":
 			// Modulo: a mod b = a - b * floor(a / b)
 			// xmm0 = dividend (a), xmm1 = divisor (b)
+
+			// Check for modulo by zero (xmm1 == 0.0)
+			fc.out.XorpdXmm("xmm4", "xmm4")  // xmm4 = 0.0
+			fc.out.Ucomisd("xmm1", "xmm4")   // Compare divisor with 0
+
+			// Jump to modulo if not zero
+			jumpPos := fc.eb.text.Len()
+			fc.out.JumpConditional(JumpNotEqual, 0) // Placeholder
+
+			// Modulo by zero: print error and exit
+			errorMsg := "Error: modulo by zero\n"
+			errorLabel := fmt.Sprintf("mod_zero_error_%d", fc.stringCounter)
+			fc.stringCounter++
+			fc.eb.Define(errorLabel, errorMsg)
+
+			// syscall: write(2, msg, len)
+			fc.out.MovImmToReg("rax", "1")
+			fc.out.MovImmToReg("rdi", "2")
+			fc.out.LeaSymbolToReg("rsi", errorLabel)
+			fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", len(errorMsg)))
+			fc.eb.Emit("syscall")
+
+			// syscall: exit(1)
+			fc.out.MovImmToReg("rax", "60")
+			fc.out.MovImmToReg("rdi", "1")
+			fc.eb.Emit("syscall")
+
+			// Patch jump to here (safe modulo)
+			safePos := fc.eb.text.Len()
+			jumpEndPos := jumpPos + 6
+			offset := int32(safePos - jumpEndPos)
+			fc.patchJumpImmediate(jumpPos+2, offset)
+
 			fc.out.MovXmmToXmm("xmm2", "xmm0") // Save dividend in xmm2
 			fc.out.MovXmmToXmm("xmm3", "xmm1") // Save divisor in xmm3
 			fc.out.DivsdXmm("xmm0", "xmm1")    // xmm0 = a / b
@@ -5276,10 +5341,22 @@ func (fc *FlapCompiler) compileRegisterOp(dest string, op *RegisterOp) {
 		case *NumberExpr:
 			fc.out.DivRegByImm(dest, int64(r.Value))
 		}
-	// TODO v1.5.0: Implement remaining operations (<<, >>)
-	// These require new instruction file (shift.go)
+	case "<<":
+		switch r := op.Right.(type) {
+		case string:
+			fc.out.ShlRegByReg(dest, r)
+		case *NumberExpr:
+			fc.out.ShlRegByImm(dest, int64(r.Value))
+		}
+	case ">>":
+		switch r := op.Right.(type) {
+		case string:
+			fc.out.ShrRegByReg(dest, r)
+		case *NumberExpr:
+			fc.out.ShrRegByImm(dest, int64(r.Value))
+		}
 	default:
-		compilerError("operator %s not yet implemented in v1.4.0 (coming in v1.5.0)", op.Operator)
+		compilerError("operator %s not yet implemented in v1.5.0", op.Operator)
 	}
 }
 
