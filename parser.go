@@ -5244,9 +5244,12 @@ func (fc *FlapCompiler) compileUnsafeExpr(expr *UnsafeExpr) {
 }
 
 func (fc *FlapCompiler) compileSyscall() {
-	// TODO v1.4.0: Emit syscall instruction
-	// fc.out.Syscall()
-	compilerError("syscall not yet implemented in v1.3.0")
+	// Emit raw syscall instruction
+	// Registers must be set up before calling syscall:
+	// x86-64: rax=syscall#, rdi=arg1, rsi=arg2, rdx=arg3, r10=arg4, r8=arg5, r9=arg6
+	// ARM64: x8=syscall#, x0-x6=args
+	// RISC-V: a7=syscall#, a0-a6=args
+	fc.out.Syscall()
 }
 
 func (fc *FlapCompiler) compileRegisterAssignment(stmt *RegisterAssignStmt) {
@@ -5416,7 +5419,7 @@ func (fc *FlapCompiler) compileMemoryStore(addr string, value interface{}) {
 
 func (fc *FlapCompiler) compileUnsafeCast(dest string, cast *CastExpr) {
 	// Handle type casts in unsafe blocks
-	// Examples: rax <- 42 as uint8, rax <- ptr as pointer
+	// Examples: rax <- 42 as uint8, rax <- buffer as pointer, rax <- msg as cstr
 
 	switch expr := cast.Expr.(type) {
 	case *NumberExpr:
@@ -5426,12 +5429,26 @@ func (fc *FlapCompiler) compileUnsafeCast(dest string, cast *CastExpr) {
 		fc.out.MovImmToReg(dest, strconv.FormatInt(val, 10))
 
 	case *IdentExpr:
-		// Variable cast: rax <- ptr as pointer
-		// Load the variable value into dest
+		// Variable cast: rax <- buffer as pointer, rax <- msg as cstr
+		// Load the variable value
 		if offset, ok := fc.variables[expr.Name]; ok {
-			// Stack variable - load as float, convert to int
+			// Stack variable - load as float64 in xmm0
 			fc.out.MovMemToXmm("xmm0", "rbp", -offset)
-			fc.out.Cvttsd2si(dest, "xmm0")
+
+			// Handle specific cast types
+			if cast.Type == "cstr" || cast.Type == "cstring" {
+				// Convert Flap string to C null-terminated string
+				// xmm0 contains pointer to Flap string map
+				fc.trackFunctionCall("flap_string_to_cstr")
+				fc.out.CallSymbol("flap_string_to_cstr")
+				// Result is C string pointer in rax
+				if dest != "rax" {
+					fc.out.MovRegToReg(dest, "rax")
+				}
+			} else {
+				// For other types (pointer, integer types), convert to int
+				fc.out.Cvttsd2si(dest, "xmm0")
+			}
 		} else {
 			compilerError("undefined variable in unsafe cast: %s", expr.Name)
 		}

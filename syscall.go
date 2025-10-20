@@ -1,5 +1,68 @@
 package main
 
+import (
+	"fmt"
+	"os"
+)
+
+// Syscall generates a raw syscall instruction for unsafe blocks
+func (o *Out) Syscall() {
+	switch o.machine.Arch {
+	case ArchX86_64:
+		o.syscallX86()
+	case ArchARM64:
+		o.syscallARM64()
+	case ArchRiscv64:
+		o.syscallRISCV()
+	}
+}
+
+// x86-64: syscall instruction
+func (o *Out) syscallX86() {
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "syscall: ")
+	}
+	o.Write(0x0F)
+	o.Write(0x05)
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
+}
+
+// ARM64: svc #0
+func (o *Out) syscallARM64() {
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "svc #0: ")
+	}
+	// SVC #0: 1101 0100 000 imm16 000 01
+	// Encoding: 0xD4000001
+	instr := uint32(0xD4000001)
+	o.Write(uint8(instr & 0xFF))
+	o.Write(uint8((instr >> 8) & 0xFF))
+	o.Write(uint8((instr >> 16) & 0xFF))
+	o.Write(uint8((instr >> 24) & 0xFF))
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
+}
+
+// RISC-V: ecall
+func (o *Out) syscallRISCV() {
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "ecall: ")
+	}
+	// ECALL: 000000000000 00000 000 00000 1110011
+	// Encoding: 0x00000073
+	instr := uint32(0x00000073)
+	o.Write(uint8(instr & 0xFF))
+	o.Write(uint8((instr >> 8) & 0xFF))
+	o.Write(uint8((instr >> 16) & 0xFF))
+	o.Write(uint8((instr >> 24) & 0xFF))
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
+}
+
 // SysWrite generates a write system call using architecture-specific registers
 func (eb *ExecutableBuilder) SysWrite(what_data string, what_data_len ...string) {
 	switch eb.platform.Arch {
