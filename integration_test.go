@@ -22,9 +22,10 @@ var compileExpectations = map[string]string{
 var skipPrograms = map[string]bool{}
 
 // Programs to compile but not run (require external libraries beyond libc/libm)
-// Note: SDL3 and Raylib5 are now installed in CI, so these tests can run
+// SDL3 is installed in CI, but these may fail to run if libraries missing
 var compileOnlyPrograms = map[string]bool{
-	// All SDL3/Raylib tests should now run in CI
+	// SDL3 tests should run in CI (SDL3 installed from source/brew)
+	// Raylib tests are compile-only (Raylib is optional, may not be available)
 }
 
 // Programs to skip on ARM64 (macOS) - C import not yet implemented

@@ -17,15 +17,36 @@ jobs:
       with:
         go-version: ${{ matrix.go-version }}
 
-    - name: Install SDL3 and Raylib5
+    - name: Install SDL3
       run: |
         if [ "$RUNNER_OS" == "Linux" ]; then
+          # SDL3 is available in Ubuntu 25.04+, but not 24.04
+          # Install from source for Ubuntu 24.04
           sudo apt-get update
-          sudo apt-get install -y libsdl3-dev raylib
+          sudo apt-get install -y cmake libx11-dev libxext-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev
+          git clone --depth 1 --branch release-3.2.0 https://github.com/libsdl-org/SDL.git /tmp/SDL3
+          cd /tmp/SDL3
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+          sudo cmake --install build
+          sudo ldconfig
         elif [ "$RUNNER_OS" == "macOS" ]; then
-          brew install sdl3 raylib
+          brew install sdl3
         fi
       shell: bash
+
+    - name: Install Raylib5 (optional)
+      run: |
+        if [ "$RUNNER_OS" == "macOS" ]; then
+          brew install raylib || true
+        elif [ "$RUNNER_OS" == "Linux" ]; then
+          # Try to install from PPA, but don't fail if unavailable
+          sudo add-apt-repository -y ppa:texus/raylib || true
+          sudo apt-get update || true
+          sudo apt-get install -y libraylib5-dev || true
+        fi
+      shell: bash
+      continue-on-error: true
 
     - name: Build
       run: go build -v
