@@ -20,8 +20,15 @@ jobs:
     - name: Install SDL3
       run: |
         if [ "$RUNNER_OS" == "Linux" ]; then
+          # SDL3 is only in Ubuntu 25.04+, build from source for 24.04
           sudo apt-get update
-          sudo apt-get install -y libsdl3 libsdl3-dev
+          sudo apt-get install -y cmake libx11-dev libxext-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev
+          git clone --depth 1 --branch release-3.2.0 https://github.com/libsdl-org/SDL.git /tmp/SDL3
+          cd /tmp/SDL3
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+          sudo cmake --install build
+          sudo ldconfig
         elif [ "$RUNNER_OS" == "macOS" ]; then
           brew install sdl3
         fi
