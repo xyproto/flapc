@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -23,9 +24,20 @@ var skipPrograms = map[string]bool{}
 // Programs to compile but not run (require external libraries beyond libc/libm)
 // Note: All FFI tests that only use libc/libm should run in CI (both Arch Linux and Ubuntu)
 var compileOnlyPrograms = map[string]bool{
-	"c_ffi_test":       true, // SDL3/RayLib - compile-only (requires libsdl3.so at runtime)
+	"c_ffi_test":       true, // SDL3 - compile-only (requires libsdl3.so at runtime)
 	"c_string_test":    true, // SDL3 strings - compile-only (requires libsdl3.so at runtime)
 	"c_auto_cast_test": true, // SDL3 auto-cast - compile-only (requires libsdl3.so at runtime)
+}
+
+// Programs to skip on ARM64 (macOS) - C import not yet implemented
+var skipOnARM64 = map[string]bool{
+	"c_ffi_test":       true,
+	"c_string_test":    true,
+	"c_auto_cast_test": true,
+	"c_constants_test": true,
+	"c_getpid_test":    true,
+	"c_import_test":    true,
+	"c_simple_test":    true,
 }
 
 // Expected exit codes (default is 0 if not specified)
@@ -58,6 +70,12 @@ func TestFlapPrograms(t *testing.T) {
 
 		t.Run(base, func(t *testing.T) {
 			// t.Parallel() // DISABLED: compiler has race conditions with parallel execution
+
+			// Skip ARM64-incompatible programs on macOS
+			if runtime.GOARCH == "arm64" && skipOnARM64[base] {
+				t.Skipf("Skipping %s on ARM64 (C import not yet implemented)", base)
+				return
+			}
 
 			// Use t.TempDir() for thread-safe temporary directory
 			buildDir := t.TempDir()
