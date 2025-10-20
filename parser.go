@@ -435,6 +435,98 @@ func (p *Parser) tryParseNonParenLambda() Expression {
 	return nil
 }
 
+// parseFString parses an f-string and returns an FStringExpr
+// F-strings have the format: f"text {expr} more text {expr2}"
+// We convert this to alternating string literals and expressions
+func (p *Parser) parseFString() Expression {
+	raw := p.current.Value // Raw f-string content without f" and "
+
+	var parts []Expression
+	currentPos := 0
+
+	for currentPos < len(raw) {
+		// Find next {
+		nextBrace := -1
+		for i := currentPos; i < len(raw); i++ {
+			if raw[i] == '{' {
+				// Check if it's escaped {{
+				if i+1 < len(raw) && raw[i+1] == '{' {
+					i++ // Skip the second {
+					continue
+				}
+				nextBrace = i
+				break
+			}
+		}
+
+		// If no more braces, add remaining text as string literal
+		if nextBrace == -1 {
+			if currentPos < len(raw) {
+				text := raw[currentPos:]
+				// Process escape sequences and unescape {{  }}
+				text = strings.ReplaceAll(text, "{{", "{")
+				text = strings.ReplaceAll(text, "}}", "}")
+				text = processEscapeSequences(text)
+				parts = append(parts, &StringExpr{Value: text})
+			}
+			break
+		}
+
+		// Add text before { as string literal
+		if nextBrace > currentPos {
+			text := raw[currentPos:nextBrace]
+			// Process escape sequences and unescape {{ }}
+			text = strings.ReplaceAll(text, "{{", "{")
+			text = strings.ReplaceAll(text, "}}", "}")
+			text = processEscapeSequences(text)
+			parts = append(parts, &StringExpr{Value: text})
+		}
+
+		// Find matching }
+		braceDepth := 1
+		exprStart := nextBrace + 1
+		exprEnd := exprStart
+		for exprEnd < len(raw) && braceDepth > 0 {
+			if raw[exprEnd] == '{' {
+				braceDepth++
+			} else if raw[exprEnd] == '}' {
+				braceDepth--
+			}
+			if braceDepth > 0 {
+				exprEnd++
+			}
+		}
+
+		if braceDepth != 0 {
+			p.error("unclosed { in f-string")
+			return &StringExpr{Value: raw}
+		}
+
+		// Parse the expression inside {...}
+		exprCode := raw[exprStart:exprEnd]
+		exprLexer := NewLexer(exprCode)
+		exprParser := NewParser(exprCode)
+		exprParser.lexer = exprLexer
+		exprParser.current = exprLexer.NextToken()
+		exprParser.peek = exprLexer.NextToken()
+
+		expr := exprParser.parseExpression()
+
+		parts = append(parts, expr)
+
+		currentPos = exprEnd + 1 // Skip past the }
+	}
+
+	// If only one part and it's a string, return a regular StringExpr
+	if len(parts) == 1 {
+		if strExpr, ok := parts[0].(*StringExpr); ok {
+			return strExpr
+		}
+	}
+
+	return &FStringExpr{Parts: parts}
+}
+
 func (p *Parser) parseAssignment() *AssignStmt {
 	name := p.current.Value
 	p.nextToken() // skip identifier
@@ -1291,6 +1383,9 @@ func (p *Parser) parsePrimary() Expression {
 
 	case TOKEN_STRING:
 		return &StringExpr{Value: p.current.Value}
+
+	case TOKEN_FSTRING:
+		return p.parseFString()
 
 	case TOKEN_IDENT:
 		name := p.current.Value
@@ -2658,6 +2753,9 @@ func (fc *FlapCompiler) getExprType(expr Expression) string {
 	case *SliceExpr:
 		// Slicing preserves the type of the list
 		return fc.getExprType(e.List)
+	case *FStringExpr:
+		// F-strings are always strings
+		return "string"
 	default:
 		return "unknown"
 	}
@@ -2704,7 +2802,8 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		// Build map data: count followed by key-value pairs
 		var mapData []byte
 
-		// Count (number of characters) - can be 0 for empty strings
+		// Count (number of UTF-8 bytes) - can be 0 for empty strings
+		// Note: len(e.Value) returns byte count in Go, not rune count
 		count := float64(len(e.Value))
 		countBits := uint64(0)
 		*(*float64)(unsafe.Pointer(&countBits)) = count
@@ -2712,9 +2811,10 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			mapData = append(mapData, byte((countBits>>(i*8))&ByteMask))
 		}
 
-		// Add each character as a key-value pair (none for empty strings)
-		for idx, ch := range e.Value {
-			// Key: character index as float64
+		// Add each UTF-8 byte as a key-value pair (none for empty strings)
+		// IMPORTANT: Iterate over bytes, not runes, to preserve UTF-8 encoding
+		for idx := 0; idx < len(e.Value); idx++ {
+			// Key: byte index as float64
 			keyVal := float64(idx)
 			keyBits := uint64(0)
 			*(*float64)(unsafe.Pointer(&keyBits)) = keyVal
@@ -2722,12 +2822,12 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				mapData = append(mapData, byte((keyBits>>(i*8))&ByteMask))
 			}
 
-			// Value: character code as float64
-			charVal := float64(ch)
-			charBits := uint64(0)
-			*(*float64)(unsafe.Pointer(&charBits)) = charVal
+			// Value: UTF-8 byte value as float64 (0-255)
+			byteVal := float64(e.Value[idx])
+			byteBits := uint64(0)
+			*(*float64)(unsafe.Pointer(&byteBits)) = byteVal
 			for i := 0; i < 8; i++ {
-				mapData = append(mapData, byte((charBits>>(i*8))&ByteMask))
+				mapData = append(mapData, byte((byteBits>>(i*8))&ByteMask))
 			}
 		}
 
@@ -2738,6 +2838,72 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		fc.out.MovRegToMem("rax", "rsp", 0)
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
 		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+	case *FStringExpr:
+		// F-string: concatenate all parts
+		if len(e.Parts) == 0 {
+			// Empty f-string, return empty string
+			fc.compileExpression(&StringExpr{Value: ""})
+			return
+		}
+
+		// Compile first part
+		// Check if it needs str() conversion using type checking
+		firstPart := e.Parts[0]
+		if fc.getExprType(firstPart) == "string" {
+			// Already a string - compile directly
+			fc.compileExpression(firstPart)
+		} else {
+			// Not a string - wrap with str() for conversion
+			fc.compileExpression(&CallExpr{
+				Function: "str",
+				Args:     []Expression{firstPart},
+			})
+		}
+
+		// Concatenate remaining parts
+		for i := 1; i < len(e.Parts); i++ {
+			// Save left pointer (current result) to stack
+			fc.out.SubImmFromReg("rsp", 16)
+			fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+			// Evaluate right string (next part)
+			part := e.Parts[i]
+			if fc.getExprType(part) == "string" {
+				// Already a string - compile directly
+				fc.compileExpression(part)
+			} else {
+				// Not a string - wrap with str() for conversion
+				fc.compileExpression(&CallExpr{
+					Function: "str",
+					Args:     []Expression{part},
+				})
+			}
+
+			// Save right pointer to stack
+			fc.out.SubImmFromReg("rsp", 16)
+			fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+			// Load arguments: rdi = left ptr, rsi = right ptr
+			fc.out.MovMemToReg("rdi", "rsp", 16) // left ptr from [rsp+16]
+			fc.out.MovMemToReg("rsi", "rsp", 0)  // right ptr from [rsp]
+			fc.out.AddImmToReg("rsp", 32)        // clean up both stack slots
+
+			// Align stack for call
+			fc.out.SubImmFromReg("rsp", StackSlotSize)
+
+			// Call _flap_string_concat(rdi, rsi) -> rax
+			fc.out.CallSymbol("_flap_string_concat")
+
+			// Restore stack alignment
+			fc.out.AddImmToReg("rsp", StackSlotSize)
+
+			// Convert result pointer from rax back to xmm0
+			fc.out.SubImmFromReg("rsp", StackSlotSize)
+			fc.out.MovRegToMem("rax", "rsp", 0)
+			fc.out.MovMemToXmm("xmm0", "rsp", 0)
+			fc.out.AddImmToReg("rsp", StackSlotSize)
+		}
 
 	case *IdentExpr:
 		// Load variable from stack into xmm0
@@ -6532,7 +6698,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		formatArg := call.Args[0]
 		strExpr, ok := formatArg.(*StringExpr)
 		if !ok {
-			compilerError("printf() first argument must be a string literal")
+			compilerError("printf() first argument must be a string literal (got %T)", formatArg)
 		}
 
 		// Process format string: %v -> %g (smart float), %b -> %s (boolean), %s -> string

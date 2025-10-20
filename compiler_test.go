@@ -161,9 +161,15 @@ func TestExecutableGeneration(t *testing.T) {
 	eb.WriteELFHeader()
 
 	// Write to file
-	err = os.WriteFile(tmpfilePath, eb.Bytes(), 0755)
+	err = os.WriteFile(tmpfilePath, eb.Bytes(), 0644)
 	if err != nil {
 		t.Fatalf("Failed to write executable: %v", err)
+	}
+
+	// Set executable permissions
+	err = os.Chmod(tmpfilePath, 0755)
+	if err != nil {
+		t.Fatalf("Failed to set executable permissions: %v", err)
 	}
 
 	// Check that it's a valid ELF

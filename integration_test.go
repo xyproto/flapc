@@ -19,8 +19,7 @@ var compileExpectations = map[string]string{
 
 // Programs to skip
 var skipPrograms = map[string]bool{
-	"fstring_test":  true, // F-strings not yet implemented (TODO P1)
-	"match_unicode": true, // Has os.Exit in compiler code generation
+	// All tests passing!
 }
 
 // Expected exit codes (default is 0 if not specified)
@@ -131,40 +130,38 @@ func compareOutputs(t *testing.T, expected, actual []byte, programName string) {
 	expectedLines := splitLines(expected)
 	actualLines := splitLines(actual)
 
-	// Check each expected line appears in actual output
-	// Support wildcard * for matching floating point numbers (e.g., pointer addresses)
-	actualMap := make(map[string]bool)
-	for _, line := range actualLines {
-		actualMap[line] = true
+	// Check line counts match first
+	if len(expectedLines) != len(actualLines) {
+		t.Errorf("Expected %d lines but found %d\nExpected output:\n%s\nActual output:\n%s",
+			len(expectedLines), len(actualLines), string(expected), string(actual))
+		return
 	}
 
-	for _, expectedLine := range expectedLines {
-		found := false
-		if strings.Contains(expectedLine, "*") {
+	// Compare line by line in order
+	for i, expectedLine := range expectedLines {
+		actualLine := actualLines[i]
+
+		// Check for wildcard pattern: * as standalone value (e.g., "timestamp: *")
+		// Only treat * as wildcard if it's at the end after ": " or is the whole line
+		isWildcard := strings.HasSuffix(expectedLine, ": *") || expectedLine == "*"
+
+		if isWildcard {
 			// Pattern matching: * matches any floating point number
 			pattern := regexp.QuoteMeta(expectedLine)
 			pattern = strings.ReplaceAll(pattern, "\\*", "[0-9]+\\.[0-9]+")
 			re := regexp.MustCompile("^" + pattern + "$")
-			for actualLine := range actualMap {
-				if re.MatchString(actualLine) {
-					found = true
-					break
-				}
+			if !re.MatchString(actualLine) {
+				t.Errorf("Line %d pattern mismatch:\nPattern: %q\nActual:  %q",
+					i+1, expectedLine, actualLine)
 			}
-		} else {
-			found = actualMap[expectedLine]
+			continue
 		}
 
-		if !found {
-			t.Errorf("Missing expected line: %q\nExpected output:\n%s\nActual output:\n%s",
-				expectedLine, string(expected), string(actual))
+		// Direct comparison - if bytes are identical, lines match
+		if expectedLine != actualLine {
+			t.Errorf("Line %d mismatch:\nExpected: %q\nActual:   %q\nExpected bytes: %v\nActual bytes:   %v",
+				i+1, expectedLine, actualLine, []byte(expectedLine), []byte(actualLine))
 		}
-	}
-
-	// Check line counts match
-	if len(expectedLines) != len(actualLines) {
-		t.Errorf("Expected %d lines but found %d\nExpected output:\n%s\nActual output:\n%s",
-			len(expectedLines), len(actualLines), string(expected), string(actual))
 	}
 }
 

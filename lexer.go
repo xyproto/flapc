@@ -212,7 +212,12 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		start := l.pos
 		for l.pos < len(l.input) && l.input[l.pos] != '"' {
-			l.pos++
+			// Skip escaped characters (including escaped quotes)
+			if l.input[l.pos] == '\\' && l.pos+1 < len(l.input) {
+				l.pos += 2 // Skip backslash and next character
+			} else {
+				l.pos++
+			}
 		}
 		value := l.input[start:l.pos]
 		l.pos++ // skip closing "
@@ -237,6 +242,23 @@ func (l *Lexer) NextToken() Token {
 			l.pos++
 		}
 		value := l.input[start:l.pos]
+
+		// Check for f-string: f"..."
+		if value == "f" && l.pos < len(l.input) && l.input[l.pos] == '"' {
+			l.pos++ // skip opening "
+			fstringStart := l.pos
+			for l.pos < len(l.input) && l.input[l.pos] != '"' {
+				// Skip escaped characters (including escaped quotes)
+				if l.input[l.pos] == '\\' && l.pos+1 < len(l.input) {
+					l.pos += 2
+				} else {
+					l.pos++
+				}
+			}
+			fstringValue := l.input[fstringStart:l.pos]
+			l.pos++ // skip closing "
+			return Token{Type: TOKEN_FSTRING, Value: fstringValue, Line: l.line}
+		}
 
 		// Check for keywords
 		switch value {

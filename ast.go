@@ -168,6 +168,16 @@ type StringExpr struct {
 func (s *StringExpr) String() string  { return fmt.Sprintf("\"%s\"", s.Value) }
 func (s *StringExpr) expressionNode() {}
 
+// FStringExpr represents an f-string with interpolated expressions
+// Parts alternates between string literals and expressions
+// Example: f"Hello {name}" -> Parts = [StringExpr("Hello "), IdentExpr("name")]
+type FStringExpr struct {
+	Parts []Expression // Alternating string literals and expressions
+}
+
+func (f *FStringExpr) String() string { return "f\"...\"" }
+func (f *FStringExpr) expressionNode() {}
+
 type IdentExpr struct {
 	Name string
 }
