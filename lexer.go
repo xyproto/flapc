@@ -72,7 +72,7 @@ const (
 	TOKEN_AT_FIRST      // @first (first iteration)
 	TOKEN_AT_LAST       // @last (last iteration)
 	TOKEN_AT_COUNTER    // @counter (iteration counter)
-	TOKEN_AT_KEY        // @key (current element/key)
+	TOKEN_AT_I          // @i (current element/item)
 	TOKEN_PIPE_B        // |b (bitwise OR)
 	TOKEN_AMP_B         // &b (bitwise AND)
 	TOKEN_CARET_B       // ^b (bitwise XOR)
@@ -270,8 +270,21 @@ func (l *Lexer) NextToken() Token {
 		}
 
 		// Regular decimal number
-		for l.pos < len(l.input) && (unicode.IsDigit(rune(l.input[l.pos])) || l.input[l.pos] == '.') {
-			l.pos++
+		hasDot := false
+		for l.pos < len(l.input) {
+			if unicode.IsDigit(rune(l.input[l.pos])) {
+				l.pos++
+			} else if l.input[l.pos] == '.' && !hasDot {
+				// Check if this is part of a range operator (..<  or ..=)
+				if l.pos+1 < len(l.input) && l.input[l.pos+1] == '.' {
+					// This is start of ..<  or ..=, stop number parsing
+					break
+				}
+				hasDot = true
+				l.pos++
+			} else {
+				break
+			}
 		}
 		return Token{Type: TOKEN_NUMBER, Value: l.input[start:l.pos], Line: l.line}
 	}
@@ -555,8 +568,18 @@ func (l *Lexer) NextToken() Token {
 			if value == "@counter" {
 				return Token{Type: TOKEN_AT_COUNTER, Value: value, Line: l.line}
 			}
-			if value == "@key" {
-				return Token{Type: TOKEN_AT_KEY, Value: value, Line: l.line}
+			if value == "@i" {
+				// Check if followed by a number (e.g., @i1, @i2)
+				if l.pos < len(l.input) && l.input[l.pos] >= '0' && l.input[l.pos] <= '9' {
+					// Parse the number
+					numStart := l.pos
+					for l.pos < len(l.input) && l.input[l.pos] >= '0' && l.input[l.pos] <= '9' {
+						l.pos++
+					}
+					fullValue := value + string(l.input[numStart:l.pos])
+					return Token{Type: TOKEN_AT_I, Value: fullValue, Line: l.line}
+				}
+				return Token{Type: TOKEN_AT_I, Value: value, Line: l.line}
 			}
 			// Unknown @identifier, treat as error or identifier
 			l.pos = start + 1

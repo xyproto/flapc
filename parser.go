@@ -1693,9 +1693,18 @@ func (p *Parser) parsePrimary() Expression {
 		// @counter is the loop iteration counter
 		return &LoopStateExpr{Type: "counter"}
 
-	case TOKEN_AT_KEY:
-		// @key is the current element (or key for maps)
-		return &LoopStateExpr{Type: "key"}
+	case TOKEN_AT_I:
+		// @i is the current loop, @i1 is outermost loop, @i2 is second loop, etc.
+		value := p.current.Value
+		level := 0
+		if len(value) > 2 { // @iN where N is a number
+			// Parse the number after @i
+			numStr := value[2:] // Skip "@i"
+			if num, err := strconv.Atoi(numStr); err == nil {
+				level = num
+			}
+		}
+		return &LoopStateExpr{Type: "i", LoopLevel: level}
 
 	case TOKEN_LPAREN:
 		// Could be lambda (params) -> expr or parenthesized expression (expr)
@@ -3628,7 +3637,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		}
 
 	case *LoopStateExpr:
-		// @first, @last, @counter, @key are special loop state variables
+		// @first, @last, @counter, @i are special loop state variables
 		if len(fc.activeLoops) == 0 {
 			compilerError("@%s used outside of loop", e.Type)
 		}
@@ -3695,10 +3704,27 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.Cvtsi2sd("xmm0", "rax")
 			}
 
-		case "key":
-			// @key: return the current element/key
-			// For both range and list loops, this is the iterator variable
-			fc.out.MovMemToXmm("xmm0", "rbp", -currentLoop.IteratorOffset)
+		case "i":
+			// @i (level 0): current loop iterator
+			// @i1 (level 1): outermost loop iterator
+			// @i2 (level 2): second loop iterator, etc.
+
+			var targetLoop LoopInfo
+			if e.LoopLevel == 0 {
+				// @i means current loop
+				targetLoop = currentLoop
+			} else {
+				// @iN means loop at level N (1-indexed from outermost)
+				if e.LoopLevel > len(fc.activeLoops) {
+					compilerError("@i%d refers to loop level %d, but only %d loops active",
+						e.LoopLevel, e.LoopLevel, len(fc.activeLoops))
+				}
+				// activeLoops[0] is outermost (level 1), activeLoops[1] is level 2, etc.
+				targetLoop = fc.activeLoops[e.LoopLevel-1]
+			}
+
+			// Return the iterator value from the target loop
+			fc.out.MovMemToXmm("xmm0", "rbp", -targetLoop.IteratorOffset)
 
 		default:
 			compilerError("unknown loop state variable @%s", e.Type)
@@ -8049,13 +8075,33 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			}
 		}
 
-		// Load float arguments from stack into xmm registers (reverse order)
-		for i := numArgs - 1; i >= 0; i-- {
+		// Load float arguments from stack into xmm registers
+		// We pushed args in forward order, so we need to pop in reverse to get correct order
+		// Stack layout after pushing arg1, arg2, arg3: [arg3][arg2][arg1] <- rsp
+		// But we want: arg1→xmm0, arg2→xmm1, arg3→xmm2
+		// So we need to load from stack in reverse: pop arg1 (deepest), then arg2, then arg3
+
+		// Count how many float args we have
+		numFloatArgs := 0
+		for i := 0; i < numArgs; i++ {
 			if !boolPositions[i] && !stringPositions[i] {
-				fc.out.MovMemToXmm(xmmRegs[xmmArgCount], "rsp", 0)
-				fc.out.AddImmToReg("rsp", 16)
+				numFloatArgs++
+			}
+		}
+
+		// Now load them in the correct order
+		// Start from the deepest item in stack and work backwards
+		for i := 0; i < numArgs; i++ {
+			if !boolPositions[i] && !stringPositions[i] {
+				// Calculate offset from rsp: (numFloatArgs - xmmArgCount - 1) * 16
+				offset := (numFloatArgs - xmmArgCount - 1) * 16
+				fc.out.MovMemToXmm(xmmRegs[xmmArgCount], "rsp", offset)
 				xmmArgCount++
 			}
+		}
+		// Clean up stack
+		if numFloatArgs > 0 {
+			fc.out.AddImmToReg("rsp", int64(numFloatArgs*16))
 		}
 
 		// Load format string to rdi

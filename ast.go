@@ -204,9 +204,10 @@ type NamespacedIdentExpr struct {
 func (n *NamespacedIdentExpr) String() string  { return n.Namespace + "." + n.Name }
 func (n *NamespacedIdentExpr) expressionNode() {}
 
-// LoopStateExpr represents special loop variables: @first, @last, @counter, @key
+// LoopStateExpr represents special loop variables: @first, @last, @counter, @i, @i1, @i2, etc.
 type LoopStateExpr struct {
-	Type string // "first", "last", "counter", "key"
+	Type      string // "first", "last", "counter", "i"
+	LoopLevel int    // 0 for @i (current loop), 1 for @i1 (outermost), 2 for @i2, etc.
 }
 
 func (l *LoopStateExpr) String() string {

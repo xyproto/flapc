@@ -1,7 +1,7 @@
 // lambda_loop.flap - test calling stored lambda in a loop
 double := x => x * 2
 
-@ i in range(3) {
+@ i in 0..<3 {
     result := double(i)
     println(result)
 }

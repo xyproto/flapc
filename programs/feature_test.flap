@@ -31,7 +31,7 @@ println(#ages)  // Should print 2
 
 // 7. Loops with @
 total := 0
-@ i in range(5) {
+@ i in 0..<5 {
     total += i
 }
 println(total)  // Should print 10 (0+1+2+3+4)
