@@ -31,6 +31,9 @@ jobs:
           cmake --build build
           sudo cmake --install build
           sudo ldconfig
+          # Configure pkg-config to find SDL3 in /usr/local
+          echo "PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
         elif [ "$RUNNER_OS" == "macOS" ]; then
           brew install sdl3
         fi
@@ -53,10 +56,4 @@ jobs:
       run: go build -v
 
     - name: Run all tests
-      run: |
-        if [ "$RUNNER_OS" == "Linux" ]; then
-          # Add /usr/local/lib to LD_LIBRARY_PATH for SDL3 shared library
-          export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
-        fi
-        go test -v ./...
-      shell: bash
+      run: go test -v ./...
