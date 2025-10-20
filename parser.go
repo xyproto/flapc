@@ -2615,6 +2615,10 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 				if !strings.HasPrefix(libSoName, "lib") {
 					libSoName = "lib" + libSoName
 				}
+				// Special case: SDL3 uses uppercase in library name
+				if libSoName == "libsdl3" {
+					libSoName = "libSDL3"
+				}
 				libSoName += ".so"
 			}
 			if VerboseMode {
