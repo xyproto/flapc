@@ -6,6 +6,7 @@ import (
 	"hash/fnv"
 	"math"
 	"os"
+	"os/exec"
 	"sort"
 	"strconv"
 	"strings"
@@ -2611,15 +2612,27 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 			// Add .so.X suffix if not present
 			libSoName := libName
 			if !strings.Contains(libSoName, ".so") {
-				// Common library naming: libsdl3 -> libSDL3.so, sdl3 -> libSDL3.so
-				if !strings.HasPrefix(libSoName, "lib") {
-					libSoName = "lib" + libSoName
+				// Try to get library name from pkg-config
+				cmd := exec.Command("pkg-config", "--libs-only-l", libName)
+				if output, err := cmd.Output(); err == nil {
+					// Parse output like "-lSDL3" to get "SDL3"
+					libs := strings.TrimSpace(string(output))
+					if strings.HasPrefix(libs, "-l") {
+						libSoName = "lib" + strings.TrimPrefix(libs, "-l") + ".so"
+					} else {
+						// Fallback to standard naming
+						if !strings.HasPrefix(libSoName, "lib") {
+							libSoName = "lib" + libSoName
+						}
+						libSoName += ".so"
+					}
+				} else {
+					// pkg-config failed, use standard naming
+					if !strings.HasPrefix(libSoName, "lib") {
+						libSoName = "lib" + libSoName
+					}
+					libSoName += ".so"
 				}
-				// Special case: SDL3 uses uppercase in library name
-				if libSoName == "libsdl3" {
-					libSoName = "libSDL3"
-				}
-				libSoName += ".so"
 			}
 			if VerboseMode {
 				fmt.Fprintf(os.Stderr, "Adding C library dependency: %s\n", libSoName)
