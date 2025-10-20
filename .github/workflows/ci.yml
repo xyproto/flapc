@@ -6,8 +6,8 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-latest, ubuntu-22.04]
-        go-version: ['1.24', '1.25']
+        os: [ubuntu-latest, macos-latest]
+        go-version: ['1.25']
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v5
@@ -17,17 +17,8 @@ jobs:
       with:
         go-version: ${{ matrix.go-version }}
 
-    - name: Install dependencies (libc and libm are already available)
-      run: |
-        # Verify libc and libm are available (should be present by default)
-        ldconfig -p | grep libc.so || echo "libc not found"
-        ldconfig -p | grep libm.so || echo "libm not found"
-
     - name: Build
       run: go build -v
 
-    - name: Run tests
+    - name: Run all tests
       run: go test -v ./...
-
-    - name: Run integration tests
-      run: go test -v -run TestFlapPrograms
