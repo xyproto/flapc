@@ -26,7 +26,7 @@ Direct C library function calls via PLT/GOT dynamic linking:
 ```flap
 import sdl3 as sdl
 
-result := sdl.SDL_Init(0x00000020)
+result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
 window := sdl.SDL_CreateWindow("Game", 100, 100, 800, 600, 0)
 sdl.SDL_Quit()
 ```
