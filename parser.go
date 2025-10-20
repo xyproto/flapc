@@ -266,6 +266,12 @@ func foldConstantExpr(expr Expression) Expression {
 		}
 		return e
 
+	case *RangeExpr:
+		// Fold range start and end
+		e.Start = foldConstantExpr(e.Start)
+		e.End = foldConstantExpr(e.End)
+		return e
+
 	case *ListExpr:
 		// Fold list elements
 		for i, elem := range e.Elements {
@@ -1217,13 +1223,13 @@ func (p *Parser) parseLogicalAnd() Expression {
 }
 
 func (p *Parser) parseComparison() Expression {
-	left := p.parseAdditive()
+	left := p.parseRange()
 
 	// Check for 'in' operator (membership testing)
 	if p.peek.Type == TOKEN_IN {
 		p.nextToken() // move to left expr
 		p.nextToken() // skip 'in'
-		right := p.parseAdditive()
+		right := p.parseRange()
 		return &InExpr{Value: left, Container: right}
 	}
 
@@ -1233,8 +1239,24 @@ func (p *Parser) parseComparison() Expression {
 		p.nextToken()
 		op := p.current.Value
 		p.nextToken()
-		right := p.parseAdditive()
+		right := p.parseRange()
 		left = &BinaryExpr{Left: left, Operator: op, Right: right}
+	}
+
+	return left
+}
+
+// parseRange handles range expressions (0..<10 or 0..=10)
+func (p *Parser) parseRange() Expression {
+	left := p.parseAdditive()
+
+	// Check for range operators
+	if p.peek.Type == TOKEN_DOTDOTLT || p.peek.Type == TOKEN_DOTDOTEQ {
+		p.nextToken() // move to left expr
+		inclusive := p.current.Type == TOKEN_DOTDOTEQ
+		p.nextToken() // skip range operator
+		right := p.parseAdditive()
+		return &RangeExpr{Start: left, End: right, Inclusive: inclusive}
 	}
 
 	return left
@@ -1671,9 +1693,9 @@ func (p *Parser) parsePrimary() Expression {
 		// @counter is the loop iteration counter
 		return &LoopStateExpr{Type: "counter"}
 
-	case TOKEN_AT_I:
-		// @i is the current element (or key for maps)
-		return &LoopStateExpr{Type: "i"}
+	case TOKEN_AT_KEY:
+		// @key is the current element (or key for maps)
+		return &LoopStateExpr{Type: "key"}
 
 	case TOKEN_LPAREN:
 		// Could be lambda (params) -> expr or parenthesized expression (expr)
@@ -2995,35 +3017,42 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 }
 
 func (fc *FlapCompiler) compileLoopStatement(stmt *LoopStmt) {
-	// Check if iterating over range() or a list
-	funcCall, isRangeCall := stmt.Iterable.(*CallExpr)
-	if isRangeCall && funcCall.Function == "range" && len(funcCall.Args) == 1 {
-		// Range loop
-		fc.compileRangeLoop(stmt, funcCall)
+	// Check if iterating over a range expression (0..<10, 0..=10)
+	if rangeExpr, isRange := stmt.Iterable.(*RangeExpr); isRange {
+		// Range loop (lazy iteration)
+		fc.compileRangeLoop(stmt, rangeExpr)
 	} else {
 		// List iteration
 		fc.compileListLoop(stmt)
 	}
 }
 
-func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, funcCall *CallExpr) {
+func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	// Increment label counter for uniqueness
 	fc.labelCounter++
 
-	// Evaluate the loop limit (argument to range())
-	fc.compileExpression(funcCall.Args[0])
+	// Evaluate the range start and end
+	// Start: evaluate and convert to integer
+	fc.compileExpression(rangeExpr.Start)
+	fc.out.Cvttsd2si("r8", "xmm0") // r8 = start value (integer)
 
-	// Convert to integer and store in a temp variable for the limit
-	// cvttsd2si rax, xmm0
-	fc.out.Cvttsd2si("rax", "xmm0")
+	// End: evaluate and convert to integer
+	fc.compileExpression(rangeExpr.End)
+	fc.out.Cvttsd2si("r9", "xmm0") // r9 = end value (integer)
 
-	// Allocate stack space for loop limit (16 bytes for alignment)
+	// For exclusive ranges (..<), end is already correct
+	// For inclusive ranges (..=), increment end by 1
+	if rangeExpr.Inclusive {
+		fc.out.AddImmToReg("r9", 1) // r9 = end + 1 (so loop is start <= i < end+1)
+	}
+
+	// Allocate stack space for loop limit (end value) (16 bytes for alignment)
 	fc.stackOffset += 16
 	limitOffset := fc.stackOffset
 	fc.out.SubImmFromReg("rsp", 16)
 
-	// Store limit: mov [rbp - limitOffset], rax
-	fc.out.MovRegToMem("rax", "rbp", -limitOffset)
+	// Store limit: mov [rbp - limitOffset], r9
+	fc.out.MovRegToMem("r9", "rbp", -limitOffset)
 
 	// Allocate stack space for iterator variable (16 bytes for alignment)
 	fc.stackOffset += 16
@@ -3032,11 +3061,9 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, funcCall *CallExpr) {
 	fc.mutableVars[stmt.Iterator] = true
 	fc.out.SubImmFromReg("rsp", 16)
 
-	// Initialize iterator to 0.0
-	// xor rax, rax
-	fc.out.XorRegWithReg("rax", "rax")
-	// cvtsi2sd xmm0, rax (convert 0 to float64)
-	fc.out.Cvtsi2sd("xmm0", "rax")
+	// Initialize iterator to start value (from r8)
+	// cvtsi2sd xmm0, r8 (convert start integer to float64)
+	fc.out.Cvtsi2sd("xmm0", "r8")
 	// movsd [rbp - iterOffset], xmm0
 	fc.out.MovXmmToMem("xmm0", "rbp", -iterOffset)
 
@@ -3374,6 +3401,8 @@ func (fc *FlapCompiler) getExprType(expr Expression) string {
 		return "string"
 	case *NumberExpr:
 		return "number"
+	case *RangeExpr:
+		return "list" // Range expressions compile to lists
 	case *ListExpr:
 		return "list"
 	case *MapExpr:
@@ -3599,7 +3628,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		}
 
 	case *LoopStateExpr:
-		// @first, @last, @counter, @i are special loop state variables
+		// @first, @last, @counter, @key are special loop state variables
 		if len(fc.activeLoops) == 0 {
 			compilerError("@%s used outside of loop", e.Type)
 		}
@@ -3666,8 +3695,8 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.Cvtsi2sd("xmm0", "rax")
 			}
 
-		case "i":
-			// @i: return the current element/key
+		case "key":
+			// @key: return the current element/key
 			// For both range and list loops, this is the iterator variable
 			fc.out.MovMemToXmm("xmm0", "rbp", -currentLoop.IteratorOffset)
 
@@ -4320,6 +4349,40 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 	case *DirectCallExpr:
 		fc.compileDirectCall(e)
+
+	case *RangeExpr:
+		// Compile range expression by expanding it to a list
+		// 0..<10 becomes [0, 1, 2, ..., 9]
+		// 0..=10 becomes [0, 1, 2, ..., 10]
+
+		// Evaluate start and end expressions (must be compile-time constants for now)
+		startNum, startOk := e.Start.(*NumberExpr)
+		endNum, endOk := e.End.(*NumberExpr)
+
+		if !startOk || !endOk {
+			compilerError("range expressions currently only support number literals")
+		}
+
+		start := int64(startNum.Value)
+		end := int64(endNum.Value)
+
+		// Build list of elements
+		var elements []Expression
+		if e.Inclusive {
+			// ..= includes end value
+			for i := start; i <= end; i++ {
+				elements = append(elements, &NumberExpr{Value: float64(i)})
+			}
+		} else {
+			// ..< excludes end value
+			for i := start; i < end; i++ {
+				elements = append(elements, &NumberExpr{Value: float64(i)})
+			}
+		}
+
+		// Compile as a list
+		listExpr := &ListExpr{Elements: elements}
+		fc.compileExpression(listExpr)
 
 	case *ListExpr:
 		// Following Lisp philosophy: even empty lists are objects (length=0), not null
@@ -9595,6 +9658,9 @@ func collectFunctionCalls(expr Expression, calls map[string]bool) {
 		}
 	case *LambdaExpr:
 		collectFunctionCalls(e.Body, calls)
+	case *RangeExpr:
+		collectFunctionCalls(e.Start, calls)
+		collectFunctionCalls(e.End, calls)
 	case *ListExpr:
 		for _, elem := range e.Elements {
 			collectFunctionCalls(elem, calls)
@@ -9652,7 +9718,7 @@ func getUnknownFunctions(program *Program) []string {
 	// Builtin functions that are always available (implemented in compiler)
 	builtins := map[string]bool{
 		"printf": true, "exit": true, "syscall": true,
-		"getpid": true, "range": true, "me": true,
+		"getpid": true, "me": true,
 		"println": true, // println is a builtin optimization, not a dependency
 		// Math functions (hardware instructions)
 		"sqrt": true, "sin": true, "cos": true, "tan": true,

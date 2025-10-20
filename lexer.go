@@ -72,7 +72,7 @@ const (
 	TOKEN_AT_FIRST      // @first (first iteration)
 	TOKEN_AT_LAST       // @last (last iteration)
 	TOKEN_AT_COUNTER    // @counter (iteration counter)
-	TOKEN_AT_I          // @i (current element/key)
+	TOKEN_AT_KEY        // @key (current element/key)
 	TOKEN_PIPE_B        // |b (bitwise OR)
 	TOKEN_AMP_B         // &b (bitwise AND)
 	TOKEN_CARET_B       // ^b (bitwise XOR)
@@ -105,6 +105,8 @@ const (
 	TOKEN_IMPORT      // import (with git URL)
 	TOKEN_FROM        // from (C library imports)
 	TOKEN_DOT         // . (for namespaced calls)
+	TOKEN_DOTDOTEQ    // ..= (inclusive range operator)
+	TOKEN_DOTDOTLT    // ..< (exclusive range operator)
 	TOKEN_UNSAFE      // unsafe (architecture-specific code blocks)
 	TOKEN_SYSCALL     // syscall (system call in unsafe blocks)
 	TOKEN_ARENA       // arena (arena memory blocks)
@@ -516,6 +518,23 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_SEMICOLON, Value: ";", Line: l.line}
 	case '.':
+		// Check for ..< or ..=
+		if l.pos+1 < len(l.input) && l.input[l.pos+1] == '.' {
+			if l.pos+2 < len(l.input) {
+				if l.input[l.pos+2] == '<' {
+					// ..<
+					l.pos += 3
+					return Token{Type: TOKEN_DOTDOTLT, Value: "..<", Line: l.line}
+				} else if l.input[l.pos+2] == '=' {
+					// ..=
+					l.pos += 3
+					return Token{Type: TOKEN_DOTDOTEQ, Value: "..=", Line: l.line}
+				}
+			}
+			// Just .. is an error - must be ..< or ..=
+			// For now, treat as single .
+		}
+		// Single .
 		l.pos++
 		return Token{Type: TOKEN_DOT, Value: ".", Line: l.line}
 	case '@':
@@ -536,8 +555,8 @@ func (l *Lexer) NextToken() Token {
 			if value == "@counter" {
 				return Token{Type: TOKEN_AT_COUNTER, Value: value, Line: l.line}
 			}
-			if value == "@i" {
-				return Token{Type: TOKEN_AT_I, Value: value, Line: l.line}
+			if value == "@key" {
+				return Token{Type: TOKEN_AT_KEY, Value: value, Line: l.line}
 			}
 			// Unknown @identifier, treat as error or identifier
 			l.pos = start + 1

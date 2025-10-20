@@ -204,9 +204,9 @@ type NamespacedIdentExpr struct {
 func (n *NamespacedIdentExpr) String() string  { return n.Namespace + "." + n.Name }
 func (n *NamespacedIdentExpr) expressionNode() {}
 
-// LoopStateExpr represents special loop variables: @first, @last, @counter, @i
+// LoopStateExpr represents special loop variables: @first, @last, @counter, @key
 type LoopStateExpr struct {
-	Type string // "first", "last", "counter", "i"
+	Type string // "first", "last", "counter", "key"
 }
 
 func (l *LoopStateExpr) String() string {
@@ -422,6 +422,22 @@ func (s *SliceExpr) String() string {
 	return result
 }
 func (s *SliceExpr) expressionNode() {}
+
+// RangeExpr represents a range like 0..<10 or 0..=10
+type RangeExpr struct {
+	Start     Expression
+	End       Expression
+	Inclusive bool // true for ..=, false for ..<
+}
+
+func (r *RangeExpr) String() string {
+	op := "..<"
+	if r.Inclusive {
+		op = "..="
+	}
+	return r.Start.String() + op + r.End.String()
+}
+func (r *RangeExpr) expressionNode() {}
 
 type LambdaExpr struct {
 	Params []string
