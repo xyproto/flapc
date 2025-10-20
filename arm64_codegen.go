@@ -2182,8 +2182,13 @@ func (acg *ARM64CodeGen) compileMathFunction(call *CallExpr) error {
 	// Mark that we need dynamic linking
 	acg.eb.useDynamicLinking = true
 
+	// Map function names to C library names (e.g., abs -> fabs)
+	funcName := call.Function
+	if funcName == "abs" {
+		funcName = "fabs" // Use fabs for floating-point absolute value
+	}
+
 	// Add function to needed functions list if not already there
-	funcName := call.Function // e.g., "sin", "cos", "sqrt"
 	found := false
 	for _, f := range acg.eb.neededFunctions {
 		if f == funcName {
