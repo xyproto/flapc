@@ -8,7 +8,7 @@ Compiler for Flap, a functional programming language that compiles directly to n
 
 ## Technical Overview
 
-Flap uses `map[uint64]float64` as its unified type representation:
+Flap uses an ordered map from uint64 to float64 as the unified type representation:
 
 - Numbers: `{0: 42.0}`
 - Strings: `{0: 72.0, 1: 101.0, ...}` (index → character code)
