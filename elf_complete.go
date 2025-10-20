@@ -134,8 +134,8 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	currentOffset += uint64(ds.plt.Len())
 	currentAddr += uint64(ds.plt.Len())
 
-	// ._start (entry point - clears registers, aligns stack, and jumps to user code)
-	startSize := 20 // Size of our _start function (3*3 bytes clear regs + 4 bytes align + 5 bytes jmp)
+	// ._start (entry point - clears registers and jumps to user code)
+	startSize := 14 // Size of our minimal _start function (3*3 bytes clear regs + 5 bytes jmp)
 	layout["_start"] = struct {
 		offset uint64
 		addr   uint64
@@ -500,17 +500,11 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	w.Write(0x48)
 	w.Write(0x31)
 	w.Write(0xf6)
-	// Align stack to 16 bytes (System V ABI requirement)
-	// and rsp, -16   ; align RSP to 16-byte boundary
-	w.Write(0x48)
-	w.Write(0x83)
-	w.Write(0xe4)
-	w.Write(0xf0)
 	// jmp to user code (relative jump)
 	w.Write(0xe9) // jmp rel32
 	startAddr := layout["_start"].addr
 	textAddrForJump := layout["text"].addr
-	jumpOffset := int32(textAddrForJump - (startAddr + 18)) // 18 = size of _start code before jmp
+	jumpOffset := int32(textAddrForJump - (startAddr + 14)) // 14 = size of _start code before jmp
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "_start jump: startAddr=0x%x, textAddr=0x%x, jumpOffset=0x%x (%d)\n",
 			startAddr, textAddrForJump, uint32(jumpOffset), jumpOffset)
