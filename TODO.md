@@ -191,7 +191,7 @@ Complete remaining language features for v1.5.0.
 - [x] Document C library imports ✓
 - [x] Document unsafe arithmetic and memory operations ✓
 - [ ] Create C FFI tutorial with practical examples
-  - SDL2 game window
+  - SDL3 or RayLib game window
   - SQLite database access
   - File I/O with POSIX API
 - [ ] Create unsafe block tutorial for systems programming

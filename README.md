@@ -24,7 +24,7 @@ The compiler generates native machine code directly without intermediate represe
 Direct C library function calls via PLT/GOT dynamic linking:
 
 ```flap
-import sdl2 as sdl
+import sdl3 as sdl
 
 result := sdl.SDL_Init(0x00000020)
 window := sdl.SDL_CreateWindow("Game", 100, 100, 800, 600, 0)
@@ -179,7 +179,7 @@ exit(0)
 
 ### Module System
 - **Git imports**: `import "github.com/user/pkg" as name`
-- **C imports**: `import sdl2 as sdl` (auto-detected)
+- **C imports**: `import sdl3 as sdl`, `import raylib as rl` (auto-detected)
 - **Versions**: `import "pkg@v1.0.0" as name`
 - **Wildcards**: `import "pkg" as *`
 - **Private**: Functions starting with `_` not exported
@@ -215,7 +215,7 @@ exit(0)
 See `programs/` directory:
 - `hello.flap` - Basic Hello World
 - `c_getpid_test.flap` - C FFI with standard library
-- `c_ffi_test.flap` - SDL2 example
+- `c_ffi_test.flap` - SDL3/RayLib example
 - `unsafe_test.flap` - Register manipulation
 - `arithmetic_test.flap` - Math operations
 - `list_test.flap` - List operations

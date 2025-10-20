@@ -19,7 +19,7 @@ var compileExpectations = map[string]string{
 
 // Programs to skip
 var skipPrograms = map[string]bool{
-	"c_ffi_test": true, // SDL2 test - use SDL3 instead if needed
+	"c_ffi_test": true, // SDL3/RayLib test - skipped (headless server)
 }
 
 // Expected exit codes (default is 0 if not specified)

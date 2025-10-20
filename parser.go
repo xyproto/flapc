@@ -330,7 +330,7 @@ func (p *Parser) parseImport() Statement {
 
 	// Auto-detect import type:
 	// - String with "/" -> Flap package (Git): import "github.com/user/pkg" as alias
-	// - Identifier -> C library: import sdl2 as sdl
+	// - Identifier -> C library: import sdl3 as sdl, import raylib as rl
 
 	if p.current.Type == TOKEN_STRING {
 		// Git import: import "url@version" as alias
@@ -360,7 +360,7 @@ func (p *Parser) parseImport() Statement {
 	}
 
 	if p.current.Type == TOKEN_IDENT {
-		// C library import: import sdl2 as sdl
+		// C library import: import sdl3 as sdl, import raylib as rl
 		libName := p.current.Value
 		p.nextToken()
 
@@ -2556,7 +2556,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 			// Add .so.X suffix if not present
 			libSoName := libName
 			if !strings.Contains(libSoName, ".so") {
-				// Common library naming: libsdl2 -> libSDL2.so, sdl2 -> libSDL2.so
+				// Common library naming: libsdl3 -> libSDL3.so, sdl3 -> libSDL3.so
 				if !strings.HasPrefix(libSoName, "lib") {
 					libSoName = "lib" + libSoName
 				}

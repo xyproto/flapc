@@ -77,7 +77,7 @@ func (i *ImportStmt) String() string {
 func (i *ImportStmt) statementNode() {}
 
 type CImportStmt struct {
-	Library string // C library name: "sdl2", "raylib", "sqlite3"
+	Library string // C library name: "sdl3", "raylib", "sqlite3"
 	Alias   string // Namespace alias: "sdl", "rl", "sql"
 }
 

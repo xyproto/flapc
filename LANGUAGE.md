@@ -1141,7 +1141,7 @@ Flap can call C library functions directly using a simple import syntax. The com
 
 ```flap
 // Import C library (auto-detected by lack of "/" in name)
-import sdl2 as sdl
+import sdl3 as sdl
 import raylib as rl
 import c as libc  // Standard C library
 
@@ -1157,7 +1157,7 @@ time := libc.time(0)
 **How It Works:**
 
 1. **Auto-detection**: Imports without `/` are treated as C libraries, imports with URLs are Flap packages
-2. **Dynamic linking**: C libraries are added to ELF `DT_NEEDED` (e.g., `libsdl2.so`)
+2. **Dynamic linking**: C libraries are added to ELF `DT_NEEDED` (e.g., `libSDL3.so`, `libraylib.so`)
 3. **PLT calls**: Functions are called through the Procedure Linkage Table
 4. **ABI compatibility**: Arguments are marshaled to System V AMD64 calling convention
 
@@ -1168,10 +1168,10 @@ time := libc.time(0)
 - Return values are converted to Flap's `float64`
 - No support for strings, structs, or pointers yet
 
-**Example: SDL2 Game Initialization**
+**Example: SDL3 Game Initialization**
 
 ```flap
-import sdl2 as sdl
+import sdl3 as sdl
 
 // Initialize SDL
 result := sdl.SDL_Init(0x00000020)  // SDL_INIT_VIDEO = 0x20
@@ -1213,8 +1213,8 @@ println(time)
 **Library Naming:**
 
 The compiler automatically converts library names:
-- `sdl2` → `libsdl2.so`
-- `raylib` → `libraylib.so`
+- `sdl3` → `libSDL3.so.0` (SDL3 with version)
+- `raylib` → `libraylib.so.5` (RayLib 5)
 - `c` → (uses already-linked `libc.so.6`)
 - `m` → (math library, link automatically if needed)
 
