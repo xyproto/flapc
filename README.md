@@ -6,6 +6,23 @@
 
 Flapc is the compiler for Flap, a functional programming language that compiles directly to native machine code.
 
+## Philosophy
+
+Flap embraces **radical simplicity through uniformity**. Instead of juggling types, memory models, and runtime complexity, everything is `map[uint64]float64`:
+
+- **One Foundation**: Numbers are `{0: 42.0}`, strings are `{0: 72.0, 1: 101.0, ...}`, lists are `{0: 1.0, 1: 2.0, ...}`. One type, infinite flexibility.
+- **Zero Runtime**: No GC pauses, no interpreter overhead, no hidden allocations. Direct compilation to native machine code with predictable performance.
+- **Performance by Default**: SIMD operations (SSE2/AVX-512) with automatic CPU detection. Hardware FPU instructions. Every abstraction compiles to tight assembly.
+- **Explicit Mutability**: Three operators (`=`, `:=`, `<-`) make immutability and updates crystal clear, preventing shadowing bugs that plague loops.
+- **Railway-Oriented Errors**: The `or!` operator creates clean error handling pipelines without the noise of `if err != nil` or exception hierarchies.
+- **Suckless Ethos**: Simple, clear, maintainable. The compiler is ~5000 lines of readable Go code. No macros, no templates, no DSLs.
+
+**For game developers**: Hex/binary literals for colors and flags, compile-time constants with zero overhead, bit manipulation operators, unsafe blocks for direct register access, predictable performance.
+
+**For demoscene coders**: Direct machine code generation, SIMD by default, unsafe blocks for architecture-specific optimizations, no runtime dependencies, tiny executables.
+
+Flap proves that **simplicity scales**. One type system, one calling convention, one memory model — yet expressive enough for real-world software.
+
 ## Overview
 
 Flap is a functional programming language built on a `map[uint64]float64` foundation, designed for high-performance numerical computing with first-class SIMD support. The compiler generates native machine code directly, with no intermediate steps.

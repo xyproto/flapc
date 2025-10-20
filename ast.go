@@ -480,3 +480,32 @@ func (c *CastExpr) String() string {
 	return c.Expr.String() + " as " + c.Type
 }
 func (c *CastExpr) expressionNode() {}
+
+type UnsafeExpr struct {
+	X86_64Block  []Statement // x86_64 architecture block
+	ARM64Block   []Statement // arm64 architecture block
+	RISCV64Block []Statement // riscv64 architecture block
+}
+
+func (u *UnsafeExpr) String() string {
+	return fmt.Sprintf("unsafe { x86_64: %d stmts } { arm64: %d stmts } { riscv64: %d stmts }",
+		len(u.X86_64Block), len(u.ARM64Block), len(u.RISCV64Block))
+}
+func (u *UnsafeExpr) expressionNode() {}
+
+type RegisterAssignStmt struct {
+	Register string      // Register name (e.g., "rax", "x0", "a0")
+	Value    interface{} // Either Expression (for immediate) or string (for register name)
+}
+
+func (r *RegisterAssignStmt) String() string {
+	switch v := r.Value.(type) {
+	case Expression:
+		return r.Register + " <- " + v.String()
+	case string:
+		return r.Register + " <- " + v
+	default:
+		return r.Register + " <- <unknown>"
+	}
+}
+func (r *RegisterAssignStmt) statementNode() {}

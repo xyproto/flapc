@@ -105,6 +105,7 @@ const (
 	TOKEN_USE         // use (import)
 	TOKEN_IMPORT      // import (with git URL)
 	TOKEN_DOT         // . (for namespaced calls)
+	TOKEN_UNSAFE      // unsafe (architecture-specific code blocks)
 )
 
 // Code generation constants
@@ -320,6 +321,8 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_IMPORT, Value: value, Line: l.line}
 		case "as":
 			return Token{Type: TOKEN_AS, Value: value, Line: l.line}
+		case "unsafe":
+			return Token{Type: TOKEN_UNSAFE, Value: value, Line: l.line}
 		case "xor":
 			return Token{Type: TOKEN_XOR, Value: value, Line: l.line}
 		case "shl":

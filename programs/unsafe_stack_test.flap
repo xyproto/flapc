@@ -1,0 +1,65 @@
+// Test unsafe blocks with stack operations
+
+// Test push and pop
+result := unsafe {
+    rax <- 100
+    stack <- rax      // Push rax to stack
+    rax <- 42         // Change rax
+    rax <- stack      // Pop from stack back to rax
+} {
+    x0 <- 100
+    stack <- x0
+    x0 <- 42
+    x0 <- stack
+} {
+    a0 <- 100
+    stack <- a0
+    a0 <- 42
+    a0 <- stack
+}
+
+printf("Result (should be 100): %.0f\n", result)
+
+// Test multiple pushes and pops (LIFO order)
+value := unsafe {
+    rax <- 10
+    stack <- rax      // Push 10
+    rax <- 20
+    stack <- rax      // Push 20
+    rax <- 30
+    stack <- rax      // Push 30
+
+    rbx <- stack      // Pop 30 into rbx
+    rcx <- stack      // Pop 20 into rcx
+    rax <- stack      // Pop 10 into rax
+
+    rax <- rcx        // Return 20
+} {
+    x0 <- 10
+    stack <- x0
+    x0 <- 20
+    stack <- x0
+    x0 <- 30
+    stack <- x0
+
+    x1 <- stack
+    x2 <- stack
+    x0 <- stack
+
+    x0 <- x2
+} {
+    a0 <- 10
+    stack <- a0
+    a0 <- 20
+    stack <- a0
+    a0 <- 30
+    stack <- a0
+
+    a1 <- stack
+    a2 <- stack
+    a0 <- stack
+
+    a0 <- a2
+}
+
+printf("Value (should be 20): %.0f\n", value)

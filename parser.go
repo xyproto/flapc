@@ -1793,6 +1793,10 @@ func (p *Parser) parsePrimary() Expression {
 		}
 		// Must be loop expression: @ ident in...
 		return p.parseLoopExpr()
+
+	case TOKEN_UNSAFE:
+		// unsafe { x86_64 } { arm64 } { riscv64 }
+		return p.parseUnsafeExpr()
 	}
 
 	return nil
@@ -1864,6 +1868,88 @@ func (p *Parser) parseLoopExpr() Expression {
 		Iterable: iterable,
 		Body:     body,
 	}
+}
+
+// parseUnsafeExpr parses: unsafe { x86_64 block } { arm64 block } { riscv64 block }
+func (p *Parser) parseUnsafeExpr() Expression {
+	p.nextToken() // skip 'unsafe'
+
+	// Parse x86_64 block
+	if p.current.Type != TOKEN_LBRACE {
+		p.error("expected '{' for x86_64 block in unsafe expression")
+	}
+	x86_64Block := p.parseUnsafeBlock()
+
+	// Parse arm64 block
+	if p.current.Type != TOKEN_LBRACE {
+		p.error("expected '{' for arm64 block in unsafe expression")
+	}
+	arm64Block := p.parseUnsafeBlock()
+
+	// Parse riscv64 block
+	if p.current.Type != TOKEN_LBRACE {
+		p.error("expected '{' for riscv64 block in unsafe expression")
+	}
+	riscv64Block := p.parseUnsafeBlock()
+
+	return &UnsafeExpr{
+		X86_64Block:  x86_64Block,
+		ARM64Block:   arm64Block,
+		RISCV64Block: riscv64Block,
+	}
+}
+
+// parseUnsafeBlock parses a single architecture block: { reg1 <- reg2; reg3 <- 42; ... }
+func (p *Parser) parseUnsafeBlock() []Statement {
+	p.nextToken() // skip '{'
+	p.skipNewlines()
+
+	statements := []Statement{}
+
+	for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+		// Inside unsafe blocks, we parse register assignments
+		// Format: register <- value (where value can be number or another register)
+
+		if p.current.Type != TOKEN_IDENT {
+			p.error("expected register name in unsafe block")
+		}
+
+		regName := p.current.Value
+		p.nextToken() // skip register name
+
+		if p.current.Type != TOKEN_LEFT_ARROW {
+			p.error(fmt.Sprintf("expected '<-' after register %s in unsafe block", regName))
+		}
+		p.nextToken() // skip '<-'
+
+		// Parse the value (either a number or another register)
+		var value interface{}
+		if p.current.Type == TOKEN_NUMBER {
+			val := p.parseNumberLiteral(p.current.Value)
+			value = &NumberExpr{Value: val}
+			p.nextToken() // skip number
+		} else if p.current.Type == TOKEN_IDENT {
+			// Another register
+			value = p.current.Value
+			p.nextToken() // skip register name
+		} else {
+			p.error("expected number or register name after '<-' in unsafe block")
+		}
+
+		statements = append(statements, &RegisterAssignStmt{
+			Register: regName,
+			Value:    value,
+		})
+
+		p.skipNewlines()
+	}
+
+	if p.current.Type != TOKEN_RBRACE {
+		p.error("expected '}' to close unsafe block")
+	}
+	p.nextToken() // skip '}'
+
+	return statements
 }
 
 // LoopInfo tracks information about an active loop during compilation
@@ -4291,6 +4377,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 	case *CastExpr:
 		fc.compileCastExpr(e)
 
+	case *UnsafeExpr:
+		fc.compileUnsafeExpr(e)
+
 	case *SliceExpr:
 		fc.compileSliceExpr(e)
 	}
@@ -4669,6 +4758,70 @@ func (fc *FlapCompiler) compileSliceExpr(expr *SliceExpr) {
 	fc.out.MovRegToMem("rax", "rsp", 0)
 	fc.out.MovMemToXmm("xmm0", "rsp", 0)
 	fc.out.AddImmToReg("rsp", StackSlotSize)
+}
+
+func (fc *FlapCompiler) compileUnsafeExpr(expr *UnsafeExpr) {
+	// Execute the appropriate architecture block based on target
+	// For now, we only support x86_64
+	arch := "x86_64" // TODO: Get from build target
+
+	var block []Statement
+	switch arch {
+	case "x86_64":
+		block = expr.X86_64Block
+	case "arm64":
+		block = expr.ARM64Block
+	case "riscv64":
+		block = expr.RISCV64Block
+	default:
+		compilerError("unsupported architecture: %s", arch)
+	}
+
+	// Compile each register assignment statement
+	for _, stmt := range block {
+		regStmt, ok := stmt.(*RegisterAssignStmt)
+		if !ok {
+			compilerError("unsafe blocks can only contain register assignments")
+		}
+		fc.compileRegisterAssignment(regStmt)
+	}
+
+	// The result of an unsafe block is the value in the accumulator register
+	// x86_64: rax, arm64: x0, riscv64: a0
+	// Convert the integer in rax to float64 in xmm0
+	fc.out.Cvtsi2sd("xmm0", "rax")
+}
+
+func (fc *FlapCompiler) compileRegisterAssignment(stmt *RegisterAssignStmt) {
+	// Handle: register <- value (where value is number, another register, or stack)
+
+	switch v := stmt.Value.(type) {
+	case *NumberExpr:
+		// Immediate value: register <- 42
+		if stmt.Register == "stack" {
+			compilerError("cannot assign immediate value to stack; use 'stack <- register' to push")
+		}
+		val := int64(v.Value)
+		fc.out.MovImmToReg(stmt.Register, strconv.FormatInt(val, 10))
+
+	case string:
+		// Handle stack operations
+		if stmt.Register == "stack" && v != "stack" {
+			// Push: stack <- rax
+			fc.out.PushReg(v)
+		} else if stmt.Register != "stack" && v == "stack" {
+			// Pop: rax <- stack
+			fc.out.PopReg(stmt.Register)
+		} else if stmt.Register == "stack" && v == "stack" {
+			compilerError("cannot do 'stack <- stack'")
+		} else {
+			// Register-to-register move: rax <- rbx
+			fc.out.MovRegToReg(stmt.Register, v)
+		}
+
+	default:
+		compilerError("unsupported value type in register assignment: %T", v)
+	}
 }
 
 func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
