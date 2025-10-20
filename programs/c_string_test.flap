@@ -1,0 +1,20 @@
+// Test passing strings to C functions using 'as cstr'
+import sdl3 as sdl
+
+// Test: Create SDL window with a string title
+// SDL_CreateWindow(const char *title, int w, int h, Uint64 flags)
+title := "My Flap Window"
+width := 800
+height := 600
+flags := 0  // No special flags for this test
+
+// Pass string as cstr to C function
+window := sdl.SDL_CreateWindow(title as cstr, width as int, height as int, flags as uint32)
+
+printf("Created window with title: %s\n", title)
+printf("Window pointer: %.0f\n", window)
+
+// SDL calls for cleanup
+sdl.SDL_Quit()
+
+exit(0)

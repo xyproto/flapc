@@ -1,0 +1,20 @@
+// Test automatic type inference for C FFI (no explicit casts needed)
+import sdl3 as sdl
+
+// Test 1: Automatic string -> cstr conversion
+title := "Auto Cast Test"
+width := 640
+height := 480
+
+// No casts needed - compiler infers:
+// - title (string) -> cstr
+// - width (number) -> int
+// - height (number) -> int
+// - 0 (number) -> int
+window := sdl.SDL_CreateWindow(title, width, height, 0)
+
+printf("Window created: %.0f\n", window)
+printf("Title was: %s\n", title)
+
+sdl.SDL_Quit()
+exit(0)

@@ -195,6 +195,15 @@ type IdentExpr struct {
 func (i *IdentExpr) String() string  { return i.Name }
 func (i *IdentExpr) expressionNode() {}
 
+// NamespacedIdentExpr represents a namespaced identifier like sdl.SDL_INIT_VIDEO
+type NamespacedIdentExpr struct {
+	Namespace string // e.g., "sdl"
+	Name      string // e.g., "SDL_INIT_VIDEO"
+}
+
+func (n *NamespacedIdentExpr) String() string  { return n.Namespace + "." + n.Name }
+func (n *NamespacedIdentExpr) expressionNode() {}
+
 // LoopStateExpr represents special loop variables: @first, @last, @counter, @i
 type LoopStateExpr struct {
 	Type string // "first", "last", "counter", "i"

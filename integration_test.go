@@ -17,9 +17,14 @@ var compileExpectations = map[string]string{
 	"lambda_bad_syntax_test": "lambda definitions must use '=>'",
 }
 
-// Programs to skip
-var skipPrograms = map[string]bool{
-	"c_ffi_test": true, // SDL3/RayLib test - skipped (headless server)
+// Programs to skip entirely
+var skipPrograms = map[string]bool{}
+
+// Programs to compile but not run (e.g., require runtime libraries not available in CI)
+var compileOnlyPrograms = map[string]bool{
+	"c_ffi_test":       true, // SDL3/RayLib - compile-only (requires libsdl3.so at runtime)
+	"c_string_test":    true, // SDL3 strings - compile-only (requires libsdl3.so at runtime)
+	"c_auto_cast_test": true, // SDL3 auto-cast - compile-only (requires libsdl3.so at runtime)
 }
 
 // Expected exit codes (default is 0 if not specified)
@@ -84,6 +89,12 @@ func testFlapProgram(t *testing.T, name, srcPath, buildDir string) {
 
 	if shouldFailCompile {
 		t.Fatalf("Expected compilation to fail, but it succeeded")
+	}
+
+	// Check if this is a compile-only program (e.g., requires runtime libraries)
+	if compileOnlyPrograms[name] {
+		t.Logf("Program %s compiled successfully (compile-only test, not run)", name)
+		return
 	}
 
 	// Run the program

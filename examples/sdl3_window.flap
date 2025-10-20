@@ -1,0 +1,55 @@
+// Comprehensive SDL3 Example in Flap
+// Demonstrates C FFI features:
+// - Automatic constant extraction from headers
+// - String to cstr conversion (automatic)
+// - Type inference for function arguments
+// - Pointer handling
+
+import sdl3 as sdl
+
+printf("=== SDL3 Window Example ===\n")
+printf("This demonstrates Flap's C FFI capabilities\n\n")
+
+// Initialize SDL with extracted constants
+printf("Initializing SDL...\n")
+init_result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
+printf("SDL_Init returned: %.0f\n", init_result)
+printf("SDL initialized!\n")
+
+// Create window with automatic type conversions
+// - Strings automatically become cstr
+// - Numbers automatically become int
+printf("\nCreating window...\n")
+title := "Flap + SDL3 = ❤️"
+width := 1024
+height := 768
+flags := 0
+
+window := sdl.SDL_CreateWindow(title, width, height, flags)
+printf("Window created!\n")
+printf("  Title: %s\n", title)
+printf("  Size: %.0f x %.0f\n", width, height)
+printf("  Window handle: %.0f\n", window)
+
+// Create renderer
+printf("\nCreating renderer...\n")
+renderer := sdl.SDL_CreateRenderer(window, 0)
+printf("Renderer created!\n")
+printf("  Renderer handle: %.0f\n", renderer)
+
+// Demonstrate using extracted constants
+printf("\nSDL Constants from headers:\n")
+printf("  SDL_INIT_VIDEO = %.0f\n", sdl.SDL_INIT_VIDEO)
+printf("  SDL_INIT_AUDIO = %.0f\n", sdl.SDL_INIT_AUDIO)
+printf("  SDL_INIT_EVENTS = %.0f\n", sdl.SDL_INIT_EVENTS)
+
+// Clean up (automatic pointer inference!)
+printf("\nCleaning up...\n")
+sdl.SDL_DestroyRenderer(renderer)  // Automatically inferred as pointer
+sdl.SDL_DestroyWindow(window)      // Automatically inferred as pointer
+sdl.SDL_Quit()
+
+printf("SDL shut down successfully!\n")
+printf("\n=== Example Complete ===\n")
+
+exit(0)

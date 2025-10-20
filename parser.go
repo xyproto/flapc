@@ -1498,7 +1498,9 @@ func (p *Parser) parsePostfix() Expression {
 				validTypes := map[string]bool{
 					"i8": true, "i16": true, "i32": true, "i64": true,
 					"u8": true, "u16": true, "u32": true, "u64": true,
-					"f32": true, "f64": true, "cstr": true, "ptr": true,
+					"f32": true, "f64": true, "cstr": true, "cstring": true,
+					"ptr": true, "pointer": true,
+					"int": true, "uint": true, "uint32": true, "int32": true,
 					"number": true, "string": true, "list": true,
 				}
 				if validTypes[p.current.Value] {
@@ -1512,7 +1514,7 @@ func (p *Parser) parsePostfix() Expression {
 
 			expr = &CastExpr{Expr: expr, Type: castType}
 		} else if p.peek.Type == TOKEN_DOT {
-			// Handle dot notation: obj.field or namespace.func()
+			// Handle dot notation: obj.field, namespace.func(), or namespace.CONSTANT
 			p.nextToken() // skip current expr
 			p.nextToken() // skip '.'
 
@@ -1522,25 +1524,31 @@ func (p *Parser) parsePostfix() Expression {
 
 			fieldName := p.current.Value
 
-			// Check if this is a namespaced function call: namespace.func(...)
+			// Check if this is a namespaced function call or constant: namespace.func() or namespace.CONSTANT
 			// This requires expr to be an IdentExpr
-			if ident, ok := expr.(*IdentExpr); ok && p.peek.Type == TOKEN_LPAREN {
-				// Namespaced function call - combine identifiers
-				namespacedName := ident.Name + "." + fieldName
-				p.nextToken() // skip second identifier
-				p.nextToken() // skip '('
-				args := []Expression{}
+			if ident, ok := expr.(*IdentExpr); ok {
+				if p.peek.Type == TOKEN_LPAREN {
+					// Namespaced function call - combine identifiers
+					namespacedName := ident.Name + "." + fieldName
+					p.nextToken() // skip second identifier
+					p.nextToken() // skip '('
+					args := []Expression{}
 
-				if p.current.Type != TOKEN_RPAREN {
-					args = append(args, p.parseExpression())
-					for p.peek.Type == TOKEN_COMMA {
-						p.nextToken() // skip current
-						p.nextToken() // skip ','
+					if p.current.Type != TOKEN_RPAREN {
 						args = append(args, p.parseExpression())
+						for p.peek.Type == TOKEN_COMMA {
+							p.nextToken() // skip current
+							p.nextToken() // skip ','
+							args = append(args, p.parseExpression())
+						}
+						p.nextToken() // move to ')'
 					}
-					p.nextToken() // move to ')'
+					expr = &CallExpr{Function: namespacedName, Args: args}
+				} else {
+					// Could be a C constant (sdl.SDL_INIT_VIDEO) or field access
+					// We'll create a special NamespacedIdentExpr to distinguish at compile time
+					expr = &NamespacedIdentExpr{Namespace: ident.Name, Name: fieldName}
 				}
-				expr = &CallExpr{Function: namespacedName, Args: args}
 			} else {
 				// Regular field access - hash the field name and create index expression
 				hashValue := hashStringKey(fieldName)
@@ -2324,9 +2332,10 @@ type FlapCompiler struct {
 	usedFunctions    map[string]bool   // Track which functions are called
 	unknownFunctions map[string]bool   // Track functions called but not defined
 	callOrder        []string          // Track order of function calls
-	cImports         map[string]string // Track C imports: alias -> library name
-	cLibHandles      map[string]string // Track library handles: library -> handle var name
-	stringCounter    int               // Counter for unique string labels
+	cImports         map[string]string            // Track C imports: alias -> library name
+	cLibHandles      map[string]string            // Track library handles: library -> handle var name
+	cConstants       map[string]*CHeaderConstants // Track C constants: alias -> constants
+	stringCounter    int                          // Counter for unique string labels
 	stackOffset      int               // Current stack offset for variables
 	labelCounter     int               // Counter for unique labels (if/else, loops, etc)
 	lambdaCounter    int               // Counter for unique lambda function names
@@ -2377,6 +2386,7 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 		callOrder:        []string{},
 		cImports:         make(map[string]string),
 		cLibHandles:      make(map[string]string),
+		cConstants:       make(map[string]*CHeaderConstants),
 		lambdaOffsets:    make(map[string]int),
 		debug:            debugEnabled,
 	}, nil
@@ -2450,12 +2460,26 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.out.XorRegWithReg("rcx", "rcx")
 	// ===== END AVX-512 DETECTION =====
 
-	// Pre-pass: Collect C imports to set up library handles
+	// Pre-pass: Collect C imports to set up library handles and extract constants
 	for _, stmt := range program.Statements {
 		if cImport, ok := stmt.(*CImportStmt); ok {
 			fc.cImports[cImport.Alias] = cImport.Library
 			if VerboseMode {
 				fmt.Fprintf(os.Stderr, "Registered C import: %s -> %s\n", cImport.Alias, cImport.Library)
+			}
+
+			// Extract constants from C headers
+			constants, err := ExtractConstantsFromLibrary(cImport.Library)
+			if err != nil {
+				// Non-fatal: constants extraction is optional
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Warning: failed to extract constants from %s: %v\n", cImport.Library, err)
+				}
+			} else {
+				fc.cConstants[cImport.Alias] = constants
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Extracted %d constants from %s\n", len(constants.Constants), cImport.Library)
+				}
 			}
 		}
 	}
@@ -3361,6 +3385,9 @@ func (fc *FlapCompiler) getExprType(expr Expression) string {
 		}
 		// Default to number if not tracked (most variables are numbers)
 		return "number"
+	case *NamespacedIdentExpr:
+		// C constants are always numbers
+		return "number"
 	case *BinaryExpr:
 		// Binary expressions between strings return strings if operator is "+"
 		if e.Operator == "+" {
@@ -3545,6 +3572,31 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		}
 		// movsd xmm0, [rbp - offset]
 		fc.out.MovMemToXmm("xmm0", "rbp", -offset)
+
+	case *NamespacedIdentExpr:
+		// Handle namespaced identifiers like sdl.SDL_INIT_VIDEO or data.field
+		// Check if this is a C constant
+		if constants, ok := fc.cConstants[e.Namespace]; ok {
+			if value, found := constants.Constants[e.Name]; found {
+				// Found a C constant - load it as a number
+				fc.out.MovImmToReg("rax", strconv.FormatInt(value, 10))
+				fc.out.Cvtsi2sd("xmm0", "rax")
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Resolved C constant %s.%s = %d\n", e.Namespace, e.Name, value)
+				}
+			} else {
+				compilerError("undefined constant '%s.%s'", e.Namespace, e.Name)
+			}
+		} else {
+			// Not a C import - treat as field access (obj.field)
+			// Convert to IndexExpr and compile it
+			hashValue := hashStringKey(e.Name)
+			indexExpr := &IndexExpr{
+				List:  &IdentExpr{Name: e.Namespace},
+				Index: &NumberExpr{Value: float64(hashValue)},
+			}
+			fc.compileExpression(indexExpr)
+		}
 
 	case *LoopStateExpr:
 		// @first, @last, @counter, @i are special loop state variables
@@ -7583,14 +7635,81 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 		argStackOffset := len(args) * 8
 		fc.out.SubImmFromReg("rsp", int64(argStackOffset))
 
+		// Look up function signature if available
+		var funcSig *CFunctionSignature
+		if constants, ok := fc.cConstants[strings.Split(funcName, ".")[0]]; ok {
+			if sig, found := constants.Functions[funcName]; found {
+				funcSig = sig
+			}
+		}
+
 		// Compile each argument and store on stack
 		for i, arg := range args {
-			// Compile argument expression (result in xmm0)
-			fc.compileExpression(arg)
+			// Check if argument has a cast expression to determine type
+			var castType string
+			var innerExpr Expression = arg
+			if castExpr, ok := arg.(*CastExpr); ok {
+				// Explicit cast provided
+				castType = castExpr.Type
+				innerExpr = castExpr.Expr
+			} else {
+				// No explicit cast - infer from expression type or function signature
+				exprType := fc.getExprType(arg)
+				if exprType == "string" {
+					castType = "cstr" // Strings become C strings by default
+				} else if funcSig != nil && i < len(funcSig.Params) {
+					// Use function signature to determine type
+					paramType := funcSig.Params[i].Type
+					if isPointerType(paramType) {
+						castType = "pointer"
+					} else if strings.Contains(paramType, "char") && strings.Contains(paramType, "*") {
+						castType = "cstr"
+					} else {
+						castType = "int"
+					}
+				} else {
+					castType = "int" // Numbers become integers by default
+				}
+			}
 
-			// Convert float64 to integer (Flap uses float64 for all values)
-			// C functions typically expect integer types (int, uint32, etc.)
-			fc.out.Cvttsd2si("rax", "xmm0")
+			// Compile the inner expression (result in xmm0)
+			fc.compileExpression(innerExpr)
+
+			// Handle different cast types
+			switch castType {
+			case "cstr", "cstring":
+				// String to C string conversion
+				// xmm0 contains string map pointer - convert to C string
+				fc.out.SubImmFromReg("rsp", StackSlotSize)
+				fc.out.MovXmmToMem("xmm0", "rsp", 0)
+				fc.out.MovMemToReg("rax", "rsp", 0)
+				fc.out.AddImmToReg("rsp", StackSlotSize)
+
+				// Call flap_string_to_cstr(map_ptr) -> char*
+				fc.out.SubImmFromReg("rsp", StackSlotSize)
+				fc.out.MovRegToMem("rax", "rsp", 0)
+				fc.out.MovMemToReg("rdi", "rsp", 0)
+				fc.out.AddImmToReg("rsp", StackSlotSize)
+				fc.trackFunctionCall("flap_string_to_cstr")
+				fc.out.CallSymbol("flap_string_to_cstr")
+				// Result in rax (C string pointer)
+
+			case "ptr", "pointer":
+				// Pointer type - convert float64 to integer pointer
+				fc.out.Cvttsd2si("rax", "xmm0")
+
+			case "int", "i32", "int32":
+				// Signed 32-bit integer
+				fc.out.Cvttsd2si("rax", "xmm0")
+
+			case "uint32", "u32":
+				// Unsigned 32-bit integer
+				fc.out.Cvttsd2si("rax", "xmm0")
+
+			default:
+				// Default: convert float64 to integer
+				fc.out.Cvttsd2si("rax", "xmm0")
+			}
 
 			// Store on stack at offset i*8
 			fc.out.MovRegToMem("rax", "rsp", i*8)
