@@ -27,6 +27,44 @@ func hashStringKey(s string) uint64 {
 	return uint64((h32.Sum32() & 0x3FFFFFFF) | 0x40000000)
 }
 
+// isUppercase checks if an identifier is all uppercase (constant naming convention)
+func isUppercase(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	for _, ch := range s {
+		if ch >= 'a' && ch <= 'z' {
+			return false
+		}
+	}
+	return true
+}
+
+// parseNumberLiteral parses a number literal which can be decimal, hex (0x...), or binary (0b...)
+func (p *Parser) parseNumberLiteral(s string) float64 {
+	if len(s) >= 2 {
+		prefix := s[0:2]
+		if prefix == "0x" || prefix == "0X" {
+			// Hexadecimal
+			val, err := strconv.ParseUint(s[2:], 16, 64)
+			if err != nil {
+				p.error(fmt.Sprintf("invalid hexadecimal literal: %s", s))
+			}
+			return float64(val)
+		} else if prefix == "0b" || prefix == "0B" {
+			// Binary
+			val, err := strconv.ParseUint(s[2:], 2, 64)
+			if err != nil {
+				p.error(fmt.Sprintf("invalid binary literal: %s", s))
+			}
+			return float64(val)
+		}
+	}
+	// Regular decimal number
+	val, _ := strconv.ParseFloat(s, 64)
+	return val
+}
+
 type Parser struct {
 	lexer     *Lexer
 	current   Token
@@ -34,13 +72,15 @@ type Parser struct {
 	filename  string
 	source    string
 	loopDepth int // Current loop nesting level (0 = not in loop, 1 = outer loop, etc.)
+	constants map[string]Expression // Compile-time constants (immutable literals)
 }
 
 func NewParser(input string) *Parser {
 	p := &Parser{
-		lexer:    NewLexer(input),
-		filename: "<input>",
-		source:   input,
+		lexer:     NewLexer(input),
+		filename:  "<input>",
+		source:    input,
+		constants: make(map[string]Expression),
 	}
 	p.nextToken()
 	p.nextToken()
@@ -49,9 +89,10 @@ func NewParser(input string) *Parser {
 
 func NewParserWithFilename(input, filename string) *Parser {
 	p := &Parser{
-		lexer:    NewLexer(input),
-		filename: filename,
-		source:   input,
+		lexer:     NewLexer(input),
+		filename:  filename,
+		source:    input,
+		constants: make(map[string]Expression),
 	}
 	p.nextToken()
 	p.nextToken()
@@ -642,6 +683,35 @@ func (p *Parser) parseAssignment() *AssignStmt {
 		// Compound assignments are updates
 		isUpdate = true
 		mutable = true
+	}
+
+	// Check if this is a constant definition (uppercase immutable with literal value)
+	// Store compile-time constants for substitution
+	// Only uppercase identifiers are true constants (cannot be shadowed in practice)
+	if !mutable && !isUpdate && isUppercase(name) {
+		// Store numbers, strings, and lists as compile-time constants
+		switch v := value.(type) {
+		case *NumberExpr:
+			p.constants[name] = v
+		case *StringExpr:
+			p.constants[name] = v
+		case *ListExpr:
+			// Only store lists that contain only literal values
+			isLiteral := true
+			for _, elem := range v.Elements {
+				switch elem.(type) {
+				case *NumberExpr, *StringExpr:
+					// These are literals, OK
+				default:
+					// Contains expressions, not a pure literal list
+					isLiteral = false
+					break
+				}
+			}
+			if isLiteral {
+				p.constants[name] = v
+			}
+		}
 	}
 
 	return &AssignStmt{Name: name, Value: value, Mutable: mutable, IsUpdate: isUpdate, Precision: precision}
@@ -1432,7 +1502,7 @@ func (p *Parser) parsePrimary() Expression {
 		return &LengthExpr{Operand: expr}
 
 	case TOKEN_NUMBER:
-		val, _ := strconv.ParseFloat(p.current.Value, 64)
+		val := p.parseNumberLiteral(p.current.Value)
 		return &NumberExpr{Value: val}
 
 	case TOKEN_STRING:
@@ -1443,6 +1513,32 @@ func (p *Parser) parsePrimary() Expression {
 
 	case TOKEN_IDENT:
 		name := p.current.Value
+
+		// Check if this is a constant reference (substitute with value)
+		if expr, isConst := p.constants[name]; isConst {
+			// Return a copy of the stored expression to avoid mutation issues
+			switch e := expr.(type) {
+			case *NumberExpr:
+				return &NumberExpr{Value: e.Value}
+			case *StringExpr:
+				return &StringExpr{Value: e.Value}
+			case *ListExpr:
+				// Deep copy the list
+				elements := make([]Expression, len(e.Elements))
+				for i, elem := range e.Elements {
+					switch el := elem.(type) {
+					case *NumberExpr:
+						elements[i] = &NumberExpr{Value: el.Value}
+					case *StringExpr:
+						elements[i] = &StringExpr{Value: el.Value}
+					default:
+						elements[i] = elem
+					}
+				}
+				return &ListExpr{Elements: elements}
+			}
+			return expr
+		}
 
 		// Check for lambda: x => expr or x, y => expr
 		if p.peek.Type == TOKEN_FAT_ARROW {

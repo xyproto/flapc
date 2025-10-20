@@ -114,6 +114,72 @@ sum := 0
 - Makes mutations explicit at update site
 - Compiler catches common mistakes at compile time
 
+### Constants
+
+Flap supports compile-time constants using an **uppercase naming convention**. Constants are substituted at compile time with zero runtime overhead.
+
+```flap
+// Define constants (uppercase identifiers)
+PI = 3.14159
+SCREEN_WIDTH = 1920
+SCREEN_HEIGHT = 1080
+MAX_HEALTH = 100
+
+// Use in expressions - substituted at compile time
+circumference = 2.0 * PI * 10.0        // PI replaced with 3.14159
+pixels = SCREEN_WIDTH * SCREEN_HEIGHT  // Computed at compile time
+
+// Constants can use hex/binary literals
+MAX_U8 = 0xFF
+BITMASK = 0b11110000
+
+// Useful for game development
+player_health = MAX_HEALTH - 25
+```
+
+**Constant Rules:**
+- Must be all uppercase (e.g., `PI`, `MAX_HEALTH`, `SCREEN_WIDTH`)
+- Can be assigned number literals, string literals, or literal lists
+- Substituted at parse time (true compile-time constants)
+- Zero runtime overhead - values inlined at each use
+- Perfect for configuration values, magic numbers, and named constants
+
+**Example with strings and lists:**
+```flap
+APP_NAME = "MyGame"
+VERSION = "1.0.0"
+DEFAULT_COLORS = [255, 128, 64]
+
+printf("%s v%s\n", APP_NAME, VERSION)
+red = DEFAULT_COLORS[0]
+```
+
+### Number Literals
+
+Flap supports decimal, hexadecimal, and binary number literals:
+
+```flap
+// Decimal (standard)
+x = 255
+y = 3.14159
+
+// Hexadecimal (0x prefix)
+color = 0xFF00FF      // RGB magenta
+mask = 0xDEADBEEF
+offset = 0x1000
+
+// Binary (0b prefix)
+flags = 0b11110000
+permissions = 0b101   // 5 in decimal
+```
+
+**Hexadecimal and Binary:**
+- Hexadecimal: `0x` or `0X` prefix followed by `[0-9a-fA-F]+`
+- Binary: `0b` or `0B` prefix followed by `[01]+`
+- Both convert to float64 at compile time
+- Useful for bit manipulation, color values, memory addresses
+- Current limitation: values should be < 2³¹ due to compiler immediate encoding
+
 ### Operators
 
 **Arithmetic:** `+` `-` `*` `/` `%` `**` (power)

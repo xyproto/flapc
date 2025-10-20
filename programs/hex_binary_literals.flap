@@ -1,0 +1,8 @@
+x = 0xFF
+printf("0xFF = %.0f\n", x)
+
+y = 0b11111111
+printf("0b11111111 = %.0f\n", y)
+
+z = x + y
+printf("Sum = %.0f\n", z)

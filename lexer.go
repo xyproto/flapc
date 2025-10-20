@@ -126,6 +126,11 @@ type Token struct {
 	Line  int
 }
 
+// isHexDigit checks if a byte is a valid hexadecimal digit
+func isHexDigit(ch byte) bool {
+	return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
+}
+
 // processEscapeSequences converts escape sequences in a string to their actual characters
 func processEscapeSequences(s string) string {
 	var result strings.Builder
@@ -226,9 +231,39 @@ func (l *Lexer) NextToken() Token {
 		return Token{Type: TOKEN_STRING, Value: value, Line: l.line}
 	}
 
-	// Number
+	// Number (including hex 0x... and binary 0b...)
 	if unicode.IsDigit(rune(ch)) {
 		start := l.pos
+
+		// Check for hex or binary prefix
+		if ch == '0' && l.pos+1 < len(l.input) {
+			next := l.input[l.pos+1]
+			if next == 'x' || next == 'X' {
+				// Hexadecimal: 0x[0-9a-fA-F]+
+				l.pos += 2 // skip '0x'
+				if l.pos >= len(l.input) || !isHexDigit(l.input[l.pos]) {
+					// Invalid hex literal
+					return Token{Type: TOKEN_NUMBER, Value: "0", Line: l.line}
+				}
+				for l.pos < len(l.input) && isHexDigit(l.input[l.pos]) {
+					l.pos++
+				}
+				return Token{Type: TOKEN_NUMBER, Value: l.input[start:l.pos], Line: l.line}
+			} else if next == 'b' || next == 'B' {
+				// Binary: 0b[01]+
+				l.pos += 2 // skip '0b'
+				if l.pos >= len(l.input) || (l.input[l.pos] != '0' && l.input[l.pos] != '1') {
+					// Invalid binary literal
+					return Token{Type: TOKEN_NUMBER, Value: "0", Line: l.line}
+				}
+				for l.pos < len(l.input) && (l.input[l.pos] == '0' || l.input[l.pos] == '1') {
+					l.pos++
+				}
+				return Token{Type: TOKEN_NUMBER, Value: l.input[start:l.pos], Line: l.line}
+			}
+		}
+
+		// Regular decimal number
 		for l.pos < len(l.input) && (unicode.IsDigit(rune(l.input[l.pos])) || l.input[l.pos] == '.') {
 			l.pos++
 		}
