@@ -22,11 +22,9 @@ var compileExpectations = map[string]string{
 var skipPrograms = map[string]bool{}
 
 // Programs to compile but not run (require external libraries beyond libc/libm)
-// Note: All FFI tests that only use libc/libm should run in CI (both Arch Linux and Ubuntu)
+// Note: SDL3 and Raylib5 are now installed in CI, so these tests can run
 var compileOnlyPrograms = map[string]bool{
-	"c_ffi_test":       true, // SDL3 - compile-only (requires libsdl3.so at runtime)
-	"c_string_test":    true, // SDL3 strings - compile-only (requires libsdl3.so at runtime)
-	"c_auto_cast_test": true, // SDL3 auto-cast - compile-only (requires libsdl3.so at runtime)
+	// All SDL3/Raylib tests should now run in CI
 }
 
 // Programs to skip on ARM64 (macOS) - C import not yet implemented

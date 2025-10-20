@@ -17,6 +17,16 @@ jobs:
       with:
         go-version: ${{ matrix.go-version }}
 
+    - name: Install SDL3 and Raylib5
+      run: |
+        if [ "$RUNNER_OS" == "Linux" ]; then
+          sudo apt-get update
+          sudo apt-get install -y libsdl3-dev raylib
+        elif [ "$RUNNER_OS" == "macOS" ]; then
+          brew install sdl3 raylib
+        fi
+      shell: bash
+
     - name: Build
       run: go build -v
 
