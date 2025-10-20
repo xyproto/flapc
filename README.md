@@ -2,104 +2,97 @@
 
 [![Go CI](https://github.com/xyproto/flapc/actions/workflows/ci.yml/badge.svg)](https://github.com/xyproto/flapc/actions/workflows/ci.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/xyproto/flapc.svg)](https://pkg.go.dev/github.com/xyproto/flapc) [![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause) [![Go Report Card](https://goreportcard.com/badge/github.com/xyproto/flapc)](https://goreportcard.com/report/github.com/xyproto/flapc)
 
-**Version 1.4.0** - C Library FFI Release
+**Version 1.4.0**
 
-Flapc is the compiler for Flap, a functional programming language that compiles directly to native machine code with zero runtime overhead.
+Compiler for Flap, a functional programming language that compiles to native x86-64, ARM64, and RISC-V machine code.
 
-## Philosophy
+## Technical Overview
 
-Flap embraces **radical simplicity through uniformity**. Instead of juggling types, memory models, and runtime complexity, everything is `map[uint64]float64`:
+Flap uses `map[uint64]float64` as its unified type representation:
 
-- **One Foundation**: Numbers are `{0: 42.0}`, strings are `{0: 72.0, 1: 101.0, ...}`, lists are `{0: 1.0, 1: 2.0, ...}`. One type, infinite flexibility.
-- **Zero Runtime**: No GC pauses, no interpreter overhead, no hidden allocations. Direct compilation to native machine code with predictable performance.
-- **Performance by Default**: SIMD operations (SSE2/AVX-512) with automatic CPU detection. Hardware FPU instructions. Every abstraction compiles to tight assembly.
-- **C Interoperability**: Call any C library function with simple `import sdl2 as sdl` syntax. No bindings, no wrappers, just works.
-- **Railway-Oriented Errors**: The `or!` operator creates clean error handling pipelines without the noise of `if err != nil` or exception hierarchies.
-- **Suckless Ethos**: Simple, clear, maintainable. The compiler is ~12,000 lines of readable Go code. No macros, no templates, no DSLs.
+- Numbers: `{0: 42.0}`
+- Strings: `{0: 72.0, 1: 101.0, ...}` (index → character code)
+- Lists: `{0: 1.0, 1: 2.0, ...}` (index → element value)
+- Maps: Direct representation
 
-**For game developers**: Direct SDL2/SDL3/Raylib access, hex/binary literals for colors and flags, compile-time constants with zero overhead, unsafe blocks for hardware access, predictable performance.
+The compiler generates native machine code directly without intermediate representations or runtime systems. All values use IEEE 754 double-precision floating point. SIMD optimizations (SSE2/AVX-512) are automatically selected at runtime via CPUID detection.
 
-**For systems programmers**: Direct register manipulation via unsafe blocks, System V ABI compatibility, no runtime dependencies, tiny executables, full control.
+## v1.4.0 Release Notes
 
-Flap proves that **simplicity scales**. One type system, one calling convention, one memory model — yet expressive enough for real-world software.
+### C Library FFI
 
-## What's New in v1.4.0
-
-### C Library FFI (Complete)
-
-Call C library functions directly with automatic dynamic linking:
+Direct C library function calls via PLT/GOT dynamic linking:
 
 ```flap
 import sdl2 as sdl
 
-result := sdl.SDL_Init(0x00000020)  // SDL_INIT_VIDEO
+result := sdl.SDL_Init(0x00000020)
 window := sdl.SDL_CreateWindow("Game", 100, 100, 800, 600, 0)
-// ... game code ...
 sdl.SDL_Quit()
 ```
 
-**Features:**
-- Auto-detection of C vs Flap imports (no "/" = C library)
-- Namespace-based function calls
-- Automatic PLT/GOT dynamic linking
+**Implementation:**
+- Import syntax: `import <library> as <namespace>` (identifier without "/" = C library)
+- ELF DT_NEEDED entries generated automatically
 - System V AMD64 ABI calling convention
-- Works with SDL2, SDL3, Raylib, OpenGL, SQLite, and any C library
+- Arguments: float64 → int64 conversion (Cvttsd2si)
+- Return values: int64 → float64 conversion (Cvtsi2sd)
+- PLT call patching via `trackFunctionCall()` and `patchPLTCalls()`
 
-**Current Limitations:**
-- Max 6 arguments per call
-- Arguments converted to integers
-- Return values assumed to be integers
-- String/struct/pointer support coming in v1.5.0
+**Limitations:**
+- Maximum 6 arguments (rdi, rsi, rdx, rcx, r8, r9 registers)
+- Integer arguments only (no float, pointer, or struct support)
+- Integer return values only
 
-### Enhanced Unsafe Language
+### Unsafe Blocks
 
-Direct register manipulation for systems programming:
+Architecture-specific register manipulation (x86-64, ARM64, RISC-V):
 
 ```flap
 result := unsafe {
     rax <- 100
     rbx <- 50
-    rax <- rax + rbx   // Arithmetic operations
-    rcx <- [rax]       // Memory loads
-    rax                // Return value
+    rax <- rax + rbx
+    rcx <- [rax]
+    rax
 } { /* arm64 */ } { /* riscv64 */ }
 ```
 
-**Supported Operations (v1.4.0):**
-- Register loads: `rax <- 42`, `rax <- rbx`
-- Stack operations: `stack <- rax`, `rax <- stack`
-- Arithmetic: `rax <- rax + rbx`, `rax <- rax - 10`
-- Memory loads: `rax <- [rbx]`, `rax <- [rbx + 16]`
+**Implemented operations:**
+- Immediate loads: `rax <- 42`
+- Register moves: `rax <- rbx`
+- Stack push/pop: `stack <- rax`, `rax <- stack`
+- Addition: `rax <- rax + rbx`, `rax <- rax + 10`
+- Subtraction: `rax <- rax - rbx`, `rax <- rax - 10`
+- Memory loads: `rax <- [rbx]`, `rax <- [rbx + 16]` (64-bit only)
 
-**Coming in v1.5.0:** Multiply, divide, bitwise ops, shifts, memory stores, syscall
+**Not yet implemented:** multiply, divide, bitwise operations, shifts, sized loads/stores, memory stores, syscall instruction
 
-## Main Features
+## Implementation
 
-- **Direct to machine code** - `.flap` source compiles directly to native executables (ELF/Mach-O)
-- **Multi-architecture** - Supports x86_64, aarch64, and riscv64
-- **C Library FFI** - Call any C function with simple import syntax
-- **SIMD by default** - Automatic SSE2/AVX-512 CPU detection and optimization
-- **Unsafe blocks** - Direct register access for systems programming
-- **Constants** - Compile-time constant folding with uppercase identifiers
-- **Hex/Binary literals** - `0xFF` and `0b11110000` for colors and flags
-- **Hash map foundation** - `map[uint64]float64` is the core data type
-- **No nil** - Simplified memory model
-- **Few keywords** - Minimal syntax for maximum expressiveness
+- **Code generation**: Direct x86-64/ARM64/RISC-V machine code emission (no LLVM, no GCC)
+- **Binary format**: ELF64 (Linux), Mach-O (macOS)
+- **Type system**: Single type (`map[uint64]float64`) with IEEE 754 double-precision values
+- **SIMD**: Runtime CPU detection (CPUID) selects SSE2 or AVX-512 paths for map indexing
+- **FFI**: PLT/GOT dynamic linking for C library calls
+- **Unsafe blocks**: Three-architecture register manipulation (x86-64, ARM64, RISC-V)
+- **Constants**: Uppercase identifiers with compile-time substitution
+- **Literals**: Decimal, hexadecimal (`0xFF`), binary (`0b1010`)
+- **Calling convention**: System V AMD64 ABI
+- **Stack alignment**: 16-byte before CALL instructions
+- **Compiler**: ~12,000 lines of Go code
 
 ## Test Status
 
-**x86-64 Linux:** 200/201 tests passing (99.5%) ✅
-- All core language features working
-- C FFI working (getpid, SDL tests)
-- SIMD-optimized map operations
-- 1 expected failure: `unsafe_arithmetic_test` (multiply/divide not yet implemented)
+**x86-64 Linux:** 200/201 tests passing (99.5%)
+- Expected failure: `unsafe_arithmetic_test` (multiply/divide not implemented)
 
-**ARM64 macOS:** Compiler hang issue (deferred) 🔧
-- Core features implemented
-- Binary execution blocked by platform-specific issue
-- Full support planned for v1.5.0+
+**ARM64 macOS:** Binary hang on execution
+- Compiler builds successfully
+- Generated binaries hang before entering main()
+- Issue appears to be macOS-specific (dyld or code signing related)
 
-**RISC-V 64-bit:** Partial (instruction encoders ready) ⚠️
+**RISC-V 64-bit:** Instruction encoders implemented, code generation incomplete
 
 ## Quick Start
 
@@ -245,57 +238,41 @@ See `programs/` directory:
 - **C FFI**: PLT/GOT dynamic linking
 - **Binary Format**: ELF64 (Linux), Mach-O (macOS)
 
-## Performance Features
+## Performance Characteristics
 
-### SIMD-Optimized Map Indexing
+### SIMD Map Indexing
 
-Automatic runtime CPU detection selects optimal SIMD path:
+Runtime CPUID detection selects implementation:
 
-- **AVX-512**: 8 keys/iteration (if CPU supports)
-- **SSE2**: 2 keys/iteration (fallback for all x86-64)
-- **Scalar**: 1 key/iteration (baseline)
+- **AVX-512** (if supported): 8 keys per iteration using VGATHERQPD
+- **SSE2** (baseline): 2 keys per iteration using UNPCKLPD + CMPEQPD
+- **Scalar** (fallback): 1 key per iteration
 
-No recompilation needed - every binary includes all paths!
+Each compiled binary includes all three implementations.
 
-### Zero-Runtime Overhead
+### Runtime Characteristics
 - No garbage collector
-- No interpreter
-- No hidden allocations
-- Direct syscalls (no libc dependency for I/O)
-- Inline constant folding
+- No bytecode interpreter
+- No JIT compilation
+- Direct Linux syscalls for I/O (write, read, open, close, lseek)
+- Compile-time constant folding
 
-## Current Limitations
+## Known Issues (v1.4.0)
 
-### v1.4.0 Known Issues
-- **ARM64**: Compiler binary hang blocks all ARM64 development
-- **Unsafe ops**: Multiply, divide, bitwise, shifts not implemented
-- **C FFI**: Limited to 6 integer arguments, no strings/structs/pointers
-- **Memory**: Arena/defer syntax parsed but runtime not implemented
+- **ARM64**: Binary execution hang (macOS-specific)
+- **Unsafe operations**: Missing multiply, divide, bitwise (AND/OR/XOR), shifts, memory stores, syscall
+- **C FFI**: Limited to 6 integer arguments; no support for strings, structs, pointers, or floats
+- **Memory management**: Arena/defer syntax parsed but code generation not implemented
 
-### Planned for v1.5.0
-- Complete unsafe operations (multiply, divide, bitwise, shifts, syscall)
-- Enhanced C FFI (strings, pointers, floats, >6 args)
-- Arena allocator runtime
-- Defer statement code generation
-
-See [TODO.md](TODO.md) for complete roadmap.
-
-## Contributing
-
-This is an educational/experimental project exploring direct machine code generation from a high-level functional language. Feel free to explore, learn, and experiment.
+See [TODO.md](TODO.md) for v1.5.0 development priorities.
 
 ## License
 
 BSD-3-Clause
 
-## Acknowledgments
+## References
 
-Built with insights from:
 - System V AMD64 ABI specification
-- Intel Software Developer Manuals
-- ELF and Mach-O format specifications
-- The suckless philosophy of simplicity and clarity
-
----
-
-**Flap**: Simple. Fast. Direct.
+- Intel 64 and IA-32 Architectures Software Developer's Manual
+- ELF-64 Object File Format specification
+- Mach-O executable format specification
