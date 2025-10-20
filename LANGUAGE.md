@@ -637,6 +637,35 @@ unsafe {
 } { /* arm64 */ } { /* riscv64 */ }
 ```
 
+#### 4. Arithmetic Operations
+
+**Addition and Subtraction** (v1.3.0+):
+```flap
+unsafe {
+    rax <- 100
+    rbx <- 50
+    rax <- rax + rbx   // rax = 150 (register + register)
+    rax <- rax + 10    // rax = 160 (register + immediate)
+    rax <- rax - 20    // rax = 140 (register - immediate)
+    rax <- rax - rbx   // rax = 90  (register - register)
+} { /* arm64 */ } { /* riscv64 */ }
+```
+
+**Coming in v1.5.0**: Multiply, divide, bitwise operations (AND, OR, XOR), shifts
+
+#### 5. Memory Operations
+
+**Memory Loads** (v1.3.0+):
+```flap
+unsafe {
+    rbx <- 0x1000        // Address to load from
+    rax <- [rbx]         // Load 64-bit value from address in rbx
+    rcx <- [rbx + 16]    // Load from rbx + 16 offset
+} { /* arm64 */ } { /* riscv64 */ }
+```
+
+**Coming in v1.5.0**: Sized loads (u8, u16, u32), memory stores, sign extension
+
 ### Return Value
 
 Unsafe blocks return the value in the **accumulator register**:
@@ -1265,9 +1294,9 @@ rm -rf ~/.cache/flapc/
 
 ## Memory Management
 
-**Status (v1.3.0):** Syntax and documentation complete. Full runtime implementation coming in v1.4.0.
+**Status (v1.4.0):** Syntax and documentation complete. Full runtime implementation coming in v1.5.0.
 
-Flap 1.3.0 introduces syntax for arena allocators and defer statements. The compiler recognizes the keywords and parses the constructs, with full runtime implementation planned for v1.4.0.
+Flap introduces syntax for arena allocators and defer statements. The compiler recognizes the keywords and parses the constructs, with full runtime implementation planned for v1.5.0.
 
 ### Arena Allocators
 
