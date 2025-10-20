@@ -248,14 +248,19 @@ x > 42 {
     ~> println("small")
 }
 
-// Match without default (implicit 0)
+// Match without default (implicit 0.0/no)
 x > 42 {
-    -> 123           // sugar for "-> 123"
+    -> 123           // sugar for "-> 123 ~> 0"
+}
+
+// Match without default, without the arrow (implicit 0)
+x > 42 {
+    123           // sugar for "-> 123"
 }
 
 // Default-only (preserves condition value when true)
 x > 42 {
-    ~> 123           // yields 1.0 when true, 123 when false
+    ~> 123           // yields 1.0/yes when true, 123 when false
 }
 
 // Shorthand: ~> without -> is equivalent to { -> ~> value }
@@ -270,13 +275,16 @@ x {
 
 // Ternary replacement
 z = x > 42 { 1 ~> 0 }
+
+// Ternary replacement with yes/no
+z = x > 42 { yes ~> no }
 ```
 
 ### Strings
 
 ```flap
 s := "Hello"         // Creates {0: 72.0, 1: 101.0, ...}
-char := s[1]         // returns 101.0 (ASCII 'e')
+char := s[1]         // returns 101.0 (UTF-8 'e')
 println("Hello")     // String literals optimized for direct output
 result := "Hello, " + "World!"  // Compile-time concatenation
 
@@ -360,7 +368,7 @@ data.name            // Access by string key
 - Dot notation (`obj.field`) is syntax sugar that compiles to map indexing (`obj[hash("field")]`)
 - At runtime, everything is still `map[uint64]float64` - no new data types
 - String keys preserve insertion order just like numeric keys
-- Namespaced function calls (`SDL.init()`) are supported through dot notation
+- Namespaced function calls (`sdl.SDL_init()`) are supported through dot notation
 
 ### Membership Testing
 
@@ -369,6 +377,8 @@ data.name            // Access by string key
     -> println("Found!")
     ~> println("Not found")
 }
+
+println(10 in numbers { "Found!" ~> "Not found" })
 
 result = 5 in mylist  // returns 1.0 or 0.0
 ```
@@ -384,7 +394,7 @@ Loops use `@` for iteration (simplified from `@` in v1.0):
 }
 
 // Iterate over range
-@ i in range(10) {
+@ i in 0..<10 {
     println(i)
 }
 
@@ -418,7 +428,7 @@ numbers = [10, 20, 30]
 - `@first` - true on first iteration
 - `@last` - true on last iteration
 - `@counter` - iteration count (starts at 0)
-- `@i` - current element/key
+- `@key` - current key or index
 
 **Example:**
 ```flap
