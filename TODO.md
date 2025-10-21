@@ -15,7 +15,7 @@
   - [ ] Register allocation for frequently-used variables
   - [ ] Full register allocator with liveness analysis
 - [ ] **Dead code elimination** - Remove unused code from output
-- [ ] **Constant propagation across functions** - Optimize constants through call boundaries
+- [x] **Constant propagation** - Substitute immutable variables with their constant values
 - [ ] **Inline small functions automatically** - Performance optimization
 
 ## Future stdlib (architecture-agnostic)

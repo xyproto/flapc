@@ -169,10 +169,17 @@ func (p *Parser) ParseProgram() *Program {
 
 // optimizeProgram applies optimization passes to the AST
 func optimizeProgram(program *Program) *Program {
-	// Apply constant folding
+	// Pass 1: Constant folding (2 + 3 → 5)
 	for i, stmt := range program.Statements {
 		program.Statements[i] = foldConstants(stmt)
 	}
+
+	// Pass 2: Constant propagation (x = 5; y = x + 1 → y = 6)
+	constMap := make(map[string]*NumberExpr)
+	for i, stmt := range program.Statements {
+		program.Statements[i] = propagateConstants(stmt, constMap)
+	}
+
 	return program
 }
 
@@ -301,6 +308,157 @@ func foldConstantExpr(expr Expression) Expression {
 		}
 		if e.DefaultExpr != nil {
 			e.DefaultExpr = foldConstantExpr(e.DefaultExpr)
+		}
+		return e
+
+	default:
+		return expr
+	}
+}
+
+// propagateConstants performs constant propagation on statements
+// Tracks immutable variables assigned constant values and substitutes them
+func propagateConstants(stmt Statement, constMap map[string]*NumberExpr) Statement {
+	switch s := stmt.(type) {
+	case *AssignStmt:
+		// First propagate constants in the value expression
+		s.Value = propagateConstantsExpr(s.Value, constMap)
+
+		// Then fold constants in case propagation enabled new folding opportunities
+		s.Value = foldConstantExpr(s.Value)
+
+		// If this is an immutable assignment to a number literal, track it
+		if !s.Mutable && !s.IsUpdate {
+			if numExpr, ok := s.Value.(*NumberExpr); ok {
+				// Clone the number expression to avoid mutation issues
+				constMap[s.Name] = &NumberExpr{Value: numExpr.Value}
+			} else {
+				// Variable is not assigned a constant, remove from map
+				delete(constMap, s.Name)
+			}
+		} else {
+			// Mutable or update - can't track as constant
+			delete(constMap, s.Name)
+		}
+		return s
+
+	case *ExpressionStmt:
+		s.Expr = propagateConstantsExpr(s.Expr, constMap)
+		s.Expr = foldConstantExpr(s.Expr)
+		return s
+
+	case *LoopStmt:
+		s.Iterable = propagateConstantsExpr(s.Iterable, constMap)
+		s.Iterable = foldConstantExpr(s.Iterable)
+
+		// Loop body creates a new scope - clone const map
+		bodyConstMap := make(map[string]*NumberExpr)
+		for k, v := range constMap {
+			bodyConstMap[k] = v
+		}
+		// Remove iterator variable from constants (it changes each iteration)
+		delete(bodyConstMap, s.Iterator)
+
+		for i, bodyStmt := range s.Body {
+			s.Body[i] = propagateConstants(bodyStmt, bodyConstMap)
+		}
+		return s
+
+	default:
+		return stmt
+	}
+}
+
+// propagateConstantsExpr substitutes variable references with known constant values
+func propagateConstantsExpr(expr Expression, constMap map[string]*NumberExpr) Expression {
+	switch e := expr.(type) {
+	case *IdentExpr:
+		// Check if this variable has a known constant value
+		if constVal, exists := constMap[e.Name]; exists {
+			// Substitute with the constant value
+			return &NumberExpr{Value: constVal.Value}
+		}
+		return e
+
+	case *BinaryExpr:
+		e.Left = propagateConstantsExpr(e.Left, constMap)
+		e.Right = propagateConstantsExpr(e.Right, constMap)
+		return e
+
+	case *CallExpr:
+		for i, arg := range e.Args {
+			e.Args[i] = propagateConstantsExpr(arg, constMap)
+		}
+		return e
+
+	case *RangeExpr:
+		e.Start = propagateConstantsExpr(e.Start, constMap)
+		e.End = propagateConstantsExpr(e.End, constMap)
+		return e
+
+	case *ListExpr:
+		for i, elem := range e.Elements {
+			e.Elements[i] = propagateConstantsExpr(elem, constMap)
+		}
+		return e
+
+	case *MapExpr:
+		for i := range e.Keys {
+			e.Keys[i] = propagateConstantsExpr(e.Keys[i], constMap)
+			e.Values[i] = propagateConstantsExpr(e.Values[i], constMap)
+		}
+		return e
+
+	case *IndexExpr:
+		e.List = propagateConstantsExpr(e.List, constMap)
+		e.Index = propagateConstantsExpr(e.Index, constMap)
+		return e
+
+	case *LambdaExpr:
+		// Lambda creates new scope - don't propagate outer constants into lambda body
+		// (More sophisticated analysis could handle this)
+		return e
+
+	case *ParallelExpr:
+		e.List = propagateConstantsExpr(e.List, constMap)
+		e.Operation = propagateConstantsExpr(e.Operation, constMap)
+		return e
+
+	case *PipeExpr:
+		e.Left = propagateConstantsExpr(e.Left, constMap)
+		e.Right = propagateConstantsExpr(e.Right, constMap)
+		return e
+
+	case *InExpr:
+		e.Value = propagateConstantsExpr(e.Value, constMap)
+		e.Container = propagateConstantsExpr(e.Container, constMap)
+		return e
+
+	case *LengthExpr:
+		e.Operand = propagateConstantsExpr(e.Operand, constMap)
+		return e
+
+	case *MatchExpr:
+		e.Condition = propagateConstantsExpr(e.Condition, constMap)
+		for _, clause := range e.Clauses {
+			if clause.Guard != nil {
+				clause.Guard = propagateConstantsExpr(clause.Guard, constMap)
+			}
+			clause.Result = propagateConstantsExpr(clause.Result, constMap)
+		}
+		if e.DefaultExpr != nil {
+			e.DefaultExpr = propagateConstantsExpr(e.DefaultExpr, constMap)
+		}
+		return e
+
+	case *BlockExpr:
+		// Block creates new scope - clone const map
+		blockConstMap := make(map[string]*NumberExpr)
+		for k, v := range constMap {
+			blockConstMap[k] = v
+		}
+		for i, stmt := range e.Statements {
+			e.Statements[i] = propagateConstants(stmt, blockConstMap)
 		}
 		return e
 
