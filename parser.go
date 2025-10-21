@@ -158,31 +158,8 @@ func (p *Parser) ParseProgram() *Program {
 		p.skipNewlines()
 	}
 
-	// Add implicit exit(0) if the last statement isn't already an exit call
-	if len(program.Statements) > 0 {
-		lastStmt := program.Statements[len(program.Statements)-1]
-		isExitCall := false
-
-		// Check if last statement is an exit() call
-		if exprStmt, ok := lastStmt.(*ExpressionStmt); ok {
-			if callExpr, ok := exprStmt.Expr.(*CallExpr); ok {
-				if callExpr.Function == "exit" {
-					isExitCall = true
-				}
-			}
-		}
-
-		// Add exit(0) if not already present
-		if !isExitCall {
-			exitCall := &ExpressionStmt{
-				Expr: &CallExpr{
-					Function: "exit",
-					Args:     []Expression{&NumberExpr{Value: 0}},
-				},
-			}
-			program.Statements = append(program.Statements, exitCall)
-		}
-	}
+	// Don't add automatic exit(0) statement - the compiler will emit exit code
+	// after processing deferred statements (see lines 2658-2669 in compileStatement)
 
 	// Apply optimizations
 	program = optimizeProgram(program)
