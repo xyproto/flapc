@@ -1,6 +1,6 @@
 # The Flap Programming Language
 
-### Version 1.4.0
+### Version 1.0.0
 
 ## Type System
 
@@ -1143,7 +1143,7 @@ import "github.com/xyproto/flap_math@HEAD" as math
 
 ### C Library Imports
 
-**Status (v1.4.0):** C library FFI is fully functional for basic use cases.
+**Status (v1.0.0):** C library FFI is fully functional for basic use cases.
 
 Flap can call C library functions directly using a simple import syntax. The compiler automatically handles dynamic linking via PLT/GOT on Linux.
 
@@ -1171,7 +1171,7 @@ time := libc.time(0)
 3. **PLT calls**: Functions are called through the Procedure Linkage Table
 4. **ABI compatibility**: Arguments are marshaled to System V AMD64 calling convention
 
-**Current Limitations (v1.4.0):**
+**Current Limitations (v1.0.0):**
 
 - Maximum 6 arguments per function call
 - Arguments are converted to integers (uint32/int64)
@@ -1266,7 +1266,7 @@ rm -rf ~/.cache/flapc/
 
 ## Memory Management
 
-**Status (v1.4.0):** Syntax and documentation complete. Full runtime implementation coming in v1.5.0.
+**Status (v1.0.0):** Syntax and documentation complete. Full runtime implementation coming in v1.5.0.
 
 Flap introduces syntax for arena allocators and defer statements. The compiler recognizes the keywords and parses the constructs, with full runtime implementation planned for v1.5.0.
 

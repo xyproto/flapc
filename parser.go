@@ -2072,7 +2072,7 @@ func (p *Parser) parseUnsafeBlock() []Statement {
 			p.current.Type == TOKEN_U32 || p.current.Type == TOKEN_U64 ||
 			p.current.Type == TOKEN_I8 || p.current.Type == TOKEN_I16 ||
 			p.current.Type == TOKEN_I32 || p.current.Type == TOKEN_I64 {
-			// u8 [rax] <- value (TODO v1.4.0: implement sized stores)
+			// u8 [rax] <- value (TODO v1.1.0: implement sized stores)
 			_ = p.current.Value // storeSize - unused for now
 			p.nextToken()       // skip size
 			if p.current.Type != TOKEN_LBRACKET {
@@ -5552,10 +5552,10 @@ func (fc *FlapCompiler) compileRegisterOp(dest string, op *RegisterOp) {
 
 func (fc *FlapCompiler) compileMemoryLoad(dest string, load *MemoryLoad) {
 	// Memory load: dest <- [addr + offset]
-	// TODO v1.4.0: Implement sized loads (u8, u16, u32, i32)
+	// TODO v1.1.0: Implement sized loads (u8, u16, u32, i32)
 	// For now, only support u64
 	if load.Size != "u64" && load.Size != "" {
-		compilerError("sized memory loads not yet implemented in v1.3.0 (coming in v1.4.0)")
+		compilerError("sized memory loads not yet implemented in v1.3.0 (coming in v1.1.0)")
 	}
 	fc.out.MovMemToReg(dest, load.Address, int(load.Offset))
 }
@@ -7706,7 +7706,7 @@ func (fc *FlapCompiler) compileTailCall(call *CallExpr) {
 
 func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, args []Expression) {
 	// Generate C FFI call
-	// Strategy for v1.4.0:
+	// Strategy for v1.1.0:
 	// 1. Marshal arguments according to System V AMD64 ABI
 	// 2. Call function using PLT (dynamic linking)
 	// 3. Convert result to float64 in xmm0
@@ -7727,9 +7727,9 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 	// Integer/pointer args: rdi, rsi, rdx, rcx, r8, r9, then stack
 	// Float args: xmm0-xmm7, then stack
 
-	// For simplicity in v1.4.0: support up to 6 integer arguments
+	// For simplicity in v1.1.0: support up to 6 integer arguments
 	if len(args) > 6 {
-		compilerError("C FFI calls with >6 arguments not yet supported in v1.4.0")
+		compilerError("C FFI calls with >6 arguments not yet supported in v1.1.0")
 	}
 
 	// System V AMD64 ABI register sequence for integer/pointer arguments
@@ -9087,7 +9087,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		}
 
 	case "alloc":
-		// alloc(size) - Allocate memory (v1.3.0: calls malloc, arena tracking in v1.4.0)
+		// alloc(size) - Allocate memory (v1.3.0: calls malloc, arena tracking in v1.1.0)
 		// size: number (bytes to allocate)
 		// Returns: pointer as float64
 		if len(call.Args) != 1 {
@@ -9099,7 +9099,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Convert size to integer in rdi
 		fc.out.Cvttsd2si("rdi", "xmm0")
 
-		// v1.3.0: Just call malloc (full arena allocator in v1.4.0)
+		// v1.3.0: Just call malloc (full arena allocator in v1.1.0)
 		fc.trackFunctionCall("malloc")
 		fc.eb.GenerateCallInstruction("malloc")
 
