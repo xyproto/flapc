@@ -5,12 +5,13 @@
 
 platforms="
   linux,amd64,,linux_x86_64_static,tar.xz
-  darwin,arm64,,macos_aarch64_static,tar.gz
-  linux,riscv64,,linux_riscv64_static,tar.xz
 "
 
+# darwin,arm64,,macos_aarch64_static,tar.gz
+# linux,riscv64,,linux_riscv64_static,tar.xz
+
 name=flapc
-version=$(grep -i version main.go | head -1 | cut -d' ' -f4 | cut -d'"' -f1)
+version=$(grep -i version main.go | head -1 | cut -d' ' -f5 | cut -d'"' -f1)
 echo "Version $version"
 
 export CGO_ENABLED=0
@@ -34,10 +35,10 @@ compile_and_compress() {
 
   echo "Compressing $name-$version.$platform.$compression"
   mkdir "$name-$version-$platform"
-  cp ../flapc.1 "$name-$version-$platform/"
+  cp flapc.1 "$name-$version-$platform/"
   gzip "$name-$version-$platform/flapc.1"
   cp "$name.$platform" "$name-$version-$platform/flapc"
-  cp ../LICENSE "$name-$version-$platform/"
+  cp LICENSE "$name-$version-$platform/"
 
   case "$compression" in
     tar.xz)
@@ -65,6 +66,5 @@ EOF
 
 wait
 
-cd ..
 mkdir -p release
-mv -v v2/$name-$version* release
+mv -v $name-$version* release
