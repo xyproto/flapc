@@ -78,10 +78,17 @@
   - Tested: fib(35) = 9227465 runs instantly (vs exponential time without cache)
   - TODO: Add max_cache_size and cleanup_lambda parameters
 
+- [x] **Defer statements runtime** - ✅ COMPLETE (v1.6.0)
+  - Syntax: `defer expr` - Go-style deferred execution for cleanup and resource management
+  - Executes deferred expressions in LIFO order at scope exit
+  - Works in main program scope, lambda functions, and arena blocks
+  - Scope stack management with pushDeferScope/popDeferScope
+  - Fixed execution order by removing parser-added exit(0) statement
+  - Deferred code emits before program exit via compiler's exit code generation
+  - Tested: Multiple defer statements execute in correct reverse order
+  - Use cases: Resource cleanup, closing files, logging, debugging
+
 ## Next Actions
-- [ ] **Defer statements runtime** - Implement cleanup code for resource management
-  - Track deferred expressions per scope in FlapCompiler
-  - Emit deferred code in LIFO order at scope exit and before returns
 - [ ] **SIMD intrinsics** - Vector operations for audio DSP, graphics effects, particle systems
 - [ ] **Register allocation improvements** - Better register usage for performance
 - [ ] **Dead code elimination** - Remove unused code from output
