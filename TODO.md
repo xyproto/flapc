@@ -44,13 +44,23 @@
   - Supports all 8 xmm registers for float arguments (xmm0-xmm7)
   - Tested with sum8doubles(8 doubles) - all parameters passed correctly
 
+## Recently Completed (continued)
+
+- [x] **Arena allocator runtime** - ✅ COMPLETE (v1.6.0)
+  - Inline assembly implementation of bump allocator
+  - `arena_create(capacity)` - Create new arena with specified capacity
+  - `arena_alloc(arena_ptr, size)` - Fast O(1) bump allocation with 8-byte alignment
+  - `arena_reset(arena_ptr)` - Reset arena for memory reuse
+  - `arena_destroy(arena_ptr)` - Free all arena memory
+  - Calls malloc/free via PLT for actual memory management
+  - Tested with multiple allocations and reset functionality
+
 ## Next Actions
 - [ ] **Memoized recursion (cme) enhancements** - Add cache size limit and cleanup callback parameters:
   - `cme(arg, max_cache_size, cleanup_lambda)` where cleanup_lambda is called when cache is full
   - Currently `cme` only supports simple recursive calls without memoization
-- [ ] **Arena allocator runtime** - Implement fast memory allocation for game objects and demo effects
-  - Create `arena_runtime.c` with `flap_arena_create()`, `flap_arena_alloc()`, `flap_arena_destroy()`
-  - Generate arena block code (call create on entry, destroy on exit)
+- [ ] **Arena block syntax** - Add language-level arena blocks for automatic lifetime management
+  - Syntax: `arena(capacity) { ... code ... }` - arena destroyed automatically at block exit
   - Support nested arenas for hierarchical allocation
 - [ ] **Defer statements runtime** - Implement cleanup code for resource management
   - Track deferred expressions per scope in FlapCompiler

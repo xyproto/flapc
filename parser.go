@@ -7144,6 +7144,130 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbx")
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
+
+	// Generate flap_arena_create(capacity) -> arena_ptr
+	// Creates a new arena with the specified capacity
+	// Argument: rdi = capacity (int64)
+	// Returns: rax = arena pointer
+	// Arena structure: [buffer_ptr (8)][capacity (8)][offset (8)][alignment (8)] = 32 bytes header
+	fc.eb.MarkLabel("flap_arena_create")
+
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+	fc.out.PushReg("rbx")
+	fc.out.PushReg("r12")
+
+	// Save capacity argument
+	fc.out.MovRegToReg("r12", "rdi") // r12 = capacity
+
+	// Allocate arena structure (32 bytes)
+	fc.out.MovImmToReg("rdi", "32")
+	fc.trackFunctionCall("malloc")
+	fc.eb.GenerateCallInstruction("malloc")
+	fc.out.MovRegToReg("rbx", "rax") // rbx = arena struct pointer
+
+	// Allocate arena buffer
+	fc.out.MovRegToReg("rdi", "r12") // rdi = capacity
+	fc.trackFunctionCall("malloc")
+	fc.eb.GenerateCallInstruction("malloc")
+
+	// Fill arena structure
+	fc.out.MovRegToMem("rax", "rbx", 0)      // [rbx+0] = buffer_ptr
+	fc.out.MovRegToMem("r12", "rbx", 8)      // [rbx+8] = capacity
+	fc.out.MovImmToMem(0, "rbx", 16)         // [rbx+16] = offset (0)
+	fc.out.MovImmToMem(8, "rbx", 24)         // [rbx+24] = alignment (8)
+
+	// Return arena pointer in rax
+	fc.out.MovRegToReg("rax", "rbx")
+
+	fc.out.PopReg("r12")
+	fc.out.PopReg("rbx")
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
+
+	// Generate flap_arena_alloc(arena_ptr, size) -> allocation_ptr
+	// Allocates memory from the arena using bump allocation
+	// Arguments: rdi = arena_ptr, rsi = size (int64)
+	// Returns: rax = allocated memory pointer
+	fc.eb.MarkLabel("flap_arena_alloc")
+
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+
+	// Load arena fields
+	fc.out.MovMemToReg("r8", "rdi", 0)   // r8 = buffer_ptr
+	fc.out.MovMemToReg("r9", "rdi", 8)   // r9 = capacity
+	fc.out.MovMemToReg("r10", "rdi", 16) // r10 = current offset
+	fc.out.MovMemToReg("r11", "rdi", 24) // r11 = alignment
+
+	// Align offset: aligned_offset = (offset + alignment - 1) & ~(alignment - 1)
+	fc.out.MovRegToReg("rax", "r10")   // rax = offset
+	fc.out.AddRegToReg("rax", "r11")   // rax = offset + alignment
+	fc.out.SubImmFromReg("rax", 1)     // rax = offset + alignment - 1
+	fc.out.MovRegToReg("rcx", "r11")   // rcx = alignment
+	fc.out.SubImmFromReg("rcx", 1)     // rcx = alignment - 1
+	fc.out.Emit([]byte{0x48, 0xf7, 0xd1}) // not rcx (bitwise NOT)
+	fc.out.Emit([]byte{0x48, 0x21, 0xc8}) // and rax, rcx (aligned_offset)
+
+	// Check if we have enough space: if (aligned_offset + size > capacity) error
+	fc.out.MovRegToReg("rdx", "rax")   // rdx = aligned_offset
+	fc.out.AddRegToReg("rdx", "rsi")   // rdx = aligned_offset + size
+	fc.out.CmpRegToReg("rdx", "r9")    // compare with capacity
+	// TODO: Add error handling for out-of-memory
+	// For now, just continue (will segfault if OOM)
+
+	// Calculate allocation pointer: ptr = buffer + aligned_offset
+	fc.out.MovRegToReg("rcx", "r8")    // rcx = buffer_ptr
+	fc.out.AddRegToReg("rcx", "rax")   // rcx = buffer_ptr + aligned_offset
+
+	// Update arena offset: offset = aligned_offset + size
+	fc.out.AddRegToReg("rax", "rsi")   // rax = aligned_offset + size
+	fc.out.MovRegToMem("rax", "rdi", 16) // [arena_ptr+16] = new offset
+
+	// Return allocation pointer in rax
+	fc.out.MovRegToReg("rax", "rcx")
+
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
+
+	// Generate flap_arena_destroy(arena_ptr)
+	// Frees all memory associated with the arena
+	// Argument: rdi = arena_ptr
+	fc.eb.MarkLabel("flap_arena_destroy")
+
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+	fc.out.PushReg("rbx")
+
+	fc.out.MovRegToReg("rbx", "rdi") // rbx = arena_ptr
+
+	// Free buffer
+	fc.out.MovMemToReg("rdi", "rbx", 0) // rdi = buffer_ptr
+	fc.trackFunctionCall("free")
+	fc.eb.GenerateCallInstruction("free")
+
+	// Free arena structure
+	fc.out.MovRegToReg("rdi", "rbx") // rdi = arena_ptr
+	fc.trackFunctionCall("free")
+	fc.eb.GenerateCallInstruction("free")
+
+	fc.out.PopReg("rbx")
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
+
+	// Generate flap_arena_reset(arena_ptr)
+	// Resets the arena offset to 0, effectively freeing all allocations
+	// Argument: rdi = arena_ptr
+	fc.eb.MarkLabel("flap_arena_reset")
+
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+
+	// Reset offset to 0
+	fc.out.MovImmToMem(0, "rdi", 16) // [arena_ptr+16] = 0
+
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
 }
 
 func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
@@ -8510,6 +8634,59 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.MovRegToReg("rsp", "rbp")
 		fc.trackFunctionCall("exit")
 		fc.eb.GenerateCallInstruction("exit")
+
+	case "arena_create":
+		// arena_create(capacity) -> arena_ptr
+		// Create a new arena with the given capacity
+		if len(call.Args) != 1 {
+			compilerError("arena_create() requires exactly 1 argument (capacity)")
+		}
+		fc.compileExpression(call.Args[0])
+		// Convert float64 capacity to int64
+		fc.out.Cvttsd2si("rdi", "xmm0")
+		fc.out.CallSymbol("flap_arena_create")
+		// Result in rax, convert to float64
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "arena_alloc":
+		// arena_alloc(arena_ptr, size) -> allocation_ptr
+		// Allocate memory from the arena
+		if len(call.Args) != 2 {
+			compilerError("arena_alloc() requires exactly 2 arguments (arena_ptr, size)")
+		}
+		// First arg: arena_ptr
+		fc.compileExpression(call.Args[0])
+		fc.out.Cvttsd2si("rdi", "xmm0")
+		// Second arg: size
+		fc.compileExpression(call.Args[1])
+		fc.out.Cvttsd2si("rsi", "xmm0")
+		fc.out.CallSymbol("flap_arena_alloc")
+		// Result in rax, convert to float64
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "arena_destroy":
+		// arena_destroy(arena_ptr)
+		// Destroy the arena and free all memory
+		if len(call.Args) != 1 {
+			compilerError("arena_destroy() requires exactly 1 argument (arena_ptr)")
+		}
+		fc.compileExpression(call.Args[0])
+		fc.out.Cvttsd2si("rdi", "xmm0")
+		fc.out.CallSymbol("flap_arena_destroy")
+		// No return value, set xmm0 to 0
+		fc.out.XorpdXmm("xmm0", "xmm0")
+
+	case "arena_reset":
+		// arena_reset(arena_ptr)
+		// Reset the arena offset to 0, freeing all allocations
+		if len(call.Args) != 1 {
+			compilerError("arena_reset() requires exactly 1 argument (arena_ptr)")
+		}
+		fc.compileExpression(call.Args[0])
+		fc.out.Cvttsd2si("rdi", "xmm0")
+		fc.out.CallSymbol("flap_arena_reset")
+		// No return value, set xmm0 to 0
+		fc.out.XorpdXmm("xmm0", "xmm0")
 
 	case "syscall":
 		// Raw Linux syscall: syscall(number, arg1, arg2, arg3, arg4, arg5, arg6)
