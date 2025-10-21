@@ -193,6 +193,12 @@ func optimizeProgram(program *Program) *Program {
 	}
 	program.Statements = newStmts
 
+	// Pass 4: Analyze lambda purity (for future memoization)
+	pureFunctions := make(map[string]bool) // Track which named functions are pure
+	for _, stmt := range program.Statements {
+		analyzePurity(stmt, pureFunctions)
+	}
+
 	return program
 }
 
@@ -637,6 +643,216 @@ func hasSideEffects(expr Expression) bool {
 		return true
 	default:
 		return false // Literals, identifiers, etc. have no side effects
+	}
+}
+
+// analyzePurity walks AST and marks lambdas as pure (no side effects, no captured mutables)
+func analyzePurity(stmt Statement, pureFunctions map[string]bool) {
+	switch s := stmt.(type) {
+	case *AssignStmt:
+		// Analyze value expression for lambdas
+		if lambda, ok := s.Value.(*LambdaExpr); ok {
+			// Check if this lambda is pure
+			lambda.IsPure = isLambdaPure(lambda, pureFunctions)
+			if !s.Mutable {
+				// Track named pure functions for call analysis
+				pureFunctions[s.Name] = lambda.IsPure
+			}
+		}
+		analyzePurityExpr(s.Value, pureFunctions)
+	case *ExpressionStmt:
+		analyzePurityExpr(s.Expr, pureFunctions)
+	case *LoopStmt:
+		analyzePurityExpr(s.Iterable, pureFunctions)
+		for _, bodyStmt := range s.Body {
+			analyzePurity(bodyStmt, pureFunctions)
+		}
+	}
+}
+
+// analyzePurityExpr recursively analyzes expressions for lambdas
+func analyzePurityExpr(expr Expression, pureFunctions map[string]bool) {
+	switch e := expr.(type) {
+	case *LambdaExpr:
+		e.IsPure = isLambdaPure(e, pureFunctions)
+	case *BinaryExpr:
+		analyzePurityExpr(e.Left, pureFunctions)
+		analyzePurityExpr(e.Right, pureFunctions)
+	case *CallExpr:
+		for _, arg := range e.Args {
+			analyzePurityExpr(arg, pureFunctions)
+		}
+	case *ListExpr:
+		for _, elem := range e.Elements {
+			analyzePurityExpr(elem, pureFunctions)
+		}
+	case *MapExpr:
+		for i := range e.Keys {
+			analyzePurityExpr(e.Keys[i], pureFunctions)
+			analyzePurityExpr(e.Values[i], pureFunctions)
+		}
+	case *IndexExpr:
+		analyzePurityExpr(e.List, pureFunctions)
+		analyzePurityExpr(e.Index, pureFunctions)
+	case *ParallelExpr:
+		analyzePurityExpr(e.List, pureFunctions)
+		analyzePurityExpr(e.Operation, pureFunctions)
+	case *PipeExpr:
+		analyzePurityExpr(e.Left, pureFunctions)
+		analyzePurityExpr(e.Right, pureFunctions)
+	case *MatchExpr:
+		analyzePurityExpr(e.Condition, pureFunctions)
+		for _, clause := range e.Clauses {
+			if clause.Guard != nil {
+				analyzePurityExpr(clause.Guard, pureFunctions)
+			}
+			analyzePurityExpr(clause.Result, pureFunctions)
+		}
+		if e.DefaultExpr != nil {
+			analyzePurityExpr(e.DefaultExpr, pureFunctions)
+		}
+	case *BlockExpr:
+		for _, stmt := range e.Statements {
+			analyzePurity(stmt, pureFunctions)
+		}
+	}
+}
+
+// isLambdaPure determines if a lambda is pure (safe to memoize)
+// A pure lambda:
+// 1. Has no side effects (no I/O, no global state mutation)
+// 2. Doesn't capture mutable variables
+// 3. Only calls other pure functions
+// 4. Is deterministic (same inputs → same outputs)
+func isLambdaPure(lambda *LambdaExpr, pureFunctions map[string]bool) bool {
+	// Check for basic side effects
+	if hasSideEffects(lambda.Body) {
+		return false
+	}
+
+	// Check if lambda calls any impure functions
+	if callsImpureFunctions(lambda.Body, pureFunctions) {
+		return false
+	}
+
+	// Check if lambda captures external variables (conservatively mark as impure)
+	// More sophisticated analysis could track whether captured vars are mutable
+	capturedVars := make(map[string]bool)
+	collectCapturedVariables(lambda.Body, lambda.Params, capturedVars)
+	if len(capturedVars) > 0 {
+		// Lambda captures external variables - conservatively mark as impure
+		// (Could be enhanced to allow capturing immutable constants)
+		return false
+	}
+
+	return true
+}
+
+// callsImpureFunctions checks if expression calls any functions marked as impure
+func callsImpureFunctions(expr Expression, pureFunctions map[string]bool) bool {
+	switch e := expr.(type) {
+	case *CallExpr:
+		// Check if called function is known to be impure
+		// Known impure built-ins
+		impureBuiltins := map[string]bool{
+			"printf": true, "println": true, "print": true,
+			"scanf": true, "read": true, "write": true,
+		}
+		if impureBuiltins[e.Function] {
+			return true
+		}
+		// Check if it's a user function we know is impure
+		if isPure, known := pureFunctions[e.Function]; known && !isPure {
+			return true
+		}
+		// Check arguments
+		for _, arg := range e.Args {
+			if callsImpureFunctions(arg, pureFunctions) {
+				return true
+			}
+		}
+		return false
+	case *BinaryExpr:
+		return callsImpureFunctions(e.Left, pureFunctions) || callsImpureFunctions(e.Right, pureFunctions)
+	case *ListExpr:
+		for _, elem := range e.Elements {
+			if callsImpureFunctions(elem, pureFunctions) {
+				return true
+			}
+		}
+		return false
+	case *MatchExpr:
+		if callsImpureFunctions(e.Condition, pureFunctions) {
+			return true
+		}
+		for _, clause := range e.Clauses {
+			if clause.Guard != nil && callsImpureFunctions(clause.Guard, pureFunctions) {
+				return true
+			}
+			if callsImpureFunctions(clause.Result, pureFunctions) {
+				return true
+			}
+		}
+		if e.DefaultExpr != nil && callsImpureFunctions(e.DefaultExpr, pureFunctions) {
+			return true
+		}
+		return false
+	case *BlockExpr:
+		// Conservative: blocks might have impure statements
+		return true
+	default:
+		return false
+	}
+}
+
+// collectCapturedVariables finds variables used but not defined in lambda params
+func collectCapturedVariables(expr Expression, params []string, captured map[string]bool) {
+	// Create param set for quick lookup
+	paramSet := make(map[string]bool)
+	for _, p := range params {
+		paramSet[p] = true
+	}
+
+	collectCapturedVarsExpr(expr, paramSet, captured)
+}
+
+func collectCapturedVarsExpr(expr Expression, paramSet map[string]bool, captured map[string]bool) {
+	switch e := expr.(type) {
+	case *IdentExpr:
+		// If variable is not a parameter, it's captured from outer scope
+		if !paramSet[e.Name] {
+			captured[e.Name] = true
+		}
+	case *BinaryExpr:
+		collectCapturedVarsExpr(e.Left, paramSet, captured)
+		collectCapturedVarsExpr(e.Right, paramSet, captured)
+	case *CallExpr:
+		for _, arg := range e.Args {
+			collectCapturedVarsExpr(arg, paramSet, captured)
+		}
+	case *ListExpr:
+		for _, elem := range e.Elements {
+			collectCapturedVarsExpr(elem, paramSet, captured)
+		}
+	case *MapExpr:
+		for i := range e.Keys {
+			collectCapturedVarsExpr(e.Keys[i], paramSet, captured)
+			collectCapturedVarsExpr(e.Values[i], paramSet, captured)
+		}
+	case *IndexExpr:
+		collectCapturedVarsExpr(e.List, paramSet, captured)
+		collectCapturedVarsExpr(e.Index, paramSet, captured)
+	case *MatchExpr:
+		collectCapturedVarsExpr(e.Condition, paramSet, captured)
+		for _, clause := range e.Clauses {
+			if clause.Guard != nil {
+				collectCapturedVarsExpr(clause.Guard, paramSet, captured)
+			}
+			collectCapturedVarsExpr(clause.Result, paramSet, captured)
+		}
+		if e.DefaultExpr != nil {
+			collectCapturedVarsExpr(e.DefaultExpr, paramSet, captured)
+		}
 	}
 }
 

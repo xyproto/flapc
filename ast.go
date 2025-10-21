@@ -447,6 +447,7 @@ func (r *RangeExpr) expressionNode() {}
 type LambdaExpr struct {
 	Params []string
 	Body   Expression
+	IsPure bool // Automatically detected: true if function has no side effects
 }
 
 func (l *LambdaExpr) String() string {
