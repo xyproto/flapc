@@ -7966,20 +7966,11 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 	// Integer/pointer args: rdi, rsi, rdx, rcx, r8, r9, then stack
 	// Float args: xmm0-xmm7, then stack
 
-	// Support more than 6 arguments via stack-based argument passing (System V AMD64 ABI)
-	// Arguments 1-6 go in registers, arguments 7+ go on the stack
-
-	// System V AMD64 ABI register sequence for integer/pointer arguments
+	// System V AMD64 ABI register sequences
 	intArgRegs := []string{"rdi", "rsi", "rdx", "rcx", "r8", "r9"}
+	floatArgRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"}
 
-	// Detect if this is a math function (libm) which uses float args/returns
-	// Check both hardcoded libm functions and function signatures from DWARF
-	isMathFunc := (libName == "m" || libName == "math") ||
-		(funcName == "sqrt" || funcName == "pow" || funcName == "sin" || funcName == "cos" ||
-			funcName == "tan" || funcName == "log" || funcName == "exp" || funcName == "fabs" ||
-			funcName == "ceil" || funcName == "floor")
-
-	// Check if we have a signature for this function from DWARF
+	// Look up function signature from DWARF if available
 	// Need to find the alias for this library name (reverse lookup)
 	var libAlias string
 	for alias, lib := range fc.cImports {
@@ -7989,24 +7980,14 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 		}
 	}
 
-	// Look up signatures using the alias
+	var funcSig *CFunctionSignature
 	if libAlias != "" {
 		if constants, ok := fc.cConstants[libAlias]; ok {
 			if sig, found := constants.Functions[funcName]; found {
-				// Check if any parameters are float/double
-				hasFloatParams := false
-				for _, param := range sig.Params {
-					if param.Type == "float" || param.Type == "double" {
-						hasFloatParams = true
-						break
-					}
-				}
-				// If function has float parameters or returns float/double, treat as math function
-				if hasFloatParams || sig.ReturnType == "float" || sig.ReturnType == "double" {
-					isMathFunc = true
-					if VerboseMode {
-						fmt.Fprintf(os.Stderr, "Detected %s as math function via DWARF (float/double params)\n", funcName)
-					}
+				funcSig = sig
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Found signature for %s: %d params, return=%s\n",
+						funcName, len(sig.Params), sig.ReturnType)
 				}
 			}
 		}
@@ -8017,31 +7998,38 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 		argStackOffset := len(args) * 8
 		fc.out.SubImmFromReg("rsp", int64(argStackOffset))
 
-		// Look up function signature if available
-		var funcSig *CFunctionSignature
-		if constants, ok := fc.cConstants[strings.Split(funcName, ".")[0]]; ok {
-			if sig, found := constants.Functions[funcName]; found {
-				funcSig = sig
-			}
-		}
-
 		// Compile each argument and store on stack
 		for i, arg := range args {
-			// Check if argument has a cast expression to determine type
+			// Determine the parameter type from signature or cast
+			var paramType string
 			var castType string
 			var innerExpr Expression = arg
+
 			if castExpr, ok := arg.(*CastExpr); ok {
 				// Explicit cast provided
 				castType = castExpr.Type
 				innerExpr = castExpr.Expr
-			} else {
-				// No explicit cast - infer from expression type or function signature
+			}
+
+			// Determine actual parameter type from signature
+			if funcSig != nil && i < len(funcSig.Params) {
+				paramType = funcSig.Params[i].Type
+			}
+
+			// Decide whether this parameter should be treated as float or int
+			isFloatParam := false
+			if paramType == "float" || paramType == "double" {
+				isFloatParam = true
+			}
+
+			// If no signature, fall back to cast type or defaults
+			if castType == "" {
 				exprType := fc.getExprType(arg)
 				if exprType == "string" {
-					castType = "cstr" // Strings become C strings by default
-				} else if funcSig != nil && i < len(funcSig.Params) {
-					// Use function signature to determine type
-					paramType := funcSig.Params[i].Type
+					castType = "cstr"
+				} else if isFloatParam {
+					castType = "float"
+				} else if paramType != "" {
 					if isPointerType(paramType) {
 						castType = "pointer"
 					} else if strings.Contains(paramType, "char") && strings.Contains(paramType, "*") {
@@ -8050,15 +8038,15 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 						castType = "int"
 					}
 				} else {
-					castType = "int" // Numbers become integers by default
+					castType = "int" // Default to int if no info available
 				}
 			}
 
-			// Set C context for string literals and pointers to compile them correctly
+			// Set C context for string literals
 			isStringLiteral := false
 			if _, ok := innerExpr.(*StringExpr); ok {
 				isStringLiteral = true
-				fc.cContext = true // Enable C context for string compilation
+				fc.cContext = true
 			}
 
 			// Compile the inner expression (result in xmm0 for Flap values, rax for C strings)
@@ -8069,12 +8057,12 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 				fc.cContext = false
 			}
 
-			// For math functions, keep values as float64 in xmm registers
-			if isMathFunc {
-				// Store xmm0 directly on stack (as float64)
+			// Store argument on stack based on its type
+			if isFloatParam || castType == "float" || castType == "double" {
+				// Keep as float64 in xmm0, store directly
 				fc.out.MovXmmToMem("xmm0", "rsp", i*8)
 			} else {
-				// Handle different cast types for non-math functions
+				// Convert to integer or pointer
 				switch castType {
 				case "cstr", "cstring":
 					if isStringLiteral {
@@ -8082,7 +8070,6 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 						// No conversion needed, just store it
 					} else {
 						// Runtime string (Flap map format) - need to convert to C string
-						// xmm0 contains string map pointer - convert to C string
 						fc.out.SubImmFromReg("rsp", StackSlotSize)
 						fc.out.MovXmmToMem("xmm0", "rsp", 0)
 						fc.out.MovMemToReg("rax", "rsp", 0)
@@ -8120,117 +8107,100 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 			}
 		}
 
-		// Load arguments from stack into ABI registers and call function
-		// System V AMD64 ABI: First 8 float args in xmm0-xmm7, args 9+ on stack
-		// System V AMD64 ABI: First 6 int args in rdi-r9, args 7+ on stack
-		numRegArgs := len(args)
-		numStackArgs := 0
+		// Load arguments from stack into ABI registers
+		// Track int and float register usage separately
+		intRegIdx := 0
+		floatRegIdx := 0
+		stackArgCount := 0
 
-		if isMathFunc {
-			// Math functions use up to 8 xmm registers
-			if numRegArgs > 8 {
-				numRegArgs = 8
+		// Build a list of stack arguments that overflow registers
+		type stackArg struct {
+			offset int
+			value  int
+		}
+		var stackArgs []stackArg
+
+		// First pass: determine which arguments go in registers vs stack
+		for i := 0; i < len(args); i++ {
+			var paramType string
+			if funcSig != nil && i < len(funcSig.Params) {
+				paramType = funcSig.Params[i].Type
 			}
-			if len(args) > 8 {
-				numStackArgs = len(args) - 8
-			}
-		} else {
-			// Non-math functions use up to 6 integer registers
-			if numRegArgs > 6 {
-				numRegArgs = 6
-			}
-			if len(args) > 6 {
-				numStackArgs = len(args) - 6
+
+			isFloatParam := (paramType == "float" || paramType == "double")
+
+			if isFloatParam {
+				if floatRegIdx < len(floatArgRegs) {
+					// Load into float register
+					fc.out.MovMemToXmm(floatArgRegs[floatRegIdx], "rsp", i*8)
+					floatRegIdx++
+				} else {
+					// Goes on stack
+					stackArgs = append(stackArgs, stackArg{offset: i * 8, value: stackArgCount})
+					stackArgCount++
+				}
+			} else {
+				if intRegIdx < len(intArgRegs) {
+					// Load into int register
+					fc.out.MovMemToReg(intArgRegs[intRegIdx], "rsp", i*8)
+					intRegIdx++
+				} else {
+					// Goes on stack
+					stackArgs = append(stackArgs, stackArg{offset: i * 8, value: stackArgCount})
+					stackArgCount++
+				}
 			}
 		}
 
-		if isMathFunc {
-			// Math functions: pass arguments in xmm registers, result in xmm0
-			// Load first 8 arguments from stack into xmm registers (xmm0-xmm7)
-			xmmRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"}
-			for i := 0; i < numRegArgs; i++ {
-				fc.out.MovMemToXmm(xmmRegs[i], "rsp", i*8)
+		// Clean up temp stack space, but preserve stack arguments
+		if stackArgCount > 0 {
+			// Move stack args to the bottom of the stack
+			for i, arg := range stackArgs {
+				fc.out.MovMemToReg("r11", "rsp", arg.offset)
+				fc.out.MovRegToMem("r11", "rsp", i*8)
 			}
+			// Adjust RSP to remove register arg space, keeping stack args
+			fc.out.AddImmToReg("rsp", int64(argStackOffset-stackArgCount*8))
+		} else {
+			// No stack args - clean up all temp space
+			fc.out.AddImmToReg("rsp", int64(argStackOffset))
+		}
 
-			// Clean up register arguments from stack, but leave stack arguments
-			// If we have >8 args, args 0-7 are loaded into registers, args 8+ stay on stack
-			if numStackArgs > 0 {
-				// Keep stack args (8+), remove temp space for register args (0-7)
-				// Stack currently has: [arg0][arg1]...[arg7][arg8][arg9]...
-				// We need to move stack args down to remove the register arg space
-				// Use r11 as temp to avoid conflicts with xmm registers
-				for i := 0; i < numStackArgs; i++ {
-					fc.out.MovMemToReg("r11", "rsp", (8+i)*8)
-					fc.out.MovRegToMem("r11", "rsp", i*8)
-				}
-				// Now adjust RSP to account for removed register arg space
-				fc.out.AddImmToReg("rsp", int64(8*8))
-			} else {
-				// No stack args - clean up all argument stack space
-				fc.out.AddImmToReg("rsp", int64(argStackOffset))
-			}
+		// Generate PLT call
+		fc.eb.GenerateCallInstruction(funcName)
 
-			// Generate PLT call
-			// Note: Stack is already properly aligned per System V AMD64 ABI
-			// (RSP % 16 == 8 before CALL, which becomes RSP % 16 == 0 after CALL pushes return address)
-			fc.eb.GenerateCallInstruction(funcName)
+		// Clean up stack arguments after call
+		if stackArgCount > 0 {
+			fc.out.AddImmToReg("rsp", int64(stackArgCount*8))
+		}
 
-			// Clean up stack arguments after call
-			if numStackArgs > 0 {
-				fc.out.AddImmToReg("rsp", int64(numStackArgs*8))
-			}
+		// Handle return value based on signature
+		var returnType string
+		if funcSig != nil {
+			returnType = funcSig.ReturnType
+		}
 
+		if returnType == "float" || returnType == "double" {
 			// Result is already in xmm0 as double - no conversion needed
 		} else {
-			// Non-math functions: pass in integer registers, result in rax
-			// Load first 6 arguments from stack into ABI registers
-			for i := 0; i < numRegArgs; i++ {
-				fc.out.MovMemToReg(intArgRegs[i], "rsp", i*8)
-			}
-
-			// Clean up register arguments from stack, but leave stack arguments
-			if numStackArgs > 0 {
-				// Keep stack args (6+), remove temp space for register args (0-5)
-				// Stack currently has: [arg0][arg1][arg2][arg3][arg4][arg5][arg6][arg7]...
-				// We need to move stack args down to remove the register arg space
-				for i := 0; i < numStackArgs; i++ {
-					fc.out.MovMemToReg("r10", "rsp", (6+i)*8) // Use r10 as temp
-					fc.out.MovRegToMem("r10", "rsp", i*8)
-				}
-				// Now adjust RSP to account for removed register arg space
-				fc.out.AddImmToReg("rsp", int64(6*8))
-			} else {
-				// No stack args - clean up all argument stack space
-				fc.out.AddImmToReg("rsp", int64(argStackOffset))
-			}
-
-			// Generate PLT call to external C function
-			// Note: Stack is already properly aligned per System V AMD64 ABI
-			fc.eb.GenerateCallInstruction(funcName)
-
-			// Clean up stack arguments after call
-			if numStackArgs > 0 {
-				fc.out.AddImmToReg("rsp", int64(numStackArgs*8))
-			}
-
-			// Convert result to float64 for Flap
-			// Assuming integer return value (in rax)
+			// Convert integer result in rax to float64 for Flap
 			fc.out.Cvtsi2sd("xmm0", "rax")
 		}
 	} else {
 		// No arguments - just call the function
 		// No stack adjustment needed - RSP is already at (16n - 8) from main() prologue
-		if isMathFunc {
-			// Generate PLT call
-			fc.eb.GenerateCallInstruction(funcName)
+		fc.eb.GenerateCallInstruction(funcName)
 
+		// Handle return value based on signature
+		var returnType string
+		if funcSig != nil {
+			returnType = funcSig.ReturnType
+		}
+
+		if returnType == "float" || returnType == "double" {
 			// Result is already in xmm0 as double - no conversion needed
 		} else {
-			// Generate PLT call to external C function
-			fc.eb.GenerateCallInstruction(funcName)
-
-			// Convert result to float64 for Flap
-			// Assuming integer return value (in rax)
+			// Convert integer result in rax to float64 for Flap
 			fc.out.Cvtsi2sd("xmm0", "rax")
 		}
 	}
