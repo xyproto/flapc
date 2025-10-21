@@ -1246,9 +1246,16 @@ import sdl3 as sdl
 import raylib as rl
 import c as libc  // Standard C library
 
+// Import custom .so file (NEW in v1.6.0)
+import "/tmp/libmylib.so" as mylib
+import "/usr/local/lib/libcustom.so.1" as custom
+
 // Call C functions with namespace prefix
 sdl.SDL_Init(0)
 window := sdl.SDL_CreateWindow("Game", 100, 100, 800, 600, 0)
+
+// Call custom library functions
+result := mylib.my_function(1, 2, 3, 4, 5, 6, 7, 8)  // >6 arguments supported!
 
 // Standard library functions
 pid := libc.getpid()
@@ -1257,17 +1264,35 @@ time := libc.time(0)
 
 **How It Works:**
 
-1. **Auto-detection**: Imports without `/` are treated as C libraries, imports with URLs are Flap packages
-2. **Dynamic linking**: C libraries are added to ELF `DT_NEEDED` (e.g., `libSDL3.so`, `libraylib.so`)
-3. **PLT calls**: Functions are called through the Procedure Linkage Table
-4. **ABI compatibility**: Arguments are marshaled to System V AMD64 calling convention
+1. **Auto-detection**:
+   - Strings ending with ".so" or containing ".so." → Custom .so file import
+   - Identifiers without "/" → Standard C libraries (sdl3, raylib, c)
+   - Strings with "/" → Flap packages (Git)
+2. **Symbol extraction**: For custom .so files, symbols are automatically extracted using `nm -D`
+3. **Dynamic linking**: C libraries are added to ELF `DT_NEEDED` (e.g., `libSDL3.so`, `libraylib.so`, `libmylib.so`)
+4. **PLT calls**: Functions are called through the Procedure Linkage Table
+5. **ABI compatibility**: Arguments are marshaled to System V AMD64 calling convention
+6. **Stack arguments**: Functions with >6 arguments use stack-based argument passing
 
-**Current Limitations (v1.0.0):**
+**Custom .so File Imports (v1.6.0+):**
 
-- Maximum 6 arguments per function call
-- Arguments are converted to integers (uint32/int64)
+```flap
+// Import custom library
+import "/tmp/libmanyargs.so" as mylib
+
+// Functions are automatically discovered from the .so file
+result := mylib.sum7(1, 2, 3, 4, 5, 6, 7)          // 7 arguments
+result := mylib.sum10(1, 2, 3, 4, 5, 6, 7, 8, 9, 10) // 10 arguments
+
+// Run with: LD_LIBRARY_PATH=/tmp ./program
+```
+
+**Current Limitations (v1.6.0):**
+
+- Arguments are converted to integers (uint32/int64) or float64
 - Return values are converted to Flap's `float64`
-- No support for strings, structs, or pointers yet
+- Limited support for strings (C strings work via `as cstr` cast)
+- No support for structs yet
 
 **Example: SDL3 Game Initialization**
 

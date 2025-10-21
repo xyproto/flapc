@@ -77,11 +77,15 @@ func (i *ImportStmt) String() string {
 func (i *ImportStmt) statementNode() {}
 
 type CImportStmt struct {
-	Library string // C library name: "sdl3", "raylib", "sqlite3"
+	Library string // C library name: "sdl3", "raylib", "sqlite3", or .so filename: "libmylib.so"
 	Alias   string // Namespace alias: "sdl", "rl", "sql"
+	SoPath  string // Optional: full path to .so file for custom libraries (e.g., "/tmp/libmylib.so")
 }
 
 func (c *CImportStmt) String() string {
+	if c.SoPath != "" {
+		return "import \"" + c.SoPath + "\" as " + c.Alias
+	}
 	return "import " + c.Library + " from C as " + c.Alias
 }
 func (c *CImportStmt) statementNode() {}

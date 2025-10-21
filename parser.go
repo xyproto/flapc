@@ -336,12 +336,41 @@ func (p *Parser) parseImport() Statement {
 	p.nextToken() // skip 'import'
 
 	// Auto-detect import type:
+	// - String ending with ".so" -> C library .so file: import "/path/to/lib.so" as alias
 	// - String with "/" -> Flap package (Git): import "github.com/user/pkg" as alias
 	// - Identifier -> C library: import sdl3 as sdl, import raylib as rl
 
 	if p.current.Type == TOKEN_STRING {
+		value := p.current.Value
+
+		// Check if this is a .so file import
+		if strings.HasSuffix(value, ".so") || strings.Contains(value, ".so.") {
+			// C library .so file import: import "/tmp/libmylib.so" as mylib
+			p.nextToken()
+
+			if p.current.Type != TOKEN_AS {
+				p.error("expected 'as' after .so file path")
+			}
+			p.nextToken()
+
+			if p.current.Type != TOKEN_IDENT {
+				p.error("expected alias after 'as'")
+			}
+			alias := p.current.Value
+			p.nextToken()
+
+			// Extract just the filename from the path
+			soPath := value
+			soFilename := soPath
+			if lastSlash := strings.LastIndex(soPath, "/"); lastSlash != -1 {
+				soFilename = soPath[lastSlash+1:]
+			}
+
+			return &CImportStmt{Library: soFilename, Alias: alias, SoPath: soPath}
+		}
+
 		// Git import: import "url@version" as alias
-		urlWithVersion := p.current.Value
+		urlWithVersion := value
 		p.nextToken()
 
 		// Parse URL and optional version (URL@version)
@@ -2490,6 +2519,27 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 				fmt.Fprintf(os.Stderr, "Registered C import: %s -> %s\n", cImport.Alias, cImport.Library)
 			}
 
+			// For .so file imports, extract symbols using nm
+			if cImport.SoPath != "" {
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Extracting symbols from %s...\n", cImport.SoPath)
+				}
+				symbols, err := ExtractSymbolsFromSo(cImport.SoPath)
+				if err != nil {
+					// Non-fatal: symbol extraction is optional
+					if VerboseMode {
+						fmt.Fprintf(os.Stderr, "Warning: failed to extract symbols from %s: %v\n", cImport.SoPath, err)
+					}
+				} else if VerboseMode && len(symbols) > 0 {
+					fmt.Fprintf(os.Stderr, "Found %d symbols in %s\n", len(symbols), cImport.Library)
+					if len(symbols) <= 20 {
+						for _, sym := range symbols {
+							fmt.Fprintf(os.Stderr, "  - %s\n", sym)
+						}
+					}
+				}
+			}
+
 			// Extract constants from C headers
 			constants, err := ExtractConstantsFromLibrary(cImport.Library)
 			if err != nil {
@@ -2599,8 +2649,19 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 				continue
 			}
 
-			// Add .so.X suffix if not present
+			// If library name already contains .so, it's a direct .so file - use it as-is
 			libSoName := libName
+			if strings.Contains(libSoName, ".so") {
+				// Direct .so file (e.g., "libmanyargs.so" from import "/tmp/libmanyargs.so" as mylib)
+				// Use it directly for DT_NEEDED
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Adding custom C library dependency: %s\n", libSoName)
+				}
+				ds.AddNeeded(libSoName)
+				continue
+			}
+
+			// Add .so.X suffix if not present (standard library mapping)
 			if !strings.Contains(libSoName, ".so") {
 				// Try to get library name from pkg-config
 				cmd := exec.Command("pkg-config", "--libs-only-l", libName)

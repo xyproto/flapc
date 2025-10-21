@@ -27,7 +27,14 @@
   - Stack-based argument passing for complex C APIs (args 7+ go on stack)
   - Proper System V AMD64 ABI compliance (RSP % 16 == 8 before CALL)
   - Works for both integer and float arguments
-  - Note: Requires properly linked C libraries (import statement or DT_NEEDED)
+  - Tested with 7, 8, and 10 argument functions
+
+- [x] **Custom .so file imports** - ✅ COMPLETE (v1.6.0)
+  - Import arbitrary .so files: `import "/tmp/libmylib.so" as mylib`
+  - Automatic symbol extraction using `nm -D`
+  - Automatic DT_NEEDED entries for dynamic linking
+  - Works with >6 argument functions
+  - Use with `LD_LIBRARY_PATH=/path/to/libs ./program`
 
 ## Next Actions
 - [ ] **Memoized recursion (cme) enhancements** - Add cache size limit and cleanup callback parameters:

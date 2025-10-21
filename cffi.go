@@ -676,3 +676,38 @@ func parseFunctionParams(paramsStr string) []CFunctionParam {
 func isPointerType(cType string) bool {
 	return strings.Contains(cType, "*") || strings.HasSuffix(cType, "Ptr")
 }
+
+// ExtractSymbolsFromSo extracts exported function symbols from a .so file using nm
+func ExtractSymbolsFromSo(soPath string) ([]string, error) {
+	// Use nm -D to list dynamic symbols
+	cmd := exec.Command("nm", "-D", "--defined-only", soPath)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("nm failed: %v", err)
+	}
+
+	var symbols []string
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		// nm output format: "address type name"
+		// Example: "0000000000001149 T sum7"
+		// We want symbols with type T (text/code) or W (weak)
+		parts := strings.Fields(line)
+		if len(parts) >= 3 {
+			symbolType := parts[1]
+			symbolName := parts[2]
+
+			// Only extract function symbols (T = text/code, W = weak)
+			if symbolType == "T" || symbolType == "W" {
+				symbols = append(symbols, symbolName)
+			}
+		}
+	}
+
+	return symbols, nil
+}
