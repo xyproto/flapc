@@ -1,0 +1,45 @@
+// ASCII Art Generator - Creates a simple pyramid
+// Demonstrates: loops, string operations, printf formatting
+
+height := 10
+
+printf("ASCII Pyramid (height %v):\n\n", height)
+
+// Draw pyramid
+@ i in 0..<height {
+    // Print spaces for centering
+    spaces := height - i - 1
+    @ j in 0..<spaces {
+        printf(" ")
+    }
+
+    // Print stars
+    stars := 2 * i + 1
+    @ k in 0..<stars {
+        printf("*")
+    }
+
+    printf("\n")
+}
+
+printf("\nInverted Pyramid:\n\n")
+
+// Draw inverted pyramid
+@ i in 0..<height {
+    row := height - i - 1
+
+    // Print spaces
+    @ j in 0..<i {
+        printf(" ")
+    }
+
+    // Print stars
+    numStars := 2 * row + 1
+    @ k in 0..<numStars {
+        printf("*")
+    }
+
+    printf("\n")
+}
+
+printf("\nArt complete!\n")

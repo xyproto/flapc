@@ -1,0 +1,43 @@
+// Lambda-based calculator with higher-order functions
+// Demonstrates: lambdas, closures, function composition, maps
+
+// Define arithmetic operations as lambdas
+add := (x, y) => x + y
+sub := (x, y) => x - y
+mul := (x, y) => x * y
+div := (x, y) => x / y
+
+// Higher-order function: apply operation n times
+applyN := (fn, initial, count) => {
+    result := initial
+    @ i in 0..<count {
+        result <- fn(result)
+    }
+    result
+}
+
+// Test basic operations
+printf("Basic operations:\n")
+printf("10 + 5 = %v\n", add(10, 5))
+printf("10 - 5 = %v\n", sub(10, 5))
+printf("10 * 5 = %v\n", mul(10, 5))
+printf("10 / 5 = %v\n", div(10, 5))
+
+// Test higher-order function
+printf("\nHigher-order functions:\n")
+double := (x) => x * 2
+square := (x) => x * x
+
+printf("Apply double 3 times to 5: %v\n", applyN(double, 5, 3))
+printf("Apply square 2 times to 2: %v\n", applyN(square, 2, 2))
+
+// Function composition
+compose := (f, g) => (x) => f(g(x))
+doubleAndSquare := compose(square, double)
+printf("Double then square 3: %v\n", doubleAndSquare(3))
+
+// Partial application simulation
+addFive := (x) => add(x, 5)
+printf("Add 5 to 10: %v\n", addFive(10))
+
+printf("\nCalculator complete!\n")

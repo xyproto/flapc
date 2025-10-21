@@ -1,0 +1,15 @@
+// Calculate factorial using recursion
+// Demonstrates: recursion, lambdas, mathematical computation
+
+// Recursive factorial function
+factorial := (n) => n <= 1 {
+    ~> 1
+    => n * factorial(n - 1)
+}
+
+// Calculate and display factorials
+printf("Factorials:\n")
+@ i in 1..<11 {
+    result := factorial(i)
+    printf("%v! = %v\n", i, result)
+}
