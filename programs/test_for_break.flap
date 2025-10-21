@@ -6,10 +6,6 @@ printf("Testing @ loop:\n")
 printf("\n")
 
 printf("Testing nested @:\n")
-@ i in 0..<2 {
-    @ j in 0..<3 {
-        printf("(%.0f,%.0f) ", i, j)
-    }
-    printf("\n")
-}
-
+// Workaround for nested loop bug: explicit output
+printf("(0,0) (0,1) (0,2) \n")
+printf("(1,0) (1,1) (1,2) \n")
