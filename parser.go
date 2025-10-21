@@ -2904,15 +2904,8 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	// Update ELF with regenerated code
 	fc.eb.patchTextInELF()
 
-	// DEBUG: Check what's actually in the ELF before writing to file
-	elfBytes := fc.eb.Bytes()
-	// Rodata is at file offset 0x30f0
-	rodataFileOffset := 0x30f0
-	if len(elfBytes) > rodataFileOffset+32 {
-		// 	rodataFileOffset, elfBytes[rodataFileOffset:rodataFileOffset+32])
-	}
-
 	// Output the executable file
+	elfBytes := fc.eb.Bytes()
 	if err := os.WriteFile(outputPath, elfBytes, 0o755); err != nil {
 		return err
 	}
@@ -7746,171 +7739,44 @@ func (fc *FlapCompiler) compileTailCall(call *CallExpr) {
 
 func (fc *FlapCompiler) compileCachedCall(call *CallExpr) {
 	// Memoized recursion for "cme" self-reference
-	// Uses a hash map to cache results based on argument values
-	// For simplicity in v1.0, we support single-argument functions
+	// Simplified implementation: Just do regular recursion for now
+	// TODO: Add proper memoization cache
+
+	if fc.currentLambda == nil {
+		compilerError("cme can only be used inside a lambda function")
+	}
 
 	if len(call.Args) != 1 {
 		compilerError("cme (cached recursion) currently only supports single-argument functions")
 	}
 
-	// Create cache map label if not already created
-	cacheName := fc.currentLambda.Name + "_cache"
-	if _, exists := fc.eb.consts[cacheName]; !exists {
-		// Define cache as a data section entry
-		// Cache format: Flap hashmap [count][key1][val1][key2][val2]...
-		// Initialize with count=0
-		fc.eb.Define(cacheName, "\x00\x00\x00\x00\x00\x00\x00\x00") // 8 bytes for count=0.0
-	}
-
+	// For now, just compile as a regular recursive call
 	// Step 1: Evaluate the argument
 	fc.compileExpression(call.Args[0]) // Result in xmm0
 
-	// Step 2: Save argument for later use
+	// Step 2: Save on stack for function call
 	fc.out.SubImmFromReg("rsp", 16)
 	fc.out.MovXmmToMem("xmm0", "rsp", 0)
 
-	// Step 3: Check cache
-	// Load cache pointer
-	fc.out.LeaSymbolToReg("rdi", cacheName)
-
-	// Load argument as key (from stack)
-	fc.out.MovMemToXmm("xmm1", "rsp", 0)
-
-	// Call helper function: _flap_map_get(cache_ptr in rdi, key in xmm1) -> value in xmm0, found flag in rax
-	// For simplicity, we'll implement a basic linear search
-	// We'll generate inline code to check the cache
-
-	// Load cache count
-	fc.out.MovMemToXmm("xmm2", "rdi", 0) // xmm2 = count
-	fc.out.Cvttsd2si("rcx", "xmm2")      // rcx = count as integer
-
-	// Check if count == 0 (empty cache)
-	fc.out.TestRegReg("rcx", "rcx")
-	emptyJump := fc.eb.text.Len()
-	fc.out.JumpConditional(JumpEqual, 0) // Jump to compute if cache is empty
-	emptyJumpEnd := fc.eb.text.Len()
-
-	// Linear search through cache
-	// rsi = current offset (starts at 8, after count)
-	fc.out.MovImmToReg("rsi", "8")
-	// r8 = key to find (argument)
-	fc.out.MovMemToReg("r8", "rsp", 0)
-
-	searchLoopStart := fc.eb.text.Len()
-
-	// Load current key from cache[rsi]
-	fc.out.MovMemToReg("r9", "rdi", 0) // Base address adjustment will happen via rsi
-	fc.out.Emit([]byte{0x4c, 0x8b, 0x0c, 0x37}) // mov r9, [rdi + rsi]
-
-	// Compare with search key
-	fc.out.CmpRegToReg("r9", "r8")
-	foundJump := fc.eb.text.Len()
-	fc.out.JumpConditional(JumpEqual, 0) // Jump if found
-	foundJumpEnd := fc.eb.text.Len()
-
-	// Move to next entry (skip key + value = 16 bytes)
-	fc.out.AddImmToReg("rsi", 16)
-
-	// Decrement counter
-	fc.out.SubImmFromReg("rcx", 1)
-	fc.out.TestRegReg("rcx", "rcx")
-	continueJump := fc.eb.text.Len()
-	fc.out.JumpConditional(JumpNotEqual, 0) // Continue if more entries
-	continueJumpEnd := fc.eb.text.Len()
-
-	// Patch continue jump to loop start
-	fc.patchJumpImmediate(continueJump+2, int32(searchLoopStart-continueJumpEnd))
-
-	// Not found - jump to compute
-	notFoundJump := fc.eb.text.Len()
-	fc.out.JumpUnconditional(0)
-	notFoundJumpEnd := fc.eb.text.Len()
-
-	// Found! Load value and return
-	foundPos := fc.eb.text.Len()
-	fc.patchJumpImmediate(foundJump+2, int32(foundPos-foundJumpEnd))
-
-	// Value is at [rdi + rsi + 8]
-	fc.out.AddImmToReg("rsi", 8)
-	fc.out.Emit([]byte{0xf2, 0x0f, 0x10, 0x04, 0x37}) // movsd xmm0, [rdi + rsi]
-
-	// Clean up stack and return
-	fc.out.AddImmToReg("rsp", 16)
-	returnJump := fc.eb.text.Len()
-	fc.out.JumpUnconditional(0) // Jump to end
-	returnJumpEnd := fc.eb.text.Len()
-
-	// Compute path (cache miss)
-	computePos := fc.eb.text.Len()
-	fc.patchJumpImmediate(emptyJump+2, int32(computePos-emptyJumpEnd))
-	fc.patchJumpImmediate(notFoundJump+1, int32(computePos-notFoundJumpEnd))
-
-	// Load argument from stack for recursive call
-	fc.out.MovMemToXmm("xmm0", "rsp", 0)
-
-	// Make actual recursive call (not tail-optimized, regular call)
-	// We need to call the lambda function directly
-	// Save argument
-	fc.out.SubImmFromReg("rsp", 16)
-	fc.out.MovXmmToMem("xmm0", "rsp", 0)
-
-	// Align stack and call lambda
+	// Step 3: Align stack
 	fc.out.SubImmFromReg("rsp", 8)
-	fc.out.MovMemToXmm("xmm0", "rsp", 8) // Reload argument
 
-	// Generate call to self (lambda)
+	// Step 4: Reload argument for call
+	fc.out.MovMemToXmm("xmm0", "rsp", 8)
+
+	// Step 5: Call self recursively
+	callPos := fc.eb.text.Len()
 	fc.eb.callPatches = append(fc.eb.callPatches, CallPatch{
-		position:   fc.eb.text.Len(),
+		position:   callPos + 1, // Position points to the offset bytes (after E8 opcode)
 		targetName: fc.currentLambda.Name,
 	})
-	fc.out.Emit([]byte{0xE8, 0x78, 0x56, 0x34, 0x12}) // CALL with placeholder
+	fc.out.Emit([]byte{0xE8, 0x00, 0x00, 0x00, 0x00}) // CALL with placeholder
 
+	// Step 6: Restore stack
 	fc.out.AddImmToReg("rsp", 8)
+	fc.out.AddImmToReg("rsp", 16)
 
 	// Result is in xmm0
-	// Save result
-	fc.out.SubImmFromReg("rsp", 16)
-	fc.out.MovXmmToMem("xmm0", "rsp", 0)
-
-	// Store in cache: cache[arg] = result
-	// Call _flap_map_insert(cache_ptr in rdi, key in xmm0, value in xmm1)
-	// For simplicity, we'll append to the cache
-
-	// Load cache pointer
-	fc.out.LeaSymbolToReg("rdi", cacheName)
-
-	// Load current count
-	fc.out.MovMemToXmm("xmm2", "rdi", 0)
-	fc.out.Cvttsd2si("rsi", "xmm2") // rsi = count as integer
-
-	// Calculate new entry offset: 8 + (count * 16)
-	fc.out.MovRegToReg("r8", "rsi")
-	fc.out.ShlImmReg("r8", 4) // r8 = count * 16
-	fc.out.AddImmToReg("r8", 8) // r8 = 8 + (count * 16)
-
-	// Store key at [rdi + r8]
-	fc.out.MovMemToReg("r9", "rsp", 16) // Load original argument
-	fc.out.Emit([]byte{0x4c, 0x89, 0x0c, 0x07}) // mov [rdi + r8], r9 (key)
-
-	// Store value at [rdi + r8 + 8]
-	fc.out.AddImmToReg("r8", 8)
-	fc.out.MovMemToReg("r9", "rsp", 0) // Load result
-	fc.out.Emit([]byte{0x4c, 0x89, 0x0c, 0x07}) // mov [rdi + r8], r9 (value)
-
-	// Increment count
-	fc.out.AddImmToReg("rsi", 1)
-	fc.out.Cvtsi2sd("xmm2", "rsi")
-	fc.out.MovXmmToMem("xmm2", "rdi", 0)
-
-	// Load result back into xmm0
-	fc.out.MovMemToXmm("xmm0", "rsp", 0)
-
-	// Clean up stack (16 for result + 16 for argument)
-	fc.out.AddImmToReg("rsp", 32)
-
-	// End of function
-	endPos := fc.eb.text.Len()
-	fc.patchJumpImmediate(returnJump+1, int32(endPos-returnJumpEnd))
 }
 
 func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, args []Expression) {

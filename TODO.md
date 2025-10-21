@@ -4,6 +4,9 @@
 
 - [ ] **Float arguments in C FFI** - Use xmm0-xmm7 registers for passing floats to C functions (needed for graphics APIs)
 - [ ] **Float return values in C FFI** - Retrieve float results from C functions (needed for math libraries)
+- [ ] **Memoized recursion (cme) enhancements** - Add cache size limit and cleanup callback parameters:
+  - `cme(arg, max_cache_size, cleanup_lambda)` where cleanup_lambda is called when cache is full
+  - Currently `cme` only supports simple recursive calls without memoization
 - [ ] **Arena allocator runtime** - Implement fast memory allocation for game objects and demo effects
   - Create `arena_runtime.c` with `flap_arena_create()`, `flap_arena_alloc()`, `flap_arena_destroy()`
   - Generate arena block code (call create on entry, destroy on exit)
