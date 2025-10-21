@@ -333,3 +333,390 @@ func (o *Out) leaMemToRegX86(dst, base string, offset int) {
 		fmt.Fprintln(os.Stderr)
 	}
 }
+
+// MovU8MemToReg emits a zero-extended byte load (MOVZX r64, byte [base+offset])
+func (o *Out) MovU8MemToReg(dest, base string, offset int) {
+	switch o.machine.Arch {
+	case ArchX86_64:
+		o.movU8MemToRegX86(dest, base, offset)
+	}
+}
+
+func (o *Out) movU8MemToRegX86(dest, base string, offset int) {
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "movzx %s, byte [%s", dest, base)
+		if offset != 0 {
+			if offset > 0 {
+				fmt.Fprintf(os.Stderr, "+%d", offset)
+			} else {
+				fmt.Fprintf(os.Stderr, "%d", offset)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "]: ")
+	}
+
+	destReg, _ := GetRegister(o.machine.Arch, dest)
+	baseReg, _ := GetRegister(o.machine.Arch, base)
+
+	// MOVZX r64, r/m8 - opcode 0x0F 0xB6
+	rex := uint8(0x48) // REX.W for 64-bit destination
+	if destReg.Encoding >= 8 {
+		rex |= 0x04 // REX.R
+	}
+	if baseReg.Encoding >= 8 {
+		rex |= 0x01 // REX.B
+	}
+	o.Write(rex)
+	o.Write(0x0F)
+	o.Write(0xB6)
+
+	// ModR/M byte
+	if offset == 0 && (baseReg.Encoding&7) != 5 {
+		modrm := uint8(0x00) | ((destReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24) // SIB for RSP
+		}
+	} else if offset < 128 && offset >= -128 {
+		modrm := uint8(0x40) | ((destReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.Write(uint8(offset))
+	} else {
+		modrm := uint8(0x80) | ((destReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.WriteUnsigned(uint(offset))
+	}
+
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
+}
+
+// MovI8MemToReg emits a sign-extended byte load (MOVSX r64, byte [base+offset])
+func (o *Out) MovI8MemToReg(dest, base string, offset int) {
+	switch o.machine.Arch {
+	case ArchX86_64:
+		o.movI8MemToRegX86(dest, base, offset)
+	}
+}
+
+func (o *Out) movI8MemToRegX86(dest, base string, offset int) {
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "movsx %s, byte [%s", dest, base)
+		if offset != 0 {
+			if offset > 0 {
+				fmt.Fprintf(os.Stderr, "+%d", offset)
+			} else {
+				fmt.Fprintf(os.Stderr, "%d", offset)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "]: ")
+	}
+
+	destReg, _ := GetRegister(o.machine.Arch, dest)
+	baseReg, _ := GetRegister(o.machine.Arch, base)
+
+	// MOVSX r64, r/m8 - opcode 0x0F 0xBE
+	rex := uint8(0x48) // REX.W for 64-bit destination
+	if destReg.Encoding >= 8 {
+		rex |= 0x04 // REX.R
+	}
+	if baseReg.Encoding >= 8 {
+		rex |= 0x01 // REX.B
+	}
+	o.Write(rex)
+	o.Write(0x0F)
+	o.Write(0xBE)
+
+	// ModR/M byte
+	if offset == 0 && (baseReg.Encoding&7) != 5 {
+		modrm := uint8(0x00) | ((destReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24) // SIB for RSP
+		}
+	} else if offset < 128 && offset >= -128 {
+		modrm := uint8(0x40) | ((destReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.Write(uint8(offset))
+	} else {
+		modrm := uint8(0x80) | ((destReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.WriteUnsigned(uint(offset))
+	}
+
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
+}
+
+// MovU16MemToReg emits a zero-extended word load (MOVZX r64, word [base+offset])
+func (o *Out) MovU16MemToReg(dest, base string, offset int) {
+	switch o.machine.Arch {
+	case ArchX86_64:
+		o.movU16MemToRegX86(dest, base, offset)
+	}
+}
+
+func (o *Out) movU16MemToRegX86(dest, base string, offset int) {
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "movzx %s, word [%s", dest, base)
+		if offset != 0 {
+			if offset > 0 {
+				fmt.Fprintf(os.Stderr, "+%d", offset)
+			} else {
+				fmt.Fprintf(os.Stderr, "%d", offset)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "]: ")
+	}
+
+	destReg, _ := GetRegister(o.machine.Arch, dest)
+	baseReg, _ := GetRegister(o.machine.Arch, base)
+
+	// MOVZX r64, r/m16 - opcode 0x0F 0xB7
+	rex := uint8(0x48) // REX.W for 64-bit destination
+	if destReg.Encoding >= 8 {
+		rex |= 0x04 // REX.R
+	}
+	if baseReg.Encoding >= 8 {
+		rex |= 0x01 // REX.B
+	}
+	o.Write(rex)
+	o.Write(0x0F)
+	o.Write(0xB7)
+
+	// ModR/M byte
+	if offset == 0 && (baseReg.Encoding&7) != 5 {
+		modrm := uint8(0x00) | ((destReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24) // SIB for RSP
+		}
+	} else if offset < 128 && offset >= -128 {
+		modrm := uint8(0x40) | ((destReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.Write(uint8(offset))
+	} else {
+		modrm := uint8(0x80) | ((destReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.WriteUnsigned(uint(offset))
+	}
+
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
+}
+
+// MovI16MemToReg emits a sign-extended word load (MOVSX r64, word [base+offset])
+func (o *Out) MovI16MemToReg(dest, base string, offset int) {
+	switch o.machine.Arch {
+	case ArchX86_64:
+		o.movI16MemToRegX86(dest, base, offset)
+	}
+}
+
+func (o *Out) movI16MemToRegX86(dest, base string, offset int) {
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "movsx %s, word [%s", dest, base)
+		if offset != 0 {
+			if offset > 0 {
+				fmt.Fprintf(os.Stderr, "+%d", offset)
+			} else {
+				fmt.Fprintf(os.Stderr, "%d", offset)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "]: ")
+	}
+
+	destReg, _ := GetRegister(o.machine.Arch, dest)
+	baseReg, _ := GetRegister(o.machine.Arch, base)
+
+	// MOVSX r64, r/m16 - opcode 0x0F 0xBF
+	rex := uint8(0x48) // REX.W for 64-bit destination
+	if destReg.Encoding >= 8 {
+		rex |= 0x04 // REX.R
+	}
+	if baseReg.Encoding >= 8 {
+		rex |= 0x01 // REX.B
+	}
+	o.Write(rex)
+	o.Write(0x0F)
+	o.Write(0xBF)
+
+	// ModR/M byte
+	if offset == 0 && (baseReg.Encoding&7) != 5 {
+		modrm := uint8(0x00) | ((destReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24) // SIB for RSP
+		}
+	} else if offset < 128 && offset >= -128 {
+		modrm := uint8(0x40) | ((destReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.Write(uint8(offset))
+	} else {
+		modrm := uint8(0x80) | ((destReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.WriteUnsigned(uint(offset))
+	}
+
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
+}
+
+// MovU32MemToReg emits a zero-extended dword load (MOV r32, [base+offset])
+// Note: On x86-64, 32-bit operations automatically zero-extend to 64-bit
+func (o *Out) MovU32MemToReg(dest, base string, offset int) {
+	switch o.machine.Arch {
+	case ArchX86_64:
+		o.movU32MemToRegX86(dest, base, offset)
+	}
+}
+
+func (o *Out) movU32MemToRegX86(dest, base string, offset int) {
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "mov %s, dword [%s", dest, base)
+		if offset != 0 {
+			if offset > 0 {
+				fmt.Fprintf(os.Stderr, "+%d", offset)
+			} else {
+				fmt.Fprintf(os.Stderr, "%d", offset)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "]: ")
+	}
+
+	destReg, _ := GetRegister(o.machine.Arch, dest)
+	baseReg, _ := GetRegister(o.machine.Arch, base)
+
+	// MOV r32, r/m32 - opcode 0x8B (no REX.W, auto zero-extends)
+	// Only emit REX if we need extended registers
+	needsRex := destReg.Encoding >= 8 || baseReg.Encoding >= 8
+	if needsRex {
+		rex := uint8(0x40) // REX prefix without W bit
+		if destReg.Encoding >= 8 {
+			rex |= 0x04 // REX.R
+		}
+		if baseReg.Encoding >= 8 {
+			rex |= 0x01 // REX.B
+		}
+		o.Write(rex)
+	}
+	o.Write(0x8B)
+
+	// ModR/M byte
+	if offset == 0 && (baseReg.Encoding&7) != 5 {
+		modrm := uint8(0x00) | ((destReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24) // SIB for RSP
+		}
+	} else if offset < 128 && offset >= -128 {
+		modrm := uint8(0x40) | ((destReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.Write(uint8(offset))
+	} else {
+		modrm := uint8(0x80) | ((destReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.WriteUnsigned(uint(offset))
+	}
+
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
+}
+
+// MovI32MemToReg emits a sign-extended dword load (MOVSXD r64, [base+offset])
+func (o *Out) MovI32MemToReg(dest, base string, offset int) {
+	switch o.machine.Arch {
+	case ArchX86_64:
+		o.movI32MemToRegX86(dest, base, offset)
+	}
+}
+
+func (o *Out) movI32MemToRegX86(dest, base string, offset int) {
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "movsxd %s, dword [%s", dest, base)
+		if offset != 0 {
+			if offset > 0 {
+				fmt.Fprintf(os.Stderr, "+%d", offset)
+			} else {
+				fmt.Fprintf(os.Stderr, "%d", offset)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "]: ")
+	}
+
+	destReg, _ := GetRegister(o.machine.Arch, dest)
+	baseReg, _ := GetRegister(o.machine.Arch, base)
+
+	// MOVSXD r64, r/m32 - opcode 0x63 with REX.W
+	rex := uint8(0x48) // REX.W for 64-bit destination
+	if destReg.Encoding >= 8 {
+		rex |= 0x04 // REX.R
+	}
+	if baseReg.Encoding >= 8 {
+		rex |= 0x01 // REX.B
+	}
+	o.Write(rex)
+	o.Write(0x63)
+
+	// ModR/M byte
+	if offset == 0 && (baseReg.Encoding&7) != 5 {
+		modrm := uint8(0x00) | ((destReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24) // SIB for RSP
+		}
+	} else if offset < 128 && offset >= -128 {
+		modrm := uint8(0x40) | ((destReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.Write(uint8(offset))
+	} else {
+		modrm := uint8(0x80) | ((destReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.WriteUnsigned(uint(offset))
+	}
+
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
+}

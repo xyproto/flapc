@@ -2166,7 +2166,8 @@ func (p *Parser) parseUnsafeBlock() []Statement {
 
 // parseUnsafeValue parses the RHS of a register assignment in unsafe blocks
 func (p *Parser) parseUnsafeValue() interface{} {
-	// Check for memory load: [rax], u8 [rax], etc.
+	// Check for memory load: [rax] or [rax + offset]
+	// Followed optionally by: as uint8, as int16, etc.
 	if p.current.Type == TOKEN_LBRACKET {
 		// [rax] or [rax + offset]
 		p.nextToken() // skip '['
@@ -2191,43 +2192,16 @@ func (p *Parser) parseUnsafeValue() interface{} {
 		}
 		p.nextToken() // skip ']'
 
-		return &MemoryLoad{Size: "u64", Address: addrReg, Offset: offset}
-	}
-
-	// Check for sized memory load: u8 [rax], u32 [rbx + 16], etc.
-	if p.current.Type == TOKEN_U8 || p.current.Type == TOKEN_U16 ||
-		p.current.Type == TOKEN_U32 || p.current.Type == TOKEN_U64 ||
-		p.current.Type == TOKEN_I8 || p.current.Type == TOKEN_I16 ||
-		p.current.Type == TOKEN_I32 || p.current.Type == TOKEN_I64 {
-
-		size := p.current.Value
-		p.nextToken() // skip size
-
-		if p.current.Type != TOKEN_LBRACKET {
-			p.error("expected '[' after size specifier")
-		}
-		p.nextToken() // skip '['
-
-		if p.current.Type != TOKEN_IDENT {
-			p.error("expected register name in memory load")
-		}
-		addrReg := p.current.Value
-		p.nextToken() // skip register
-
-		var offset int64 = 0
-		if p.current.Type == TOKEN_PLUS {
-			p.nextToken() // skip '+'
-			if p.current.Type != TOKEN_NUMBER {
-				p.error("expected number after '+' in memory address")
+		// Check for size cast: [rbx] as uint8
+		size := "uint64" // default to 64-bit
+		if p.current.Type == TOKEN_AS {
+			p.nextToken() // skip 'as'
+			if p.current.Type != TOKEN_IDENT {
+				p.error("expected type name after 'as'")
 			}
-			offset = int64(p.parseNumberLiteral(p.current.Value))
-			p.nextToken() // skip number
+			size = p.current.Value
+			p.nextToken() // skip type name
 		}
-
-		if p.current.Type != TOKEN_RBRACKET {
-			p.error("expected ']'")
-		}
-		p.nextToken() // skip ']'
 
 		return &MemoryLoad{Size: size, Address: addrReg, Offset: offset}
 	}
@@ -5601,12 +5575,32 @@ func (fc *FlapCompiler) compileRegisterOp(dest string, op *RegisterOp) {
 
 func (fc *FlapCompiler) compileMemoryLoad(dest string, load *MemoryLoad) {
 	// Memory load: dest <- [addr + offset]
-	// TODO v1.1.0: Implement sized loads (u8, u16, u32, i32)
-	// For now, only support u64
-	if load.Size != "u64" && load.Size != "" {
-		compilerError("sized memory loads not yet implemented in v1.3.0 (coming in v1.1.0)")
+	// Support sized loads: uint8, int8, uint16, int16, uint32, int32, uint64, int64
+	switch load.Size {
+	case "", "uint64", "int64":
+		// Default 64-bit load (unsigned and signed are the same for full width)
+		fc.out.MovMemToReg(dest, load.Address, int(load.Offset))
+	case "uint8":
+		// Zero-extend byte to 64-bit
+		fc.out.MovU8MemToReg(dest, load.Address, int(load.Offset))
+	case "int8":
+		// Sign-extend byte to 64-bit
+		fc.out.MovI8MemToReg(dest, load.Address, int(load.Offset))
+	case "uint16":
+		// Zero-extend word to 64-bit
+		fc.out.MovU16MemToReg(dest, load.Address, int(load.Offset))
+	case "int16":
+		// Sign-extend word to 64-bit
+		fc.out.MovI16MemToReg(dest, load.Address, int(load.Offset))
+	case "uint32":
+		// Zero-extend dword to 64-bit (automatic on x86-64)
+		fc.out.MovU32MemToReg(dest, load.Address, int(load.Offset))
+	case "int32":
+		// Sign-extend dword to 64-bit
+		fc.out.MovI32MemToReg(dest, load.Address, int(load.Offset))
+	default:
+		compilerError(fmt.Sprintf("unsupported memory load size: %s (supported: uint8, int8, uint16, int16, uint32, int32, uint64, int64)", load.Size))
 	}
-	fc.out.MovMemToReg(dest, load.Address, int(load.Offset))
 }
 
 func (fc *FlapCompiler) compileMemoryStore(addr string, value interface{}) {

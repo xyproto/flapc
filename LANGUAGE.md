@@ -686,7 +686,27 @@ unsafe {
 } { /* arm64 */ } { /* riscv64 */ }
 ```
 
-**Coming in v1.5.0**: Sized loads (u8, u16, u32), memory stores, sign extension
+**Sized Memory Loads** (v1.5.0+):
+```flap
+unsafe {
+    rbx <- 0x1000
+
+    // Zero-extend smaller types (unsigned)
+    rax <- [rbx] as uint8    // Load byte, zero-extend to 64-bit (0x00000000000000FF)
+    rax <- [rbx] as uint16   // Load word, zero-extend to 64-bit (0x000000000000FFFF)
+    rax <- [rbx] as uint32   // Load dword, zero-extend to 64-bit (0x00000000FFFFFFFF)
+
+    // Sign-extend smaller types (signed)
+    rax <- [rbx] as int8     // Load byte, sign-extend to 64-bit (0xFFFFFFFFFFFFFFFF for -1)
+    rax <- [rbx] as int16    // Load word, sign-extend to 64-bit
+    rax <- [rbx] as int32    // Load dword, sign-extend to 64-bit
+
+    // Works with offsets too
+    rax <- [rbx + 8] as uint8
+} { /* arm64 */ } { /* riscv64 */ }
+```
+
+**Coming soon**: Sized memory stores
 
 ### Return Value
 
