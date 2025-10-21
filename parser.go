@@ -3840,11 +3840,8 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 			fc.eb.Define(labelName, string(mapData))
 			fc.out.LeaSymbolToReg("rax", labelName)
-			// Convert pointer to float64
-			fc.out.SubImmFromReg("rsp", StackSlotSize)
-			fc.out.MovRegToMem("rax", "rsp", 0)
-			fc.out.MovMemToXmm("xmm0", "rsp", 0)
-			fc.out.AddImmToReg("rsp", StackSlotSize)
+			// Convert pointer to float64 (direct register move, no stack)
+			fc.out.MovqRegToXmm("xmm0", "rax")
 		}
 
 	case *FStringExpr:
@@ -3906,11 +3903,8 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			// Restore stack alignment
 			fc.out.AddImmToReg("rsp", StackSlotSize)
 
-			// Convert result pointer from rax back to xmm0
-			fc.out.SubImmFromReg("rsp", StackSlotSize)
-			fc.out.MovRegToMem("rax", "rsp", 0)
-			fc.out.MovMemToXmm("xmm0", "rsp", 0)
-			fc.out.AddImmToReg("rsp", StackSlotSize)
+			// Convert result pointer from rax back to xmm0 (direct register move)
+			fc.out.MovqRegToXmm("xmm0", "rax")
 		}
 
 	case *IdentExpr:
@@ -4427,16 +4421,14 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		// Default: numeric binary operation
 		// Compile left into xmm0
 		fc.compileExpression(e.Left)
-		// Save xmm0 to stack
-		fc.out.SubImmFromReg("rsp", 16)
-		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		// Save left in xmm2 (register-to-register, no stack needed)
+		fc.out.MovRegToReg("xmm2", "xmm0")
 		// Compile right into xmm0
 		fc.compileExpression(e.Right)
 		// Move right operand to xmm1
 		fc.out.MovRegToReg("xmm1", "xmm0")
-		// Load left operand from stack to xmm0
-		fc.out.MovMemToXmm("xmm0", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 16)
+		// Move left operand from xmm2 to xmm0
+		fc.out.MovRegToReg("xmm0", "xmm2")
 		// Perform scalar floating-point operation
 		switch e.Operator {
 		case "+":
