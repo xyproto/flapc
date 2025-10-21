@@ -69,13 +69,16 @@
   - Tested: Empty arena ✓, single alloc() ✓, multiple alloc() ✓, printf ✓, auto-growing ✓, 17 nested arenas ✓
   - Note: Static storage instead of dynamic growth for simplicity (65K slots should handle any realistic scenario)
 
+- [x] **Memoized recursion (cme)** - ✅ COMPLETE (v1.6.0)
+  - Syntax: `cme(arg)` - Automatic result caching for recursive functions
+  - Hash-based cache with linear probing (32 buckets per lambda)
+  - Stores raw float64 bits as keys for fast comparison
+  - Each lambda using cme gets dedicated cache in .data section
+  - Runtime functions: flap_cache_lookup, flap_cache_insert
+  - Tested: fib(35) = 9227465 runs instantly (vs exponential time without cache)
+  - TODO: Add max_cache_size and cleanup_lambda parameters
+
 ## Next Actions
-- [ ] **Memoized recursion (cme) enhancements** - Add cache size limit and cleanup callback parameters:
-  - `cme(arg, max_cache_size, cleanup_lambda)` where cleanup_lambda is called when cache is full
-  - Currently `cme` only supports simple recursive calls without memoization
-- [ ] **Arena block syntax** - Add language-level arena blocks for automatic lifetime management
-  - Syntax: `arena(capacity) { ... code ... }` - arena destroyed automatically at block exit
-  - Support nested arenas for hierarchical allocation
 - [ ] **Defer statements runtime** - Implement cleanup code for resource management
   - Track deferred expressions per scope in FlapCompiler
   - Emit deferred code in LIFO order at scope exit and before returns
