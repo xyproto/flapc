@@ -17,6 +17,12 @@
   - Works with offsets: `rax <- [rbx + 8] as uint8`
   - All 6 sized types tested and verified (MOVZX for unsigned, MOVSX for signed)
 
+- [x] **Sized memory stores in unsafe** - ✅ COMPLETE
+  - Syntax: `[rax] <- value as uint8` for byte store, `[rax] <- value as uint16` for word store
+  - Supported types: uint8, uint16, uint32, uint64 (int types work same as unsigned for stores)
+  - Works with offsets: `[rax + 8] <- rbx as uint8`
+  - All sized types tested and verified (MOV byte/word/dword [addr], reg)
+
 ## Next Actions
 - [ ] **Memoized recursion (cme) enhancements** - Add cache size limit and cleanup callback parameters:
   - `cme(arg, max_cache_size, cleanup_lambda)` where cleanup_lambda is called when cache is full
@@ -28,7 +34,6 @@
 - [ ] **Defer statements runtime** - Implement cleanup code for resource management
   - Track deferred expressions per scope in FlapCompiler
   - Emit deferred code in LIFO order at scope exit and before returns
-- [ ] **Sized memory stores in unsafe** - `[rax] <- rbx as uint8` for writing packed formats
 - [ ] **More than 6 C function arguments** - Stack-based argument passing for complex APIs
 - [ ] **SIMD intrinsics** - Vector operations for audio DSP, graphics effects, particle systems
 - [ ] **Register allocation improvements** - Better register usage for performance
