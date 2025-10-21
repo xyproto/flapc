@@ -2391,6 +2391,7 @@ type FlapCompiler struct {
 	lambdaBodyStart  int                          // Offset where lambda body starts (for tail recursion)
 	hasExplicitExit  bool                         // Track if program contains explicit exit() call
 	debug            bool                         // Enable debug output (set via DEBUG_FLAP env var)
+	cContext         bool                         // When true, compile expressions for C FFI (affects strings, pointers, ints)
 }
 
 type LambdaFunc struct {
@@ -3537,53 +3538,65 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		}
 
 	case *StringExpr:
-		// Strings are represented as map[uint64]float64 where keys are indices
-		// and values are character codes
-		// Map format: [count][key0][val0][key1][val1]...
-		// Following Lisp philosophy: even empty strings are objects (count=0), not null
-
 		labelName := fmt.Sprintf("str_%d", fc.stringCounter)
 		fc.stringCounter++
 
-		// Build map data: count followed by key-value pairs
-		var mapData []byte
+		if fc.cContext {
+			// C context: compile as null-terminated C string
+			// Format: just the raw bytes followed by null terminator
+			cStringData := append([]byte(e.Value), 0) // Add null terminator
+			fc.eb.Define(labelName, string(cStringData))
 
-		// Count (number of UTF-8 bytes) - can be 0 for empty strings
-		// Note: len(e.Value) returns byte count in Go, not rune count
-		count := float64(len(e.Value))
-		countBits := uint64(0)
-		*(*float64)(unsafe.Pointer(&countBits)) = count
-		for i := 0; i < 8; i++ {
-			mapData = append(mapData, byte((countBits>>(i*8))&ByteMask))
-		}
+			// Load pointer to C string into rax (not xmm0)
+			fc.out.LeaSymbolToReg("rax", labelName)
+			// Note: In C context, we keep the pointer in rax, not convert to float64
+			// The caller (compileCFunctionCall) will handle it appropriately
+		} else {
+			// Flap context: compile as map[uint64]float64 where keys are indices
+			// and values are character codes
+			// Map format: [count][key0][val0][key1][val1]...
+			// Following Lisp philosophy: even empty strings are objects (count=0), not null
 
-		// Add each UTF-8 byte as a key-value pair (none for empty strings)
-		// IMPORTANT: Iterate over bytes, not runes, to preserve UTF-8 encoding
-		for idx := 0; idx < len(e.Value); idx++ {
-			// Key: byte index as float64
-			keyVal := float64(idx)
-			keyBits := uint64(0)
-			*(*float64)(unsafe.Pointer(&keyBits)) = keyVal
+			// Build map data: count followed by key-value pairs
+			var mapData []byte
+
+			// Count (number of UTF-8 bytes) - can be 0 for empty strings
+			// Note: len(e.Value) returns byte count in Go, not rune count
+			count := float64(len(e.Value))
+			countBits := uint64(0)
+			*(*float64)(unsafe.Pointer(&countBits)) = count
 			for i := 0; i < 8; i++ {
-				mapData = append(mapData, byte((keyBits>>(i*8))&ByteMask))
+				mapData = append(mapData, byte((countBits>>(i*8))&ByteMask))
 			}
 
-			// Value: UTF-8 byte value as float64 (0-255)
-			byteVal := float64(e.Value[idx])
-			byteBits := uint64(0)
-			*(*float64)(unsafe.Pointer(&byteBits)) = byteVal
-			for i := 0; i < 8; i++ {
-				mapData = append(mapData, byte((byteBits>>(i*8))&ByteMask))
-			}
-		}
+			// Add each UTF-8 byte as a key-value pair (none for empty strings)
+			// IMPORTANT: Iterate over bytes, not runes, to preserve UTF-8 encoding
+			for idx := 0; idx < len(e.Value); idx++ {
+				// Key: byte index as float64
+				keyVal := float64(idx)
+				keyBits := uint64(0)
+				*(*float64)(unsafe.Pointer(&keyBits)) = keyVal
+				for i := 0; i < 8; i++ {
+					mapData = append(mapData, byte((keyBits>>(i*8))&ByteMask))
+				}
 
-		fc.eb.Define(labelName, string(mapData))
-		fc.out.LeaSymbolToReg("rax", labelName)
-		// Convert pointer to float64
-		fc.out.SubImmFromReg("rsp", StackSlotSize)
-		fc.out.MovRegToMem("rax", "rsp", 0)
-		fc.out.MovMemToXmm("xmm0", "rsp", 0)
-		fc.out.AddImmToReg("rsp", StackSlotSize)
+				// Value: UTF-8 byte value as float64 (0-255)
+				byteVal := float64(e.Value[idx])
+				byteBits := uint64(0)
+				*(*float64)(unsafe.Pointer(&byteBits)) = byteVal
+				for i := 0; i < 8; i++ {
+					mapData = append(mapData, byte((byteBits>>(i*8))&ByteMask))
+				}
+			}
+
+			fc.eb.Define(labelName, string(mapData))
+			fc.out.LeaSymbolToReg("rax", labelName)
+			// Convert pointer to float64
+			fc.out.SubImmFromReg("rsp", StackSlotSize)
+			fc.out.MovRegToMem("rax", "rsp", 0)
+			fc.out.MovMemToXmm("xmm0", "rsp", 0)
+			fc.out.AddImmToReg("rsp", StackSlotSize)
+		}
 
 	case *FStringExpr:
 		// F-string: concatenate all parts
@@ -7858,8 +7871,20 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 				}
 			}
 
-			// Compile the inner expression (result in xmm0)
+			// Set C context for string literals and pointers to compile them correctly
+			isStringLiteral := false
+			if _, ok := innerExpr.(*StringExpr); ok {
+				isStringLiteral = true
+				fc.cContext = true // Enable C context for string compilation
+			}
+
+			// Compile the inner expression (result in xmm0 for Flap values, rax for C strings)
 			fc.compileExpression(innerExpr)
+
+			// Reset C context after compilation
+			if isStringLiteral {
+				fc.cContext = false
+			}
 
 			// For math functions, keep values as float64 in xmm registers
 			if isMathFunc {
@@ -7869,21 +7894,26 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 				// Handle different cast types for non-math functions
 				switch castType {
 				case "cstr", "cstring":
-					// String to C string conversion
-					// xmm0 contains string map pointer - convert to C string
-					fc.out.SubImmFromReg("rsp", StackSlotSize)
-					fc.out.MovXmmToMem("xmm0", "rsp", 0)
-					fc.out.MovMemToReg("rax", "rsp", 0)
-					fc.out.AddImmToReg("rsp", StackSlotSize)
+					if isStringLiteral {
+						// String literal was compiled as C string - rax already contains the pointer
+						// No conversion needed, just store it
+					} else {
+						// Runtime string (Flap map format) - need to convert to C string
+						// xmm0 contains string map pointer - convert to C string
+						fc.out.SubImmFromReg("rsp", StackSlotSize)
+						fc.out.MovXmmToMem("xmm0", "rsp", 0)
+						fc.out.MovMemToReg("rax", "rsp", 0)
+						fc.out.AddImmToReg("rsp", StackSlotSize)
 
-					// Call flap_string_to_cstr(map_ptr) -> char*
-					fc.out.SubImmFromReg("rsp", StackSlotSize)
-					fc.out.MovRegToMem("rax", "rsp", 0)
-					fc.out.MovMemToReg("rdi", "rsp", 0)
-					fc.out.AddImmToReg("rsp", StackSlotSize)
-					fc.trackFunctionCall("flap_string_to_cstr")
-					fc.out.CallSymbol("flap_string_to_cstr")
-					// Result in rax (C string pointer)
+						// Call flap_string_to_cstr(map_ptr) -> char*
+						fc.out.SubImmFromReg("rsp", StackSlotSize)
+						fc.out.MovRegToMem("rax", "rsp", 0)
+						fc.out.MovMemToReg("rdi", "rsp", 0)
+						fc.out.AddImmToReg("rsp", StackSlotSize)
+						fc.trackFunctionCall("flap_string_to_cstr")
+						fc.out.CallSymbol("flap_string_to_cstr")
+						// Result in rax (C string pointer)
+					}
 
 				case "ptr", "pointer":
 					// Pointer type - convert float64 to integer pointer
