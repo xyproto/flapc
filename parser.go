@@ -890,6 +890,44 @@ func (p *Parser) parseMatchClause() (*MatchClause, bool) {
 
 func (p *Parser) parseMatchTarget() Expression {
 	switch p.current.Type {
+	case TOKEN_LBRACE:
+		// Parse a block of statements as the match target
+		// This allows multi-statement match arms like:
+		//   condition {
+		//       { stmt1; stmt2; stmt3 }
+		//   }
+		p.nextToken() // skip '{'
+		p.skipNewlines()
+
+		var statements []Statement
+		for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+			stmt := p.parseStatement()
+			if stmt != nil {
+				statements = append(statements, stmt)
+			}
+
+			// Skip separators between statements
+			if p.peek.Type == TOKEN_NEWLINE || p.peek.Type == TOKEN_SEMICOLON {
+				p.nextToken()
+				p.skipNewlines()
+			} else if p.peek.Type == TOKEN_RBRACE || p.peek.Type == TOKEN_EOF {
+				p.nextToken() // move to '}'
+				break
+			} else {
+				p.nextToken()
+				p.skipNewlines()
+			}
+		}
+
+		if p.current.Type != TOKEN_RBRACE {
+			p.error("expected '}' at end of match block")
+		}
+
+		// Consume the closing '}'
+		p.nextToken()
+
+		return &BlockExpr{Statements: statements}
+
 	case TOKEN_RET:
 		// ret or ret @N or ret value or ret @N value
 		p.nextToken() // skip 'ret'

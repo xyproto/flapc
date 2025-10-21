@@ -1,3 +1,29 @@
+# ✅ IMPLEMENTED: Multi-Statement Match Blocks
+
+**Status**: Implemented on 2025-10-21
+
+## Implementation Details
+
+Multi-statement match blocks are now supported using the following syntax:
+
+```flap
+condition {
+    -> {
+        stmt1
+        stmt2
+        stmt3
+    }
+    ~> {
+        other_stmt1
+        other_stmt2
+    }
+}
+```
+
+The implementation adds support for parsing statement blocks (`BlockExpr`) in match arms through the `parseMatchTarget()` function in `parser.go`. When a `{` token is encountered after a match arrow (`->` or `~>`), the parser now recognizes it as a block of statements rather than requiring a single expression.
+
+## Original Suggestion
+
 # Key Improvement Suggestion for Flap/Flapc
 
 ## The Problem: Limited Control Flow Expressiveness
