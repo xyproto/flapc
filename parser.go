@@ -2394,6 +2394,7 @@ type FlapCompiler struct {
 	hasExplicitExit  bool                         // Track if program contains explicit exit() call
 	debug            bool                         // Enable debug output (set via DEBUG_FLAP env var)
 	cContext         bool                         // When true, compile expressions for C FFI (affects strings, pointers, ints)
+	currentArena     int                          // Stack offset of current arena pointer (-1 if not in arena block)
 }
 
 type LambdaFunc struct {
@@ -2437,6 +2438,7 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 		cConstants:       make(map[string]*CHeaderConstants),
 		lambdaOffsets:    make(map[string]int),
 		debug:            debugEnabled,
+		currentArena:     -1, // Not in arena block initially
 	}, nil
 }
 
@@ -3077,6 +3079,13 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 				return err
 			}
 		}
+	case *ArenaStmt:
+		// Recursively collect symbols from arena body
+		for _, bodyStmt := range s.Body {
+			if err := fc.collectSymbols(bodyStmt); err != nil {
+				return err
+			}
+		}
 	case *ExpressionStmt:
 		// No symbols to collect from expression statements
 	}
@@ -3164,7 +3173,48 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 		} else {
 			fc.compileExpression(s.Expr)
 		}
+
+	case *ArenaStmt:
+		fc.compileArenaStmt(s)
 	}
+}
+
+func (fc *FlapCompiler) compileArenaStmt(stmt *ArenaStmt) {
+	// Save previous arena context
+	previousArena := fc.currentArena
+
+	// Create arena with initial 1KB capacity
+	initialCapacity := 1024
+	fc.out.MovImmToReg("rdi", fmt.Sprintf("%d", initialCapacity))
+	fc.out.CallSymbol("flap_arena_create")
+	// rax now contains arena pointer, convert to float64 in xmm0
+	fc.out.Cvtsi2sd("xmm0", "rax")
+
+	// Allocate stack space for arena pointer
+	fc.stackOffset += 16
+	arenaOffset := fc.stackOffset
+	fc.out.SubImmFromReg("rsp", 16)
+	fc.out.MovXmmToMem("xmm0", "rbp", -arenaOffset)
+
+	// Set current arena context
+	fc.currentArena = arenaOffset
+
+	// Compile statements in arena body
+	for _, bodyStmt := range stmt.Body {
+		fc.compileStatement(bodyStmt)
+	}
+
+	// Restore previous arena context
+	fc.currentArena = previousArena
+
+	// Destroy arena
+	fc.out.MovMemToXmm("xmm0", "rbp", -arenaOffset)
+	fc.out.Cvttsd2si("rdi", "xmm0")
+	fc.out.CallSymbol("flap_arena_destroy")
+
+	// Clean up arena pointer from stack
+	fc.out.AddImmToReg("rsp", 16)
+	fc.stackOffset -= 16
 }
 
 func (fc *FlapCompiler) compileLoopStatement(stmt *LoopStmt) {
@@ -7186,47 +7236,123 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.Ret()
 
 	// Generate flap_arena_alloc(arena_ptr, size) -> allocation_ptr
-	// Allocates memory from the arena using bump allocation
+	// Allocates memory from the arena using bump allocation with auto-growing
+	// If arena is full, reallocs buffer to 2x size
 	// Arguments: rdi = arena_ptr, rsi = size (int64)
 	// Returns: rax = allocated memory pointer
 	fc.eb.MarkLabel("flap_arena_alloc")
 
 	fc.out.PushReg("rbp")
 	fc.out.MovRegToReg("rbp", "rsp")
+	fc.out.PushReg("rbx")
+	fc.out.PushReg("r12")
+	fc.out.PushReg("r13")
+
+	fc.out.MovRegToReg("rbx", "rdi") // rbx = arena_ptr (preserve across calls)
+	fc.out.MovRegToReg("r12", "rsi") // r12 = size (preserve across calls)
 
 	// Load arena fields
-	fc.out.MovMemToReg("r8", "rdi", 0)   // r8 = buffer_ptr
-	fc.out.MovMemToReg("r9", "rdi", 8)   // r9 = capacity
-	fc.out.MovMemToReg("r10", "rdi", 16) // r10 = current offset
-	fc.out.MovMemToReg("r11", "rdi", 24) // r11 = alignment
+	fc.out.MovMemToReg("r8", "rbx", 0)   // r8 = buffer_ptr
+	fc.out.MovMemToReg("r9", "rbx", 8)   // r9 = capacity
+	fc.out.MovMemToReg("r10", "rbx", 16) // r10 = current offset
+	fc.out.MovMemToReg("r11", "rbx", 24) // r11 = alignment
 
 	// Align offset: aligned_offset = (offset + alignment - 1) & ~(alignment - 1)
-	fc.out.MovRegToReg("rax", "r10")   // rax = offset
-	fc.out.AddRegToReg("rax", "r11")   // rax = offset + alignment
-	fc.out.SubImmFromReg("rax", 1)     // rax = offset + alignment - 1
-	fc.out.MovRegToReg("rcx", "r11")   // rcx = alignment
-	fc.out.SubImmFromReg("rcx", 1)     // rcx = alignment - 1
-	fc.out.Emit([]byte{0x48, 0xf7, 0xd1}) // not rcx (bitwise NOT)
-	fc.out.Emit([]byte{0x48, 0x21, 0xc8}) // and rax, rcx (aligned_offset)
+	fc.out.MovRegToReg("rax", "r10")      // rax = offset
+	fc.out.AddRegToReg("rax", "r11")      // rax = offset + alignment
+	fc.out.SubImmFromReg("rax", 1)        // rax = offset + alignment - 1
+	fc.out.MovRegToReg("rcx", "r11")      // rcx = alignment
+	fc.out.SubImmFromReg("rcx", 1)        // rcx = alignment - 1
+	fc.out.Emit([]byte{0x48, 0xf7, 0xd1}) // not rcx
+	fc.out.Emit([]byte{0x48, 0x21, 0xc8}) // and rax, rcx (aligned_offset in rax)
+	fc.out.MovRegToReg("r13", "rax")      // r13 = aligned_offset
 
-	// Check if we have enough space: if (aligned_offset + size > capacity) error
-	fc.out.MovRegToReg("rdx", "rax")   // rdx = aligned_offset
-	fc.out.AddRegToReg("rdx", "rsi")   // rdx = aligned_offset + size
-	fc.out.CmpRegToReg("rdx", "r9")    // compare with capacity
-	// TODO: Add error handling for out-of-memory
-	// For now, just continue (will segfault if OOM)
+	// Check if we have enough space: if (aligned_offset + size > capacity) grow
+	fc.out.MovRegToReg("rdx", "r13")  // rdx = aligned_offset
+	fc.out.AddRegToReg("rdx", "r12")  // rdx = aligned_offset + size
+	fc.out.CmpRegToReg("rdx", "r9")   // compare with capacity
+	arenaGrowJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreater, 0) // jg to grow path
 
-	// Calculate allocation pointer: ptr = buffer + aligned_offset
-	fc.out.MovRegToReg("rcx", "r8")    // rcx = buffer_ptr
-	fc.out.AddRegToReg("rcx", "rax")   // rcx = buffer_ptr + aligned_offset
+	// Fast path: enough space, no need to grow
+	fc.eb.MarkLabel("_arena_alloc_fast")
+	fc.out.MovRegToReg("rax", "r8")    // rax = buffer_ptr
+	fc.out.AddRegToReg("rax", "r13")   // rax = buffer_ptr + aligned_offset
 
-	// Update arena offset: offset = aligned_offset + size
-	fc.out.AddRegToReg("rax", "rsi")   // rax = aligned_offset + size
-	fc.out.MovRegToMem("rax", "rdi", 16) // [arena_ptr+16] = new offset
+	// Update arena offset
+	fc.out.MovRegToReg("rdx", "r13")   // rdx = aligned_offset
+	fc.out.AddRegToReg("rdx", "r12")   // rdx = aligned_offset + size
+	fc.out.MovRegToMem("rdx", "rbx", 16) // [arena_ptr+16] = new offset
 
-	// Return allocation pointer in rax
-	fc.out.MovRegToReg("rax", "rcx")
+	arenaDoneJump := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0) // jmp to done
 
+	// Grow path: realloc buffer to 2x size
+	arenaGrowLabel := fc.eb.text.Len()
+	fc.patchJumpImmediate(arenaGrowJump+2, int32(arenaGrowLabel-(arenaGrowJump+6)))
+	fc.eb.MarkLabel("_arena_alloc_grow")
+
+	// Calculate new capacity: max(capacity * 2, aligned_offset + size)
+	fc.out.MovRegToReg("rdi", "r9")    // rdi = capacity
+	fc.out.AddRegToReg("rdi", "r9")    // rdi = capacity * 2
+	fc.out.MovRegToReg("rsi", "r13")   // rsi = aligned_offset
+	fc.out.AddRegToReg("rsi", "r12")   // rsi = aligned_offset + size
+	fc.out.CmpRegToReg("rdi", "rsi")   // compare 2*capacity with needed
+	skipMaxJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreaterOrEqual, 0) // jge skip_max
+	fc.out.MovRegToReg("rdi", "rsi")   // rdi = max(2*capacity, needed)
+	skipMaxLabel := fc.eb.text.Len()
+	fc.patchJumpImmediate(skipMaxJump+2, int32(skipMaxLabel-(skipMaxJump+6)))
+
+	// rdi now contains new_capacity
+	fc.out.MovRegToReg("r9", "rdi")    // r9 = new_capacity (update)
+
+	// Call realloc(buffer_ptr, new_capacity)
+	fc.out.MovRegToReg("rdi", "r8")    // rdi = old buffer_ptr
+	fc.out.MovRegToReg("rsi", "r9")    // rsi = new_capacity
+	fc.trackFunctionCall("realloc")
+	fc.eb.GenerateCallInstruction("realloc")
+
+	// Check if realloc failed (returns NULL)
+	fc.out.TestRegReg("rax", "rax")
+	arenaErrorJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0) // je to error (realloc failed - rax==0)
+
+	// Realloc succeeded: update arena structure
+	fc.out.MovRegToMem("rax", "rbx", 0) // [arena_ptr+0] = new buffer_ptr
+	fc.out.MovRegToMem("r9", "rbx", 8)  // [arena_ptr+8] = new capacity
+	fc.out.MovRegToReg("r8", "rax")     // r8 = new buffer_ptr
+
+	// Now allocate from the grown arena
+	fc.out.MovRegToReg("rax", "r8")     // rax = buffer_ptr
+	fc.out.AddRegToReg("rax", "r13")    // rax = buffer_ptr + aligned_offset
+	fc.out.MovRegToReg("rdx", "r13")    // rdx = aligned_offset
+	fc.out.AddRegToReg("rdx", "r12")    // rdx = aligned_offset + size
+	fc.out.MovRegToMem("rdx", "rbx", 16) // [arena_ptr+16] = new offset
+
+	arenaDoneJump2 := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0) // jmp to done
+
+	// Error path: realloc failed
+	arenaErrorLabel := fc.eb.text.Len()
+	fc.patchJumpImmediate(arenaErrorJump+2, int32(arenaErrorLabel-(arenaErrorJump+6)))
+	fc.eb.MarkLabel("_arena_alloc_error")
+
+	// Print error message and exit(1)
+	// TODO: Integrate with or! error handling
+	fc.trackFunctionCall("exit")
+	fc.out.MovImmToReg("rdi", "1")
+	fc.eb.GenerateCallInstruction("exit")
+
+	// Done label
+	arenaDoneLabel := fc.eb.text.Len()
+	fc.patchJumpImmediate(arenaDoneJump+1, int32(arenaDoneLabel-(arenaDoneJump+5)))
+	fc.patchJumpImmediate(arenaDoneJump2+1, int32(arenaDoneLabel-(arenaDoneJump2+5)))
+	fc.eb.MarkLabel("_arena_alloc_done")
+
+	fc.out.PopReg("r13")
+	fc.out.PopReg("r12")
+	fc.out.PopReg("rbx")
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
@@ -9631,23 +9757,29 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		}
 
 	case "alloc":
-		// alloc(size) - Allocate memory (v1.3.0: calls malloc, arena tracking in v1.1.0)
-		// size: number (bytes to allocate)
-		// Returns: pointer as float64
+		// alloc(size) - Context-aware memory allocation
+		// Inside arena { }: allocates from arena with auto-growing
+		// Outside arena: error (use malloc via C FFI if needed)
 		if len(call.Args) != 1 {
 			compilerError("alloc() requires 1 argument (size)")
 		}
 
-		// Evaluate size argument
+		// Check if we're in an arena context
+		if fc.currentArena == -1 {
+			compilerError("alloc() can only be used inside an arena { ... } block. Use malloc() via C FFI if you need manual memory management.")
+		}
+
+		// Load arena pointer from stack
+		fc.out.MovMemToXmm("xmm0", "rbp", -fc.currentArena)
+		fc.out.Cvttsd2si("rdi", "xmm0") // arena_ptr in rdi
+
+		// Compile size argument
 		fc.compileExpression(call.Args[0])
-		// Convert size to integer in rdi
-		fc.out.Cvttsd2si("rdi", "xmm0")
+		fc.out.Cvttsd2si("rsi", "xmm0") // size in rsi
 
-		// v1.3.0: Just call malloc (full arena allocator in v1.1.0)
-		fc.trackFunctionCall("malloc")
-		fc.eb.GenerateCallInstruction("malloc")
-
-		// Convert pointer to float64 in xmm0
+		// Call arena_alloc (with auto-growing via realloc)
+		fc.out.CallSymbol("flap_arena_alloc")
+		// Result in rax, convert to float64
 		fc.out.Cvtsi2sd("xmm0", "rax")
 
 	case "dlopen":

@@ -47,13 +47,22 @@
 ## Recently Completed (continued)
 
 - [x] **Arena allocator runtime** - ✅ COMPLETE (v1.6.0)
-  - Inline assembly implementation of bump allocator
+  - Inline assembly implementation of bump allocator with auto-growing
   - `arena_create(capacity)` - Create new arena with specified capacity
-  - `arena_alloc(arena_ptr, size)` - Fast O(1) bump allocation with 8-byte alignment
+  - `arena_alloc(arena_ptr, size)` - Bump allocation with 8-byte alignment
+  - **Auto-growing**: If arena is full, reallocs buffer to 2x size
+  - **Error handling**: Exits if realloc fails (TODO: integrate with or!)
   - `arena_reset(arena_ptr)` - Reset arena for memory reuse
   - `arena_destroy(arena_ptr)` - Free all arena memory
-  - Calls malloc/free via PLT for actual memory management
-  - Tested with multiple allocations and reset functionality
+  - Calls malloc/free/realloc from libc
+  - Tested with direct calls (arena_create, arena_alloc, arena_destroy)
+
+- [x] **Arena block syntax** - ⚠️  PARTIAL (v1.6.0)
+  - Syntax: `arena { ... }` - Auto-creates and destroys arena at block boundaries
+  - `alloc(size)` - Context-aware allocation (only works inside arena blocks)
+  - **Working**: Arena creation, destruction, nested blocks
+  - **TODO**: Debug alloc() segfault inside arena blocks (stack alignment issue?)
+  - Tested: Empty arena blocks work perfectly ✓
 
 ## Next Actions
 - [ ] **Memoized recursion (cme) enhancements** - Add cache size limit and cleanup callback parameters:
