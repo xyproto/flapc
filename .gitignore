@@ -73,6 +73,10 @@ test_*
 !programs/test_*.result
 debug_*
 simple_*
+!simple_*.result
+!programs/simple_*.result
 nested_*
+!nested_*.result
+!programs/nested_*.result
 
 release/
