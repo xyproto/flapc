@@ -1,13 +1,17 @@
 # Plans
 
-## Recently Completed
+## Recently Completed (2025-10-21)
 
-- [x] **Float arguments in C FFI** - ✅ COMPLETE: xmm0-xmm7 registers working (tested with math.sqrt, math.pow)
-- [x] **Float return values in C FFI** - ✅ COMPLETE: xmm0 return values working
-- [x] **C string arguments** - ✅ COMPLETE: String literals compile as null-terminated C strings
-- [x] **Stack alignment for SIMD** - ✅ COMPLETE: Proper System V AMD64 ABI compliance, ncurses works
+- [x] **C FFI Implementation** - ✅ COMPLETE and production-ready
+  - Float arguments/returns via xmm0-xmm7 registers (math.sqrt, math.pow tested)
+  - Integer/bool arguments/returns with proper conversion (cvttsd2si/cvtsi2sd)
+  - String literals as null-terminated C strings (printf, ncurses.printw tested)
+  - Stack alignment for SIMD (System V AMD64 ABI compliance, movaps works)
+  - Verified with: libc, libm, libncursesw, SDL3
+  - Header parsing and constants extraction (227 ncurses constants, SDL3 constants)
+  - pkg-config integration for automatic include path discovery
 
-## Next actions
+## Next Actions
 - [ ] **Memoized recursion (cme) enhancements** - Add cache size limit and cleanup callback parameters:
   - `cme(arg, max_cache_size, cleanup_lambda)` where cleanup_lambda is called when cache is full
   - Currently `cme` only supports simple recursive calls without memoization
