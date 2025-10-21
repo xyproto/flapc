@@ -199,6 +199,30 @@ func optimizeProgram(program *Program) *Program {
 		analyzePurity(stmt, pureFunctions)
 	}
 
+	// Pass 5: Function inlining (substitute small function calls with their bodies)
+	inlineCandidates := make(map[string]*LambdaExpr) // Functions that can be inlined
+	callCounts := make(map[string]int)               // Number of times each function is called
+
+	// Identify inline candidates
+	for _, stmt := range program.Statements {
+		collectInlineCandidates(stmt, inlineCandidates)
+	}
+
+	// Count call sites for each candidate
+	for _, stmt := range program.Statements {
+		countCalls(stmt, callCounts)
+	}
+
+	// Inline function calls
+	for i, stmt := range program.Statements {
+		program.Statements[i] = inlineFunctions(stmt, inlineCandidates, callCounts)
+	}
+
+	// Pass 6: Constant folding after inlining (fold inlined expressions)
+	for i, stmt := range program.Statements {
+		program.Statements[i] = foldConstants(stmt)
+	}
+
 	return program
 }
 
@@ -512,6 +536,8 @@ func collectUsedVariablesExpr(expr Expression, usedVars map[string]bool) {
 		collectUsedVariablesExpr(e.Left, usedVars)
 		collectUsedVariablesExpr(e.Right, usedVars)
 	case *CallExpr:
+		// Mark the function being called as used
+		usedVars[e.Function] = true
 		for _, arg := range e.Args {
 			collectUsedVariablesExpr(arg, usedVars)
 		}
@@ -853,6 +879,369 @@ func collectCapturedVarsExpr(expr Expression, paramSet map[string]bool, captured
 		if e.DefaultExpr != nil {
 			collectCapturedVarsExpr(e.DefaultExpr, paramSet, captured)
 		}
+	}
+}
+
+// collectInlineCandidates identifies lambdas suitable for inlining
+// Criteria: immutable, small body (single expression), not in a loop
+func collectInlineCandidates(stmt Statement, candidates map[string]*LambdaExpr) {
+	switch s := stmt.(type) {
+	case *AssignStmt:
+		// Only inline immutable assignments to lambdas
+		if !s.Mutable && !s.IsUpdate {
+			if lambda, ok := s.Value.(*LambdaExpr); ok {
+				// Only inline simple lambdas (single expression body, no blocks)
+				if !isComplexExpression(lambda.Body) {
+					// Store a copy to avoid mutation
+					candidates[s.Name] = &LambdaExpr{
+						Params: lambda.Params,
+						Body:   lambda.Body,
+						IsPure: lambda.IsPure,
+					}
+				}
+			}
+		}
+	case *LoopStmt:
+		// Recursively check loop bodies (but don't inline loop vars)
+		for _, bodyStmt := range s.Body {
+			collectInlineCandidates(bodyStmt, candidates)
+		}
+	}
+}
+
+// isComplexExpression checks if an expression is too complex to inline
+func isComplexExpression(expr Expression) bool {
+	switch e := expr.(type) {
+	case *BlockExpr:
+		return true // Don't inline blocks
+	case *MatchExpr:
+		return true // Don't inline match expressions (can be large)
+	case *ParallelExpr:
+		return true // Don't inline parallel operations
+	case *CallExpr:
+		// Allow simple function calls, but not nested complex calls
+		for _, arg := range e.Args {
+			if isComplexExpression(arg) {
+				return true
+			}
+		}
+		return false
+	case *BinaryExpr:
+		// Allow binary operations
+		return isComplexExpression(e.Left) || isComplexExpression(e.Right)
+	case *ListExpr:
+		// Allow small lists
+		if len(e.Elements) > 5 {
+			return true
+		}
+		for _, elem := range e.Elements {
+			if isComplexExpression(elem) {
+				return true
+			}
+		}
+		return false
+	default:
+		return false // Simple expressions (numbers, idents, etc.) are OK
+	}
+}
+
+// countCalls counts how many times each function is called in the program
+func countCalls(stmt Statement, counts map[string]int) {
+	switch s := stmt.(type) {
+	case *AssignStmt:
+		countCallsExpr(s.Value, counts)
+	case *ExpressionStmt:
+		countCallsExpr(s.Expr, counts)
+	case *LoopStmt:
+		countCallsExpr(s.Iterable, counts)
+		for _, bodyStmt := range s.Body {
+			countCalls(bodyStmt, counts)
+		}
+	}
+}
+
+func countCallsExpr(expr Expression, counts map[string]int) {
+	switch e := expr.(type) {
+	case *CallExpr:
+		counts[e.Function]++
+		for _, arg := range e.Args {
+			countCallsExpr(arg, counts)
+		}
+	case *BinaryExpr:
+		countCallsExpr(e.Left, counts)
+		countCallsExpr(e.Right, counts)
+	case *ListExpr:
+		for _, elem := range e.Elements {
+			countCallsExpr(elem, counts)
+		}
+	case *MapExpr:
+		for i := range e.Keys {
+			countCallsExpr(e.Keys[i], counts)
+			countCallsExpr(e.Values[i], counts)
+		}
+	case *IndexExpr:
+		countCallsExpr(e.List, counts)
+		countCallsExpr(e.Index, counts)
+	case *ParallelExpr:
+		countCallsExpr(e.List, counts)
+		countCallsExpr(e.Operation, counts)
+	case *PipeExpr:
+		countCallsExpr(e.Left, counts)
+		countCallsExpr(e.Right, counts)
+	case *MatchExpr:
+		countCallsExpr(e.Condition, counts)
+		for _, clause := range e.Clauses {
+			if clause.Guard != nil {
+				countCallsExpr(clause.Guard, counts)
+			}
+			countCallsExpr(clause.Result, counts)
+		}
+		if e.DefaultExpr != nil {
+			countCallsExpr(e.DefaultExpr, counts)
+		}
+	case *BlockExpr:
+		for _, stmt := range e.Statements {
+			countCalls(stmt, counts)
+		}
+	case *LambdaExpr:
+		countCallsExpr(e.Body, counts)
+	}
+}
+
+// inlineFunctions substitutes function calls with their bodies
+func inlineFunctions(stmt Statement, candidates map[string]*LambdaExpr, callCounts map[string]int) Statement {
+	switch s := stmt.(type) {
+	case *AssignStmt:
+		s.Value = inlineFunctionsExpr(s.Value, candidates, callCounts)
+		return s
+	case *ExpressionStmt:
+		s.Expr = inlineFunctionsExpr(s.Expr, candidates, callCounts)
+		return s
+	case *LoopStmt:
+		s.Iterable = inlineFunctionsExpr(s.Iterable, candidates, callCounts)
+		for i, bodyStmt := range s.Body {
+			s.Body[i] = inlineFunctions(bodyStmt, candidates, callCounts)
+		}
+		return s
+	default:
+		return stmt
+	}
+}
+
+func inlineFunctionsExpr(expr Expression, candidates map[string]*LambdaExpr, callCounts map[string]int) Expression {
+	switch e := expr.(type) {
+	case *CallExpr:
+		// First, recursively inline in arguments (process innermost calls first)
+		for i, arg := range e.Args {
+			e.Args[i] = inlineFunctionsExpr(arg, candidates, callCounts)
+		}
+
+		// Then check if this function itself is an inline candidate
+		if lambda, isCandidate := candidates[e.Function]; isCandidate {
+			// Only inline if:
+			// 1. Parameter count matches
+			// 2. Called at least once
+			if len(e.Args) == len(lambda.Params) && callCounts[e.Function] > 0 {
+				// Inline by substituting parameters with arguments (which may now be inlined)
+				inlinedBody := substituteParams(lambda.Body, lambda.Params, e.Args)
+				return inlinedBody
+			}
+		}
+		return e
+	case *BinaryExpr:
+		e.Left = inlineFunctionsExpr(e.Left, candidates, callCounts)
+		e.Right = inlineFunctionsExpr(e.Right, candidates, callCounts)
+		return e
+	case *ListExpr:
+		for i, elem := range e.Elements {
+			e.Elements[i] = inlineFunctionsExpr(elem, candidates, callCounts)
+		}
+		return e
+	case *MapExpr:
+		for i := range e.Keys {
+			e.Keys[i] = inlineFunctionsExpr(e.Keys[i], candidates, callCounts)
+			e.Values[i] = inlineFunctionsExpr(e.Values[i], candidates, callCounts)
+		}
+		return e
+	case *IndexExpr:
+		e.List = inlineFunctionsExpr(e.List, candidates, callCounts)
+		e.Index = inlineFunctionsExpr(e.Index, candidates, callCounts)
+		return e
+	case *ParallelExpr:
+		e.List = inlineFunctionsExpr(e.List, candidates, callCounts)
+		e.Operation = inlineFunctionsExpr(e.Operation, candidates, callCounts)
+		return e
+	case *PipeExpr:
+		e.Left = inlineFunctionsExpr(e.Left, candidates, callCounts)
+		e.Right = inlineFunctionsExpr(e.Right, candidates, callCounts)
+		return e
+	case *MatchExpr:
+		e.Condition = inlineFunctionsExpr(e.Condition, candidates, callCounts)
+		for i := range e.Clauses {
+			if e.Clauses[i].Guard != nil {
+				e.Clauses[i].Guard = inlineFunctionsExpr(e.Clauses[i].Guard, candidates, callCounts)
+			}
+			e.Clauses[i].Result = inlineFunctionsExpr(e.Clauses[i].Result, candidates, callCounts)
+		}
+		if e.DefaultExpr != nil {
+			e.DefaultExpr = inlineFunctionsExpr(e.DefaultExpr, candidates, callCounts)
+		}
+		return e
+	case *BlockExpr:
+		for i, stmt := range e.Statements {
+			e.Statements[i] = inlineFunctions(stmt, candidates, callCounts)
+		}
+		return e
+	case *LambdaExpr:
+		e.Body = inlineFunctionsExpr(e.Body, candidates, callCounts)
+		return e
+	default:
+		return expr
+	}
+}
+
+// deepCopyExpr creates a deep copy of an expression to avoid AST node sharing
+func deepCopyExpr(expr Expression) Expression {
+	switch e := expr.(type) {
+	case *NumberExpr:
+		return &NumberExpr{Value: e.Value}
+	case *StringExpr:
+		return &StringExpr{Value: e.Value}
+	case *IdentExpr:
+		return &IdentExpr{Name: e.Name}
+	case *BinaryExpr:
+		return &BinaryExpr{
+			Left:     deepCopyExpr(e.Left),
+			Operator: e.Operator,
+			Right:    deepCopyExpr(e.Right),
+		}
+	case *CallExpr:
+		newArgs := make([]Expression, len(e.Args))
+		for i, arg := range e.Args {
+			newArgs[i] = deepCopyExpr(arg)
+		}
+		return &CallExpr{
+			Function: e.Function,
+			Args:     newArgs,
+		}
+	case *ListExpr:
+		newElements := make([]Expression, len(e.Elements))
+		for i, elem := range e.Elements {
+			newElements[i] = deepCopyExpr(elem)
+		}
+		return &ListExpr{Elements: newElements}
+	case *MapExpr:
+		newKeys := make([]Expression, len(e.Keys))
+		newValues := make([]Expression, len(e.Values))
+		for i := range e.Keys {
+			newKeys[i] = deepCopyExpr(e.Keys[i])
+			newValues[i] = deepCopyExpr(e.Values[i])
+		}
+		return &MapExpr{Keys: newKeys, Values: newValues}
+	case *IndexExpr:
+		return &IndexExpr{
+			List:  deepCopyExpr(e.List),
+			Index: deepCopyExpr(e.Index),
+		}
+	case *LambdaExpr:
+		paramsCopy := make([]string, len(e.Params))
+		copy(paramsCopy, e.Params)
+		return &LambdaExpr{
+			Params: paramsCopy,
+			Body:   deepCopyExpr(e.Body),
+			IsPure: e.IsPure,
+		}
+	default:
+		// For other types, return as-is (may need to extend this)
+		return expr
+	}
+}
+
+// substituteParams replaces parameter references with actual arguments
+func substituteParams(body Expression, params []string, args []Expression) Expression {
+	// Create substitution map
+	substMap := make(map[string]Expression)
+	for i, param := range params {
+		substMap[param] = args[i]
+	}
+
+	return substituteParamsExpr(body, substMap)
+}
+
+func substituteParamsExpr(expr Expression, substMap map[string]Expression) Expression {
+	switch e := expr.(type) {
+	case *IdentExpr:
+		// Replace parameter with argument (must deep copy to avoid sharing!)
+		if replacement, found := substMap[e.Name]; found {
+			return deepCopyExpr(replacement)
+		}
+		return e
+	case *BinaryExpr:
+		return &BinaryExpr{
+			Left:     substituteParamsExpr(e.Left, substMap),
+			Operator: e.Operator,
+			Right:    substituteParamsExpr(e.Right, substMap),
+		}
+	case *CallExpr:
+		newArgs := make([]Expression, len(e.Args))
+		for i, arg := range e.Args {
+			newArgs[i] = substituteParamsExpr(arg, substMap)
+		}
+		return &CallExpr{
+			Function: e.Function,
+			Args:     newArgs,
+		}
+	case *ListExpr:
+		newElements := make([]Expression, len(e.Elements))
+		for i, elem := range e.Elements {
+			newElements[i] = substituteParamsExpr(elem, substMap)
+		}
+		return &ListExpr{Elements: newElements}
+	case *MapExpr:
+		newKeys := make([]Expression, len(e.Keys))
+		newValues := make([]Expression, len(e.Values))
+		for i := range e.Keys {
+			newKeys[i] = substituteParamsExpr(e.Keys[i], substMap)
+			newValues[i] = substituteParamsExpr(e.Values[i], substMap)
+		}
+		return &MapExpr{Keys: newKeys, Values: newValues}
+	case *IndexExpr:
+		return &IndexExpr{
+			List:  substituteParamsExpr(e.List, substMap),
+			Index: substituteParamsExpr(e.Index, substMap),
+		}
+	case *MatchExpr:
+		newClauses := make([]*MatchClause, len(e.Clauses))
+		for i, clause := range e.Clauses {
+			newClause := &MatchClause{
+				Guard:  nil,
+				Result: substituteParamsExpr(clause.Result, substMap),
+			}
+			if clause.Guard != nil {
+				newClause.Guard = substituteParamsExpr(clause.Guard, substMap)
+			}
+			newClauses[i] = newClause
+		}
+		var newDefault Expression
+		if e.DefaultExpr != nil {
+			newDefault = substituteParamsExpr(e.DefaultExpr, substMap)
+		}
+		return &MatchExpr{
+			Condition:   substituteParamsExpr(e.Condition, substMap),
+			Clauses:     newClauses,
+			DefaultExpr: newDefault,
+		}
+	case *LambdaExpr:
+		// Don't substitute inside nested lambdas' parameters
+		// But do substitute in the body (closure)
+		return &LambdaExpr{
+			Params: e.Params,
+			Body:   substituteParamsExpr(e.Body, substMap),
+			IsPure: e.IsPure,
+		}
+	default:
+		// Literals (NumberExpr, StringExpr, etc.) are returned as-is
+		return expr
 	}
 }
 

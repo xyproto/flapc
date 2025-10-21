@@ -16,7 +16,7 @@
   - [ ] Full register allocator with liveness analysis
 - [x] **Dead code elimination** - Remove unused variables and unreachable code
 - [x] **Constant propagation** - Substitute immutable variables with their constant values
-- [ ] **Function inlining** - Auto-inline small functions for performance
+- [x] **Function inlining** - Auto-inline small functions for performance
 - [ ] **Pure function memoization** - Cache results of pure functions (future)
 
 ## Future stdlib (architecture-agnostic)
