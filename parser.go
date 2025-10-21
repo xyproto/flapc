@@ -5786,7 +5786,7 @@ func (fc *FlapCompiler) compileMemoryLoad(dest string, load *MemoryLoad) {
 		// Sign-extend dword to 64-bit
 		fc.out.MovI32MemToReg(dest, load.Address, int(load.Offset))
 	default:
-		compilerError(fmt.Sprintf("unsupported memory load size: %s (supported: uint8, int8, uint16, int16, uint32, int32, uint64, int64)", load.Size))
+		compilerError("unsupported memory load size: %s (supported: uint8, int8, uint16, int16, uint32, int32, uint64, int64)", load.Size)
 	}
 }
 
@@ -5823,7 +5823,7 @@ func (fc *FlapCompiler) compileSizedMemoryStore(store *MemoryStore) {
 		// Dword store
 		fc.out.MovU32RegToMem(srcReg, store.Address, int(store.Offset))
 	default:
-		compilerError(fmt.Sprintf("unsupported memory store size: %s (supported: uint8, int8, uint16, int16, uint32, int32, uint64, int64)", store.Size))
+		compilerError("unsupported memory store size: %s (supported: uint8, int8, uint16, int16, uint32, int32, uint64, int64)", store.Size)
 	}
 }
 
