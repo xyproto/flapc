@@ -151,8 +151,8 @@ func (o *Out) orARM64RegWithReg(dst, src string) {
 	// Format: sf 0 10101 shift 0 Rm imm6 Rn Rd
 	instr := uint32(0xAA000000) |
 		(uint32(srcReg.Encoding&31) << 16) | // Rm
-		(uint32(dstReg.Encoding&31) << 5) |  // Rn (same as Rd for 2-operand)
-		uint32(dstReg.Encoding&31)           // Rd
+		(uint32(dstReg.Encoding&31) << 5) | // Rn (same as Rd for 2-operand)
+		uint32(dstReg.Encoding&31) // Rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -179,8 +179,8 @@ func (o *Out) orARM64RegWithRegToReg(dst, src1, src2 string) {
 
 	instr := uint32(0xAA000000) |
 		(uint32(src2Reg.Encoding&31) << 16) | // Rm
-		(uint32(src1Reg.Encoding&31) << 5) |  // Rn
-		uint32(dstReg.Encoding&31)            // Rd
+		(uint32(src1Reg.Encoding&31) << 5) | // Rn
+		uint32(dstReg.Encoding&31) // Rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -207,7 +207,7 @@ func (o *Out) orARM64RegWithImm(dst string, imm int32) {
 	// Format: sf 1 01100 1 0 immr imms Rn Rd
 	instr := uint32(0xB2000000) |
 		(uint32(dstReg.Encoding&31) << 5) | // Rn (same as Rd)
-		uint32(dstReg.Encoding&31)          // Rd
+		uint32(dstReg.Encoding&31) // Rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -237,10 +237,10 @@ func (o *Out) orRISCVRegWithReg(dst, src string) {
 
 	// OR: 0000000 rs2 rs1 110 rd 0110011
 	instr := uint32(0x33) |
-		(6 << 12) |                          // funct3 = 110 (OR)
+		(6 << 12) | // funct3 = 110 (OR)
 		(uint32(srcReg.Encoding&31) << 20) | // rs2
 		(uint32(dstReg.Encoding&31) << 15) | // rs1 (same as rd)
-		(uint32(dstReg.Encoding&31) << 7)    // rd
+		(uint32(dstReg.Encoding&31) << 7) // rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -266,10 +266,10 @@ func (o *Out) orRISCVRegWithRegToReg(dst, src1, src2 string) {
 	}
 
 	instr := uint32(0x33) |
-		(6 << 12) |                           // funct3 = 110 (OR)
+		(6 << 12) | // funct3 = 110 (OR)
 		(uint32(src2Reg.Encoding&31) << 20) | // rs2
 		(uint32(src1Reg.Encoding&31) << 15) | // rs1
-		(uint32(dstReg.Encoding&31) << 7)     // rd
+		(uint32(dstReg.Encoding&31) << 7) // rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -294,10 +294,10 @@ func (o *Out) orRISCVRegWithImm(dst string, imm int32) {
 
 	// ORI: imm[11:0] rs1 110 rd 0010011
 	instr := uint32(0x13) |
-		(6 << 12) |                          // funct3 = 110 (ORI)
-		(uint32(imm&0xFFF) << 20) |          // imm[11:0]
+		(6 << 12) | // funct3 = 110 (ORI)
+		(uint32(imm&0xFFF) << 20) | // imm[11:0]
 		(uint32(dstReg.Encoding&31) << 15) | // rs1 (same as rd)
-		(uint32(dstReg.Encoding&31) << 7)    // rd
+		(uint32(dstReg.Encoding&31) << 7) // rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))

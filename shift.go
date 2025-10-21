@@ -340,10 +340,10 @@ func (o *Out) shlRISCVRegByImm(dst string, imm int64) {
 
 	// SLLI: imm[11:6]=000000 imm[5:0] rs1 001 rd 0010011
 	instr := uint32(0x13) |
-		(1 << 12) |                          // funct3 = 001
-		(uint32(imm&0x3F) << 20) |           // shamt (6 bits for 64-bit)
+		(1 << 12) | // funct3 = 001
+		(uint32(imm&0x3F) << 20) | // shamt (6 bits for 64-bit)
 		(uint32(dstReg.Encoding&31) << 15) | // rs1
-		(uint32(dstReg.Encoding&31) << 7)    // rd
+		(uint32(dstReg.Encoding&31) << 7) // rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -369,10 +369,10 @@ func (o *Out) shlRISCVRegByReg(dst, src string) {
 
 	// SLL: 0000000 rs2 rs1 001 rd 0110011
 	instr := uint32(0x33) |
-		(1 << 12) |                          // funct3 = 001
+		(1 << 12) | // funct3 = 001
 		(uint32(srcReg.Encoding&31) << 20) | // rs2
 		(uint32(dstReg.Encoding&31) << 15) | // rs1
-		(uint32(dstReg.Encoding&31) << 7)    // rd
+		(uint32(dstReg.Encoding&31) << 7) // rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -397,10 +397,10 @@ func (o *Out) shrRISCVRegByImm(dst string, imm int64) {
 
 	// SRLI: imm[11:6]=000000 imm[5:0] rs1 101 rd 0010011
 	instr := uint32(0x13) |
-		(5 << 12) |                          // funct3 = 101
-		(uint32(imm&0x3F) << 20) |           // shamt (6 bits for 64-bit)
+		(5 << 12) | // funct3 = 101
+		(uint32(imm&0x3F) << 20) | // shamt (6 bits for 64-bit)
 		(uint32(dstReg.Encoding&31) << 15) | // rs1
-		(uint32(dstReg.Encoding&31) << 7)    // rd
+		(uint32(dstReg.Encoding&31) << 7) // rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -426,10 +426,10 @@ func (o *Out) shrRISCVRegByReg(dst, src string) {
 
 	// SRL: 0000000 rs2 rs1 101 rd 0110011
 	instr := uint32(0x33) |
-		(5 << 12) |                          // funct3 = 101
+		(5 << 12) | // funct3 = 101
 		(uint32(srcReg.Encoding&31) << 20) | // rs2
 		(uint32(dstReg.Encoding&31) << 15) | // rs1
-		(uint32(dstReg.Encoding&31) << 7)    // rd
+		(uint32(dstReg.Encoding&31) << 7) // rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))

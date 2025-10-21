@@ -153,8 +153,8 @@ func (o *Out) andARM64RegWithReg(dst, src string) {
 	// sf=1 (64-bit), shift=00 (LSL #0), Rm=src, Rn=dst (same as Rd), Rd=dst
 	instr := uint32(0x8A000000) |
 		(uint32(srcReg.Encoding&31) << 16) | // Rm
-		(uint32(dstReg.Encoding&31) << 5) |  // Rn (same as Rd for 2-operand)
-		uint32(dstReg.Encoding&31)           // Rd
+		(uint32(dstReg.Encoding&31) << 5) | // Rn (same as Rd for 2-operand)
+		uint32(dstReg.Encoding&31) // Rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -181,8 +181,8 @@ func (o *Out) andARM64RegWithRegToReg(dst, src1, src2 string) {
 
 	instr := uint32(0x8A000000) |
 		(uint32(src2Reg.Encoding&31) << 16) | // Rm
-		(uint32(src1Reg.Encoding&31) << 5) |  // Rn
-		uint32(dstReg.Encoding&31)            // Rd
+		(uint32(src1Reg.Encoding&31) << 5) | // Rn
+		uint32(dstReg.Encoding&31) // Rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -211,7 +211,7 @@ func (o *Out) andARM64RegWithImm(dst string, imm int32) {
 	// This is a simplified version - full implementation would need bitmask encoding
 	instr := uint32(0x92000000) |
 		(uint32(dstReg.Encoding&31) << 5) | // Rn (same as Rd)
-		uint32(dstReg.Encoding&31)          // Rd
+		uint32(dstReg.Encoding&31) // Rd
 	// Note: immr and imms fields would need proper bitmask encoding
 
 	o.Write(uint8(instr & 0xFF))
@@ -242,10 +242,10 @@ func (o *Out) andRISCVRegWithReg(dst, src string) {
 
 	// AND: 0000000 rs2 rs1 111 rd 0110011
 	instr := uint32(0x33) |
-		(7 << 12) |                          // funct3 = 111 (AND)
+		(7 << 12) | // funct3 = 111 (AND)
 		(uint32(srcReg.Encoding&31) << 20) | // rs2
 		(uint32(dstReg.Encoding&31) << 15) | // rs1 (same as rd)
-		(uint32(dstReg.Encoding&31) << 7)    // rd
+		(uint32(dstReg.Encoding&31) << 7) // rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -271,10 +271,10 @@ func (o *Out) andRISCVRegWithRegToReg(dst, src1, src2 string) {
 	}
 
 	instr := uint32(0x33) |
-		(7 << 12) |                           // funct3 = 111 (AND)
+		(7 << 12) | // funct3 = 111 (AND)
 		(uint32(src2Reg.Encoding&31) << 20) | // rs2
 		(uint32(src1Reg.Encoding&31) << 15) | // rs1
-		(uint32(dstReg.Encoding&31) << 7)     // rd
+		(uint32(dstReg.Encoding&31) << 7) // rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -299,10 +299,10 @@ func (o *Out) andRISCVRegWithImm(dst string, imm int32) {
 
 	// ANDI: imm[11:0] rs1 111 rd 0010011
 	instr := uint32(0x13) |
-		(7 << 12) |                          // funct3 = 111 (ANDI)
-		(uint32(imm&0xFFF) << 20) |          // imm[11:0]
+		(7 << 12) | // funct3 = 111 (ANDI)
+		(uint32(imm&0xFFF) << 20) | // imm[11:0]
 		(uint32(dstReg.Encoding&31) << 15) | // rs1 (same as rd)
-		(uint32(dstReg.Encoding&31) << 7)    // rd
+		(uint32(dstReg.Encoding&31) << 7) // rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))

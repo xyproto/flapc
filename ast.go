@@ -185,7 +185,7 @@ type FStringExpr struct {
 	Parts []Expression // Alternating string literals and expressions
 }
 
-func (f *FStringExpr) String() string { return "f\"...\"" }
+func (f *FStringExpr) String() string  { return "f\"...\"" }
 func (f *FStringExpr) expressionNode() {}
 
 type IdentExpr struct {
@@ -551,8 +551,8 @@ func (r *RegisterAssignStmt) String() string {
 func (r *RegisterAssignStmt) statementNode() {}
 
 type RegisterOp struct {
-	Left     string // Register name or empty for unary
-	Operator string // +, -, *, /, %, &, |, ^, <<, >>, ~
+	Left     string      // Register name or empty for unary
+	Operator string      // +, -, *, /, %, &, |, ^, <<, >>, ~
 	Right    interface{} // Register name (string) or immediate (NumberExpr)
 }
 

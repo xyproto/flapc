@@ -140,8 +140,8 @@ func (o *Out) imulARM64RegWithReg(dst, src string) {
 	// sf=1 (64-bit), Rm=src, Rn=dst (same as Rd), Rd=dst, Ra=11111 (unused)
 	instr := uint32(0x9B007C00) |
 		(uint32(srcReg.Encoding&31) << 16) | // Rm
-		(uint32(dstReg.Encoding&31) << 5) |  // Rn (same as Rd for 2-operand)
-		uint32(dstReg.Encoding&31)           // Rd
+		(uint32(dstReg.Encoding&31) << 5) | // Rn (same as Rd for 2-operand)
+		uint32(dstReg.Encoding&31) // Rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -176,9 +176,9 @@ func (o *Out) imulARM64ImmToReg(dst string, imm int64) {
 
 	// MUL dst, dst, x9
 	mul := uint32(0x9B007C00) |
-		(9 << 16) |                          // Rm = x9
-		(uint32(dstReg.Encoding&31) << 5) |  // Rn = dst
-		uint32(dstReg.Encoding&31)           // Rd = dst
+		(9 << 16) | // Rm = x9
+		(uint32(dstReg.Encoding&31) << 5) | // Rn = dst
+		uint32(dstReg.Encoding&31) // Rd = dst
 
 	o.Write(uint8(mul & 0xFF))
 	o.Write(uint8((mul >> 8) & 0xFF))
@@ -208,11 +208,11 @@ func (o *Out) imulRISCVRegWithReg(dst, src string) {
 
 	// MUL: 0000001 rs2 rs1 000 rd 0110011
 	instr := uint32(0x33) |
-		(1 << 25) |                          // funct7 = 0000001 (M extension)
-		(0 << 12) |                          // funct3 = 000 (MUL)
+		(1 << 25) | // funct7 = 0000001 (M extension)
+		(0 << 12) | // funct3 = 000 (MUL)
 		(uint32(srcReg.Encoding&31) << 20) | // rs2
 		(uint32(dstReg.Encoding&31) << 15) | // rs1 = dst
-		(uint32(dstReg.Encoding&31) << 7)    // rd
+		(uint32(dstReg.Encoding&31) << 7) // rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -240,10 +240,10 @@ func (o *Out) imulRISCVImmToReg(dst string, imm int64) {
 	if imm >= -2048 && imm <= 2047 {
 		// ADDI t0, x0, imm
 		addi := uint32(0x13) |
-			(0 << 12) |                   // funct3 = 000 (ADDI)
-			(5 << 7) |                    // rd = t0 (x5)
-			(0 << 15) |                   // rs1 = x0 (zero)
-			(uint32(imm&0xFFF) << 20)     // imm[11:0]
+			(0 << 12) | // funct3 = 000 (ADDI)
+			(5 << 7) | // rd = t0 (x5)
+			(0 << 15) | // rs1 = x0 (zero)
+			(uint32(imm&0xFFF) << 20) // imm[11:0]
 		o.Write(uint8(addi & 0xFF))
 		o.Write(uint8((addi >> 8) & 0xFF))
 		o.Write(uint8((addi >> 16) & 0xFF))
@@ -264,11 +264,11 @@ func (o *Out) imulRISCVImmToReg(dst string, imm int64) {
 
 	// MUL dst, dst, t0
 	mul := uint32(0x33) |
-		(1 << 25) |                          // funct7 = 0000001 (M extension)
-		(0 << 12) |                          // funct3 = 000 (MUL)
-		(5 << 20) |                          // rs2 = t0 (x5)
+		(1 << 25) | // funct7 = 0000001 (M extension)
+		(0 << 12) | // funct3 = 000 (MUL)
+		(5 << 20) | // rs2 = t0 (x5)
 		(uint32(dstReg.Encoding&31) << 15) | // rs1 = dst
-		(uint32(dstReg.Encoding&31) << 7)    // rd = dst
+		(uint32(dstReg.Encoding&31) << 7) // rd = dst
 
 	o.Write(uint8(mul & 0xFF))
 	o.Write(uint8((mul >> 8) & 0xFF))

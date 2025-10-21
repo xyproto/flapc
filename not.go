@@ -77,8 +77,8 @@ func (o *Out) notARM64Reg(dst string) {
 	// ORN (OR NOT): sf=1, shift=00, N=1 (inverted), Rm=src, Rn=XZR(31), Rd=dst
 	instr := uint32(0xAA200000) |
 		(uint32(dstReg.Encoding&31) << 16) | // Rm (source, same as dst)
-		(uint32(31) << 5) |                  // Rn = XZR (zero register)
-		uint32(dstReg.Encoding&31)           // Rd
+		(uint32(31) << 5) | // Rn = XZR (zero register)
+		uint32(dstReg.Encoding&31) // Rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))
@@ -109,10 +109,10 @@ func (o *Out) notRISCVReg(dst string) {
 	// Use XORI dst, dst, -1 (XOR with all 1s)
 	// XORI: imm[11:0] rs1 100 rd 0010011
 	instr := uint32(0x13) |
-		(4 << 12) |                          // funct3 = 100 (XORI)
-		(uint32(0xFFF) << 20) |              // imm = -1 (all 1s in 12 bits)
+		(4 << 12) | // funct3 = 100 (XORI)
+		(uint32(0xFFF) << 20) | // imm = -1 (all 1s in 12 bits)
 		(uint32(dstReg.Encoding&31) << 15) | // rs1 (same as rd)
-		(uint32(dstReg.Encoding&31) << 7)    // rd
+		(uint32(dstReg.Encoding&31) << 7) // rd
 
 	o.Write(uint8(instr & 0xFF))
 	o.Write(uint8((instr >> 8) & 0xFF))

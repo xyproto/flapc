@@ -20,8 +20,8 @@ type CParser struct {
 
 const (
 	// Safety limits
-	MaxTokensPerFile    = 1000000 // 1M tokens max per file
-	MaxParseOperations  = 10000000 // 10M parse ops max
+	MaxTokensPerFile   = 1000000  // 1M tokens max per file
+	MaxParseOperations = 10000000 // 10M parse ops max
 )
 
 // CTokenType represents the type of a C token
@@ -477,8 +477,8 @@ func (p *CParser) tryParseFunctionDecl() bool {
 	for _, part := range returnTypeParts {
 		// Skip common SDL/library macros
 		if part == "SDL_DECLSPEC" || part == "SDLCALL" || part == "RAYLIB_API" ||
-		   part == "SDL_MALLOC" || part == "SDL_FORCE_INLINE" || part == "static" ||
-		   part == "inline" || strings.HasPrefix(part, "__attribute__") {
+			part == "SDL_MALLOC" || part == "SDL_FORCE_INLINE" || part == "static" ||
+			part == "inline" || strings.HasPrefix(part, "__attribute__") {
 			continue
 		}
 		actualReturnType = append(actualReturnType, part)
@@ -564,8 +564,8 @@ func (p *CParser) parseParameters() []CFunctionParam {
 		// If it doesn't look like a type component, it's the name
 		lastPart := paramTypeParts[len(paramTypeParts)-1]
 		if len(paramTypeParts) > 1 && !strings.Contains(lastPart, "*") &&
-		   lastPart != "const" && lastPart != "struct" && lastPart != "enum" &&
-		   !strings.HasPrefix(lastPart, "SDL_") && !strings.HasPrefix(lastPart, "RL_") {
+			lastPart != "const" && lastPart != "struct" && lastPart != "enum" &&
+			!strings.HasPrefix(lastPart, "SDL_") && !strings.HasPrefix(lastPart, "RL_") {
 			paramName = lastPart
 			paramTypeParts = paramTypeParts[:len(paramTypeParts)-1]
 		}

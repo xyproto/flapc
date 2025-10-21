@@ -72,7 +72,7 @@ type Parser struct {
 	peek      Token
 	filename  string
 	source    string
-	loopDepth int // Current loop nesting level (0 = not in loop, 1 = outer loop, etc.)
+	loopDepth int                   // Current loop nesting level (0 = not in loop, 1 = outer loop, etc.)
 	constants map[string]Expression // Compile-time constants (immutable literals)
 }
 
@@ -1877,7 +1877,6 @@ func (p *Parser) parsePrimary() Expression {
 		p.nextToken() // move to '}'
 		return &MapExpr{Keys: keys, Values: values}
 
-
 	case TOKEN_AT:
 		// Could be loop expression (@ i in...) or jump expression (@N)
 		// Look ahead to decide
@@ -2075,7 +2074,7 @@ func (p *Parser) parseUnsafeBlock() []Statement {
 			p.current.Type == TOKEN_I32 || p.current.Type == TOKEN_I64 {
 			// u8 [rax] <- value (TODO v1.4.0: implement sized stores)
 			_ = p.current.Value // storeSize - unused for now
-			p.nextToken() // skip size
+			p.nextToken()       // skip size
 			if p.current.Type != TOKEN_LBRACKET {
 				p.error("expected '[' after size specifier")
 			}
@@ -2357,27 +2356,27 @@ type LoopInfo struct {
 type FlapCompiler struct {
 	eb               *ExecutableBuilder
 	out              *Out
-	variables        map[string]int    // variable name -> stack offset
-	mutableVars      map[string]bool   // variable name -> is mutable
-	varTypes         map[string]string // variable name -> "map" or "list"
-	sourceCode       string            // Store source for recompilation
-	usedFunctions    map[string]bool   // Track which functions are called
-	unknownFunctions map[string]bool   // Track functions called but not defined
-	callOrder        []string          // Track order of function calls
+	variables        map[string]int               // variable name -> stack offset
+	mutableVars      map[string]bool              // variable name -> is mutable
+	varTypes         map[string]string            // variable name -> "map" or "list"
+	sourceCode       string                       // Store source for recompilation
+	usedFunctions    map[string]bool              // Track which functions are called
+	unknownFunctions map[string]bool              // Track functions called but not defined
+	callOrder        []string                     // Track order of function calls
 	cImports         map[string]string            // Track C imports: alias -> library name
 	cLibHandles      map[string]string            // Track library handles: library -> handle var name
 	cConstants       map[string]*CHeaderConstants // Track C constants: alias -> constants
 	stringCounter    int                          // Counter for unique string labels
-	stackOffset      int               // Current stack offset for variables
-	labelCounter     int               // Counter for unique labels (if/else, loops, etc)
-	lambdaCounter    int               // Counter for unique lambda function names
-	activeLoops      []LoopInfo        // Stack of active loops (for @N jump resolution)
-	lambdaFuncs      []LambdaFunc      // List of lambda functions to generate
-	lambdaOffsets    map[string]int    // Lambda name -> offset in .text
-	currentLambda    *LambdaFunc       // Currently compiling lambda (for "me" self-reference)
-	lambdaBodyStart  int               // Offset where lambda body starts (for tail recursion)
-	hasExplicitExit  bool              // Track if program contains explicit exit() call
-	debug            bool              // Enable debug output (set via DEBUG_FLAP env var)
+	stackOffset      int                          // Current stack offset for variables
+	labelCounter     int                          // Counter for unique labels (if/else, loops, etc)
+	lambdaCounter    int                          // Counter for unique lambda function names
+	activeLoops      []LoopInfo                   // Stack of active loops (for @N jump resolution)
+	lambdaFuncs      []LambdaFunc                 // List of lambda functions to generate
+	lambdaOffsets    map[string]int               // Lambda name -> offset in .text
+	currentLambda    *LambdaFunc                  // Currently compiling lambda (for "me" self-reference)
+	lambdaBodyStart  int                          // Offset where lambda body starts (for tail recursion)
+	hasExplicitExit  bool                         // Track if program contains explicit exit() call
+	debug            bool                         // Enable debug output (set via DEBUG_FLAP env var)
 }
 
 type LambdaFunc struct {
@@ -4162,8 +4161,8 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.Write(0xC1) // ModR/M: 11 000 001 (xmm0, xmm0, xmm1)
 		case "/":
 			// Check for division by zero (xmm1 == 0.0)
-			fc.out.XorpdXmm("xmm2", "xmm2")  // xmm2 = 0.0
-			fc.out.Ucomisd("xmm1", "xmm2")   // Compare divisor with 0
+			fc.out.XorpdXmm("xmm2", "xmm2") // xmm2 = 0.0
+			fc.out.Ucomisd("xmm1", "xmm2")  // Compare divisor with 0
 
 			// Jump to division if not zero
 			jumpPos := fc.eb.text.Len()
@@ -4199,8 +4198,8 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			// xmm0 = dividend (a), xmm1 = divisor (b)
 
 			// Check for modulo by zero (xmm1 == 0.0)
-			fc.out.XorpdXmm("xmm4", "xmm4")  // xmm4 = 0.0
-			fc.out.Ucomisd("xmm1", "xmm4")   // Compare divisor with 0
+			fc.out.XorpdXmm("xmm4", "xmm4") // xmm4 = 0.0
+			fc.out.Ucomisd("xmm1", "xmm4")  // Compare divisor with 0
 
 			// Jump to modulo if not zero
 			jumpPos := fc.eb.text.Len()
@@ -5413,7 +5412,7 @@ func (fc *FlapCompiler) compileSyscall() {
 func (fc *FlapCompiler) compileRegisterAssignment(stmt *RegisterAssignStmt) {
 	// Handle memory stores: [rax] <- value
 	if len(stmt.Register) > 2 && stmt.Register[0] == '[' && stmt.Register[len(stmt.Register)-1] == ']' {
-		addr := stmt.Register[1:len(stmt.Register)-1]
+		addr := stmt.Register[1 : len(stmt.Register)-1]
 		fc.compileMemoryStore(addr, stmt.Value)
 		return
 	}

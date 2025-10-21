@@ -19,14 +19,14 @@ type CFunctionParam struct {
 
 // CFunctionSignature represents a parsed C function declaration
 type CFunctionSignature struct {
-	ReturnType string            // e.g., "int", "SDL_Window*", "void"
-	Params     []CFunctionParam  // function parameters
+	ReturnType string           // e.g., "int", "SDL_Window*", "void"
+	Params     []CFunctionParam // function parameters
 }
 
 // CHeaderConstants stores constants and function signatures extracted from C headers
 type CHeaderConstants struct {
-	Constants map[string]int64             // constant name -> value
-	Macros    map[string]string            // macro name -> definition (for simple function-like macros)
+	Constants map[string]int64               // constant name -> value
+	Macros    map[string]string              // macro name -> definition (for simple function-like macros)
 	Functions map[string]*CFunctionSignature // function name -> signature
 }
 
@@ -148,9 +148,9 @@ func findMainHeader(libName string, includePaths []string) string {
 
 	// Generic header file patterns (will be formatted with libName)
 	genericPatterns := []string{
-		"%s.h",      // raylib.h
-		"%s/%s.h",   // SDL3/SDL3.h (uppercase lib name)
-		"lib%s.h",   // libraylib.h
+		"%s.h",       // raylib.h
+		"%s/%s.h",    // SDL3/SDL3.h (uppercase lib name)
+		"lib%s.h",    // libraylib.h
 		"%s/lib%s.h", // raylib/libraylib.h
 	}
 
