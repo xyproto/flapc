@@ -14,9 +14,10 @@
   - [x] Keep loop counters in registers (r12/r13 for range loops)
   - [ ] Register allocation for frequently-used variables
   - [ ] Full register allocator with liveness analysis
-- [ ] **Dead code elimination** - Remove unused code from output
+- [x] **Dead code elimination** - Remove unused variables and unreachable code
 - [x] **Constant propagation** - Substitute immutable variables with their constant values
-- [ ] **Inline small functions automatically** - Performance optimization
+- [ ] **Function inlining** - Auto-inline small functions for performance
+- [ ] **Pure function memoization** - Cache results of pure functions (future)
 
 ## Future stdlib (architecture-agnostic)
 

@@ -180,6 +180,19 @@ func optimizeProgram(program *Program) *Program {
 		program.Statements[i] = propagateConstants(stmt, constMap)
 	}
 
+	// Pass 3: Dead code elimination (remove unused variables, unreachable code)
+	usedVars := make(map[string]bool)
+	for _, stmt := range program.Statements {
+		collectUsedVariables(stmt, usedVars)
+	}
+	newStmts := make([]Statement, 0, len(program.Statements))
+	for _, stmt := range program.Statements {
+		if keep := eliminateDeadCode(stmt, usedVars); keep != nil {
+			newStmts = append(newStmts, keep)
+		}
+	}
+	program.Statements = newStmts
+
 	return program
 }
 
@@ -464,6 +477,166 @@ func propagateConstantsExpr(expr Expression, constMap map[string]*NumberExpr) Ex
 
 	default:
 		return expr
+	}
+}
+
+// collectUsedVariables walks the AST and tracks which variables are referenced
+func collectUsedVariables(stmt Statement, usedVars map[string]bool) {
+	switch s := stmt.(type) {
+	case *AssignStmt:
+		collectUsedVariablesExpr(s.Value, usedVars)
+	case *ExpressionStmt:
+		collectUsedVariablesExpr(s.Expr, usedVars)
+	case *LoopStmt:
+		collectUsedVariablesExpr(s.Iterable, usedVars)
+		// Mark iterator as used (even if not explicitly referenced)
+		usedVars[s.Iterator] = true
+		for _, bodyStmt := range s.Body {
+			collectUsedVariables(bodyStmt, usedVars)
+		}
+	}
+}
+
+// collectUsedVariablesExpr tracks variable references in expressions
+func collectUsedVariablesExpr(expr Expression, usedVars map[string]bool) {
+	switch e := expr.(type) {
+	case *IdentExpr:
+		usedVars[e.Name] = true
+	case *BinaryExpr:
+		collectUsedVariablesExpr(e.Left, usedVars)
+		collectUsedVariablesExpr(e.Right, usedVars)
+	case *CallExpr:
+		for _, arg := range e.Args {
+			collectUsedVariablesExpr(arg, usedVars)
+		}
+	case *RangeExpr:
+		collectUsedVariablesExpr(e.Start, usedVars)
+		collectUsedVariablesExpr(e.End, usedVars)
+	case *ListExpr:
+		for _, elem := range e.Elements {
+			collectUsedVariablesExpr(elem, usedVars)
+		}
+	case *MapExpr:
+		for i := range e.Keys {
+			collectUsedVariablesExpr(e.Keys[i], usedVars)
+			collectUsedVariablesExpr(e.Values[i], usedVars)
+		}
+	case *IndexExpr:
+		collectUsedVariablesExpr(e.List, usedVars)
+		collectUsedVariablesExpr(e.Index, usedVars)
+	case *LambdaExpr:
+		collectUsedVariablesExpr(e.Body, usedVars)
+	case *ParallelExpr:
+		collectUsedVariablesExpr(e.List, usedVars)
+		collectUsedVariablesExpr(e.Operation, usedVars)
+	case *PipeExpr:
+		collectUsedVariablesExpr(e.Left, usedVars)
+		collectUsedVariablesExpr(e.Right, usedVars)
+	case *InExpr:
+		collectUsedVariablesExpr(e.Value, usedVars)
+		collectUsedVariablesExpr(e.Container, usedVars)
+	case *LengthExpr:
+		collectUsedVariablesExpr(e.Operand, usedVars)
+	case *MatchExpr:
+		collectUsedVariablesExpr(e.Condition, usedVars)
+		for _, clause := range e.Clauses {
+			if clause.Guard != nil {
+				collectUsedVariablesExpr(clause.Guard, usedVars)
+			}
+			collectUsedVariablesExpr(clause.Result, usedVars)
+		}
+		if e.DefaultExpr != nil {
+			collectUsedVariablesExpr(e.DefaultExpr, usedVars)
+		}
+	case *BlockExpr:
+		for _, stmt := range e.Statements {
+			collectUsedVariables(stmt, usedVars)
+		}
+	}
+}
+
+// eliminateDeadCode removes assignments to unused variables
+// Returns nil if statement should be removed entirely
+func eliminateDeadCode(stmt Statement, usedVars map[string]bool) Statement {
+	switch s := stmt.(type) {
+	case *AssignStmt:
+		// Keep assignments if:
+		// 1. Variable is used somewhere
+		// 2. Assignment has side effects (contains function call)
+		if usedVars[s.Name] || hasSideEffects(s.Value) {
+			return s
+		}
+		// Dead assignment - remove it
+		return nil
+
+	case *ExpressionStmt:
+		// Always keep expression statements (they might have side effects like printf)
+		return s
+
+	case *LoopStmt:
+		// Keep loop but eliminate dead code in body
+		newBody := make([]Statement, 0, len(s.Body))
+		for _, bodyStmt := range s.Body {
+			if keep := eliminateDeadCode(bodyStmt, usedVars); keep != nil {
+				newBody = append(newBody, keep)
+			}
+		}
+		s.Body = newBody
+		return s
+
+	default:
+		return stmt
+	}
+}
+
+// hasSideEffects checks if an expression contains function calls or other side effects
+func hasSideEffects(expr Expression) bool {
+	switch e := expr.(type) {
+	case *CallExpr:
+		return true // Function calls have side effects
+	case *BinaryExpr:
+		return hasSideEffects(e.Left) || hasSideEffects(e.Right)
+	case *ListExpr:
+		for _, elem := range e.Elements {
+			if hasSideEffects(elem) {
+				return true
+			}
+		}
+		return false
+	case *MapExpr:
+		for i := range e.Keys {
+			if hasSideEffects(e.Keys[i]) || hasSideEffects(e.Values[i]) {
+				return true
+			}
+		}
+		return false
+	case *IndexExpr:
+		return hasSideEffects(e.List) || hasSideEffects(e.Index)
+	case *ParallelExpr:
+		return true // Parallel operations have side effects
+	case *PipeExpr:
+		return hasSideEffects(e.Left) || hasSideEffects(e.Right)
+	case *MatchExpr:
+		if hasSideEffects(e.Condition) {
+			return true
+		}
+		for _, clause := range e.Clauses {
+			if clause.Guard != nil && hasSideEffects(clause.Guard) {
+				return true
+			}
+			if hasSideEffects(clause.Result) {
+				return true
+			}
+		}
+		if e.DefaultExpr != nil && hasSideEffects(e.DefaultExpr) {
+			return true
+		}
+		return false
+	case *BlockExpr:
+		// Blocks can have side effects if any statement does
+		return true
+	default:
+		return false // Literals, identifiers, etc. have no side effects
 	}
 }
 
