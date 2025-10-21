@@ -6072,9 +6072,10 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// Generate arena allocator runtime functions
 	fc.eb.EmitArenaRuntimeCode()
 
-	// Define arena pointer storage (1024 * 8 = 8192 bytes for up to 1024 nested arenas)
-	// This should be more than enough for any practical use case
-	arenaStorage := make([]byte, 8192)
+	// Define static arena pointer storage (65536 * 8 = 524288 bytes = 512 KB for up to 65536 nested arenas)
+	// This is a large static buffer that should handle virtually unlimited nesting in practice
+	// TODO: Implement true dynamic growth for unlimited arenas
+	arenaStorage := make([]byte, 524288)
 	fc.eb.Define("_flap_arena_ptrs", string(arenaStorage))
 
 	// Generate _flap_string_concat(left_ptr, right_ptr) -> new_ptr
@@ -7411,6 +7412,86 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
+
+	// Generate flap_grow_arena_storage(desired_depth)
+	// Ensures arena pointer storage can hold at least desired_depth pointers
+	// If capacity < desired_depth, reallocs to capacity * 2
+	// Argument: rdi = desired_depth
+	fc.eb.MarkLabel("flap_grow_arena_storage")
+
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+	fc.out.PushReg("rbx")
+	fc.out.PushReg("r12")
+	fc.out.PushReg("r13")
+
+	// r12 = desired_depth
+	fc.out.MovRegToReg("r12", "rdi")
+
+	// Load current capacity
+	fc.out.LeaSymbolToReg("rbx", "_flap_arena_capacity")
+	fc.out.MovMemToReg("r13", "rbx", 0) // r13 = capacity
+
+	// Check if we need to grow: if (desired_depth <= capacity) return
+	fc.out.CmpRegToReg("r12", "r13")
+	storageGrowNeededJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreater, 0) // jg to grow (desired > capacity)
+
+	// No growth needed - return
+	fc.out.PopReg("r13")
+	fc.out.PopReg("r12")
+	fc.out.PopReg("rbx")
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
+
+	// Growth needed
+	storageGrowLabel := fc.eb.text.Len()
+	fc.patchJumpImmediate(storageGrowNeededJump+2, int32(storageGrowLabel-(storageGrowNeededJump+6)))
+
+	// Calculate new capacity: capacity * 2
+	fc.out.MovRegToReg("rsi", "r13")
+	fc.out.AddRegToReg("rsi", "r13") // rsi = capacity * 2 (new capacity)
+	fc.out.MovRegToReg("r13", "rsi") // r13 = new_capacity
+
+	// Calculate byte size: new_capacity * 8
+	fc.out.MovRegToReg("rax", "r13")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x03}) // shl rax, 3 (multiply by 8)
+	fc.out.MovRegToReg("rsi", "rax") // rsi = new byte size
+
+	// Load old pointer
+	fc.out.LeaSymbolToReg("rbx", "_flap_arena_ptrs")
+	fc.out.MovMemToReg("rdi", "rbx", 0) // rdi = old pointer
+
+	// Call realloc(old_ptr, new_size)
+	fc.trackFunctionCall("realloc")
+	fc.eb.GenerateCallInstruction("realloc")
+
+	// Check if realloc failed
+	fc.out.TestRegReg("rax", "rax")
+	storageErrorJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0) // je to error (realloc failed)
+
+	// Success: update pointer and capacity
+	fc.out.LeaSymbolToReg("rbx", "_flap_arena_ptrs")
+	fc.out.MovRegToMem("rax", "rbx", 0) // Store new pointer
+
+	fc.out.LeaSymbolToReg("rbx", "_flap_arena_capacity")
+	fc.out.MovRegToMem("r13", "rbx", 0) // Store new capacity
+
+	fc.out.PopReg("r13")
+	fc.out.PopReg("r12")
+	fc.out.PopReg("rbx")
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
+
+	// Error path: realloc failed
+	storageErrorLabel := fc.eb.text.Len()
+	fc.patchJumpImmediate(storageErrorJump+2, int32(storageErrorLabel-(storageErrorJump+6)))
+
+	// Exit with error code 1
+	fc.out.MovImmToReg("rdi", "1")
+	fc.trackFunctionCall("exit")
+	fc.eb.GenerateCallInstruction("exit")
 }
 
 func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {

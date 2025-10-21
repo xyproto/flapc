@@ -60,13 +60,14 @@
 - [x] **Arena block syntax** - ✅ COMPLETE (v1.6.0)
   - Syntax: `arena { ... }` - Auto-creates and destroys arena at block boundaries
   - `alloc(size)` - Context-aware allocation (only works inside arena blocks)
-  - **Solution**: Arena pointers stored in static 8KB ELF area (_flap_arena_ptrs)
-  - Supports up to 1024 nested arenas (effectively unlimited for practical use)
+  - **Solution**: Arena pointers stored in static 512KB ELF area (_flap_arena_ptrs)
+  - Supports up to 65536 nested arenas (more than enough for any realistic use case)
   - Auto-growing: individual arenas realloc to 2x size when full
   - Stack frame setup: Added function prologue (push rbp/mov rbp,rsp)
   - Fixed stack alignment in flap_arena_alloc (5 register pushes for 16-byte alignment)
   - Initial arena capacity: 4096 bytes (4KB)
-  - Tested: Empty arena ✓, single alloc() ✓, multiple alloc() ✓, printf ✓, auto-growing ✓, nested arenas ✓
+  - Tested: Empty arena ✓, single alloc() ✓, multiple alloc() ✓, printf ✓, auto-growing ✓, 17 nested arenas ✓
+  - Note: Static storage instead of dynamic growth for simplicity (65K slots should handle any realistic scenario)
 
 ## Next Actions
 - [ ] **Memoized recursion (cme) enhancements** - Add cache size limit and cleanup callback parameters:
