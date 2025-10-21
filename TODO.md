@@ -11,6 +11,12 @@
   - Header parsing and constants extraction (227 ncurses constants, SDL3 constants)
   - pkg-config integration for automatic include path discovery
 
+- [x] **Sized memory loads in unsafe** - ✅ COMPLETE
+  - Syntax: `rax <- [rbx] as uint8` for zero-extension, `rax <- [rbx] as int8` for sign-extension
+  - Supported types: uint8, int8, uint16, int16, uint32, int32, uint64, int64
+  - Works with offsets: `rax <- [rbx + 8] as uint8`
+  - All 6 sized types tested and verified (MOVZX for unsigned, MOVSX for signed)
+
 ## Next Actions
 - [ ] **Memoized recursion (cme) enhancements** - Add cache size limit and cleanup callback parameters:
   - `cme(arg, max_cache_size, cleanup_lambda)` where cleanup_lambda is called when cache is full
@@ -22,9 +28,7 @@
 - [ ] **Defer statements runtime** - Implement cleanup code for resource management
   - Track deferred expressions per scope in FlapCompiler
   - Emit deferred code in LIFO order at scope exit and before returns
-- [ ] **Sized memory loads in unsafe** - `rax <- [rbx] as uint8`, `rax <- [rbx] as uint8` for packed data structures
 - [ ] **Sized memory stores in unsafe** - `[rax] <- rbx as uint8` for writing packed formats
-- [ ] **Signed loads in unsafe** - `rax <- [rbx] as int8` with sign extension for audio/image processing
 - [ ] **More than 6 C function arguments** - Stack-based argument passing for complex APIs
 - [ ] **SIMD intrinsics** - Vector operations for audio DSP, graphics effects, particle systems
 - [ ] **Register allocation improvements** - Better register usage for performance
