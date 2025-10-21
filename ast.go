@@ -595,6 +595,27 @@ func (m *MemoryLoad) String() string {
 	return sizeStr + "[" + m.Address + offsetStr + "]"
 }
 
+type MemoryStore struct {
+	Size    string      // "uint8", "uint16", "uint32", "uint64" (empty = uint64)
+	Address string      // Register containing address (e.g., "rax", "rbx")
+	Offset  int64       // Optional offset (e.g., [rax + 16])
+	Value   interface{} // Value to store (register name string or *NumberExpr)
+}
+
+func (m *MemoryStore) String() string {
+	sizeStr := ""
+	if m.Size != "" && m.Size != "uint64" {
+		sizeStr = " as " + m.Size
+	}
+	offsetStr := ""
+	if m.Offset != 0 {
+		offsetStr = fmt.Sprintf(" + %d", m.Offset)
+	}
+	return "[" + m.Address + offsetStr + "] <- " + fmt.Sprint(m.Value) + sizeStr
+}
+
+func (m *MemoryStore) statementNode() {}
+
 type SyscallStmt struct{}
 
 func (s *SyscallStmt) String() string { return "syscall" }

@@ -2065,53 +2065,39 @@ func (p *Parser) parseUnsafeBlock() []Statement {
 			continue
 		}
 
-		// Check for memory store: [rax] <- value or u8 [rax] <- value
-		isMemoryStore := false
-		storeReg := ""
-
+		// Check for memory store: [rax] <- value or [rax] <- value as uint8
 		if p.current.Type == TOKEN_LBRACKET {
-			// [rax] <- value
-			isMemoryStore = true
+			// Parse: [rax + offset] <- value as type
 			p.nextToken() // skip '['
+
 			if p.current.Type != TOKEN_IDENT {
 				p.error("expected register name in memory address")
 			}
-			storeReg = p.current.Value
+			storeAddr := p.current.Value
 			p.nextToken() // skip register name
+
+			// Check for offset: [rax + 16]
+			var storeOffset int64 = 0
+			if p.current.Type == TOKEN_PLUS {
+				p.nextToken() // skip '+'
+				if p.current.Type != TOKEN_NUMBER {
+					p.error("expected number after '+' in memory address")
+				}
+				storeOffset = int64(p.parseNumberLiteral(p.current.Value))
+				p.nextToken() // skip number
+			}
+
 			if p.current.Type != TOKEN_RBRACKET {
 				p.error("expected ']' after memory address")
 			}
 			p.nextToken() // skip ']'
-		} else if p.current.Type == TOKEN_U8 || p.current.Type == TOKEN_U16 ||
-			p.current.Type == TOKEN_U32 || p.current.Type == TOKEN_U64 ||
-			p.current.Type == TOKEN_I8 || p.current.Type == TOKEN_I16 ||
-			p.current.Type == TOKEN_I32 || p.current.Type == TOKEN_I64 {
-			// u8 [rax] <- value (TODO v1.1.0: implement sized stores)
-			_ = p.current.Value // storeSize - unused for now
-			p.nextToken()       // skip size
-			if p.current.Type != TOKEN_LBRACKET {
-				p.error("expected '[' after size specifier")
-			}
-			p.nextToken() // skip '['
-			if p.current.Type != TOKEN_IDENT {
-				p.error("expected register name in memory address")
-			}
-			storeReg = p.current.Value
-			isMemoryStore = true
-			p.nextToken() // skip register
-			if p.current.Type != TOKEN_RBRACKET {
-				p.error("expected ']'")
-			}
-			p.nextToken() // skip ']'
-		}
 
-		if isMemoryStore {
-			// Parse: [rax] <- value
 			if p.current.Type != TOKEN_LEFT_ARROW {
 				p.error("expected '<-' after memory address")
 			}
 			p.nextToken() // skip '<-'
 
+			// Parse value
 			var value interface{}
 			if p.current.Type == TOKEN_NUMBER {
 				val := p.parseNumberLiteral(p.current.Value)
@@ -2124,9 +2110,22 @@ func (p *Parser) parseUnsafeBlock() []Statement {
 				p.error("expected number or register after '<-' in memory store")
 			}
 
-			statements = append(statements, &RegisterAssignStmt{
-				Register: "[" + storeReg + "]",
-				Value:    value,
+			// Check for size cast: [rax] <- value as uint8
+			storeSize := "uint64" // default to 64-bit
+			if p.current.Type == TOKEN_AS {
+				p.nextToken() // skip 'as'
+				if p.current.Type != TOKEN_IDENT {
+					p.error("expected type name after 'as'")
+				}
+				storeSize = p.current.Value
+				p.nextToken() // skip type name
+			}
+
+			statements = append(statements, &MemoryStore{
+				Size:    storeSize,
+				Address: storeAddr,
+				Offset:  storeOffset,
+				Value:   value,
 			})
 			p.skipNewlines()
 			continue
@@ -5410,6 +5409,8 @@ func (fc *FlapCompiler) compileUnsafeExpr(expr *UnsafeExpr) {
 		switch s := stmt.(type) {
 		case *RegisterAssignStmt:
 			fc.compileRegisterAssignment(s)
+		case *MemoryStore:
+			fc.compileSizedMemoryStore(s)
 		case *SyscallStmt:
 			fc.compileSyscall()
 		default:
@@ -5600,6 +5601,43 @@ func (fc *FlapCompiler) compileMemoryLoad(dest string, load *MemoryLoad) {
 		fc.out.MovI32MemToReg(dest, load.Address, int(load.Offset))
 	default:
 		compilerError(fmt.Sprintf("unsupported memory load size: %s (supported: uint8, int8, uint16, int16, uint32, int32, uint64, int64)", load.Size))
+	}
+}
+
+func (fc *FlapCompiler) compileSizedMemoryStore(store *MemoryStore) {
+	// Memory store: [addr + offset] <- value as size
+	// Get the value into a register first
+	var srcReg string
+
+	switch v := store.Value.(type) {
+	case string:
+		// Value is already in a register
+		srcReg = v
+	case *NumberExpr:
+		// Load immediate value into a temporary register (r11)
+		srcReg = "r11"
+		val := int64(v.Value)
+		fc.out.MovImmToReg(srcReg, strconv.FormatInt(val, 10))
+	default:
+		compilerError("unsupported value type in memory store: %T", store.Value)
+	}
+
+	// Perform sized store based on Size field
+	switch store.Size {
+	case "", "uint64", "int64":
+		// Default 64-bit store
+		fc.out.MovRegToMem(srcReg, store.Address, int(store.Offset))
+	case "uint8", "int8":
+		// Byte store (signed and unsigned are the same for stores)
+		fc.out.MovU8RegToMem(srcReg, store.Address, int(store.Offset))
+	case "uint16", "int16":
+		// Word store
+		fc.out.MovU16RegToMem(srcReg, store.Address, int(store.Offset))
+	case "uint32", "int32":
+		// Dword store
+		fc.out.MovU32RegToMem(srcReg, store.Address, int(store.Offset))
+	default:
+		compilerError(fmt.Sprintf("unsupported memory store size: %s (supported: uint8, int8, uint16, int16, uint32, int32, uint64, int64)", store.Size))
 	}
 }
 

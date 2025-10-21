@@ -720,3 +720,203 @@ func (o *Out) movI32MemToRegX86(dest, base string, offset int) {
 		fmt.Fprintln(os.Stderr)
 	}
 }
+
+// MovU8RegToMem emits a byte store (MOV byte [base+offset], src)
+func (o *Out) MovU8RegToMem(src, base string, offset int) {
+	switch o.machine.Arch {
+	case ArchX86_64:
+		o.movU8RegToMemX86(src, base, offset)
+	}
+}
+
+func (o *Out) movU8RegToMemX86(src, base string, offset int) {
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "mov byte [%s", base)
+		if offset != 0 {
+			if offset > 0 {
+				fmt.Fprintf(os.Stderr, "+%d", offset)
+			} else {
+				fmt.Fprintf(os.Stderr, "%d", offset)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "], %s: ", src)
+	}
+
+	srcReg, _ := GetRegister(o.machine.Arch, src)
+	baseReg, _ := GetRegister(o.machine.Arch, base)
+
+	// MOV r/m8, r8 - opcode 0x88
+	rex := uint8(0x40) // REX prefix (needed for accessing low byte of extended registers)
+	needsRex := srcReg.Encoding >= 8 || baseReg.Encoding >= 8
+	if needsRex {
+		if srcReg.Encoding >= 8 {
+			rex |= 0x04 // REX.R
+		}
+		if baseReg.Encoding >= 8 {
+			rex |= 0x01 // REX.B
+		}
+		o.Write(rex)
+	}
+	o.Write(0x88)
+
+	// ModR/M byte
+	if offset == 0 && (baseReg.Encoding&7) != 5 {
+		modrm := uint8(0x00) | ((srcReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24) // SIB for RSP
+		}
+	} else if offset < 128 && offset >= -128 {
+		modrm := uint8(0x40) | ((srcReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.Write(uint8(offset))
+	} else {
+		modrm := uint8(0x80) | ((srcReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.WriteUnsigned(uint(offset))
+	}
+
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
+}
+
+// MovU16RegToMem emits a word store (MOV word [base+offset], src)
+func (o *Out) MovU16RegToMem(src, base string, offset int) {
+	switch o.machine.Arch {
+	case ArchX86_64:
+		o.movU16RegToMemX86(src, base, offset)
+	}
+}
+
+func (o *Out) movU16RegToMemX86(src, base string, offset int) {
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "mov word [%s", base)
+		if offset != 0 {
+			if offset > 0 {
+				fmt.Fprintf(os.Stderr, "+%d", offset)
+			} else {
+				fmt.Fprintf(os.Stderr, "%d", offset)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "], %s: ", src)
+	}
+
+	srcReg, _ := GetRegister(o.machine.Arch, src)
+	baseReg, _ := GetRegister(o.machine.Arch, base)
+
+	// MOV r/m16, r16 - requires 0x66 prefix and opcode 0x89
+	o.Write(0x66) // 16-bit operand size prefix
+
+	needsRex := srcReg.Encoding >= 8 || baseReg.Encoding >= 8
+	if needsRex {
+		rex := uint8(0x40)
+		if srcReg.Encoding >= 8 {
+			rex |= 0x04 // REX.R
+		}
+		if baseReg.Encoding >= 8 {
+			rex |= 0x01 // REX.B
+		}
+		o.Write(rex)
+	}
+	o.Write(0x89)
+
+	// ModR/M byte
+	if offset == 0 && (baseReg.Encoding&7) != 5 {
+		modrm := uint8(0x00) | ((srcReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24) // SIB for RSP
+		}
+	} else if offset < 128 && offset >= -128 {
+		modrm := uint8(0x40) | ((srcReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.Write(uint8(offset))
+	} else {
+		modrm := uint8(0x80) | ((srcReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.WriteUnsigned(uint(offset))
+	}
+
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
+}
+
+// MovU32RegToMem emits a dword store (MOV dword [base+offset], src)
+func (o *Out) MovU32RegToMem(src, base string, offset int) {
+	switch o.machine.Arch {
+	case ArchX86_64:
+		o.movU32RegToMemX86(src, base, offset)
+	}
+}
+
+func (o *Out) movU32RegToMemX86(src, base string, offset int) {
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "mov dword [%s", base)
+		if offset != 0 {
+			if offset > 0 {
+				fmt.Fprintf(os.Stderr, "+%d", offset)
+			} else {
+				fmt.Fprintf(os.Stderr, "%d", offset)
+			}
+		}
+		fmt.Fprintf(os.Stderr, "], %s: ", src)
+	}
+
+	srcReg, _ := GetRegister(o.machine.Arch, src)
+	baseReg, _ := GetRegister(o.machine.Arch, base)
+
+	// MOV r/m32, r32 - opcode 0x89 (no REX.W)
+	needsRex := srcReg.Encoding >= 8 || baseReg.Encoding >= 8
+	if needsRex {
+		rex := uint8(0x40)
+		if srcReg.Encoding >= 8 {
+			rex |= 0x04 // REX.R
+		}
+		if baseReg.Encoding >= 8 {
+			rex |= 0x01 // REX.B
+		}
+		o.Write(rex)
+	}
+	o.Write(0x89)
+
+	// ModR/M byte
+	if offset == 0 && (baseReg.Encoding&7) != 5 {
+		modrm := uint8(0x00) | ((srcReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24) // SIB for RSP
+		}
+	} else if offset < 128 && offset >= -128 {
+		modrm := uint8(0x40) | ((srcReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.Write(uint8(offset))
+	} else {
+		modrm := uint8(0x80) | ((srcReg.Encoding & 7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 {
+			o.Write(0x24)
+		}
+		o.WriteUnsigned(uint(offset))
+	}
+
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
+}

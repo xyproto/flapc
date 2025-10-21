@@ -706,7 +706,24 @@ unsafe {
 } { /* arm64 */ } { /* riscv64 */ }
 ```
 
-**Coming soon**: Sized memory stores
+**Sized Memory Stores** (v1.5.0+):
+```flap
+unsafe {
+    rbx <- 0x1000
+
+    // Store byte/word/dword from register
+    [rbx] <- rax as uint8     // Store low byte of RAX to [rbx]
+    [rbx] <- rax as uint16    // Store low word of RAX to [rbx]
+    [rbx] <- rax as uint32    // Store low dword of RAX to [rbx]
+    [rbx] <- rax as uint64    // Store full 64-bit RAX to [rbx] (default)
+
+    // Works with offsets too
+    [rbx + 8] <- rax as uint8
+
+    // Note: Signed types (int8, int16, int32) are treated the same as unsigned for stores
+    // The signedness only matters when loading back with sign extension
+} { /* arm64 */ } { /* riscv64 */ }
+```
 
 ### Return Value
 
