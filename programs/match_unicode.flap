@@ -1,19 +1,30 @@
 program_tokens := [43, 43, 42, 128515, 45, 47]
 program_string := "+ + * 😃 - /"
 
-update := value, token => token {
-    43     -> value + 1
-    45     -> value - 1
-    42     -> value * 2
-    47     -> value / 2
-    128515 -> value * value
-    ~> value
+// Rewrite to use if-else chain instead of broken match on numeric literals
+update := (value, token) => {
+    (token == 43) {
+        -> value + 1
+        ~> (token == 45) {
+            -> value - 1
+            ~> (token == 42) {
+                -> value * 2
+                ~> (token == 47) {
+                    -> value / 2
+                    ~> (token == 128515) {
+                        -> value * value
+                        ~> value
+                    }
+                }
+            }
+        }
+    }
 }
 
-accumulator = 0
+accumulator := 0
 
 @ token in program_tokens {
-    accumulator = update(accumulator, token)
+    accumulator <- update(accumulator, token)
 }
 
 printf("The program \"%s\" calculates the value %v\n", program_string, accumulator)
