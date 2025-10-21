@@ -2519,7 +2519,7 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 				fmt.Fprintf(os.Stderr, "Registered C import: %s -> %s\n", cImport.Alias, cImport.Library)
 			}
 
-			// For .so file imports, extract symbols using nm
+			// For .so file imports, extract symbols and function signatures
 			if cImport.SoPath != "" {
 				if VerboseMode {
 					fmt.Fprintf(os.Stderr, "Extracting symbols from %s...\n", cImport.SoPath)
@@ -2538,6 +2538,44 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 						}
 					}
 				}
+
+				// Extract function signatures from DWARF debug info
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Extracting function signatures from DWARF info...\n")
+				}
+				signatures, err := ExtractFunctionSignatures(cImport.SoPath)
+				if err != nil {
+					if VerboseMode {
+						fmt.Fprintf(os.Stderr, "Warning: failed to extract signatures: %v\n", err)
+					}
+				} else if len(signatures) > 0 {
+					// Store signatures for this library
+					if fc.cConstants[cImport.Alias] == nil {
+						fc.cConstants[cImport.Alias] = &CHeaderConstants{
+							Constants: make(map[string]int64),
+							Macros:    make(map[string]string),
+							Functions: make(map[string]*CFunctionSignature),
+						}
+					}
+					// Merge DWARF signatures into the constants map
+					for funcName, sig := range signatures {
+						fc.cConstants[cImport.Alias].Functions[funcName] = sig
+					}
+					if VerboseMode {
+						fmt.Fprintf(os.Stderr, "Extracted %d function signatures from DWARF\n", len(signatures))
+						if len(signatures) <= 10 {
+							for name, sig := range signatures {
+								paramTypes := make([]string, len(sig.Params))
+								for i, p := range sig.Params {
+									paramTypes[i] = p.Type
+								}
+								fmt.Fprintf(os.Stderr, "  - %s(%s) -> %s\n", name, strings.Join(paramTypes, ", "), sig.ReturnType)
+							}
+						}
+					}
+				} else if VerboseMode {
+					fmt.Fprintf(os.Stderr, "No DWARF debug info found in %s\n", cImport.SoPath)
+				}
 			}
 
 			// Extract constants from C headers
@@ -2548,7 +2586,24 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 					fmt.Fprintf(os.Stderr, "Warning: failed to extract constants from %s: %v\n", cImport.Library, err)
 				}
 			} else {
-				fc.cConstants[cImport.Alias] = constants
+				// Merge with existing data (don't overwrite DWARF signatures!)
+				if fc.cConstants[cImport.Alias] == nil {
+					fc.cConstants[cImport.Alias] = constants
+				} else {
+					// Merge constants and macros, but don't overwrite existing functions from DWARF
+					for k, v := range constants.Constants {
+						fc.cConstants[cImport.Alias].Constants[k] = v
+					}
+					for k, v := range constants.Macros {
+						fc.cConstants[cImport.Alias].Macros[k] = v
+					}
+					// Merge functions (header signatures don't overwrite DWARF)
+					for k, v := range constants.Functions {
+						if _, exists := fc.cConstants[cImport.Alias].Functions[k]; !exists {
+							fc.cConstants[cImport.Alias].Functions[k] = v
+						}
+					}
+				}
 				if VerboseMode {
 					fmt.Fprintf(os.Stderr, "Extracted %d constants from %s\n", len(constants.Constants), cImport.Library)
 				}
@@ -7918,10 +7973,44 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 	intArgRegs := []string{"rdi", "rsi", "rdx", "rcx", "r8", "r9"}
 
 	// Detect if this is a math function (libm) which uses float args/returns
+	// Check both hardcoded libm functions and function signatures from DWARF
 	isMathFunc := (libName == "m" || libName == "math") ||
 		(funcName == "sqrt" || funcName == "pow" || funcName == "sin" || funcName == "cos" ||
 			funcName == "tan" || funcName == "log" || funcName == "exp" || funcName == "fabs" ||
 			funcName == "ceil" || funcName == "floor")
+
+	// Check if we have a signature for this function from DWARF
+	// Need to find the alias for this library name (reverse lookup)
+	var libAlias string
+	for alias, lib := range fc.cImports {
+		if lib == libName {
+			libAlias = alias
+			break
+		}
+	}
+
+	// Look up signatures using the alias
+	if libAlias != "" {
+		if constants, ok := fc.cConstants[libAlias]; ok {
+			if sig, found := constants.Functions[funcName]; found {
+				// Check if any parameters are float/double
+				hasFloatParams := false
+				for _, param := range sig.Params {
+					if param.Type == "float" || param.Type == "double" {
+						hasFloatParams = true
+						break
+					}
+				}
+				// If function has float parameters or returns float/double, treat as math function
+				if hasFloatParams || sig.ReturnType == "float" || sig.ReturnType == "double" {
+					isMathFunc = true
+					if VerboseMode {
+						fmt.Fprintf(os.Stderr, "Detected %s as math function via DWARF (float/double params)\n", funcName)
+					}
+				}
+			}
+		}
+	}
 
 	// Allocate stack space to save arguments temporarily
 	if len(args) > 0 {
@@ -8032,36 +8121,50 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 		}
 
 		// Load arguments from stack into ABI registers and call function
-		// For arguments 7+, they stay on the stack per System V AMD64 ABI
+		// System V AMD64 ABI: First 8 float args in xmm0-xmm7, args 9+ on stack
+		// System V AMD64 ABI: First 6 int args in rdi-r9, args 7+ on stack
 		numRegArgs := len(args)
-		if numRegArgs > 6 {
-			numRegArgs = 6
-		}
 		numStackArgs := 0
-		if len(args) > 6 {
-			numStackArgs = len(args) - 6
+
+		if isMathFunc {
+			// Math functions use up to 8 xmm registers
+			if numRegArgs > 8 {
+				numRegArgs = 8
+			}
+			if len(args) > 8 {
+				numStackArgs = len(args) - 8
+			}
+		} else {
+			// Non-math functions use up to 6 integer registers
+			if numRegArgs > 6 {
+				numRegArgs = 6
+			}
+			if len(args) > 6 {
+				numStackArgs = len(args) - 6
+			}
 		}
 
 		if isMathFunc {
 			// Math functions: pass arguments in xmm registers, result in xmm0
-			// Load first 6 arguments from stack into xmm registers (xmm0, xmm1, xmm2, ...)
-			xmmRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"}
+			// Load first 8 arguments from stack into xmm registers (xmm0-xmm7)
+			xmmRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"}
 			for i := 0; i < numRegArgs; i++ {
 				fc.out.MovMemToXmm(xmmRegs[i], "rsp", i*8)
 			}
 
 			// Clean up register arguments from stack, but leave stack arguments
-			// If we have >6 args, args 0-5 are loaded into registers, args 6+ stay on stack
+			// If we have >8 args, args 0-7 are loaded into registers, args 8+ stay on stack
 			if numStackArgs > 0 {
-				// Keep stack args (6+), remove temp space for register args (0-5)
-				// Stack currently has: [arg0][arg1][arg2][arg3][arg4][arg5][arg6][arg7]...
+				// Keep stack args (8+), remove temp space for register args (0-7)
+				// Stack currently has: [arg0][arg1]...[arg7][arg8][arg9]...
 				// We need to move stack args down to remove the register arg space
+				// Use r11 as temp to avoid conflicts with xmm registers
 				for i := 0; i < numStackArgs; i++ {
-					fc.out.MovMemToXmm("xmm7", "rsp", (6+i)*8) // Use xmm7 as temp
-					fc.out.MovXmmToMem("xmm7", "rsp", i*8)
+					fc.out.MovMemToReg("r11", "rsp", (8+i)*8)
+					fc.out.MovRegToMem("r11", "rsp", i*8)
 				}
 				// Now adjust RSP to account for removed register arg space
-				fc.out.AddImmToReg("rsp", int64(6*8))
+				fc.out.AddImmToReg("rsp", int64(8*8))
 			} else {
 				// No stack args - clean up all argument stack space
 				fc.out.AddImmToReg("rsp", int64(argStackOffset))

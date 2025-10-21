@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"debug/dwarf"
+	"debug/elf"
 	"fmt"
 	"os"
 	"os/exec"
@@ -677,37 +679,189 @@ func isPointerType(cType string) bool {
 	return strings.Contains(cType, "*") || strings.HasSuffix(cType, "Ptr")
 }
 
-// ExtractSymbolsFromSo extracts exported function symbols from a .so file using nm
+// ExtractSymbolsFromSo extracts exported function symbols from a .so file using Go's debug/elf
 func ExtractSymbolsFromSo(soPath string) ([]string, error) {
-	// Use nm -D to list dynamic symbols
-	cmd := exec.Command("nm", "-D", "--defined-only", soPath)
-	output, err := cmd.Output()
+	// Open ELF file
+	elfFile, err := elf.Open(soPath)
 	if err != nil {
-		return nil, fmt.Errorf("nm failed: %v", err)
+		return nil, fmt.Errorf("failed to open ELF file: %v", err)
+	}
+	defer elfFile.Close()
+
+	// Get dynamic symbols
+	symbols, err := elfFile.DynamicSymbols()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read dynamic symbols: %v", err)
 	}
 
-	var symbols []string
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
+	var funcSymbols []string
+	for _, sym := range symbols {
+		// Only include function symbols (STT_FUNC)
+		// elf.STT_FUNC = 2
+		if elf.ST_TYPE(sym.Info) == elf.STT_FUNC {
+			funcSymbols = append(funcSymbols, sym.Name)
+		}
+	}
+
+	return funcSymbols, nil
+}
+
+// ExtractFunctionSignatures extracts function signatures from DWARF debug info in a .so file
+// Returns a map of function name -> CFunctionSignature
+func ExtractFunctionSignatures(soPath string) (map[string]*CFunctionSignature, error) {
+	// Open ELF file
+	elfFile, err := elf.Open(soPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open ELF file: %v", err)
+	}
+	defer elfFile.Close()
+
+	// Get DWARF debug info
+	dwarfData, err := elfFile.DWARF()
+	if err != nil {
+		// No DWARF info available - not an error, just return empty map
+		return make(map[string]*CFunctionSignature), nil
+	}
+
+	signatures := make(map[string]*CFunctionSignature)
+	reader := dwarfData.Reader()
+
+	// Iterate through all DWARF entries
+	for {
+		entry, err := reader.Next()
+		if err != nil {
+			return nil, fmt.Errorf("error reading DWARF: %v", err)
+		}
+		if entry == nil {
+			break
 		}
 
-		// nm output format: "address type name"
-		// Example: "0000000000001149 T sum7"
-		// We want symbols with type T (text/code) or W (weak)
-		parts := strings.Fields(line)
-		if len(parts) >= 3 {
-			symbolType := parts[1]
-			symbolName := parts[2]
-
-			// Only extract function symbols (T = text/code, W = weak)
-			if symbolType == "T" || symbolType == "W" {
-				symbols = append(symbols, symbolName)
+		// Look for subprogram entries (functions)
+		if entry.Tag == dwarf.TagSubprogram {
+			name, sig := parseFunctionEntry(entry, reader, dwarfData)
+			if name != "" && sig != nil {
+				signatures[name] = sig
 			}
 		}
 	}
 
-	return symbols, nil
+	return signatures, nil
+}
+
+// parseFunctionEntry parses a DWARF subprogram entry to extract function signature
+// Returns (name, signature)
+func parseFunctionEntry(entry *dwarf.Entry, reader *dwarf.Reader, data *dwarf.Data) (string, *CFunctionSignature) {
+	sig := &CFunctionSignature{}
+	var funcName string
+
+	// Get function name
+	if nameAttr := entry.Val(dwarf.AttrName); nameAttr != nil {
+		funcName = nameAttr.(string)
+	}
+
+	// Get return type
+	if typeAttr := entry.Val(dwarf.AttrType); typeAttr != nil {
+		if typeOffset, ok := typeAttr.(dwarf.Offset); ok {
+			sig.ReturnType = resolveTypeName(typeOffset, data)
+		}
+	} else {
+		sig.ReturnType = "void"
+	}
+
+	// Parse parameters - read all immediate children
+	if !entry.Children {
+		return funcName, sig
+	}
+
+	for {
+		childEntry, err := reader.Next()
+		if err != nil || childEntry == nil {
+			break
+		}
+
+		// Tag == 0 means end of children at this level
+		if childEntry.Tag == 0 {
+			break
+		}
+
+		// Look for formal parameter entries
+		if childEntry.Tag == dwarf.TagFormalParameter {
+			param := CFunctionParam{}
+
+			if nameAttr := childEntry.Val(dwarf.AttrName); nameAttr != nil {
+				param.Name = nameAttr.(string)
+			}
+
+			if typeAttr := childEntry.Val(dwarf.AttrType); typeAttr != nil {
+				if typeOffset, ok := typeAttr.(dwarf.Offset); ok {
+					param.Type = resolveTypeName(typeOffset, data)
+				}
+			}
+
+			sig.Params = append(sig.Params, param)
+		}
+
+		// Skip children of this entry (if any)
+		if childEntry.Children {
+			reader.SkipChildren()
+		}
+	}
+
+	return funcName, sig
+}
+
+// resolveTypeName resolves a DWARF type offset to a simplified type name
+func resolveTypeName(offset dwarf.Offset, data *dwarf.Data) string {
+	reader := data.Reader()
+	reader.Seek(offset)
+
+	entry, err := reader.Next()
+	if err != nil || entry == nil {
+		return "unknown"
+	}
+
+	// Handle base types
+	if entry.Tag == dwarf.TagBaseType {
+		if nameAttr := entry.Val(dwarf.AttrName); nameAttr != nil {
+			typeName := nameAttr.(string)
+
+			// Map C types to simplified categories
+			switch {
+			case strings.Contains(typeName, "float"):
+				return "float"
+			case strings.Contains(typeName, "double"):
+				return "double"
+			case strings.Contains(typeName, "int") || strings.Contains(typeName, "long") ||
+			     strings.Contains(typeName, "short") || strings.Contains(typeName, "char"):
+				return "int"
+			default:
+				return typeName
+			}
+		}
+	}
+
+	// Handle pointer types
+	if entry.Tag == dwarf.TagPointerType {
+		return "pointer"
+	}
+
+	// Handle typedef
+	if entry.Tag == dwarf.TagTypedef {
+		if typeAttr := entry.Val(dwarf.AttrType); typeAttr != nil {
+			if typeOffset, ok := typeAttr.(dwarf.Offset); ok {
+				return resolveTypeName(typeOffset, data)
+			}
+		}
+	}
+
+	// Handle const types
+	if entry.Tag == dwarf.TagConstType {
+		if typeAttr := entry.Val(dwarf.AttrType); typeAttr != nil {
+			if typeOffset, ok := typeAttr.(dwarf.Offset); ok {
+				return resolveTypeName(typeOffset, data)
+			}
+		}
+	}
+
+	return "unknown"
 }

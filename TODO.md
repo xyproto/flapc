@@ -36,6 +36,14 @@
   - Works with >6 argument functions
   - Use with `LD_LIBRARY_PATH=/path/to/libs ./program`
 
+- [x] **ELF symbol and DWARF signature extraction** - ✅ COMPLETE (v1.6.0)
+  - Pure Go implementation using debug/elf and debug/dwarf from standard library
+  - No external tool dependencies (nm, etc.)
+  - Automatic float vs int parameter detection from DWARF debug info
+  - Function signatures extracted and used for proper argument marshaling
+  - Supports all 8 xmm registers for float arguments (xmm0-xmm7)
+  - Tested with sum8doubles(8 doubles) - all parameters passed correctly
+
 ## Next Actions
 - [ ] **Memoized recursion (cme) enhancements** - Add cache size limit and cleanup callback parameters:
   - `cme(arg, max_cache_size, cleanup_lambda)` where cleanup_lambda is called when cache is full
