@@ -584,6 +584,73 @@ func collectUsedVariablesExpr(expr Expression, usedVars map[string]bool) {
 		for _, stmt := range e.Statements {
 			collectUsedVariables(stmt, usedVars)
 		}
+	case *CastExpr:
+		collectUsedVariablesExpr(e.Expr, usedVars)
+	case *SliceExpr:
+		collectUsedVariablesExpr(e.List, usedVars)
+		if e.Start != nil {
+			collectUsedVariablesExpr(e.Start, usedVars)
+		}
+		if e.End != nil {
+			collectUsedVariablesExpr(e.End, usedVars)
+		}
+	case *UnaryExpr:
+		collectUsedVariablesExpr(e.Operand, usedVars)
+	case *NamespacedIdentExpr:
+		// Namespace access like sdl.SDL_Init or data.field
+		// For data.field, "data" is a variable that should be marked as used
+		// For sdl.SDL_Init, "sdl" is an imported namespace, not a variable
+		// We mark it as used - the compiler will handle whether it's a variable or namespace
+		usedVars[e.Namespace] = true
+	case *FStringExpr:
+		// FStringExpr.Parts is []Expression, each part is either StringExpr or an expression
+		for _, part := range e.Parts {
+			collectUsedVariablesExpr(part, usedVars)
+		}
+	case *DirectCallExpr:
+		collectUsedVariablesExpr(e.Callee, usedVars)
+		for _, arg := range e.Args {
+			collectUsedVariablesExpr(arg, usedVars)
+		}
+	case *PostfixExpr:
+		collectUsedVariablesExpr(e.Operand, usedVars)
+	case *VectorExpr:
+		for _, comp := range e.Components {
+			collectUsedVariablesExpr(comp, usedVars)
+		}
+	case *ArenaExpr:
+		// ArenaExpr has Body []Statement
+		for _, stmt := range e.Body {
+			collectUsedVariables(stmt, usedVars)
+		}
+	case *MultiLambdaExpr:
+		// For multi-lambda, collect variables from all lambda bodies
+		for _, lambda := range e.Lambdas {
+			collectUsedVariablesExpr(lambda.Body, usedVars)
+		}
+	case *ConcurrentGatherExpr:
+		// ConcurrentGatherExpr has Left and Right
+		collectUsedVariablesExpr(e.Left, usedVars)
+		collectUsedVariablesExpr(e.Right, usedVars)
+	case *UnsafeExpr:
+		// UnsafeExpr has architecture-specific blocks
+		for _, stmt := range e.X86_64Block {
+			collectUsedVariables(stmt, usedVars)
+		}
+		for _, stmt := range e.ARM64Block {
+			collectUsedVariables(stmt, usedVars)
+		}
+		for _, stmt := range e.RISCV64Block {
+			collectUsedVariables(stmt, usedVars)
+		}
+	case *LoopExpr:
+		for _, stmt := range e.Body {
+			collectUsedVariables(stmt, usedVars)
+		}
+	case *LoopStateExpr:
+		// LoopStateExpr doesn't reference variables
+	case *JumpExpr:
+		// JumpExpr doesn't reference variables directly
 	}
 }
 
