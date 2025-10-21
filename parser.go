@@ -2394,7 +2394,7 @@ type FlapCompiler struct {
 	hasExplicitExit  bool                         // Track if program contains explicit exit() call
 	debug            bool                         // Enable debug output (set via DEBUG_FLAP env var)
 	cContext         bool                         // When true, compile expressions for C FFI (affects strings, pointers, ints)
-	currentArena     int                          // Stack offset of current arena pointer (-1 if not in arena block)
+	currentArena     int                          // Arena depth (0=none, 1=first arena, 2=nested, etc.)
 }
 
 type LambdaFunc struct {
@@ -2620,6 +2620,14 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 			return err
 		}
 	}
+
+	// Reset arena depth before compilation pass
+	fc.currentArena = 0
+
+	// Function prologue - set up stack frame for main code
+	// This allows stack-relative addressing via RBP
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
 
 	// Second pass: Generate actual code with all symbols known
 	for _, stmt := range program.Statements {
@@ -3080,12 +3088,21 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 			}
 		}
 	case *ArenaStmt:
+		// Track arena depth during symbol collection
+		// This ensures alloc() calls are validated correctly
+		previousArena := fc.currentArena
+		fc.currentArena++
+
 		// Recursively collect symbols from arena body
+		// Note: Arena pointers are stored in static storage (_flap_arena_ptrs)
 		for _, bodyStmt := range s.Body {
 			if err := fc.collectSymbols(bodyStmt); err != nil {
 				return err
 			}
 		}
+
+		// Restore arena depth
+		fc.currentArena = previousArena
 	case *ExpressionStmt:
 		// No symbols to collect from expression statements
 	}
@@ -3180,24 +3197,21 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 }
 
 func (fc *FlapCompiler) compileArenaStmt(stmt *ArenaStmt) {
-	// Save previous arena context
+	// Save previous arena context and increment depth
 	previousArena := fc.currentArena
+	fc.currentArena++
+	arenaDepth := fc.currentArena
 
-	// Create arena with initial 1KB capacity
-	initialCapacity := 1024
+	// Create arena with initial 4KB capacity
+	initialCapacity := 4096
 	fc.out.MovImmToReg("rdi", fmt.Sprintf("%d", initialCapacity))
 	fc.out.CallSymbol("flap_arena_create")
-	// rax now contains arena pointer, convert to float64 in xmm0
-	fc.out.Cvtsi2sd("xmm0", "rax")
 
-	// Allocate stack space for arena pointer
-	fc.stackOffset += 16
-	arenaOffset := fc.stackOffset
-	fc.out.SubImmFromReg("rsp", 16)
-	fc.out.MovXmmToMem("xmm0", "rbp", -arenaOffset)
-
-	// Set current arena context
-	fc.currentArena = arenaOffset
+	// Store arena pointer in static storage area: _flap_arena_ptrs[arenaDepth-1]
+	// Each pointer is 8 bytes, so offset = (arenaDepth-1) * 8
+	offset := (arenaDepth - 1) * 8
+	fc.out.LeaSymbolToReg("rbx", "_flap_arena_ptrs")
+	fc.out.MovRegToMem("rax", "rbx", offset)
 
 	// Compile statements in arena body
 	for _, bodyStmt := range stmt.Body {
@@ -3207,14 +3221,10 @@ func (fc *FlapCompiler) compileArenaStmt(stmt *ArenaStmt) {
 	// Restore previous arena context
 	fc.currentArena = previousArena
 
-	// Destroy arena
-	fc.out.MovMemToXmm("xmm0", "rbp", -arenaOffset)
-	fc.out.Cvttsd2si("rdi", "xmm0")
+	// Load arena pointer from static storage and destroy
+	fc.out.LeaSymbolToReg("rbx", "_flap_arena_ptrs")
+	fc.out.MovMemToReg("rdi", "rbx", offset)
 	fc.out.CallSymbol("flap_arena_destroy")
-
-	// Clean up arena pointer from stack
-	fc.out.AddImmToReg("rsp", 16)
-	fc.stackOffset -= 16
 }
 
 func (fc *FlapCompiler) compileLoopStatement(stmt *LoopStmt) {
@@ -6062,6 +6072,10 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// Generate arena allocator runtime functions
 	fc.eb.EmitArenaRuntimeCode()
 
+	// Define arena pointer storage (256 * 8 = 2048 bytes for up to 256 nested arenas)
+	arenaStorage := make([]byte, 2048)
+	fc.eb.Define("_flap_arena_ptrs", string(arenaStorage))
+
 	// Generate _flap_string_concat(left_ptr, right_ptr) -> new_ptr
 	// Arguments: rdi = left_ptr, rsi = right_ptr
 	// Returns: rax = pointer to new concatenated string
@@ -7247,6 +7261,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PushReg("rbx")
 	fc.out.PushReg("r12")
 	fc.out.PushReg("r13")
+	fc.out.PushReg("r14") // Extra push for 16-byte stack alignment (5 total pushes = 40 bytes)
 
 	fc.out.MovRegToReg("rbx", "rdi") // rbx = arena_ptr (preserve across calls)
 	fc.out.MovRegToReg("r12", "rsi") // r12 = size (preserve across calls)
@@ -7350,6 +7365,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.patchJumpImmediate(arenaDoneJump2+1, int32(arenaDoneLabel-(arenaDoneJump2+5)))
 	fc.eb.MarkLabel("_arena_alloc_done")
 
+	fc.out.PopReg("r14") // Pop extra register for stack alignment
 	fc.out.PopReg("r13")
 	fc.out.PopReg("r12")
 	fc.out.PopReg("rbx")
@@ -9765,13 +9781,14 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		}
 
 		// Check if we're in an arena context
-		if fc.currentArena == -1 {
+		if fc.currentArena == 0 {
 			compilerError("alloc() can only be used inside an arena { ... } block. Use malloc() via C FFI if you need manual memory management.")
 		}
 
-		// Load arena pointer from stack
-		fc.out.MovMemToXmm("xmm0", "rbp", -fc.currentArena)
-		fc.out.Cvttsd2si("rdi", "xmm0") // arena_ptr in rdi
+		// Load arena pointer from static storage: _flap_arena_ptrs[currentArena-1]
+		offset := (fc.currentArena - 1) * 8
+		fc.out.LeaSymbolToReg("rbx", "_flap_arena_ptrs")
+		fc.out.MovMemToReg("rdi", "rbx", offset) // arena_ptr in rdi
 
 		// Compile size argument
 		fc.compileExpression(call.Args[0])

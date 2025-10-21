@@ -57,12 +57,16 @@
   - Calls malloc/free/realloc from libc
   - Tested with direct calls (arena_create, arena_alloc, arena_destroy)
 
-- [x] **Arena block syntax** - ⚠️  PARTIAL (v1.6.0)
+- [x] **Arena block syntax** - ✅ COMPLETE (v1.6.0)
   - Syntax: `arena { ... }` - Auto-creates and destroys arena at block boundaries
   - `alloc(size)` - Context-aware allocation (only works inside arena blocks)
-  - **Working**: Arena creation, destruction, nested blocks
-  - **TODO**: Debug alloc() segfault inside arena blocks (stack alignment issue?)
-  - Tested: Empty arena blocks work perfectly ✓
+  - **Solution**: Arena pointers stored in static 2048-byte ELF area (_flap_arena_ptrs)
+  - Supports up to 256 nested arenas (256 * 8 bytes)
+  - Auto-growing: reallocs to 2x size when full
+  - Stack frame setup: Added function prologue (push rbp/mov rbp,rsp)
+  - Fixed stack alignment in flap_arena_alloc (5 register pushes for 16-byte alignment)
+  - Initial capacity: 4096 bytes (4KB)
+  - Tested: Empty arena ✓, single alloc() ✓, multiple alloc() ✓, printf ✓, auto-growing ✓
 
 ## Next Actions
 - [ ] **Memoized recursion (cme) enhancements** - Add cache size limit and cleanup callback parameters:
