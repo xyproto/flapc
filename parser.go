@@ -7850,10 +7850,8 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 	// Integer/pointer args: rdi, rsi, rdx, rcx, r8, r9, then stack
 	// Float args: xmm0-xmm7, then stack
 
-	// For simplicity in v1.1.0: support up to 6 integer arguments
-	if len(args) > 6 {
-		compilerError("C FFI calls with >6 arguments not yet supported in v1.1.0")
-	}
+	// Support more than 6 arguments via stack-based argument passing (System V AMD64 ABI)
+	// Arguments 1-6 go in registers, arguments 7+ go on the stack
 
 	// System V AMD64 ABI register sequence for integer/pointer arguments
 	intArgRegs := []string{"rdi", "rsi", "rdx", "rcx", "r8", "r9"}
@@ -7973,39 +7971,83 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 		}
 
 		// Load arguments from stack into ABI registers and call function
+		// For arguments 7+, they stay on the stack per System V AMD64 ABI
+		numRegArgs := len(args)
+		if numRegArgs > 6 {
+			numRegArgs = 6
+		}
+		numStackArgs := 0
+		if len(args) > 6 {
+			numStackArgs = len(args) - 6
+		}
+
 		if isMathFunc {
 			// Math functions: pass arguments in xmm registers, result in xmm0
-			// Load arguments from stack into xmm registers (xmm0, xmm1, xmm2, ...)
+			// Load first 6 arguments from stack into xmm registers (xmm0, xmm1, xmm2, ...)
 			xmmRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"}
-			for i := 0; i < len(args) && i < 6; i++ {
+			for i := 0; i < numRegArgs; i++ {
 				fc.out.MovMemToXmm(xmmRegs[i], "rsp", i*8)
 			}
 
-			// Clean up argument stack space
-			fc.out.AddImmToReg("rsp", int64(argStackOffset))
-
-			// No stack alignment needed - see comment in non-math function path
+			// Clean up register arguments from stack, but leave stack arguments
+			// If we have >6 args, args 0-5 are loaded into registers, args 6+ stay on stack
+			if numStackArgs > 0 {
+				// Keep stack args (6+), remove temp space for register args (0-5)
+				// Stack currently has: [arg0][arg1][arg2][arg3][arg4][arg5][arg6][arg7]...
+				// We need to move stack args down to remove the register arg space
+				for i := 0; i < numStackArgs; i++ {
+					fc.out.MovMemToXmm("xmm7", "rsp", (6+i)*8) // Use xmm7 as temp
+					fc.out.MovXmmToMem("xmm7", "rsp", i*8)
+				}
+				// Now adjust RSP to account for removed register arg space
+				fc.out.AddImmToReg("rsp", int64(6*8))
+			} else {
+				// No stack args - clean up all argument stack space
+				fc.out.AddImmToReg("rsp", int64(argStackOffset))
+			}
 
 			// Generate PLT call
+			// Note: Stack is already properly aligned per System V AMD64 ABI
+			// (RSP % 16 == 8 before CALL, which becomes RSP % 16 == 0 after CALL pushes return address)
 			fc.eb.GenerateCallInstruction(funcName)
+
+			// Clean up stack arguments after call
+			if numStackArgs > 0 {
+				fc.out.AddImmToReg("rsp", int64(numStackArgs*8))
+			}
 
 			// Result is already in xmm0 as double - no conversion needed
 		} else {
 			// Non-math functions: pass in integer registers, result in rax
-			// Load arguments from stack into ABI registers
-			for i := 0; i < len(args) && i < 6; i++ {
+			// Load first 6 arguments from stack into ABI registers
+			for i := 0; i < numRegArgs; i++ {
 				fc.out.MovMemToReg(intArgRegs[i], "rsp", i*8)
 			}
 
-			// Clean up argument stack space
-			fc.out.AddImmToReg("rsp", int64(argStackOffset))
-
-			// No stack alignment needed - main() already set up RSP at (16n - 8)
-			// CALL will push 8-byte return address, making RSP = (16n + 8) mod 16
-			// which is correct per System V AMD64 ABI
+			// Clean up register arguments from stack, but leave stack arguments
+			if numStackArgs > 0 {
+				// Keep stack args (6+), remove temp space for register args (0-5)
+				// Stack currently has: [arg0][arg1][arg2][arg3][arg4][arg5][arg6][arg7]...
+				// We need to move stack args down to remove the register arg space
+				for i := 0; i < numStackArgs; i++ {
+					fc.out.MovMemToReg("r10", "rsp", (6+i)*8) // Use r10 as temp
+					fc.out.MovRegToMem("r10", "rsp", i*8)
+				}
+				// Now adjust RSP to account for removed register arg space
+				fc.out.AddImmToReg("rsp", int64(6*8))
+			} else {
+				// No stack args - clean up all argument stack space
+				fc.out.AddImmToReg("rsp", int64(argStackOffset))
+			}
 
 			// Generate PLT call to external C function
+			// Note: Stack is already properly aligned per System V AMD64 ABI
 			fc.eb.GenerateCallInstruction(funcName)
+
+			// Clean up stack arguments after call
+			if numStackArgs > 0 {
+				fc.out.AddImmToReg("rsp", int64(numStackArgs*8))
+			}
 
 			// Convert result to float64 for Flap
 			// Assuming integer return value (in rax)

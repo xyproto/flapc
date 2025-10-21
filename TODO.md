@@ -23,6 +23,12 @@
   - Works with offsets: `[rax + 8] <- rbx as uint8`
   - All sized types tested and verified (MOV byte/word/dword [addr], reg)
 
+- [x] **More than 6 C function arguments** - ✅ COMPLETE
+  - Stack-based argument passing for complex C APIs (args 7+ go on stack)
+  - Proper System V AMD64 ABI compliance (RSP % 16 == 8 before CALL)
+  - Works for both integer and float arguments
+  - Note: Requires properly linked C libraries (import statement or DT_NEEDED)
+
 ## Next Actions
 - [ ] **Memoized recursion (cme) enhancements** - Add cache size limit and cleanup callback parameters:
   - `cme(arg, max_cache_size, cleanup_lambda)` where cleanup_lambda is called when cache is full
@@ -34,7 +40,6 @@
 - [ ] **Defer statements runtime** - Implement cleanup code for resource management
   - Track deferred expressions per scope in FlapCompiler
   - Emit deferred code in LIFO order at scope exit and before returns
-- [ ] **More than 6 C function arguments** - Stack-based argument passing for complex APIs
 - [ ] **SIMD intrinsics** - Vector operations for audio DSP, graphics effects, particle systems
 - [ ] **Register allocation improvements** - Better register usage for performance
 - [ ] **Dead code elimination** - Remove unused code from output
