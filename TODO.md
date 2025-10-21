@@ -9,6 +9,11 @@
   - [ ] Vector component access (v.x, v.y, v.z, v.w or v[0], v[1], etc.)
   - [ ] Dot product, magnitude, normalize operations
 - [ ] **Register allocation improvements** - Better register usage for performance
+  - [x] Binary operation optimization (use xmm2 instead of stack spills)
+  - [x] Direct register-to-register moves (movq xmm, rax)
+  - [ ] Keep loop counters in registers
+  - [ ] Register allocation for frequently-used variables
+  - [ ] Full register allocator with liveness analysis
 - [ ] **Dead code elimination** - Remove unused code from output
 - [ ] **Constant propagation across functions** - Optimize constants through call boundaries
 - [ ] **Inline small functions automatically** - Performance optimization
