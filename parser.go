@@ -6072,8 +6072,9 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// Generate arena allocator runtime functions
 	fc.eb.EmitArenaRuntimeCode()
 
-	// Define arena pointer storage (256 * 8 = 2048 bytes for up to 256 nested arenas)
-	arenaStorage := make([]byte, 2048)
+	// Define arena pointer storage (1024 * 8 = 8192 bytes for up to 1024 nested arenas)
+	// This should be more than enough for any practical use case
+	arenaStorage := make([]byte, 8192)
 	fc.eb.Define("_flap_arena_ptrs", string(arenaStorage))
 
 	// Generate _flap_string_concat(left_ptr, right_ptr) -> new_ptr
