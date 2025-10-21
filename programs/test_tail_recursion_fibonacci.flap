@@ -1,9 +1,8 @@
 // Test tail recursion with Fibonacci using accumulator pattern
 // fib(n) using tail recursion
-fib := (n, a, b) => n <= 0.0 {
+fib := (n, a, b) => n <= 0 {
     -> a
-    ~> me(n - 1.0, b, a + b)
+    ~> me(n - 1, b, a + b)
 }
 
-result := fib(10.0, 0.0, 1.0)
-println(result)  // Should print 55 (10th Fibonacci number)
+println(fib(10, 0, 1)) // Should print 55 (10th Fibonacci number)

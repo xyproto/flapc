@@ -922,13 +922,17 @@ func main() {
 	// Use whichever output flag was specified (prefer short form if both given)
 	outputFilename := *outputFilenameFlag
 	outputFlagProvided := false
+	// Check if user explicitly provided -o or --output flag
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "o" || f.Name == "output" {
+			outputFlagProvided = true
+		}
+	})
 	if *outputFilenameLongFlag != defaultOutputFilename {
 		outputFilename = *outputFilenameLongFlag
-		outputFlagProvided = true
 	}
 	if *outputFilenameFlag != defaultOutputFilename {
 		outputFilename = *outputFilenameFlag
-		outputFlagProvided = true
 	}
 
 	// Get input files from remaining arguments
@@ -938,9 +942,17 @@ func main() {
 		fmt.Fprintf(os.Stderr, "----=[ %s ]=----\n", versionString)
 	}
 
-	// Warn if no input files provided
+	// If no input files provided and no -c flag, try to find *.flap in current directory
 	if len(inputFiles) == 0 && *codeFlag == "" {
-		fmt.Fprintln(os.Stderr, "flapc: warning: no input files")
+		matches, err := filepath.Glob("*.flap")
+		if err == nil && len(matches) > 0 {
+			inputFiles = matches
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "No input files specified, found: %v\n", inputFiles)
+			}
+		} else {
+			fmt.Fprintln(os.Stderr, "flapc: warning: no input files")
+		}
 	}
 
 	if VerboseMode {
@@ -1002,7 +1014,8 @@ func main() {
 				}
 
 				writeToFilename := outputFilename
-				if outputFilename == defaultOutputFilename {
+				if !outputFlagProvided {
+					// No output filename specified - use input filename without .flap
 					writeToFilename = strings.TrimSuffix(filepath.Base(file), ".flap")
 				}
 

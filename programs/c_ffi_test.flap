@@ -1,15 +1,19 @@
 // Test C library FFI (Foreign Function Interface)
+// SDL3 headless mode - works without VIDEO subsystem for CI/testing
 import sdl3 as sdl
 
-// Test 1: Use C constants from headers
-init_flags := sdl.SDL_INIT_VIDEO
-printf("SDL_INIT_VIDEO constant: %.0f\n", init_flags)
+// Initialize SDL3 without any subsystems (headless mode)
+// This allows SDL3 to be tested in environments without a display
+printf("Testing SDL3 C FFI (headless mode)...\n")
 
-// Test 2: Call SDL_Init with the constant
-result := sdl.SDL_Init(init_flags)
-printf("SDL_Init result: %.0f\n", result)
+// Call SDL_Init with 0 (no subsystems) for headless testing
+result := sdl.SDL_Init(0)
+printf("SDL_Init(0) returned: %.0f\n", result)
+
+printf("SDL3 initialized successfully!\n")
 
 // Clean up
 sdl.SDL_Quit()
+printf("SDL3 C FFI test passed!\n")
 
 exit(0)

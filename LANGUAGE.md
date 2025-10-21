@@ -428,7 +428,7 @@ numbers = [10, 20, 30]
 - `@first` - true on first iteration
 - `@last` - true on last iteration
 - `@counter` - iteration count (starts at 0)
-- `@key` - current key or index
+- `@i` - current element value (same as loop variable)
 
 **Example:**
 ```flap
@@ -489,6 +489,16 @@ square = x => x * x
 // Multiple parameters need parentheses
 multiply = (x, y) => x * y
 
+// Zero parameters use () => or shorthand ==>
+main = () => {
+    println("Hello, World!")
+}
+
+// Shorthand ==> syntax (equivalent to = () =>)
+main ==> {
+    println("Hello, World!")
+}
+
 // Lambdas can have match blocks
 classify = x => x > 0 {
     -> "positive"
@@ -502,6 +512,44 @@ process = x => {
     result  // Last expression is return value
 }
 ```
+
+### Tail Recursion and Memoization
+
+Flap provides two special keywords for recursive functions: `me` for tail recursion and `cme` for cached/memoized recursion.
+
+**Tail Recursion with `me`:**
+
+The `me` keyword enables tail-call optimization, converting recursive calls into efficient loops:
+
+```flap
+// Fibonacci using tail recursion with accumulator pattern
+fib := (n, a, b) => n <= 0 {
+    -> a
+    ~> me(n - 1, b, a + b)
+}
+
+println(fib(10, 0, 1))  // 55
+```
+
+**Memoized Recursion with `cme`:**
+
+The `cme` keyword automatically caches function results based on arguments, dramatically improving performance for recursive algorithms with overlapping subproblems:
+
+```flap
+// Fibonacci with automatic memoization
+fib := (n) => n <= 1 {
+    -> n
+    ~> cme(n - 1) + cme(n - 2)
+}
+
+println(fib(10))   // Fast: results are cached
+println(fib(20))   // Very fast: reuses cached results
+```
+
+**When to use:**
+- Use `me` for tail-recursive functions (last operation is the recursive call)
+- Use `cme` for non-tail-recursive functions with repeated subproblems
+- `cme` uses arena-based memory allocation for efficient cache management
 
 ### Builtin Functions
 
@@ -537,11 +585,13 @@ process = x => {
 - `%d` - integer
 - `%s` - string
 
-**Math:** (all using native x87 FPU or SSE2)
+**Math:** (using native x87 FPU or SSE2, or C library via FFI)
 - `sqrt(x)`, `abs(x)`, `floor(x)`, `ceil(x)`, `round(x)`
 - `sin(x)`, `cos(x)`, `tan(x)`
 - `asin(x)`, `acos(x)`, `atan(x)`
-- `log(x)`, `exp(x)`
+- `log(x)`, `exp(x)`, `pow(x, y)`
+
+**Note:** Math functions from C libraries (like libm) use proper floating-point calling convention (xmm registers) for accurate results.
 
 ## The Unsafe Language
 
@@ -904,10 +954,14 @@ escape_sequence         = "\\" ( "n" | "t" | "r" | "\\" | '"' ) ;
 ## Keywords
 
 ```
-and as in not or or! ret xor &b |b ^b ~b <b >b >>b <<b
+and as in not or or! ret me cme xor &b |b ^b ~b <b >b >>b <<b
 i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 cstr ptr
 number string list
 ```
+
+**Recursion Keywords:**
+- `me` - self-reference for tail-recursive calls (optimized to loops)
+- `cme` - cached/memoized self-reference for recursive calls with automatic result caching
 
 **Note:** Type keywords (`i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32`, `f64`, `cstr`, `ptr`, `number`, `string`, `list`) are **contextual keywords** - they are only reserved when used after `as` in type casting expressions. They can be used as variable names in other contexts:
 

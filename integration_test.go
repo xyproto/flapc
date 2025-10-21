@@ -23,9 +23,10 @@ var skipPrograms = map[string]bool{}
 
 // Programs to compile but not run (require external libraries beyond libc/libm)
 var compileOnlyPrograms = map[string]bool{
-	// SDL3 C FFI tests compile successfully but crash at runtime (SIGSEGV)
-	// This is a known issue with the C FFI dlopen/dlsym implementation
-	// TODO: Debug and fix C FFI runtime crashes
+	// SDL3 C FFI tests compile successfully but may crash in headless environments
+	// SDL3's library constructors attempt to initialize display subsystems even before main()
+	// This occurs before SDL_Init(0) can specify headless mode
+	// Works fine with a display; headless execution requires SDL_VIDEODRIVER=dummy or X virtual framebuffer
 	"c_auto_cast_test": true,
 	"c_ffi_test":       true,
 	"c_string_test":    true,

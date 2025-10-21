@@ -50,6 +50,7 @@ const (
 	TOKEN_RBRACKET      // ]
 	TOKEN_ARROW         // ->
 	TOKEN_FAT_ARROW     // =>
+	TOKEN_EQUALS_FAT_ARROW // ==> (shorthand for = =>)
 	TOKEN_LEFT_ARROW    // <-
 	TOKEN_PIPE          // |
 	TOKEN_PIPEPIPE      // ||
@@ -68,6 +69,7 @@ const (
 	TOKEN_FMA           // *+ (fused multiply-add)
 	TOKEN_OR_BANG       // or! (error handling)
 	TOKEN_ME            // me (self-reference)
+	TOKEN_CME           // cme (cached/memoized self-reference)
 	TOKEN_RET           // ret keyword (return/break)
 	TOKEN_AT_FIRST      // @first (first iteration)
 	TOKEN_AT_LAST       // @last (last iteration)
@@ -180,6 +182,14 @@ func NewLexer(input string) *Lexer {
 func (l *Lexer) peek() byte {
 	if l.pos+1 < len(l.input) {
 		return l.input[l.pos+1]
+	}
+	return 0
+}
+
+// peekAhead looks n characters ahead (0-indexed from current position)
+func (l *Lexer) peekAhead(n int) byte {
+	if l.pos+1+n < len(l.input) {
+		return l.input[l.pos+1+n]
 	}
 	return 0
 }
@@ -331,6 +341,8 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_NOT, Value: value, Line: l.line}
 		case "me":
 			return Token{Type: TOKEN_ME, Value: value, Line: l.line}
+		case "cme":
+			return Token{Type: TOKEN_CME, Value: value, Line: l.line}
 		case "ret":
 			return Token{Type: TOKEN_RET, Value: value, Line: l.line}
 		case "use":
@@ -449,6 +461,11 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_COLON, Value: ":", Line: l.line}
 	case '=':
+		// Check for ==> (must check before =>)
+		if l.peek() == '=' && l.peekAhead(1) == '>' {
+			l.pos += 3
+			return Token{Type: TOKEN_EQUALS_FAT_ARROW, Value: "==>", Line: l.line}
+		}
 		// Check for =>
 		if l.peek() == '>' {
 			l.pos += 2
