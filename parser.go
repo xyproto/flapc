@@ -2468,9 +2468,12 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 
 	// Generate code
 	// Set up stack frame
+	// Note: After _start JMPs here, RSP is 16-byte aligned (kernel guarantee)
+	// After PUSH RBP, RSP = (16n - 8), which is correct for making C function calls
+	// (CALL will push return address, making RSP = 16n - 16, then function prologue adjusts)
 	fc.out.PushReg("rbp")
 	fc.out.MovRegToReg("rbp", "rsp")
-	fc.out.SubImmFromReg("rsp", StackSlotSize) // Align stack to 16 bytes (push rbp made it 8-byte aligned)
+	// Do NOT subtract from RSP here - we want it at (16n - 8) for C ABI compliance
 
 	// Initialize registers
 	fc.out.XorRegWithReg("rax", "rax")
@@ -7949,14 +7952,10 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 			// Clean up argument stack space
 			fc.out.AddImmToReg("rsp", int64(argStackOffset))
 
-			// Align stack to 16 bytes before call
-			fc.out.SubImmFromReg("rsp", 8)
+			// No stack alignment needed - see comment in non-math function path
 
 			// Generate PLT call
 			fc.eb.GenerateCallInstruction(funcName)
-
-			// Restore stack alignment
-			fc.out.AddImmToReg("rsp", 8)
 
 			// Result is already in xmm0 as double - no conversion needed
 		} else {
@@ -7969,14 +7968,12 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 			// Clean up argument stack space
 			fc.out.AddImmToReg("rsp", int64(argStackOffset))
 
-			// Align stack to 16 bytes before call
-			fc.out.SubImmFromReg("rsp", 8)
+			// No stack alignment needed - main() already set up RSP at (16n - 8)
+			// CALL will push 8-byte return address, making RSP = (16n + 8) mod 16
+			// which is correct per System V AMD64 ABI
 
 			// Generate PLT call to external C function
 			fc.eb.GenerateCallInstruction(funcName)
-
-			// Restore stack alignment
-			fc.out.AddImmToReg("rsp", 8)
 
 			// Convert result to float64 for Flap
 			// Assuming integer return value (in rax)
@@ -7984,26 +7981,15 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 		}
 	} else {
 		// No arguments - just call the function
+		// No stack adjustment needed - RSP is already at (16n - 8) from main() prologue
 		if isMathFunc {
-			// Align stack to 16 bytes before call
-			fc.out.SubImmFromReg("rsp", 8)
-
 			// Generate PLT call
 			fc.eb.GenerateCallInstruction(funcName)
 
-			// Restore stack alignment
-			fc.out.AddImmToReg("rsp", 8)
-
 			// Result is already in xmm0 as double - no conversion needed
 		} else {
-			// Align stack to 16 bytes before call
-			fc.out.SubImmFromReg("rsp", 8)
-
 			// Generate PLT call to external C function
 			fc.eb.GenerateCallInstruction(funcName)
-
-			// Restore stack alignment
-			fc.out.AddImmToReg("rsp", 8)
 
 			// Convert result to float64 for Flap
 			// Assuming integer return value (in rax)
