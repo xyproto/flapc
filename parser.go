@@ -2397,6 +2397,7 @@ type FlapCompiler struct {
 	currentArena     int                          // Arena depth (0=none, 1=first arena, 2=nested, etc.)
 	usesArenas       bool                         // Track if program uses any arena blocks
 	cacheEnabledLambdas map[string]bool           // Track which lambdas use cme
+	deferredExprs    [][]Expression               // Stack of deferred expressions per scope (LIFO order)
 
 	metaArenaGrowthErrorJump      int
 	firstMetaArenaMallocErrorJump int
@@ -2635,10 +2636,26 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.out.PushReg("rbp")
 	fc.out.MovRegToReg("rbp", "rsp")
 
+	fc.pushDeferScope()
+
 	// Second pass: Generate actual code with all symbols known
-	for _, stmt := range program.Statements {
-		fc.compileStatement(stmt)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Compiling %d statements\n", len(program.Statements))
+		for i, stmt := range program.Statements {
+			fmt.Fprintf(os.Stderr, "DEBUG:   Statement %d: %T\n", i, stmt)
+		}
 	}
+	for i, stmt := range program.Statements {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: About to compile statement %d: %T\n", i, stmt)
+		}
+		fc.compileStatement(stmt)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Finished compiling statement %d\n", i)
+		}
+	}
+
+	fc.popDeferScope()
 
 	// Automatically exit if no explicit exit() was called
 	// Use libc's exit(0) to ensure proper cleanup (flushes printf buffers, etc.)
@@ -2652,10 +2669,22 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	}
 
 	// Generate lambda functions
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: About to generate lambda functions\n")
+	}
 	fc.generateLambdaFunctions()
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Finished generating lambda functions\n")
+	}
 
 	// Generate runtime helper functions
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: About to generate runtime helpers\n")
+	}
 	fc.generateRuntimeHelpers()
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Finished generating runtime helpers\n")
+	}
 
 	// Write ELF using existing infrastructure
 	return fc.writeELF(program, outputPath)
@@ -2929,10 +2958,15 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 			return err
 		}
 	}
+
+	fc.pushDeferScope()
+
 	// Generate code with symbols collected
 	for _, stmt := range program.Statements {
 		fc.compileStatement(stmt)
 	}
+
+	fc.popDeferScope()
 
 	// Automatically exit if no explicit exit() was called
 	// Use libc's exit(0) to ensure proper cleanup (flushes printf buffers, etc.)
@@ -3199,6 +3233,51 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 
 	case *ArenaStmt:
 		fc.compileArenaStmt(s)
+
+	case *DeferStmt:
+		if len(fc.deferredExprs) == 0 {
+			compilerError("defer can only be used inside a function or block scope")
+		}
+		currentScope := len(fc.deferredExprs) - 1
+		fc.deferredExprs[currentScope] = append(fc.deferredExprs[currentScope], s.Call)
+	}
+}
+
+func (fc *FlapCompiler) pushDeferScope() {
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: pushDeferScope called, len before = %d\n", len(fc.deferredExprs))
+	}
+	fc.deferredExprs = append(fc.deferredExprs, []Expression{})
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: pushDeferScope called, len after = %d\n", len(fc.deferredExprs))
+	}
+}
+
+func (fc *FlapCompiler) popDeferScope() {
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: popDeferScope called, len before = %d\n", len(fc.deferredExprs))
+	}
+	if len(fc.deferredExprs) == 0 {
+		return
+	}
+
+	currentScope := len(fc.deferredExprs) - 1
+	deferred := fc.deferredExprs[currentScope]
+
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: popDeferScope emitting %d deferred expressions\n", len(deferred))
+	}
+
+	for i := len(deferred) - 1; i >= 0; i-- {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG:   Emitting deferred expr %d: %T - %v\n", i, deferred[i], deferred[i])
+		}
+		fc.compileExpression(deferred[i])
+	}
+
+	fc.deferredExprs = fc.deferredExprs[:currentScope]
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: popDeferScope done, len after = %d\n", len(fc.deferredExprs))
 	}
 }
 
@@ -3223,10 +3302,14 @@ func (fc *FlapCompiler) compileArenaStmt(stmt *ArenaStmt) {
 	fc.out.MovMemToReg("rax", "rax", 0)     // Load the meta-arena pointer
 	fc.out.MovMemToReg("rax", "rax", offset) // Load the arena pointer from slot
 
+	fc.pushDeferScope()
+
 	// Compile statements in arena body
 	for _, bodyStmt := range stmt.Body {
 		fc.compileStatement(bodyStmt)
 	}
+
+	fc.popDeferScope()
 
 	// Restore previous arena context
 	fc.currentArena = previousArena
@@ -6060,8 +6143,12 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 		fc.currentLambda = &lambda
 		fc.lambdaBodyStart = fc.eb.text.Len()
 
+		fc.pushDeferScope()
+
 		// Compile lambda body (result in xmm0)
 		fc.compileExpression(lambda.Body)
+
+		fc.popDeferScope()
 
 		// Clear lambda context
 		fc.currentLambda = nil
