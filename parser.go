@@ -3377,71 +3377,51 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	// Increment label counter for uniqueness
 	fc.labelCounter++
 
-	// Evaluate the range start and end
-	// Start: evaluate and convert to integer
-	fc.compileExpression(rangeExpr.Start)
-	fc.out.Cvttsd2si("r8", "xmm0") // r8 = start value (integer)
+	// OPTIMIZATION: Keep loop counter in r12 register and limit in r13 register
+	// Use callee-saved registers so function calls don't clobber them
+	// This eliminates 2 loads + 1 store per iteration (significant speedup)
 
-	// End: evaluate and convert to integer
+	// Evaluate the range start and end
+	// Start: evaluate and convert to integer in r12
+	fc.compileExpression(rangeExpr.Start)
+	fc.out.Cvttsd2si("r12", "xmm0") // r12 = start value (loop counter register)
+
+	// End: evaluate and convert to integer in r13
 	fc.compileExpression(rangeExpr.End)
-	fc.out.Cvttsd2si("r9", "xmm0") // r9 = end value (integer)
+	fc.out.Cvttsd2si("r13", "xmm0") // r13 = end value (loop limit register)
 
 	// For exclusive ranges (..<), end is already correct
 	// For inclusive ranges (..=), increment end by 1
 	if rangeExpr.Inclusive {
-		fc.out.AddImmToReg("r9", 1) // r9 = end + 1 (so loop is start <= i < end+1)
+		fc.out.AddImmToReg("r13", 1) // r13 = end + 1
 	}
 
-	// Allocate stack space for loop limit (end value) (16 bytes for alignment)
-	fc.stackOffset += 16
-	limitOffset := fc.stackOffset
-	fc.out.SubImmFromReg("rsp", 16)
-
-	// Store limit: mov [rbp - limitOffset], r9
-	fc.out.MovRegToMem("r9", "rbp", -limitOffset)
-
 	// Allocate stack space for iterator variable (16 bytes for alignment)
+	// The iterator value on the stack is updated each iteration so loop body can read it
 	fc.stackOffset += 16
 	iterOffset := fc.stackOffset
 	fc.variables[stmt.Iterator] = iterOffset
 	fc.mutableVars[stmt.Iterator] = true
 	fc.out.SubImmFromReg("rsp", 16)
 
-	// Initialize iterator to start value (from r8)
-	// cvtsi2sd xmm0, r8 (convert start integer to float64)
-	fc.out.Cvtsi2sd("xmm0", "r8")
-	// movsd [rbp - iterOffset], xmm0
-	fc.out.MovXmmToMem("xmm0", "rbp", -iterOffset)
-
 	// Loop start label
 	loopStartPos := fc.eb.text.Len()
 
 	// Register this loop on the active loop stack
-	// Label is determined by loop depth (1-indexed)
 	loopLabel := len(fc.activeLoops) + 1
 	loopInfo := LoopInfo{
-		Label:            loopLabel,
-		StartPos:         loopStartPos,
-		EndPatches:       []int{},
-		IteratorOffset:   iterOffset,
-		UpperBoundOffset: limitOffset,
-		IsRangeLoop:      true,
+		Label:          loopLabel,
+		StartPos:       loopStartPos,
+		EndPatches:     []int{},
+		IteratorOffset: iterOffset,
+		IsRangeLoop:    true,
 	}
 	fc.activeLoops = append(fc.activeLoops, loopInfo)
 
-	// Load iterator value as float: movsd xmm0, [rbp - iterOffset]
-	fc.out.MovMemToXmm("xmm0", "rbp", -iterOffset)
+	// Compare loop counter (r12) with limit (r13)
+	fc.out.CmpRegToReg("r12", "r13")
 
-	// Convert iterator to integer for comparison: cvttsd2si rax, xmm0
-	fc.out.Cvttsd2si("rax", "xmm0")
-
-	// Load limit value: mov rdi, [rbp - limitOffset]
-	fc.out.MovMemToReg("rdi", "rbp", -limitOffset)
-
-	// Compare iterator with limit: cmp rax, rdi
-	fc.out.CmpRegToReg("rax", "rdi")
-
-	// Jump to loop end if iterator >= limit
+	// Jump to loop end if counter >= limit
 	loopEndJumpPos := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpGreaterOrEqual, 0) // Placeholder
 
@@ -3450,6 +3430,11 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 		fc.activeLoops[len(fc.activeLoops)-1].EndPatches,
 		loopEndJumpPos+2, // +2 to skip to the offset field
 	)
+
+	// Store current counter value to stack for loop body to access
+	// Convert r12 (integer) to float64 and store
+	fc.out.Cvtsi2sd("xmm0", "r12")
+	fc.out.MovXmmToMem("xmm0", "rbp", -iterOffset)
 
 	// Compile loop body
 	for _, s := range stmt.Body {
@@ -3462,33 +3447,24 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 
 	// Patch all continue jumps to point here
 	for _, patchPos := range fc.activeLoops[len(fc.activeLoops)-1].ContinuePatches {
-		backOffset := int32(continuePos - (patchPos + 4)) // 4 bytes for 32-bit offset
+		backOffset := int32(continuePos - (patchPos + 4))
 		fc.patchJumpImmediate(patchPos, backOffset)
 	}
 
-	// Increment iterator (add 1.0 to float64 value)
-	// movsd xmm0, [rbp - iterOffset]
-	fc.out.MovMemToXmm("xmm0", "rbp", -iterOffset)
-	// Load 1.0 into xmm1
-	fc.out.XorRegWithReg("rax", "rax")
-	fc.out.IncReg("rax") // rax = 1
-	fc.out.Cvtsi2sd("xmm1", "rax")
-	// addsd xmm0, xmm1 (scalar addition)
-	fc.out.AddsdXmm("xmm0", "xmm1")
-	// movsd [rbp - iterOffset], xmm0
-	fc.out.MovXmmToMem("xmm0", "rbp", -iterOffset)
+	// Increment loop counter in register: inc r12 (1 instruction, very fast!)
+	fc.out.IncReg("r12")
 
 	// Jump back to loop start
 	loopBackJumpPos := fc.eb.text.Len()
-	backOffset := int32(loopStartPos - (loopBackJumpPos + UnconditionalJumpSize)) // 5 bytes for unconditional jump
+	backOffset := int32(loopStartPos - (loopBackJumpPos + UnconditionalJumpSize))
 	fc.out.JumpUnconditional(backOffset)
 
 	// Loop end label
 	loopEndPos := fc.eb.text.Len()
 
-	// Patch all end jumps (conditional jump + any @0 breaks)
+	// Patch all end jumps
 	for _, patchPos := range fc.activeLoops[len(fc.activeLoops)-1].EndPatches {
-		endOffset := int32(loopEndPos - (patchPos + 4)) // 4 bytes for 32-bit offset
+		endOffset := int32(loopEndPos - (patchPos + 4))
 		fc.patchJumpImmediate(patchPos, endOffset)
 	}
 
