@@ -2395,6 +2395,11 @@ type FlapCompiler struct {
 	debug            bool                         // Enable debug output (set via DEBUG_FLAP env var)
 	cContext         bool                         // When true, compile expressions for C FFI (affects strings, pointers, ints)
 	currentArena     int                          // Arena depth (0=none, 1=first arena, 2=nested, etc.)
+	usesArenas       bool                         // Track if program uses any arena blocks
+
+	// Arena growth error jump positions (set by helper functions in grow.go)
+	metaArenaGrowthErrorJump      int
+	firstMetaArenaMallocErrorJump int
 }
 
 type LambdaFunc struct {
@@ -3197,21 +3202,25 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 }
 
 func (fc *FlapCompiler) compileArenaStmt(stmt *ArenaStmt) {
+	// Mark that this program uses arenas
+	fc.usesArenas = true
+
 	// Save previous arena context and increment depth
 	previousArena := fc.currentArena
 	fc.currentArena++
 	arenaDepth := fc.currentArena
 
-	// Create arena with initial 4KB capacity
-	initialCapacity := 4096
-	fc.out.MovImmToReg("rdi", fmt.Sprintf("%d", initialCapacity))
-	fc.out.CallSymbol("flap_arena_create")
+	// Ensure meta-arena has enough capacity
+	// Call _flap_arena_ensure_capacity(arenaDepth)
+	fc.out.MovImmToReg("rdi", fmt.Sprintf("%d", arenaDepth))
+	fc.out.CallSymbol("_flap_arena_ensure_capacity")
 
-	// Store arena pointer in static storage area: _flap_arena_ptrs[arenaDepth-1]
+	// Load arena pointer from meta-arena: _flap_arena_meta[arenaDepth-1]
 	// Each pointer is 8 bytes, so offset = (arenaDepth-1) * 8
 	offset := (arenaDepth - 1) * 8
-	fc.out.LeaSymbolToReg("rbx", "_flap_arena_ptrs")
-	fc.out.MovRegToMem("rax", "rbx", offset)
+	fc.out.LeaSymbolToReg("rax", "_flap_arena_meta")
+	fc.out.MovMemToReg("rax", "rax", 0)     // Load the meta-arena pointer
+	fc.out.MovMemToReg("rax", "rax", offset) // Load the arena pointer from slot
 
 	// Compile statements in arena body
 	for _, bodyStmt := range stmt.Body {
@@ -3221,9 +3230,10 @@ func (fc *FlapCompiler) compileArenaStmt(stmt *ArenaStmt) {
 	// Restore previous arena context
 	fc.currentArena = previousArena
 
-	// Load arena pointer from static storage and destroy
-	fc.out.LeaSymbolToReg("rbx", "_flap_arena_ptrs")
-	fc.out.MovMemToReg("rdi", "rbx", offset)
+	// Load arena pointer from meta-arena and destroy
+	fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
+	fc.out.MovMemToReg("rdi", "rdi", 0)     // Load the meta-arena pointer
+	fc.out.MovMemToReg("rdi", "rdi", offset) // Load the arena pointer from slot
 	fc.out.CallSymbol("flap_arena_destroy")
 }
 
@@ -6072,11 +6082,16 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// Generate arena allocator runtime functions
 	fc.eb.EmitArenaRuntimeCode()
 
-	// Define static arena pointer storage (65536 * 8 = 524288 bytes = 512 KB for up to 65536 nested arenas)
-	// This is a large static buffer that should handle virtually unlimited nesting in practice
-	// TODO: Implement true dynamic growth for unlimited arenas
-	arenaStorage := make([]byte, 524288)
-	fc.eb.Define("_flap_arena_ptrs", string(arenaStorage))
+	// Define dynamic meta-arena storage (starts null, grows as needed)
+	// Only allocated if program uses arena blocks
+	if fc.usesArenas {
+		// _flap_arena_meta: pointer to array of arena pointers (8 bytes)
+		fc.eb.Define("_flap_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")
+		// _flap_arena_meta_cap: allocated capacity (8 bytes)
+		fc.eb.Define("_flap_arena_meta_cap", "\x00\x00\x00\x00\x00\x00\x00\x00")
+		// _flap_arena_meta_len: current number of initialized arena slots (8 bytes)
+		fc.eb.Define("_flap_arena_meta_len", "\x00\x00\x00\x00\x00\x00\x00\x00")
+	}
 
 	// Generate _flap_string_concat(left_ptr, right_ptr) -> new_ptr
 	// Arguments: rdi = left_ptr, rsi = right_ptr
@@ -7413,82 +7428,123 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
-	// Generate flap_grow_arena_storage(desired_depth)
-	// Ensures arena pointer storage can hold at least desired_depth pointers
-	// If capacity < desired_depth, reallocs to capacity * 2
-	// Argument: rdi = desired_depth
-	fc.eb.MarkLabel("flap_grow_arena_storage")
+	// Generate _flap_arena_ensure_capacity if arenas are used
+	if fc.usesArenas {
+		fc.generateArenaEnsureCapacity()
+	}
+}
 
+// generateArenaEnsureCapacity generates the _flap_arena_ensure_capacity function
+// This function ensures the meta-arena has enough capacity for the requested depth
+// Argument: rdi = required_depth
+func (fc *FlapCompiler) generateArenaEnsureCapacity() {
+	fc.eb.MarkLabel("_flap_arena_ensure_capacity")
+
+	// Function prologue
 	fc.out.PushReg("rbp")
 	fc.out.MovRegToReg("rbp", "rsp")
 	fc.out.PushReg("rbx")
 	fc.out.PushReg("r12")
 	fc.out.PushReg("r13")
+	fc.out.PushReg("r14")
+	fc.out.PushReg("r15")
 
-	// r12 = desired_depth
+	// r12 = required_depth
 	fc.out.MovRegToReg("r12", "rdi")
 
 	// Load current capacity
-	fc.out.LeaSymbolToReg("rbx", "_flap_arena_capacity")
-	fc.out.MovMemToReg("r13", "rbx", 0) // r13 = capacity
+	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta_cap")
+	fc.out.MovMemToReg("r13", "rbx", 0) // r13 = current capacity
 
-	// Check if we need to grow: if (desired_depth <= capacity) return
+	// Check if this is first allocation (capacity == 0)
+	fc.out.TestRegReg("r13", "r13")
+	firstAllocJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0) // je to first_alloc
+
+	// Not first time - load len
+	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta_len")
+	fc.out.MovMemToReg("r14", "rbx", 0) // r14 = current len
+
+	// Check if we already have enough arenas (required <= len)
+	fc.out.CmpRegToReg("r12", "r14")
+	noGrowthNeededJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpLessOrEqual, 0) // jle to return (required <= len)
+
+	// Need more arenas - check if we have capacity for them
 	fc.out.CmpRegToReg("r12", "r13")
-	storageGrowNeededJump := fc.eb.text.Len()
-	fc.out.JumpConditional(JumpGreater, 0) // jg to grow (desired > capacity)
+	needCapacityGrowthJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreater, 0) // jg to capacity growth (required > capacity)
 
-	// No growth needed - return
+	// Have capacity, just need to initialize more arenas
+	// r12 = required, r14 = current len
+	// Load meta-arena pointer into r15
+	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta")
+	fc.out.MovMemToReg("r15", "rbx", 0) // r15 = meta-arena pointer
+	fc.out.MovRegToReg("r13", "r14")    // r13 = current len (start index for init loop)
+	fc.generateArenaInitLoop()
+	// Jump to return
+	lenOnlyGrowthJump := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0)
+
+	// Capacity growth needed - realloc and initialize new slots
+	growLabel := fc.eb.text.Len()
+	fc.patchJumpImmediate(needCapacityGrowthJump+2, int32(growLabel-(needCapacityGrowthJump+6)))
+
+	// Use helper function to grow meta-arena
+	fc.generateMetaArenaGrowth()
+
+	// Use helper function to initialize new arena structures
+	fc.generateArenaInitLoop()
+
+	// Update capacity
+	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta_cap")
+	fc.out.MovRegToMem("r14", "rbx", 0)
+
+	// Jump to return
+	returnJump := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0) // Will patch this later
+
+	// First allocation path
+	firstAllocLabel := fc.eb.text.Len()
+	fc.patchJumpImmediate(firstAllocJump+2, int32(firstAllocLabel-(firstAllocJump+6)))
+
+	// Use helper function for first meta-arena allocation
+	fc.generateFirstMetaArenaAlloc()
+
+	// Check if we need to grow further (required > 8)
+	fc.out.CmpRegToImm("r12", 8)
+	firstGrowCheckJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpLessOrEqual, 0) // jle to return (no growth needed)
+
+	// Need to grow: load capacity into r13 for growth path
+	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta_cap")
+	fc.out.MovMemToReg("r13", "rbx", 0) // r13 = capacity (8)
+
+	// Jump to growth path
+	growthJump := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0)
+	fc.patchJumpImmediate(growthJump+1, int32(growLabel-(growthJump+5)))
+
+	// Return (no growth needed)
+	returnLabel := fc.eb.text.Len()
+	fc.patchJumpImmediate(noGrowthNeededJump+2, int32(returnLabel-(noGrowthNeededJump+6)))
+	fc.patchJumpImmediate(returnJump+1, int32(returnLabel-(returnJump+5)))
+	fc.patchJumpImmediate(lenOnlyGrowthJump+1, int32(returnLabel-(lenOnlyGrowthJump+5)))
+	fc.patchJumpImmediate(firstGrowCheckJump+2, int32(returnLabel-(firstGrowCheckJump+6)))
+
+	fc.out.PopReg("r15")
+	fc.out.PopReg("r14")
 	fc.out.PopReg("r13")
 	fc.out.PopReg("r12")
 	fc.out.PopReg("rbx")
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
-	// Growth needed
-	storageGrowLabel := fc.eb.text.Len()
-	fc.patchJumpImmediate(storageGrowNeededJump+2, int32(storageGrowLabel-(storageGrowNeededJump+6)))
+	// Error path: malloc/realloc failed
+	errorLabel := fc.eb.text.Len()
+	fc.patchJumpImmediate(fc.metaArenaGrowthErrorJump+2, int32(errorLabel-(fc.metaArenaGrowthErrorJump+6)))
+	fc.patchJumpImmediate(fc.firstMetaArenaMallocErrorJump+2, int32(errorLabel-(fc.firstMetaArenaMallocErrorJump+6)))
 
-	// Calculate new capacity: capacity * 2
-	fc.out.MovRegToReg("rsi", "r13")
-	fc.out.AddRegToReg("rsi", "r13") // rsi = capacity * 2 (new capacity)
-	fc.out.MovRegToReg("r13", "rsi") // r13 = new_capacity
-
-	// Calculate byte size: new_capacity * 8
-	fc.out.MovRegToReg("rax", "r13")
-	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x03}) // shl rax, 3 (multiply by 8)
-	fc.out.MovRegToReg("rsi", "rax") // rsi = new byte size
-
-	// Load old pointer
-	fc.out.LeaSymbolToReg("rbx", "_flap_arena_ptrs")
-	fc.out.MovMemToReg("rdi", "rbx", 0) // rdi = old pointer
-
-	// Call realloc(old_ptr, new_size)
-	fc.trackFunctionCall("realloc")
-	fc.eb.GenerateCallInstruction("realloc")
-
-	// Check if realloc failed
-	fc.out.TestRegReg("rax", "rax")
-	storageErrorJump := fc.eb.text.Len()
-	fc.out.JumpConditional(JumpEqual, 0) // je to error (realloc failed)
-
-	// Success: update pointer and capacity
-	fc.out.LeaSymbolToReg("rbx", "_flap_arena_ptrs")
-	fc.out.MovRegToMem("rax", "rbx", 0) // Store new pointer
-
-	fc.out.LeaSymbolToReg("rbx", "_flap_arena_capacity")
-	fc.out.MovRegToMem("r13", "rbx", 0) // Store new capacity
-
-	fc.out.PopReg("r13")
-	fc.out.PopReg("r12")
-	fc.out.PopReg("rbx")
-	fc.out.PopReg("rbp")
-	fc.out.Ret()
-
-	// Error path: realloc failed
-	storageErrorLabel := fc.eb.text.Len()
-	fc.patchJumpImmediate(storageErrorJump+2, int32(storageErrorLabel-(storageErrorJump+6)))
-
-	// Exit with error code 1
 	fc.out.MovImmToReg("rdi", "1")
 	fc.trackFunctionCall("exit")
 	fc.eb.GenerateCallInstruction("exit")
@@ -9867,10 +9923,11 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			compilerError("alloc() can only be used inside an arena { ... } block. Use malloc() via C FFI if you need manual memory management.")
 		}
 
-		// Load arena pointer from static storage: _flap_arena_ptrs[currentArena-1]
+		// Load arena pointer from meta-arena: _flap_arena_meta[currentArena-1]
 		offset := (fc.currentArena - 1) * 8
-		fc.out.LeaSymbolToReg("rbx", "_flap_arena_ptrs")
-		fc.out.MovMemToReg("rdi", "rbx", offset) // arena_ptr in rdi
+		fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
+		fc.out.MovMemToReg("rdi", "rdi", 0)     // Load the meta-arena pointer
+		fc.out.MovMemToReg("rdi", "rdi", offset) // Load the arena pointer from slot
 
 		// Compile size argument
 		fc.compileExpression(call.Args[0])

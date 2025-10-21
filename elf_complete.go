@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // WriteCompleteDynamicELF generates a fully functional dynamically-linked ELF
@@ -634,39 +635,43 @@ func (eb *ExecutableBuilder) patchPLTCalls(ds *DynamicSections, textAddr uint64,
 }
 
 func (eb *ExecutableBuilder) patchX86PLTCalls(textBytes []byte, ds *DynamicSections, textAddr, pltBase uint64, functions []string) {
-	// Search for placeholder call instructions (0xE8 followed by 0x78563412)
-	placeholder := []byte{0x78, 0x56, 0x34, 0x12}
+	// Use callPatches which has both position and function name
+	// This correctly handles calls from runtime helpers that aren't in fc.callOrder
+	for _, patch := range eb.callPatches {
+		// Extract function name from targetName (strip "$stub" suffix if present)
+		funcName := patch.targetName
+		if strings.HasSuffix(funcName, "$stub") {
+			funcName = funcName[:len(funcName)-5] // Remove "$stub"
+		}
 
-	funcIndex := 0
-	for i := 0; i < len(textBytes); i++ {
-		if i > 0 && i+3 < len(textBytes) && textBytes[i-1] == 0xE8 {
-			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "Found 0xE8 at i-1=%d, checking placeholder at i=%d: %x\n", i-1, i, textBytes[i:i+4])
-			}
-			if bytes.Equal(textBytes[i:i+4], placeholder) {
-				if VerboseMode {
-					fmt.Fprintf(os.Stderr, "  -> Placeholder matches!\n")
+		// Get the CALL instruction position
+		// patch.position points to where the 0xE8 byte is written
+		// The placeholder is at position+1 (4 bytes after 0xE8)
+		callPos := patch.position
+		placeholderPos := callPos + 1
+
+		// Verify we're at a CALL instruction with placeholder
+		if callPos < len(textBytes) && placeholderPos+3 < len(textBytes) && textBytes[callPos] == 0xE8 {
+			placeholder := []byte{0x78, 0x56, 0x34, 0x12}
+			if bytes.Equal(textBytes[placeholderPos:placeholderPos+4], placeholder) {
+				pltOffset := ds.GetPLTOffset(funcName)
+				if pltOffset >= 0 {
+					targetAddr := pltBase + uint64(pltOffset)
+					currentAddr := textAddr + uint64(placeholderPos)
+					relOffset := int32(targetAddr - (currentAddr + 4))
+
+					textBytes[placeholderPos] = byte(relOffset & 0xFF)
+					textBytes[placeholderPos+1] = byte((relOffset >> 8) & 0xFF)
+					textBytes[placeholderPos+2] = byte((relOffset >> 16) & 0xFF)
+					textBytes[placeholderPos+3] = byte((relOffset >> 24) & 0xFF)
+				} else if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Warning: No PLT entry for %s\n", funcName)
 				}
-				if funcIndex < len(functions) {
-					pltOffset := ds.GetPLTOffset(functions[funcIndex])
-					if pltOffset >= 0 {
-						targetAddr := pltBase + uint64(pltOffset)
-						currentAddr := textAddr + uint64(i)
-						relOffset := int32(targetAddr - (currentAddr + 4))
-
-						if VerboseMode {
-							fmt.Fprintf(os.Stderr, "Patching x86-64 call #%d (%s): i=%d, currentAddr=0x%x, targetAddr=0x%x, relOffset=%d (0x%x)\n",
-								funcIndex, functions[funcIndex], i, currentAddr, targetAddr, relOffset, uint32(relOffset))
-						}
-
-						textBytes[i] = byte(relOffset & 0xFF)
-						textBytes[i+1] = byte((relOffset >> 8) & 0xFF)
-						textBytes[i+2] = byte((relOffset >> 16) & 0xFF)
-						textBytes[i+3] = byte((relOffset >> 24) & 0xFF)
-					}
-					funcIndex++
-				}
+			} else if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Warning: No placeholder at position %d for %s\n", placeholderPos, funcName)
 			}
+		} else if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Warning: Invalid call position %d for %s\n", callPos, funcName)
 		}
 	}
 }

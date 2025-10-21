@@ -789,13 +789,107 @@ func (eb *ExecutableBuilder) GenerateCallInstruction(funcName string) error {
 }
 
 // EmitArenaRuntimeCode emits arena allocator runtime functions
-// Version 1.3.0: Simplified implementation - arena blocks tracked, alloc() calls malloc
-// Full arena allocator with growth will be in version 1.1.0
 func (eb *ExecutableBuilder) EmitArenaRuntimeCode() {
-	// For v1.3.0, arena runtime is minimal:
-	// - alloc() just calls malloc
-	// - Arena blocks compile to scope tracking for defer
-	// - Full bump allocator deferred to v1.1.0
+	out := &Out{
+		machine: eb.platform,
+		writer:  &BufferWrapper{&eb.text},
+		eb:      eb,
+	}
+
+	// Helper function to patch jump immediates
+	patchJump := func(pos int, offset int32) {
+		bytes := eb.text.Bytes()
+		bytes[pos] = byte(offset)
+		bytes[pos+1] = byte(offset >> 8)
+		bytes[pos+2] = byte(offset >> 16)
+		bytes[pos+3] = byte(offset >> 24)
+	}
+
+	// flap_arena_create(capacity) - creates an arena with given capacity
+	// Argument: rdi = capacity
+	// Returns: rax = arena_ptr (pointer to 32-byte arena structure)
+	// Arena structure: [buffer_ptr, capacity, offset, alignment] = 32 bytes
+	eb.MarkLabel("flap_arena_create")
+	out.PushReg("rbp")
+	out.MovRegToReg("rbp", "rsp")
+	out.PushReg("rbx")
+	out.PushReg("r12")
+
+	// Save capacity
+	out.MovRegToReg("r12", "rdi")
+
+	// Allocate arena structure (32 bytes)
+	out.MovImmToReg("rdi", "32")
+	eb.GenerateCallInstruction("malloc")
+
+	// Check if malloc failed
+	out.TestRegReg("rax", "rax")
+	arenaStructFailJump := eb.text.Len()
+	out.JumpConditional(JumpEqual, 0) // je to error
+
+	// rax = arena structure pointer
+	out.MovRegToReg("rbx", "rax") // Save arena ptr
+
+	// Allocate buffer
+	out.MovRegToReg("rdi", "r12") // capacity
+	eb.GenerateCallInstruction("malloc")
+
+	// Check if malloc failed
+	out.TestRegReg("rax", "rax")
+	bufferFailJump := eb.text.Len()
+	out.JumpConditional(JumpEqual, 0) // je to error
+
+	// Initialize arena structure
+	out.MovRegToMem("rax", "rbx", 0)   // [arena+0] = buffer_ptr
+	out.MovRegToMem("r12", "rbx", 8)   // [arena+8] = capacity
+	out.MovImmToReg("rax", "0")
+	out.MovRegToMem("rax", "rbx", 16)  // [arena+16] = offset = 0
+	out.MovImmToReg("rax", "8")
+	out.MovRegToMem("rax", "rbx", 24)  // [arena+24] = alignment = 8
+
+	// Return arena pointer
+	out.MovRegToReg("rax", "rbx")
+	successJump := eb.text.Len()
+	out.JumpUnconditional(0)
+
+	// Error path
+	errorLabel := eb.text.Len()
+	patchJump(arenaStructFailJump+2, int32(errorLabel-(arenaStructFailJump+6)))
+	patchJump(bufferFailJump+2, int32(errorLabel-(bufferFailJump+6)))
+
+	// Return NULL on error
+	out.XorRegWithReg("rax", "rax")
+
+	// Return
+	returnLabel := eb.text.Len()
+	patchJump(successJump+1, int32(returnLabel-(successJump+5)))
+
+	out.PopReg("r12")
+	out.PopReg("rbx")
+	out.PopReg("rbp")
+	out.Ret()
+
+	// flap_arena_destroy(arena_ptr) - destroys an arena
+	// Argument: rdi = arena_ptr
+	eb.MarkLabel("flap_arena_destroy")
+	out.PushReg("rbp")
+	out.MovRegToReg("rbp", "rsp")
+	out.PushReg("rbx")
+
+	// Save arena ptr
+	out.MovRegToReg("rbx", "rdi")
+
+	// Free buffer
+	out.MovMemToReg("rdi", "rbx", 0) // buffer_ptr
+	eb.GenerateCallInstruction("free")
+
+	// Free arena structure
+	out.MovRegToReg("rdi", "rbx")
+	eb.GenerateCallInstruction("free")
+
+	out.PopReg("rbx")
+	out.PopReg("rbp")
+	out.Ret()
 }
 
 // patchTextInELF replaces the .text section in the ELF buffer with the current text buffer
