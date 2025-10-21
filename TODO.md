@@ -1,9 +1,13 @@
 # Plans
 
-## Next actions
+## Recently Completed
 
-- [ ] **Float arguments in C FFI** - Use xmm0-xmm7 registers for passing floats to C functions (needed for graphics APIs)
-- [ ] **Float return values in C FFI** - Retrieve float results from C functions (needed for math libraries)
+- [x] **Float arguments in C FFI** - ✅ COMPLETE: xmm0-xmm7 registers working (tested with math.sqrt, math.pow)
+- [x] **Float return values in C FFI** - ✅ COMPLETE: xmm0 return values working
+- [x] **C string arguments** - ✅ COMPLETE: String literals compile as null-terminated C strings
+- [x] **Stack alignment for SIMD** - ✅ COMPLETE: Proper System V AMD64 ABI compliance, ncurses works
+
+## Next actions
 - [ ] **Memoized recursion (cme) enhancements** - Add cache size limit and cleanup callback parameters:
   - `cme(arg, max_cache_size, cleanup_lambda)` where cleanup_lambda is called when cache is full
   - Currently `cme` only supports simple recursive calls without memoization
