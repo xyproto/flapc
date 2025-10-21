@@ -2396,8 +2396,8 @@ type FlapCompiler struct {
 	cContext         bool                         // When true, compile expressions for C FFI (affects strings, pointers, ints)
 	currentArena     int                          // Arena depth (0=none, 1=first arena, 2=nested, etc.)
 	usesArenas       bool                         // Track if program uses any arena blocks
+	cacheEnabledLambdas map[string]bool           // Track which lambdas use cme
 
-	// Arena growth error jump positions (set by helper functions in grow.go)
 	metaArenaGrowthErrorJump      int
 	firstMetaArenaMallocErrorJump int
 }
@@ -2430,20 +2430,21 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 	debugEnabled := os.Getenv("DEBUG_FLAP") != ""
 
 	return &FlapCompiler{
-		eb:               eb,
-		out:              out,
-		variables:        make(map[string]int),
-		mutableVars:      make(map[string]bool),
-		varTypes:         make(map[string]string),
-		usedFunctions:    make(map[string]bool),
-		unknownFunctions: make(map[string]bool),
-		callOrder:        []string{},
-		cImports:         make(map[string]string),
-		cLibHandles:      make(map[string]string),
-		cConstants:       make(map[string]*CHeaderConstants),
-		lambdaOffsets:    make(map[string]int),
-		debug:            debugEnabled,
-		currentArena:     -1, // Not in arena block initially
+		eb:                  eb,
+		out:                 out,
+		variables:           make(map[string]int),
+		mutableVars:         make(map[string]bool),
+		varTypes:            make(map[string]string),
+		usedFunctions:       make(map[string]bool),
+		unknownFunctions:    make(map[string]bool),
+		callOrder:           []string{},
+		cImports:            make(map[string]string),
+		cLibHandles:         make(map[string]string),
+		cConstants:          make(map[string]*CHeaderConstants),
+		lambdaOffsets:       make(map[string]int),
+		cacheEnabledLambdas: make(map[string]bool),
+		debug:               debugEnabled,
+		currentArena:        -1,
 	}, nil
 }
 
@@ -6078,19 +6079,139 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 	}
 }
 
+func (fc *FlapCompiler) generateCacheLookup() {
+	fc.eb.MarkLabel("flap_cache_lookup")
+
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+	fc.out.PushReg("rbx")
+	fc.out.PushReg("r12")
+	fc.out.PushReg("r13")
+
+	fc.out.MovRegToReg("r12", "rdi")
+	fc.out.MovRegToReg("r13", "rsi")
+
+	fc.out.MovMemToReg("rax", "r12", 0)
+	fc.out.CmpRegToImm("rax", 0)
+	notInitJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0)
+
+	fc.out.MovMemToReg("rdi", "r12", 0)
+	fc.out.MovMemToReg("rsi", "r12", 8)
+
+	fc.out.MovRegToReg("rax", "r13")
+	fc.out.AndRegWithImm("rax", 31)
+
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x04})
+	fc.out.AddRegToReg("rax", "rdi")
+	fc.out.MovRegToReg("rbx", "rax")
+
+	fc.out.XorRegWithReg("rcx", "rcx")
+
+	loopStart := fc.eb.text.Len()
+	fc.out.CmpRegToImm("rcx", 32)
+	loopEndJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreaterOrEqual, 0)
+
+	fc.out.MovMemToReg("rax", "rbx", 0)
+	fc.out.CmpRegToReg("rax", "r13")
+	foundJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0)
+
+	fc.out.AddImmToReg("rbx", 16)
+	fc.out.AddImmToReg("rcx", 1)
+	backJump := fc.eb.text.Len()
+	fc.out.JumpUnconditional(int32(loopStart - (backJump + 5)))
+
+	foundLabel := fc.eb.text.Len()
+	fc.patchJumpImmediate(foundJump+2, int32(foundLabel-(foundJump+6)))
+	fc.out.LeaMemToReg("rax", "rbx", 8)
+
+	fc.out.PopReg("r13")
+	fc.out.PopReg("r12")
+	fc.out.PopReg("rbx")
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
+
+	notInitLabel := fc.eb.text.Len()
+	fc.patchJumpImmediate(notInitJump+2, int32(notInitLabel-(notInitJump+6)))
+
+	loopEndLabel := fc.eb.text.Len()
+	fc.patchJumpImmediate(loopEndJump+2, int32(loopEndLabel-(loopEndJump+6)))
+	fc.out.XorRegWithReg("rax", "rax")
+	fc.out.PopReg("r13")
+	fc.out.PopReg("r12")
+	fc.out.PopReg("rbx")
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
+}
+
+func (fc *FlapCompiler) generateCacheInsert() {
+	fc.eb.MarkLabel("flap_cache_insert")
+
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+	fc.out.PushReg("rbx")
+	fc.out.PushReg("r12")
+	fc.out.PushReg("r13")
+	fc.out.PushReg("r14")
+	fc.out.PushReg("r15")
+	fc.out.SubImmFromReg("rsp", 8)
+
+	fc.out.MovRegToReg("r12", "rdi")
+	fc.out.MovRegToReg("r13", "rsi")
+	fc.out.MovRegToReg("r14", "rdx")
+
+	fc.out.MovMemToReg("rax", "r12", 0)
+	fc.out.CmpRegToImm("rax", 0)
+	alreadyInitJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpNotEqual, 0)
+
+	fc.out.MovImmToReg("rdi", "512")
+	fc.trackFunctionCall("malloc")
+	fc.eb.GenerateCallInstruction("malloc")
+	fc.out.MovRegToMem("rax", "r12", 0)
+	fc.out.MovImmToReg("rax", "32")
+	fc.out.MovRegToMem("rax", "r12", 8)
+
+	alreadyInitLabel := fc.eb.text.Len()
+	fc.patchJumpImmediate(alreadyInitJump+2, int32(alreadyInitLabel-(alreadyInitJump+6)))
+
+	fc.out.MovMemToReg("rdi", "r12", 0)
+
+	fc.out.MovRegToReg("rax", "r13")
+	fc.out.AndRegWithImm("rax", 31)
+
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x04})
+	fc.out.AddRegToReg("rax", "rdi")
+	fc.out.MovRegToMem("r13", "rax", 0)
+	fc.out.MovRegToMem("r14", "rax", 8)
+
+	fc.out.AddImmToReg("rsp", 8)
+	fc.out.PopReg("r15")
+	fc.out.PopReg("r14")
+	fc.out.PopReg("r13")
+	fc.out.PopReg("r12")
+	fc.out.PopReg("rbx")
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
+}
+
 func (fc *FlapCompiler) generateRuntimeHelpers() {
-	// Generate arena allocator runtime functions
 	fc.eb.EmitArenaRuntimeCode()
 
-	// Define dynamic meta-arena storage (starts null, grows as needed)
-	// Only allocated if program uses arena blocks
 	if fc.usesArenas {
-		// _flap_arena_meta: pointer to array of arena pointers (8 bytes)
 		fc.eb.Define("_flap_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")
-		// _flap_arena_meta_cap: allocated capacity (8 bytes)
 		fc.eb.Define("_flap_arena_meta_cap", "\x00\x00\x00\x00\x00\x00\x00\x00")
-		// _flap_arena_meta_len: current number of initialized arena slots (8 bytes)
 		fc.eb.Define("_flap_arena_meta_len", "\x00\x00\x00\x00\x00\x00\x00\x00")
+	}
+
+	fc.generateCacheLookup()
+	fc.generateCacheInsert()
+
+	for lambdaName := range fc.cacheEnabledLambdas {
+		cacheName := lambdaName + "_cache"
+		fc.eb.Define(cacheName, "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
 	}
 
 	// Generate _flap_string_concat(left_ptr, right_ptr) -> new_ptr
@@ -8306,45 +8427,70 @@ func (fc *FlapCompiler) compileTailCall(call *CallExpr) {
 }
 
 func (fc *FlapCompiler) compileCachedCall(call *CallExpr) {
-	// Memoized recursion for "cme" self-reference
-	// Simplified implementation: Just do regular recursion for now
-	// TODO: Add proper memoization cache
-
 	if fc.currentLambda == nil {
 		compilerError("cme can only be used inside a lambda function")
 	}
 
-	if len(call.Args) != 1 {
-		compilerError("cme (cached recursion) currently only supports single-argument functions")
+	numArgs := len(call.Args)
+	if numArgs < 1 || numArgs > 3 {
+		compilerError("cme requires 1-3 arguments: cme(arg) or cme(arg, max_size) or cme(arg, max_size, cleanup_fn)")
 	}
 
-	// For now, just compile as a regular recursive call
-	// Step 1: Evaluate the argument
-	fc.compileExpression(call.Args[0]) // Result in xmm0
+	fc.cacheEnabledLambdas[fc.currentLambda.Name] = true
+	cacheName := fc.currentLambda.Name + "_cache"
 
-	// Step 2: Save on stack for function call
-	fc.out.SubImmFromReg("rsp", 16)
+	fc.compileExpression(call.Args[0])
+
+	fc.out.SubImmFromReg("rsp", 32)
 	fc.out.MovXmmToMem("xmm0", "rsp", 0)
 
-	// Step 3: Align stack
+	fc.out.LeaSymbolToReg("rdi", cacheName)
+	fc.out.MovMemToXmm("xmm0", "rsp", 0)
+	fc.out.MovqXmmToReg("rsi", "xmm0")
+
+	fc.trackFunctionCall("flap_cache_lookup")
+	fc.out.CallSymbol("flap_cache_lookup")
+
+	fc.out.CmpRegToImm("rax", 0)
+	cacheHitJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpNotEqual, 0)
+
+	fc.out.MovMemToXmm("xmm0", "rsp", 0)
 	fc.out.SubImmFromReg("rsp", 8)
 
-	// Step 4: Reload argument for call
-	fc.out.MovMemToXmm("xmm0", "rsp", 8)
-
-	// Step 5: Call self recursively
 	callPos := fc.eb.text.Len()
 	fc.eb.callPatches = append(fc.eb.callPatches, CallPatch{
-		position:   callPos + 1, // Position points to the offset bytes (after E8 opcode)
+		position:   callPos + 1,
 		targetName: fc.currentLambda.Name,
 	})
-	fc.out.Emit([]byte{0xE8, 0x00, 0x00, 0x00, 0x00}) // CALL with placeholder
+	fc.out.Emit([]byte{0xE8, 0x00, 0x00, 0x00, 0x00})
 
-	// Step 6: Restore stack
 	fc.out.AddImmToReg("rsp", 8)
-	fc.out.AddImmToReg("rsp", 16)
+	fc.out.MovXmmToMem("xmm0", "rsp", 8)
 
-	// Result is in xmm0
+	fc.out.LeaSymbolToReg("rdi", cacheName)
+	fc.out.MovMemToXmm("xmm0", "rsp", 0)
+	fc.out.MovqXmmToReg("rsi", "xmm0")
+	fc.out.MovMemToXmm("xmm0", "rsp", 8)
+	fc.out.MovqXmmToReg("rdx", "xmm0")
+
+	fc.trackFunctionCall("flap_cache_insert")
+	fc.out.CallSymbol("flap_cache_insert")
+
+	fc.out.MovMemToXmm("xmm0", "rsp", 8)
+
+	skipInsertJump := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0)
+
+	cacheHitLabel := fc.eb.text.Len()
+	fc.patchJumpImmediate(cacheHitJump+2, int32(cacheHitLabel-(cacheHitJump+6)))
+
+	fc.out.MovMemToXmm("xmm0", "rax", 0)
+
+	skipInsertLabel := fc.eb.text.Len()
+	fc.patchJumpImmediate(skipInsertJump+1, int32(skipInsertLabel-(skipInsertJump+5)))
+
+	fc.out.AddImmToReg("rsp", 32)
 }
 
 func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, args []Expression) {
