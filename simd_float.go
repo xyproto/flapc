@@ -545,3 +545,131 @@ func (o *Out) movX86XmmToXmm(dst, src string) {
 		fmt.Fprintln(os.Stderr)
 	}
 }
+
+// MovupdMemToXmm - Move Unaligned Packed Double (128 bits = 2 doubles) from memory to XMM
+// movupd xmm, [base+offset]
+func (o *Out) MovupdMemToXmm(xmm, base string, offset int) {
+	switch o.machine.Arch {
+	case ArchX86_64:
+		o.movupdMemToXmmX86(xmm, base, offset)
+	}
+}
+
+func (o *Out) movupdMemToXmmX86(xmm, base string, offset int) {
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "movupd %s, [%s+%d]: ", xmm, base, offset)
+	}
+	var xmmNum int
+	fmt.Sscanf(xmm, "xmm%d", &xmmNum)
+	baseReg, _ := GetRegister(o.machine.Arch, base)
+
+	// 66 prefix for packed double
+	o.Write(0x66)
+
+	// REX prefix only if needed (for extended registers)
+	if xmmNum >= 8 || baseReg.Encoding >= 8 {
+		rex := uint8(0x40)
+		if xmmNum >= 8 {
+			rex |= 0x04 // REX.R
+		}
+		if baseReg.Encoding >= 8 {
+			rex |= 0x01 // REX.B
+		}
+		o.Write(rex)
+	}
+
+	// 0F 10 - MOVUPD xmm, m128
+	o.Write(0x0F)
+	o.Write(0x10)
+
+	// ModR/M byte
+	if offset == 0 && (baseReg.Encoding&7) != 5 { // rbp/r13 needs displacement
+		modrm := uint8(0x00) | (uint8(xmmNum&7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 { // rsp/r12 needs SIB
+			o.Write(0x24)
+		}
+	} else if offset < 128 && offset >= -128 {
+		modrm := uint8(0x40) | (uint8(xmmNum&7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 { // rsp/r12 needs SIB
+			o.Write(0x24)
+		}
+		o.Write(uint8(offset))
+	} else {
+		modrm := uint8(0x80) | (uint8(xmmNum&7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 { // rsp/r12 needs SIB
+			o.Write(0x24)
+		}
+		o.WriteUnsigned(uint(offset))
+	}
+
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
+}
+
+// MovupdXmmToMem - Move Unaligned Packed Double (128 bits = 2 doubles) from XMM to memory
+// movupd [base+offset], xmm
+func (o *Out) MovupdXmmToMem(xmm, base string, offset int) {
+	switch o.machine.Arch {
+	case ArchX86_64:
+		o.movupdXmmToMemX86(xmm, base, offset)
+	}
+}
+
+func (o *Out) movupdXmmToMemX86(xmm, base string, offset int) {
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "movupd [%s+%d], %s: ", base, offset, xmm)
+	}
+	var xmmNum int
+	fmt.Sscanf(xmm, "xmm%d", &xmmNum)
+	baseReg, _ := GetRegister(o.machine.Arch, base)
+
+	// 66 prefix for packed double
+	o.Write(0x66)
+
+	// REX prefix only if needed (for extended registers)
+	if xmmNum >= 8 || baseReg.Encoding >= 8 {
+		rex := uint8(0x40)
+		if xmmNum >= 8 {
+			rex |= 0x04 // REX.R
+		}
+		if baseReg.Encoding >= 8 {
+			rex |= 0x01 // REX.B
+		}
+		o.Write(rex)
+	}
+
+	// 0F 11 - MOVUPD m128, xmm
+	o.Write(0x0F)
+	o.Write(0x11)
+
+	// ModR/M byte
+	if offset == 0 && (baseReg.Encoding&7) != 5 { // rbp/r13 needs displacement
+		modrm := uint8(0x00) | (uint8(xmmNum&7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 { // rsp/r12 needs SIB
+			o.Write(0x24)
+		}
+	} else if offset < 128 && offset >= -128 {
+		modrm := uint8(0x40) | (uint8(xmmNum&7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 { // rsp/r12 needs SIB
+			o.Write(0x24)
+		}
+		o.Write(uint8(offset))
+	} else {
+		modrm := uint8(0x80) | (uint8(xmmNum&7) << 3) | (baseReg.Encoding & 7)
+		o.Write(modrm)
+		if (baseReg.Encoding & 7) == 4 { // rsp/r12 needs SIB
+			o.Write(0x24)
+		}
+		o.WriteUnsigned(uint(offset))
+	}
+
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr)
+	}
+}

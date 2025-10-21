@@ -2,6 +2,12 @@
 
 ## Current Sprint (x86_64 only)
 - [ ] **SIMD intrinsics** - Vector operations for audio DSP, graphics effects, particle systems
+  - [x] vec2() and vec4() constructors
+  - [x] VectorExpr AST node and parser support
+  - [x] SIMD instruction wrappers (movupd, addpd, subpd, mulpd, divpd)
+  - [ ] Vector arithmetic operations (vadd, vsub, vmul, vdiv) - needs debugging
+  - [ ] Vector component access (v.x, v.y, v.z, v.w or v[0], v[1], etc.)
+  - [ ] Dot product, magnitude, normalize operations
 - [ ] **Register allocation improvements** - Better register usage for performance
 - [ ] **Dead code elimination** - Remove unused code from output
 - [ ] **Constant propagation across functions** - Optimize constants through call boundaries

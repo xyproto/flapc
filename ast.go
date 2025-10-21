@@ -663,6 +663,26 @@ func (a *ArenaExpr) String() string {
 }
 func (a *ArenaExpr) expressionNode() {}
 
+// VectorExpr represents a SIMD vector literal: vec2(x, y) or vec4(x, y, z, w)
+type VectorExpr struct {
+	Components []Expression // 2 or 4 components
+	Size       int          // 2 or 4
+}
+
+func (v *VectorExpr) String() string {
+	var out strings.Builder
+	out.WriteString(fmt.Sprintf("vec%d(", v.Size))
+	for i, comp := range v.Components {
+		if i > 0 {
+			out.WriteString(", ")
+		}
+		out.WriteString(comp.String())
+	}
+	out.WriteString(")")
+	return out.String()
+}
+func (v *VectorExpr) expressionNode() {}
+
 // DeferStmt represents a deferred expression: defer expr
 // Executed at the end of the current scope in LIFO order
 type DeferStmt struct {

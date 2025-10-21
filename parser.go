@@ -1514,7 +1514,20 @@ func (p *Parser) parsePostfix() Expression {
 			// If expr is a LambdaExpr, it will be compiled and called
 			// If expr is an IdentExpr, it will be looked up and called
 			if ident, ok := expr.(*IdentExpr); ok {
-				expr = &CallExpr{Function: ident.Name, Args: args}
+				// Special handling for vector constructors
+				if ident.Name == "vec2" {
+					if len(args) != 2 {
+						p.error("vec2 requires exactly 2 arguments")
+					}
+					expr = &VectorExpr{Components: args, Size: 2}
+				} else if ident.Name == "vec4" {
+					if len(args) != 4 {
+						p.error("vec4 requires exactly 4 arguments")
+					}
+					expr = &VectorExpr{Components: args, Size: 4}
+				} else {
+					expr = &CallExpr{Function: ident.Name, Args: args}
+				}
 			} else {
 				// For lambda expressions or other callable expressions,
 				// create a special call expression that compiles the lambda inline
@@ -1690,6 +1703,19 @@ func (p *Parser) parsePrimary() Expression {
 				p.nextToken() // move to ')'
 			}
 			// current is now on ')', whether we had args or not
+			// Special handling for vector constructors
+			if name == "vec2" {
+				if len(args) != 2 {
+					p.error("vec2 requires exactly 2 arguments")
+				}
+				return &VectorExpr{Components: args, Size: 2}
+			} else if name == "vec4" {
+				if len(args) != 4 {
+					p.error("vec4 requires exactly 4 arguments")
+				}
+				return &VectorExpr{Components: args, Size: 4}
+			}
+
 			return &CallExpr{Function: name, Args: args}
 		}
 		return &IdentExpr{Name: name}
@@ -5256,6 +5282,23 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 	case *SliceExpr:
 		fc.compileSliceExpr(e)
+
+	case *VectorExpr:
+		// Allocate stack space for vector components (8 bytes per float64)
+		stackSize := int64(e.Size * 8)
+		fc.out.SubImmFromReg("rsp", stackSize)
+
+		// Compile and store each component
+		for i, comp := range e.Components {
+			fc.compileExpression(comp)
+			// Result is in xmm0, store it to stack at offset i*8
+			offset := i * 8
+			fc.out.MovXmmToMem("xmm0", "rsp", offset)
+		}
+
+		// Load stack address into rax and convert to float64 for return
+		fc.out.MovRegToReg("rax", "rsp")
+		fc.out.Cvtsi2sd("xmm0", "rax")
 	}
 }
 
@@ -10608,6 +10651,132 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			compilerError("%s() takes no arguments", call.Function)
 		}
 		fc.out.MovImmToReg("rax", "8")
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "vadd":
+		// vadd(v1, v2) - Vector addition using SIMD
+		if len(call.Args) != 2 {
+			compilerError("vadd() requires exactly 2 arguments")
+		}
+
+		// Compile first vector argument -> pointer in xmm0
+		fc.compileExpression(call.Args[0])
+		// Push pointer to stack (save for later)
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+		// Compile second vector argument -> pointer in xmm0
+		fc.compileExpression(call.Args[1])
+		// Convert second vector pointer to rbx
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovMemToReg("rbx", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+		// Get first vector pointer from stack to rax
+		fc.out.MovMemToReg("rax", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+		// For now, just return the first vector pointer to test if the logic works
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "vsub":
+		// vsub(v1, v2) - Vector subtraction using SIMD
+		if len(call.Args) != 2 {
+			compilerError("vsub() requires exactly 2 arguments")
+		}
+
+		// Compile first vector argument -> pointer in xmm0
+		fc.compileExpression(call.Args[0])
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovMemToReg("r12", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+		// Compile second vector argument -> pointer in xmm0
+		fc.compileExpression(call.Args[1])
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovMemToReg("r13", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+		// Allocate stack space for result
+		fc.out.SubImmFromReg("rsp", 16)
+
+		// Load and subtract vectors using SIMD
+		fc.out.MovupdMemToXmm("xmm0", "r12", 0)
+		fc.out.MovupdMemToXmm("xmm1", "r13", 0)
+		fc.out.SubpdXmm("xmm0", "xmm1")
+
+		// Store result and return pointer
+		fc.out.MovupdXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovRegToReg("rax", "rsp")
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "vmul":
+		// vmul(v1, v2) - Vector element-wise multiplication using SIMD
+		if len(call.Args) != 2 {
+			compilerError("vmul() requires exactly 2 arguments")
+		}
+
+		// Compile first vector argument
+		fc.compileExpression(call.Args[0])
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovMemToReg("r12", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+		// Compile second vector argument
+		fc.compileExpression(call.Args[1])
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovMemToReg("r13", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+		// Allocate stack space for result
+		fc.out.SubImmFromReg("rsp", 16)
+
+		// Load and multiply vectors using SIMD
+		fc.out.MovupdMemToXmm("xmm0", "r12", 0)
+		fc.out.MovupdMemToXmm("xmm1", "r13", 0)
+		fc.out.MulpdXmm("xmm0", "xmm1")
+
+		// Store result and return pointer
+		fc.out.MovupdXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovRegToReg("rax", "rsp")
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "vdiv":
+		// vdiv(v1, v2) - Vector element-wise division using SIMD
+		if len(call.Args) != 2 {
+			compilerError("vdiv() requires exactly 2 arguments")
+		}
+
+		// Compile first vector argument
+		fc.compileExpression(call.Args[0])
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovMemToReg("r12", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+		// Compile second vector argument
+		fc.compileExpression(call.Args[1])
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovMemToReg("r13", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+		// Allocate stack space for result
+		fc.out.SubImmFromReg("rsp", 16)
+
+		// Load and divide vectors using SIMD
+		fc.out.MovupdMemToXmm("xmm0", "r12", 0)
+		fc.out.MovupdMemToXmm("xmm1", "r13", 0)
+		fc.out.DivpdXmm("xmm0", "xmm1")
+
+		// Store result and return pointer
+		fc.out.MovupdXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovRegToReg("rax", "rsp")
 		fc.out.Cvtsi2sd("xmm0", "rax")
 
 	default:
