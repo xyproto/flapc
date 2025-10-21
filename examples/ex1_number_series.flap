@@ -1,0 +1,17 @@
+// Example 1: Generate number series and compute statistics
+// Demonstrates: loops, arithmetic, mutable variables
+
+sum := 0.0
+count := 20
+
+printf("Squares of first %v numbers:\n", count)
+
+@ i in 1..<(count + 1) {
+    square := i * i
+    sum <- sum + square
+    printf("%v² = %v\n", i, square)
+}
+
+average := sum / count
+printf("\nSum of squares: %v\n", sum)
+printf("Average: %v\n", average)
