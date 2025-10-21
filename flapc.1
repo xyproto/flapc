@@ -1,0 +1,235 @@
+.\"             -*-Nroff-*-
+.\"
+.TH "o" 1 "10 Oct 2025" "o" "User Commands"
+.SH NAME
+flapc \- a compiler for the Flap language
+.SH SYNOPSIS
+.B flapc
+filename [LINE NUMBER]
+.sp
+.SH DESCRIPTION
+asdf
+.sp
+.SH OPTIONS
+.sp
+The line number can be prefixed with \fB+\fP, or be a suffix of the filename if prefixed with \fB:\fP.
+.sp
+.TP
+.B \-c FILENAME or \-\-copy FILENAME
+Copy the given file into the clipboard.
+.TP
+.B \-f or \-\-force
+Ignore file locks when opening files.
+.TP
+.B \-l or \-\-last-command
+Output the last used build/format/export command.
+.TP
+.B \-m FILENAME or \-\-monitor FILENAME
+Monitor the given file for changes, and open it as read-ony.
+.TP
+.B \-n or \-\-no-cache
+Avoid writing the location history, search history, game highscore and last build/format/export command to the cache directory.
+.TP
+.B \-p FILENAME or \-\-paste FILENAME
+Paste the contents of the clipboard into the given file. Combine with \-f to overwrite the file.
+.TP
+.B \-e or \-\-clear-locks
+Clear all file locks.
+.TP
+.B \-o or \-\-ollama
+Use Ollama for tab completion with the model specified in the \fBORBITON_OLLAMA\fP environment variable. This requires that Ollama is up and running,
+either locally or at the host specified in the \fBOLLAMA_HOST\fP environment variable.
+.TP
+.B \-r or \-\-release
+Build with release instead of debug mode whenever applicable. This can be useful when editing a CMakeLists.txt file and then pressing ctrl-space to build the project.
+.TP
+.B \-b or \-\-bat
+List the file with syntax highlighting using the \fBbat\fP command, if installed.
+.TP
+.B \-t or \-\-list
+List the file in a colorful way without opening it for editing.
+.TP
+.B \-b or \-\-build
+Build the given file instead of opening it for editing.
+.TP
+.B \-F or \-\-format
+Format the given file instead of opening it for editing.
+.TP
+.B \-v or \-\-version
+Display the current version.
+.TP
+.B \-h or \-\-help
+Display brief usage information.
+.PP
+.SH KEYBINDINGS
+.sp
+.B ctrl-q
+  Quit o.
+.sp
+.B ctrl-s
+  Save the file.
+.sp
+.B ctrl-w
+  Format the current file with \fBgoimport\fP or \fBclang-format\fP, depending on the file extension.
+  Zig, V, Rust (\fBrustfmt\fP), Haskell (\fBbrittany\fP) and Python (\fBautopep8\fP) are also supported.
+  If in git mode, cycle the git interactive rebase keyword on the current line.
+  If in Markdown mode, format the table under the cursor.
+.sp
+.B ctrl-a
+  Go to start of the text, then the start of the line and then the previous line.
+.sp
+.B ctrl-e
+  Go to end of the line and then the next line.
+.sp
+.sp
+.B ctrl-n
+  Scroll down 10 lines or go to the next match if a search is active.
+  Insert a new column when in the Markdown table editor.
+  Jump to a matching parenthesis or bracket if the arrow keys were just used.
+.B ctrl-p
+  Scroll up 10 lines or go to the previous match if a search is active.
+  Remove an empty column when in the Markdown table editor.
+  Jump to a matching parenthesis or bracket if the arrow keys were just used.
+.sp
+.B ctrl-k
+  Delete all characters to the end of the line. Delete the line if it is empty.
+.sp
+.B ctrl-g
+  Jump to definition, for some programming languages (experimental feature) or toggle the status bar.
+.sp
+.B ctrl-d
+  Delete a single character.
+.sp
+.B ctrl-o
+  Open the command menu, which is a list of actions that can be performed.
+  If editing a PKGBUILD file and guessica is installed, there will be a menu option for updating the pkgver + source fields.
+  If pandoc is installed, a menu option for rendering to PDF may appear.
+.sp
+.B ctrl-t
+  For C and C++: switch between the corresponding header and implementation.
+  For Agda, insert a symbol.
+  For Markdown, if the cursor is on a table, launch the Markdown table editor.
+  For the rest, record and play back keypresses. Press escape to clear the current macro.
+.sp
+.B ctrl-c
+  Press twice to copy the current block of text (until a blank line or the end of the file).
+  Press once to only copy the current line.
+  Also closes the portal.
+.sp
+.B ctrl-v
+  Press once to paste only the first line of the copied text, trimmed.
+  Press twice to paste the all copied text, untrimmed.
+.sp
+.B ctrl-x
+  Press once to only cut the current line (or delete the line, if empty).
+  Press twice to cut the current block of text (until a blank line or the end of the file).
+  Also closes the portal.
+.sp
+.B ctrl-b
+  Jump back after jumping to a definition with `ctrl-g`.
+  Bookmark the current line. Press again to remove the bookmark.
+  If a bookmark is set, and not on the bookmarked line, jump to the bookmark.
+  Toggle the breakpoint if the editor is in debug mode.
+.sp
+.B ctrl-j
+  Join lines.
+.sp
+.B ctrl-u
+  Undo (\fBctrl-z\P is also possible, but may background the application).
+.sp
+.B ctrl-l
+  Jump to a specific line number or percentage. Press return to jump to the top. Press return again to jump to the bottom.
+  Press one of the highlighted on-screen letters to jump to that location.
+.sp
+.B ctrl-f
+  Search for a string from the current location. The search wraps around and is case sensitive.
+  There is also support for text replacement, after typing in the search term:
+  To replace all, press tab instead of return, enter a replace term and then press tab.
+  To replace once, press tab instead of return, enter a replace term and then press return.
+  Search for just \fBf\P to find the previous function signature.
+.sp
+.B esc
+  Redraw the screen and clear the last search.
+.sp
+.B ctrl-space
+  Build Go programs with `go`.
+  Build C++ programs with `cxx`.
+  Build Rust programs with `cargo` or `rustc`.
+  Build Zig programs with `zig`.
+  Build Haskell programs with `ghc`.
+  Check Python programs with `python -m py_compile`.
+  Build Crystal programs with `crystal`.
+  Build Kotlin programs with `kotlinc`,
+    or `kotlinc-native` if available.
+  Build Java programs with `javac` and `jar`.
+  Build Scala programs with `scalac`.
+  Build Lua programs with `luac`.
+  Build Object Pascal programs with `fpc`.
+  Build Nim programs with `nim`.
+  Build Odin programs with `odin`.
+  Build V programs with `v`.
+  Build C# programs with `csc -nollogo -unsafe`.
+  Build D programs with `gdc`.
+  Build Standard ML programs with `mlton`.
+  Build OCaml programs with `ocamlopt`.
+  Export scdoc files to man using `scdoc`.
+  Export asciidoctor files to man using `asciidoctor`.
+  Build Arch Linux packages with `makepkg`.
+  Build Agda programs with `agda`.
+  Double press to render Markdown to HTML.
+.sp
+  The last used external command by `o` can be found in `~/.cache/o/last_command.sh`.
+.sp
+.B ctrl-~
+  Insert the current date and time.
+.sp
+  `o` will try to jump to the location where the error is and otherwise display "Success".
+.sp
+.B ctrl-\\\\
+  Toggle single-line comments for a block of code.
+.sp
+.B ctrl-_
+  Insert a symbol by typing in a 2-letter digraph.
+  The digraphs are the same as for ViM.
+  For a full overview, see: https://raw.githubusercontent.com/xyproto/digraph/main/digraphs.txt
+.sp
+.B ctrl-r
+  Open or close a portal. Text can be pasted from the portal into another file with `ctrl-v`.
+  For "git interactive rebase" mode, cycle the rebase keywords.
+.sp
+.SH "ENV"
+.sp
+The \fBNO_COLOR\fP environment variable can be set to 1 to disable all colors.
+.sp
+If \fBXTERM_VERSION\fP is set (usually automatically by xterm), the "light" color scheme will be used.
+.sp
+The \fBORBITON_OLLAMA\fP environment variable can be set to 1 to enable Ollama tab completion.
+.sp
+The \fBOLLAMA_HOST\fP environment variable specifies the host for the Ollama service if a non-local service should be used.
+.sp
+.SH "MAN PAGER"
+O can be used for viewing man pages by setting MANPAGER to "o" with ie. \fBexport MANPAGER=o\fP.
+.SH "WHY"
+.sp
+I wanted to write a simple editor that only used VT100 terminal codes.
+.SH "SEE ALSO"
+.BR e3 (1)
+.BR nano (1)
+.BR micro (1)
+.SH KNOWN BUGS
+In some terminal emulators, scrolling quickly up or down with the arrow keys can make the text jump around (it works fine in \fBalacritty\fP). Scroll up and down with \fBctrl-n\fP and \fBctrl-p\fP instead to avoid this. Press \fBesc\fP to repaint the text, if needed.
+.sp
+Some unicode runes may disrupt the text flow. This is generally not a problem for editing code and configuration files, but may be an issue when editing files that contains text in many languages.
+.sp
+For some terminal emulators, if \fBo\fP is busy performing an operation, pressing \fBctrl-s\fP may lock the terminal. Some terminal emulators, like \fBkonsole\fP, can be configured to turn off this behavior. Press \fBctrl-q\fP to unlock the terminal again (together with the unfortunate risk of quitting \fBo\fP). You can also use the \fBctrl-o\fP menu for saving and quitting.
+.sp
+\fBo\fP may have issues with large files (of several MB+). For normal text files or source code files, this is a non-issue.
+.sp
+Middle-click pasting (instead of pasting with \fBctrl-v\fP) may have issues with only pasting the first character.
+.sp
+The smart indentation is not always smart.
+.SH VERSION
+1.0.0
+.SH AUTHOR
+.B o
+was written by Alexander F. Rødseth <xyproto@archlinux.org>
