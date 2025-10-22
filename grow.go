@@ -5,12 +5,15 @@ package main
 // generateMetaArenaGrowth generates code to grow the meta-arena capacity
 // This doubles the meta-arena pointer array and initializes new arena structures
 // Input registers:
-//   r12 = required_depth
-//   r13 = old_capacity
+//
+//	r12 = required_depth
+//	r13 = old_capacity
+//
 // Output:
-//   r14 = new_capacity
-//   r15 = new meta-arena pointer
-//   r13 = updated to old len for initialization loop
+//
+//	r14 = new_capacity
+//	r15 = new meta-arena pointer
+//	r13 = updated to old len for initialization loop
 func (fc *FlapCompiler) generateMetaArenaGrowth() {
 	// Calculate new capacity: max(capacity * 2, required_depth)
 	fc.out.MovRegToReg("r14", "r13")
@@ -51,11 +54,14 @@ func (fc *FlapCompiler) generateMetaArenaGrowth() {
 
 // generateArenaInitLoop generates code to initialize new arena structures
 // Input registers:
-//   r12 = required_depth (stop when we reach this)
-//   r13 = start_index (current len)
-//   r15 = meta-arena pointer
+//
+//	r12 = required_depth (stop when we reach this)
+//	r13 = start_index (current len)
+//	r15 = meta-arena pointer
+//
 // Output:
-//   r13 = updated len after initialization
+//
+//	r13 = updated len after initialization
 func (fc *FlapCompiler) generateArenaInitLoop() {
 	// Initialize new slots (from len to required_depth)
 	// r13 = len, r12 = required_depth, r15 = meta-arena pointer
@@ -75,8 +81,8 @@ func (fc *FlapCompiler) generateArenaInitLoop() {
 
 	// Store arena pointer in meta-arena[r13]
 	fc.out.MovRegToReg("rbx", "r13")
-	fc.out.ShlImmReg("rbx", 3)           // rbx = r13 * 8
-	fc.out.AddRegToReg("rbx", "r15")     // rbx = r15 + (r13 * 8)
+	fc.out.ShlImmReg("rbx", 3)          // rbx = r13 * 8
+	fc.out.AddRegToReg("rbx", "r15")    // rbx = r15 + (r13 * 8)
 	fc.out.MovRegToMem("rax", "rbx", 0) // Store at [rbx]
 
 	// Increment counter
@@ -96,10 +102,13 @@ func (fc *FlapCompiler) generateArenaInitLoop() {
 // generateFirstMetaArenaAlloc generates code for the first meta-arena allocation
 // Allocates 8 slots and initializes arena structures up to min(8, required_depth)
 // Input registers:
-//   r12 = required_depth
+//
+//	r12 = required_depth
+//
 // Output:
-//   r13 = number of arenas created (min(8, required))
-//   r15 = meta-arena pointer
+//
+//	r13 = number of arenas created (min(8, required))
+//	r15 = meta-arena pointer
 func (fc *FlapCompiler) generateFirstMetaArenaAlloc() {
 	// Allocate meta-arena with 8 slots initially
 	fc.out.MovImmToReg("rdi", "64") // 8 slots * 8 bytes = 64
@@ -123,7 +132,7 @@ func (fc *FlapCompiler) generateFirstMetaArenaAlloc() {
 	fc.out.CmpRegToReg("r13", "r12") // Compare with required_depth
 	firstInitDoneJump1 := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpGreaterOrEqual, 0) // jge done (r13 >= required)
-	fc.out.CmpRegToImm("r13", 8)                   // Also check if we've done 8
+	fc.out.CmpRegToImm("r13", 8)                  // Also check if we've done 8
 	firstInitDoneJump2 := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpGreaterOrEqual, 0) // jge done (r13 >= 8)
 
@@ -138,8 +147,8 @@ func (fc *FlapCompiler) generateFirstMetaArenaAlloc() {
 
 	// Store in meta-arena[r13] - calculate offset without modifying r15
 	fc.out.MovRegToReg("rbx", "r13")
-	fc.out.ShlImmReg("rbx", 3)           // rbx = r13 * 8
-	fc.out.AddRegToReg("rbx", "r15")     // rbx = r15 + offset
+	fc.out.ShlImmReg("rbx", 3)          // rbx = r13 * 8
+	fc.out.AddRegToReg("rbx", "r15")    // rbx = r15 + offset
 	fc.out.MovRegToMem("rax", "rbx", 0) // Store at [rbx]
 
 	// Increment counter
@@ -168,11 +177,15 @@ func (fc *FlapCompiler) generateFirstMetaArenaAlloc() {
 // generateIndividualArenaGrowth generates code to grow a single arena's buffer
 // This is used within flap_arena_alloc when an arena runs out of space
 // Input registers:
-//   rdi = arena_ptr
-//   rsi = needed_size (aligned)
-//   r13 = current offset
+//
+//	rdi = arena_ptr
+//	rsi = needed_size (aligned)
+//	r13 = current offset
+//
 // Modifies:
-//   r8, r9, rdx, rax
+//
+//	r8, r9, rdx, rax
+//
 // Calls realloc and updates arena structure
 func (fc *FlapCompiler) generateIndividualArenaGrowth(arenaGrowJump int) int {
 	arenaGrowLabel := fc.eb.text.Len()
@@ -182,8 +195,8 @@ func (fc *FlapCompiler) generateIndividualArenaGrowth(arenaGrowJump int) int {
 	// Calculate new capacity: max(capacity * 2, aligned_offset + size)
 	// r9 = capacity, rdx = aligned_offset + aligned_size
 	fc.out.MovRegToReg("rdi", "r9")
-	fc.out.AddRegToReg("rdi", "r9")   // rdi = capacity * 2
-	fc.out.CmpRegToReg("rdi", "rdx")  // compare with needed
+	fc.out.AddRegToReg("rdi", "r9")  // rdi = capacity * 2
+	fc.out.CmpRegToReg("rdi", "rdx") // compare with needed
 	skipMaxJump := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpGreaterOrEqual, 0) // jge skip_max
 	fc.out.MovRegToReg("rdi", "rdx")              // rdi = max(capacity * 2, needed)

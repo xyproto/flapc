@@ -3414,34 +3414,34 @@ type LoopInfo struct {
 
 // Code Generator for Flap
 type FlapCompiler struct {
-	eb               *ExecutableBuilder
-	out              *Out
-	variables        map[string]int               // variable name -> stack offset
-	mutableVars      map[string]bool              // variable name -> is mutable
-	varTypes         map[string]string            // variable name -> "map" or "list"
-	sourceCode       string                       // Store source for recompilation
-	usedFunctions    map[string]bool              // Track which functions are called
-	unknownFunctions map[string]bool              // Track functions called but not defined
-	callOrder        []string                     // Track order of function calls
-	cImports         map[string]string            // Track C imports: alias -> library name
-	cLibHandles      map[string]string            // Track library handles: library -> handle var name
-	cConstants       map[string]*CHeaderConstants // Track C constants: alias -> constants
-	stringCounter    int                          // Counter for unique string labels
-	stackOffset      int                          // Current stack offset for variables
-	labelCounter     int                          // Counter for unique labels (if/else, loops, etc)
-	lambdaCounter    int                          // Counter for unique lambda function names
-	activeLoops      []LoopInfo                   // Stack of active loops (for @N jump resolution)
-	lambdaFuncs      []LambdaFunc                 // List of lambda functions to generate
-	lambdaOffsets    map[string]int               // Lambda name -> offset in .text
-	currentLambda    *LambdaFunc                  // Currently compiling lambda (for "me" self-reference)
-	lambdaBodyStart  int                          // Offset where lambda body starts (for tail recursion)
-	hasExplicitExit  bool                         // Track if program contains explicit exit() call
-	debug            bool                         // Enable debug output (set via DEBUG_FLAP env var)
-	cContext         bool                         // When true, compile expressions for C FFI (affects strings, pointers, ints)
-	currentArena     int                          // Arena depth (0=none, 1=first arena, 2=nested, etc.)
-	usesArenas       bool                         // Track if program uses any arena blocks
-	cacheEnabledLambdas map[string]bool           // Track which lambdas use cme
-	deferredExprs    [][]Expression               // Stack of deferred expressions per scope (LIFO order)
+	eb                  *ExecutableBuilder
+	out                 *Out
+	variables           map[string]int               // variable name -> stack offset
+	mutableVars         map[string]bool              // variable name -> is mutable
+	varTypes            map[string]string            // variable name -> "map" or "list"
+	sourceCode          string                       // Store source for recompilation
+	usedFunctions       map[string]bool              // Track which functions are called
+	unknownFunctions    map[string]bool              // Track functions called but not defined
+	callOrder           []string                     // Track order of function calls
+	cImports            map[string]string            // Track C imports: alias -> library name
+	cLibHandles         map[string]string            // Track library handles: library -> handle var name
+	cConstants          map[string]*CHeaderConstants // Track C constants: alias -> constants
+	stringCounter       int                          // Counter for unique string labels
+	stackOffset         int                          // Current stack offset for variables
+	labelCounter        int                          // Counter for unique labels (if/else, loops, etc)
+	lambdaCounter       int                          // Counter for unique lambda function names
+	activeLoops         []LoopInfo                   // Stack of active loops (for @N jump resolution)
+	lambdaFuncs         []LambdaFunc                 // List of lambda functions to generate
+	lambdaOffsets       map[string]int               // Lambda name -> offset in .text
+	currentLambda       *LambdaFunc                  // Currently compiling lambda (for "me" self-reference)
+	lambdaBodyStart     int                          // Offset where lambda body starts (for tail recursion)
+	hasExplicitExit     bool                         // Track if program contains explicit exit() call
+	debug               bool                         // Enable debug output (set via DEBUG_FLAP env var)
+	cContext            bool                         // When true, compile expressions for C FFI (affects strings, pointers, ints)
+	currentArena        int                          // Arena depth (0=none, 1=first arena, 2=nested, etc.)
+	usesArenas          bool                         // Track if program uses any arena blocks
+	cacheEnabledLambdas map[string]bool              // Track which lambdas use cme
+	deferredExprs       [][]Expression               // Stack of deferred expressions per scope (LIFO order)
 
 	metaArenaGrowthErrorJump      int
 	firstMetaArenaMallocErrorJump int
@@ -4343,7 +4343,7 @@ func (fc *FlapCompiler) compileArenaStmt(stmt *ArenaStmt) {
 	// Each pointer is 8 bytes, so offset = (arenaDepth-1) * 8
 	offset := (arenaDepth - 1) * 8
 	fc.out.LeaSymbolToReg("rax", "_flap_arena_meta")
-	fc.out.MovMemToReg("rax", "rax", 0)     // Load the meta-arena pointer
+	fc.out.MovMemToReg("rax", "rax", 0)      // Load the meta-arena pointer
 	fc.out.MovMemToReg("rax", "rax", offset) // Load the arena pointer from slot
 
 	fc.pushDeferScope()
@@ -4360,7 +4360,7 @@ func (fc *FlapCompiler) compileArenaStmt(stmt *ArenaStmt) {
 
 	// Load arena pointer from meta-arena and destroy
 	fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
-	fc.out.MovMemToReg("rdi", "rdi", 0)     // Load the meta-arena pointer
+	fc.out.MovMemToReg("rdi", "rdi", 0)      // Load the meta-arena pointer
 	fc.out.MovMemToReg("rdi", "rdi", offset) // Load the arena pointer from slot
 	fc.out.CallSymbol("flap_arena_destroy")
 }
@@ -8490,10 +8490,10 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.eb.GenerateCallInstruction("malloc")
 
 	// Fill arena structure
-	fc.out.MovRegToMem("rax", "rbx", 0)      // [rbx+0] = buffer_ptr
-	fc.out.MovRegToMem("r12", "rbx", 8)      // [rbx+8] = capacity
-	fc.out.MovImmToMem(0, "rbx", 16)         // [rbx+16] = offset (0)
-	fc.out.MovImmToMem(8, "rbx", 24)         // [rbx+24] = alignment (8)
+	fc.out.MovRegToMem("rax", "rbx", 0) // [rbx+0] = buffer_ptr
+	fc.out.MovRegToMem("r12", "rbx", 8) // [rbx+8] = capacity
+	fc.out.MovImmToMem(0, "rbx", 16)    // [rbx+16] = offset (0)
+	fc.out.MovImmToMem(8, "rbx", 24)    // [rbx+24] = alignment (8)
 
 	// Return arena pointer in rax
 	fc.out.MovRegToReg("rax", "rbx")
@@ -8537,20 +8537,20 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovRegToReg("r13", "rax")      // r13 = aligned_offset
 
 	// Check if we have enough space: if (aligned_offset + size > capacity) grow
-	fc.out.MovRegToReg("rdx", "r13")  // rdx = aligned_offset
-	fc.out.AddRegToReg("rdx", "r12")  // rdx = aligned_offset + size
-	fc.out.CmpRegToReg("rdx", "r9")   // compare with capacity
+	fc.out.MovRegToReg("rdx", "r13") // rdx = aligned_offset
+	fc.out.AddRegToReg("rdx", "r12") // rdx = aligned_offset + size
+	fc.out.CmpRegToReg("rdx", "r9")  // compare with capacity
 	arenaGrowJump := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpGreater, 0) // jg to grow path
 
 	// Fast path: enough space, no need to grow
 	fc.eb.MarkLabel("_arena_alloc_fast")
-	fc.out.MovRegToReg("rax", "r8")    // rax = buffer_ptr
-	fc.out.AddRegToReg("rax", "r13")   // rax = buffer_ptr + aligned_offset
+	fc.out.MovRegToReg("rax", "r8")  // rax = buffer_ptr
+	fc.out.AddRegToReg("rax", "r13") // rax = buffer_ptr + aligned_offset
 
 	// Update arena offset
-	fc.out.MovRegToReg("rdx", "r13")   // rdx = aligned_offset
-	fc.out.AddRegToReg("rdx", "r12")   // rdx = aligned_offset + size
+	fc.out.MovRegToReg("rdx", "r13")     // rdx = aligned_offset
+	fc.out.AddRegToReg("rdx", "r12")     // rdx = aligned_offset + size
 	fc.out.MovRegToMem("rdx", "rbx", 16) // [arena_ptr+16] = new offset
 
 	arenaDoneJump := fc.eb.text.Len()
@@ -8562,23 +8562,23 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.eb.MarkLabel("_arena_alloc_grow")
 
 	// Calculate new capacity: max(capacity * 2, aligned_offset + size)
-	fc.out.MovRegToReg("rdi", "r9")    // rdi = capacity
-	fc.out.AddRegToReg("rdi", "r9")    // rdi = capacity * 2
-	fc.out.MovRegToReg("rsi", "r13")   // rsi = aligned_offset
-	fc.out.AddRegToReg("rsi", "r12")   // rsi = aligned_offset + size
-	fc.out.CmpRegToReg("rdi", "rsi")   // compare 2*capacity with needed
+	fc.out.MovRegToReg("rdi", "r9")  // rdi = capacity
+	fc.out.AddRegToReg("rdi", "r9")  // rdi = capacity * 2
+	fc.out.MovRegToReg("rsi", "r13") // rsi = aligned_offset
+	fc.out.AddRegToReg("rsi", "r12") // rsi = aligned_offset + size
+	fc.out.CmpRegToReg("rdi", "rsi") // compare 2*capacity with needed
 	skipMaxJump := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpGreaterOrEqual, 0) // jge skip_max
-	fc.out.MovRegToReg("rdi", "rsi")   // rdi = max(2*capacity, needed)
+	fc.out.MovRegToReg("rdi", "rsi")              // rdi = max(2*capacity, needed)
 	skipMaxLabel := fc.eb.text.Len()
 	fc.patchJumpImmediate(skipMaxJump+2, int32(skipMaxLabel-(skipMaxJump+6)))
 
 	// rdi now contains new_capacity
-	fc.out.MovRegToReg("r9", "rdi")    // r9 = new_capacity (update)
+	fc.out.MovRegToReg("r9", "rdi") // r9 = new_capacity (update)
 
 	// Call realloc(buffer_ptr, new_capacity)
-	fc.out.MovRegToReg("rdi", "r8")    // rdi = old buffer_ptr
-	fc.out.MovRegToReg("rsi", "r9")    // rsi = new_capacity
+	fc.out.MovRegToReg("rdi", "r8") // rdi = old buffer_ptr
+	fc.out.MovRegToReg("rsi", "r9") // rsi = new_capacity
 	fc.trackFunctionCall("realloc")
 	fc.eb.GenerateCallInstruction("realloc")
 
@@ -8593,10 +8593,10 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovRegToReg("r8", "rax")     // r8 = new buffer_ptr
 
 	// Now allocate from the grown arena
-	fc.out.MovRegToReg("rax", "r8")     // rax = buffer_ptr
-	fc.out.AddRegToReg("rax", "r13")    // rax = buffer_ptr + aligned_offset
-	fc.out.MovRegToReg("rdx", "r13")    // rdx = aligned_offset
-	fc.out.AddRegToReg("rdx", "r12")    // rdx = aligned_offset + size
+	fc.out.MovRegToReg("rax", "r8")      // rax = buffer_ptr
+	fc.out.AddRegToReg("rax", "r13")     // rax = buffer_ptr + aligned_offset
+	fc.out.MovRegToReg("rdx", "r13")     // rdx = aligned_offset
+	fc.out.AddRegToReg("rdx", "r12")     // rdx = aligned_offset + size
 	fc.out.MovRegToMem("rdx", "rbx", 16) // [arena_ptr+16] = new offset
 
 	arenaDoneJump2 := fc.eb.text.Len()
@@ -11188,7 +11188,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Load arena pointer from meta-arena: _flap_arena_meta[currentArena-1]
 		offset := (fc.currentArena - 1) * 8
 		fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
-		fc.out.MovMemToReg("rdi", "rdi", 0)     // Load the meta-arena pointer
+		fc.out.MovMemToReg("rdi", "rdi", 0)      // Load the meta-arena pointer
 		fc.out.MovMemToReg("rdi", "rdi", offset) // Load the arena pointer from slot
 
 		// Compile size argument

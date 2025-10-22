@@ -32,60 +32,60 @@ const (
 	TOKEN_COLON
 	TOKEN_SEMICOLON
 	TOKEN_NEWLINE
-	TOKEN_LT            // <
-	TOKEN_GT            // >
-	TOKEN_LE            // <=
-	TOKEN_GE            // >=
-	TOKEN_EQ            // ==
-	TOKEN_NE            // !=
-	TOKEN_TILDE         // ~
-	TOKEN_DEFAULT_ARROW // ~>
-	TOKEN_AT            // @
-	TOKEN_AT_MINUS      // @-
-	TOKEN_AT_EQUALS     // @=
-	TOKEN_IN            // in keyword
-	TOKEN_LBRACE        // {
-	TOKEN_RBRACE        // }
-	TOKEN_LBRACKET      // [
-	TOKEN_RBRACKET      // ]
-	TOKEN_ARROW         // ->
-	TOKEN_FAT_ARROW     // =>
+	TOKEN_LT               // <
+	TOKEN_GT               // >
+	TOKEN_LE               // <=
+	TOKEN_GE               // >=
+	TOKEN_EQ               // ==
+	TOKEN_NE               // !=
+	TOKEN_TILDE            // ~
+	TOKEN_DEFAULT_ARROW    // ~>
+	TOKEN_AT               // @
+	TOKEN_AT_MINUS         // @-
+	TOKEN_AT_EQUALS        // @=
+	TOKEN_IN               // in keyword
+	TOKEN_LBRACE           // {
+	TOKEN_RBRACE           // }
+	TOKEN_LBRACKET         // [
+	TOKEN_RBRACKET         // ]
+	TOKEN_ARROW            // ->
+	TOKEN_FAT_ARROW        // =>
 	TOKEN_EQUALS_FAT_ARROW // ==> (shorthand for = =>)
-	TOKEN_LEFT_ARROW    // <-
-	TOKEN_PIPE          // |
-	TOKEN_PIPEPIPE      // ||
-	TOKEN_PIPEPIPEPIPE  // |||
-	TOKEN_HASH          // #
-	TOKEN_AND           // and keyword
-	TOKEN_OR            // or keyword
-	TOKEN_NOT           // not keyword
-	TOKEN_XOR           // xor keyword
-	TOKEN_SHL           // shl keyword
-	TOKEN_SHR           // shr keyword
-	TOKEN_ROL           // rol keyword
-	TOKEN_ROR           // ror keyword
-	TOKEN_INCREMENT     // ++
-	TOKEN_DECREMENT     // --
-	TOKEN_FMA           // *+ (fused multiply-add)
-	TOKEN_OR_BANG       // or! (error handling)
-	TOKEN_ME            // me (self-reference)
-	TOKEN_CME           // cme (cached/memoized self-reference)
-	TOKEN_RET           // ret keyword (return/break)
-	TOKEN_AT_FIRST      // @first (first iteration)
-	TOKEN_AT_LAST       // @last (last iteration)
-	TOKEN_AT_COUNTER    // @counter (iteration counter)
-	TOKEN_AT_I          // @i (current element/item)
-	TOKEN_PIPE_B        // |b (bitwise OR)
-	TOKEN_AMP_B         // &b (bitwise AND)
-	TOKEN_CARET_B       // ^b (bitwise XOR)
-	TOKEN_TILDE_B       // ~b (bitwise NOT)
-	TOKEN_CARET         // ^ (head of list)
-	TOKEN_AMP           // & (tail of list)
-	TOKEN_LT_B          // <b (shift left)
-	TOKEN_GT_B          // >b (shift right)
-	TOKEN_LTLT_B        // <<b (rotate left)
-	TOKEN_GTGT_B        // >>b (rotate right)
-	TOKEN_AS            // as (type casting)
+	TOKEN_LEFT_ARROW       // <-
+	TOKEN_PIPE             // |
+	TOKEN_PIPEPIPE         // ||
+	TOKEN_PIPEPIPEPIPE     // |||
+	TOKEN_HASH             // #
+	TOKEN_AND              // and keyword
+	TOKEN_OR               // or keyword
+	TOKEN_NOT              // not keyword
+	TOKEN_XOR              // xor keyword
+	TOKEN_SHL              // shl keyword
+	TOKEN_SHR              // shr keyword
+	TOKEN_ROL              // rol keyword
+	TOKEN_ROR              // ror keyword
+	TOKEN_INCREMENT        // ++
+	TOKEN_DECREMENT        // --
+	TOKEN_FMA              // *+ (fused multiply-add)
+	TOKEN_OR_BANG          // or! (error handling)
+	TOKEN_ME               // me (self-reference)
+	TOKEN_CME              // cme (cached/memoized self-reference)
+	TOKEN_RET              // ret keyword (return/break)
+	TOKEN_AT_FIRST         // @first (first iteration)
+	TOKEN_AT_LAST          // @last (last iteration)
+	TOKEN_AT_COUNTER       // @counter (iteration counter)
+	TOKEN_AT_I             // @i (current element/item)
+	TOKEN_PIPE_B           // |b (bitwise OR)
+	TOKEN_AMP_B            // &b (bitwise AND)
+	TOKEN_CARET_B          // ^b (bitwise XOR)
+	TOKEN_TILDE_B          // ~b (bitwise NOT)
+	TOKEN_CARET            // ^ (head of list)
+	TOKEN_AMP              // & (tail of list)
+	TOKEN_LT_B             // <b (shift left)
+	TOKEN_GT_B             // >b (shift right)
+	TOKEN_LTLT_B           // <<b (rotate left)
+	TOKEN_GTGT_B           // >>b (rotate right)
+	TOKEN_AS               // as (type casting)
 	// C type keywords
 	TOKEN_I8   // i8
 	TOKEN_I16  // i16

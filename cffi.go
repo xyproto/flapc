@@ -832,7 +832,7 @@ func resolveTypeName(offset dwarf.Offset, data *dwarf.Data) string {
 			case strings.Contains(typeName, "double"):
 				return "double"
 			case strings.Contains(typeName, "int") || strings.Contains(typeName, "long") ||
-			     strings.Contains(typeName, "short") || strings.Contains(typeName, "char"):
+				strings.Contains(typeName, "short") || strings.Contains(typeName, "char"):
 				return "int"
 			default:
 				return typeName
