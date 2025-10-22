@@ -1,5 +1,15 @@
 # Flapc TODO
 
+## Bugs
+
+- [ ] Fix UTF-8 rune rendering issues.
+- [ ] Fix the TODO issues mentioned in examples/*.flap.
+
+## Features
+
+- [ ] Add an unsafe block that combines all platforms, and uses "a" for the first register, "b" for the next register etc.
+      Inspired by the Battlestar programming language.
+
 ## Compiler Bugs (High Priority)
 
 These bugs are preventing proper testing and limit language usability:
