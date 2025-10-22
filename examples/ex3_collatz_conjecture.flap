@@ -1,6 +1,8 @@
 // Example 3: Collatz Conjecture (3n+1 problem)
 // Demonstrates: while loops, mathematical sequences, match expressions
 
+// TODO: fix the "bare match clause must be the only entry in the block"
+
 // Start with any positive integer
 n := 27.0
 steps := 0.0
@@ -12,18 +14,17 @@ printf("%v ", n)
 @ i in 0..<1000 {
     // Stop if we reached 1
     n == 1 {
-        -> ret @1
+        ret @1
     }
 
     // If even, divide by 2; if odd, multiply by 3 and add 1
-    isEven := (n mod 2) == 0
-    isEven {
+    n % 2 == 0 {
         -> n <- n / 2
         ~> n <- (3 * n) + 1
     }
 
     printf("-> %v ", n)
-    steps <- steps + 1
+    steps++
 }
 
 printf("\n\nReached 1 in %v steps!\n", steps)

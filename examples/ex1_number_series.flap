@@ -1,6 +1,8 @@
 // Example 1: Generate number series and compute statistics
 // Demonstrates: loops, arithmetic, mutable variables
 
+// TODO: Fix the wrong printing of ²
+
 sum := 0.0
 count := 20
 
