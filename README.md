@@ -32,7 +32,7 @@ sdl.SDL_Quit()
 ```
 
 **Implementation:**
-- Import syntax: `import <library> as <namespace>` (identifier without "/" = C library)
+- Import syntax: `import <library> as <namespace>` (identifiers without `/` are C libraries, identifiers with a `/` are git repos).
 - ELF DT_NEEDED entries generated automatically
 - System V AMD64 ABI calling convention
 - Arguments: float64 → int64 conversion (Cvttsd2si)
