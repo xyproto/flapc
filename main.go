@@ -840,12 +840,12 @@ func (eb *ExecutableBuilder) EmitArenaRuntimeCode() {
 	out.JumpConditional(JumpEqual, 0) // je to error
 
 	// Initialize arena structure
-	out.MovRegToMem("rax", "rbx", 0)   // [arena+0] = buffer_ptr
-	out.MovRegToMem("r12", "rbx", 8)   // [arena+8] = capacity
+	out.MovRegToMem("rax", "rbx", 0) // [arena+0] = buffer_ptr
+	out.MovRegToMem("r12", "rbx", 8) // [arena+8] = capacity
 	out.MovImmToReg("rax", "0")
-	out.MovRegToMem("rax", "rbx", 16)  // [arena+16] = offset = 0
+	out.MovRegToMem("rax", "rbx", 16) // [arena+16] = offset = 0
 	out.MovImmToReg("rax", "8")
-	out.MovRegToMem("rax", "rbx", 24)  // [arena+24] = alignment = 8
+	out.MovRegToMem("rax", "rbx", 24) // [arena+24] = alignment = 8
 
 	// Return arena pointer
 	out.MovRegToReg("rax", "rbx")
@@ -1085,7 +1085,8 @@ func main() {
 
 		err = CompileFlap(tmpFilename, writeToFilename, targetPlatform)
 		if err != nil {
-			log.Fatalf("Flap compilation error: %v", err)
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
 		}
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "-> Wrote executable: %s\n", writeToFilename)
@@ -1115,7 +1116,8 @@ func main() {
 
 				err := CompileFlap(file, writeToFilename, targetPlatform)
 				if err != nil {
-					log.Fatalf("Flap compilation error: %v", err)
+					fmt.Fprintf(os.Stderr, "%v\n", err)
+					os.Exit(1)
 				}
 				if VerboseMode {
 					fmt.Fprintf(os.Stderr, "-> Wrote executable: %s\n", writeToFilename)
@@ -1128,7 +1130,8 @@ func main() {
 	}
 
 	if err := eb.CompileDefaultProgram(filepath.Join(os.TempDir(), "main")); err != nil {
-		log.Fatalf("Flap compilation error: %v", err)
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
 	}
 
 }
