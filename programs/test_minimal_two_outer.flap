@@ -1,0 +1,24 @@
+// Minimal test: two outer loops, each with two inner loops
+@ i in 0..<2 {
+    @ j in 0..<2 {
+        printf("a")
+    }
+    @ k in 0..<2 {
+        printf("b")
+    }
+    printf("\n")
+}
+
+printf("Between\n")
+
+@ i in 0..<2 {
+    @ j in 0..<2 {
+        printf("c")
+    }
+    @ k in 0..<2 {
+        printf("d")
+    }
+    printf("\n")
+}
+
+printf("Done\n")

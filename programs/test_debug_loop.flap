@@ -1,0 +1,20 @@
+// Debug version to see what's happening
+@ i in 0..<2 {
+    printf("Outer i=%v\n", i)
+
+    count1 := i + 1
+    printf("First inner: 0..<%.0f\n", count1)
+    @ j in 0..<count1 {
+        printf("j=%v ", j)
+    }
+    printf("\n")
+
+    count2 := i + 2
+    printf("Second inner: 0..<%.0f\n", count2)
+    @ k in 0..<count2 {
+        printf("k=%v ", k)
+    }
+    printf("\n")
+}
+
+printf("Done\n")

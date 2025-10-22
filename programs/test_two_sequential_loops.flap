@@ -1,0 +1,17 @@
+// Two sequential inner loops
+@ i in 0..<2 {
+    printf("i=%v: ", i)
+
+    // First inner loop
+    @ j in 0..<2 {
+        printf("a")
+    }
+
+    // Second inner loop
+    @ k in 0..<3 {
+        printf("b")
+    }
+
+    printf("\n")
+}
+printf("Done\n")

@@ -1,0 +1,15 @@
+// Two sequential inner loops with variable bounds - exactly like ascii_art
+@ i in 0..<3 {
+    spaces := 3 - i - 1
+    @ j in 0..<spaces {
+        printf(" ")
+    }
+
+    stars := 2 * i + 1
+    @ k in 0..<stars {
+        printf("*")
+    }
+
+    printf("\n")
+}
+printf("Done\n")

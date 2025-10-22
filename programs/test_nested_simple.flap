@@ -1,0 +1,6 @@
+// Simple nested loop test
+@ i in 0..<2 {
+    @ j in 0..<3 {
+        println(i * 10 + j)
+    }
+}

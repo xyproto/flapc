@@ -1,0 +1,40 @@
+// Exact same logic as pyramid
+height := 3
+
+printf("Test:\n")
+
+@ i in 0..<height {
+    printf("i=%v: ", i)
+
+    spaces := height - i - 1
+    @ j in 0..<spaces {
+        printf(" ")
+    }
+
+    stars := 2 * i + 1
+    @ k in 0..<stars {
+        printf("*")
+    }
+
+    printf("\n")
+}
+
+printf("Second loop:\n")
+
+@ i in 0..<height {
+    printf("i=%v: ", i)
+    row := height - i - 1
+
+    @ j in 0..<i {
+        printf(" ")
+    }
+
+    numStars := 2 * row + 1
+    @ k in 0..<numStars {
+        printf("*")
+    }
+
+    printf("\n")
+}
+
+printf("Done\n")

@@ -1,0 +1,10 @@
+// Nested loop with variable bounds
+@ i in 0..<2 {
+    printf("i=%v: ", i)
+    count := i + 2  // Variable bound: 2, 3
+    @ j in 0..<count {
+        printf("*")
+    }
+    printf("\n")
+}
+printf("Done\n")

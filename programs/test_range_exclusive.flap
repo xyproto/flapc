@@ -1,0 +1,5 @@
+// Test exclusive range operator ..<
+@ i in 0..<5 {
+    printf("i = %.0f\n", @i)
+}
+exit(0)

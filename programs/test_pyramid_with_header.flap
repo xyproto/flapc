@@ -1,0 +1,19 @@
+// Exact copy of first part of ascii_art.flap
+height := 10
+
+printf("ASCII Pyramid (height %v):\n\n", height)
+
+@ i in 0..<height {
+    spaces := height - i - 1
+    @ j in 0..<spaces {
+        printf(" ")
+    }
+
+    stars := 2 * i + 1
+    @ k in 0..<stars {
+        printf("*")
+    }
+
+    printf("\n")
+}
+printf("Done\n")

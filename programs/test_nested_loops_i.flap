@@ -1,0 +1,7 @@
+// Test @i1, @i2 for nested loops
+@ i in 0..<3 {
+    @ j in 10..<12 {
+        printf("@i1 (outer)=%v, @i2 (inner)=%v, @i (current)=%v\n", @i1, @i2, @i)
+    }
+}
+exit(0)

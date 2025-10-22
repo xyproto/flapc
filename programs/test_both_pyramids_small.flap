@@ -1,0 +1,32 @@
+// Both pyramids with height=3
+height := 3
+
+printf("ASCII Pyramid:\n")
+
+@ i in 0..<height {
+    spaces := height - i - 1
+    @ j in 0..<spaces {
+        printf(" ")
+    }
+    stars := 2 * i + 1
+    @ k in 0..<stars {
+        printf("*")
+    }
+    printf("\n")
+}
+
+printf("Inverted:\n")
+
+@ i in 0..<height {
+    row := height - i - 1
+    @ j in 0..<i {
+        printf(" ")
+    }
+    numStars := 2 * row + 1
+    @ k in 0..<numStars {
+        printf("*")
+    }
+    printf("\n")
+}
+
+printf("Done\n")

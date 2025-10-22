@@ -1,0 +1,17 @@
+// Pyramid with height 10 - exactly like ascii_art
+height := 10
+
+@ i in 0..<height {
+    spaces := height - i - 1
+    @ j in 0..<spaces {
+        printf(" ")
+    }
+
+    stars := 2 * i + 1
+    @ k in 0..<stars {
+        printf("*")
+    }
+
+    printf("\n")
+}
+printf("Done\n")

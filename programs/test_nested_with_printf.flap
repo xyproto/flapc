@@ -1,0 +1,9 @@
+// Nested loop with printf inside inner loop
+@ i in 0..<2 {
+    printf("Outer i=%v\n", i)
+    @ j in 0..<3 {
+        printf("*")
+    }
+    printf("\n")
+}
+printf("Done\n")
