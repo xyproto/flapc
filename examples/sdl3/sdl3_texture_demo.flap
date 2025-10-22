@@ -1,0 +1,78 @@
+// SDL3 Texture Rendering Example in Flap
+// Ported from SDL2 C sample to showcase SDL3 + Flap FFI usage
+
+import sdl3 as sdl
+
+// Initialize SDL video subsystem
+init_result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
+init_result != 0 {
+    printf("SDL_Init Error: %s\n", sdl.SDL_GetError())
+    exit(1)
+}
+
+// Create the application window
+window_title := "Hello World!"
+window_width := 620
+window_height := 387
+window_flags := sdl.SDL_WINDOW_RESIZABLE
+
+window := sdl.SDL_CreateWindow(window_title, window_width, window_height, window_flags)
+window == 0 {
+    printf("SDL_CreateWindow Error: %s\n", sdl.SDL_GetError())
+    sdl.SDL_Quit()
+    exit(1)
+}
+
+// Create a renderer with vsync enabled
+renderer := sdl.SDL_CreateRenderer(window, 0)
+renderer == 0 {
+    printf("SDL_CreateRenderer Error: %s\n", sdl.SDL_GetError())
+    sdl.SDL_DestroyWindow(window)
+    sdl.SDL_Quit()
+    exit(1)
+}
+
+// Try to enable vsync (best effort)
+set_vsync := sdl.SDL_SetRenderVSync(renderer, 1)
+set_vsync != 0 {
+    printf("Warning: Unable to enable VSync: %s\n", sdl.SDL_GetError())
+}
+
+// Load the BMP image as a surface
+image_path := "grumpy-cat.bmp"
+surface := sdl.SDL_LoadBMP(image_path)
+surface == 0 {
+    printf("SDL_LoadBMP Error: %s\n", sdl.SDL_GetError())
+    sdl.SDL_DestroyRenderer(renderer)
+    sdl.SDL_DestroyWindow(window)
+    sdl.SDL_Quit()
+    exit(1)
+}
+
+// Convert the surface to a texture for the renderer
+texture := sdl.SDL_CreateTextureFromSurface(renderer, surface)
+texture == 0 {
+    printf("SDL_CreateTextureFromSurface Error: %s\n", sdl.SDL_GetError())
+    sdl.SDL_DestroySurface(surface)
+    sdl.SDL_DestroyRenderer(renderer)
+    sdl.SDL_DestroyWindow(window)
+    sdl.SDL_Quit()
+    exit(1)
+}
+
+// We no longer need the surface after creating the texture
+sdl.SDL_DestroySurface(surface)
+
+// Render the texture 20 times with a short delay between frames
+@ i in 0..<20 {
+    sdl.SDL_RenderClear(renderer)
+    sdl.SDL_RenderTexture(renderer, texture, 0, 0)
+    sdl.SDL_RenderPresent(renderer)
+    sdl.SDL_Delay(100)
+}
+
+// Clean up SDL objects
+sdl.SDL_DestroyTexture(texture)
+sdl.SDL_DestroyRenderer(renderer)
+sdl.SDL_DestroyWindow(window)
+sdl.SDL_Quit()
