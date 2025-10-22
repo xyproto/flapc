@@ -2,6 +2,8 @@
 
 [![Go CI](https://github.com/xyproto/flapc/actions/workflows/ci.yml/badge.svg)](https://github.com/xyproto/flapc/actions/workflows/ci.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/xyproto/flapc.svg)](https://pkg.go.dev/github.com/xyproto/flapc) [![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause) [![Go Report Card](https://goreportcard.com/badge/github.com/xyproto/flapc)](https://goreportcard.com/report/github.com/xyproto/flapc)
 
+An experiment in vibecoding a compiler.
+
 **Version 1.1.0**
 
 Compiler for Flap, a functional programming language that compiles to native machine code for x86-64 (Linux/ELF). Support for ARM64 (macOS/Mach-O) and RISC-V (Linux/ELF) is in progress.
