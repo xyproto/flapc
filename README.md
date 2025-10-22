@@ -2,7 +2,7 @@
 
 [![Go CI](https://github.com/xyproto/flapc/actions/workflows/ci.yml/badge.svg)](https://github.com/xyproto/flapc/actions/workflows/ci.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/xyproto/flapc.svg)](https://pkg.go.dev/github.com/xyproto/flapc) [![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause) [![Go Report Card](https://goreportcard.com/badge/github.com/xyproto/flapc)](https://goreportcard.com/report/github.com/xyproto/flapc)
 
-**Version 1.0.0**
+**Version 1.1.0**
 
 Compiler for Flap, a functional programming language that compiles to native machine code for x86-64 (Linux/ELF). Support for ARM64 (macOS/Mach-O) and RISC-V (Linux/ELF) is in progress.
 
@@ -17,7 +17,7 @@ Flap uses an ordered map from uint64 to float64 as the unified type representati
 
 The compiler generates native machine code directly without intermediate representations or runtime systems. All values use IEEE 754 double-precision floating point. SIMD optimizations (SSE2/AVX-512) are automatically selected at runtime via CPUID detection.
 
-## v1.0.0 Release Notes
+## v1.1.0 Release Notes
 
 ### C Library FFI
 
@@ -263,7 +263,7 @@ Each compiled binary includes all three implementations.
 - Direct Linux syscalls for I/O (write, read, open, close, lseek)
 - Compile-time constant folding
 
-## Known Issues (v1.0.0)
+## Known Issues (v1.1.0)
 
 - **ARM64**: Binary execution may hang on macOS (dyld/code signing related)
 - **Unsafe operations**: Missing multiply, divide, bitwise operations (AND/OR/XOR), shifts, sized loads/stores
