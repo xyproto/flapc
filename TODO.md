@@ -1,15 +1,5 @@
 # Flapc TODO
 
-## Current Work
-
-- [ ] **SIMD intrinsics** - Vector operations
-  - [ ] Vector arithmetic operations (vadd, vsub, vmul, vdiv) - needs debugging
-  - [ ] Vector component access (v.x, v.y, v.z, v.w or v[0], v[1], etc.)
-  - [ ] Dot product, magnitude, normalize operations
-- [ ] **Register allocation improvements**
-  - [ ] Register allocation for frequently-used variables
-  - [ ] Full register allocator with liveness analysis
-
 ## Compiler Bugs (High Priority)
 
 These bugs are preventing proper testing and limit language usability:
@@ -32,9 +22,3 @@ These bugs are preventing proper testing and limit language usability:
 - [ ] **Assignment in match clause results** - Parser rejects
   - Affects: programs/prime_sieve.flap
   - Impact: Medium - limits expressiveness
-
-## Test Coverage Improvements
-
-- [ ] **Match expression tests** - Only 2 tests for major language feature
-- [ ] **Mutable variable tests** - Only 2 tests, critical for state management
-- [ ] **Edge case tests** - Empty collections, min/max values, error paths
