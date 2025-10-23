@@ -3474,6 +3474,7 @@ type FlapCompiler struct {
 	usesArenas          bool                         // Track if program uses any arena blocks
 	cacheEnabledLambdas map[string]bool              // Track which lambdas use cme
 	deferredExprs       [][]Expression               // Stack of deferred expressions per scope (LIFO order)
+	currentAssignName   string                       // Name of variable being assigned (for lambda naming)
 
 	metaArenaGrowthErrorJump      int
 	firstMetaArenaMallocErrorJump int
@@ -4240,8 +4241,12 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 		// Allocate actual stack space (was only registered in first pass)
 		fc.out.SubImmFromReg("rsp", 16)
 
+		// Set current assignment name for lambda naming (allows recursive calls)
+		fc.currentAssignName = s.Name
 		// Evaluate expression into xmm0
 		fc.compileExpression(s.Value)
+		// Clear assignment name
+		fc.currentAssignName = ""
 		// Store xmm0 to stack at variable's offset
 		fc.out.MovXmmToMem("xmm0", "rbp", -offset)
 
@@ -6250,9 +6255,16 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		fc.out.AddImmToReg("rsp", 16)
 
 	case *LambdaExpr:
-		// Generate a unique function name for this lambda
-		fc.lambdaCounter++
-		funcName := fmt.Sprintf("lambda_%d", fc.lambdaCounter)
+		// Generate function name for this lambda
+		// If being assigned to a variable, use that name to allow recursion
+		// Otherwise, use a generated name
+		var funcName string
+		if fc.currentAssignName != "" {
+			funcName = fc.currentAssignName
+		} else {
+			fc.lambdaCounter++
+			funcName = fmt.Sprintf("lambda_%d", fc.lambdaCounter)
+		}
 
 		if fc.debug {
 			if VerboseMode {
@@ -8976,6 +8988,34 @@ func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
 	// Result is in xmm0
 }
 
+func (fc *FlapCompiler) compileLambdaDirectCall(call *CallExpr) {
+	// Direct call to a lambda by name (for recursion)
+	// Compile arguments and put them in xmm registers
+	xmmRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"}
+	if len(call.Args) > len(xmmRegs) {
+		compilerError("too many arguments to lambda function (max 6)")
+	}
+
+	// Evaluate all arguments and save to stack
+	for _, arg := range call.Args {
+		fc.compileExpression(arg) // Result in xmm0
+		fc.out.SubImmFromReg("rsp", 16)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+	}
+
+	// Load arguments from stack into xmm registers (in reverse order)
+	for i := len(call.Args) - 1; i >= 0; i-- {
+		fc.out.MovMemToXmm(xmmRegs[i], "rsp", 0)
+		fc.out.AddImmToReg("rsp", 16)
+	}
+
+	// Call the lambda function directly by name
+	fc.trackFunctionCall(call.Function)
+	fc.out.CallSymbol(call.Function)
+
+	// Result is in xmm0
+}
+
 func (fc *FlapCompiler) compileDirectCall(call *DirectCallExpr) {
 	// Compile the callee expression (e.g., a lambda) to get function pointer
 	fc.compileExpression(call.Callee) // Result in xmm0 (function pointer as float64)
@@ -10032,6 +10072,21 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 				return
 			}
 		}
+	}
+
+	// Check if this is a known lambda function (for recursive calls)
+	isKnownLambda := false
+	for _, lambda := range fc.lambdaFuncs {
+		if lambda.Name == call.Function {
+			isKnownLambda = true
+			break
+		}
+	}
+
+	if isKnownLambda {
+		// Direct call to a known lambda function
+		fc.compileLambdaDirectCall(call)
+		return
 	}
 
 	// Check if this is a stored function (variable containing function pointer)

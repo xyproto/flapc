@@ -1,0 +1,7 @@
+// Test creating and using a map without [:] literal
+m := 0.0  // Use a simple value as placeholder
+m[5] = 10
+m[10] = 20
+
+val1 := m[5]
+printf("m[5] = %v\n", val1)

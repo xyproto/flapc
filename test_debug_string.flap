@@ -1,2 +1,0 @@
-s := "hello"
-printf("address = %v\n", s)

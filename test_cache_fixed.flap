@@ -1,0 +1,15 @@
+// Test that exercises the cache (and the refactored malloc call)
+// Using map operations which internally use the cache
+
+m := {}
+m[5] = 10
+m[10] = 20
+m[15] = 30
+
+val1 := m[5]
+val2 := m[10]
+val3 := m[15]
+
+printf("m[5] = %ld\n", val1 as number)
+printf("m[10] = %ld\n", val2 as number)
+printf("m[15] = %ld\n", val3 as number)

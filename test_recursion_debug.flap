@@ -1,5 +1,0 @@
-// Test recursion with just 1 iteration - single expression
-fact := n => n * 2
-
-result := fact(5)
-printf("Result: %ld\n", result as number)
