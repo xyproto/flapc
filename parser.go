@@ -4412,42 +4412,34 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	// Increment label counter for uniqueness
 	fc.labelCounter++
 
-	// HYBRID APPROACH: Use r12/r13 for counter/limit but push/pop for nesting
-	// - Counter in r12, limit in r13
-	// - Push r12/r13 at loop entry to save outer loop state
-	// - Pop r13/r12 at loop exit to restore outer loop state
-	// - Iterator stored on stack for access in loop body
+	// PURE STACK APPROACH (like C/Go): Store counter and limit on stack
+	// This avoids ALL register conflicts and works for arbitrary nesting depth
+	// Layout per loop: [limit: 8 bytes][counter: 8 bytes][iterator: 8 bytes] = 24 bytes
 
-	// Check if this is a nested loop (there are active loops)
-	isNested := len(fc.activeLoops) > 0
+	// Allocate stack space for loop state (24 bytes)
+	fc.stackOffset += 24
+	iterOffset := fc.stackOffset - 16    // iterator at -16
+	counterOffset := fc.stackOffset - 8  // counter at -8
+	limitOffset := fc.stackOffset        // limit at top
+	fc.out.SubImmFromReg("rsp", 24)
 
-	// If nested, save outer loop's r12/r13
-	if isNested {
-		fc.out.PushReg("r12")
-		fc.out.PushReg("r13")
-		fc.stackOffset += 16 // Two 8-byte pushes
+	// Evaluate range start and store to stack (counter)
+	fc.compileExpression(rangeExpr.Start)
+	fc.out.Cvttsd2si("rax", "xmm0")
+	fc.out.MovRegToMem("rax", "rbp", -counterOffset)
+
+	// Evaluate range end and store to stack (limit)
+	fc.compileExpression(rangeExpr.End)
+	fc.out.Cvttsd2si("rax", "xmm0")
+	// For inclusive ranges (..=), increment end by 1
+	if rangeExpr.Inclusive {
+		fc.out.IncReg("rax")
 	}
-
-	// Allocate stack space for iterator variable (16 bytes for alignment)
-	fc.stackOffset += 16
-	iterOffset := fc.stackOffset
-	fc.out.SubImmFromReg("rsp", 16)
+	fc.out.MovRegToMem("rax", "rbp", -limitOffset)
 
 	// Register iterator variable
 	fc.variables[stmt.Iterator] = iterOffset
 	fc.mutableVars[stmt.Iterator] = true
-
-	// Evaluate range start and store in r12 (counter)
-	fc.compileExpression(rangeExpr.Start)
-	fc.out.Cvttsd2si("r12", "xmm0")
-
-	// Evaluate range end and store in r13 (limit)
-	fc.compileExpression(rangeExpr.End)
-	fc.out.Cvttsd2si("r13", "xmm0")
-	// For inclusive ranges (..=), increment end by 1
-	if rangeExpr.Inclusive {
-		fc.out.AddImmToReg("r13", 1)
-	}
 
 	// Loop start label - this is where we jump back to
 	loopStartPos := fc.eb.text.Len()
@@ -4463,8 +4455,10 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	}
 	fc.activeLoops = append(fc.activeLoops, loopInfo)
 
-	// Compare counter (r12) with limit (r13)
-	fc.out.CmpRegToReg("r12", "r13")
+	// Load counter and limit from stack for comparison
+	fc.out.MovMemToReg("rax", "rbp", -counterOffset)
+	fc.out.MovMemToReg("rcx", "rbp", -limitOffset)
+	fc.out.CmpRegToReg("rax", "rcx")
 
 	// Jump to loop end if counter >= limit
 	loopEndJumpPos := fc.eb.text.Len()
@@ -4476,8 +4470,8 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 		loopEndJumpPos+2, // +2 to skip to the offset field
 	)
 
-	// Store current counter value (r12) as iterator (convert to float64)
-	fc.out.Cvtsi2sd("xmm0", "r12")
+	// Store current counter value as iterator (convert to float64)
+	fc.out.Cvtsi2sd("xmm0", "rax")
 	fc.out.MovXmmToMem("xmm0", "rbp", -iterOffset)
 
 	// Compile loop body
@@ -4495,8 +4489,10 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 		fc.patchJumpImmediate(patchPos, backOffset)
 	}
 
-	// Increment loop counter (r12)
-	fc.out.IncReg("r12")
+	// Increment loop counter: load, increment, store back
+	fc.out.MovMemToReg("rax", "rbp", -counterOffset)
+	fc.out.IncReg("rax")
+	fc.out.MovRegToMem("rax", "rbp", -counterOffset)
 
 	// Jump back to loop start
 	loopBackJumpPos := fc.eb.text.Len()
@@ -4506,18 +4502,11 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	// Loop end cleanup - this is where all loop exit jumps target
 	loopEndPos := fc.eb.text.Len()
 
-	// Clean up stack space (16 bytes for iterator)
-	fc.out.AddImmToReg("rsp", 16)
-	fc.stackOffset -= 16
+	// Clean up stack space (24 bytes)
+	fc.out.AddImmToReg("rsp", 24)
+	fc.stackOffset -= 24
 
-	// If nested, restore outer loop's r12/r13 (reverse order of push)
-	if isNested {
-		fc.out.PopReg("r13")  // Last pushed, first popped
-		fc.out.PopReg("r12")  // First pushed, last popped
-		fc.stackOffset -= 16 // Two 8-byte pops
-	}
-
-	// Unregister iterator variable to avoid shadowing issues
+	// Unregister iterator variable
 	delete(fc.variables, stmt.Iterator)
 	delete(fc.mutableVars, stmt.Iterator)
 
