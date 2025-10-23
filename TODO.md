@@ -34,3 +34,29 @@ These bugs are preventing proper testing and limit language usability:
 - [ ] **Assignment in match clause results** - Parser rejects
   - Affects: programs/prime_sieve.flap
   - Impact: Medium - limits expressiveness
+     
+## Mnemonics
+
+Add support for emitting these mnemonics, one .go file per mnemonic: 
+
+aad
+aam
+adc
+add
+cbw
+cwd
+imul
+in
+int
+jnp
+jns
+jnz
+jp
+jz
+mov
+or
+pop
+stosw
+xadd
+xchg
+xor
