@@ -265,3 +265,47 @@ Stack operations are fast (L1 cache) and the slight overhead is negligible compa
 - The risk of subtle, hard-to-reproduce errors
 
 **Premature optimization**: Trying to "optimize" by using registers for intermediate values often leads to bugs that cost far more time to debug than the microseconds saved.
+
+### Code Patterns and Helpers
+
+**Helper function for safe binary operations:**
+
+```go
+// Use this helper instead of manually managing registers:
+func (fc *FlapCompiler) compileBinaryOpSafe(left, right Expression, operator string)
+```
+
+This helper encapsulates the stack-first pattern and should be used whenever possible.
+
+**Comment template for manual implementations:**
+
+When you must manually implement expression compilation with sub-expressions, use this comment pattern:
+
+```go
+// Compile left operand
+fc.compileExpression(leftExpr)
+// Save to stack (registers may be clobbered by sub-expression evaluation)
+fc.out.SubImmFromReg("rsp", 16)
+fc.out.MovXmmToMem("xmm0", "rsp", 0)
+// Compile right operand (safe - can use any registers)
+fc.compileExpression(rightExpr)
+// Restore left operand from stack
+fc.out.MovMemToXmm("xmm1", "rsp", 0)
+fc.out.AddImmToReg("rsp", 16)
+// Now xmm0 has right, xmm1 has left - ready to use
+```
+
+**Red flags to watch for:**
+
+These patterns are potential bugs:
+- `fc.out.MovRegToReg("xmm2", "xmm0")` followed by `fc.compileExpression(...)` - xmm2 will likely be clobbered
+- Saving to XMM registers (xmm2-xmm15) across `fc.compileExpression()` calls
+- Assuming any XMM register preserves its value across function calls
+- Using XMM registers for "temporary" storage without checking call paths
+
+**Safe patterns:**
+
+These patterns are safe:
+- Stack-based storage: `SubImmFromReg` → `MovXmmToMem` → ... → `MovMemToXmm` → `AddImmToReg`
+- Using callee-saved general-purpose registers (rbx, r12-r15) but ONLY in functions you control the prologue/epilogue for
+- Register-to-register moves within a single basic block with no function calls

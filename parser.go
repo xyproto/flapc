@@ -9018,6 +9018,41 @@ func (fc *FlapCompiler) compileLambdaDirectCall(call *CallExpr) {
 	// Result is in xmm0
 }
 
+// compileBinaryOpSafe compiles a binary operation with proper stack-based
+// intermediate storage to avoid register clobbering.
+// This is the recommended pattern for all binary operations.
+func (fc *FlapCompiler) compileBinaryOpSafe(left, right Expression, operator string) {
+	// Compile left into xmm0
+	fc.compileExpression(left)
+	// Save left to stack (registers may be clobbered by function calls in right expr)
+	fc.out.SubImmFromReg("rsp", 16)
+	fc.out.MovXmmToMem("xmm0", "rsp", 0)
+	// Compile right into xmm0
+	fc.compileExpression(right)
+	// Move right operand to xmm1
+	fc.out.MovRegToReg("xmm1", "xmm0")
+	// Restore left operand from stack to xmm0
+	fc.out.MovMemToXmm("xmm0", "rsp", 0)
+	fc.out.AddImmToReg("rsp", 16)
+	// Now xmm0 has left, xmm1 has right - ready for operation
+
+	// Perform the operation
+	switch operator {
+	case "+":
+		fc.out.AddsdXmm("xmm0", "xmm1")
+	case "-":
+		fc.out.SubsdXmm("xmm0", "xmm1")
+	case "*":
+		fc.out.MulsdXmm("xmm0", "xmm1")
+	case "/":
+		// Division needs zero check - caller should handle
+		fc.out.DivsdXmm("xmm0", "xmm1")
+	default:
+		compilerError("unsupported operator in compileBinaryOpSafe: %s", operator)
+	}
+	// Result is in xmm0
+}
+
 func (fc *FlapCompiler) compileDirectCall(call *DirectCallExpr) {
 	// Compile the callee expression (e.g., a lambda) to get function pointer
 	fc.compileExpression(call.Callee) // Result in xmm0 (function pointer as float64)
