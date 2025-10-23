@@ -21,12 +21,14 @@ These bugs prevent proper testing and limit language usability:
   - Impact: High - prevents functional programming patterns
   - Status: Requires implementing closure capture mechanism
 
-- [ ] **Match expressions with string results** - Runtime crash ("Error")
-  - Root cause: String results in match clauses cause segfault at runtime
-  - Affects: Any match expression returning strings (programs/match_unicode.flap)
-  - Workaround: Use numeric codes or if-else chains
-  - Impact: High - severely limits match expression utility
-  - Status: Bug identified, needs investigation of match clause compilation
+- [ ] **String variables with printf %s** - Runtime crash or garbled output
+  - Root cause: `flap_string_to_cstr` runtime function completes but returns invalid/garbled C string
+  - Affects: Any printf("%s", string_var) where string_var is a variable (not literal)
+  - Also affects: Match expressions returning strings (programs/match_unicode.flap)
+  - Workaround: Use string literals directly, or use numeric codes
+  - Impact: High - prevents using string variables in formatted output
+  - Status: Bug isolated to flap_string_to_cstr - function executes but produces bad output
+  - Investigation: Function enters, reads count, calls malloc successfully, but final C string is corrupted
 
 - [ ] **Recursive lambdas** - Multiple related issues:
   - Issue 1: Can't call lambda by its own name (symbol lookup error)
