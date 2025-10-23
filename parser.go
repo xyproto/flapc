@@ -946,6 +946,26 @@ func collectCapturedVarsExpr(expr Expression, paramSet map[string]bool, captured
 		if e.DefaultExpr != nil {
 			collectCapturedVarsExpr(e.DefaultExpr, paramSet, captured)
 		}
+	case *BlockExpr:
+		// For blocks, we need to track locally defined variables
+		// so they aren't treated as captured
+		localParamSet := make(map[string]bool)
+		for k, v := range paramSet {
+			localParamSet[k] = v
+		}
+
+		// Process each statement in the block
+		for _, stmt := range e.Statements {
+			switch s := stmt.(type) {
+			case *AssignStmt:
+				// Recursively check the assignment value (with current param set)
+				collectCapturedVarsExpr(s.Value, localParamSet, captured)
+				// Then add locally defined variable to param set
+				localParamSet[s.Name] = true
+			case *ExpressionStmt:
+				collectCapturedVarsExpr(s.Expr, localParamSet, captured)
+			}
+		}
 	}
 }
 
@@ -988,6 +1008,10 @@ func analyzeClosuresExpr(expr Expression, availableVars map[string]bool) {
 		// This is a lambda - check if it captures any variables
 		captured := make(map[string]bool)
 		collectCapturedVariables(e.Body, e.Params, captured)
+
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Lambda analysis - raw captured: %v, availableVars: %v\n", captured, availableVars)
+		}
 
 		// Filter captured vars to only include those available in outer scope
 		var capturedList []string
@@ -1045,8 +1069,19 @@ func analyzeClosuresExpr(expr Expression, availableVars map[string]bool) {
 			analyzeClosuresExpr(e.DefaultExpr, availableVars)
 		}
 	case *BlockExpr:
+		// Create a new scope for the block, accumulating available vars
+		blockAvailableVars := make(map[string]bool)
+		for k, v := range availableVars {
+			blockAvailableVars[k] = v
+		}
+
+		// Process each statement, threading through newly defined variables
 		for _, stmt := range e.Statements {
-			analyzeClosures(stmt, availableVars)
+			analyzeClosures(stmt, blockAvailableVars)
+			// If it's an assignment, add the variable to available vars for subsequent statements
+			if assign, ok := stmt.(*AssignStmt); ok {
+				blockAvailableVars[assign.Name] = true
+			}
 		}
 	case *UnaryExpr:
 		analyzeClosuresExpr(e.Operand, availableVars)
@@ -1416,9 +1451,44 @@ func substituteParamsExpr(expr Expression, substMap map[string]Expression) Expre
 			Body:   substituteParamsExpr(e.Body, substMap),
 			IsPure: e.IsPure,
 		}
+	case *BlockExpr:
+		// Substitute in block statements
+		newStatements := make([]Statement, len(e.Statements))
+		for i, stmt := range e.Statements {
+			newStatements[i] = substituteParamsStmt(stmt, substMap)
+		}
+		return &BlockExpr{Statements: newStatements}
 	default:
 		// Literals (NumberExpr, StringExpr, etc.) are returned as-is
 		return expr
+	}
+}
+
+func substituteParamsStmt(stmt Statement, substMap map[string]Expression) Statement {
+	switch s := stmt.(type) {
+	case *AssignStmt:
+		return &AssignStmt{
+			Name:     s.Name,
+			Value:    substituteParamsExpr(s.Value, substMap),
+			Mutable:  s.Mutable,
+			IsUpdate: s.IsUpdate,
+		}
+	case *ExpressionStmt:
+		return &ExpressionStmt{
+			Expr: substituteParamsExpr(s.Expr, substMap),
+		}
+	case *LoopStmt:
+		newBody := make([]Statement, len(s.Body))
+		for i, bodyStmt := range s.Body {
+			newBody[i] = substituteParamsStmt(bodyStmt, substMap)
+		}
+		return &LoopStmt{
+			Iterator: s.Iterator,
+			Iterable: substituteParamsExpr(s.Iterable, substMap),
+			Body:     newBody,
+		}
+	default:
+		return stmt
 	}
 }
 
@@ -5099,6 +5169,8 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		// Load variable from stack into xmm0
 		offset, exists := fc.variables[e.Name]
 		if !exists {
+			fmt.Fprintf(os.Stderr, "DEBUG: Undefined variable '%s', available vars: %v\n", e.Name, fc.variables)
+			fmt.Fprintf(os.Stderr, "DEBUG: Current lambda: %v\n", fc.currentLambda)
 			compilerError("undefined variable '%s' at line %d", e.Name, 0)
 		}
 		// movsd xmm0, [rbp - offset]
@@ -6413,9 +6485,16 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			totalSize := 16 + envSize // closure object + environment
 
 			// Allocate memory with malloc
+			// Ensure stack is 16-byte aligned before call
+			// Save current rsp to restore after alignment
+			fc.out.MovRegToReg("r13", "rsp") // Save original rsp
+			fc.out.AndRegWithImm("rsp", -16) // Align to 16 bytes
+
 			fc.out.MovImmToReg("rdi", fmt.Sprintf("%d", totalSize))
 			fc.trackFunctionCall("malloc")
 			fc.eb.GenerateCallInstruction("malloc")
+
+			fc.out.MovRegToReg("rsp", "r13") // Restore original rsp
 			fc.out.MovRegToReg("r12", "rax") // r12 = closure object pointer
 
 			// Store function pointer at offset 0
@@ -6496,14 +6575,12 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			// the value is already in xmm0 but will be overwritten by the next statement
 			if i == len(e.Statements)-1 {
 				// Last statement - its value should already be in xmm0
-				// If it's an expression statement, compileStatement already put it there
 				// If it's an assignment, we need to load the assigned value
 				if assignStmt, ok := stmt.(*AssignStmt); ok {
 					fc.compileExpression(&IdentExpr{Name: assignStmt.Name})
-				} else if exprStmt, ok := stmt.(*ExpressionStmt); ok {
-					// Expression statement - result should already be in xmm0
-					fc.compileExpression(exprStmt.Expr)
 				}
+				// For ExpressionStmt, compileStatement already compiled the expression
+				// and left the result in xmm0, so we don't need to do anything here
 			}
 		}
 
@@ -7356,7 +7433,9 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 			fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: generating %d lambdas\n", len(fc.lambdaFuncs))
 		}
 	}
-	for _, lambda := range fc.lambdaFuncs {
+	// Use index-based loop to handle lambdas added during iteration (nested lambdas)
+	for i := 0; i < len(fc.lambdaFuncs); i++ {
+		lambda := fc.lambdaFuncs[i]
 		if fc.debug {
 			if VerboseMode {
 				fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: generating lambda '%s'\n", lambda.Name)
@@ -12776,6 +12855,10 @@ func CompileFlap(inputPath string, outputPath string, platform Platform) (err er
 	availableVars := make(map[string]bool)
 	for _, stmt := range program.Statements {
 		analyzeClosures(stmt, availableVars)
+		// Add any newly defined variables to available vars for subsequent statements
+		if assign, ok := stmt.(*AssignStmt); ok {
+			availableVars[assign.Name] = true
+		}
 	}
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "-> Finished analyzing closures\n")
