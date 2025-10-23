@@ -1,0 +1,9 @@
+// Test passing integers to factorial
+factorial := (n, acc) => n <= 1 {
+    -> acc
+    ~> me(n - 1, acc * n)
+}
+
+// Pass integer literals
+result := factorial(5, 1)
+printf("factorial(5, 1) = %.0f\n", result)

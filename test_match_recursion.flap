@@ -1,0 +1,11 @@
+// Test recursion with match
+countdown := n => n <= 1 {
+  -> n
+  ~> {
+    println(n)
+    me(n - 1)
+  }
+}
+
+countdown(5.0)
+println("Done")

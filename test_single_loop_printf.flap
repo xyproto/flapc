@@ -1,0 +1,3 @@
+@ i in 0..<2 {
+    printf("i=%ld\n", i as number)
+}

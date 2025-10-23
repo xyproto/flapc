@@ -1,0 +1,7 @@
+// Simplest possible recursion test
+countdown := n => {
+  println(n)
+  me(n - 1)
+}
+
+countdown(3.0)

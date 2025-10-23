@@ -1,0 +1,8 @@
+// Test recursion WITHOUT match expression
+fact := (n, acc) => {
+  printf("fact(%ld, %ld)\n", n as number, acc as number)
+  me(n - 1, acc * n)
+}
+
+result := fact(5, 1)
+printf("Result: %ld\n", result as number)

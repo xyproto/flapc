@@ -1,0 +1,12 @@
+// Simplest recursive lambda test
+countdown := (n) => n <= 0 {
+    -> n
+    ~> {
+        printf("n = %ld\n", n as number)
+        me(n - 1)
+    }
+}
+
+printf("Starting countdown from 3:\n")
+result := countdown(3)
+printf("Final result: %ld\n", result as number)

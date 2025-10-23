@@ -1,0 +1,7 @@
+// Test recursion with 2 parameters
+countdown := (n, x) => {
+  println(n)
+  me(n - 1, x)
+}
+
+countdown(3.0, 99.0)

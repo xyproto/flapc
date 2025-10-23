@@ -1,0 +1,9 @@
+@ i in 0..<2 {
+    printf("i=%v\n", i)
+    @ j in 0..<2 {
+        printf("  j=%v\n", j)
+        @ k in 0..<2 {
+            printf("    k=%v (i=%v, j=%v, k=%v)\n", k, i, j, k)
+        }
+    }
+}
