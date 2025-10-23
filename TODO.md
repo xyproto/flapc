@@ -1,64 +1,63 @@
 # Flapc TODO
 
-## Bugs
+## Essential - Compiler Bugs (Highest Priority)
 
-- [ ] Fix UTF-8 rune rendering issues.
-- [ ] Fix the TODO issues mentioned in examples/*.flap.
-- [ ] Do not use external tools or packages or cgo.
-- [ ] Use Go code instead of the "file" utility.
-
-## Features
-
-- [ ] Add an unsafe block that combines all platforms, and uses "a" for the first register, "b" for the next register etc.
-      Inspired by the Battlestar programming language.
-- [ ] Add an "alias" keyword, for creating aliases for keywords, such as "alias for=@" etc.
-- [ ] Add aliases for: for, break, continue, return, mod and in. (Use ":" instead of "in" in the language).
-
-## Compiler Bugs (High Priority)
-
-These bugs are preventing proper testing and limit language usability:
+These bugs prevent proper testing and limit language usability:
 
 - [ ] **Nested loops bug** - Outer loop terminates after first iteration
   - Affects: programs/nested_loop.flap, programs/ascii_art.flap, programs/test_for_break.flap
-  - Workaround: Use explicit output or flatten loops
+  - Current issue: Register save/restore and stack cleanup interaction
   - Impact: Major - prevents many real-world use cases
+
+- [ ] **Lambda-returning-lambda (closures)** - Cause segfaults
+  - Affects: programs/lambda_calculator.flap
+  - Impact: High - prevents functional programming patterns
+
 - [ ] **Match on numeric literals** - Doesn't work correctly
   - Affects: programs/match_unicode.flap
   - Workaround: Use nested if-else chains
   - Impact: Medium - limits pattern matching utility
+
 - [ ] **Single-parameter lambdas with match** - Return wrong values
   - Affects: programs/factorial.flap
   - Workaround: Use two-parameter accumulator pattern
   - Impact: Medium - requires workarounds for common patterns
-- [ ] **Lambda-returning-lambda (closures)** - Cause segfaults
-  - Affects: programs/lambda_calculator.flap
-  - Impact: High - prevents functional programming patterns
-- [ ] **Assignment in match clause results** - Parser rejects
-  - Affects: programs/prime_sieve.flap
-  - Impact: Medium - limits expressiveness
 
-## Mnemonics
+## Essential - Core Language Features
 
-Add support for emitting these mnemonics, one .go file per mnemonic:
+- [ ] Add an "alias" keyword for creating keyword aliases
+  - Examples: `alias for=@`, `alias break=@-`, `alias continue=@=`
+  - Enables language packs (python.flap, gdscript.flap, etc.)
 
-aad
-aam
-adc
-add
-cbw
-cwd
-imul
-in
-int
-jnp
-jns
-jnz
-jp
-jz
-mov
-or
-pop
-stosw
-xadd
-xchg
-xor
+- [ ] Add optional use of `:` followed by indentation (like Python) instead of `{}` blocks
+  - Enables Python/GDScript-style syntax in language packs
+  - Should be opt-in, not replacing existing brace syntax
+
+## Important - Bug Fixes
+
+- [ ] Fix the TODO issues mentioned in examples/*.flap
+
+## Nice to Have - Advanced Features
+
+- [ ] Add unsafe block with platform-agnostic register names
+  - Use "a" for first register, "b" for next, etc.
+  - Inspired by the Battlestar programming language
+  - Combines all platforms into one assembly syntax
+
+- [ ] Add approximate equality operator for float matching
+  - Syntax: `0.3 =0.1= 0.2` (checks if 0.3 is within 0.2±0.1)
+  - Useful for floating-point comparisons
+
+- [ ] Add macro system for complex syntax transformations
+  - Enables advanced language pack features
+  - Pattern-based code transformation
+
+- [ ] Add custom infix operator definitions
+  - For language packs with different operator precedence
+  - Example: Python's `**` for exponentiation
+
+## Nice to Have - Assembly Mnemonics
+
+Add support for emitting these x86-64 mnemonics (one .go file per mnemonic):
+
+aad, aam, adc, add, cbw, cwd, imul, in, int, jnp, jns, jnz, jp, jz, mov, or, pop, stosw, xadd, xchg, xor
