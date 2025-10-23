@@ -9,6 +9,8 @@
 
 - [ ] Add an unsafe block that combines all platforms, and uses "a" for the first register, "b" for the next register etc.
       Inspired by the Battlestar programming language.
+- [ ] Add an "alias" keyword, for creating aliases for keywords, such as "alias for=@" etc.
+- [ ] Add aliases for: for, break, continue, return, mod and in. (Use ":" instead of "in" in the language).
 
 ## Compiler Bugs (High Priority)
 
