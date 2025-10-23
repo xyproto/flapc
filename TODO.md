@@ -56,12 +56,19 @@ These bugs prevent proper testing and limit language usability:
   - For language packs with different operator precedence
   - Example: Python's `**` for exponentiation
 
-## Nice to Have - Assembly Mnemonics
+## Nice to Have - New Operators (After All Tests Pass)
 
-Additional x86-64 instructions that could be useful:
+These operators work in both safe and unsafe blocks:
 
-- [ ] `adc` - Add with carry (useful for multi-precision arithmetic in unsafe blocks)
-- [ ] `xchg` - Exchange values between registers/memory (atomic operations)
+- [ ] `++` (add with carry) - Multi-precision arithmetic
+  - Safe mode: Automatic carry propagation between operations
+  - Unsafe mode: Uses `adc` instruction (x86-64) for explicit carry handling
+  - Syntax: `result <- high1 ++ high2`
+
+- [ ] `<->` (swap/exchange) - Exchange two values
+  - Safe mode: Swap variables or memory locations
+  - Unsafe mode: Uses `xchg` instruction (x86-64) for atomic operations
+  - Syntax: `a <-> b` or `rax <-> rbx` (unsafe)
 
 **Not implementing** (obsolete, privileged, or redundant):
 - `aad`, `aam` - Obsolete BCD instructions

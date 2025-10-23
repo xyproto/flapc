@@ -227,6 +227,23 @@ x %= 5        // x = x % 5
 
 **Shifts:** `<b` `>b` (shift left/right), `<<b` `>>b` (rotate left/right)
 
+**Special:**
+- `++` (add with carry) - Multi-precision arithmetic, works in safe and unsafe blocks
+  ```flap
+  // Safe mode: automatic carry handling
+  low := 0xFFFFFFFFFFFFFFFF  // Max uint64
+  high := 0x1
+  result_low := low ++ 1      // Wraps to 0, sets carry
+  result_high := high ++ 0    // Becomes 2 due to carry
+  ```
+- `<->` (swap) - Exchange two values, works in safe and unsafe blocks
+  ```flap
+  // Safe mode: swap variables
+  a := 10
+  b := 20
+  a <-> b  // Now: a=20, b=10
+  ```
+
 **Pipeline:**
 - `|` (functional composition: `x | f | g` ≡ `g(f(x))`)
 - `||` (parallel piping)
@@ -683,6 +700,26 @@ unsafe {
     rax <- rax + 10    // rax = 160 (register + immediate)
     rax <- rax - 20    // rax = 140 (register - immediate)
     rax <- rax - rbx   // rax = 90  (register - register)
+} { /* arm64 */ } { /* riscv64 */ }
+```
+
+**Add with Carry** - Multi-precision arithmetic:
+```flap
+unsafe {
+    // 128-bit addition: add two pairs of 64-bit values
+    rax <- low1 + low2      // Add lower 64 bits (sets carry flag)
+    rdx <- high1 ++ high2   // Add upper 64 bits with carry
+} { /* arm64 */ } { /* riscv64 */ }
+```
+
+**Exchange/Swap** - Atomic value exchange:
+```flap
+unsafe {
+    rax <- 100
+    rbx <- 200
+    rax <-> rbx            // Swap: rax=200, rbx=100
+
+    rax <-> [rcx]          // Swap rax with memory at [rcx]
 } { /* arm64 */ } { /* riscv64 */ }
 ```
 
