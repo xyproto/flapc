@@ -5489,14 +5489,16 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		// Default: numeric binary operation
 		// Compile left into xmm0
 		fc.compileExpression(e.Left)
-		// Save left in xmm2 (register-to-register, no stack needed)
-		fc.out.MovRegToReg("xmm2", "xmm0")
+		// Save left to stack (xmm2 may be clobbered by function calls in right expr)
+		fc.out.SubImmFromReg("rsp", 16)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
 		// Compile right into xmm0
 		fc.compileExpression(e.Right)
 		// Move right operand to xmm1
 		fc.out.MovRegToReg("xmm1", "xmm0")
-		// Move left operand from xmm2 to xmm0
-		fc.out.MovRegToReg("xmm0", "xmm2")
+		// Restore left operand from stack to xmm0
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 16)
 		// Perform scalar floating-point operation
 		switch e.Operator {
 		case "+":
