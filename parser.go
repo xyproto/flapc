@@ -4419,14 +4419,14 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 
 	// PURE STACK APPROACH (like C/Go): Store counter and limit on stack
 	// This avoids ALL register conflicts and works for arbitrary nesting depth
-	// Layout per loop: [limit: 8 bytes][counter: 8 bytes][iterator: 8 bytes] = 24 bytes
+	// Layout per loop: [limit: 8][counter: 8][iterator: 8][padding: 8] = 32 bytes (16-byte aligned)
 
-	// Allocate stack space for loop state (24 bytes)
-	fc.stackOffset += 24
+	// Allocate stack space for loop state (32 bytes for 16-byte alignment)
+	fc.stackOffset += 32
 	iterOffset := fc.stackOffset - 16    // iterator at -16
 	counterOffset := fc.stackOffset - 8  // counter at -8
 	limitOffset := fc.stackOffset        // limit at top
-	fc.out.SubImmFromReg("rsp", 24)
+	fc.out.SubImmFromReg("rsp", 32)
 
 	// Evaluate range start and store to stack (counter)
 	fc.compileExpression(rangeExpr.Start)
@@ -4507,9 +4507,9 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	// Loop end cleanup - this is where all loop exit jumps target
 	loopEndPos := fc.eb.text.Len()
 
-	// Clean up stack space (24 bytes)
-	fc.out.AddImmToReg("rsp", 24)
-	fc.stackOffset -= 24
+	// Clean up stack space (32 bytes)
+	fc.out.AddImmToReg("rsp", 32)
+	fc.stackOffset -= 32
 
 	// Unregister iterator variable
 	delete(fc.variables, stmt.Iterator)
@@ -10427,18 +10427,11 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Set rax = number of vector registers used
 		fc.out.MovImmToReg("rax", fmt.Sprintf("%d", xmmArgCount))
 
-		// Ensure stack alignment before calling printf
-		// The x86-64 ABI requires 16-byte alignment before calls.
-		// Loops allocate 24 bytes per level, which can misalign the stack.
-		// We save rsp & 0xF in r10, subtract it to align, call printf, then restore.
-		fc.out.MovRegToReg("r10", "rsp")
-		fc.out.AndRegWithImm("r10", 0xF) // r10 = misalignment amount
-		fc.out.SubRegFromReg("rsp", "r10") // Align stack
-
+		// Stack should be 16-byte aligned at this point because:
+		// - Function prologue ensures alignment
+		// - All stack allocations (loops, variables) use multiples of 16 bytes
 		fc.trackFunctionCall("printf")
 		fc.eb.GenerateCallInstruction("printf")
-
-		fc.out.AddRegToReg("rsp", "r10") // Restore stack
 
 	case "exit":
 		fc.hasExplicitExit = true // Mark that program has explicit exit
