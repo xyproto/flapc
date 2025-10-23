@@ -4875,19 +4875,20 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			// Build map data: count followed by key-value pairs
 			var mapData []byte
 
-			// Count (number of UTF-8 bytes) - can be 0 for empty strings
-			// Note: len(e.Value) returns byte count in Go, not rune count
-			count := float64(len(e.Value))
+			// Count (number of Unicode codepoints/runes) - can be 0 for empty strings
+			// Use utf8.RuneCountInString to get proper character count
+			runes := []rune(e.Value) // Convert to rune slice for proper UTF-8 handling
+			count := float64(len(runes))
 			countBits := uint64(0)
 			*(*float64)(unsafe.Pointer(&countBits)) = count
 			for i := 0; i < 8; i++ {
 				mapData = append(mapData, byte((countBits>>(i*8))&ByteMask))
 			}
 
-			// Add each UTF-8 byte as a key-value pair (none for empty strings)
-			// IMPORTANT: Iterate over bytes, not runes, to preserve UTF-8 encoding
-			for idx := 0; idx < len(e.Value); idx++ {
-				// Key: byte index as float64
+			// Add each Unicode codepoint as a key-value pair (none for empty strings)
+			// IMPORTANT: Iterate over runes, not bytes, for proper UTF-8 support
+			for idx, r := range runes {
+				// Key: codepoint index as float64
 				keyVal := float64(idx)
 				keyBits := uint64(0)
 				*(*float64)(unsafe.Pointer(&keyBits)) = keyVal
@@ -4895,12 +4896,12 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 					mapData = append(mapData, byte((keyBits>>(i*8))&ByteMask))
 				}
 
-				// Value: UTF-8 byte value as float64 (0-255)
-				byteVal := float64(e.Value[idx])
-				byteBits := uint64(0)
-				*(*float64)(unsafe.Pointer(&byteBits)) = byteVal
+				// Value: Unicode codepoint value as float64
+				runeVal := float64(r)
+				runeBits := uint64(0)
+				*(*float64)(unsafe.Pointer(&runeBits)) = runeVal
 				for i := 0; i < 8; i++ {
-					mapData = append(mapData, byte((byteBits>>(i*8))&ByteMask))
+					mapData = append(mapData, byte((runeBits>>(i*8))&ByteMask))
 				}
 			}
 
