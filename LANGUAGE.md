@@ -385,7 +385,9 @@ result = 5 in mylist  // returns 1.0 or 0.0
 
 ### Loops
 
-Loops use `@` for iteration (simplified from `@` in v1.0):
+**The `@` symbol in Flap is loop-related**: it's used for loop iteration, loop control flow, and accessing loop state.
+
+Loops use `@` for iteration:
 
 ```flap
 // Basic loop - iterates from 0 (inclusive) to 5 (exclusive): 0,1,2,3,4
