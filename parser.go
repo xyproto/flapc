@@ -2030,6 +2030,9 @@ func (p *Parser) parseMatchTarget() Expression {
 		if p.peek.Type == TOKEN_LEFT_ARROW {
 			// Parse as an assignment statement wrapped in a block
 			stmt := p.parseStatement()
+			// After parseStatement, p.current is at the last token of the statement
+			// We need to advance past it for the caller
+			p.nextToken()
 			return &BlockExpr{Statements: []Statement{stmt}}
 		}
 		// Otherwise parse as expression
