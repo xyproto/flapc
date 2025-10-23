@@ -58,6 +58,19 @@ These bugs prevent proper testing and limit language usability:
 
 ## Nice to Have - Assembly Mnemonics
 
-Add support for emitting these x86-64 mnemonics (one .go file per mnemonic):
+Additional x86-64 instructions that could be useful:
 
-aad, aam, adc, add, cbw, cwd, imul, in, int, jnp, jns, jnz, jp, jz, mov, or, pop, stosw, xadd, xchg, xor
+- [ ] `adc` - Add with carry (useful for multi-precision arithmetic in unsafe blocks)
+- [ ] `xchg` - Exchange values between registers/memory (atomic operations)
+
+**Not implementing** (obsolete, privileged, or redundant):
+- `aad`, `aam` - Obsolete BCD instructions
+- `cbw`, `cwd` - Sign extension (can use movsx instead)
+- `in` - Port I/O (privileged, not useful in userspace)
+- `int` - Software interrupt (already have syscall support)
+- `stosw` - String operations (can use mov in loops)
+- `xadd` - Atomic exchange-and-add (niche use case)
+
+**Already implemented:**
+- `add`, `imul`, `mov`, `or`, `pop`, `xor` - All have dedicated .go files
+- Jump instructions (`jnp`, `jns`, `jnz`, `jp`, `jz`) - Handled in jmp.go
