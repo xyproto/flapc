@@ -3070,21 +3070,22 @@ func (p *Parser) parseLoopExpr() Expression {
 	defer func() { p.loopDepth = oldDepth }()
 
 	var body []Statement
-	for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+	for p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
+		p.nextToken()
 		if p.current.Type == TOKEN_NEWLINE {
-			p.nextToken()
 			continue
 		}
 		stmt := p.parseStatement()
 		if stmt != nil {
 			body = append(body, stmt)
 		}
-		p.nextToken()
 	}
 
-	if p.current.Type != TOKEN_RBRACE {
+	// Expect and consume '}'
+	if p.peek.Type != TOKEN_RBRACE {
 		p.error("expected '}' at end of loop body")
 	}
+	p.nextToken() // consume the '}'
 
 	return &LoopExpr{
 		Iterator: iterator,
@@ -4384,6 +4385,16 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	// Use callee-saved registers so function calls don't clobber them
 	// This eliminates 2 loads + 1 store per iteration (significant speedup)
 
+	// Save r12 and r13 if we're in a nested loop (they may contain outer loop state)
+	isNested := len(fc.activeLoops) > 0
+	if isNested {
+		if fc.debug {
+			fmt.Fprintf(os.Stderr, "DEBUG: Saving r12/r13 for nested loop (depth %d)\n", len(fc.activeLoops))
+		}
+		fc.out.PushReg("r12")
+		fc.out.PushReg("r13")
+	}
+
 	// Evaluate the range start and end
 	// Start: evaluate and convert to integer in r12
 	fc.compileExpression(rangeExpr.Start)
@@ -4464,6 +4475,13 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 
 	// Loop end label
 	loopEndPos := fc.eb.text.Len()
+
+	// Restore r12 and r13 if we saved them (nested loop)
+	// This must happen RIGHT HERE in the generated code, at the loop end label
+	if isNested {
+		fc.out.PopReg("r13")
+		fc.out.PopReg("r12")
+	}
 
 	// Patch all end jumps
 	for _, patchPos := range fc.activeLoops[len(fc.activeLoops)-1].EndPatches {

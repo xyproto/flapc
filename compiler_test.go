@@ -173,10 +173,14 @@ func TestExecutableGeneration(t *testing.T) {
 	}
 
 	// Check that it's a valid ELF
-	cmd := exec.Command("file", tmpfilePath)
-	output, err := cmd.CombinedOutput()
+	fileInfo, err := IdentifyFile(tmpfilePath)
 	if err != nil {
-		t.Logf("file output: %s", output)
+		t.Logf("Failed to identify file: %v", err)
+	} else {
+		t.Logf("File type: %s", fileInfo.String())
+		if !fileInfo.IsELF() {
+			t.Errorf("Expected ELF file, got: %s", fileInfo.String())
+		}
 	}
 
 	// Just verify the file was created with executable permissions

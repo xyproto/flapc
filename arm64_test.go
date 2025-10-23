@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -57,23 +56,21 @@ func TestARM64BasicCompilation(t *testing.T) {
 				t.Errorf("Output file is not executable")
 			}
 
-			// Verify it's a Mach-O file using file(1)
-			cmd := exec.Command("file", outFile)
-			output, err := cmd.CombinedOutput()
+			// Verify it's a Mach-O file with ARM64 architecture
+			fileInfo, err := IdentifyFile(outFile)
 			if err != nil {
-				t.Logf("file command output: %s", output)
-				t.Fatalf("file command failed: %v", err)
+				t.Fatalf("Failed to identify file: %v", err)
 			}
 
-			outputStr := string(output)
-			if !contains(outputStr, "Mach-O") {
-				t.Errorf("Expected Mach-O file, got: %s", outputStr)
+			t.Logf("File type: %s", fileInfo.String())
+			if !fileInfo.IsMachO() {
+				t.Errorf("Expected Mach-O file, got: %s", fileInfo.String())
 			}
-			if !contains(outputStr, "arm64") && !contains(outputStr, "aarch64") {
-				t.Errorf("Expected ARM64 architecture, got: %s", outputStr)
+			if !fileInfo.IsARM64() {
+				t.Errorf("Expected ARM64 architecture, got: %s", fileInfo.String())
 			}
 
-			t.Logf("Successfully compiled %s: %s", tt.name, outputStr)
+			t.Logf("Successfully compiled %s: %s", tt.name, fileInfo.String())
 		})
 	}
 }

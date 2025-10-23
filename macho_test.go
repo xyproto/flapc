@@ -472,20 +472,17 @@ func TestMachOFileCommand(t *testing.T) {
 		t.Fatalf("Failed to write executable: %v", err)
 	}
 
-	// Run file command
-	cmd := exec.Command("file", tmpfilePath)
-	output, err := cmd.CombinedOutput()
+	// Verify it's recognized as Mach-O
+	fileInfo, err := IdentifyFile(tmpfilePath)
 	if err != nil {
-		t.Logf("file output: %s", output)
-		t.Fatalf("file command failed: %v", err)
+		t.Fatalf("Failed to identify file: %v", err)
 	}
 
-	t.Logf("file output: %s", output)
+	t.Logf("File type: %s", fileInfo.String())
 
 	// Verify it's recognized as Mach-O
-	outputStr := string(output)
-	if !machoContains(outputStr, "Mach-O") && !machoContains(outputStr, "executable") {
-		t.Errorf("file command didn't recognize as Mach-O: %s", outputStr)
+	if !fileInfo.IsMachO() {
+		t.Errorf("Expected Mach-O file, got: %s", fileInfo.String())
 	}
 }
 

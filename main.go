@@ -20,7 +20,8 @@ const versionString = "flapc 1.1.1"
 type Arch int
 
 const (
-	ArchX86_64 Arch = iota
+	ArchUnknown Arch = iota
+	ArchX86_64
 	ArchARM64
 	ArchRiscv64
 )
@@ -33,6 +34,8 @@ func (a Arch) String() string {
 		return "aarch64"
 	case ArchRiscv64:
 		return "riscv64"
+	case ArchUnknown:
+		return "unknown"
 	default:
 		return "unknown"
 	}
