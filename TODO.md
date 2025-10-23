@@ -4,6 +4,8 @@
 
 - [ ] Fix UTF-8 rune rendering issues.
 - [ ] Fix the TODO issues mentioned in examples/*.flap.
+- [ ] Do not use external tools or packages or cgo.
+- [ ] Use Go code instead of the "file" utility.
 
 ## Features
 
@@ -34,10 +36,10 @@ These bugs are preventing proper testing and limit language usability:
 - [ ] **Assignment in match clause results** - Parser rejects
   - Affects: programs/prime_sieve.flap
   - Impact: Medium - limits expressiveness
-     
+
 ## Mnemonics
 
-Add support for emitting these mnemonics, one .go file per mnemonic: 
+Add support for emitting these mnemonics, one .go file per mnemonic:
 
 aad
 aam
