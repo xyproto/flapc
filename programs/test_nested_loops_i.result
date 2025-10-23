@@ -1,2 +1,6 @@
 @i1 (outer)=0, @i2 (inner)=10, @i (current)=10
 @i1 (outer)=0, @i2 (inner)=11, @i (current)=11
+@i1 (outer)=1, @i2 (inner)=10, @i (current)=10
+@i1 (outer)=1, @i2 (inner)=11, @i (current)=11
+@i1 (outer)=2, @i2 (inner)=10, @i (current)=10
+@i1 (outer)=2, @i2 (inner)=11, @i (current)=11
