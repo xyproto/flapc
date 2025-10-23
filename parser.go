@@ -7318,7 +7318,6 @@ func (fc *FlapCompiler) generateCacheInsert() {
 	fc.out.PushReg("r13")
 	fc.out.PushReg("r14")
 	fc.out.PushReg("r15")
-	fc.out.SubImmFromReg("rsp", 8)
 
 	fc.out.MovRegToReg("r12", "rdi")
 	fc.out.MovRegToReg("r13", "rsi")
@@ -7329,9 +7328,9 @@ func (fc *FlapCompiler) generateCacheInsert() {
 	alreadyInitJump := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpNotEqual, 0)
 
-	fc.out.MovImmToReg("rdi", "512")
-	fc.trackFunctionCall("malloc")
-	fc.eb.GenerateCallInstruction("malloc")
+	// Allocate hash table: malloc(512)
+	fc.out.MovImmToReg("rax", "512")
+	fc.callMallocAligned("rax", 5) // 5 pushes after prologue
 	fc.out.MovRegToMem("rax", "r12", 0)
 	fc.out.MovImmToReg("rax", "32")
 	fc.out.MovRegToMem("rax", "r12", 8)
@@ -7348,8 +7347,6 @@ func (fc *FlapCompiler) generateCacheInsert() {
 	fc.out.AddRegToReg("rax", "rdi")
 	fc.out.MovRegToMem("r13", "rax", 0)
 	fc.out.MovRegToMem("r14", "rax", 8)
-
-	fc.out.AddImmToReg("rsp", 8)
 	fc.out.PopReg("r15")
 	fc.out.PopReg("r14")
 	fc.out.PopReg("r13")
@@ -12043,6 +12040,55 @@ func (fc *FlapCompiler) trackFunctionCall(funcName string) {
 		fc.usedFunctions[funcName] = true
 	}
 	fc.callOrder = append(fc.callOrder, funcName)
+}
+
+// callMallocAligned calls malloc with proper stack alignment.
+// This helper ensures the stack is 16-byte aligned before calling malloc,
+// which is required by the x86-64 System V ABI.
+//
+// Parameters:
+//   - sizeReg: register containing the allocation size (will be moved to rdi)
+//   - pushCount: number of registers pushed in the current function
+//     (after function prologue, not including the prologue's push rbp)
+//
+// Returns: allocated pointer in rax
+//
+// Stack alignment calculation:
+//   - call instruction: 8 bytes (return address)
+//   - push rbp: 8 bytes (function prologue)
+//   - push registers: 8 * pushCount bytes
+//   Total: 16 + (8 * pushCount) bytes
+//
+// If total is not a multiple of 16, we subtract 8 more from rsp before calling malloc.
+// The caller must restore rsp after the call.
+func (fc *FlapCompiler) callMallocAligned(sizeReg string, pushCount int) {
+	// Calculate current stack usage
+	// call (8) + push rbp (8) + pushes (8 * pushCount)
+	stackUsed := 16 + (8 * pushCount)
+	needsAlignment := (stackUsed % 16) != 0
+
+	// Move size to rdi (first argument)
+	if sizeReg != "rdi" {
+		fc.out.MovRegToReg("rdi", sizeReg)
+	}
+
+	// If stack is misaligned, subtract 8 bytes for alignment
+	var alignmentOffset int
+	if needsAlignment {
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		alignmentOffset = StackSlotSize
+	}
+
+	// Call malloc
+	fc.trackFunctionCall("malloc")
+	fc.eb.GenerateCallInstruction("malloc")
+
+	// Restore stack alignment offset if we added one
+	if alignmentOffset > 0 {
+		fc.out.AddImmToReg("rsp", int64(alignmentOffset))
+	}
+
+	// Result is in rax
 }
 
 // collectFunctionCalls walks an expression and collects all function calls
