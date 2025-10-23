@@ -227,7 +227,10 @@ x %= 5        // x = x % 5
 
 **Shifts:** `<b` `>b` (shift left/right), `<<b` `>>b` (rotate left/right)
 
-**Pipeline:** `|` (functional composition: `x | f | g` ≡ `g(f(x))`)
+**Pipeline:**
+- `|` (functional composition: `x | f | g` ≡ `g(f(x))`)
+- `||` (parallel piping)
+- `|||` (reducing, map-filter-reduce)
 
 **List:** `^` (head), `&` (tail), `#` (length), `::` (cons)
 

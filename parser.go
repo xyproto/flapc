@@ -4504,17 +4504,19 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	backOffset := int32(loopStartPos - (loopBackJumpPos + UnconditionalJumpSize))
 	fc.out.JumpUnconditional(backOffset)
 
-	// Loop end label
+	// Loop end cleanup - this is where all loop exit jumps target
+	// Clean up iterator stack space first (16 bytes)
 	loopEndPos := fc.eb.text.Len()
+	fc.out.AddImmToReg("rsp", 16)
+	fc.stackOffset -= 16
 
 	// Restore r12 and r13 if we saved them (nested loop)
-	// This must happen RIGHT HERE in the generated code, at the loop end label
 	if isNested {
 		fc.out.PopReg("r13")
 		fc.out.PopReg("r12")
 	}
 
-	// Patch all end jumps
+	// Patch all end jumps to point to loopEndPos (cleanup code)
 	for _, patchPos := range fc.activeLoops[len(fc.activeLoops)-1].EndPatches {
 		endOffset := int32(loopEndPos - (patchPos + 4))
 		fc.patchJumpImmediate(patchPos, endOffset)
@@ -7511,11 +7513,11 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PushReg("rbx")
 	fc.out.PushReg("r12")
 	fc.out.PushReg("r13")
-	fc.out.PushReg("r14") // Save r14 for count (callee-saved, won't be clobbered by malloc)
+	fc.out.PushReg("r14") // r14 = codepoint count
+	fc.out.PushReg("r15") // r15 = output byte position
 
-	// Still need alignment: 5 pushes + rbp = 6 pushes = 48 bytes
-	// Need to align to 16 bytes before calls, so add 8 bytes
-	fc.out.SubImmFromReg("rsp", StackSlotSize)
+	// Still need alignment: 6 pushes + rbp = 7 pushes = 56 bytes
+	// Already aligned to 16 bytes
 
 	// Convert float64 pointer to integer pointer in r12
 	fc.out.SubImmFromReg("rsp", StackSlotSize)
@@ -7525,46 +7527,135 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Get string length from map: count = [r12+0]
 	fc.out.MovMemToXmm("xmm0", "r12", 0)
-	fc.out.Emit([]byte{0xf2, 0x4c, 0x0f, 0x2c, 0xf0}) // cvttsd2si r14, xmm0 (r14 = count, callee-saved)
+	fc.out.Emit([]byte{0xf2, 0x4c, 0x0f, 0x2c, 0xf0}) // cvttsd2si r14, xmm0 (r14 = codepoint count)
 
-	// Allocate memory: malloc(count + 1) for null terminator
+	// Allocate memory: malloc(count * 4 + 1) for UTF-8 (max 4 bytes per codepoint + null)
 	fc.out.MovRegToReg("rdi", "r14")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe7, 0x02}) // shl rdi, 2 (multiply by 4)
 	fc.out.Emit([]byte{0x48, 0x83, 0xc7, 0x01}) // add rdi, 1
 	fc.trackFunctionCall("malloc")
 	fc.eb.GenerateCallInstruction("malloc")
 	fc.out.MovRegToReg("r13", "rax") // r13 = C string buffer
 
-	// Initialize: rbx = current index, r12 = map ptr, r13 = cstr ptr, r14 = count
-	fc.out.XorRegWithReg("rbx", "rbx") // rbx = 0 (current index)
+	// Initialize: rbx = codepoint index, r12 = map ptr, r13 = output buffer, r14 = count, r15 = byte position
+	fc.out.XorRegWithReg("rbx", "rbx") // rbx = 0 (codepoint index)
+	fc.out.XorRegWithReg("r15", "r15") // r15 = 0 (output byte position)
 
-	// Loop through map entries to extract characters
+	// Loop through map entries to extract and encode codepoints
 	fc.eb.MarkLabel("_cstr_convert_loop")
 	fc.out.Emit([]byte{0x4c, 0x39, 0xf3}) // cmp rbx, r14
-	fc.out.Emit([]byte{0x74, 0x27})       // je +39 bytes (adjusted for r14: skip loop body)
+	loopEndJump := fc.eb.text.Len()
+	fc.out.Emit([]byte{0x0f, 0x84, 0x00, 0x00, 0x00, 0x00}) // je _loop_end (4-byte offset, will patch)
 
 	// Calculate map entry offset: 8 + (rbx * 16) for [count][key0][val0][key1][val1]...
 	fc.out.MovRegToReg("rax", "rbx")
 	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x04}) // shl rax, 4 (multiply by 16)
 	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x08}) // add rax, 8
 
-	// Load character code: xmm0 = [r12 + rax + 8] (value field)
-	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x10, 0x04, 0x04})       // movsd xmm0, [r12 + rax]
+	// Load codepoint value: xmm0 = [r12 + rax + 8] (value field)
 	fc.out.Emit([]byte{0xf2, 0x49, 0x0f, 0x10, 0x44, 0x04, 0x08}) // movsd xmm0, [r12 + rax + 8]
 
-	// Convert character code to byte
-	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2c, 0xc0}) // cvttsd2si rax, xmm0
+	// Convert codepoint to integer in rdx
+	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2c, 0xd0}) // cvttsd2si rdx, xmm0 (rdx = codepoint)
 
-	// Store character: [r13 + rbx] = al
-	// r13 requires special handling - use mod=01 with disp8=0
-	fc.out.Emit([]byte{0x41, 0x88, 0x44, 0x1d, 0x00}) // mov [r13 + rbx + 0], al
+	// UTF-8 encoding: check codepoint ranges and encode
+	// Case 1: codepoint <= 0x7F (1 byte: 0xxxxxxx)
+	fc.out.Emit([]byte{0x48, 0x81, 0xfa, 0x7f, 0x00, 0x00, 0x00}) // cmp rdx, 0x7F
+	case1Jump := fc.eb.text.Len()
+	fc.out.Emit([]byte{0x0f, 0x87, 0x00, 0x00, 0x00, 0x00}) // ja case2 (4-byte offset)
+	// 1-byte encoding
+	fc.out.Emit([]byte{0x43, 0x88, 0x54, 0x3d, 0x00})       // mov [r13 + r15], dl
+	fc.out.Emit([]byte{0x49, 0xff, 0xc7})                   // inc r15
+	continueJump1 := fc.eb.text.Len()
+	fc.out.Emit([]byte{0xe9, 0x00, 0x00, 0x00, 0x00})       // jmp loop_continue (4-byte offset)
 
-	// Increment index
-	fc.out.Emit([]byte{0x48, 0xff, 0xc3}) // inc rbx
-	fc.out.Emit([]byte{0xeb, 0xd4})       // jmp _cstr_convert_loop (-44 bytes, adjusted for r14)
+	// Case 2: codepoint <= 0x7FF (2 bytes: 110xxxxx 10xxxxxx)
+	case2Start := fc.eb.text.Len()
+	fc.patchJumpImmediate(case1Jump+2, int32(case2Start-(case1Jump+6)))
+	fc.out.Emit([]byte{0x48, 0x81, 0xfa, 0xff, 0x07, 0x00, 0x00}) // cmp rdx, 0x7FF
+	case2Jump := fc.eb.text.Len()
+	fc.out.Emit([]byte{0x0f, 0x87, 0x00, 0x00, 0x00, 0x00}) // ja case3
+	// 2-byte encoding
+	fc.out.MovRegToReg("rax", "rdx")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x06})             // shr rax, 6
+	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0xc0})             // or rax, 0xC0
+	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00})       // mov [r13 + r15], al
+	fc.out.Emit([]byte{0x49, 0xff, 0xc7})                   // inc r15
+	fc.out.MovRegToReg("rax", "rdx")
+	fc.out.Emit([]byte{0x48, 0x83, 0xe0, 0x3f})             // and rax, 0x3F
+	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0x80})             // or rax, 0x80
+	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00})       // mov [r13 + r15], al
+	fc.out.Emit([]byte{0x49, 0xff, 0xc7})                   // inc r15
+	continueJump2 := fc.eb.text.Len()
+	fc.out.Emit([]byte{0xe9, 0x00, 0x00, 0x00, 0x00})       // jmp loop_continue
 
-	// Add null terminator: [r13 + r14] = 0
-	// r13 requires mod=01 with disp8=0, r14 as index register
-	fc.out.Emit([]byte{0x43, 0xc6, 0x44, 0x35, 0x00, 0x00}) // mov byte [r13 + r14 + 0], 0
+	// Case 3: codepoint <= 0xFFFF (3 bytes: 1110xxxx 10xxxxxx 10xxxxxx)
+	case3Start := fc.eb.text.Len()
+	fc.patchJumpImmediate(case2Jump+2, int32(case3Start-(case2Jump+6)))
+	fc.out.Emit([]byte{0x48, 0x81, 0xfa, 0xff, 0xff, 0x00, 0x00}) // cmp rdx, 0xFFFF
+	case3Jump := fc.eb.text.Len()
+	fc.out.Emit([]byte{0x0f, 0x87, 0x00, 0x00, 0x00, 0x00}) // ja case4
+	// 3-byte encoding
+	fc.out.MovRegToReg("rax", "rdx")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x0c})             // shr rax, 12
+	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0xe0})             // or rax, 0xE0
+	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00})       // mov [r13 + r15], al
+	fc.out.Emit([]byte{0x49, 0xff, 0xc7})                   // inc r15
+	fc.out.MovRegToReg("rax", "rdx")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x06})             // shr rax, 6
+	fc.out.Emit([]byte{0x48, 0x83, 0xe0, 0x3f})             // and rax, 0x3F
+	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0x80})             // or rax, 0x80
+	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00})       // mov [r13 + r15], al
+	fc.out.Emit([]byte{0x49, 0xff, 0xc7})                   // inc r15
+	fc.out.MovRegToReg("rax", "rdx")
+	fc.out.Emit([]byte{0x48, 0x83, 0xe0, 0x3f})             // and rax, 0x3F
+	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0x80})             // or rax, 0x80
+	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00})       // mov [r13 + r15], al
+	fc.out.Emit([]byte{0x49, 0xff, 0xc7})                   // inc r15
+	continueJump3 := fc.eb.text.Len()
+	fc.out.Emit([]byte{0xe9, 0x00, 0x00, 0x00, 0x00})       // jmp loop_continue
+
+	// Case 4: codepoint > 0xFFFF (4 bytes: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx)
+	case4Start := fc.eb.text.Len()
+	fc.patchJumpImmediate(case3Jump+2, int32(case4Start-(case3Jump+6)))
+	// 4-byte encoding
+	fc.out.MovRegToReg("rax", "rdx")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x12})             // shr rax, 18
+	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0xf0})             // or rax, 0xF0
+	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00})       // mov [r13 + r15], al
+	fc.out.Emit([]byte{0x49, 0xff, 0xc7})                   // inc r15
+	fc.out.MovRegToReg("rax", "rdx")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x0c})             // shr rax, 12
+	fc.out.Emit([]byte{0x48, 0x83, 0xe0, 0x3f})             // and rax, 0x3F
+	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0x80})             // or rax, 0x80
+	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00})       // mov [r13 + r15], al
+	fc.out.Emit([]byte{0x49, 0xff, 0xc7})                   // inc r15
+	fc.out.MovRegToReg("rax", "rdx")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x06})             // shr rax, 6
+	fc.out.Emit([]byte{0x48, 0x83, 0xe0, 0x3f})             // and rax, 0x3F
+	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0x80})             // or rax, 0x80
+	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00})       // mov [r13 + r15], al
+	fc.out.Emit([]byte{0x49, 0xff, 0xc7})                   // inc r15
+	fc.out.MovRegToReg("rax", "rdx")
+	fc.out.Emit([]byte{0x48, 0x83, 0xe0, 0x3f})             // and rax, 0x3F
+	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0x80})             // or rax, 0x80
+	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00})       // mov [r13 + r15], al
+	fc.out.Emit([]byte{0x49, 0xff, 0xc7})                   // inc r15
+
+	// Loop continue: increment codepoint index and jump back
+	loopContinue := fc.eb.text.Len()
+	fc.patchJumpImmediate(continueJump1+1, int32(loopContinue-(continueJump1+5)))
+	fc.patchJumpImmediate(continueJump2+1, int32(loopContinue-(continueJump2+5)))
+	fc.patchJumpImmediate(continueJump3+1, int32(loopContinue-(continueJump3+5)))
+	fc.out.Emit([]byte{0x48, 0xff, 0xc3})                   // inc rbx
+	loopJumpBack := fc.eb.text.Len()
+	backOffset := int32(fc.eb.LabelOffset("_cstr_convert_loop") - (loopJumpBack + 5))
+	fc.out.Emit([]byte{0xe9, byte(backOffset), byte(backOffset >> 8), byte(backOffset >> 16), byte(backOffset >> 24)}) // jmp _cstr_convert_loop
+
+	// Loop end: add null terminator
+	loopEnd := fc.eb.text.Len()
+	fc.patchJumpImmediate(loopEndJump+2, int32(loopEnd-(loopEndJump+6)))
+	fc.out.Emit([]byte{0x43, 0xc6, 0x44, 0x3d, 0x00, 0x00}) // mov byte [r13 + r15], 0
 
 	// Return C string pointer in rax
 	fc.out.MovRegToReg("rax", "r13")
@@ -7573,6 +7664,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	// Restore callee-saved registers
+	fc.out.PopReg("r15")
 	fc.out.PopReg("r14")
 	fc.out.PopReg("r13")
 	fc.out.PopReg("r12")
@@ -10056,25 +10148,26 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		stringPositions := make(map[int]bool) // Track which args are %s (string)
 
 		argPos := 0
-		result := ""
+		var result strings.Builder
+		runes := []rune(processedFormat)
 		i := 0
-		for i < len(processedFormat) {
-			if processedFormat[i] == '%' && i+1 < len(processedFormat) {
-				next := processedFormat[i+1]
+		for i < len(runes) {
+			if runes[i] == '%' && i+1 < len(runes) {
+				next := runes[i+1]
 				if next == '%' {
 					// Escaped %% - keep as is
-					result += "%%"
+					result.WriteString("%%")
 					i += 2
 					continue
 				} else if next == 'v' {
 					// %v = smart value format (uses %.15g for precision with no trailing zeros)
-					result += "%.15g"
+					result.WriteString("%.15g")
 					argPos++
 					i += 2
 					continue
 				} else if next == 'b' {
 					// %b = boolean (yes/no)
-					result += "%s"
+					result.WriteString("%s")
 					boolPositions[argPos] = true
 					argPos++
 					i += 2
@@ -10087,9 +10180,10 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 					argPos++
 				}
 			}
-			result += string(processedFormat[i])
+			result.WriteRune(runes[i])
 			i++
 		}
+		resultStr := result.String()
 
 		// Create "yes" and "no" string labels for %b
 		yesLabel := fmt.Sprintf("bool_yes_%d", fc.stringCounter)
@@ -10100,7 +10194,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Create label for processed format string
 		labelName := fmt.Sprintf("str_%d", fc.stringCounter)
 		fc.stringCounter++
-		fc.eb.Define(labelName, result+"\x00")
+		fc.eb.Define(labelName, resultStr+"\x00")
 
 		numArgs := len(call.Args) - 1
 		if numArgs > 8 {

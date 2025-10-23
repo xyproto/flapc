@@ -1,8 +1,6 @@
 // Example 2: List operations with transformations
 // Demonstrates: lists, lambdas, higher-order functions, parallel processing
 
-// TODO: Fix | vs || vs |>
-// TODO: Use "%" instead of "mod"
 // TODO: The doubled output is wrong, fix
 
 // Create a list of numbers
@@ -11,7 +9,7 @@ numbers := [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 // Define transformation functions
 double := x => x * 2
 square := x => x * x
-isEven := x => (x % 2) == 0
+isEven := x => (x mod 2) == 0
 
 printf("Original list: ")
 @ n in numbers {
@@ -42,7 +40,7 @@ printf("\n")
 
 // Parallel transformation using built-in parallel map
 printf("\nParallel doubled: ")
-doubled := numbers |> double
+doubled := numbers | double
 @ n in doubled {
     printf("%v ", n)
 }

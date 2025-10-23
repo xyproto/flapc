@@ -141,28 +141,30 @@ func isHexDigit(ch byte) bool {
 
 // processEscapeSequences converts escape sequences in a string to their actual characters
 func processEscapeSequences(s string) string {
+	// Handle UTF-8 properly by converting to runes first
 	var result strings.Builder
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\\' && i+1 < len(s) {
-			switch s[i+1] {
+	runes := []rune(s)
+	for i := 0; i < len(runes); i++ {
+		if runes[i] == '\\' && i+1 < len(runes) {
+			switch runes[i+1] {
 			case 'n':
-				result.WriteByte('\n')
+				result.WriteRune('\n')
 			case 't':
-				result.WriteByte('\t')
+				result.WriteRune('\t')
 			case 'r':
-				result.WriteByte('\r')
+				result.WriteRune('\r')
 			case '\\':
-				result.WriteByte('\\')
+				result.WriteRune('\\')
 			case '"':
-				result.WriteByte('"')
+				result.WriteRune('"')
 			default:
 				// Unknown escape sequence - keep backslash and the character
-				result.WriteByte(s[i])
-				result.WriteByte(s[i+1])
+				result.WriteRune(runes[i])
+				result.WriteRune(runes[i+1])
 			}
 			i++ // Skip the escaped character
 		} else {
-			result.WriteByte(s[i])
+			result.WriteRune(runes[i])
 		}
 	}
 	return result.String()
