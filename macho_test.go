@@ -472,20 +472,17 @@ func TestMachOFileCommand(t *testing.T) {
 		t.Fatalf("Failed to write executable: %v", err)
 	}
 
-	// Run file command
-	cmd := exec.Command("file", tmpfilePath)
-	output, err := cmd.CombinedOutput()
+	machoFile, err := macho.Open(tmpfilePath)
 	if err != nil {
-		t.Logf("file output: %s", output)
-		t.Fatalf("file command failed: %v", err)
+		t.Fatalf("failed to parse Mach-O: %v", err)
 	}
+	defer machoFile.Close()
 
-	t.Logf("file output: %s", output)
-
-	// Verify it's recognized as Mach-O
-	outputStr := string(output)
-	if !machoContains(outputStr, "Mach-O") && !machoContains(outputStr, "executable") {
-		t.Errorf("file command didn't recognize as Mach-O: %s", outputStr)
+	if machoFile.Type != macho.TypeExec {
+		t.Errorf("unexpected Mach-O type: got %v, want %v", machoFile.Type, macho.TypeExec)
+	}
+	if machoFile.Cpu != macho.CpuAmd64 {
+		t.Errorf("unexpected Mach-O CPU: got %v, want %v", machoFile.Cpu, macho.CpuAmd64)
 	}
 }
 
@@ -527,14 +524,4 @@ func TestMachOPermissions(t *testing.T) {
 	if info.Mode().Perm()&0100 == 0 {
 		t.Errorf("File not executable: permissions = %o", info.Mode().Perm())
 	}
-}
-
-// Helper function to check if string contains substring
-func machoContains(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

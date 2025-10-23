@@ -1,8 +1,8 @@
 package main
 
 import (
+	"debug/macho"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -57,36 +57,18 @@ func TestARM64BasicCompilation(t *testing.T) {
 				t.Errorf("Output file is not executable")
 			}
 
-			// Verify it's a Mach-O file using file(1)
-			cmd := exec.Command("file", outFile)
-			output, err := cmd.CombinedOutput()
+			machoFile, err := macho.Open(outFile)
 			if err != nil {
-				t.Logf("file command output: %s", output)
-				t.Fatalf("file command failed: %v", err)
+				t.Fatalf("failed to parse Mach-O: %v", err)
 			}
+			defer machoFile.Close()
 
-			outputStr := string(output)
-			if !contains(outputStr, "Mach-O") {
-				t.Errorf("Expected Mach-O file, got: %s", outputStr)
+			if machoFile.Type != macho.TypeExec {
+				t.Errorf("unexpected Mach-O type: got %v, want %v", machoFile.Type, macho.TypeExec)
 			}
-			if !contains(outputStr, "arm64") && !contains(outputStr, "aarch64") {
-				t.Errorf("Expected ARM64 architecture, got: %s", outputStr)
+			if machoFile.Cpu != macho.CpuArm64 {
+				t.Errorf("unexpected Mach-O CPU: got %v, want %v", machoFile.Cpu, macho.CpuArm64)
 			}
-
-			t.Logf("Successfully compiled %s: %s", tt.name, outputStr)
 		})
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && findSubstring(s, substr))
-}
-
-func findSubstring(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

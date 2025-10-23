@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -172,11 +173,31 @@ func TestExecutableGeneration(t *testing.T) {
 		t.Fatalf("Failed to set executable permissions: %v", err)
 	}
 
-	// Check that it's a valid ELF
-	cmd := exec.Command("file", tmpfilePath)
-	output, err := cmd.CombinedOutput()
+	data, err := os.ReadFile(tmpfilePath)
 	if err != nil {
-		t.Logf("file output: %s", output)
+		t.Fatalf("failed to read executable: %v", err)
+	}
+	if len(data) < 0x40 {
+		t.Fatalf("ELF header too small: %d bytes", len(data))
+	}
+
+	if string(data[:4]) != "\x7fELF" {
+		t.Fatalf("invalid ELF magic: % x", data[:4])
+	}
+
+	class := data[4]
+	if class != 2 { // ELFCLASS64
+		t.Errorf("unexpected ELF class: got %d, want 2 (64-bit)", class)
+	}
+
+	machine := binary.LittleEndian.Uint16(data[18:20])
+	if machine != 0x3e { // EM_X86_64
+		t.Errorf("unexpected ELF machine: got 0x%x, want 0x3e", machine)
+	}
+
+	etype := binary.LittleEndian.Uint16(data[16:18])
+	if etype != 2 { // ET_EXEC
+		t.Errorf("unexpected ELF type: got 0x%x, want 0x2", etype)
 	}
 
 	// Just verify the file was created with executable permissions

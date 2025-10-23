@@ -6352,6 +6352,10 @@ func (fc *FlapCompiler) compileMatchExpr(expr *MatchExpr) {
 		fc.out.JumpConditional(jumpCond, 0)
 	}
 
+	// Preserve the condition value for literal guard comparisons
+	fc.out.SubImmFromReg("rsp", StackSlotSize)
+	fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
 	endJumpPositions := []int{}
 	pendingGuardJumps := []int{}
 
@@ -6371,12 +6375,21 @@ func (fc *FlapCompiler) compileMatchExpr(expr *MatchExpr) {
 
 			if clause.Guard != nil {
 				fc.compileExpression(clause.Guard)
-				fc.out.XorRegWithReg("rax", "rax")
-				fc.out.Cvtsi2sd("xmm1", "rax")
-				fc.out.Ucomisd("xmm0", "xmm1")
-				guardJump := fc.eb.text.Len()
-				fc.out.JumpConditional(JumpEqual, 0)
-				pendingGuardJumps = append(pendingGuardJumps, guardJump)
+
+				if isNumericLiteral(clause.Guard) {
+					fc.out.MovMemToXmm("xmm1", "rsp", 0)
+					fc.out.Ucomisd("xmm0", "xmm1")
+					guardJump := fc.eb.text.Len()
+					fc.out.JumpConditional(JumpNotEqual, 0)
+					pendingGuardJumps = append(pendingGuardJumps, guardJump)
+				} else {
+					fc.out.XorRegWithReg("rax", "rax")
+					fc.out.Cvtsi2sd("xmm1", "rax")
+					fc.out.Ucomisd("xmm0", "xmm1")
+					guardJump := fc.eb.text.Len()
+					fc.out.JumpConditional(JumpEqual, 0)
+					pendingGuardJumps = append(pendingGuardJumps, guardJump)
+				}
 			}
 
 			fc.compileMatchClauseResult(clause.Result, &endJumpPositions)
@@ -6395,11 +6408,24 @@ func (fc *FlapCompiler) compileMatchExpr(expr *MatchExpr) {
 
 	fc.compileMatchDefault(expr.DefaultExpr)
 
-	endPos := fc.eb.text.Len()
+	restorePos := fc.eb.text.Len()
+	fc.out.AddImmToReg("rsp", StackSlotSize)
 	for _, jumpPos := range endJumpPositions {
-		endOffset := int32(endPos - (jumpPos + 5))
+		endOffset := int32(restorePos - (jumpPos + 5))
 		fc.patchJumpImmediate(jumpPos+1, endOffset)
 	}
+}
+
+func isNumericLiteral(expr Expression) bool {
+	switch e := expr.(type) {
+	case *NumberExpr:
+		return true
+	case *UnaryExpr:
+		if e.Operator == "-" {
+			return isNumericLiteral(e.Operand)
+		}
+	}
+	return false
 }
 
 func (fc *FlapCompiler) compileMatchClauseResult(result Expression, endJumps *[]int) {
@@ -6424,6 +6450,9 @@ func (fc *FlapCompiler) compileMatchDefault(result Expression) {
 }
 
 func (fc *FlapCompiler) compileMatchJump(jumpExpr *JumpExpr) {
+	// Restore stack slot reserved for match condition before performing control flow
+	fc.out.AddImmToReg("rsp", StackSlotSize)
+
 	// Handle ret (Label=0, IsBreak=true) - return from function
 	if jumpExpr.Label == 0 && jumpExpr.IsBreak {
 		// Return from function
