@@ -188,3 +188,80 @@ After an odd number of pushes (after the prologue), RSP is misaligned. We need t
 - **Runtime helper → runtime helper**: Each function handles its own alignment
 
 The helper function automatically calculates: `(16 + 8*pushCount) % 16 != 0`
+
+## Register Clobbering and the Stack-First Principle
+
+### The Problem
+
+Registers are volatile across function calls. Any XMM register (xmm0-xmm15) or general-purpose register can be clobbered when evaluating sub-expressions that contain function calls.
+
+**Example of the bug pattern:**
+```go
+// BUGGY CODE (removed from binary operations):
+fc.compileExpression(e.Left)           // Result in xmm0
+fc.out.MovRegToReg("xmm2", "xmm0")     // Save left in xmm2
+fc.compileExpression(e.Right)          // May call functions that clobber xmm2!
+fc.out.MovRegToReg("xmm0", "xmm2")     // BUG: xmm2 is corrupted!
+```
+
+This manifested in expressions like `n * factorial(n - 1)`, where:
+1. `n` is evaluated and stored in xmm2
+2. `factorial(n - 1)` is evaluated, which recursively uses xmm registers
+3. When control returns, xmm2 contains garbage, not `n`
+4. The multiplication uses corrupted values
+
+### The Solution: Stack-First Principle
+
+**Always use the stack for intermediate values across sub-expression evaluations:**
+
+```go
+// CORRECT CODE (current implementation):
+fc.compileExpression(e.Left)           // Result in xmm0
+fc.out.SubImmFromReg("rsp", 16)        // Allocate stack space
+fc.out.MovXmmToMem("xmm0", "rsp", 0)   // Save left to stack
+fc.compileExpression(e.Right)          // Safe - can use any registers
+fc.out.MovRegToReg("xmm1", "xmm0")     // Right in xmm1
+fc.out.MovMemToXmm("xmm0", "rsp", 0)   // Restore left from stack
+fc.out.AddImmToReg("rsp", 16)          // Clean up
+// Now perform operation with xmm0 and xmm1
+```
+
+### When Registers Are Safe vs. Unsafe
+
+**Safe to use registers:**
+- Within a single basic block with no function calls
+- For immediate operations (e.g., `movsd xmm1, xmm0` followed by `addsd xmm0, xmm1`)
+- For results that are used immediately before any function call
+
+**Must use stack:**
+- Across sub-expression evaluations that might contain function calls
+- Across loop iterations where the loop body might call functions
+- When the value needs to survive a function call
+
+### General Guidelines
+
+1. **Default to stack-based storage** for any value that needs to persist across sub-expression evaluation
+2. **Only optimize to registers** when you can prove no function calls intervene
+3. **Document assumptions** when using register storage (e.g., "safe because no calls in this basic block")
+4. **Use descriptive comments** like "Save to stack (registers may be clobbered by function calls)"
+
+### x86-64 Calling Convention Register Usage
+
+According to System V ABI, these registers are caller-saved (clobbered by function calls):
+- **General purpose**: rax, rcx, rdx, rsi, rdi, r8-r11
+- **XMM registers**: xmm0-xmm15 (all volatile)
+
+These are callee-saved (preserved across calls):
+- **General purpose**: rbx, rbp, r12-r15
+- **XMM registers**: None! All XMM registers are caller-saved
+
+**Implication:** XMM registers are NEVER safe across function calls. Always use stack.
+
+### Performance Considerations
+
+Stack operations are fast (L1 cache) and the slight overhead is negligible compared to:
+- The complexity of register liveness analysis
+- The difficulty of debugging register corruption bugs
+- The risk of subtle, hard-to-reproduce errors
+
+**Premature optimization**: Trying to "optimize" by using registers for intermediate values often leads to bugs that cost far more time to debug than the microseconds saved.
