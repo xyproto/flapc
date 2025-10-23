@@ -4663,6 +4663,14 @@ func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
 	// Loop end label
 	loopEndPos := fc.eb.text.Len()
 
+	// Clean up stack space (64 bytes: 16 for iterator + 16 for index + 16 for length + 16 for list ptr)
+	fc.out.AddImmToReg("rsp", 64)
+	fc.stackOffset -= 64
+
+	// Unregister iterator variable
+	delete(fc.variables, stmt.Iterator)
+	delete(fc.mutableVars, stmt.Iterator)
+
 	// Patch all end jumps (conditional jump + any @0 breaks)
 	for _, patchPos := range fc.activeLoops[len(fc.activeLoops)-1].EndPatches {
 		endOffset := int32(loopEndPos - (patchPos + 4)) // 4 bytes for 32-bit offset
