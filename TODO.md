@@ -4,10 +4,12 @@
 
 These bugs prevent proper testing and limit language usability:
 
-- [x] **Nested loops bug** - FIXED ✓
-  - Fixed by moving from register-based to stack-based storage for loop counters
-  - All nested loop tests now pass: test_nested_var_bounds, test_simple_nested, test_nested_trace, etc.
-  - Impact: Major bug resolved - nested loops now work correctly
+- [x] **Nested loops bug** - PARTIALLY FIXED ✓
+  - Fixed for 2-level nesting using push/pop of r12/r13 registers
+  - Working tests: test_nested_var_bounds, test_nested_simple, ascii_art (all 2-level nesting)
+  - Known limitation: 3+ level nesting still has issues - values from outer loops corrupted
+  - Impact: Major improvement - common 2-level nesting now works correctly
+  - TODO: Fix 3+ level nesting (requires more complex register/stack management)
 
 - [ ] **Lambda-returning-lambda (closures)** - Compilation error "undefined variable"
   - Root cause: Inner lambdas can't access outer lambda parameters (no closure capture)
