@@ -1,0 +1,7 @@
+// Original factorial - should work now
+factorial := (n) => n <= 1 {
+    -> 1
+    ~> n * factorial(n - 1)
+}
+
+printf("factorial(5) = %v (expected 120)\n", factorial(5))

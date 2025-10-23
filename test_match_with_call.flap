@@ -1,0 +1,10 @@
+// Test match with function call
+helper := (x) => x * 2
+
+test := (n) => n <= 1 {
+    -> 1
+    ~> helper(n)
+}
+
+printf("test(5) = %v (expected 10)\n", test(5))
+printf("test(0) = %v (expected 1)\n", test(0))

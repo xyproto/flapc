@@ -1,0 +1,7 @@
+// Test multiplication with parameter in match
+test := (n) => n <= 1 {
+    -> 1
+    ~> n * 2
+}
+
+printf("test(5) = %v (expected 10)\n", test(5))

@@ -1,0 +1,5 @@
+@ i in 0..<2 {
+    @ j in 0..<2 {
+    }
+    printf("after\n")
+}

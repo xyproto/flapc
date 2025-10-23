@@ -949,6 +949,116 @@ func collectCapturedVarsExpr(expr Expression, paramSet map[string]bool, captured
 	}
 }
 
+// analyzeClosure detects and marks closures (lambdas that capture variables from outer scope)
+// This must be called during compilation to populate CapturedVars field
+func analyzeClosures(stmt Statement, availableVars map[string]bool) {
+	switch s := stmt.(type) {
+	case *AssignStmt:
+		// Add this variable to available vars
+		newAvailableVars := make(map[string]bool)
+		for k, v := range availableVars {
+			newAvailableVars[k] = v
+		}
+		newAvailableVars[s.Name] = true
+
+		// Analyze the value expression
+		analyzeClosuresExpr(s.Value, availableVars)
+
+	case *ExpressionStmt:
+		analyzeClosuresExpr(s.Expr, availableVars)
+
+	case *LoopStmt:
+		// Add iterator to available vars for loop body
+		newAvailableVars := make(map[string]bool)
+		for k, v := range availableVars {
+			newAvailableVars[k] = v
+		}
+		newAvailableVars[s.Iterator] = true
+
+		analyzeClosuresExpr(s.Iterable, availableVars)
+		for _, bodyStmt := range s.Body {
+			analyzeClosures(bodyStmt, newAvailableVars)
+		}
+	}
+}
+
+func analyzeClosuresExpr(expr Expression, availableVars map[string]bool) {
+	switch e := expr.(type) {
+	case *LambdaExpr:
+		// This is a lambda - check if it captures any variables
+		captured := make(map[string]bool)
+		collectCapturedVariables(e.Body, e.Params, captured)
+
+		// Filter captured vars to only include those available in outer scope
+		var capturedList []string
+		for varName := range captured {
+			if availableVars[varName] {
+				capturedList = append(capturedList, varName)
+			}
+		}
+
+		e.CapturedVars = capturedList
+		e.IsNestedLambda = len(capturedList) > 0
+
+		if VerboseMode && len(capturedList) > 0 {
+			fmt.Fprintf(os.Stderr, "DEBUG: Found closure with %d captured vars: %v\n", len(capturedList), capturedList)
+		}
+
+		// Recursively analyze the lambda body with params added to available vars
+		newAvailableVars := make(map[string]bool)
+		for k, v := range availableVars {
+			newAvailableVars[k] = v
+		}
+		for _, param := range e.Params {
+			newAvailableVars[param] = true
+		}
+		analyzeClosuresExpr(e.Body, newAvailableVars)
+
+	case *BinaryExpr:
+		analyzeClosuresExpr(e.Left, availableVars)
+		analyzeClosuresExpr(e.Right, availableVars)
+	case *CallExpr:
+		for _, arg := range e.Args {
+			analyzeClosuresExpr(arg, availableVars)
+		}
+	case *ListExpr:
+		for _, elem := range e.Elements {
+			analyzeClosuresExpr(elem, availableVars)
+		}
+	case *MapExpr:
+		for i := range e.Keys {
+			analyzeClosuresExpr(e.Keys[i], availableVars)
+			analyzeClosuresExpr(e.Values[i], availableVars)
+		}
+	case *IndexExpr:
+		analyzeClosuresExpr(e.List, availableVars)
+		analyzeClosuresExpr(e.Index, availableVars)
+	case *MatchExpr:
+		analyzeClosuresExpr(e.Condition, availableVars)
+		for _, clause := range e.Clauses {
+			if clause.Guard != nil {
+				analyzeClosuresExpr(clause.Guard, availableVars)
+			}
+			analyzeClosuresExpr(clause.Result, availableVars)
+		}
+		if e.DefaultExpr != nil {
+			analyzeClosuresExpr(e.DefaultExpr, availableVars)
+		}
+	case *BlockExpr:
+		for _, stmt := range e.Statements {
+			analyzeClosures(stmt, availableVars)
+		}
+	case *UnaryExpr:
+		analyzeClosuresExpr(e.Operand, availableVars)
+	case *ParallelExpr:
+		analyzeClosuresExpr(e.List, availableVars)
+		analyzeClosuresExpr(e.Operation, availableVars)
+	case *PipeExpr:
+		analyzeClosuresExpr(e.Left, availableVars)
+		analyzeClosuresExpr(e.Right, availableVars)
+	}
+}
+
 // collectInlineCandidates identifies lambdas suitable for inlining
 // Criteria: immutable, small body (single expression), not in a loop
 func collectInlineCandidates(stmt Statement, candidates map[string]*LambdaExpr) {
@@ -3481,9 +3591,11 @@ type FlapCompiler struct {
 }
 
 type LambdaFunc struct {
-	Name   string
-	Params []string
-	Body   Expression
+	Name         string
+	Params       []string
+	Body         Expression
+	CapturedVars []string // Variables captured from outer scope
+	IsNested     bool     // True if this lambda is nested inside another
 }
 
 func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
@@ -6284,18 +6396,78 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 		// Store lambda for later code generation
 		fc.lambdaFuncs = append(fc.lambdaFuncs, LambdaFunc{
-			Name:   funcName,
-			Params: e.Params,
-			Body:   e.Body,
+			Name:         funcName,
+			Params:       e.Params,
+			Body:         e.Body,
+			CapturedVars: e.CapturedVars,
+			IsNested:     e.IsNestedLambda,
 		})
 
-		// Return function pointer as float64 in xmm0
-		// Use LEA to get function address, then convert to float64
-		fc.out.LeaSymbolToReg("rax", funcName)
-		fc.out.SubImmFromReg("rsp", StackSlotSize)
-		fc.out.MovRegToMem("rax", "rsp", 0)
-		fc.out.MovMemToXmm("xmm0", "rsp", 0)
-		fc.out.AddImmToReg("rsp", StackSlotSize)
+		// For closures with captured variables, we need runtime allocation
+		// For simple lambdas, use a static closure object with NULL environment
+		if e.IsNestedLambda && len(e.CapturedVars) > 0 {
+			// Allocate closure object and environment on the stack
+			// Closure: [func_ptr, env_ptr] (16 bytes)
+			// Environment: [var0, var1, ...] (8 bytes each)
+			envSize := len(e.CapturedVars) * 8
+			totalSize := 16 + envSize // closure object + environment
+
+			// Allocate space on stack
+			fc.out.SubImmFromReg("rsp", int64(totalSize))
+
+			// rsp now points to closure object
+			// rsp+16 points to environment
+
+			// Store function pointer at rsp+0
+			fc.out.LeaSymbolToReg("rax", funcName)
+			fc.out.MovRegToMem("rax", "rsp", 0)
+
+			// Store environment pointer at rsp+8
+			fc.out.LeaMemToReg("rax", "rsp", 16) // rax = address of environment
+			fc.out.MovRegToMem("rax", "rsp", 8)
+
+			// Copy captured variable values into environment
+			for i, varName := range e.CapturedVars {
+				varOffset, exists := fc.variables[varName]
+				if !exists {
+					compilerError("captured variable '%s' not found in scope", varName)
+				}
+				// Load variable value to xmm15
+				fc.out.MovMemToXmm("xmm15", "rbp", -varOffset)
+				// Store in environment at rsp+16+(i*8)
+				fc.out.MovXmmToMem("xmm15", "rsp", 16+(i*8))
+			}
+
+			// Return closure object pointer (rsp) as float64 in xmm0
+			fc.out.MovRegToReg("r12", "rsp") // Save closure pointer
+			fc.out.SubImmFromReg("rsp", StackSlotSize)
+			fc.out.MovRegToMem("r12", "rsp", 0)
+			fc.out.MovMemToXmm("xmm0", "rsp", 0)
+			fc.out.AddImmToReg("rsp", StackSlotSize)
+
+			// Note: We leave the closure+environment on the stack
+			// The caller is responsible for managing this memory
+		} else {
+			// Simple lambda (no captures) - create static closure object
+			// Closure object format: [func_ptr (8 bytes), env_ptr (8 bytes)]
+			closureLabel := fmt.Sprintf("closure_%s", funcName)
+
+			// We can't statically encode a function pointer, so we'll do it at runtime
+			// Create a placeholder in .rodata for the closure object
+			fc.eb.Define(closureLabel, strings.Repeat("\x00", 16))
+
+			// At runtime, initialize the closure object with function pointer
+			fc.out.LeaSymbolToReg("r12", closureLabel) // r12 = closure object address
+			fc.out.LeaSymbolToReg("rax", funcName)     // rax = function pointer
+			fc.out.MovRegToMem("rax", "r12", 0)        // Store func ptr at offset 0
+			// Offset 8 is already 0 (NULL environment) from the zeroed data
+
+			// Return closure object pointer as float64 in xmm0
+			fc.out.SubImmFromReg("rsp", StackSlotSize)
+			fc.out.MovRegToMem("r12", "rsp", 0)
+			fc.out.MovMemToXmm("xmm0", "rsp", 0)
+			fc.out.AddImmToReg("rsp", StackSlotSize)
+		}
 
 	case *LengthExpr:
 		// Compile the operand (should be a list, returns pointer as float64 in xmm0)
@@ -7235,6 +7407,24 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 			// Store parameter from xmm register to stack
 			fc.out.MovXmmToMem(xmmRegs[i], "rbp", -paramOffset)
 		}
+
+	// Add captured variables to the lambda's scope
+	// The environment pointer is in r15, passed by the caller
+	// Environment contains: [var0, var1, var2, ...] where each is 8 bytes
+	for i, capturedVar := range lambda.CapturedVars {
+		// Allocate stack space for captured variable
+		fc.stackOffset += 16
+		varOffset := fc.stackOffset
+		fc.variables[capturedVar] = varOffset
+		fc.mutableVars[capturedVar] = false
+
+		// Allocate stack space
+		fc.out.SubImmFromReg("rsp", 16)
+
+		// Load captured variable from environment and store to stack
+		fc.out.MovMemToXmm("xmm15", "r15", i*8) // Load from environment
+		fc.out.MovXmmToMem("xmm15", "rbp", -varOffset) // Store to stack
+	}
 
 		// Set current lambda context for "me" self-reference and tail recursion
 		fc.currentLambda = &lambda
@@ -8944,7 +9134,7 @@ func (fc *FlapCompiler) generateArenaEnsureCapacity() {
 }
 
 func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
-	// Load function pointer from variable
+	// Load closure object pointer from variable
 	offset, _ := fc.variables[call.Function]
 	if fc.debug {
 		if VerboseMode {
@@ -8959,16 +9149,21 @@ func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
 	fc.out.MovMemToReg("rax", "rsp", 0)
 	fc.out.AddImmToReg("rsp", StackSlotSize)
 
+	// Load function pointer from closure object (offset 0)
+	fc.out.MovMemToReg("r11", "rax", 0)
+	// Load environment pointer from closure object (offset 8)
+	fc.out.MovMemToReg("r15", "rax", 8)
+
 	// Compile arguments and put them in xmm registers
 	xmmRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"}
 	if len(call.Args) > len(xmmRegs) {
 		compilerError("too many arguments to stored function (max 6)")
 	}
 
-	// Save function pointer to stack (rax might get clobbered)
+	// Save function pointer and environment to stack (will be clobbered during arg evaluation)
 	fc.out.SubImmFromReg("rsp", 16)
-	fc.out.MovRegToMem("rax", "rsp", 0)
-
+	fc.out.MovRegToMem("r11", "rsp", 0)
+	fc.out.MovRegToMem("r15", "rsp", 8)
 	// Evaluate all arguments and save to stack
 	for _, arg := range call.Args {
 		fc.compileExpression(arg) // Result in xmm0
@@ -8984,15 +9179,11 @@ func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
 
 	// Load function pointer from stack to r11
 	fc.out.MovMemToReg("r11", "rsp", 0)
+	fc.out.MovMemToReg("r15", "rsp", 8)
 	fc.out.AddImmToReg("rsp", 16)
 
-	// Ensure stack is 16-byte aligned before call
-	// After the moves above, rsp should already be aligned
-	// but let's verify: original rsp was aligned, we did SubImmFromReg 16 for func ptr
-	// then SubImmFromReg 16 for each arg, then AddImmToReg 16 for each arg,
-	// then AddImmToReg 16 for func ptr, so we're back to original alignment
-
 	// Call the function pointer in r11
+	// r15 contains the environment pointer (accessible within the lambda)
 	fc.out.CallRegister("r11")
 
 	// Result is in xmm0
@@ -12580,6 +12771,19 @@ func CompileFlap(inputPath string, outputPath string, platform Platform) (err er
 	}
 	// Append main file source
 	combinedSource = combinedSource + string(content)
+
+	// Analyze closures to detect which variables lambdas capture from outer scope
+	// This must be done before compilation so that CapturedVars is populated
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "-> Analyzing closures...\n")
+	}
+	availableVars := make(map[string]bool)
+	for _, stmt := range program.Statements {
+		analyzeClosures(stmt, availableVars)
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "-> Finished analyzing closures\n")
+	}
 
 	// Compile
 	compiler, err := NewFlapCompiler(platform)
