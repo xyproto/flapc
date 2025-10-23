@@ -1,0 +1,8 @@
+@ i in 0..<2 {
+    printf("Outer i=%v\n", i)
+    @ j in 0..<2 {
+        @ k in 0..<2 {
+            println(k)
+        }
+    }
+}

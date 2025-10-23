@@ -1,0 +1,8 @@
+@ i in 0..<2 {
+    @ j in 0..<2 {
+        @ k in 0..<2 {
+            val := i * 100 + j * 10 + k
+            printf("i=%v j=%v k=%v -> val=%v\n", i, j, k, val)
+        }
+    }
+}

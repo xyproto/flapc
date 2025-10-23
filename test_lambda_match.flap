@@ -1,0 +1,12 @@
+// Test single-parameter lambda with match expression
+// Reported as returning wrong values in TODO.md
+
+factorial := n => n {
+    n == 0 -> 1
+    n == 1 -> 1
+    ~> n * factorial(n - 1)
+}
+
+printf("factorial(0) = %v (expected: 1)\n", factorial(0))
+printf("factorial(1) = %v (expected: 1)\n", factorial(1))
+printf("factorial(5) = %v (expected: 120)\n", factorial(5))

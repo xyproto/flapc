@@ -1,0 +1,3 @@
+// Test explicit cstr conversion
+s := "hi"
+printf("Using as cstr: %s\n", s as cstr)

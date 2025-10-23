@@ -1,0 +1,8 @@
+// Simplest test: just print i twice in outer loop
+@ i in 0..<2 {
+    printf("Before inner: i=%v\n", i)
+    @ j in 0..<2 {
+        printf("  In inner: i=%v j=%v\n", i, j)
+    }
+    printf("After inner: i=%v\n", i)
+}

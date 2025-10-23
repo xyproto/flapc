@@ -1,0 +1,11 @@
+// Test match with numeric results
+n := 2
+
+result := n {
+    n == 1 -> 100
+    n == 2 -> 200
+    n == 3 -> 300
+    ~> 999
+}
+
+printf("result = %v (expected: 200)\n", result)

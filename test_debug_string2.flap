@@ -1,0 +1,4 @@
+s1 := "hello"
+printf("s1 address = %v\n", s1)
+s2 := s1
+printf("s2 address = %v\n", s2)

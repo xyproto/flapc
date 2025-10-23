@@ -1,0 +1,7 @@
+@ i in 0..<3 {
+    printf("i=%v ", i)
+    @ j in 0..<2 {
+        printf("j=%v ", j)
+    }
+    printf("\n")
+}

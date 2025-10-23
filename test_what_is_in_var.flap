@@ -1,0 +1,6 @@
+result := "two"
+printf("result value (as number) = %v\n", result)
+(result == 0) {
+    -> printf("ERROR: result is zero!\n")
+    ~> printf("OK: result is not zero\n")
+}

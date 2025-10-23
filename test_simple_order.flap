@@ -1,0 +1,7 @@
+@ i in 0..<2 {
+    printf("A")
+    @ j in 0..<2 {
+        printf("B")
+    }
+    printf("C\n")
+}

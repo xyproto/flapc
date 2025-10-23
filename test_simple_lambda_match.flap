@@ -1,0 +1,6 @@
+// Simplest possible test of lambda with match
+test := (x) => x {
+    -> 42
+}
+
+println(test(5))

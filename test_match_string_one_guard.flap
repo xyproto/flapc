@@ -1,0 +1,9 @@
+// Test match with one guard returning string
+n := 2
+
+result := n {
+    n == 2 -> "two"
+    ~> 999
+}
+
+printf("result = %s\n", result)

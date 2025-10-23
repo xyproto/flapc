@@ -1,0 +1,2 @@
+s := "hello"
+printf("s = %s\n", s)

@@ -1,0 +1,25 @@
+// Test lambda returning lambda (closure)
+// This should capture the outer variable in a closure
+
+// Simple closure: function that returns a function
+makeAdder := (x) => {
+    -> (y) => x + y
+}
+
+// Test 1: Create an adder that adds 5
+addFive := makeAdder(5)
+result1 := addFive(10)  // Should be 15
+printf("makeAdder(5)(10) = %v (expected 15)\n", result1)
+
+// Test 2: Create an adder that adds 100
+addHundred := makeAdder(100)
+result2 := addHundred(23)  // Should be 123
+printf("makeAdder(100)(23) = %v (expected 123)\n", result2)
+
+// Test 3: Multiple closures with different captured values
+add10 := makeAdder(10)
+add20 := makeAdder(20)
+printf("add10(5) = %v (expected 15)\n", add10(5))
+printf("add20(5) = %v (expected 25)\n", add20(5))
+
+printf("Closure test complete!\n")

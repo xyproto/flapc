@@ -1,0 +1,7 @@
+n := 2
+result := n {
+    n == 1 -> 100
+    n == 2 -> 200
+    ~> 999
+}
+printf("result = %v\n", result)

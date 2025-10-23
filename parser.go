@@ -7510,14 +7510,15 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PushReg("r14") // r14 = codepoint count
 	fc.out.PushReg("r15") // r15 = output byte position
 
-	// Still need alignment: 6 pushes + rbp = 7 pushes = 56 bytes
-	// Already aligned to 16 bytes
+	// Stack alignment FIX: call(8) + 6 pushes(48) = 56 bytes (MISALIGNED!)
+	// Sub 16 keeps stack aligned for malloc call
+	// Stack alignment FIX: call(8) + 6 pushes(48) = 56 bytes (MISALIGNED!)
+	// Sub 16 keeps stack aligned for malloc call
 
 	// Convert float64 pointer to integer pointer in r12
 	fc.out.SubImmFromReg("rsp", StackSlotSize)
 	fc.out.MovXmmToMem("xmm0", "rsp", 0)
 	fc.out.MovMemToReg("r12", "rsp", 0)
-	fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	// Get string length from map: count = [r12+0]
 	fc.out.MovMemToXmm("xmm0", "r12", 0)

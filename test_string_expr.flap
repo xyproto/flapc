@@ -1,0 +1,2 @@
+result := "two"
+printf("result = %s\n", result)
