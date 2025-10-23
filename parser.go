@@ -10136,8 +10136,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Process format string: %v -> %g (smart float), %b -> %s (boolean), %s -> string
 		processedFormat := processEscapeSequences(strExpr.Value)
-		boolPositions := make(map[int]bool)   // Track which args are %b (boolean)
-		stringPositions := make(map[int]bool) // Track which args are %s (string)
+		boolPositions := make(map[int]bool)    // Track which args are %b (boolean)
+		stringPositions := make(map[int]bool)  // Track which args are %s (string)
+		integerPositions := make(map[int]bool) // Track which args are %d, %i, %ld, etc (integer)
 
 		argPos := 0
 		var result strings.Builder
@@ -10168,7 +10169,15 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 					// %s = string pointer
 					stringPositions[argPos] = true
 					argPos++
-				} else if next == 'f' || next == 'd' || next == 'g' {
+				} else if next == 'l' && i+2 < len(runes) && (runes[i+2] == 'd' || runes[i+2] == 'i' || runes[i+2] == 'u') {
+					// %ld, %li, %lu = long integer formats
+					integerPositions[argPos] = true
+					argPos++
+				} else if next == 'd' || next == 'i' || next == 'u' || next == 'x' || next == 'X' || next == 'o' {
+					// %d, %i, %u, %x, %X, %o = integer formats
+					integerPositions[argPos] = true
+					argPos++
+				} else if next == 'f' || next == 'g' {
 					argPos++
 				}
 			}
@@ -10217,6 +10226,22 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 				}
 			}
 
+			// Check if this is an integer format with "as number" cast
+			if integerPositions[argIdx] {
+				if castExpr, ok := call.Args[i].(*CastExpr); ok && castExpr.Type == "number" {
+					// Integer format with explicit cast - convert float to integer
+					fc.compileExpression(castExpr.Expr)
+					// xmm0 contains float64, convert to integer in rax
+					fc.out.Cvttsd2si("rax", "xmm0")
+					// Move to appropriate integer register
+					if intRegs[intArgCount] != "rax" {
+						fc.out.MovRegToReg(intRegs[intArgCount], "rax")
+					}
+					intArgCount++
+					continue
+				}
+			}
+
 			fc.compileExpression(call.Args[i])
 
 			if boolPositions[argIdx] {
@@ -10253,6 +10278,13 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 				// Result in rax is C string pointer
 				fc.out.MovRegToReg(intRegs[intArgCount], "rax")
 				intArgCount++
+			} else if integerPositions[argIdx] {
+				// Integer format without explicit cast - treat as float and convert
+				fc.out.Cvttsd2si("rax", "xmm0")
+				if intRegs[intArgCount] != "rax" {
+					fc.out.MovRegToReg(intRegs[intArgCount], "rax")
+				}
+				intArgCount++
 			} else {
 				// Regular float argument (%v, %f, %g, etc)
 				fc.out.SubImmFromReg("rsp", 16)
@@ -10269,7 +10301,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Count how many float args we have
 		numFloatArgs := 0
 		for i := 0; i < numArgs; i++ {
-			if !boolPositions[i] && !stringPositions[i] {
+			if !boolPositions[i] && !stringPositions[i] && !integerPositions[i] {
 				numFloatArgs++
 			}
 		}
@@ -10277,7 +10309,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Now load them in the correct order
 		// Start from the deepest item in stack and work backwards
 		for i := 0; i < numArgs; i++ {
-			if !boolPositions[i] && !stringPositions[i] {
+			if !boolPositions[i] && !stringPositions[i] && !integerPositions[i] {
 				// Calculate offset from rsp: (numFloatArgs - xmmArgCount - 1) * 16
 				offset := (numFloatArgs - xmmArgCount - 1) * 16
 				fc.out.MovMemToXmm(xmmRegs[xmmArgCount], "rsp", offset)
@@ -10295,8 +10327,18 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Set rax = number of vector registers used
 		fc.out.MovImmToReg("rax", fmt.Sprintf("%d", xmmArgCount))
 
+		// Ensure stack alignment before calling printf
+		// The x86-64 ABI requires 16-byte alignment before calls.
+		// Loops allocate 24 bytes per level, which can misalign the stack.
+		// We save rsp & 0xF in r10, subtract it to align, call printf, then restore.
+		fc.out.MovRegToReg("r10", "rsp")
+		fc.out.AndRegWithImm("r10", 0xF) // r10 = misalignment amount
+		fc.out.SubRegFromReg("rsp", "r10") // Align stack
+
 		fc.trackFunctionCall("printf")
 		fc.eb.GenerateCallInstruction("printf")
+
+		fc.out.AddRegToReg("rsp", "r10") // Restore stack
 
 	case "exit":
 		fc.hasExplicitExit = true // Mark that program has explicit exit
