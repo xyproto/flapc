@@ -6406,25 +6406,25 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		// For closures with captured variables, we need runtime allocation
 		// For simple lambdas, use a static closure object with NULL environment
 		if e.IsNestedLambda && len(e.CapturedVars) > 0 {
-			// Allocate closure object and environment on the stack
+			// Allocate closure object and environment on the heap using malloc
 			// Closure: [func_ptr, env_ptr] (16 bytes)
 			// Environment: [var0, var1, ...] (8 bytes each)
 			envSize := len(e.CapturedVars) * 8
 			totalSize := 16 + envSize // closure object + environment
 
-			// Allocate space on stack
-			fc.out.SubImmFromReg("rsp", int64(totalSize))
+			// Allocate memory with malloc
+			fc.out.MovImmToReg("rdi", fmt.Sprintf("%d", totalSize))
+			fc.trackFunctionCall("malloc")
+			fc.eb.GenerateCallInstruction("malloc")
+			fc.out.MovRegToReg("r12", "rax") // r12 = closure object pointer
 
-			// rsp now points to closure object
-			// rsp+16 points to environment
-
-			// Store function pointer at rsp+0
+			// Store function pointer at offset 0
 			fc.out.LeaSymbolToReg("rax", funcName)
-			fc.out.MovRegToMem("rax", "rsp", 0)
+			fc.out.MovRegToMem("rax", "r12", 0)
 
-			// Store environment pointer at rsp+8
-			fc.out.LeaMemToReg("rax", "rsp", 16) // rax = address of environment
-			fc.out.MovRegToMem("rax", "rsp", 8)
+			// Store environment pointer at offset 8
+			fc.out.LeaMemToReg("rax", "r12", 16) // rax = address of environment (within same allocation)
+			fc.out.MovRegToMem("rax", "r12", 8)
 
 			// Copy captured variable values into environment
 			for i, varName := range e.CapturedVars {
@@ -6434,19 +6434,15 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				}
 				// Load variable value to xmm15
 				fc.out.MovMemToXmm("xmm15", "rbp", -varOffset)
-				// Store in environment at rsp+16+(i*8)
-				fc.out.MovXmmToMem("xmm15", "rsp", 16+(i*8))
+				// Store in environment at r12+16+(i*8)
+				fc.out.MovXmmToMem("xmm15", "r12", 16+(i*8))
 			}
 
-			// Return closure object pointer (rsp) as float64 in xmm0
-			fc.out.MovRegToReg("r12", "rsp") // Save closure pointer
+			// Return closure object pointer as float64 in xmm0
 			fc.out.SubImmFromReg("rsp", StackSlotSize)
 			fc.out.MovRegToMem("r12", "rsp", 0)
 			fc.out.MovMemToXmm("xmm0", "rsp", 0)
 			fc.out.AddImmToReg("rsp", StackSlotSize)
-
-			// Note: We leave the closure+environment on the stack
-			// The caller is responsible for managing this memory
 		} else {
 			// Simple lambda (no captures) - create static closure object
 			// Closure object format: [func_ptr (8 bytes), env_ptr (8 bytes)]
