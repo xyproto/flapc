@@ -76,6 +76,14 @@ sum := 0
 - Makes mutations explicit at update site
 - Compiler catches common mistakes at compile time
 
+**Note on Arrow Symbols:**
+Flap uses three distinct arrow operators with different meanings:
+- `<-` (left arrow) - Update mutable variable/register: `x <- x + 1`
+- `->` (right arrow) - Match result/consequence: `condition { -> result }`
+- `~>` (squiggly arrow) - Default/else case: `condition { -> if_true ~> if_false }`
+
+These arrows point in different directions and have completely different purposes, so they're easy to distinguish in context.
+
 ### Constants
 
 Flap supports compile-time constants using an **uppercase naming convention**. Constants are substituted at compile time with zero runtime overhead.

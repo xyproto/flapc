@@ -1866,10 +1866,29 @@ func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
 }
 
 func (p *Parser) parseMatchClause() (*MatchClause, bool) {
-	// Guardless clause starting with '->'
+	// Guardless clause starting with '->' (explicit)
 	if p.current.Type == TOKEN_ARROW {
 		p.nextToken() // skip '->'
 		p.skipNewlines()
+		result := p.parseMatchTarget()
+		p.skipNewlines()
+		return &MatchClause{Result: result}, false
+	}
+
+	// Guardless clause without '->' (implicit): check for statement-only tokens
+	// These tokens can only appear in match targets, not as guard expressions:
+	// - ret, @-, @=, @N (jump/return statements)
+	// - { (block statements)
+	// - identifier <- (assignment statements)
+	isStatementToken := p.current.Type == TOKEN_RET ||
+		p.current.Type == TOKEN_AT_MINUS ||
+		p.current.Type == TOKEN_AT_EQUALS ||
+		p.current.Type == TOKEN_LBRACE ||
+		(p.current.Type == TOKEN_AT && p.peek.Type == TOKEN_NUMBER) ||
+		(p.current.Type == TOKEN_IDENT && p.peek.Type == TOKEN_LEFT_ARROW)
+
+	if isStatementToken {
+		// Treat as guardless clause (implicit '->'), not a bare clause
 		result := p.parseMatchTarget()
 		p.skipNewlines()
 		return &MatchClause{Result: result}, false
@@ -2006,6 +2025,15 @@ func (p *Parser) parseMatchTarget() Expression {
 		}
 		// @N is continue (jump to top of loop N), not break
 		return &JumpExpr{Label: label, Value: value, IsBreak: false}
+	case TOKEN_IDENT:
+		// Check if this is an assignment statement (x <- value)
+		if p.peek.Type == TOKEN_LEFT_ARROW {
+			// Parse as an assignment statement wrapped in a block
+			stmt := p.parseStatement()
+			return &BlockExpr{Statements: []Statement{stmt}}
+		}
+		// Otherwise parse as expression
+		fallthrough
 	default:
 		expr := p.parseExpression()
 
