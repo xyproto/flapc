@@ -4416,33 +4416,31 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	// Use callee-saved registers so function calls don't clobber them
 	// This eliminates 2 loads + 1 store per iteration (significant speedup)
 
-	// Save r12 and r13 if we're in a nested loop (they may contain outer loop state)
-	isNested := len(fc.activeLoops) > 0
-	if isNested {
-		if fc.debug {
-			fmt.Fprintf(os.Stderr, "DEBUG: Saving r12/r13 for nested loop (depth %d)\n", len(fc.activeLoops))
-		}
-		fc.out.PushReg("r12")
-		fc.out.PushReg("r13")
-	}
+	// Allocate stack space for loop counter and limit (2 * 8 bytes = 16 bytes)
+	fc.stackOffset += 16
+	counterOffset := fc.stackOffset - 8  // First 8 bytes for counter
+	limitOffset := fc.stackOffset        // Next 8 bytes for limit
 
-	// Evaluate the range start and end
-	// Start: evaluate and convert to integer in r12
+	// Evaluate the range start and store to stack
 	fc.compileExpression(rangeExpr.Start)
-	fc.out.Cvttsd2si("r12", "xmm0") // r12 = start value (loop counter register)
+	fc.out.Cvttsd2si("r12", "xmm0")
+	fc.out.MovRegToMem("r12", "rbp", -counterOffset)
 
-	// End: evaluate and convert to integer in r13
+	// Evaluate the range end and store to stack
 	fc.compileExpression(rangeExpr.End)
-	fc.out.Cvttsd2si("r13", "xmm0") // r13 = end value (loop limit register)
+	fc.out.Cvttsd2si("r13", "xmm0")
 
 	// For exclusive ranges (..<), end is already correct
 	// For inclusive ranges (..=), increment end by 1
 	if rangeExpr.Inclusive {
-		fc.out.AddImmToReg("r13", 1) // r13 = end + 1
+		fc.out.AddImmToReg("r13", 1)
 	}
+	fc.out.MovRegToMem("r13", "rbp", -limitOffset)
+
+	// Reserve stack space for counter and limit
+	fc.out.SubImmFromReg("rsp", 16)
 
 	// Allocate stack space for iterator variable (16 bytes for alignment)
-	// The iterator value on the stack is updated each iteration so loop body can read it
 	fc.stackOffset += 16
 	iterOffset := fc.stackOffset
 	fc.variables[stmt.Iterator] = iterOffset
@@ -4463,6 +4461,10 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	}
 	fc.activeLoops = append(fc.activeLoops, loopInfo)
 
+	// Load counter and limit from stack into r12 and r13
+	fc.out.MovMemToReg("r12", "rbp", -counterOffset)
+	fc.out.MovMemToReg("r13", "rbp", -limitOffset)
+
 	// Compare loop counter (r12) with limit (r13)
 	fc.out.CmpRegToReg("r12", "r13")
 
@@ -4476,7 +4478,7 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 		loopEndJumpPos+2, // +2 to skip to the offset field
 	)
 
-	// Store current counter value to stack for loop body to access
+	// Store current counter value to iterator stack slot for loop body to access
 	// Convert r12 (integer) to float64 and store
 	fc.out.Cvtsi2sd("xmm0", "r12")
 	fc.out.MovXmmToMem("xmm0", "rbp", -iterOffset)
@@ -4496,8 +4498,10 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 		fc.patchJumpImmediate(patchPos, backOffset)
 	}
 
-	// Increment loop counter in register: inc r12 (1 instruction, very fast!)
+	// Increment loop counter: load from stack, increment, store back
+	fc.out.MovMemToReg("r12", "rbp", -counterOffset)
 	fc.out.IncReg("r12")
+	fc.out.MovRegToMem("r12", "rbp", -counterOffset)
 
 	// Jump back to loop start
 	loopBackJumpPos := fc.eb.text.Len()
@@ -4505,16 +4509,11 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	fc.out.JumpUnconditional(backOffset)
 
 	// Loop end cleanup - this is where all loop exit jumps target
-	// Clean up iterator stack space first (16 bytes)
 	loopEndPos := fc.eb.text.Len()
-	fc.out.AddImmToReg("rsp", 16)
-	fc.stackOffset -= 16
 
-	// Restore r12 and r13 if we saved them (nested loop)
-	if isNested {
-		fc.out.PopReg("r13")
-		fc.out.PopReg("r12")
-	}
+	// Clean up stack space: iterator (16 bytes) + counter/limit (16 bytes) = 32 bytes total
+	fc.out.AddImmToReg("rsp", 32)
+	fc.stackOffset -= 32
 
 	// Patch all end jumps to point to loopEndPos (cleanup code)
 	for _, patchPos := range fc.activeLoops[len(fc.activeLoops)-1].EndPatches {

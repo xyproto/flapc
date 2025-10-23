@@ -4,24 +4,33 @@
 
 These bugs prevent proper testing and limit language usability:
 
-- [ ] **Nested loops bug** - Outer loop terminates after first iteration
-  - Affects: programs/nested_loop.flap, programs/ascii_art.flap, programs/test_for_break.flap
-  - Current issue: Register save/restore and stack cleanup interaction
-  - Impact: Major - prevents many real-world use cases
+- [x] **Nested loops bug** - FIXED ✓
+  - Fixed by moving from register-based to stack-based storage for loop counters
+  - All nested loop tests now pass: test_nested_var_bounds, test_simple_nested, test_nested_trace, etc.
+  - Impact: Major bug resolved - nested loops now work correctly
 
-- [ ] **Lambda-returning-lambda (closures)** - Cause segfaults
-  - Affects: programs/lambda_calculator.flap
+- [ ] **Lambda-returning-lambda (closures)** - Compilation error "undefined variable"
+  - Root cause: Inner lambdas can't access outer lambda parameters (no closure capture)
+  - Affects: Any lambda that returns another lambda
   - Impact: High - prevents functional programming patterns
+  - Status: Requires implementing closure capture mechanism
 
-- [ ] **Match on numeric literals** - Doesn't work correctly
-  - Affects: programs/match_unicode.flap
-  - Workaround: Use nested if-else chains
-  - Impact: Medium - limits pattern matching utility
+- [ ] **Match expressions with string results** - Runtime crash ("Error")
+  - Root cause: String results in match clauses cause segfault at runtime
+  - Affects: Any match expression returning strings (programs/match_unicode.flap)
+  - Workaround: Use numeric codes or if-else chains
+  - Impact: High - severely limits match expression utility
+  - Status: Bug identified, needs investigation of match clause compilation
 
-- [ ] **Single-parameter lambdas with match** - Return wrong values
-  - Affects: programs/factorial.flap
-  - Workaround: Use two-parameter accumulator pattern
-  - Impact: Medium - requires workarounds for common patterns
+- [ ] **Recursive lambdas** - Multiple related issues:
+  - Issue 1: Can't call lambda by its own name (symbol lookup error)
+    - Workaround: Use `me` keyword for self-reference
+  - Issue 2: Non-tail recursion with `me` returns wrong values
+    - Root cause: Tail call optimization applied to non-tail-recursive calls
+    - Example: `me(n-1) * n` treats recursive call as tail call
+    - Workaround: Use accumulator pattern for tail recursion
+  - Affects: programs/factorial.flap (non-tail-recursive version)
+  - Impact: Medium - requires specific recursion patterns
 
 ## Essential - Core Language Features
 
