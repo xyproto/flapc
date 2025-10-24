@@ -41,7 +41,7 @@ const (
 	TOKEN_TILDE            // ~
 	TOKEN_DEFAULT_ARROW    // ~>
 	TOKEN_AT               // @
-	TOKEN_AT_EQUALS        // @=
+	TOKEN_AT_PLUSPLUS      // @++
 	TOKEN_IN               // in keyword
 	TOKEN_LBRACE           // {
 	TOKEN_RBRACE           // }
