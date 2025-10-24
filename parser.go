@@ -12991,12 +12991,65 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 func (fc *FlapCompiler) compilePipeExpr(expr *PipeExpr) {
 	// Use ParallelExpr implementation for list mapping
-	// Convert pipe to parallel expr: left | right => left || right
-	parallelExpr := &ParallelExpr{
-		List:      expr.Left,
-		Operation: expr.Right,
+	// Behavior depends on left type:
+	// - If list: map function over elements (use ParallelExpr)
+	// - If scalar: call function with single value
+
+	leftType := fc.getExprType(expr.Left)
+
+	if leftType == "list" {
+		// List mapping: delegate to ParallelExpr
+		parallelExpr := &ParallelExpr{
+			List:      expr.Left,
+			Operation: expr.Right,
+		}
+		fc.compileParallelExpr(parallelExpr)
+		return
 	}
-	fc.compileParallelExpr(parallelExpr)
+
+	// Scalar pipe: evaluate left, then call right with result
+	fc.compileExpression(expr.Left)
+
+	switch right := expr.Right.(type) {
+	case *LambdaExpr:
+		// Direct lambda: compile and call with value in xmm0
+		fc.out.SubImmFromReg("rsp", 16)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+		fc.compileExpression(right)
+
+		fc.out.MovXmmToMem("xmm0", "rsp", StackSlotSize)
+		fc.out.MovMemToReg("r12", "rsp", StackSlotSize)
+
+		fc.out.MovMemToReg("r11", "r12", 0)
+		fc.out.MovMemToReg("r15", "r12", 8)
+
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 16)
+
+		fc.out.CallRegister("r11")
+
+	case *IdentExpr:
+		// Variable reference (lambda stored in variable)
+		fc.out.SubImmFromReg("rsp", 16)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+		fc.compileExpression(right)
+
+		fc.out.MovXmmToMem("xmm0", "rsp", StackSlotSize)
+		fc.out.MovMemToReg("r12", "rsp", StackSlotSize)
+
+		fc.out.MovMemToReg("r11", "r12", 0)
+		fc.out.MovMemToReg("r15", "r12", 8)
+
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 16)
+
+		fc.out.CallRegister("r11")
+
+	default:
+		fc.compileExpression(expr.Right)
+	}
 }
 
 func (fc *FlapCompiler) compileConcurrentGatherExpr(expr *ConcurrentGatherExpr) {
