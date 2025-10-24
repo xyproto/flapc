@@ -2021,7 +2021,6 @@ func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
 	clauses := []*MatchClause{}
 	defaultExpr := Expression(&NumberExpr{Value: 0})
 	defaultExplicit := false
-	sawBareClause := false
 
 	for {
 		p.skipNewlines()
@@ -2042,13 +2041,7 @@ func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
 			continue
 		}
 
-		clause, bare := p.parseMatchClause()
-		if bare {
-			if sawBareClause || len(clauses) > 0 || defaultExplicit {
-				p.error("bare match clause must be the only entry in the block")
-			}
-			sawBareClause = true
-		}
+		clause, _ := p.parseMatchClause()
 		clauses = append(clauses, clause)
 	}
 
@@ -2307,13 +2300,37 @@ func (p *Parser) parseLoopStatement() Statement {
 			}
 			p.nextToken() // consume the '}'
 
-			// Create synthetic range 0..<limit with max inf for infinite loop
+			// Check for optional 'max' clause after the loop body
+			var maxIterations int64 = math.MaxInt64
+			needsMaxCheck := true
+
+			if p.peek.Type == TOKEN_MAX {
+				p.nextToken() // advance to 'max'
+				p.nextToken() // skip 'max'
+
+				// Parse max iterations: either a number or 'inf'
+				if p.current.Type == TOKEN_INF {
+					maxIterations = math.MaxInt64
+					p.nextToken()
+				} else if p.current.Type == TOKEN_NUMBER {
+					maxInt, err := strconv.ParseInt(p.current.Value, 10, 64)
+					if err != nil || maxInt < 1 {
+						p.error("max iterations must be a positive integer or 'inf'")
+					}
+					maxIterations = maxInt
+					p.nextToken()
+				} else {
+					p.error("expected number or 'inf' after 'max' keyword")
+				}
+			}
+
+			// Create synthetic range 0..<limit with max for infinite loop
 			return &LoopStmt{
-				Iterator:      "_", // synthetic iterator (won't be used)
-				Iterable:      &RangeExpr{Start: &NumberExpr{Value: 0}, End: &NumberExpr{Value: 1000000}}, // Large enough for practical purposes
+				Iterator:      "_",
+				Iterable:      &RangeExpr{Start: &NumberExpr{Value: 0}, End: &NumberExpr{Value: 1000000}},
 				Body:          body,
-				MaxIterations: math.MaxInt64,
-				NeedsMaxCheck: true, // Enable max checking to handle iteration counter
+				MaxIterations: maxIterations,
+				NeedsMaxCheck: needsMaxCheck,
 			}
 		}
 
