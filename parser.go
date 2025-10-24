@@ -4547,10 +4547,21 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 	case *LoopStmt:
 		// Save stackOffset before processing loop body
 		// This is needed for correct loop state offset calculation
-		fc.labelCounter++
-		loopLabel := fc.labelCounter
 		baseOffset := fc.stackOffset
-		fc.loopBaseOffsets[loopLabel] = baseOffset
+
+		// Store baseOffset directly in the LoopStmt (only on first pass)
+		// This avoids issues with label counter synchronization between passes
+		if s.BaseOffset == 0 {
+			s.BaseOffset = baseOffset
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG collectSymbols: Storing baseOffset=%d in LoopStmt (first pass)\n", baseOffset)
+			}
+		} else {
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG collectSymbols: BaseOffset already set to %d, not overwriting with %d\n",
+					s.BaseOffset, baseOffset)
+			}
+		}
 
 		// Reserve space for loop state in logical frame
 		// This prevents loop-local variables from colliding with loop iterator
@@ -4599,6 +4610,10 @@ func (fc *FlapCompiler) collectLoopsFromExpression(expr Expression) {
 		fc.labelCounter++
 		loopLabel := fc.labelCounter
 		baseOffset := fc.stackOffset
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG collectLoopsFromExpression: Setting loopBaseOffsets[%d] = %d (stackOffset=%d)\n",
+				loopLabel, baseOffset, fc.stackOffset)
+		}
 		fc.loopBaseOffsets[loopLabel] = baseOffset
 
 		if e.NeedsMaxCheck {
@@ -4926,8 +4941,13 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	currentLoopLabel := fc.labelCounter
 
 	// Get the stack offset from BEFORE loop body was processed
-	// This ensures loop state doesn't conflict with loop-local variables
-	baseOffset := fc.loopBaseOffsets[currentLoopLabel]
+	// This is stored directly in the LoopStmt during collectSymbols
+	baseOffset := stmt.BaseOffset
+
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG compileRangeLoop: currentLoopLabel=%d, baseOffset=%d from stmt.BaseOffset\n",
+			currentLoopLabel, baseOffset)
+	}
 
 	// Allocate stack space for loop state
 	// If runtime checking needed: 48 bytes [iteration_count] [max_iterations] [iterator] [counter] [limit]
@@ -4981,6 +5001,11 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	fc.out.MovRegToMem("rax", "rbp", -limitOffset)
 
 	// Register iterator variable
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Loop iterator '%s' at offset %d (baseOffset=%d, loopStateOffset=%d)\n",
+			stmt.Iterator, iterOffset, baseOffset, loopStateOffset)
+		fmt.Fprintf(os.Stderr, "DEBUG: Current variables before iterator: %v\n", fc.variables)
+	}
 	fc.variables[stmt.Iterator] = iterOffset
 	fc.mutableVars[stmt.Iterator] = true
 

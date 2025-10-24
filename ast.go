@@ -104,6 +104,7 @@ type LoopStmt struct {
 	Body          []Statement
 	MaxIterations int64 // Maximum allowed iterations (math.MaxInt64 for infinite)
 	NeedsMaxCheck bool  // Whether to emit runtime max iteration checking
+	BaseOffset    int   // Stack offset before loop body (set during collectSymbols)
 }
 
 type LoopExpr struct {
