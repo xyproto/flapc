@@ -337,6 +337,11 @@ func (l *Lexer) NextToken() Token {
 		case "in":
 			return Token{Type: TOKEN_IN, Value: value, Line: l.line}
 		case "and":
+			// Check for and!
+			if l.pos < len(l.input) && l.input[l.pos] == '!' {
+				l.pos++ // consume the !
+				return Token{Type: TOKEN_AND_BANG, Value: "and!", Line: l.line}
+			}
 			return Token{Type: TOKEN_AND, Value: value, Line: l.line}
 		case "or":
 			// Check for or!
@@ -351,7 +356,19 @@ func (l *Lexer) NextToken() Token {
 		case "ret":
 			return Token{Type: TOKEN_RET, Value: value, Line: l.line}
 		case "err":
+			// Check for err?
+			if l.pos < len(l.input) && l.input[l.pos] == '?' {
+				l.pos++ // consume the ?
+				return Token{Type: TOKEN_ERR_QUESTION, Value: "err?", Line: l.line}
+			}
 			return Token{Type: TOKEN_ERR, Value: value, Line: l.line}
+		case "val":
+			// Check for val?
+			if l.pos < len(l.input) && l.input[l.pos] == '?' {
+				l.pos++ // consume the ?
+				return Token{Type: TOKEN_VAL_QUESTION, Value: "val?", Line: l.line}
+			}
+			return Token{Type: TOKEN_IDENT, Value: value, Line: l.line}
 		case "use":
 			return Token{Type: TOKEN_USE, Value: value, Line: l.line}
 		case "import":
@@ -479,11 +496,21 @@ func (l *Lexer) NextToken() Token {
 			l.pos += 2
 			return Token{Type: TOKEN_EQ, Value: "==", Line: l.line}
 		}
+		// Check for =?
+		if l.peek() == '?' {
+			l.pos += 2
+			return Token{Type: TOKEN_EQUALS_QUESTION, Value: "=?", Line: l.line}
+		}
 		l.pos++
 		return Token{Type: TOKEN_EQUALS, Value: "=", Line: l.line}
 	case '<':
-		// Check for <-, then <<b (rotate left), then <b (shift left), then <=, then <
+		// Check for <-?, then <-, then <<b (rotate left), then <b (shift left), then <=, then <
 		if l.peek() == '-' {
+			// Check for <-?
+			if l.pos+2 < len(l.input) && l.input[l.pos+2] == '?' {
+				l.pos += 3
+				return Token{Type: TOKEN_LEFT_ARROW_QUESTION, Value: "<-?", Line: l.line}
+			}
 			l.pos += 2
 			return Token{Type: TOKEN_LEFT_ARROW, Value: "<-", Line: l.line}
 		}
@@ -571,7 +598,12 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_DOT, Value: ".", Line: l.line}
 	case '@':
-		// Check for @first, @last, @-, @=
+		// Check for @++, @first, @last, @counter, @i
+		// Check for @++ first
+		if l.peek() == '+' && l.pos+2 < len(l.input) && l.input[l.pos+2] == '+' {
+			l.pos += 3
+			return Token{Type: TOKEN_AT_PLUSPLUS, Value: "@++", Line: l.line}
+		}
 		if l.peek() >= 'a' && l.peek() <= 'z' {
 			start := l.pos
 			l.pos++ // skip @
@@ -604,10 +636,6 @@ func (l *Lexer) NextToken() Token {
 			// Unknown @identifier, treat as error or identifier
 			l.pos = start + 1
 			return Token{Type: TOKEN_AT, Value: "@", Line: l.line}
-		}
-		if l.peek() == '=' {
-			l.pos += 2
-			return Token{Type: TOKEN_AT_EQUALS, Value: "@=", Line: l.line}
 		}
 		l.pos++
 		return Token{Type: TOKEN_AT, Value: "@", Line: l.line}
