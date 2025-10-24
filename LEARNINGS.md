@@ -309,3 +309,53 @@ These patterns are safe:
 - Stack-based storage: `SubImmFromReg` → `MovXmmToMem` → ... → `MovMemToXmm` → `AddImmToReg`
 - Using callee-saved general-purpose registers (rbx, r12-r15) but ONLY in functions you control the prologue/epilogue for
 - Register-to-register moves within a single basic block with no function calls
+
+## Nested Loop Implementation Design
+
+**Problem:** Supporting arbitrary depth nested loops where each loop maintains its counter, limit, and iterator variable.
+
+**Failed Approach:** Register-based storage using r12/r13
+- Works for 2 levels but fails for 3+ because only saves the immediately outer loop's registers
+- Push/pop pattern creates LIFO order: push A's registers → push B's registers → pop B's registers → pop A's registers
+- Inner loop restore happens before outer loop completes
+
+**Correct Solution:** Stack-based storage
+```
+Each loop allocates dedicated stack space (32 bytes, 16-byte aligned):
+- [rsp + 0]:  counter (current iteration value)
+- [rsp + 8]:  limit (end value)  
+- [rsp + 16]: (padding for alignment)
+
+Loop execution:
+1. Allocate stack space: sub rsp, 32
+2. Store counter/limit to stack
+3. Load counter/limit to r12/r13 for loop condition checks
+4. Update counter, store back to stack
+5. Nested loops allocate their own stack slots
+6. Deallocate on exit: add rsp, 32
+```
+
+**Key insight:** Each nested loop level has isolated stack slots, preventing interference.
+
+**Files:** `parser.go:4419-4516` (compileRangeLoop function)
+
+## Stack Alignment and Printf Bug
+
+**Problem:** SIGBUS crashes when calling printf after nested loops.
+
+**Root Cause #1:** Range loops allocated 24 bytes (not 16-byte aligned), violating x86-64 ABI requirement.
+
+**Root Cause #2:** Printf had buggy alignment code:
+```go
+// WRONG - r10 is caller-saved, gets clobbered by printf
+fc.out.MovRegToReg("r10", "rsp")
+fc.out.AndImm("rsp", -16)
+// ... call printf ...
+fc.out.MovRegToReg("rsp", "r10")  // BROKEN: r10 was clobbered!
+```
+
+**Solution:**
+1. Changed range loop allocation from 24 to 32 bytes (16-byte aligned)
+2. Removed buggy printf alignment code - no longer needed since stack is always aligned
+
+**Lesson:** Stack must be 16-byte aligned before any function call. Use proper multiples (16, 32, 48, ...) for stack allocations.
