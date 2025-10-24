@@ -7151,8 +7151,22 @@ func (fc *FlapCompiler) compileMatchExpr(expr *MatchExpr) {
 		needsZeroCompare = true
 	}
 
+	// Check if any clause has a guard (for pattern matching)
+	hasGuards := false
+	for _, clause := range expr.Clauses {
+		if clause.Guard != nil {
+			hasGuards = true
+			break
+		}
+	}
+
 	var defaultJumpPos int
-	if needsZeroCompare {
+	// Only do preliminary condition check if there are no guards
+	// With guards, we need to evaluate them regardless of condition value
+	if len(expr.Clauses) > 0 && hasGuards {
+		// Skip preliminary check - go straight to evaluating guards
+		defaultJumpPos = -1
+	} else if needsZeroCompare {
 		fc.out.XorRegWithReg("rax", "rax")
 		fc.out.Cvtsi2sd("xmm1", "rax")
 		fc.out.Ucomisd("xmm0", "xmm1")
@@ -7201,8 +7215,11 @@ func (fc *FlapCompiler) compileMatchExpr(expr *MatchExpr) {
 		fc.patchJumpImmediate(pos+2, offset)
 	}
 
-	defaultOffset := int32(defaultPos - (defaultJumpPos + ConditionalJumpSize))
-	fc.patchJumpImmediate(defaultJumpPos+2, defaultOffset)
+	// Only patch preliminary jump if it exists (defaultJumpPos != -1)
+	if defaultJumpPos != -1 {
+		defaultOffset := int32(defaultPos - (defaultJumpPos + ConditionalJumpSize))
+		fc.patchJumpImmediate(defaultJumpPos+2, defaultOffset)
+	}
 
 	fc.compileMatchDefault(expr.DefaultExpr)
 
