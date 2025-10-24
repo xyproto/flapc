@@ -1202,10 +1202,14 @@ func (acg *ARM64CodeGen) compileParallelExpr(expr *ParallelExpr) error {
 	// ldr d0, [x0]
 	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x40, 0xfd})
 
-	// Load lambda function pointer and call it
-	// ldr x11, [x12, #lambdaScratchOffset]
+	// Save loop index x15 to stack (will be clobbered by environment pointer)
+	// str x15, [sp, #-16]!
+	acg.out.out.writer.WriteBytes([]byte{0xef, 0x0f, 0x1f, 0xf8})
+
+	// Load lambda closure object pointer from scratch slot
+	// ldr x0, [x12, #lambdaScratchOffset]
 	scratchOffsetImm = (lambdaScratchOffset / 8) << 10
-	ldrInstr := uint32(0xf9400000) | uint32(11) | uint32(12<<5) | uint32(scratchOffsetImm)
+	ldrInstr := uint32(0xf9400000) | uint32(0) | uint32(12<<5) | uint32(scratchOffsetImm)
 	acg.out.out.writer.WriteBytes([]byte{
 		byte(ldrInstr),
 		byte(ldrInstr >> 8),
@@ -1213,8 +1217,20 @@ func (acg *ARM64CodeGen) compileParallelExpr(expr *ParallelExpr) error {
 		byte(ldrInstr >> 24),
 	})
 
-	// Call the lambda function: blr x11
+	// Extract function pointer from closure object (offset 0)
+	// ldr x11, [x0, #0]
+	acg.out.out.writer.WriteBytes([]byte{0x0b, 0x00, 0x40, 0xf9})
+
+	// Extract environment pointer from closure object (offset 8) into x15
+	// ldr x15, [x0, #8]
+	acg.out.out.writer.WriteBytes([]byte{0x0f, 0x04, 0x40, 0xf9})
+
+	// Call the lambda function with environment in x15: blr x11
 	acg.out.out.writer.WriteBytes([]byte{0x60, 0x01, 0x3f, 0xd6})
+
+	// Restore loop index from stack
+	// ldr x15, [sp], #16
+	acg.out.out.writer.WriteBytes([]byte{0xef, 0x07, 0x41, 0xf8})
 
 	// Result is in d0, store it in output list: result_list[index]
 	// mov x0, x15

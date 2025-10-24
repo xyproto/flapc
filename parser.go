@@ -7382,11 +7382,25 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	// Load element into xmm0 (this is the argument to the lambda)
 	fc.out.MovMemToXmm("xmm0", "rax", 0)
 
-	// Load lambda function pointer (stored in the reserved scratch slot) and call it
-	fc.out.MovMemToReg("r11", "r12", lambdaScratchOffset)
+	// Save loop index r15 to stack (will be clobbered by environment pointer)
+	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.MovRegToMem("r15", "rsp", 0)
 
-	// Call the lambda function with element in xmm0
+	// Load lambda closure object pointer (stored in the reserved scratch slot)
+	fc.out.MovMemToReg("rax", "r12", lambdaScratchOffset)
+
+	// Extract function pointer from closure object (offset 0)
+	fc.out.MovMemToReg("r11", "rax", 0)
+
+	// Extract environment pointer from closure object (offset 8) into r15
+	fc.out.MovMemToReg("r15", "rax", 8)
+
+	// Call the lambda function with element in xmm0 and environment in r15
 	fc.out.CallRegister("r11")
+
+	// Restore loop index from stack
+	fc.out.MovMemToReg("r15", "rsp", 0)
+	fc.out.AddImmToReg("rsp", 8)
 
 	// Result is in xmm0, store it in output list: result_list[index]
 	fc.out.MovRegToReg("rax", "r15")
