@@ -8,7 +8,24 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
 ## Critical - Compiler Correctness
 
-1. **Fix nested loops with loop-local variables** (MEDIUM)
+1. **Change 'ret' keyword to 'retval' and introduce 'reterr'** (MEDIUM)
+   - Current: `ret` returns a value from function/lambda
+   - Goal: Separate value returns (`retval`) from error returns (`reterr`)
+   - Design: Functions return either a value OR an error, not both
+   - Syntax: `retval x` returns value, `reterr "error message"` returns error string
+   - Impact: Better error handling semantics, clearer code intent
+   - Files: `lexer.go` (add TOKEN_RETVAL, TOKEN_RETERR), `parser.go` (update all ret handling)
+   - Update: LANGUAGE.md to document new keywords
+
+2. **Fix higher-order function segfaults** (HIGH)
+   - Current: Passing lambdas as parameters causes segfaults
+   - Error: Programs like lambda_calculator crash with exit code 139
+   - Impact: Blocks functional programming patterns (map, filter, reduce)
+   - Root cause: Likely closure environment handling or calling convention mismatch
+   - Files: `parser.go` lambda call codegen, closure compilation
+   - Tests: lambda_calculator, lambda_direct_test, pipe_test fail
+
+3. **Fix nested loops with loop-local variables** (MEDIUM)
    - Current: Simple loops work, nested loops with locals fail
    - Problem: Loop state offset calculation breaks with nesting
    - Impact: Blocks programs like ascii_art pyramid
