@@ -7970,7 +7970,8 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 		// Function prologue
 		fc.out.PushReg("rbp")
 		fc.out.MovRegToReg("rbp", "rsp")
-		fc.out.SubImmFromReg("rsp", StackSlotSize) // Align stack
+		// Stack is now 16-byte aligned (after call+push rbp)
+		// All allocations are multiples of 16 bytes to maintain alignment
 
 		// Save previous state
 		oldVariables := fc.variables
