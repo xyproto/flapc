@@ -4597,6 +4597,115 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 	return nil
 }
 
+func (fc *FlapCompiler) collectLoopsFromExpression(expr Expression) {
+	switch e := expr.(type) {
+	case *LoopExpr:
+		fc.labelCounter++
+		loopLabel := fc.labelCounter
+		baseOffset := fc.stackOffset
+		fc.loopBaseOffsets[loopLabel] = baseOffset
+
+		if e.NeedsMaxCheck {
+			fc.stackOffset += 48
+		} else {
+			fc.stackOffset += 24
+		}
+
+		for _, bodyStmt := range e.Body {
+			if err := fc.collectSymbols(bodyStmt); err != nil {
+				return
+			}
+		}
+
+		fc.stackOffset = baseOffset
+
+	case *BinaryExpr:
+		fc.collectLoopsFromExpression(e.Left)
+		fc.collectLoopsFromExpression(e.Right)
+
+	case *CallExpr:
+		for _, arg := range e.Args {
+			fc.collectLoopsFromExpression(arg)
+		}
+
+	case *LambdaExpr:
+		fc.collectLoopsFromExpression(e.Body)
+
+	case *ListExpr:
+		for _, elem := range e.Elements {
+			fc.collectLoopsFromExpression(elem)
+		}
+
+	case *MapExpr:
+		for i := range e.Keys {
+			fc.collectLoopsFromExpression(e.Keys[i])
+			fc.collectLoopsFromExpression(e.Values[i])
+		}
+
+	case *IndexExpr:
+		fc.collectLoopsFromExpression(e.List)
+		fc.collectLoopsFromExpression(e.Index)
+
+	case *RangeExpr:
+		fc.collectLoopsFromExpression(e.Start)
+		fc.collectLoopsFromExpression(e.End)
+
+	case *ParallelExpr:
+		fc.collectLoopsFromExpression(e.List)
+		fc.collectLoopsFromExpression(e.Operation)
+
+	case *PipeExpr:
+		fc.collectLoopsFromExpression(e.Left)
+		fc.collectLoopsFromExpression(e.Right)
+
+	case *InExpr:
+		fc.collectLoopsFromExpression(e.Value)
+		fc.collectLoopsFromExpression(e.Container)
+
+	case *LengthExpr:
+		fc.collectLoopsFromExpression(e.Operand)
+
+	case *MatchExpr:
+		fc.collectLoopsFromExpression(e.Condition)
+		for _, clause := range e.Clauses {
+			if clause.Guard != nil {
+				fc.collectLoopsFromExpression(clause.Guard)
+			}
+			fc.collectLoopsFromExpression(clause.Result)
+		}
+		if e.DefaultExpr != nil {
+			fc.collectLoopsFromExpression(e.DefaultExpr)
+		}
+
+	case *BlockExpr:
+		for _, stmt := range e.Statements {
+			if err := fc.collectSymbols(stmt); err != nil {
+				return
+			}
+		}
+
+	case *UnaryExpr:
+		fc.collectLoopsFromExpression(e.Operand)
+
+	case *PostfixExpr:
+		fc.collectLoopsFromExpression(e.Operand)
+
+	case *CastExpr:
+		fc.collectLoopsFromExpression(e.Expr)
+
+	case *SliceExpr:
+		fc.collectLoopsFromExpression(e.List)
+		if e.Start != nil {
+			fc.collectLoopsFromExpression(e.Start)
+		}
+		if e.End != nil {
+			fc.collectLoopsFromExpression(e.End)
+		}
+
+	case *NumberExpr, *IdentExpr, *StringExpr, *FStringExpr, *NamespacedIdentExpr:
+	}
+}
+
 func (fc *FlapCompiler) compileStatement(stmt Statement) {
 	switch s := stmt.(type) {
 	case *AssignStmt:
@@ -7815,6 +7924,10 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 		// Set current lambda context for "me" self-reference and tail recursion
 		fc.currentLambda = &lambda
 		fc.lambdaBodyStart = fc.eb.text.Len()
+
+		fc.labelCounter = 0
+		fc.collectLoopsFromExpression(lambda.Body)
+		fc.labelCounter = 0
 
 		fc.pushDeferScope()
 
