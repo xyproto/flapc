@@ -176,14 +176,22 @@ func compareOutputs(t *testing.T, expected, actual []byte, programName string) {
 	for i, expectedLine := range expectedLines {
 		actualLine := actualLines[i]
 
-		// Check for wildcard pattern: * as standalone value (e.g., "timestamp: *")
-		// Only treat * as wildcard if it's at the end after ": " or is the whole line
-		isWildcard := strings.HasSuffix(expectedLine, ": *") || expectedLine == "*"
+		// Check for wildcard pattern: * matches any number
+		// Supported patterns: "value = *", "timestamp: *", or just "*"
+		// But not "6 * 7" (multiplication) or "i=0:   *" (ASCII art with multiple spaces)
+		hasWildcardSuffix := false
+		if strings.HasSuffix(expectedLine, " *") && !strings.HasSuffix(expectedLine, "  *") {
+			// Ends with exactly one space before *, not multiple spaces
+			prefix := strings.TrimSuffix(expectedLine, " *")
+			hasWildcardSuffix = strings.TrimSpace(prefix) != ""
+		}
+		isWildcard := hasWildcardSuffix || expectedLine == "*" ||
+			(strings.Contains(expectedLine, "* ") && !strings.Contains(expectedLine, " * "))
 
 		if isWildcard {
-			// Pattern matching: * matches any floating point number
+			// Pattern matching: * matches any number (integer or float)
 			pattern := regexp.QuoteMeta(expectedLine)
-			pattern = strings.ReplaceAll(pattern, "\\*", "[0-9]+\\.[0-9]+")
+			pattern = strings.ReplaceAll(pattern, "\\*", "[-+]?[0-9]+(?:\\.[0-9]+)?(?:[eE][-+]?[0-9]+)?")
 			re := regexp.MustCompile("^" + pattern + "$")
 			if !re.MatchString(actualLine) {
 				t.Errorf("Line %d pattern mismatch:\nPattern: %q\nActual:  %q",
