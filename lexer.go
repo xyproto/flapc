@@ -41,7 +41,6 @@ const (
 	TOKEN_TILDE            // ~
 	TOKEN_DEFAULT_ARROW    // ~>
 	TOKEN_AT               // @
-	TOKEN_AT_MINUS         // @-
 	TOKEN_AT_EQUALS        // @=
 	TOKEN_IN               // in keyword
 	TOKEN_LBRACE           // {
@@ -603,10 +602,6 @@ func (l *Lexer) NextToken() Token {
 			// Unknown @identifier, treat as error or identifier
 			l.pos = start + 1
 			return Token{Type: TOKEN_AT, Value: "@", Line: l.line}
-		}
-		if l.peek() == '-' {
-			l.pos += 2
-			return Token{Type: TOKEN_AT_MINUS, Value: "@-", Line: l.line}
 		}
 		if l.peek() == '=' {
 			l.pos += 2

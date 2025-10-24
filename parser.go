@@ -1675,11 +1675,6 @@ func (p *Parser) parseStatement() Statement {
 		return p.parseJumpStatement()
 	}
 
-	// Check for @- (jump to @(N-1))
-	if p.current.Type == TOKEN_AT_MINUS {
-		return p.parseLoopStatement()
-	}
-
 	// Check for @= (continue current loop)
 	if p.current.Type == TOKEN_AT_EQUALS {
 		return p.parseLoopStatement()
@@ -1692,12 +1687,12 @@ func (p *Parser) parseStatement() Statement {
 		// Look ahead to distinguish loop vs jump
 		// Loop: @N identifier in ... or @ identifier in ...
 		// Jump: @N (followed by newline, semicolon, or })
-		if p.peek.Type == TOKEN_NUMBER || p.peek.Type == TOKEN_IDENT {
+		if p.peek.Type == TOKEN_NUMBER || p.peek.Type == TOKEN_IDENT || p.peek.Type == TOKEN_LBRACE || p.peek.Type == TOKEN_NEWLINE {
 			// We need to peek further to distinguish loop from jump
 			// For now, let's just parse as loop if it matches the pattern
 			// Otherwise treat as jump
 
-			// Simple heuristic: if @ NUMBER IDENTIFIER or @ IDENTIFIER, it's a loop
+			// Simple heuristic: if @ NUMBER IDENTIFIER or @ IDENTIFIER or @ {, it's a loop
 			// We can't easily look 2 tokens ahead, so we'll just try parsing as loop first
 			return p.parseLoopStatement()
 		}
@@ -2091,7 +2086,6 @@ func (p *Parser) parseMatchClause() (*MatchClause, bool) {
 	isStatementToken := p.current.Type == TOKEN_RET ||
 		p.current.Type == TOKEN_RETVAL ||
 		p.current.Type == TOKEN_RETERR ||
-		p.current.Type == TOKEN_AT_MINUS ||
 		p.current.Type == TOKEN_AT_EQUALS ||
 		p.current.Type == TOKEN_LBRACE ||
 		(p.current.Type == TOKEN_AT && p.peek.Type == TOKEN_NUMBER) ||
@@ -2192,18 +2186,6 @@ func (p *Parser) parseMatchTarget() Expression {
 
 		// Return a JumpExpr with IsBreak semantics (ret exits loop)
 		return &JumpExpr{Label: label, Value: value, IsBreak: true}
-	case TOKEN_AT_MINUS:
-		if p.loopDepth < 2 {
-			p.error("@- requires at least 2 nested loops")
-		}
-		p.nextToken() // skip '@-'
-		// Check for optional return value: @- value
-		var value Expression
-		if p.current.Type != TOKEN_NEWLINE && p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
-			value = p.parseExpression()
-			p.nextToken()
-		}
-		return &JumpExpr{Label: p.loopDepth - 1, Value: value, IsBreak: true}
 	case TOKEN_AT_EQUALS:
 		if p.loopDepth < 1 {
 			p.error("@= requires at least 1 loop")
@@ -2265,21 +2247,6 @@ func (p *Parser) parseMatchTarget() Expression {
 }
 
 func (p *Parser) parseLoopStatement() Statement {
-	// Handle @- token (jump to outer loop)
-	if p.current.Type == TOKEN_AT_MINUS {
-		// @- means jump to @(N-1) where N is current loop depth (break semantics)
-		if p.loopDepth < 2 {
-			p.error("@- requires at least 2 nested loops")
-		}
-		// Check for optional return value: @- value
-		var value Expression
-		if p.peek.Type != TOKEN_NEWLINE && p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
-			p.nextToken() // move to value
-			value = p.parseExpression()
-		}
-		return &JumpStmt{IsBreak: true, Label: p.loopDepth - 1, Value: value}
-	}
-
 	// Handle @= token (continue current loop)
 	if p.current.Type == TOKEN_AT_EQUALS {
 		// @= means continue current loop (jump to @N where N is current loop depth)
@@ -2296,6 +2263,11 @@ func (p *Parser) parseLoopStatement() Statement {
 		label := p.loopDepth + 1
 		p.nextToken() // skip '@'
 
+		// Skip newlines after '@'
+		for p.current.Type == TOKEN_NEWLINE {
+			p.nextToken()
+		}
+
 		// Check if this is @N (numbered loop) or @ ident (simple loop)
 		if p.current.Type == TOKEN_NUMBER {
 			// This is @N syntax, handle it in the jump statement section below
@@ -2303,6 +2275,47 @@ func (p *Parser) parseLoopStatement() Statement {
 			p.current.Type = TOKEN_AT // restore token type (it's already @, but for clarity)
 			// Fall through to the jump statement section
 			goto handleJump
+		}
+
+		// Check for infinite loop syntax: @ { ... }
+		if p.current.Type == TOKEN_LBRACE {
+			// Skip newlines after '{'
+			for p.peek.Type == TOKEN_NEWLINE {
+				p.nextToken()
+			}
+
+			// Track loop depth for nested loops
+			oldDepth := p.loopDepth
+			p.loopDepth = label
+			defer func() { p.loopDepth = oldDepth }()
+
+			// Parse loop body
+			var body []Statement
+			for p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
+				p.nextToken()
+				if p.current.Type == TOKEN_NEWLINE {
+					continue
+				}
+				stmt := p.parseStatement()
+				if stmt != nil {
+					body = append(body, stmt)
+				}
+			}
+
+			// Expect and consume '}'
+			if p.peek.Type != TOKEN_RBRACE {
+				p.error("expected '}' at end of loop body")
+			}
+			p.nextToken() // consume the '}'
+
+			// Create synthetic range 0..<limit with max inf for infinite loop
+			return &LoopStmt{
+				Iterator:      "_", // synthetic iterator (won't be used)
+				Iterable:      &RangeExpr{Start: &NumberExpr{Value: 0}, End: &NumberExpr{Value: 1000000}}, // Large enough for practical purposes
+				Body:          body,
+				MaxIterations: math.MaxInt64,
+				NeedsMaxCheck: true, // Enable max checking to handle iteration counter
+			}
 		}
 
 		// Expect identifier for loop variable

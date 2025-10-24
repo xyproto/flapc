@@ -1,6 +1,6 @@
 # The Flap Programming Language
 
-### Version 1.0.0
+### Version 1.5
 
 ## Type System
 
@@ -476,6 +476,12 @@ numbers := [10, 20, 30]
 @ n in numbers max 1000 {
     println(n)
 }
+
+// Infinite loop without an iterator
+@ {
+    printf("Looping...\n")
+    condition { retval @  }  // Exit loop with retval @
+}
 ```
 
 **Max Iteration Safety:**
@@ -490,6 +496,7 @@ numbers := [10, 20, 30]
 - `retval @1`, `retval @2`, `retval @3`, ... - exits loop at nesting level 1, 2, 3, ... and all inner loops
 - `retval @1 value` - exits loop and returns value
 - `reterr "message"` - returns error from function (for error handling)
+- `@=` - continues current loop (jumps to top of innermost loop)
 - `@1`, `@2`, `@3`, ... - continues (jumps to top of) loop at nesting level 1, 2, 3, ...
 - Note: `ret` is deprecated but still supported for backwards compatibility
 
@@ -979,7 +986,6 @@ loop_statement  = "@" block
 
 jump_statement  = ("retval" | "reterr" | "ret") [ "@" number ] [ expression ]
                 | "@" number
-                | "@-"
                 | "@=" ;
 
 assignment      = identifier [ ":" type_annotation ] ("=" | ":=" | "<-") expression
@@ -1095,10 +1101,11 @@ escape_sequence         = "\\" ( "n" | "t" | "r" | "\\" | '"' ) ;
 
 * `@` without arguments creates an infinite loop: `@ { ... }`
 * `@` with identifier introduces auto-labeled loops. The loop label is the current nesting depth (1, 2, 3, ...).
+* `@=` continues the current loop (jumps to its top).
 * `@1`, `@2`, `@3`, ... continues the loop at that nesting level by jumping to its top.
 * `unsafe` blocks can return register values as expressions (e.g., `rax`, `rbx`)
 * When used in a loop statement (`@1 identifier in expression`), it explicitly labels that loop.
-* `retval` returns from the current function with a value. `retval @1`, `retval @2`, `retval @3`, ... exits the loop at that nesting level and all inner loops. `reterr` returns an error. (`ret` is deprecated but still supported.)
+* `retval` returns from the current function with a value. `retval @` exits the current loop. `retval @1`, `retval @2`, `retval @3`, ... exits the loop at that nesting level and all inner loops. `reterr` returns an error. (`ret` is deprecated but still supported.)
 * Lambda syntax: `x => expr` or `x, y => expr` (no parentheses around parameters).
 * Type casting with `as`: Bidirectional conversion for FFI (e.g., `42 as i32` to C, `c_value as number` from C).
 * Match blocks attach to the preceding expression. When omitted, implicit default is `0`.
