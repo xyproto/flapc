@@ -3,7 +3,8 @@
 
 // Simple closure: function that returns a function
 makeAdder := (x) => {
-    -> (y) => x + y
+    inner := (y) => x + y
+    ret inner
 }
 
 // Test 1: Create an adder that adds 5

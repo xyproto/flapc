@@ -946,6 +946,11 @@ func collectCapturedVarsExpr(expr Expression, paramSet map[string]bool, captured
 		if e.DefaultExpr != nil {
 			collectCapturedVarsExpr(e.DefaultExpr, paramSet, captured)
 		}
+	case *JumpExpr:
+		// Process the value expression of return/jump statements
+		if e.Value != nil {
+			collectCapturedVarsExpr(e.Value, paramSet, captured)
+		}
 	case *BlockExpr:
 		// For blocks, we need to track locally defined variables
 		// so they aren't treated as captured
@@ -998,6 +1003,12 @@ func analyzeClosures(stmt Statement, availableVars map[string]bool) {
 		analyzeClosuresExpr(s.Iterable, availableVars)
 		for _, bodyStmt := range s.Body {
 			analyzeClosures(bodyStmt, newAvailableVars)
+		}
+
+	case *JumpStmt:
+		// Analyze the value expression of return/jump statements
+		if s.Value != nil {
+			analyzeClosuresExpr(s.Value, availableVars)
 		}
 	}
 }
@@ -1067,6 +1078,11 @@ func analyzeClosuresExpr(expr Expression, availableVars map[string]bool) {
 		}
 		if e.DefaultExpr != nil {
 			analyzeClosuresExpr(e.DefaultExpr, availableVars)
+		}
+	case *JumpExpr:
+		// Analyze the value expression of return/jump statements
+		if e.Value != nil {
+			analyzeClosuresExpr(e.Value, availableVars)
 		}
 	case *BlockExpr:
 		// Create a new scope for the block, accumulating available vars
@@ -5427,8 +5443,10 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		// Load variable from stack into xmm0
 		offset, exists := fc.variables[e.Name]
 		if !exists {
-			fmt.Fprintf(os.Stderr, "DEBUG: Undefined variable '%s', available vars: %v\n", e.Name, fc.variables)
-			fmt.Fprintf(os.Stderr, "DEBUG: Current lambda: %v\n", fc.currentLambda)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG: Undefined variable '%s', available vars: %v\n", e.Name, fc.variables)
+				fmt.Fprintf(os.Stderr, "DEBUG: Current lambda: %v\n", fc.currentLambda)
+			}
 			compilerError("undefined variable '%s' at line %d", e.Name, 0)
 		}
 		// movsd xmm0, [rbp - offset]
@@ -6816,6 +6834,17 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		fc.out.MovMemToXmm("xmm0", "rax", 0)
 
 		// Length is now in xmm0 as float64
+
+	case *JumpExpr:
+		// Compile the value expression of return/jump statements
+		// The value will be left in xmm0
+		if e.Value != nil {
+			fc.compileExpression(e.Value)
+		} else {
+			// No value - leave 0.0 in xmm0
+			fc.out.MovImmToReg("rax", "0")
+			fc.out.Cvtsi2sd("xmm0", "rax")
+		}
 
 	case *BlockExpr:
 		// First, collect symbols from all statements in the block

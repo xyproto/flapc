@@ -10,7 +10,7 @@ div := (x, y) => x / y
 // Higher-order function: apply operation n times
 applyN := (fn, initial, count) => {
     result := initial
-    @ i in 0..<count {
+    @ i in 0..<count max 1000 {
         result <- fn(result)
     }
     result

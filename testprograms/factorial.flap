@@ -4,7 +4,7 @@
 // Recursive factorial function using accumulator pattern
 factorial := (n, acc) => n <= 1 {
     -> acc
-    ~> me(n - 1, acc * n)
+    ~> factorial(n - 1, acc * n) max 100
 }
 
 // Calculate and display factorials

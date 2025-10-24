@@ -4,7 +4,7 @@
 factorial := n => n {
     n == 0 -> 1
     n == 1 -> 1
-    ~> n * factorial(n - 1)
+    ~> n * factorial(n - 1) max 100
 }
 
 printf("factorial(0) = %v (expected: 1)\n", factorial(0))
