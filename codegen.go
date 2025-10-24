@@ -138,29 +138,25 @@ type CodeGenerator interface {
 
 // NewCodeGenerator creates the appropriate backend for the given architecture
 func NewCodeGenerator(arch Arch, w Writer, eb *ExecutableBuilder) CodeGenerator {
-	// TODO: Implement when backends are ready
-	// switch arch {
-	// case ArchX86_64:
-	//     return &X86_64CodeGen{writer: w, eb: eb}
-	// case ArchARM64:
-	//     return &ARM64CodeGen{writer: w, eb: eb}
-	// case ArchRiscv64:
-	//     return &RISCV64CodeGen{writer: w, eb: eb}
-	// default:
-	//     compilerError("unsupported architecture: %v", arch)
-	//     return nil
-	// }
-	
-	compilerError("CodeGenerator interface not yet fully implemented - migration in progress")
-	return nil
+	switch arch {
+	case ArchX86_64:
+		return NewX86_64CodeGen(w, eb)
+	case ArchARM64:
+		return NewARM64Backend(w, eb)
+	case ArchRiscv64:
+		return NewRISCV64Backend(w, eb)
+	default:
+		compilerError("unsupported architecture: %v", arch)
+		return nil
+	}
 }
 
 // ===== Migration Progress Tracker =====
 //
 // Phase 1: ✓ Interface definition and architecture design
-// Phase 2: [ ] Implement X86_64CodeGen (move all o.xxxX86() methods)
-// Phase 3: [ ] Implement ARM64CodeGen (move all o.xxxARM64() methods)
-// Phase 4: [ ] Implement RISCV64CodeGen (move all o.xxxRISCV() methods)
+// Phase 2: ✓ Implement X86_64CodeGen (x86_64_codegen.go - 1028 lines)
+// Phase 3: ✓ Implement ARM64Backend (arm64_backend.go - implements CodeGenerator interface)
+// Phase 4: ✓ Implement RISCV64Backend (riscv64_backend.go - implements CodeGenerator interface)
 // Phase 5: [ ] Add backend field to Out struct
 // Phase 6: [ ] Update Out methods to use backend
 // Phase 7: [ ] Remove old switch-based methods
