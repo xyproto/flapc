@@ -4988,16 +4988,6 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 		iterOffset = loopStateOffset - 16           // iterator at -16
 		counterOffset = loopStateOffset - 8         // counter at -8
 		limitOffset = loopStateOffset               // limit at top
-
-		// Store max iterations on stack (skip if infinite)
-		if stmt.MaxIterations != math.MaxInt64 {
-			fc.out.MovImmToReg("rax", fmt.Sprintf("%d", stmt.MaxIterations))
-			fc.out.MovRegToMem("rax", "rbp", -maxIterOffset)
-		}
-
-		// Initialize iteration counter to 0
-		fc.out.XorRegWithReg("rax", "rax")
-		fc.out.MovRegToMem("rax", "rbp", -iterationCountOffset)
 	} else {
 		// No runtime checking needed - smaller stack frame
 		stackSize = 24
@@ -5009,6 +4999,19 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 
 	fc.out.SubImmFromReg("rsp", stackSize)
 	fc.runtimeStack += int(stackSize) // Track runtime allocation
+
+	// Initialize iteration counter and max iterations (after stack allocation)
+	if stmt.NeedsMaxCheck {
+		// Store max iterations on stack (skip if infinite)
+		if stmt.MaxIterations != math.MaxInt64 {
+			fc.out.MovImmToReg("rax", fmt.Sprintf("%d", stmt.MaxIterations))
+			fc.out.MovRegToMem("rax", "rbp", -maxIterOffset)
+		}
+
+		// Initialize iteration counter to 0
+		fc.out.XorRegWithReg("rax", "rax")
+		fc.out.MovRegToMem("rax", "rbp", -iterationCountOffset)
+	}
 
 	// Evaluate range start and store to stack (counter)
 	fc.compileExpression(rangeExpr.Start)
@@ -5145,7 +5148,6 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 
 	// Clean up stack space
 	fc.out.AddImmToReg("rsp", stackSize)
-	fc.stackOffset -= int(stackSize)
 	fc.runtimeStack -= int(stackSize)
 
 	// Unregister iterator variable
