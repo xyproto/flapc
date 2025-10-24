@@ -4437,7 +4437,7 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 		// Updates (a <- value) reuse existing stack space
 		if !s.IsUpdate {
 			fc.out.SubImmFromReg("rsp", 16)
-			fc.runtimeStack += 16  // Track actual runtime allocation
+			fc.runtimeStack += 16 // Track actual runtime allocation
 		}
 
 		// Set current assignment name for lambda naming (allows recursive calls)
@@ -4624,11 +4624,11 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	// Allocate stack space for loop state (32 bytes for 16-byte alignment)
 	// Use baseOffset for calculating offsets, not current stackOffset
 	loopStateOffset := baseOffset + 32
-	iterOffset := loopStateOffset - 16    // iterator at -16
-	counterOffset := loopStateOffset - 8  // counter at -8
-	limitOffset := loopStateOffset        // limit at top
+	iterOffset := loopStateOffset - 16   // iterator at -16
+	counterOffset := loopStateOffset - 8 // counter at -8
+	limitOffset := loopStateOffset       // limit at top
 	fc.out.SubImmFromReg("rsp", 32)
-	fc.runtimeStack += 32  // Track runtime allocation
+	fc.runtimeStack += 32 // Track runtime allocation
 
 	// Evaluate range start and store to stack (counter)
 	fc.compileExpression(rangeExpr.Start)
@@ -7539,23 +7539,23 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 			fc.out.MovXmmToMem(xmmRegs[i], "rbp", -paramOffset)
 		}
 
-	// Add captured variables to the lambda's scope
-	// The environment pointer is in r15, passed by the caller
-	// Environment contains: [var0, var1, var2, ...] where each is 8 bytes
-	for i, capturedVar := range lambda.CapturedVars {
-		// Allocate stack space for captured variable
-		fc.stackOffset += 16
-		varOffset := fc.stackOffset
-		fc.variables[capturedVar] = varOffset
-		fc.mutableVars[capturedVar] = false
+		// Add captured variables to the lambda's scope
+		// The environment pointer is in r15, passed by the caller
+		// Environment contains: [var0, var1, var2, ...] where each is 8 bytes
+		for i, capturedVar := range lambda.CapturedVars {
+			// Allocate stack space for captured variable
+			fc.stackOffset += 16
+			varOffset := fc.stackOffset
+			fc.variables[capturedVar] = varOffset
+			fc.mutableVars[capturedVar] = false
 
-		// Allocate stack space
-		fc.out.SubImmFromReg("rsp", 16)
+			// Allocate stack space
+			fc.out.SubImmFromReg("rsp", 16)
 
-		// Load captured variable from environment and store to stack
-		fc.out.MovMemToXmm("xmm15", "r15", i*8) // Load from environment
-		fc.out.MovXmmToMem("xmm15", "rbp", -varOffset) // Store to stack
-	}
+			// Load captured variable from environment and store to stack
+			fc.out.MovMemToXmm("xmm15", "r15", i*8)        // Load from environment
+			fc.out.MovXmmToMem("xmm15", "rbp", -varOffset) // Store to stack
+		}
 
 		// Set current lambda context for "me" self-reference and tail recursion
 		fc.currentLambda = &lambda
@@ -7899,10 +7899,10 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	case1Jump := fc.eb.text.Len()
 	fc.out.Emit([]byte{0x0f, 0x87, 0x00, 0x00, 0x00, 0x00}) // ja case2 (4-byte offset)
 	// 1-byte encoding
-	fc.out.Emit([]byte{0x43, 0x88, 0x54, 0x3d, 0x00})       // mov [r13 + r15], dl
-	fc.out.Emit([]byte{0x49, 0xff, 0xc7})                   // inc r15
+	fc.out.Emit([]byte{0x43, 0x88, 0x54, 0x3d, 0x00}) // mov [r13 + r15], dl
+	fc.out.Emit([]byte{0x49, 0xff, 0xc7})             // inc r15
 	continueJump1 := fc.eb.text.Len()
-	fc.out.Emit([]byte{0xe9, 0x00, 0x00, 0x00, 0x00})       // jmp loop_continue (4-byte offset)
+	fc.out.Emit([]byte{0xe9, 0x00, 0x00, 0x00, 0x00}) // jmp loop_continue (4-byte offset)
 
 	// Case 2: codepoint <= 0x7FF (2 bytes: 110xxxxx 10xxxxxx)
 	case2Start := fc.eb.text.Len()
@@ -7912,17 +7912,17 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.Emit([]byte{0x0f, 0x87, 0x00, 0x00, 0x00, 0x00}) // ja case3
 	// 2-byte encoding
 	fc.out.MovRegToReg("rax", "rdx")
-	fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x06})             // shr rax, 6
-	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0xc0})             // or rax, 0xC0
-	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00})       // mov [r13 + r15], al
-	fc.out.Emit([]byte{0x49, 0xff, 0xc7})                   // inc r15
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x06})       // shr rax, 6
+	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0xc0})       // or rax, 0xC0
+	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00}) // mov [r13 + r15], al
+	fc.out.Emit([]byte{0x49, 0xff, 0xc7})             // inc r15
 	fc.out.MovRegToReg("rax", "rdx")
-	fc.out.Emit([]byte{0x48, 0x83, 0xe0, 0x3f})             // and rax, 0x3F
-	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0x80})             // or rax, 0x80
-	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00})       // mov [r13 + r15], al
-	fc.out.Emit([]byte{0x49, 0xff, 0xc7})                   // inc r15
+	fc.out.Emit([]byte{0x48, 0x83, 0xe0, 0x3f})       // and rax, 0x3F
+	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0x80})       // or rax, 0x80
+	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00}) // mov [r13 + r15], al
+	fc.out.Emit([]byte{0x49, 0xff, 0xc7})             // inc r15
 	continueJump2 := fc.eb.text.Len()
-	fc.out.Emit([]byte{0xe9, 0x00, 0x00, 0x00, 0x00})       // jmp loop_continue
+	fc.out.Emit([]byte{0xe9, 0x00, 0x00, 0x00, 0x00}) // jmp loop_continue
 
 	// Case 3: codepoint <= 0xFFFF (3 bytes: 1110xxxx 10xxxxxx 10xxxxxx)
 	case3Start := fc.eb.text.Len()
@@ -7932,57 +7932,57 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.Emit([]byte{0x0f, 0x87, 0x00, 0x00, 0x00, 0x00}) // ja case4
 	// 3-byte encoding
 	fc.out.MovRegToReg("rax", "rdx")
-	fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x0c})             // shr rax, 12
-	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0xe0})             // or rax, 0xE0
-	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00})       // mov [r13 + r15], al
-	fc.out.Emit([]byte{0x49, 0xff, 0xc7})                   // inc r15
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x0c})       // shr rax, 12
+	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0xe0})       // or rax, 0xE0
+	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00}) // mov [r13 + r15], al
+	fc.out.Emit([]byte{0x49, 0xff, 0xc7})             // inc r15
 	fc.out.MovRegToReg("rax", "rdx")
-	fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x06})             // shr rax, 6
-	fc.out.Emit([]byte{0x48, 0x83, 0xe0, 0x3f})             // and rax, 0x3F
-	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0x80})             // or rax, 0x80
-	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00})       // mov [r13 + r15], al
-	fc.out.Emit([]byte{0x49, 0xff, 0xc7})                   // inc r15
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x06})       // shr rax, 6
+	fc.out.Emit([]byte{0x48, 0x83, 0xe0, 0x3f})       // and rax, 0x3F
+	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0x80})       // or rax, 0x80
+	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00}) // mov [r13 + r15], al
+	fc.out.Emit([]byte{0x49, 0xff, 0xc7})             // inc r15
 	fc.out.MovRegToReg("rax", "rdx")
-	fc.out.Emit([]byte{0x48, 0x83, 0xe0, 0x3f})             // and rax, 0x3F
-	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0x80})             // or rax, 0x80
-	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00})       // mov [r13 + r15], al
-	fc.out.Emit([]byte{0x49, 0xff, 0xc7})                   // inc r15
+	fc.out.Emit([]byte{0x48, 0x83, 0xe0, 0x3f})       // and rax, 0x3F
+	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0x80})       // or rax, 0x80
+	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00}) // mov [r13 + r15], al
+	fc.out.Emit([]byte{0x49, 0xff, 0xc7})             // inc r15
 	continueJump3 := fc.eb.text.Len()
-	fc.out.Emit([]byte{0xe9, 0x00, 0x00, 0x00, 0x00})       // jmp loop_continue
+	fc.out.Emit([]byte{0xe9, 0x00, 0x00, 0x00, 0x00}) // jmp loop_continue
 
 	// Case 4: codepoint > 0xFFFF (4 bytes: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx)
 	case4Start := fc.eb.text.Len()
 	fc.patchJumpImmediate(case3Jump+2, int32(case4Start-(case3Jump+6)))
 	// 4-byte encoding
 	fc.out.MovRegToReg("rax", "rdx")
-	fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x12})             // shr rax, 18
-	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0xf0})             // or rax, 0xF0
-	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00})       // mov [r13 + r15], al
-	fc.out.Emit([]byte{0x49, 0xff, 0xc7})                   // inc r15
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x12})       // shr rax, 18
+	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0xf0})       // or rax, 0xF0
+	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00}) // mov [r13 + r15], al
+	fc.out.Emit([]byte{0x49, 0xff, 0xc7})             // inc r15
 	fc.out.MovRegToReg("rax", "rdx")
-	fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x0c})             // shr rax, 12
-	fc.out.Emit([]byte{0x48, 0x83, 0xe0, 0x3f})             // and rax, 0x3F
-	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0x80})             // or rax, 0x80
-	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00})       // mov [r13 + r15], al
-	fc.out.Emit([]byte{0x49, 0xff, 0xc7})                   // inc r15
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x0c})       // shr rax, 12
+	fc.out.Emit([]byte{0x48, 0x83, 0xe0, 0x3f})       // and rax, 0x3F
+	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0x80})       // or rax, 0x80
+	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00}) // mov [r13 + r15], al
+	fc.out.Emit([]byte{0x49, 0xff, 0xc7})             // inc r15
 	fc.out.MovRegToReg("rax", "rdx")
-	fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x06})             // shr rax, 6
-	fc.out.Emit([]byte{0x48, 0x83, 0xe0, 0x3f})             // and rax, 0x3F
-	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0x80})             // or rax, 0x80
-	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00})       // mov [r13 + r15], al
-	fc.out.Emit([]byte{0x49, 0xff, 0xc7})                   // inc r15
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x06})       // shr rax, 6
+	fc.out.Emit([]byte{0x48, 0x83, 0xe0, 0x3f})       // and rax, 0x3F
+	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0x80})       // or rax, 0x80
+	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00}) // mov [r13 + r15], al
+	fc.out.Emit([]byte{0x49, 0xff, 0xc7})             // inc r15
 	fc.out.MovRegToReg("rax", "rdx")
-	fc.out.Emit([]byte{0x48, 0x83, 0xe0, 0x3f})             // and rax, 0x3F
-	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0x80})             // or rax, 0x80
-	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00})       // mov [r13 + r15], al
-	fc.out.Emit([]byte{0x49, 0xff, 0xc7})                   // inc r15
+	fc.out.Emit([]byte{0x48, 0x83, 0xe0, 0x3f})       // and rax, 0x3F
+	fc.out.Emit([]byte{0x48, 0x83, 0xc8, 0x80})       // or rax, 0x80
+	fc.out.Emit([]byte{0x43, 0x88, 0x44, 0x3d, 0x00}) // mov [r13 + r15], al
+	fc.out.Emit([]byte{0x49, 0xff, 0xc7})             // inc r15
 
 	// Loop continue: increment codepoint index and jump back
 	loopContinue := fc.eb.text.Len()
 	fc.patchJumpImmediate(continueJump1+1, int32(loopContinue-(continueJump1+5)))
 	fc.patchJumpImmediate(continueJump2+1, int32(loopContinue-(continueJump2+5)))
 	fc.patchJumpImmediate(continueJump3+1, int32(loopContinue-(continueJump3+5)))
-	fc.out.Emit([]byte{0x48, 0xff, 0xc3})                   // inc rbx
+	fc.out.Emit([]byte{0x48, 0xff, 0xc3}) // inc rbx
 	loopJumpBack := fc.eb.text.Len()
 	backOffset := int32(fc.eb.LabelOffset("_cstr_convert_loop") - (loopJumpBack + 5))
 	fc.out.Emit([]byte{0xe9, byte(backOffset), byte(backOffset >> 8), byte(backOffset >> 16), byte(backOffset >> 24)}) // jmp _cstr_convert_loop
@@ -12525,7 +12525,7 @@ func (fc *FlapCompiler) trackFunctionCall(funcName string) {
 //   - call instruction: 8 bytes (return address)
 //   - push rbp: 8 bytes (function prologue)
 //   - push registers: 8 * pushCount bytes
-//   Total: 16 + (8 * pushCount) bytes
+//     Total: 16 + (8 * pushCount) bytes
 //
 // If total is not a multiple of 16, we subtract 8 more from rsp before calling malloc.
 // The caller must restore rsp after the call.

@@ -1,7 +1,7 @@
 package main
 
 // Dynamic library support for generated executables
-// This enables the compiled programs to call functions from .so files
+// This enables the compiled testprograms to call functions from .so files
 
 import (
 	"fmt"

@@ -50,24 +50,24 @@ var expectedExitCodes = map[string]int{
 	"div_zero_test": 1, // Tests division-by-zero error handling
 }
 
-// TestFlapPrograms is an integration test that compiles and runs all .flap programs
+// TestFlapPrograms is an integration test that compiles and runs all .flap testprograms
 // and compares their output against .result files
 func TestFlapPrograms(t *testing.T) {
 	// Find all .flap files
-	matches, err := filepath.Glob("programs/*.flap")
+	matches, err := filepath.Glob("testprograms/*.flap")
 	if err != nil {
 		t.Fatalf("Failed to find .flap files: %v", err)
 	}
 
 	if len(matches) == 0 {
-		t.Fatal("No .flap files found in programs/ directory")
+		t.Fatal("No .flap files found in testprograms/ directory")
 	}
 
 	// Test each program
 	for _, srcPath := range matches {
 		base := strings.TrimSuffix(filepath.Base(srcPath), ".flap")
 
-		// Skip experimental programs
+		// Skip experimental testprograms
 		if skipPrograms[base] {
 			continue
 		}
@@ -75,7 +75,7 @@ func TestFlapPrograms(t *testing.T) {
 		t.Run(base, func(t *testing.T) {
 			// t.Parallel() // DISABLED: compiler has race conditions with parallel execution
 
-			// Skip ARM64-incompatible programs on macOS
+			// Skip ARM64-incompatible testprograms on macOS
 			if runtime.GOARCH == "arm64" && skipOnARM64[base] {
 				t.Skipf("Skipping %s on ARM64 (C import not yet implemented)", base)
 				return
