@@ -22,14 +22,17 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
    - Completed in commit 858db49
    - `retval` and `reterr` keywords now implemented
 
-2. **Fix higher-order function segfaults** (HIGH) 🔴 ACTIVE
-   - Current: Passing lambdas as parameters causes segfaults
-   - Error: Programs crash with exit code 139 (SIGSEGV)
-   - Failing tests: test_lambda_match, test_map_simple, ex2_list_operations
-   - Impact: Blocks functional programming patterns (map, filter, reduce)
-   - Root cause: Call stub generation failures, dynamic linking issues
-   - Symptoms: "Warning: Label $stub not found for call patch"
-   - Files: `parser.go` lambda call codegen, `main.go` stub generation
+2. **Fix advanced lambda/map features** (HIGH) 🔴 BLOCKED
+   - Status: Programs compile successfully but crash immediately at runtime
+   - Failing tests (3/306): test_lambda_match, test_map_simple, ex2_list_operations
+   - Analysis:
+     - `test_map_simple`: Map indexing `m[5] = 10` on scalar value generates invalid code
+     - `test_lambda_match`: Recursive lambda with match expressions crashes in closure
+     - `ex2_list_operations`: Pipe operator with lambdas segfaults during transformation
+   - Note: Stub warnings ("Label $stub not found") are benign - PLT calls work correctly
+   - Impact: Blocks advanced functional programming patterns
+   - Root cause: Code generation bugs in map operations and complex lambda/match combinations
+   - Files: `parser.go` (map indexing codegen, lambda match expressions, pipe operator)
 
 3. ~~**Fix nested loops with loop-local variables**~~ ✓ COMPLETED
    - Fixed in commits 8cbb7b9 and 987e746
