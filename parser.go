@@ -12962,18 +12962,24 @@ func (fc *FlapCompiler) compilePipeExpr(expr *PipeExpr) {
 		fc.out.SubImmFromReg("rsp", 16)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
 
-		// Compile the lambda to get its function pointer
+		// Compile the lambda to get closure object pointer (as float64 in xmm0)
 		fc.compileExpression(right)
 
-		// Convert function pointer from float64 to integer
+		// Convert closure object pointer from float64 to integer in r12
 		fc.out.MovXmmToMem("xmm0", "rsp", StackSlotSize)
-		fc.out.MovMemToReg("r11", "rsp", StackSlotSize)
+		fc.out.MovMemToReg("r12", "rsp", StackSlotSize)
+
+		// Extract function pointer from closure object [r12 + 0]
+		fc.out.MovMemToReg("r11", "r12", 0)
+
+		// Extract environment pointer from closure object [r12 + 8] into r15
+		fc.out.MovMemToReg("r15", "r12", 8)
 
 		// Restore input value to xmm0
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
 		fc.out.AddImmToReg("rsp", 16)
 
-		// Call the lambda
+		// Call the lambda with environment in r15
 		fc.out.CallRegister("r11")
 
 	case *CallExpr:
@@ -12987,18 +12993,24 @@ func (fc *FlapCompiler) compilePipeExpr(expr *PipeExpr) {
 		fc.out.SubImmFromReg("rsp", 16)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
 
-		// Load the variable (function pointer as float64)
+		// Load the variable (closure object pointer as float64)
 		fc.compileExpression(right)
 
-		// Convert function pointer from float64 to integer
+		// Convert closure object pointer from float64 to integer in r12
 		fc.out.MovXmmToMem("xmm0", "rsp", StackSlotSize)
-		fc.out.MovMemToReg("r11", "rsp", StackSlotSize)
+		fc.out.MovMemToReg("r12", "rsp", StackSlotSize)
+
+		// Extract function pointer from closure object [r12 + 0]
+		fc.out.MovMemToReg("r11", "r12", 0)
+
+		// Extract environment pointer from closure object [r12 + 8] into r15
+		fc.out.MovMemToReg("r15", "r12", 8)
 
 		// Restore input value to xmm0
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
 		fc.out.AddImmToReg("rsp", 16)
 
-		// Call the lambda
+		// Call the lambda with environment in r15
 		fc.out.CallRegister("r11")
 
 	default:
