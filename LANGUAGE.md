@@ -325,7 +325,8 @@ x %= 5        // x = x % 5
 **Err handling:**
 - `or!` (railway-oriented programming / err propagation)
 - `and!` (success handler - executes if left has val, not err)
-- `?:` (Elvis operator - null coalescing / default val)
+- `err?` (check if expression is an err)
+- `val?` (check if expression has val)
 
 **Control flow:** `ret` (return val from function/lambda), `err` (return err from function/lambda)
 
@@ -390,7 +391,15 @@ z = x > 42 { yes ~> no }
 
 ```flap
 s := "Hello"         // Creates {0: 72.0, 1: 101.0, ...}
-char := s[1]         // returns 101.0 (UTF-8 'e')
+
+// Indexing returns Result (err if out of bounds)
+s[1] {
+    -> val { printf("Char: %v\n", val) }  // val = 101.0 (UTF-8 'e')
+    ~> err { printf("Out of bounds\n") }
+}
+
+char := s[1] or! 0   // 101.0 (in bounds) or 0 if out of bounds
+
 println("Hello")     // String literals optimized for direct output
 result := "Hello, " + "World!"  // Compile-time concatenation
 
@@ -412,10 +421,24 @@ s[1:5:2]             // Characters at indices 1, 3
 
 ```flap
 numbers = [1, 2, 3]
-first = numbers[0]
 length = #numbers    // length operator
 head = ^numbers      // first element
 tail = &numbers      // all but first
+
+// Indexing returns Result (err if out of bounds)
+numbers[0] {
+    -> val { printf("First: %v\n", val) }  // val = 1
+    ~> err { printf("Err: %v\n", err) }
+}
+
+numbers[999] {
+    -> val { printf("Found: %v\n", val) }
+    ~> err { printf("Out of bounds!\n") }  // This executes
+}
+
+// With or! for default values
+first := numbers[0] or! 0   // 1 (in bounds)
+missing := numbers[999] or! -1  // -1 (out of bounds, returns err, uses default)
 
 // Slicing works on lists too
 numbers[0:2]         // [1, 2] (first two elements)
@@ -431,8 +454,21 @@ Maps are **ordered** - they preserve insertion order.
 ages = {1: 25, 2: 30, 3: 35}
 empty = {}
 count = #ages        // returns 3.0
-price = ages[1]      // returns 25.0
-missing = ages[999]  // returns 0.0 (key doesn't exist)
+
+// Indexing returns Result (err if key doesn't exist)
+ages[1] {
+    -> val { printf("Age: %v\n", val) }  // val = 25
+    ~> err { printf("Key not found\n") }
+}
+
+ages[999] {
+    -> val { printf("Age: %v\n", val) }
+    ~> err { printf("Key 999 not found!\n") }  // This executes
+}
+
+// With or! for default values
+age := ages[1] or! 0      // 25 (key exists)
+missing := ages[999] or! 0  // 0 (key doesn't exist, returns err, uses default)
 
 // Maps preserve insertion order
 @ key, val in ages {
@@ -590,8 +626,8 @@ numbers := [10, 20, 30]
 - `ret @1`, `ret @2`, `ret @3`, ... - exits loop at nesting level 1, 2, 3, ... and all inner loops
 - `ret @1 val` - exits loop and returns val
 - `err "message"` - returns err from function (for err handling)
-- `@=` - continues current loop (jumps to top of innermost loop)
-- `@1`, `@2`, `@3`, ... - continues (jumps to top of) loop at nesting level 1, 2, 3, ...
+- `@++` - skip this iteration and continue to next (current loop)
+- `@1++`, `@2++`, `@3++`, ... - continue to next iteration of loop at nesting level 1, 2, 3, ...
 
 **Loop Variables:**
 - `@first` - true on first iteration
@@ -707,42 +743,53 @@ operation()
 - If left side is an err, skip right side and propagate err
 - Complement to `or!`: `and!` handles success, `or!` handles err
 
-#### Elvis Operator `?:`
+#### Checking Results: `err?` and `val?`
 
-The Elvis operator provides null-coalescing / default val semantics. If the left side is zero, false, or empty, use the right side:
+The `err?` and `val?` operators test whether an expression is an err or has val(s):
 
 ```flap
-// Use default val if zero/empty
-x := 0
-y := x ?: 42  // y = 42 (x is zero)
+// Check if something is an err
+result := parse_int("not a number")
+result.err? {
+    printf("Got an err: %v\n", result)  // Prints error message
+}
 
-a := 10
-b := a ?: 42  // b = 10 (a is non-zero)
+// Check if something has val
+result := parse_int("42")
+result.val? {
+    printf("Successfully parsed!\n")
+}
 
-// Works with strings
-name := ""
-display := name ?: "Anonymous"  // "Anonymous" (empty string)
+// Use in conditionals
+operation() {
+    val? -> printf("Success!\n")
+    err? -> printf("Failed!\n")
+}
 
-name := "Alice"
-display := name ?: "Anonymous"  // "Alice" (non-empty)
+// Common pattern: handle both cases
+result.val? {
+    result {
+        -> val { process(val) }
+    }
+}
+result.err? {
+    result {
+        ~> err { log_err(err) }
+    }
+}
 
-// Works with map access (returns 0 if key doesn't exist)
-config := {port: 8080}
-timeout := config.timeout ?: 30  // 30 (key doesn't exist, returns 0)
-port := config.port ?: 3000      // 8080 (key exists)
-
-// Chaining Elvis operators
-val := a ?: b ?: c ?: default_val
-
-// Common pattern: environment variables with defaults
-port := env("PORT") ?: 8080
-host := env("HOST") ?: "localhost"
+// With or! for compact code
+parse_int(input).val? {
+    data := parse_int(input) or! 0  // We know it's safe now
+    process(data)
+}
 ```
 
 **Behavior:**
-- Returns left side if it's "truthy" (non-zero, non-empty)
-- Returns right side if left is "falsy" (0, 0.0, empty string, missing key)
-- Different from `or!`: Elvis checks for zero/empty, `or!` checks for err
+- `expr.err?` returns true (1.0) if expr is an err, false (0.0) otherwise
+- `expr.val?` returns true (1.0) if expr has val(s), false (0.0) otherwise
+- These are complementary: exactly one is always true
+- More concise than pattern matching when you just need to check
 
 #### Loop Err Handling
 
@@ -1245,7 +1292,8 @@ loop_statement  = "@" block
 
 jump_statement  = ("ret" | "err") [ "@" number ] [ expression ]
                 | "@" number
-                | "@=" ;
+                | "@++"
+                | "@" number "++" ;
 
 assignment      = identifier [ ":" type_annotation ] ("=" | ":=" | "<-") expression
                 | identifier ("+=" | "-=" | "*=" | "/=" | "%=") expression ;
@@ -1360,8 +1408,8 @@ escape_sequence         = "\\" ( "n" | "t" | "r" | "\\" | '"' ) ;
 
 * `@` without arguments creates an infinite loop: `@ { ... }`
 * `@` with identifier introduces auto-labeled loops. The loop label is the current nesting depth (1, 2, 3, ...).
-* `@=` continues the current loop (jumps to its top).
-* `@1`, `@2`, `@3`, ... continues the loop at that nesting level by jumping to its top.
+* `@++` continues the current loop (skip this iteration, jump to next).
+* `@1++`, `@2++`, `@3++`, ... continues the loop at that nesting level (skip iteration, jump to next).
 * `unsafe` blocks can return register values as expressions (e.g., `rax`, `rbx`)
 * When used in a loop statement (`@1 identifier in expression`), it explicitly labels that loop.
 * `ret` returns from the current function with a val. `ret @` exits the current loop. `ret @1`, `ret @2`, `ret @3`, ... exits the loop at that nesting level and all inner loops. `err` returns an err.
