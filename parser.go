@@ -4420,8 +4420,11 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 			}
 		}
 
-		// Allocate actual stack space (was only registered in first pass)
-		fc.out.SubImmFromReg("rsp", 16)
+		// Allocate actual stack space only for new variables (not updates)
+		// Updates (a <- value) reuse existing stack space
+		if !s.IsUpdate {
+			fc.out.SubImmFromReg("rsp", 16)
+		}
 
 		// Set current assignment name for lambda naming (allows recursive calls)
 		fc.currentAssignName = s.Name
@@ -4661,6 +4664,9 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	fc.out.Cvtsi2sd("xmm0", "rax")
 	fc.out.MovXmmToMem("xmm0", "rbp", -iterOffset)
 
+	// Save stack offset before loop body (to clean up loop-local variables)
+	stackOffsetBeforeBody := fc.stackOffset
+
 	// Compile loop body
 	for _, s := range stmt.Body {
 		fc.compileStatement(s)
@@ -4674,6 +4680,14 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	for _, patchPos := range fc.activeLoops[len(fc.activeLoops)-1].ContinuePatches {
 		backOffset := int32(continuePos - (patchPos + 4))
 		fc.patchJumpImmediate(patchPos, backOffset)
+	}
+
+	// Clean up loop-local variables allocated during loop body
+	// Calculate how much stack was used by loop body
+	bodyStackUsage := fc.stackOffset - stackOffsetBeforeBody
+	if bodyStackUsage > 0 {
+		fc.out.AddImmToReg("rsp", int64(bodyStackUsage))
+		fc.stackOffset = stackOffsetBeforeBody
 	}
 
 	// Increment loop counter: load, increment, store back
