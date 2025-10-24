@@ -1658,14 +1658,15 @@ func (p *Parser) parseStatement() Statement {
 		return p.parseDeferStmt()
 	}
 
-	// Check for ret keyword (but not if it's followed by assignment operator)
-	if p.current.Type == TOKEN_RET {
-		// If followed by assignment operator, treat as identifier for assignment
-		if p.peek.Type == TOKEN_COLON_EQUALS || p.peek.Type == TOKEN_EQUALS ||
-			p.peek.Type == TOKEN_LEFT_ARROW || p.peek.Type == TOKEN_COLON ||
-			p.peek.Type == TOKEN_PLUS_EQUALS || p.peek.Type == TOKEN_MINUS_EQUALS ||
-			p.peek.Type == TOKEN_STAR_EQUALS || p.peek.Type == TOKEN_SLASH_EQUALS ||
-			p.peek.Type == TOKEN_MOD_EQUALS {
+	// Check for ret/retval/reterr keywords (but not if followed by assignment operator)
+	if p.current.Type == TOKEN_RET || p.current.Type == TOKEN_RETVAL || p.current.Type == TOKEN_RETERR {
+		// If TOKEN_RET followed by assignment operator, treat as identifier for assignment
+		if p.current.Type == TOKEN_RET &&
+			(p.peek.Type == TOKEN_COLON_EQUALS || p.peek.Type == TOKEN_EQUALS ||
+				p.peek.Type == TOKEN_LEFT_ARROW || p.peek.Type == TOKEN_COLON ||
+				p.peek.Type == TOKEN_PLUS_EQUALS || p.peek.Type == TOKEN_MINUS_EQUALS ||
+				p.peek.Type == TOKEN_STAR_EQUALS || p.peek.Type == TOKEN_SLASH_EQUALS ||
+				p.peek.Type == TOKEN_MOD_EQUALS) {
 			// Treat TOKEN_RET as TOKEN_IDENT for assignment purposes
 			// by converting the token type temporarily
 			p.current.Type = TOKEN_IDENT
@@ -2088,6 +2089,8 @@ func (p *Parser) parseMatchClause() (*MatchClause, bool) {
 	// - { (block statements)
 	// - identifier <- (assignment statements)
 	isStatementToken := p.current.Type == TOKEN_RET ||
+		p.current.Type == TOKEN_RETVAL ||
+		p.current.Type == TOKEN_RETERR ||
 		p.current.Type == TOKEN_AT_MINUS ||
 		p.current.Type == TOKEN_AT_EQUALS ||
 		p.current.Type == TOKEN_LBRACE ||
@@ -2157,9 +2160,9 @@ func (p *Parser) parseMatchTarget() Expression {
 
 		return &BlockExpr{Statements: statements}
 
-	case TOKEN_RET:
-		// ret or ret @N or ret value or ret @N value
-		p.nextToken() // skip 'ret'
+	case TOKEN_RET, TOKEN_RETVAL, TOKEN_RETERR:
+		// ret/retval/reterr or ret @N or ret value or ret @N value
+		p.nextToken() // skip 'ret'/'retval'/'reterr'
 
 		label := 0 // 0 means return from function
 		var value Expression

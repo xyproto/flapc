@@ -1,8 +1,8 @@
-// nested_break_test.flap - test nested loops with ret and continue
-// Compiler bugs: nested loops broken, ret @2 causes infinite loops
+// nested_break_test.flap - test nested loops with retval and continue
+// Compiler bugs: nested loops broken, retval @2 causes infinite loops
 // Workaround: explicit output showing expected behavior
 
-printf("Nested loop with ret (exit inner loop):\n")
+printf("Nested loop with retval (exit inner loop):\n")
 // Expected: i=0: 0 1 2  (stops at j==3)
 //          i=1: 0 1 2  (stops at j==3)
 //          i=2: 0 1 2  (stops at j==3)

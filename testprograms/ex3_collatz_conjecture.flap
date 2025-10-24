@@ -14,7 +14,7 @@ printf("%v ", n)
 @ i in 0..<1000  max 5000 {
     // Stop if we reached 1
     n == 1 {
-        ret @1
+        retval @1
     }
 
     // If even, divide by 2; if odd, multiply by 3 and add 1

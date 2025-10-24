@@ -263,7 +263,7 @@ x %= 5        // x = x % 5
 
 **Error handling:** `or!` (railway-oriented programming / error propagation)
 
-**Control flow:** `ret` (break loop / return value)
+**Control flow:** `retval` (return value from function/lambda), `reterr` (return error from function/lambda)
 
 **Type Casting:** `as` (convert between Flap and C types for FFI)
 - To C: `as i8`, `as i16`, `as i32`, `as i64` (signed integers)
@@ -463,7 +463,7 @@ end := 100
 // For unbounded loops, use 'max inf'
 @ i in 0..<1000000 max inf {
     println(i)
-    i == 100 ? ret : 0  // Usually exits via some condition
+    i == 100 ? retval : 0  // Usually exits via some condition
 }
 
 // List iteration with inferred max (when literal)
@@ -485,11 +485,13 @@ numbers := [10, 20, 30]
 - `max inf`: allows unlimited iterations (use cautiously!)
 
 **Loop Control:**
-- `ret` - returns from function
-- `ret value` - returns value from function
-- `ret @1`, `ret @2`, `ret @3`, ... - exits loop at nesting level 1, 2, 3, ... and all inner loops
-- `ret @1 value` - exits loop and returns value
+- `retval` - returns from function with value
+- `retval value` - returns value from function
+- `retval @1`, `retval @2`, `retval @3`, ... - exits loop at nesting level 1, 2, 3, ... and all inner loops
+- `retval @1 value` - exits loop and returns value
+- `reterr "message"` - returns error from function (for error handling)
 - `@1`, `@2`, `@3`, ... - continues (jumps to top of) loop at nesting level 1, 2, 3, ...
+- Note: `ret` is deprecated but still supported for backwards compatibility
 
 **Loop Variables:**
 - `@first` - true on first iteration
@@ -975,7 +977,7 @@ loop_statement  = "@" block
                 | "@" identifier "in" expression [ "max" (number | "inf") ] block
                 | "@" number identifier "in" expression [ "max" (number | "inf") ] block ;
 
-jump_statement  = "ret" [ "@" number ] [ expression ]
+jump_statement  = ("retval" | "reterr" | "ret") [ "@" number ] [ expression ]
                 | "@" number
                 | "@-"
                 | "@=" ;
@@ -997,7 +999,7 @@ default_arm     = "~>" match_target ;
 
 match_target    = jump_target | expression ;
 
-jump_target     = "ret" [ "@" number ] [ expression ]
+jump_target     = ("retval" | "reterr" | "ret") [ "@" number ] [ expression ]
                 | "@" number ;
 
 block           = "{" { statement { newline } } "}" ;
@@ -1096,7 +1098,7 @@ escape_sequence         = "\\" ( "n" | "t" | "r" | "\\" | '"' ) ;
 * `@1`, `@2`, `@3`, ... continues the loop at that nesting level by jumping to its top.
 * `unsafe` blocks can return register values as expressions (e.g., `rax`, `rbx`)
 * When used in a loop statement (`@1 identifier in expression`), it explicitly labels that loop.
-* `ret` returns from the current function. `ret @1`, `ret @2`, `ret @3`, ... exits the loop at that nesting level and all inner loops.
+* `retval` returns from the current function with a value. `retval @1`, `retval @2`, `retval @3`, ... exits the loop at that nesting level and all inner loops. `reterr` returns an error. (`ret` is deprecated but still supported.)
 * Lambda syntax: `x => expr` or `x, y => expr` (no parentheses around parameters).
 * Type casting with `as`: Bidirectional conversion for FFI (e.g., `42 as i32` to C, `c_value as number` from C).
 * Match blocks attach to the preceding expression. When omitted, implicit default is `0`.
@@ -1107,7 +1109,7 @@ escape_sequence         = "\\" ( "n" | "t" | "r" | "\\" | '"' ) ;
 ## Keywords
 
 ```
-and as in not or or! ret me cme xor &b |b ^b ~b <b >b >>b <<b
+and as in not or or! retval reterr xor &b |b ^b ~b <b >b >>b <<b
 i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 cstr ptr
 number string list
 ```
@@ -1631,7 +1633,7 @@ open_and_process = (filename) -> {
     data := read_file(file)
 
     // Process data...
-    ret process(data)  // fclose called before return
+    retval process(data)  // fclose called before return
 }
 ```
 
@@ -1669,7 +1671,7 @@ load_level = (level_file) -> {
         // Load and process...
         level_data := parse_level(file, temp_buffer)
 
-        ret level_data
+        retval level_data
     }  // Arena freed, then fclose called (LIFO)
 }
 ```

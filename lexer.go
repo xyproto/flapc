@@ -69,7 +69,9 @@ const (
 	TOKEN_FMA              // *+ (fused multiply-add)
 	TOKEN_OR_BANG          // or! (error handling)
 	// TOKEN_ME and TOKEN_CME removed - recursive calls now use mandatory max
-	TOKEN_RET              // ret keyword (return/break)
+	TOKEN_RET              // ret keyword (deprecated, kept for backwards compatibility)
+	TOKEN_RETVAL           // retval keyword (return value from function/lambda)
+	TOKEN_RETERR           // reterr keyword (return error from function/lambda)
 	TOKEN_AT_FIRST         // @first (first iteration)
 	TOKEN_AT_LAST          // @last (last iteration)
 	TOKEN_AT_COUNTER       // @counter (iteration counter)
@@ -345,6 +347,10 @@ func (l *Lexer) NextToken() Token {
 		// "me" and "cme" removed - recursive calls now use function name with mandatory max
 		case "ret":
 			return Token{Type: TOKEN_RET, Value: value, Line: l.line}
+		case "retval":
+			return Token{Type: TOKEN_RETVAL, Value: value, Line: l.line}
+		case "reterr":
+			return Token{Type: TOKEN_RETERR, Value: value, Line: l.line}
 		case "use":
 			return Token{Type: TOKEN_USE, Value: value, Line: l.line}
 		case "import":
