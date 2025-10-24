@@ -6903,10 +6903,8 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			funcName = fmt.Sprintf("lambda_%d", fc.lambdaCounter)
 		}
 
-		if fc.debug {
-			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "DEBUG compileExpression: adding lambda '%s' with %d params\n", funcName, len(e.Params))
-			}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG compileExpression: adding lambda '%s' with %d params, body type: %T\n", funcName, len(e.Params), e.Body)
 		}
 
 		// Store lambda for later code generation
@@ -7914,10 +7912,8 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 	// Use index-based loop to handle lambdas added during iteration (nested lambdas)
 	for i := 0; i < len(fc.lambdaFuncs); i++ {
 		lambda := fc.lambdaFuncs[i]
-		if fc.debug {
-			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: generating lambda '%s'\n", lambda.Name)
-			}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: generating lambda '%s' with body type %T\n", lambda.Name, lambda.Body)
 		}
 		// Record the offset of this lambda function in .text
 		fc.lambdaOffsets[lambda.Name] = fc.eb.text.Len()
