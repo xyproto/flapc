@@ -10463,19 +10463,18 @@ func (fc *FlapCompiler) compileRecursiveCall(call *CallExpr) {
 		fc.out.MovRegToMem("rax", depthVarName, 0)
 	}
 
-	// Compile arguments in order (same as normal lambda calls)
-	for i, arg := range call.Args {
+	// Compile arguments in order and save ALL to stack
+	for _, arg := range call.Args {
 		fc.compileExpression(arg)
-		if i < len(call.Args)-1 {
-			// Save result to stack if not the last arg
-			fc.out.SubImmFromReg("rsp", StackSlotSize)
-			fc.out.MovXmmToMem("xmm0", "rsp", 0)
-		}
+		// Save result to stack for all arguments
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
 	}
 
-	// Restore arguments from stack in reverse order to registers
-	// Last arg is already in xmm0
-	for i := len(call.Args) - 2; i >= 0; i-- {
+	// Restore arguments from stack to registers xmm0, xmm1, xmm2, ...
+	// Arguments are on stack in order: [arg0, arg1, arg2, ...]
+	// We need to pop them in reverse order to get them into the right registers
+	for i := len(call.Args) - 1; i >= 0; i-- {
 		regName := fmt.Sprintf("xmm%d", i)
 		fc.out.MovMemToXmm(regName, "rsp", 0)
 		fc.out.AddImmToReg("rsp", StackSlotSize)
