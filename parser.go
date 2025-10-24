@@ -4608,11 +4608,11 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 
 		// Reserve space for loop state in logical frame
 		// This prevents loop-local variables from colliding with loop iterator
-		// 48 bytes if runtime checking needed, 24 bytes otherwise
+		// 48 bytes if runtime checking needed, 32 bytes otherwise (16-byte aligned)
 		if s.NeedsMaxCheck {
 			fc.stackOffset += 48
 		} else {
-			fc.stackOffset += 24
+			fc.stackOffset += 32
 		}
 
 		// Recursively collect symbols from loop body
@@ -5019,8 +5019,9 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 		limitOffset = loopStateOffset               // limit at top
 	} else {
 		// No runtime checking needed - smaller stack frame
-		stackSize = 24
-		loopStateOffset = baseOffset + 24
+		// Must be 16-byte aligned for x86-64 calling convention
+		stackSize = 32
+		loopStateOffset = baseOffset + 32
 		iterOffset = loopStateOffset - 16  // iterator at -16
 		counterOffset = loopStateOffset - 8 // counter at -8
 		limitOffset = loopStateOffset       // limit at top
