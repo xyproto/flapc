@@ -1675,8 +1675,8 @@ func (p *Parser) parseStatement() Statement {
 		return p.parseJumpStatement()
 	}
 
-	// Check for @= (continue current loop)
-	if p.current.Type == TOKEN_AT_EQUALS {
+	// Check for @++ (continue current loop)
+	if p.current.Type == TOKEN_AT_PLUSPLUS {
 		return p.parseLoopStatement()
 	}
 
@@ -2085,7 +2085,7 @@ func (p *Parser) parseMatchClause() (*MatchClause, bool) {
 	// - identifier <- (assignment statements)
 	isStatementToken := p.current.Type == TOKEN_RET ||
 		p.current.Type == TOKEN_ERR ||
-		p.current.Type == TOKEN_AT_EQUALS ||
+		p.current.Type == TOKEN_AT_PLUSPLUS ||
 		p.current.Type == TOKEN_LBRACE ||
 		(p.current.Type == TOKEN_AT && p.peek.Type == TOKEN_NUMBER) ||
 		(p.current.Type == TOKEN_IDENT && p.peek.Type == TOKEN_LEFT_ARROW)
@@ -2185,12 +2185,12 @@ func (p *Parser) parseMatchTarget() Expression {
 
 		// Return a JumpExpr with IsBreak semantics (ret exits loop)
 		return &JumpExpr{Label: label, Value: value, IsBreak: true}
-	case TOKEN_AT_EQUALS:
+	case TOKEN_AT_PLUSPLUS:
 		if p.loopDepth < 1 {
-			p.error("@= requires at least 1 loop")
+			p.error("@++ requires at least 1 loop")
 		}
-		p.nextToken() // skip '@='
-		// Check for optional return value: @= value
+		p.nextToken() // skip '@++'
+		// Check for optional return value: @++ value
 		var value Expression
 		if p.current.Type != TOKEN_NEWLINE && p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
 			value = p.parseExpression()
@@ -2246,13 +2246,13 @@ func (p *Parser) parseMatchTarget() Expression {
 }
 
 func (p *Parser) parseLoopStatement() Statement {
-	// Handle @= token (continue current loop)
-	if p.current.Type == TOKEN_AT_EQUALS {
-		// @= means continue current loop (jump to @N where N is current loop depth)
+	// Handle @++ token (continue current loop)
+	if p.current.Type == TOKEN_AT_PLUSPLUS {
+		// @++ means continue current loop (jump to @N where N is current loop depth)
 		if p.loopDepth < 1 {
-			p.error("@= requires at least 1 loop")
+			p.error("@++ requires at least 1 loop")
 		}
-		// @= is continue semantics (not break)
+		// @++ is continue semantics (not break)
 		return &JumpStmt{IsBreak: false, Label: p.loopDepth, Value: nil}
 	}
 

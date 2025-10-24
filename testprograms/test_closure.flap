@@ -4,7 +4,7 @@
 // Simple closure: function that returns a function
 makeAdder := (x) => {
     inner := (y) => x + y
-    retval inner
+    ret inner
 }
 
 // Test 1: Create an adder that adds 5
