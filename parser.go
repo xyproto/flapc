@@ -9814,9 +9814,12 @@ func (fc *FlapCompiler) compileDirectCall(call *DirectCallExpr) {
 		fc.out.AddImmToReg("rsp", 16)
 	}
 
-	// Load function pointer from stack to r11
+	// Load closure pointer from stack
 	fc.out.MovMemToReg("r11", "rsp", 0)
 	fc.out.AddImmToReg("rsp", 16)
+
+	// Dereference closure to get actual function pointer at offset 0
+	fc.out.MovMemToReg("r11", "r11", 0)
 
 	// Call the function pointer in r11
 	fc.out.CallRegister("r11")
