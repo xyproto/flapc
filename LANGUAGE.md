@@ -16,19 +16,16 @@ All values use IEEE 754 double-precision floating point. This single underlying 
 
 ### Result Type
 
-All expressions and functions in Flap implicitly return a **Result** type, which represents either success with val(s) or failure with an err:
-
-```
-Result = Val(val1, val2, ...) | Err(err_message)
-```
+All expressions and functions in Flap implicitly return a **Result** type, which represents either success with val(s) or failure with an err.
 
 **Key Properties:**
 - A Result contains **either** vals **or** an err string, never both
 - Vals can be zero, one, or multiple (returned as a list)
-- The `ret` keyword creates a Val result
-- The `err` keyword creates an Err result
-- Pattern matching extracts vals or errs
+- The `ret` keyword returns a success result
+- The `err` keyword returns an error result
+- Pattern matching uses `->` for success (extracts vals) and `~>` for error (extracts err)
 - The `or!` operator propagates errs automatically
+- No explicit constructors - use `ret`/`err` keywords only
 
 **Examples:**
 
@@ -66,8 +63,8 @@ safe_divide = (a, b) => {
 
 // Loops can return Results
 find_item = items => @ i in items {
-    i > 100 { ret @ i }  // Val(i)
-    i < 0 { err @ "negative val found" }  // Err("negative val found")
+    i > 100 { ret @ i }  // Success: returns i
+    i < 0 { err @ "negative val found" }  // Error with message
 }
 ```
 
@@ -325,7 +322,10 @@ x %= 5        // x = x % 5
 
 **List:** `^` (head), `&` (tail), `#` (length), `::` (cons)
 
-**Err handling:** `or!` (railway-oriented programming / err propagation)
+**Err handling:**
+- `or!` (railway-oriented programming / err propagation)
+- `and!` (success handler - executes if left has val, not err)
+- `?:` (Elvis operator - null coalescing / default val)
 
 **Control flow:** `ret` (return val from function/lambda), `err` (return err from function/lambda)
 
@@ -333,8 +333,8 @@ x %= 5        // x = x % 5
 - To C: `as i8`, `as i16`, `as i32`, `as i64` (signed integers)
 - To C: `as u8`, `as u16`, `as u32`, `as u64` (unsigned integers)
 - To C: `as f32`, `as f64` (floating point)
-- To C: `as cstr` (null-terminated string)
-- To C: `as ptr` (pointer)
+- To C: `as cstr` (C null-terminated string)
+- To C: `as cptr` (C pointer)
 - From C: `as number` (any C type → Flap number)
 - From C: `as string` (C string → Flap string)
 - From C: `as list` (C array → Flap list)
@@ -481,13 +481,13 @@ data.name            // Access by string key
 When using the `.` operator, if the field doesn't exist or the left side is an err:
 
 ```flap
-// Accessing non-existent field returns Err
+// Accessing non-existent field returns err
 player = {health: 100, x: 10}
-result := player.asdf  // Err("asdf is not a member of player")
+result := player.asdf  // Returns err: "asdf is not a member of player"
 
-// If left side is Err, dot operator propagates with new message
-x := Err("something went wrong")
-result := x.field  // Err("field is not a member of x")
+// If left side is already an err, dot operator propagates with new message
+x := err "something went wrong"
+result := x.field  // Returns err: "field is not a member of x"
 
 // Handle with pattern matching
 player.health {
@@ -546,10 +546,10 @@ end := 100
     println(i)
 }
 
-// For unbounded loops, use 'max inf'
+// For unbounded range loops, use 'max inf'
 @ i in 0..<1000000 max inf {
     println(i)
-    i == 100 ? ret : 0  // Usually exits via some condition
+    i == 100 { ret @ }  // Usually exits via some condition
 }
 
 // List iteration with inferred max (when literal)
@@ -563,10 +563,17 @@ numbers := [10, 20, 30]
     println(n)
 }
 
-// Infinite loop without an iterator
+// Infinite loop (no iterator, no max needed)
 @ {
     printf("Looping...\n")
-    condition { ret @  }  // Exit loop with ret @
+    condition { ret @ }  // Exit loop with ret @
+}
+
+// Alternative: infinite game loop
+@ {
+    handle_input()
+    update_game()
+    render()
 }
 ```
 
@@ -574,7 +581,8 @@ numbers := [10, 20, 30]
 - Literal ranges (`0..<5`) and list literals: `max` is **optional** (inferred, no runtime overhead)
 - Variable ranges/lists: `max` is **required** (runtime checking enforced)
 - Explicit `max N`: adds runtime checking to ensure loop doesn't exceed N iterations
-- `max inf`: allows unlimited iterations (use cautiously!)
+- `max inf`: allows unlimited iterations for ranges/lists (use cautiously!)
+- Infinite loops (`@ {}`): no iterator, no `max` needed - truly infinite until explicit exit
 
 **Loop Control:**
 - `ret` - returns from function with val
@@ -670,6 +678,72 @@ main ==> {
 }
 ```
 
+#### Success Handler `and!`
+
+The `and!` operator executes the right side if the left side has vals (not an err). This enables "happy path" continuations:
+
+```flap
+// Execute block if operation succeeds
+parse_config("config.json") and! {
+    printf("Config loaded successfully\n")
+    start_server()
+}
+
+// Chain success handlers
+load_data() and! process_data() and! save_results()
+
+// Use with pattern matching
+result := fetch_user(123)
+result and! -> user { printf("Welcome, %v!\n", user.name) }
+
+// Combined with or! for complete handling
+operation()
+    and! { printf("Success!\n") }
+    or! { printf("Failed!\n") }
+```
+
+**Behavior:**
+- If left side is a success (has vals), execute right side
+- If left side is an err, skip right side and propagate err
+- Complement to `or!`: `and!` handles success, `or!` handles err
+
+#### Elvis Operator `?:`
+
+The Elvis operator provides null-coalescing / default val semantics. If the left side is zero, false, or empty, use the right side:
+
+```flap
+// Use default val if zero/empty
+x := 0
+y := x ?: 42  // y = 42 (x is zero)
+
+a := 10
+b := a ?: 42  // b = 10 (a is non-zero)
+
+// Works with strings
+name := ""
+display := name ?: "Anonymous"  // "Anonymous" (empty string)
+
+name := "Alice"
+display := name ?: "Anonymous"  // "Alice" (non-empty)
+
+// Works with map access (returns 0 if key doesn't exist)
+config := {port: 8080}
+timeout := config.timeout ?: 30  // 30 (key doesn't exist, returns 0)
+port := config.port ?: 3000      // 8080 (key exists)
+
+// Chaining Elvis operators
+val := a ?: b ?: c ?: default_val
+
+// Common pattern: environment variables with defaults
+port := env("PORT") ?: 8080
+host := env("HOST") ?: "localhost"
+```
+
+**Behavior:**
+- Returns left side if it's "truthy" (non-zero, non-empty)
+- Returns right side if left is "falsy" (0, 0.0, empty string, missing key)
+- Different from `or!`: Elvis checks for zero/empty, `or!` checks for err
+
 #### Loop Err Handling
 
 Loops can return Results, allowing early exit with val or err:
@@ -677,7 +751,7 @@ Loops can return Results, allowing early exit with val or err:
 ```flap
 // Exit loop with val
 find_first = items => @ i in items {
-    i > 100 { ret @ i }  // Returns Val(i)
+    i > 100 { ret @ i }  // Returns success with i
 }
 
 // Exit loop with err
@@ -774,43 +848,44 @@ process = x => {
 }
 ```
 
-### Tail Recursion and Memoization
+### Automatic Recursion Optimization
 
-Flap provides two special keywords for recursive functions: `me` for tail recursion and `cme` for cached/memoized recursion.
+Flap automatically optimizes recursive function calls without requiring special keywords:
 
-**Tail Recursion with `me`:**
+**Tail-Call Optimization (Automatic):**
 
-The `me` keyword enables tail-call optimization, converting recursive calls into efficient loops:
+When a function calls itself as the last operation (tail position), the compiler automatically converts it to a loop:
 
 ```flap
 // Fibonacci using tail recursion with accumulator pattern
 fib := (n, a, b) => n <= 0 {
     -> a
-    ~> me(n - 1, b, a + b)
+    ~> fib(n - 1, b, a + b)  // Tail call - auto-optimized to loop
 }
 
-println(fib(10, 0, 1))  // 55
+println(fib(10, 0, 1))  // 55 (no stack growth)
 ```
 
-**Memoized Recursion with `cme`:**
+**Automatic Memoization (Pure Functions):**
 
-The `cme` keyword automatically caches function results based on arguments, dramatically improving performance for recursive algorithms with overlapping subproblems:
+Pure recursive functions (no side effects) are automatically memoized by the compiler:
 
 ```flap
-// Fibonacci with automatic memoization
+// Fibonacci with automatic memoization (pure function)
 fib := (n) => n <= 1 {
     -> n
-    ~> cme(n - 1) + cme(n - 2)
+    ~> fib(n - 1) + fib(n - 2)  // Auto-memoized (pure function)
 }
 
-println(fib(10))   // Fast: results are cached
-println(fib(20))   // Very fast: reuses cached results
+println(fib(10))   // First call builds cache
+println(fib(20))   // Reuses cached results (very fast)
 ```
 
-**When to use:**
-- Use `me` for tail-recursive functions (last operation is the recursive call)
-- Use `cme` for non-tail-recursive functions with repeated subproblems
-- `cme` uses arena-based memory allocation for efficient cache management
+**How it works:**
+- **Tail calls**: Compiler detects when function calls itself in tail position and converts to loop (no stack growth)
+- **Pure functions**: Compiler analyzes function for side effects; if pure, adds automatic result caching
+- **Zero overhead**: No special syntax required, optimizations happen automatically
+- **Smart caching**: Memoization uses arena-based memory allocation
 
 ### Builtin Functions
 
@@ -1300,17 +1375,13 @@ escape_sequence         = "\\" ( "n" | "t" | "r" | "\\" | '"' ) ;
 ## Keywords
 
 ```
-and as cstruct err hot in not or or! ret xor &b |b ^b ~b <b >b >>b <<b
-i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 cstr ptr
+and and! as cstruct err hot in not or or! ret xor &b |b ^b ~b <b >b >>b <<b
+i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 cstr cptr
 number string list
 packed aligned sizeof
 ```
 
-**Recursion Keywords:**
-- `me` - self-reference for tail-recursive calls (optimized to loops)
-- `cme` - cached/memoized self-reference for recursive calls with automatic result caching
-
-**Note:** Type keywords (`i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32`, `f64`, `cstr`, `ptr`, `number`, `string`, `list`) are **contextual keywords** - they are only reserved when used after `as` in type casting expressions. They can be used as variable names in other contexts:
+**Note:** Type keywords (`i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32`, `f64`, `cstr`, `cptr`, `number`, `string`, `list`) are **contextual keywords** - they are only reserved when used after `as` in type casting expressions. They can be used as variable names in other contexts:
 
 ```flap
 // Valid: using type keywords as variable names
@@ -1320,7 +1391,7 @@ string = "hello"
 
 // Also valid: using them as type keywords in casts
 x = 42 as i32
-address = pointer_value as ptr
+address = pointer_value as cptr
 text = c_string as string
 ```
 
@@ -1393,7 +1464,7 @@ println(filter(positive, numbers))  // [1, 2]
 call("printf", "Hello from C!\n" as cstr)
 
 // Get values FROM C
-time_val = call("time", 0 as ptr)
+time_val = call("time", 0 as cptr)
 timestamp = time_val as number
 printf("Unix time: %f\n", timestamp)
 
@@ -1408,7 +1479,7 @@ write_f64(ptr, 0, 42.0)         // Write float64 at index 0
 write_i32(ptr, 1, 100)          // Write int32 at index 1
 val = read_f64(ptr, 0)          // Read back float64
 int_val = read_i32(ptr, 1)      // Read back int32
-call("free", ptr as ptr)
+call("free", ptr as cptr)
 
 // Working with C structs (safe indexing)
 // struct Point { float x; float y; }
@@ -1417,7 +1488,7 @@ write_f32(point_ptr, 0, 10.5)   // x field at index 0
 write_f32(point_ptr, 1, 20.3)   // y field at index 1
 x_val = read_f32(point_ptr, 0)
 y_val = read_f32(point_ptr, 1)
-call("free", point_ptr as ptr)
+call("free", point_ptr as cptr)
 ```
 
 ### C-Compatible Structs
@@ -1499,10 +1570,10 @@ write_u32(entity_ptr, Entity.flags_offset, 0x1)
 health := read_i32(entity_ptr, Entity.health_offset)
 
 // Pass to C functions
-call("process_entity", entity_ptr as ptr)
+call("process_entity", entity_ptr as cptr)
 
 // Cleanup
-call("free", entity_ptr as ptr)
+call("free", entity_ptr as cptr)
 ```
 
 **Benefits:**
@@ -2064,7 +2135,7 @@ malloc_fn := dlsym(libc, "malloc")
 free_fn := dlsym(libc, "free")
 
 // Manual allocation
-ptr := call(malloc_fn, 1024 as u64) as ptr
+ptr := call(malloc_fn, 1024 as u64) as cptr
 defer call(free_fn, ptr)  // Cleanup with defer
 
 // Use ptr...
@@ -2164,10 +2235,10 @@ allocate_and_process = () -> {
     malloc_fn := dlsym(libc, "malloc")
     free_fn := dlsym(libc, "free")
 
-    ptr1 := call(malloc_fn, 1024 as u64) as ptr
+    ptr1 := call(malloc_fn, 1024 as u64) as cptr
     defer call(free_fn, ptr1)
 
-    ptr2 := call(malloc_fn, 2048 as u64) as ptr
+    ptr2 := call(malloc_fn, 2048 as u64) as cptr
     defer call(free_fn, ptr2)
 
     // Both freed automatically, even if early return
