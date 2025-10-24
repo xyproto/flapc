@@ -66,7 +66,10 @@ const (
 	TOKEN_INCREMENT        // ++
 	TOKEN_DECREMENT        // --
 	TOKEN_FMA              // *+ (fused multiply-add)
-	TOKEN_OR_BANG          // or! (error handling)
+	TOKEN_OR_BANG          // or! (error handling / railway-oriented programming)
+	TOKEN_AND_BANG         // and! (success handler)
+	TOKEN_ERR_QUESTION     // err? (check if expression is error)
+	TOKEN_VAL_QUESTION     // val? (check if expression has value)
 	// TOKEN_ME and TOKEN_CME removed - recursive calls now use mandatory max
 	TOKEN_RET              // ret keyword (return value from function/lambda)
 	TOKEN_ERR              // err keyword (return error from function/lambda)
@@ -97,7 +100,7 @@ const (
 	TOKEN_F32  // f32
 	TOKEN_F64  // f64
 	TOKEN_CSTR // cstr
-	TOKEN_PTR  // ptr
+	TOKEN_CPTR // cptr (C pointer)
 	// Flap type keywords
 	TOKEN_NUMBER_TYPE // number
 	TOKEN_STRING_TYPE // string (type)
