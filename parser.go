@@ -7834,14 +7834,12 @@ func (fc *FlapCompiler) compileUnsafeCast(dest string, cast *CastExpr) {
 }
 
 func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
-	// For now, only support: list || lambda
-	lambda, ok := expr.Operation.(*LambdaExpr)
-	if !ok {
-		compilerError("parallel operator (||) currently only supports lambda expressions")
-	}
-
-	if len(lambda.Params) != 1 {
-		compilerError("parallel operator lambda must have exactly one parameter")
+	// Support: list || lambda or list || lambdaVar
+	lambda, isDirectLambda := expr.Operation.(*LambdaExpr)
+	if isDirectLambda {
+		if len(lambda.Params) != 1 {
+			compilerError("parallel operator lambda must have exactly one parameter")
+		}
 	}
 
 	const (
@@ -12992,82 +12990,13 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 }
 
 func (fc *FlapCompiler) compilePipeExpr(expr *PipeExpr) {
-	// Pipe operator: left | right
-	// Semantics: Execute left, pass result to right
-	// For now, this is a simple sequential composition:
-	// 1. Evaluate left expression
-	// 2. Pass result (in xmm0) to right expression
-
-	// Compile left side (result will be in xmm0)
-	fc.compileExpression(expr.Left)
-
-	// Right side should be a function/lambda that takes the result
-	// For now, if right is a lambda or function call, we can evaluate it
-	// The result from left is already in xmm0, which is the first parameter
-
-	switch right := expr.Right.(type) {
-	case *LambdaExpr:
-		// Compile the lambda and call it with the value in xmm0
-		// First save the input value
-		fc.out.SubImmFromReg("rsp", 16)
-		fc.out.MovXmmToMem("xmm0", "rsp", 0)
-
-		// Compile the lambda to get closure object pointer (as float64 in xmm0)
-		fc.compileExpression(right)
-
-		// Convert closure object pointer from float64 to integer in r12
-		fc.out.MovXmmToMem("xmm0", "rsp", StackSlotSize)
-		fc.out.MovMemToReg("r12", "rsp", StackSlotSize)
-
-		// Extract function pointer from closure object [r12 + 0]
-		fc.out.MovMemToReg("r11", "r12", 0)
-
-		// Extract environment pointer from closure object [r12 + 8] into r15
-		fc.out.MovMemToReg("r15", "r12", 8)
-
-		// Restore input value to xmm0
-		fc.out.MovMemToXmm("xmm0", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 16)
-
-		// Call the lambda with environment in r15
-		fc.out.CallRegister("r11")
-
-	case *CallExpr:
-		// For function calls, the value in xmm0 becomes the first argument
-		// This is a simplified implementation
-		fc.compileExpression(right)
-
-	case *IdentExpr:
-		// Variable reference - could be a lambda stored in a variable
-		// Save the input value
-		fc.out.SubImmFromReg("rsp", 16)
-		fc.out.MovXmmToMem("xmm0", "rsp", 0)
-
-		// Load the variable (closure object pointer as float64)
-		fc.compileExpression(right)
-
-		// Convert closure object pointer from float64 to integer in r12
-		fc.out.MovXmmToMem("xmm0", "rsp", StackSlotSize)
-		fc.out.MovMemToReg("r12", "rsp", StackSlotSize)
-
-		// Extract function pointer from closure object [r12 + 0]
-		fc.out.MovMemToReg("r11", "r12", 0)
-
-		// Extract environment pointer from closure object [r12 + 8] into r15
-		fc.out.MovMemToReg("r15", "r12", 8)
-
-		// Restore input value to xmm0
-		fc.out.MovMemToXmm("xmm0", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 16)
-
-		// Call the lambda with environment in r15
-		fc.out.CallRegister("r11")
-
-	default:
-		// For other expressions, just evaluate them
-		// This may not be the correct semantics but is a placeholder
-		fc.compileExpression(expr.Right)
+	// Use ParallelExpr implementation for list mapping
+	// Convert pipe to parallel expr: left | right => left || right
+	parallelExpr := &ParallelExpr{
+		List:      expr.Left,
+		Operation: expr.Right,
 	}
+	fc.compileParallelExpr(parallelExpr)
 }
 
 func (fc *FlapCompiler) compileConcurrentGatherExpr(expr *ConcurrentGatherExpr) {
