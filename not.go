@@ -21,7 +21,7 @@ func (o *Out) NotReg(dst string) {
 
 // x86-64 NOT (one's complement negation)
 func (o *Out) notX86Reg(dst string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -55,7 +55,7 @@ func (o *Out) notX86Reg(dst string) {
 
 // ARM64 MVN (NOT) - bitwise NOT using MVN (Move NOT)
 func (o *Out) notARM64Reg(dst string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -89,7 +89,7 @@ func (o *Out) notARM64Reg(dst string) {
 
 // RISC-V NOT (using XORI with -1)
 func (o *Out) notRISCVReg(dst string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}

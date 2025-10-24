@@ -16,7 +16,7 @@ import (
 // CallRelative generates a relative CALL instruction
 // offset is the relative offset to the function (from end of instruction)
 func (o *Out) CallRelative(offset int32) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.callX86Relative(offset)
 	case ArchARM64:
@@ -28,7 +28,7 @@ func (o *Out) CallRelative(offset int32) {
 
 // CallRegister generates a CALL to address in register (indirect call)
 func (o *Out) CallRegister(reg string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.callX86Register(reg)
 	case ArchARM64:
@@ -60,7 +60,7 @@ func (o *Out) callX86Relative(offset int32) {
 
 // x86-64 CALL register (indirect)
 func (o *Out) callX86Register(reg string) {
-	regInfo, regOk := GetRegister(o.machine.Arch, reg)
+	regInfo, regOk := GetRegister(o.target.Arch(), reg)
 	if !regOk {
 		return
 	}
@@ -118,7 +118,7 @@ func (o *Out) callARM64Relative(offset int32) {
 
 // ARM64 BLR (Branch with Link to Register) - indirect call
 func (o *Out) callARM64Register(reg string) {
-	regInfo, regOk := GetRegister(o.machine.Arch, reg)
+	regInfo, regOk := GetRegister(o.target.Arch(), reg)
 	if !regOk {
 		return
 	}
@@ -174,7 +174,7 @@ func (o *Out) callRISCVRelative(offset int32) {
 
 // RISC-V JALR (Jump and Link Register) - indirect call
 func (o *Out) callRISCVRegister(reg string) {
-	regInfo, regOk := GetRegister(o.machine.Arch, reg)
+	regInfo, regOk := GetRegister(o.target.Arch(), reg)
 	if !regOk {
 		return
 	}

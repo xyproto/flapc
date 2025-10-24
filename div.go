@@ -12,7 +12,7 @@ import (
 
 // DivRegByReg generates DIV dst, src (dst = dst / src)
 func (o *Out) DivRegByReg(dst, src string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.divX86RegByReg(dst, src)
 	case ArchARM64:
@@ -24,7 +24,7 @@ func (o *Out) DivRegByReg(dst, src string) {
 
 // DivRegByImm generates DIV dst, imm (dst = dst / imm)
 func (o *Out) DivRegByImm(dst string, imm int64) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.divX86RegByImm(dst, imm)
 	case ArchARM64:
@@ -40,7 +40,7 @@ func (o *Out) DivRegByImm(dst string, imm int64) {
 
 // x86-64 IDIV (signed division)
 func (o *Out) divX86RegByReg(dst, src string) {
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !srcOk {
 		return
 	}
@@ -98,8 +98,8 @@ func (o *Out) divX86RegByImm(dst string, imm int64) {
 
 // ARM64 SDIV (signed division)
 func (o *Out) divARM64RegByReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -126,7 +126,7 @@ func (o *Out) divARM64RegByReg(dst, src string) {
 
 // ARM64 division by immediate
 func (o *Out) divARM64RegByImm(dst string, imm int64) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -164,8 +164,8 @@ func (o *Out) divARM64RegByImm(dst string, imm int64) {
 
 // RISC-V DIV (signed division)
 func (o *Out) divRISCVRegByReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -194,7 +194,7 @@ func (o *Out) divRISCVRegByReg(dst, src string) {
 
 // RISC-V division by immediate
 func (o *Out) divRISCVRegByImm(dst string, imm int64) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}

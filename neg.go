@@ -21,7 +21,7 @@ func (o *Out) NegReg(dst string) {
 // NegRegToReg generates NEG dst, src (dst = -src)
 // 3-operand form for ARM64 and RISC-V
 func (o *Out) NegRegToReg(dst, src string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		// x86-64: MOV dst, src; NEG dst
 		if dst != src {
@@ -41,7 +41,7 @@ func (o *Out) NegRegToReg(dst, src string) {
 
 // x86-64 NEG (two's complement negation)
 func (o *Out) negX86Reg(dst string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -75,7 +75,7 @@ func (o *Out) negX86Reg(dst string) {
 
 // ARM64 NEG (actually SUB Xd, XZR, Xn) - 2 operand form
 func (o *Out) negARM64Reg(dst string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -104,8 +104,8 @@ func (o *Out) negARM64Reg(dst string) {
 
 // ARM64 NEG - 3 operand form
 func (o *Out) negARM64RegToReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -136,7 +136,7 @@ func (o *Out) negARM64RegToReg(dst, src string) {
 
 // RISC-V NEG (pseudo-instruction: SUB rd, x0, rs) - 2 operand form
 func (o *Out) negRISCVReg(dst string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -165,8 +165,8 @@ func (o *Out) negRISCVReg(dst string) {
 
 // RISC-V NEG - 3 operand form
 func (o *Out) negRISCVRegToReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}

@@ -25,7 +25,7 @@ import (
 // VSqrtPDVectorToVector computes square root of all elements
 // dst[i] = sqrt(src[i])
 func (o *Out) VSqrtPDVectorToVector(dst, src string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.vsqrtpdX86VectorToVector(dst, src)
 	case ArchARM64:
@@ -42,8 +42,8 @@ func (o *Out) VSqrtPDVectorToVector(dst, src string) {
 // x86-64 VSQRTPD zmm1, zmm2
 // EVEX.512.66.0F.W1 51 /r
 func (o *Out) vsqrtpdX86VectorToVector(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -149,8 +149,8 @@ func (o *Out) vsqrtpdX86VectorToVector(dst, src string) {
 
 // ARM64 FSQRT zd.d, pg/m, zn.d (SVE2) or FSQRT vd.2d, vn.2d (NEON)
 func (o *Out) vsqrtARM64VectorToVector(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -203,8 +203,8 @@ func (o *Out) vsqrtARM64VectorToVector(dst, src string) {
 
 // RISC-V vfsqrt.v vd, vs2
 func (o *Out) vsqrtRISCVVectorToVector(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}

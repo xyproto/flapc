@@ -179,7 +179,7 @@ func (dl *DynamicLinker) GenerateFunctionCall(eb *ExecutableBuilder, funcName st
 	}
 
 	// Generate calling convention code
-	switch eb.platform.Arch {
+	switch eb.target.Arch() {
 	case ArchX86_64:
 		return dl.generateX86FunctionCall(eb, fn, args)
 	case ArchARM64:

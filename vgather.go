@@ -25,7 +25,7 @@ import (
 // dst[i] = memory[base + indices[i] * scale]
 // scale is typically 8 for float64 (8 bytes per element)
 func (o *Out) VGatherQPDFromMem(dst, base, indices string, scale int32, mask string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.vgatherqpdX86FromMem(dst, base, indices, scale, mask)
 	case ArchARM64:
@@ -42,10 +42,10 @@ func (o *Out) VGatherQPDFromMem(dst, base, indices string, scale int32, mask str
 // x86-64 VGATHERQPD zmm1{k1}, [base + zmm2*8]
 // EVEX.512.66.0F38.W1 93 /r (VSIB addressing)
 func (o *Out) vgatherqpdX86FromMem(dst, base, indices string, scale int32, mask string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	baseReg, baseOk := GetRegister(o.machine.Arch, base)
-	indicesReg, indicesOk := GetRegister(o.machine.Arch, indices)
-	maskReg, maskOk := GetRegister(o.machine.Arch, mask)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	baseReg, baseOk := GetRegister(o.target.Arch(), base)
+	indicesReg, indicesOk := GetRegister(o.target.Arch(), indices)
+	maskReg, maskOk := GetRegister(o.target.Arch(), mask)
 	if !dstOk || !baseOk || !indicesOk || !maskOk {
 		return
 	}
@@ -203,10 +203,10 @@ func (o *Out) vgatherqpdX86FromMem(dst, base, indices string, scale int32, mask 
 // ARM64 LD1D {zt.d}, pg/z, [xn, zm.d, LSL #3]
 // SVE gather load with vector indices
 func (o *Out) vgatherARM64FromMem(dst, base, indices string, scale int32, mask string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	baseReg, baseOk := GetRegister(o.machine.Arch, base)
-	indicesReg, indicesOk := GetRegister(o.machine.Arch, indices)
-	maskReg, maskOk := GetRegister(o.machine.Arch, mask)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	baseReg, baseOk := GetRegister(o.target.Arch(), base)
+	indicesReg, indicesOk := GetRegister(o.target.Arch(), indices)
+	maskReg, maskOk := GetRegister(o.target.Arch(), mask)
 	if !dstOk || !baseOk || !indicesOk || !maskOk {
 		return
 	}
@@ -251,9 +251,9 @@ func (o *Out) vgatherARM64FromMem(dst, base, indices string, scale int32, mask s
 // RISC-V vluxei64.v vd, (rs1), vs2
 // Unordered indexed load (gather) with 64-bit indices
 func (o *Out) vgatherRISCVFromMem(dst, base, indices string, scale int32, mask string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	baseReg, baseOk := GetRegister(o.machine.Arch, base)
-	indicesReg, indicesOk := GetRegister(o.machine.Arch, indices)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	baseReg, baseOk := GetRegister(o.target.Arch(), base)
+	indicesReg, indicesOk := GetRegister(o.target.Arch(), indices)
 	// RISC-V uses v0 as implicit mask register
 	if !dstOk || !baseOk || !indicesOk {
 		return

@@ -26,7 +26,7 @@ func (o *Out) SubImmFromReg(dst string, imm int64) {
 // SubRegFromRegToReg generates SUB dst, src1, src2 (dst = src1 - src2)
 // For ARM64 and RISC-V which have 3-operand form
 func (o *Out) SubRegFromRegToReg(dst, src1, src2 string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		// x86 doesn't have 3-operand SUB, use MOV + SUB
 		o.MovRegToReg(dst, src1)
@@ -40,8 +40,8 @@ func (o *Out) SubRegFromRegToReg(dst, src1, src2 string) {
 
 // x86-64 SUB reg, reg
 func (o *Out) subX86RegFromReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -74,7 +74,7 @@ func (o *Out) subX86RegFromReg(dst, src string) {
 
 // x86-64 SUB reg, imm
 func (o *Out) subX86ImmFromReg(dst string, imm int64) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -118,8 +118,8 @@ func (o *Out) subX86ImmFromReg(dst string, imm int64) {
 
 // ARM64 SUB Xd, Xn, Xm
 func (o *Out) subARM64RegFromReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -147,7 +147,7 @@ func (o *Out) subARM64RegFromReg(dst, src string) {
 
 // ARM64 SUB Xd, Xn, #imm
 func (o *Out) subARM64ImmFromReg(dst string, imm int64) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -181,9 +181,9 @@ func (o *Out) subARM64ImmFromReg(dst string, imm int64) {
 
 // ARM64 SUB Xd, Xn, Xm (3-operand form)
 func (o *Out) subARM64RegFromRegToReg(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	src1Reg, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -209,8 +209,8 @@ func (o *Out) subARM64RegFromRegToReg(dst, src1, src2 string) {
 
 // RISC-V SUB rd, rs1, rs2
 func (o *Out) subRISCVRegFromReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -237,7 +237,7 @@ func (o *Out) subRISCVRegFromReg(dst, src string) {
 
 // RISC-V ADDI with negative immediate (no SUBI instruction)
 func (o *Out) subRISCVImmFromReg(dst string, imm int64) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -272,9 +272,9 @@ func (o *Out) subRISCVImmFromReg(dst string, imm int64) {
 
 // RISC-V SUB rd, rs1, rs2 (3-operand form)
 func (o *Out) subRISCVRegFromRegToReg(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	src1Reg, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}

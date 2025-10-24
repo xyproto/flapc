@@ -11,14 +11,14 @@ import (
 // ShlClReg - Shift Left by CL register
 // shl reg, cl
 func (o *Out) ShlClReg(dst, cl string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.shlClX86(dst)
 	}
 }
 
 func (o *Out) shlClX86(dst string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}

@@ -8,17 +8,17 @@ import (
 )
 
 type Out struct {
-	machine Platform
+	target  Target
 	writer  Writer
 	eb      *ExecutableBuilder
 	backend CodeGenerator
 }
 
 // NewOut creates a new Out instance with the backend properly initialized
-func NewOut(platform Platform, writer Writer, eb *ExecutableBuilder) *Out {
-	backend := NewCodeGenerator(platform.Arch, writer, eb)
+func NewOut(target Target, writer Writer, eb *ExecutableBuilder) *Out {
+	backend := NewCodeGenerator(target.Arch(), writer, eb)
 	return &Out{
-		machine: platform,
+		target:  target,
 		writer:  writer,
 		eb:      eb,
 		backend: backend,
@@ -90,8 +90,8 @@ func (o *Out) movX86RegToReg(dst, src string) {
 		return
 	}
 
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 
 	if !dstOk || !srcOk {
 		return
@@ -131,7 +131,7 @@ func (o *Out) movX86RegToReg(dst, src string) {
 
 // x86_64 immediate-to-register move
 func (o *Out) movX86ImmToReg(dst, imm string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -179,8 +179,8 @@ func (o *Out) movX86ImmToReg(dst, imm string) {
 
 // ARM64 register-to-register move
 func (o *Out) movARM64RegToReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 
 	if !dstOk || !srcOk {
 		return
@@ -214,7 +214,7 @@ func (o *Out) movARM64RegToReg(dst, src string) {
 
 // ARM64 immediate-to-register move
 func (o *Out) movARM64ImmToReg(dst, imm string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -262,8 +262,8 @@ func (o *Out) movARM64ImmToReg(dst, imm string) {
 
 // RISC-V register-to-register move
 func (o *Out) movRISCVRegToReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 
 	if !dstOk || !srcOk {
 		return
@@ -295,7 +295,7 @@ func (o *Out) movRISCVRegToReg(dst, src string) {
 
 // RISC-V immediate-to-register move
 func (o *Out) movRISCVImmToReg(dst, imm string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -357,7 +357,7 @@ func (o *Out) MovInstruction(dst, src string) {
 	src = strings.TrimSpace(src)
 
 	// Check if source is a register
-	if IsRegister(o.machine.Arch, src) {
+	if IsRegister(o.target.Arch(), src) {
 		o.MovRegToReg(dst, src)
 	} else {
 		// Check if this is a symbol in PIE mode
@@ -381,7 +381,7 @@ func (o *Out) movX86RegToXmm(dst, src string) {
 		fmt.Fprintf(os.Stderr, "movq %s, %s:", dst, src)
 	}
 
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !srcOk {
 		return
 	}
@@ -422,7 +422,7 @@ func (o *Out) movARM64RegToFP(dst, src string) {
 		fmt.Fprintf(os.Stderr, "fmov %s, %s:", dst, src)
 	}
 
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !srcOk {
 		return
 	}
@@ -452,7 +452,7 @@ func (o *Out) movRISCVRegToFP(dst, src string) {
 		fmt.Fprintf(os.Stderr, "fmv.d.x %s, %s:", dst, src)
 	}
 
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !srcOk {
 		return
 	}
@@ -479,7 +479,7 @@ func (o *Out) movRISCVRegToFP(dst, src string) {
 
 // CallSymbol generates a relative CALL instruction to a labeled symbol
 func (o *Out) CallSymbol(symbol string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.callSymbolX86(symbol)
 	}

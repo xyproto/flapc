@@ -11,14 +11,14 @@ import (
 // RolClReg - Rotate Left by CL register
 // rol reg, cl
 func (o *Out) RolClReg(dst, cl string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.rolClX86(dst)
 	}
 }
 
 func (o *Out) rolClX86(dst string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}

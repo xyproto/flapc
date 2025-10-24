@@ -26,7 +26,7 @@ import (
 // KMovMaskToGP moves mask register to general purpose register
 // dst = mask (as integer bitmask)
 func (o *Out) KMovMaskToGP(dst, src string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.kmovX86MaskToGP(dst, src)
 	case ArchARM64:
@@ -39,7 +39,7 @@ func (o *Out) KMovMaskToGP(dst, src string) {
 // KMovGPToMask moves general purpose register to mask register
 // dst = mask created from integer bitmask
 func (o *Out) KMovGPToMask(dst, src string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.kmovX86GPToMask(dst, src)
 	case ArchARM64:
@@ -52,7 +52,7 @@ func (o *Out) KMovGPToMask(dst, src string) {
 // KMovMaskToMask moves between mask registers
 // dst = src
 func (o *Out) KMovMaskToMask(dst, src string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.kmovX86MaskToMask(dst, src)
 	case ArchARM64:
@@ -69,8 +69,8 @@ func (o *Out) KMovMaskToMask(dst, src string) {
 // x86-64 KMOVW r32, k1
 // VEX.L0.0F.W0 93 /r
 func (o *Out) kmovX86MaskToGP(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcMask, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcMask, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -105,8 +105,8 @@ func (o *Out) kmovX86MaskToGP(dst, src string) {
 // x86-64 KMOVW k1, r32
 // VEX.L0.0F.W0 92 /r
 func (o *Out) kmovX86GPToMask(dst, src string) {
-	dstMask, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstMask, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -141,8 +141,8 @@ func (o *Out) kmovX86GPToMask(dst, src string) {
 // x86-64 KMOVW k1, k2
 // VEX.L0.0F.W0 90 /r
 func (o *Out) kmovX86MaskToMask(dst, src string) {
-	dstMask, dstOk := GetRegister(o.machine.Arch, dst)
-	srcMask, srcOk := GetRegister(o.machine.Arch, src)
+	dstMask, dstOk := GetRegister(o.target.Arch(), dst)
+	srcMask, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -169,8 +169,8 @@ func (o *Out) kmovX86MaskToMask(dst, src string) {
 // ============================================================================
 
 func (o *Out) kmovARM64MaskToGP(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	_, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	_, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -209,8 +209,8 @@ func (o *Out) kmovARM64MaskToGP(dst, src string) {
 // ============================================================================
 
 func (o *Out) kmovARM64GPToMask(dst, src string) {
-	_, dstOk := GetRegister(o.machine.Arch, dst)
-	_, srcOk := GetRegister(o.machine.Arch, src)
+	_, dstOk := GetRegister(o.target.Arch(), dst)
+	_, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -234,8 +234,8 @@ func (o *Out) kmovARM64GPToMask(dst, src string) {
 // ============================================================================
 
 func (o *Out) kmovARM64MaskToMask(dst, src string) {
-	dstMask, dstOk := GetRegister(o.machine.Arch, dst)
-	srcMask, srcOk := GetRegister(o.machine.Arch, src)
+	dstMask, dstOk := GetRegister(o.target.Arch(), dst)
+	srcMask, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -269,8 +269,8 @@ func (o *Out) kmovARM64MaskToMask(dst, src string) {
 // RISC-V vpopc.m rd, vs2, vm
 // Population count of mask - count set bits
 func (o *Out) kmovRISCVMaskToGP(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcMask, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcMask, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -304,8 +304,8 @@ func (o *Out) kmovRISCVMaskToGP(dst, src string) {
 // ============================================================================
 
 func (o *Out) kmovRISCVGPToMask(dst, src string) {
-	_, dstOk := GetRegister(o.machine.Arch, dst)
-	_, srcOk := GetRegister(o.machine.Arch, src)
+	_, dstOk := GetRegister(o.target.Arch(), dst)
+	_, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -331,8 +331,8 @@ func (o *Out) kmovRISCVGPToMask(dst, src string) {
 // RISC-V vmand.mm vd, vs2, vs1
 // Mask-to-mask AND (can use with same source for move)
 func (o *Out) kmovRISCVMaskToMask(dst, src string) {
-	dstMask, dstOk := GetRegister(o.machine.Arch, dst)
-	srcMask, srcOk := GetRegister(o.machine.Arch, src)
+	dstMask, dstOk := GetRegister(o.target.Arch(), dst)
+	srcMask, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}

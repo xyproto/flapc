@@ -13,7 +13,7 @@ import (
 
 // ShlRegByImm generates SHL dst, imm (logical shift left by immediate)
 func (o *Out) ShlRegByImm(dst string, imm int64) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.shlX86RegByImm(dst, imm)
 	case ArchARM64:
@@ -25,7 +25,7 @@ func (o *Out) ShlRegByImm(dst string, imm int64) {
 
 // ShlRegByReg generates SHL dst, src (logical shift left by register)
 func (o *Out) ShlRegByReg(dst, src string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.shlX86RegByReg(dst, src)
 	case ArchARM64:
@@ -37,7 +37,7 @@ func (o *Out) ShlRegByReg(dst, src string) {
 
 // ShrRegByImm generates SHR dst, imm (logical shift right by immediate)
 func (o *Out) ShrRegByImm(dst string, imm int64) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.shrX86RegByImm(dst, imm)
 	case ArchARM64:
@@ -49,7 +49,7 @@ func (o *Out) ShrRegByImm(dst string, imm int64) {
 
 // ShrRegByReg generates SHR dst, src (logical shift right by register)
 func (o *Out) ShrRegByReg(dst, src string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.shrX86RegByReg(dst, src)
 	case ArchARM64:
@@ -65,7 +65,7 @@ func (o *Out) ShrRegByReg(dst, src string) {
 
 // x86-64 SHL by immediate
 func (o *Out) shlX86RegByImm(dst string, imm int64) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -101,7 +101,7 @@ func (o *Out) shlX86RegByImm(dst string, imm int64) {
 
 // x86-64 SHL by register (uses CL register)
 func (o *Out) shlX86RegByReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -134,7 +134,7 @@ func (o *Out) shlX86RegByReg(dst, src string) {
 
 // x86-64 SHR by immediate
 func (o *Out) shrX86RegByImm(dst string, imm int64) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -170,7 +170,7 @@ func (o *Out) shrX86RegByImm(dst string, imm int64) {
 
 // x86-64 SHR by register (uses CL register)
 func (o *Out) shrX86RegByReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -207,7 +207,7 @@ func (o *Out) shrX86RegByReg(dst, src string) {
 
 // ARM64 LSL (logical shift left) by immediate
 func (o *Out) shlARM64RegByImm(dst string, imm int64) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -240,8 +240,8 @@ func (o *Out) shlARM64RegByImm(dst string, imm int64) {
 
 // ARM64 LSL (logical shift left) by register
 func (o *Out) shlARM64RegByReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -268,7 +268,7 @@ func (o *Out) shlARM64RegByReg(dst, src string) {
 
 // ARM64 LSR (logical shift right) by immediate
 func (o *Out) shrARM64RegByImm(dst string, imm int64) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -297,8 +297,8 @@ func (o *Out) shrARM64RegByImm(dst string, imm int64) {
 
 // ARM64 LSR (logical shift right) by register
 func (o *Out) shrARM64RegByReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -329,7 +329,7 @@ func (o *Out) shrARM64RegByReg(dst, src string) {
 
 // RISC-V SLLI (shift left logical immediate)
 func (o *Out) shlRISCVRegByImm(dst string, imm int64) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -357,8 +357,8 @@ func (o *Out) shlRISCVRegByImm(dst string, imm int64) {
 
 // RISC-V SLL (shift left logical)
 func (o *Out) shlRISCVRegByReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -386,7 +386,7 @@ func (o *Out) shlRISCVRegByReg(dst, src string) {
 
 // RISC-V SRLI (shift right logical immediate)
 func (o *Out) shrRISCVRegByImm(dst string, imm int64) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -414,8 +414,8 @@ func (o *Out) shrRISCVRegByImm(dst string, imm int64) {
 
 // RISC-V SRL (shift right logical)
 func (o *Out) shrRISCVRegByReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}

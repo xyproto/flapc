@@ -34,7 +34,7 @@ const (
 // VRoundPDVectorToVector rounds vector elements
 // dst[i] = round(src[i], mode)
 func (o *Out) VRoundPDVectorToVector(dst, src string, mode int) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.vroundpdX86VectorToVector(dst, src, mode)
 	case ArchARM64:
@@ -49,8 +49,8 @@ func (o *Out) VRoundPDVectorToVector(dst, src string, mode int) {
 // ============================================================================
 
 func (o *Out) vroundpdX86VectorToVector(dst, src string, mode int) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -163,8 +163,8 @@ func (o *Out) vroundpdX86VectorToVector(dst, src string, mode int) {
 // ============================================================================
 
 func (o *Out) vroundARM64VectorToVector(dst, src string, mode int) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -252,8 +252,8 @@ func (o *Out) vroundARM64VectorToVector(dst, src string, mode int) {
 // ============================================================================
 
 func (o *Out) vroundRISCVVectorToVector(dst, src string, mode int) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}

@@ -109,9 +109,8 @@ func (eb *ExecutableBuilder) Emit(assembly string) error {
 			if VerboseMode {
 				fmt.Fprint(os.Stderr, assembly+":")
 			}
-			if err := eb.arch.Syscall(w); err != nil {
-				return err
-			}
+			out := NewOut(eb.target, eb.TextWriter(), eb)
+			out.Syscall()
 			if VerboseMode {
 				fmt.Fprintln(os.Stderr)
 			}
@@ -147,7 +146,7 @@ func (eb *ExecutableBuilder) Emit(assembly string) error {
 		}
 	}
 
-	out := NewOut(eb.platform, w, eb)
+	out := NewOut(eb.target, w, eb)
 
 	switch head {
 	case "vmovupd":

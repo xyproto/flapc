@@ -206,8 +206,7 @@ type BufferWrapper struct {
 }
 
 type ExecutableBuilder struct {
-	platform                Platform
-	arch                    Architecture
+	target                  Target
 	consts                  map[string]*Const
 	labels                  map[string]int // Maps label names to their offsets in .text
 	dynlinker               *DynamicLinker
@@ -257,7 +256,7 @@ func (eb *ExecutableBuilder) PatchPCRelocations(textAddr, rodataAddr uint64, rod
 
 		offset := int(reloc.offset)
 
-		switch eb.platform.Arch {
+		switch eb.target.Arch() {
 		case ArchX86_64:
 			eb.patchX86_64PCRel(textBytes, offset, textAddr, targetAddr, reloc.symbolName)
 		case ArchARM64:
@@ -428,14 +427,10 @@ func New(machineStr string) (*ExecutableBuilder, error) {
 		return nil, err
 	}
 
-	arch, err := NewArchitecture(platform.String())
-	if err != nil {
-		return nil, err
-	}
+	target := PlatformToTarget(platform)
 
 	return &ExecutableBuilder{
-		platform:  platform,
-		arch:      arch,
+		target:    target,
 		consts:    make(map[string]*Const),
 		dynlinker: NewDynamicLinker(),
 	}, nil
@@ -443,24 +438,29 @@ func New(machineStr string) (*ExecutableBuilder, error) {
 
 // NewWithPlatform creates an ExecutableBuilder for a specific platform
 func NewWithPlatform(platform Platform) (*ExecutableBuilder, error) {
-	arch, err := NewArchitecture(platform.String())
-	if err != nil {
-		return nil, err
-	}
+	target := PlatformToTarget(platform)
 
 	return &ExecutableBuilder{
-		platform:  platform,
-		arch:      arch,
+		target:    target,
 		consts:    make(map[string]*Const),
 		dynlinker: NewDynamicLinker(),
 	}, nil
 }
 
-// getSyscallNumbers returns platform-specific syscall numbers
-func getSyscallNumbers(platform Platform) map[string]string {
+// NewWithTarget creates an ExecutableBuilder for a specific target
+func NewWithTarget(target Target) (*ExecutableBuilder, error) {
+	return &ExecutableBuilder{
+		target:    target,
+		consts:    make(map[string]*Const),
+		dynlinker: NewDynamicLinker(),
+	}, nil
+}
+
+// getSyscallNumbers returns target-specific syscall numbers
+func getSyscallNumbers(target Target) map[string]string {
 	// macOS (Darwin) has different syscall numbers with class prefix 0x2000000
-	if platform.OS == OSDarwin {
-		switch platform.Arch {
+	if target.OS() == OSDarwin {
+		switch target.Arch() {
 		case ArchX86_64:
 			return map[string]string{
 				"SYS_WRITE": "33554436", // 0x2000004
@@ -479,7 +479,7 @@ func getSyscallNumbers(platform Platform) map[string]string {
 	}
 
 	// Linux/FreeBSD syscall numbers
-	switch platform.Arch {
+	switch target.Arch() {
 	case ArchX86_64:
 		return map[string]string{
 			"SYS_WRITE": "1",
@@ -546,7 +546,7 @@ func (eb *ExecutableBuilder) PatchCallSites(textAddr uint64) {
 
 func (eb *ExecutableBuilder) Lookup(what string) string {
 	// Check architecture-specific syscall numbers first
-	syscalls := getSyscallNumbers(eb.platform)
+	syscalls := getSyscallNumbers(eb.target)
 	if v, ok := syscalls[what]; ok {
 		return v
 	}
@@ -559,7 +559,7 @@ func (eb *ExecutableBuilder) Lookup(what string) string {
 
 func (eb *ExecutableBuilder) Bytes() []byte {
 	// For Mach-O format (macOS)
-	if eb.platform.IsMachO() {
+	if eb.target.IsMachO() {
 		if err := eb.WriteMachO(); err != nil {
 			if VerboseMode {
 				fmt.Fprintf(os.Stderr, "ERROR: Failed to write Mach-O: %v\n", err)
@@ -686,7 +686,7 @@ func (eb *ExecutableBuilder) WriteData(data []byte) uint64 {
 }
 
 func (eb *ExecutableBuilder) MovInstruction(dst, src string) error {
-	out := NewOut(eb.platform, eb.TextWriter(), eb)
+	out := NewOut(eb.target, eb.TextWriter(), eb)
 	out.MovInstruction(dst, src)
 	return nil
 }
@@ -771,7 +771,7 @@ func (eb *ExecutableBuilder) GenerateCallInstruction(funcName string) error {
 	})
 
 	// Generate architecture-specific call instruction with placeholder
-	switch eb.platform.Arch {
+	switch eb.target.Arch() {
 	case ArchX86_64:
 		w.Write(0xE8)               // CALL rel32
 		w.WriteUnsigned(0x12345678) // Placeholder - will be patched
@@ -789,7 +789,7 @@ func (eb *ExecutableBuilder) GenerateCallInstruction(funcName string) error {
 
 // EmitArenaRuntimeCode emits arena allocator runtime functions
 func (eb *ExecutableBuilder) EmitArenaRuntimeCode() {
-	out := NewOut(eb.platform, &BufferWrapper{&eb.text}, eb)
+	out := NewOut(eb.target, &BufferWrapper{&eb.text}, eb)
 
 	// Helper function to patch jump immediates
 	patchJump := func(pos int, offset int32) {

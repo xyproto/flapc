@@ -34,7 +34,7 @@ const (
 // VCmpPDVectorToVector performs vector comparison: mask = cmp(src1, src2, predicate)
 // Result is a mask (k register on x86-64, predicate on ARM64, v0 on RISC-V)
 func (o *Out) VCmpPDVectorToVector(dstMask, src1, src2 string, predicate ComparisonPredicate) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.vcmppdX86VectorToVector(dstMask, src1, src2, predicate)
 	case ArchARM64:
@@ -51,9 +51,9 @@ func (o *Out) VCmpPDVectorToVector(dstMask, src1, src2 string, predicate Compari
 // x86-64 VCMPPD k1{k2}, zmm2, zmm3, imm8 (AVX-512)
 // EVEX.NDS.512.66.0F.W1 C2 /r ib
 func (o *Out) vcmppdX86VectorToVector(dstMask, src1, src2 string, predicate ComparisonPredicate) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dstMask)
-	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dstMask)
+	src1Reg, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -180,9 +180,9 @@ func (o *Out) vcmppdX86VectorToVector(dstMask, src1, src2 string, predicate Comp
 
 // ARM64 FCMGE/FCMGT/FCMEQ Pd.D, Pg/Z, Zn.D, Zm.D (SVE2)
 func (o *Out) vcmppdARM64VectorToVector(dstMask, src1, src2 string, predicate ComparisonPredicate) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dstMask)
-	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dstMask)
+	src1Reg, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -284,9 +284,9 @@ func (o *Out) vcmppdARM64VectorToVector(dstMask, src1, src2 string, predicate Co
 // RISC-V vmflt.vv/vmfle.vv/vmfeq.vv (RVV)
 // Result goes to mask register v0
 func (o *Out) vcmppdRISCVVectorToVector(dstMask, src1, src2 string, predicate ComparisonPredicate) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dstMask)
-	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dstMask)
+	src1Reg, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}

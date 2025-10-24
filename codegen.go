@@ -9,7 +9,7 @@ package main
 //
 // Current state: Every Out method looks like this:
 //   func (o *Out) SomeInstruction(args...) {
-//       switch o.machine.Arch {
+//       switch o.target.Arch() {
 //       case ArchX86_64: o.someInstructionX86(args...)
 //       case ArchARM64:  o.someInstructionARM64(args...)
 //       case ArchRiscv64: o.someInstructionRISCV(args...)

@@ -19,7 +19,7 @@ func (o *Out) cvtsi2sdX86(dst, src string) {
 	}
 
 	// Get source register
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !srcOk {
 		return
 	}
@@ -60,7 +60,7 @@ func (o *Out) scvtfARM64(dst, src string) {
 		fmt.Fprintf(os.Stderr, "scvtf %s, %s: ", dst, src)
 	}
 
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !srcOk {
 		return
 	}
@@ -89,7 +89,7 @@ func (o *Out) fcvtRISCV(dst, src string) {
 		fmt.Fprintf(os.Stderr, "fcvt.d.l %s, %s: ", dst, src)
 	}
 
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !srcOk {
 		return
 	}
@@ -234,7 +234,7 @@ func (o *Out) divpdX86(dst, src string) {
 
 // MovXmmToMem - Store XMM register to memory
 func (o *Out) MovXmmToMem(xmm, base string, offset int) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.movxmmToMemX86(xmm, base, offset)
 	}
@@ -248,7 +248,7 @@ func (o *Out) movxmmToMemX86(xmm, base string, offset int) {
 	var xmmNum int
 	fmt.Sscanf(xmm, "xmm%d", &xmmNum)
 
-	baseReg, _ := GetRegister(o.machine.Arch, base)
+	baseReg, _ := GetRegister(o.target.Arch(), base)
 
 	// F2 prefix for scalar double
 	o.Write(0xF2)
@@ -297,7 +297,7 @@ func (o *Out) movxmmToMemX86(xmm, base string, offset int) {
 
 // MovMemToXmm - Load from memory to XMM register
 func (o *Out) MovMemToXmm(xmm, base string, offset int) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.movMemToXmmX86(xmm, base, offset)
 	}
@@ -311,7 +311,7 @@ func (o *Out) movMemToXmmX86(xmm, base string, offset int) {
 	var xmmNum int
 	fmt.Sscanf(xmm, "xmm%d", &xmmNum)
 
-	baseReg, _ := GetRegister(o.machine.Arch, base)
+	baseReg, _ := GetRegister(o.target.Arch(), base)
 
 	o.Write(0xF2) // prefix
 
@@ -380,7 +380,7 @@ func (o *Out) faddRISCV(dst, src string) {
 
 // Cvttsd2si - Convert float64 to int64 with truncation
 func (o *Out) Cvttsd2si(dst, src string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.cvttsd2siX86(dst, src)
 	}
@@ -391,7 +391,7 @@ func (o *Out) cvttsd2siX86(dst, src string) {
 		fmt.Fprintf(os.Stderr, "cvttsd2si %s, %s: ", dst, src)
 	}
 
-	dstReg, _ := GetRegister(o.machine.Arch, dst)
+	dstReg, _ := GetRegister(o.target.Arch(), dst)
 
 	var xmmNum int
 	fmt.Sscanf(src, "xmm%d", &xmmNum)
@@ -477,7 +477,7 @@ func (o *Out) Emit(bytes []byte) {
 // MovXmmToXmm - Move scalar double from one XMM register to another
 // movsd xmm1, xmm2
 func (o *Out) MovXmmToXmm(dst, src string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.movX86XmmToXmm(dst, src)
 	}
@@ -523,7 +523,7 @@ func (o *Out) movX86XmmToXmm(dst, src string) {
 // MovupdMemToXmm - Move Unaligned Packed Double (128 bits = 2 doubles) from memory to XMM
 // movupd xmm, [base+offset]
 func (o *Out) MovupdMemToXmm(xmm, base string, offset int) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.movupdMemToXmmX86(xmm, base, offset)
 	}
@@ -535,7 +535,7 @@ func (o *Out) movupdMemToXmmX86(xmm, base string, offset int) {
 	}
 	var xmmNum int
 	fmt.Sscanf(xmm, "xmm%d", &xmmNum)
-	baseReg, _ := GetRegister(o.machine.Arch, base)
+	baseReg, _ := GetRegister(o.target.Arch(), base)
 
 	// 66 prefix for packed double
 	o.Write(0x66)
@@ -587,7 +587,7 @@ func (o *Out) movupdMemToXmmX86(xmm, base string, offset int) {
 // MovupdXmmToMem - Move Unaligned Packed Double (128 bits = 2 doubles) from XMM to memory
 // movupd [base+offset], xmm
 func (o *Out) MovupdXmmToMem(xmm, base string, offset int) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.movupdXmmToMemX86(xmm, base, offset)
 	}
@@ -599,7 +599,7 @@ func (o *Out) movupdXmmToMemX86(xmm, base string, offset int) {
 	}
 	var xmmNum int
 	fmt.Sscanf(xmm, "xmm%d", &xmmNum)
-	baseReg, _ := GetRegister(o.machine.Arch, base)
+	baseReg, _ := GetRegister(o.target.Arch(), base)
 
 	// 66 prefix for packed double
 	o.Write(0x66)

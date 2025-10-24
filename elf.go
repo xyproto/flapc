@@ -29,7 +29,7 @@ func (eb *ExecutableBuilder) WriteELFHeader() error {
 	w.Write2(2)    // object file type: executable
 
 	// Machine type - machine specific
-	w.Write2(byte(eb.arch.ELFMachineType()))
+	w.Write2(byte(GetELFMachineType(eb.target.Arch())))
 
 	w.Write4(1) // original ELF version (?)
 

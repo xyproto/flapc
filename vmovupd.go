@@ -19,7 +19,7 @@ import (
 
 // VMovupdLoadFromMem loads a vector from memory: dst = [base + offset]
 func (o *Out) VMovupdLoadFromMem(dst, base string, offset int32) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.vmovupdX86LoadFromMem(dst, base, offset)
 	case ArchARM64:
@@ -31,7 +31,7 @@ func (o *Out) VMovupdLoadFromMem(dst, base string, offset int32) {
 
 // VMovupdStoreToMem stores a vector to memory: [base + offset] = src
 func (o *Out) VMovupdStoreToMem(src, base string, offset int32) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.vmovupdX86StoreToMem(src, base, offset)
 	case ArchARM64:
@@ -48,8 +48,8 @@ func (o *Out) VMovupdStoreToMem(src, base string, offset int32) {
 // x86-64 VMOVUPD zmm, [mem] (load)
 // EVEX.512.66.0F.W1 10 /r
 func (o *Out) vmovupdX86LoadFromMem(dst, base string, offset int32) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	baseReg, baseOk := GetRegister(o.machine.Arch, base)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	baseReg, baseOk := GetRegister(o.target.Arch(), base)
 	if !dstOk || !baseOk {
 		return
 	}
@@ -173,8 +173,8 @@ func (o *Out) vmovupdX86LoadFromMem(dst, base string, offset int32) {
 // x86-64 VMOVUPD [mem], zmm (store)
 // EVEX.512.66.0F.W1 11 /r
 func (o *Out) vmovupdX86StoreToMem(src, base string, offset int32) {
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
-	baseReg, baseOk := GetRegister(o.machine.Arch, base)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
+	baseReg, baseOk := GetRegister(o.target.Arch(), base)
 	if !srcOk || !baseOk {
 		return
 	}
@@ -294,8 +294,8 @@ func (o *Out) vmovupdX86StoreToMem(src, base string, offset int32) {
 
 // ARM64 LD1D {zt.d}, pg/z, [xn, #imm] (SVE2)
 func (o *Out) vmovupdARM64LoadFromMem(dst, base string, offset int32) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	baseReg, baseOk := GetRegister(o.machine.Arch, base)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	baseReg, baseOk := GetRegister(o.target.Arch(), base)
 	if !dstOk || !baseOk {
 		return
 	}
@@ -341,8 +341,8 @@ func (o *Out) vmovupdARM64LoadFromMem(dst, base string, offset int32) {
 
 // ARM64 ST1D {zt.d}, pg, [xn, #imm] (SVE2)
 func (o *Out) vmovupdARM64StoreToMem(src, base string, offset int32) {
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
-	baseReg, baseOk := GetRegister(o.machine.Arch, base)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
+	baseReg, baseOk := GetRegister(o.target.Arch(), base)
 	if !srcOk || !baseOk {
 		return
 	}
@@ -389,8 +389,8 @@ func (o *Out) vmovupdARM64StoreToMem(src, base string, offset int32) {
 
 // RISC-V vle64.v vd, (rs1) - unit-stride load
 func (o *Out) vmovupdRISCVLoadFromMem(dst, base string, offset int32) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	baseReg, baseOk := GetRegister(o.machine.Arch, base)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	baseReg, baseOk := GetRegister(o.target.Arch(), base)
 	if !dstOk || !baseOk {
 		return
 	}
@@ -422,8 +422,8 @@ func (o *Out) vmovupdRISCVLoadFromMem(dst, base string, offset int32) {
 
 // RISC-V vse64.v vs3, (rs1) - unit-stride store
 func (o *Out) vmovupdRISCVStoreToMem(src, base string, offset int32) {
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
-	baseReg, baseOk := GetRegister(o.machine.Arch, base)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
+	baseReg, baseOk := GetRegister(o.target.Arch(), base)
 	if !srcOk || !baseOk {
 		return
 	}

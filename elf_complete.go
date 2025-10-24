@@ -329,7 +329,7 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	w.Write(3)    // Linux
 	w.WriteN(0, 8)
 	w.Write2(3) // DYN
-	w.Write2(byte(eb.arch.ELFMachineType()))
+	w.Write2(byte(GetELFMachineType(eb.target.Arch())))
 	w.Write4(1)
 
 	w.Write8u(entryPoint)
@@ -600,7 +600,7 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 }
 
 func (eb *ExecutableBuilder) getInterpreterPath() string {
-	switch eb.platform.Arch {
+	switch eb.target.Arch() {
 	case ArchX86_64:
 		return "/lib64/ld-linux-x86-64.so.2"
 	case ArchARM64:
@@ -620,7 +620,7 @@ func (eb *ExecutableBuilder) patchPLTCalls(ds *DynamicSections, textAddr uint64,
 		fmt.Fprintf(os.Stderr, "Text bytes (%d total): %x\n", len(textBytes), textBytes)
 	}
 
-	switch eb.platform.Arch {
+	switch eb.target.Arch() {
 	case ArchX86_64:
 		eb.patchX86PLTCalls(textBytes, ds, textAddr, pltBase, functions)
 	case ArchARM64:

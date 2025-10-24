@@ -13,7 +13,7 @@ import (
 
 // ImulRegWithReg generates IMUL dst, src (dst = dst * src)
 func (o *Out) ImulRegWithReg(dst, src string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.imulX86RegWithReg(dst, src)
 	case ArchARM64:
@@ -25,7 +25,7 @@ func (o *Out) ImulRegWithReg(dst, src string) {
 
 // ImulImmToReg generates IMUL dst, imm (dst = dst * imm)
 func (o *Out) ImulImmToReg(dst string, imm int64) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.imulX86ImmToReg(dst, imm)
 	case ArchARM64:
@@ -41,8 +41,8 @@ func (o *Out) ImulImmToReg(dst string, imm int64) {
 
 // x86-64 IMUL dst, src (2-operand form)
 func (o *Out) imulX86RegWithReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -76,7 +76,7 @@ func (o *Out) imulX86RegWithReg(dst, src string) {
 
 // x86-64 IMUL dst, dst, imm32 (3-operand form with immediate)
 func (o *Out) imulX86ImmToReg(dst string, imm int64) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -125,8 +125,8 @@ func (o *Out) imulX86ImmToReg(dst string, imm int64) {
 
 // ARM64 MUL (register-register, 2-operand form)
 func (o *Out) imulARM64RegWithReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -155,7 +155,7 @@ func (o *Out) imulARM64RegWithReg(dst, src string) {
 
 // ARM64 MUL with immediate (load immediate to temp register, then multiply)
 func (o *Out) imulARM64ImmToReg(dst string, imm int64) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -196,8 +196,8 @@ func (o *Out) imulARM64ImmToReg(dst string, imm int64) {
 
 // RISC-V MUL (register-register, 2-operand form)
 func (o *Out) imulRISCVRegWithReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -226,7 +226,7 @@ func (o *Out) imulRISCVRegWithReg(dst, src string) {
 
 // RISC-V doesn't have multiply with immediate - use temp register
 func (o *Out) imulRISCVImmToReg(dst string, imm int64) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}

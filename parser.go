@@ -3840,7 +3840,7 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 	// Don't set neededFunctions yet - we'll build it dynamically
 
 	// Create Out wrapper
-	out := NewOut(eb.platform, eb.TextWriter(), eb)
+	out := NewOut(eb.target, eb.TextWriter(), eb)
 
 	// Check if debug mode is enabled
 	debugEnabled := os.Getenv("DEBUG_FLAP") != ""
@@ -3874,14 +3874,14 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	// Use ARM64 code generator if target is ARM64
 	if VerboseMode {
 	}
-	if fc.eb.platform.Arch == ArchARM64 {
+	if fc.eb.target.Arch() == ArchARM64 {
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "-> Using ARM64 code generator\n")
 		}
 		return fc.compileARM64(program, outputPath)
 	}
 	// Use RISC-V64 code generator if target is RISC-V64
-	if fc.eb.platform.Arch == ArchRiscv64 {
+	if fc.eb.target.Arch() == ArchRiscv64 {
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "-> Using RISC-V64 code generator\n")
 		}

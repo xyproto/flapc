@@ -26,7 +26,7 @@ func (o *Out) AddImmToReg(dst string, imm int64) {
 // AddRegToRegToReg generates ADD dst, src1, src2 (dst = src1 + src2)
 // For ARM64 and RISC-V which have 3-operand form
 func (o *Out) AddRegToRegToReg(dst, src1, src2 string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		// x86 doesn't have 3-operand ADD, use MOV + ADD
 		// MOV dst, src1; ADD dst, src2
@@ -41,8 +41,8 @@ func (o *Out) AddRegToRegToReg(dst, src1, src2 string) {
 
 // x86-64 ADD reg, reg
 func (o *Out) addX86RegToReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -75,7 +75,7 @@ func (o *Out) addX86RegToReg(dst, src string) {
 
 // x86-64 ADD reg, imm
 func (o *Out) addX86ImmToReg(dst string, imm int64) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -119,8 +119,8 @@ func (o *Out) addX86ImmToReg(dst string, imm int64) {
 
 // ARM64 ADD Xd, Xn, Xm
 func (o *Out) addARM64RegToReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -148,7 +148,7 @@ func (o *Out) addARM64RegToReg(dst, src string) {
 
 // ARM64 ADD Xd, Xn, #imm
 func (o *Out) addARM64ImmToReg(dst string, imm int64) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -182,9 +182,9 @@ func (o *Out) addARM64ImmToReg(dst string, imm int64) {
 
 // ARM64 ADD Xd, Xn, Xm (3-operand form)
 func (o *Out) addARM64RegToRegToReg(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	src1Reg, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -210,8 +210,8 @@ func (o *Out) addARM64RegToRegToReg(dst, src1, src2 string) {
 
 // RISC-V ADD rd, rs1, rs2
 func (o *Out) addRISCVRegToReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -238,7 +238,7 @@ func (o *Out) addRISCVRegToReg(dst, src string) {
 
 // RISC-V ADDI rd, rs1, imm
 func (o *Out) addRISCVImmToReg(dst string, imm int64) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -272,9 +272,9 @@ func (o *Out) addRISCVImmToReg(dst string, imm int64) {
 
 // RISC-V ADD rd, rs1, rs2 (3-operand form)
 func (o *Out) addRISCVRegToRegToReg(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	src1Reg, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}

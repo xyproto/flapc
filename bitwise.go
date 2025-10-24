@@ -8,7 +8,7 @@ import (
 // OrRegToReg - OR dst with src, result in dst
 // or dst, src
 func (o *Out) OrRegToReg(dst, src string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.orX86RegToReg(dst, src)
 	case ArchARM64:
@@ -19,8 +19,8 @@ func (o *Out) OrRegToReg(dst, src string) {
 }
 
 func (o *Out) orX86RegToReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -53,8 +53,8 @@ func (o *Out) orX86RegToReg(dst, src string) {
 
 func (o *Out) orARM64RegToReg(dst, src string) {
 	// ARM64 ORR instruction
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -78,8 +78,8 @@ func (o *Out) orARM64RegToReg(dst, src string) {
 
 func (o *Out) orRISCVRegToReg(dst, src string) {
 	// RISC-V OR instruction
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -104,7 +104,7 @@ func (o *Out) orRISCVRegToReg(dst, src string) {
 // XorRegToReg - XOR dst with src, result in dst
 // xor dst, src
 func (o *Out) XorRegToReg(dst, src string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.xorX86RegToReg(dst, src)
 	case ArchARM64:
@@ -115,8 +115,8 @@ func (o *Out) XorRegToReg(dst, src string) {
 }
 
 func (o *Out) xorX86RegToReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -149,8 +149,8 @@ func (o *Out) xorX86RegToReg(dst, src string) {
 
 func (o *Out) xorARM64RegToReg(dst, src string) {
 	// ARM64 EOR instruction
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -174,8 +174,8 @@ func (o *Out) xorARM64RegToReg(dst, src string) {
 
 func (o *Out) xorRISCVRegToReg(dst, src string) {
 	// RISC-V XOR instruction
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -200,7 +200,7 @@ func (o *Out) xorRISCVRegToReg(dst, src string) {
 // TestRegReg - Test (bitwise AND without storing result, sets flags)
 // test src1, src2
 func (o *Out) TestRegReg(src1, src2 string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.testX86RegReg(src1, src2)
 	case ArchARM64:
@@ -211,8 +211,8 @@ func (o *Out) TestRegReg(src1, src2 string) {
 }
 
 func (o *Out) testX86RegReg(src1, src2 string) {
-	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
+	src1Reg, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
 	if !src1Ok || !src2Ok {
 		return
 	}
@@ -245,8 +245,8 @@ func (o *Out) testX86RegReg(src1, src2 string) {
 
 func (o *Out) testARM64RegReg(src1, src2 string) {
 	// ARM64: Use TST (ANDS with XZR as destination)
-	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
+	src1Reg, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
 	if !src1Ok || !src2Ok {
 		return
 	}
@@ -271,8 +271,8 @@ func (o *Out) testARM64RegReg(src1, src2 string) {
 func (o *Out) testRISCVRegReg(src1, src2 string) {
 	// RISC-V: Use AND followed by BNEZ (branch if not zero)
 	// For now, just do an AND to a temporary and set flags conceptually
-	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
+	src1Reg, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
 	if !src1Ok || !src2Ok {
 		return
 	}
@@ -297,7 +297,7 @@ func (o *Out) testRISCVRegReg(src1, src2 string) {
 // ShlRegImm - Shift left by immediate
 // shl reg, imm
 func (o *Out) ShlRegImm(dst, imm string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.shlX86RegImm(dst, imm)
 	case ArchARM64:
@@ -308,7 +308,7 @@ func (o *Out) ShlRegImm(dst, imm string) {
 }
 
 func (o *Out) shlX86RegImm(dst, imm string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -344,7 +344,7 @@ func (o *Out) shlX86RegImm(dst, imm string) {
 }
 
 func (o *Out) shlARM64RegImm(dst, imm string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -376,7 +376,7 @@ func (o *Out) shlARM64RegImm(dst, imm string) {
 }
 
 func (o *Out) shlRISCVRegImm(dst, imm string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}

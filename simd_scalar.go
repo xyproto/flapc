@@ -11,7 +11,7 @@ import (
 // AddsdXmm - Add Scalar Double (SSE2)
 // addsd xmm, xmm
 func (o *Out) AddsdXmm(dst, src string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.addsdX86(dst, src)
 	case ArchARM64:
@@ -60,7 +60,7 @@ func (o *Out) addsdX86(dst, src string) {
 
 // SubsdXmm - Subtract Scalar Double
 func (o *Out) SubsdXmm(dst, src string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.subsdX86(dst, src)
 	}
@@ -104,7 +104,7 @@ func (o *Out) subsdX86(dst, src string) {
 
 // MulsdXmm - Multiply Scalar Double
 func (o *Out) MulsdXmm(dst, src string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.mulsdX86(dst, src)
 	}
@@ -148,7 +148,7 @@ func (o *Out) mulsdX86(dst, src string) {
 
 // DivsdXmm - Divide Scalar Double
 func (o *Out) DivsdXmm(dst, src string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.divsdX86(dst, src)
 	}
@@ -193,7 +193,7 @@ func (o *Out) divsdX86(dst, src string) {
 // Sqrtsd - Square Root Scalar Double (SSE2)
 // sqrtsd xmm, xmm
 func (o *Out) Sqrtsd(dst, src string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.sqrtsdX86(dst, src)
 	}
@@ -753,7 +753,7 @@ func (o *Out) faddScalarRISCV(dst, src string) {
 // XorpdXmm - XOR Packed Double (SSE2)
 // xorpd xmm, xmm - commonly used to zero a register
 func (o *Out) XorpdXmm(dst, src string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.xorpdX86(dst, src)
 	case ArchARM64:

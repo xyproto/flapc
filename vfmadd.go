@@ -22,7 +22,7 @@ import (
 // VFmaddPDVectorToVector performs fused multiply-add: dst = src1 * src2 + src3
 // Four operands: destination and three sources
 func (o *Out) VFmaddPDVectorToVector(dst, src1, src2, src3 string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.vfmaddX86VectorToVector(dst, src1, src2, src3)
 	case ArchARM64:
@@ -39,10 +39,10 @@ func (o *Out) VFmaddPDVectorToVector(dst, src1, src2, src3 string) {
 // x86-64 VFMADD231PD - dst = src1 * src2 + dst (accumulator form)
 // EVEX.NDS.512.66.0F38.W1 B8 /r
 func (o *Out) vfmaddX86VectorToVector(dst, src1, src2, src3 string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
-	_, src3Ok := GetRegister(o.machine.Arch, src3)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	src1Reg, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
+	_, src3Ok := GetRegister(o.target.Arch(), src3)
 	if !dstOk || !src1Ok || !src2Ok || !src3Ok {
 		return
 	}
@@ -173,10 +173,10 @@ func (o *Out) vfmaddX86VectorToVector(dst, src1, src2, src3 string) {
 // ARM64 FMLA Zdn.D, Pg/M, Zm.D, Za.D
 // Multiply-accumulate: Zdn = Zdn + Zm * Za
 func (o *Out) vfmaddARM64VectorToVector(dst, src1, src2, src3 string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
-	_, src3Ok := GetRegister(o.machine.Arch, src3)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	src1Reg, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
+	_, src3Ok := GetRegister(o.target.Arch(), src3)
 	if !dstOk || !src1Ok || !src2Ok || !src3Ok {
 		return
 	}
@@ -247,10 +247,10 @@ func (o *Out) vfmaddARM64VectorToVector(dst, src1, src2, src3 string) {
 // RISC-V vfmadd.vv vd, vs1, vs2
 // Multiply-add: vd = vd * vs1 + vs2
 func (o *Out) vfmaddRISCVVectorToVector(dst, src1, src2, src3 string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	_, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
-	src3Reg, src3Ok := GetRegister(o.machine.Arch, src3)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	_, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
+	src3Reg, src3Ok := GetRegister(o.target.Arch(), src3)
 	if !dstOk || !src1Ok || !src2Ok || !src3Ok {
 		return
 	}

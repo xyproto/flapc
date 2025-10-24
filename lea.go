@@ -10,7 +10,7 @@ import (
 // LeaSymbolToReg generates a load effective address instruction for a symbol
 // This is used for position-independent code to load addresses relative to PC/RIP
 func (o *Out) LeaSymbolToReg(dst, symbol string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.leaX86SymbolToReg(dst, symbol)
 	case ArchARM64:
@@ -22,7 +22,7 @@ func (o *Out) LeaSymbolToReg(dst, symbol string) {
 
 // x86_64 LEA with RIP-relative addressing
 func (o *Out) leaX86SymbolToReg(dst, symbol string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -62,7 +62,7 @@ func (o *Out) leaX86SymbolToReg(dst, symbol string) {
 
 // ARM64 ADRP + ADD for loading symbol addresses
 func (o *Out) leaARM64SymbolToReg(dst, symbol string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -107,7 +107,7 @@ func (o *Out) leaARM64SymbolToReg(dst, symbol string) {
 
 // RISC-V AUIPC + ADDI for loading symbol addresses
 func (o *Out) leaRISCVSymbolToReg(dst, symbol string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -153,7 +153,7 @@ func (o *Out) leaRISCVSymbolToReg(dst, symbol string) {
 // LeaImmToReg generates a LEA instruction with an immediate offset
 // This is primarily for x86_64 address calculations
 func (o *Out) LeaImmToReg(dst, base string, offset int64) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.leaX86ImmToReg(dst, base, offset)
 	case ArchARM64:
@@ -167,8 +167,8 @@ func (o *Out) LeaImmToReg(dst, base string, offset int64) {
 
 // x86_64 LEA with base + displacement
 func (o *Out) leaX86ImmToReg(dst, base string, offset int64) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	baseReg, baseOk := GetRegister(o.machine.Arch, base)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	baseReg, baseOk := GetRegister(o.target.Arch(), base)
 
 	if !dstOk || !baseOk {
 		return
@@ -215,8 +215,8 @@ func (o *Out) leaX86ImmToReg(dst, base string, offset int64) {
 
 // ARM64 ADD for address calculation
 func (o *Out) leaARM64ImmToReg(dst, base string, offset int64) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	baseReg, baseOk := GetRegister(o.machine.Arch, base)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	baseReg, baseOk := GetRegister(o.target.Arch(), base)
 
 	if !dstOk || !baseOk {
 		return
@@ -249,8 +249,8 @@ func (o *Out) leaARM64ImmToReg(dst, base string, offset int64) {
 
 // RISC-V ADDI for address calculation
 func (o *Out) leaRISCVImmToReg(dst, base string, offset int64) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	baseReg, baseOk := GetRegister(o.machine.Arch, base)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	baseReg, baseOk := GetRegister(o.target.Arch(), base)
 
 	if !dstOk || !baseOk {
 		return

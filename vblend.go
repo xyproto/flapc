@@ -25,7 +25,7 @@ import (
 // VBlendMPDWithMask blends two vectors based on mask
 // dst[i] = mask[i] ? src1[i] : src2[i]
 func (o *Out) VBlendMPDWithMask(dst, src1, src2, mask string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.vblendmpdX86WithMask(dst, src1, src2, mask)
 	case ArchARM64:
@@ -42,10 +42,10 @@ func (o *Out) VBlendMPDWithMask(dst, src1, src2, mask string) {
 // x86-64 VBLENDMPD zmm1{k1}, zmm2, zmm3
 // EVEX.NDS.512.66.0F38.W1 65 /r
 func (o *Out) vblendmpdX86WithMask(dst, src1, src2, mask string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
-	maskReg, maskOk := GetRegister(o.machine.Arch, mask)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	src1Reg, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
+	maskReg, maskOk := GetRegister(o.target.Arch(), mask)
 	if !dstOk || !src1Ok || !src2Ok || !maskOk {
 		return
 	}
@@ -161,10 +161,10 @@ func (o *Out) vblendmpdX86WithMask(dst, src1, src2, mask string) {
 // ARM64 SEL zd.d, pg, zn.d, zm.d
 // Select elements based on predicate: dst = pg ? zn : zm
 func (o *Out) vblendARM64WithMask(dst, src1, src2, mask string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
-	maskReg, maskOk := GetRegister(o.machine.Arch, mask)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	src1Reg, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
+	maskReg, maskOk := GetRegister(o.target.Arch(), mask)
 	if !dstOk || !src1Ok || !src2Ok || !maskOk {
 		return
 	}
@@ -229,10 +229,10 @@ func (o *Out) vblendARM64WithMask(dst, src1, src2, mask string) {
 // Merge: vd[i] = v0.mask[i] ? vs1[i] : vs2[i]
 // Note: RVV uses v0 as implicit mask register
 func (o *Out) vblendRISCVWithMask(dst, src1, src2, mask string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
-	_, maskOk := GetRegister(o.machine.Arch, mask)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	src1Reg, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
+	_, maskOk := GetRegister(o.target.Arch(), mask)
 	if !dstOk || !src1Ok || !src2Ok || !maskOk {
 		return
 	}

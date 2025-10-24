@@ -11,7 +11,7 @@ func TestCmpX86RegToReg(t *testing.T) {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
 
-	out := NewOut(eb.platform, eb.TextWriter(), eb)
+	out := NewOut(eb.target, eb.TextWriter(), eb)
 
 	// Generate: CMP rax, rbx
 	out.CmpRegToReg("rax", "rbx")
@@ -38,7 +38,7 @@ func TestCmpX86RegToImm8(t *testing.T) {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
 
-	out := NewOut(eb.platform, eb.TextWriter(), eb)
+	out := NewOut(eb.target, eb.TextWriter(), eb)
 
 	// Generate: CMP rax, 10
 	out.CmpRegToImm("rax", 10)
@@ -64,7 +64,7 @@ func TestCmpX86RegToImm32(t *testing.T) {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
 
-	out := NewOut(eb.platform, eb.TextWriter(), eb)
+	out := NewOut(eb.target, eb.TextWriter(), eb)
 
 	// Generate: CMP rax, 1000
 	out.CmpRegToImm("rax", 1000)
@@ -94,7 +94,7 @@ func TestCmpARM64RegToReg(t *testing.T) {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
 
-	out := NewOut(eb.platform, eb.TextWriter(), eb)
+	out := NewOut(eb.target, eb.TextWriter(), eb)
 
 	// Generate: CMP x0, x1 (SUBS xzr, x0, x1)
 	out.CmpRegToReg("x0", "x1")
@@ -138,7 +138,7 @@ func TestCmpARM64RegToImm(t *testing.T) {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
 
-	out := NewOut(eb.platform, eb.TextWriter(), eb)
+	out := NewOut(eb.target, eb.TextWriter(), eb)
 
 	// Generate: CMP x0, #42
 	out.CmpRegToImm("x0", 42)
@@ -174,7 +174,7 @@ func TestCmpRISCVRegToReg(t *testing.T) {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
 
-	out := NewOut(eb.platform, eb.TextWriter(), eb)
+	out := NewOut(eb.target, eb.TextWriter(), eb)
 
 	// Generate: CMP a0, a1 (implemented as SUB t0, a0, a1)
 	out.CmpRegToReg("a0", "a1")

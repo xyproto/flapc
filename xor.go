@@ -24,7 +24,7 @@ func (o *Out) XorRegWithImm(dst string, imm int32) {
 // XorRegWithRegToReg generates XOR dst, src1, src2 (dst = src1 ^ src2)
 // 3-operand form for ARM64 and RISC-V
 func (o *Out) XorRegWithRegToReg(dst, src1, src2 string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		// x86-64: MOV dst, src1; XOR dst, src2
 		o.MovRegToReg(dst, src1)
@@ -42,8 +42,8 @@ func (o *Out) XorRegWithRegToReg(dst, src1, src2 string) {
 
 // x86-64 XOR (register-register)
 func (o *Out) xorX86RegWithReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -76,7 +76,7 @@ func (o *Out) xorX86RegWithReg(dst, src string) {
 
 // x86-64 XOR with immediate
 func (o *Out) xorX86RegWithImm(dst string, imm int32) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -123,8 +123,8 @@ func (o *Out) xorX86RegWithImm(dst string, imm int32) {
 
 // ARM64 EOR (XOR) (register-register, 2-operand form)
 func (o *Out) xorARM64RegWithReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -152,9 +152,9 @@ func (o *Out) xorARM64RegWithReg(dst, src string) {
 
 // ARM64 EOR - 3 operand form
 func (o *Out) xorARM64RegWithRegToReg(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	src1Reg, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -180,7 +180,7 @@ func (o *Out) xorARM64RegWithRegToReg(dst, src1, src2 string) {
 
 // ARM64 EOR with immediate
 func (o *Out) xorARM64RegWithImm(dst string, imm int32) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}
@@ -211,8 +211,8 @@ func (o *Out) xorARM64RegWithImm(dst string, imm int32) {
 
 // RISC-V XOR (register-register, 2-operand form)
 func (o *Out) xorRISCVRegWithReg(dst, src string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
 	if !dstOk || !srcOk {
 		return
 	}
@@ -240,9 +240,9 @@ func (o *Out) xorRISCVRegWithReg(dst, src string) {
 
 // RISC-V XOR - 3 operand form
 func (o *Out) xorRISCVRegWithRegToReg(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	src1Reg, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -269,7 +269,7 @@ func (o *Out) xorRISCVRegWithRegToReg(dst, src1, src2 string) {
 
 // RISC-V XORI (XOR immediate)
 func (o *Out) xorRISCVRegWithImm(dst string, imm int32) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
 	if !dstOk {
 		return
 	}

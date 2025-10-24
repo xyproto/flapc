@@ -9,7 +9,7 @@ import (
 
 // MovRegToMem - Store register to memory [base+offset]
 func (o *Out) MovRegToMem(src, base string, offset int) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.movRegToMemX86(src, base, offset)
 	}
@@ -20,8 +20,8 @@ func (o *Out) movRegToMemX86(src, base string, offset int) {
 		fmt.Fprintf(os.Stderr, "mov [%s+%d], %s: ", base, offset, src)
 	}
 
-	srcReg, _ := GetRegister(o.machine.Arch, src)
-	baseReg, _ := GetRegister(o.machine.Arch, base)
+	srcReg, _ := GetRegister(o.target.Arch(), src)
+	baseReg, _ := GetRegister(o.target.Arch(), base)
 
 	// REX.W for 64-bit operation
 	rex := uint8(0x48)
@@ -66,7 +66,7 @@ func (o *Out) movRegToMemX86(src, base string, offset int) {
 
 // MovMemToReg - Load from memory [base+offset] to register
 func (o *Out) MovMemToReg(dst, base string, offset int) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.movMemToRegX86(dst, base, offset)
 	}
@@ -77,8 +77,8 @@ func (o *Out) movMemToRegX86(dst, base string, offset int) {
 		fmt.Fprintf(os.Stderr, "mov %s, [%s+%d]: ", dst, base, offset)
 	}
 
-	dstReg, _ := GetRegister(o.machine.Arch, dst)
-	baseReg, _ := GetRegister(o.machine.Arch, base)
+	dstReg, _ := GetRegister(o.target.Arch(), dst)
+	baseReg, _ := GetRegister(o.target.Arch(), base)
 
 	rex := uint8(0x48)
 	if dstReg.Encoding >= 8 {
@@ -122,7 +122,7 @@ func (o *Out) movMemToRegX86(dst, base string, offset int) {
 
 // ShlImmReg - Shift left by immediate
 func (o *Out) ShlImmReg(dst string, imm int) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.shlImmX86(dst, imm)
 	}
@@ -133,7 +133,7 @@ func (o *Out) shlImmX86(dst string, imm int) {
 		fmt.Fprintf(os.Stderr, "shl %s, %d: ", dst, imm)
 	}
 
-	dstReg, _ := GetRegister(o.machine.Arch, dst)
+	dstReg, _ := GetRegister(o.target.Arch(), dst)
 
 	rex := uint8(0x48)
 	if dstReg.Encoding >= 8 {
@@ -161,7 +161,7 @@ func (o *Out) shlImmX86(dst string, imm int) {
 
 // MovByteRegToMem - Store byte from register to memory [base+offset]
 func (o *Out) MovByteRegToMem(src, base string, offset int) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.movByteRegToMemX86(src, base, offset)
 	}
@@ -172,8 +172,8 @@ func (o *Out) movByteRegToMemX86(src, base string, offset int) {
 		fmt.Fprintf(os.Stderr, "mov byte [%s+%d], %s: ", base, offset, src)
 	}
 
-	srcReg, _ := GetRegister(o.machine.Arch, src)
-	baseReg, _ := GetRegister(o.machine.Arch, base)
+	srcReg, _ := GetRegister(o.target.Arch(), src)
+	baseReg, _ := GetRegister(o.target.Arch(), base)
 
 	// REX prefix for extended registers (no REX.W for byte operation)
 	needREX := srcReg.Encoding >= 8 || baseReg.Encoding >= 8 || srcReg.Encoding >= 4
@@ -221,7 +221,7 @@ func (o *Out) movByteRegToMemX86(src, base string, offset int) {
 
 // MovImmToMem - Store immediate to memory [base+offset]
 func (o *Out) MovImmToMem(imm int64, base string, offset int) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.movImmToMemX86(imm, base, offset)
 	}
@@ -232,7 +232,7 @@ func (o *Out) movImmToMemX86(imm int64, base string, offset int) {
 		fmt.Fprintf(os.Stderr, "mov qword [%s+%d], %d: ", base, offset, imm)
 	}
 
-	baseReg, _ := GetRegister(o.machine.Arch, base)
+	baseReg, _ := GetRegister(o.target.Arch(), base)
 
 	// REX.W for 64-bit operation
 	rex := uint8(0x48)
@@ -280,7 +280,7 @@ func (o *Out) movImmToMemX86(imm int64, base string, offset int) {
 
 // LeaMemToReg - Load effective address [base+offset] to register
 func (o *Out) LeaMemToReg(dst, base string, offset int) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.leaMemToRegX86(dst, base, offset)
 	}
@@ -291,8 +291,8 @@ func (o *Out) leaMemToRegX86(dst, base string, offset int) {
 		fmt.Fprintf(os.Stderr, "lea %s, [%s+%d]: ", dst, base, offset)
 	}
 
-	dstReg, _ := GetRegister(o.machine.Arch, dst)
-	baseReg, _ := GetRegister(o.machine.Arch, base)
+	dstReg, _ := GetRegister(o.target.Arch(), dst)
+	baseReg, _ := GetRegister(o.target.Arch(), base)
 
 	rex := uint8(0x48) // REX.W for 64-bit
 	if dstReg.Encoding >= 8 {
@@ -336,7 +336,7 @@ func (o *Out) leaMemToRegX86(dst, base string, offset int) {
 
 // MovU8MemToReg emits a zero-extended byte load (MOVZX r64, byte [base+offset])
 func (o *Out) MovU8MemToReg(dest, base string, offset int) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.movU8MemToRegX86(dest, base, offset)
 	}
@@ -355,8 +355,8 @@ func (o *Out) movU8MemToRegX86(dest, base string, offset int) {
 		fmt.Fprintf(os.Stderr, "]: ")
 	}
 
-	destReg, _ := GetRegister(o.machine.Arch, dest)
-	baseReg, _ := GetRegister(o.machine.Arch, base)
+	destReg, _ := GetRegister(o.target.Arch(), dest)
+	baseReg, _ := GetRegister(o.target.Arch(), base)
 
 	// MOVZX r64, r/m8 - opcode 0x0F 0xB6
 	rex := uint8(0x48) // REX.W for 64-bit destination
@@ -400,7 +400,7 @@ func (o *Out) movU8MemToRegX86(dest, base string, offset int) {
 
 // MovI8MemToReg emits a sign-extended byte load (MOVSX r64, byte [base+offset])
 func (o *Out) MovI8MemToReg(dest, base string, offset int) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.movI8MemToRegX86(dest, base, offset)
 	}
@@ -419,8 +419,8 @@ func (o *Out) movI8MemToRegX86(dest, base string, offset int) {
 		fmt.Fprintf(os.Stderr, "]: ")
 	}
 
-	destReg, _ := GetRegister(o.machine.Arch, dest)
-	baseReg, _ := GetRegister(o.machine.Arch, base)
+	destReg, _ := GetRegister(o.target.Arch(), dest)
+	baseReg, _ := GetRegister(o.target.Arch(), base)
 
 	// MOVSX r64, r/m8 - opcode 0x0F 0xBE
 	rex := uint8(0x48) // REX.W for 64-bit destination
@@ -464,7 +464,7 @@ func (o *Out) movI8MemToRegX86(dest, base string, offset int) {
 
 // MovU16MemToReg emits a zero-extended word load (MOVZX r64, word [base+offset])
 func (o *Out) MovU16MemToReg(dest, base string, offset int) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.movU16MemToRegX86(dest, base, offset)
 	}
@@ -483,8 +483,8 @@ func (o *Out) movU16MemToRegX86(dest, base string, offset int) {
 		fmt.Fprintf(os.Stderr, "]: ")
 	}
 
-	destReg, _ := GetRegister(o.machine.Arch, dest)
-	baseReg, _ := GetRegister(o.machine.Arch, base)
+	destReg, _ := GetRegister(o.target.Arch(), dest)
+	baseReg, _ := GetRegister(o.target.Arch(), base)
 
 	// MOVZX r64, r/m16 - opcode 0x0F 0xB7
 	rex := uint8(0x48) // REX.W for 64-bit destination
@@ -528,7 +528,7 @@ func (o *Out) movU16MemToRegX86(dest, base string, offset int) {
 
 // MovI16MemToReg emits a sign-extended word load (MOVSX r64, word [base+offset])
 func (o *Out) MovI16MemToReg(dest, base string, offset int) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.movI16MemToRegX86(dest, base, offset)
 	}
@@ -547,8 +547,8 @@ func (o *Out) movI16MemToRegX86(dest, base string, offset int) {
 		fmt.Fprintf(os.Stderr, "]: ")
 	}
 
-	destReg, _ := GetRegister(o.machine.Arch, dest)
-	baseReg, _ := GetRegister(o.machine.Arch, base)
+	destReg, _ := GetRegister(o.target.Arch(), dest)
+	baseReg, _ := GetRegister(o.target.Arch(), base)
 
 	// MOVSX r64, r/m16 - opcode 0x0F 0xBF
 	rex := uint8(0x48) // REX.W for 64-bit destination
@@ -593,7 +593,7 @@ func (o *Out) movI16MemToRegX86(dest, base string, offset int) {
 // MovU32MemToReg emits a zero-extended dword load (MOV r32, [base+offset])
 // Note: On x86-64, 32-bit operations automatically zero-extend to 64-bit
 func (o *Out) MovU32MemToReg(dest, base string, offset int) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.movU32MemToRegX86(dest, base, offset)
 	}
@@ -612,8 +612,8 @@ func (o *Out) movU32MemToRegX86(dest, base string, offset int) {
 		fmt.Fprintf(os.Stderr, "]: ")
 	}
 
-	destReg, _ := GetRegister(o.machine.Arch, dest)
-	baseReg, _ := GetRegister(o.machine.Arch, base)
+	destReg, _ := GetRegister(o.target.Arch(), dest)
+	baseReg, _ := GetRegister(o.target.Arch(), base)
 
 	// MOV r32, r/m32 - opcode 0x8B (no REX.W, auto zero-extends)
 	// Only emit REX if we need extended registers
@@ -660,7 +660,7 @@ func (o *Out) movU32MemToRegX86(dest, base string, offset int) {
 
 // MovI32MemToReg emits a sign-extended dword load (MOVSXD r64, [base+offset])
 func (o *Out) MovI32MemToReg(dest, base string, offset int) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.movI32MemToRegX86(dest, base, offset)
 	}
@@ -679,8 +679,8 @@ func (o *Out) movI32MemToRegX86(dest, base string, offset int) {
 		fmt.Fprintf(os.Stderr, "]: ")
 	}
 
-	destReg, _ := GetRegister(o.machine.Arch, dest)
-	baseReg, _ := GetRegister(o.machine.Arch, base)
+	destReg, _ := GetRegister(o.target.Arch(), dest)
+	baseReg, _ := GetRegister(o.target.Arch(), base)
 
 	// MOVSXD r64, r/m32 - opcode 0x63 with REX.W
 	rex := uint8(0x48) // REX.W for 64-bit destination
@@ -723,7 +723,7 @@ func (o *Out) movI32MemToRegX86(dest, base string, offset int) {
 
 // MovU8RegToMem emits a byte store (MOV byte [base+offset], src)
 func (o *Out) MovU8RegToMem(src, base string, offset int) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.movU8RegToMemX86(src, base, offset)
 	}
@@ -742,8 +742,8 @@ func (o *Out) movU8RegToMemX86(src, base string, offset int) {
 		fmt.Fprintf(os.Stderr, "], %s: ", src)
 	}
 
-	srcReg, _ := GetRegister(o.machine.Arch, src)
-	baseReg, _ := GetRegister(o.machine.Arch, base)
+	srcReg, _ := GetRegister(o.target.Arch(), src)
+	baseReg, _ := GetRegister(o.target.Arch(), base)
 
 	// MOV r/m8, r8 - opcode 0x88
 	rex := uint8(0x40) // REX prefix (needed for accessing low byte of extended registers)
@@ -789,7 +789,7 @@ func (o *Out) movU8RegToMemX86(src, base string, offset int) {
 
 // MovU16RegToMem emits a word store (MOV word [base+offset], src)
 func (o *Out) MovU16RegToMem(src, base string, offset int) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.movU16RegToMemX86(src, base, offset)
 	}
@@ -808,8 +808,8 @@ func (o *Out) movU16RegToMemX86(src, base string, offset int) {
 		fmt.Fprintf(os.Stderr, "], %s: ", src)
 	}
 
-	srcReg, _ := GetRegister(o.machine.Arch, src)
-	baseReg, _ := GetRegister(o.machine.Arch, base)
+	srcReg, _ := GetRegister(o.target.Arch(), src)
+	baseReg, _ := GetRegister(o.target.Arch(), base)
 
 	// MOV r/m16, r16 - requires 0x66 prefix and opcode 0x89
 	o.Write(0x66) // 16-bit operand size prefix
@@ -857,7 +857,7 @@ func (o *Out) movU16RegToMemX86(src, base string, offset int) {
 
 // MovU32RegToMem emits a dword store (MOV dword [base+offset], src)
 func (o *Out) MovU32RegToMem(src, base string, offset int) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.movU32RegToMemX86(src, base, offset)
 	}
@@ -876,8 +876,8 @@ func (o *Out) movU32RegToMemX86(src, base string, offset int) {
 		fmt.Fprintf(os.Stderr, "], %s: ", src)
 	}
 
-	srcReg, _ := GetRegister(o.machine.Arch, src)
-	baseReg, _ := GetRegister(o.machine.Arch, base)
+	srcReg, _ := GetRegister(o.target.Arch(), src)
+	baseReg, _ := GetRegister(o.target.Arch(), base)
 
 	// MOV r/m32, r32 - opcode 0x89 (no REX.W)
 	needsRex := srcReg.Encoding >= 8 || baseReg.Encoding >= 8

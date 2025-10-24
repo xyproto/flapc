@@ -17,7 +17,7 @@ func (eb *ExecutableBuilder) WriteDynamicELF() error {
 
 	// Interpreter path (architecture-specific)
 	interp := "/lib64/ld-linux-x86-64.so.2"
-	switch eb.platform.Arch {
+	switch eb.target.Arch() {
 	case ArchARM64:
 		interp = "/lib/ld-linux-aarch64.so.1"
 	case ArchRiscv64:
@@ -51,7 +51,7 @@ func (eb *ExecutableBuilder) WriteDynamicELF() error {
 	w.WriteN(0, 8)
 	w.Write2(3) // DYN (position independent) - changed from 2 (EXEC)
 
-	w.Write2(byte(eb.arch.ELFMachineType()))
+	w.Write2(byte(GetELFMachineType(eb.target.Arch())))
 	w.Write4(1) // ELF version
 
 	w.Write8u(entry)               // entry point

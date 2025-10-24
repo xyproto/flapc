@@ -9,7 +9,7 @@ import (
 // Used for loop counters and iterator variables
 
 func (o *Out) IncReg(reg string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.incX86Reg(reg)
 	case ArchARM64:
@@ -21,7 +21,7 @@ func (o *Out) IncReg(reg string) {
 
 // x86-64 INC instruction: INC r64
 func (o *Out) incX86Reg(reg string) {
-	regInfo, ok := GetRegister(o.machine.Arch, reg)
+	regInfo, ok := GetRegister(o.target.Arch(), reg)
 	if !ok {
 		return
 	}
@@ -51,7 +51,7 @@ func (o *Out) incX86Reg(reg string) {
 
 // ARM64 ADD immediate: ADD Xd, Xn, #1
 func (o *Out) incARM64Reg(reg string) {
-	regInfo, ok := GetRegister(o.machine.Arch, reg)
+	regInfo, ok := GetRegister(o.target.Arch(), reg)
 	if !ok {
 		return
 	}
@@ -80,7 +80,7 @@ func (o *Out) incARM64Reg(reg string) {
 
 // RISC-V ADDI: ADDI rd, rs1, 1
 func (o *Out) incRISCVReg(reg string) {
-	regInfo, ok := GetRegister(o.machine.Arch, reg)
+	regInfo, ok := GetRegister(o.target.Arch(), reg)
 	if !ok {
 		return
 	}

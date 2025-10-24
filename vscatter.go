@@ -25,7 +25,7 @@ import (
 // memory[base + indices[i] * scale] = src[i]
 // scale is typically 8 for float64 (8 bytes per element)
 func (o *Out) VScatterQPDToMem(src, base, indices string, scale int32, mask string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.vscatterqpdX86ToMem(src, base, indices, scale, mask)
 	case ArchARM64:
@@ -42,10 +42,10 @@ func (o *Out) VScatterQPDToMem(src, base, indices string, scale int32, mask stri
 // x86-64 VSCATTERQPD [base + zmm2*8]{k1}, zmm1
 // EVEX.512.66.0F38.W1 A3 /r (VSIB addressing)
 func (o *Out) vscatterqpdX86ToMem(src, base, indices string, scale int32, mask string) {
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
-	baseReg, baseOk := GetRegister(o.machine.Arch, base)
-	indicesReg, indicesOk := GetRegister(o.machine.Arch, indices)
-	maskReg, maskOk := GetRegister(o.machine.Arch, mask)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
+	baseReg, baseOk := GetRegister(o.target.Arch(), base)
+	indicesReg, indicesOk := GetRegister(o.target.Arch(), indices)
+	maskReg, maskOk := GetRegister(o.target.Arch(), mask)
 	if !srcOk || !baseOk || !indicesOk || !maskOk {
 		return
 	}
@@ -155,10 +155,10 @@ func (o *Out) vscatterqpdX86ToMem(src, base, indices string, scale int32, mask s
 // ARM64 ST1D {zt.d}, pg, [xn, zm.d, LSL #3]
 // SVE scatter store with vector indices
 func (o *Out) vscatterARM64ToMem(src, base, indices string, scale int32, mask string) {
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
-	baseReg, baseOk := GetRegister(o.machine.Arch, base)
-	indicesReg, indicesOk := GetRegister(o.machine.Arch, indices)
-	maskReg, maskOk := GetRegister(o.machine.Arch, mask)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
+	baseReg, baseOk := GetRegister(o.target.Arch(), base)
+	indicesReg, indicesOk := GetRegister(o.target.Arch(), indices)
+	maskReg, maskOk := GetRegister(o.target.Arch(), mask)
 	if !srcOk || !baseOk || !indicesOk || !maskOk {
 		return
 	}
@@ -202,9 +202,9 @@ func (o *Out) vscatterARM64ToMem(src, base, indices string, scale int32, mask st
 // RISC-V vsuxei64.v vs3, (rs1), vs2
 // Unordered indexed store (scatter) with 64-bit indices
 func (o *Out) vscatterRISCVToMem(src, base, indices string, scale int32, mask string) {
-	srcReg, srcOk := GetRegister(o.machine.Arch, src)
-	baseReg, baseOk := GetRegister(o.machine.Arch, base)
-	indicesReg, indicesOk := GetRegister(o.machine.Arch, indices)
+	srcReg, srcOk := GetRegister(o.target.Arch(), src)
+	baseReg, baseOk := GetRegister(o.target.Arch(), base)
+	indicesReg, indicesOk := GetRegister(o.target.Arch(), indices)
 	// RISC-V uses v0 as implicit mask register
 	if !srcOk || !baseOk || !indicesOk {
 		return

@@ -19,7 +19,7 @@ import (
 // VAddPDVectorToVector performs vector addition: dst = src1 + src2
 // All three operands are vector registers
 func (o *Out) VAddPDVectorToVector(dst, src1, src2 string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.vaddpdX86VectorToVector(dst, src1, src2)
 	case ArchARM64:
@@ -36,9 +36,9 @@ func (o *Out) VAddPDVectorToVector(dst, src1, src2 string) {
 // x86-64 VADDPD zmm, zmm, zmm (AVX-512)
 // EVEX.NDS.512.66.0F.W1 58 /r
 func (o *Out) vaddpdX86VectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	src1Reg, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -194,9 +194,9 @@ func (o *Out) vaddpdX86VectorToVector(dst, src1, src2 string) {
 // ARM64 FADD Zd.D, Pg/M, Zn.D, Zm.D (SVE2)
 // Predicated vector addition with merge
 func (o *Out) vaddpdARM64VectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	src1Reg, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -255,9 +255,9 @@ func (o *Out) vaddpdARM64VectorToVector(dst, src1, src2 string) {
 // RISC-V vfadd.vv vd, vs2, vs1 (RVV)
 // Vector-vector floating-point addition
 func (o *Out) vaddpdRISCVVectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	src1Reg, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}

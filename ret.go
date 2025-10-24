@@ -21,7 +21,7 @@ func (o *Out) Ret() {
 // RetImm generates a return with immediate pop (x86-64 only)
 // Used to clean up stack parameters after return
 func (o *Out) RetImm(popBytes uint16) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.retX86Imm(popBytes)
 	case ArchARM64:

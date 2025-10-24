@@ -112,7 +112,7 @@ func (eb *ExecutableBuilder) CompileDefaultProgram(outputFile string) error {
 			eb.SysExit()
 		}
 		// Only write ELF headers for non-Mach-O platforms
-		if !eb.platform.IsMachO() {
+		if !eb.target.IsMachO() {
 			if len(eb.dynlinker.Libraries) > 0 {
 				eb.WriteDynamicELF()
 			} else {

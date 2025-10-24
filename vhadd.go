@@ -30,7 +30,7 @@ import (
 // dst[2] = src1[2] + src1[3]
 // dst[3] = src2[2] + src2[3]
 func (o *Out) VHAddPDVectorToVector(dst, src1, src2 string) {
-	switch o.machine.Arch {
+	switch o.target.Arch() {
 	case ArchX86_64:
 		o.vhaddpdX86VectorToVector(dst, src1, src2)
 	case ArchARM64:
@@ -47,9 +47,9 @@ func (o *Out) VHAddPDVectorToVector(dst, src1, src2 string) {
 // x86-64 VHADDPD ymm1, ymm2, ymm3/m256
 // VEX.NDS.256.66.0F.WIG 7C /r
 func (o *Out) vhaddpdX86VectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	src1Reg, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -117,9 +117,9 @@ func (o *Out) vhaddpdX86VectorToVector(dst, src1, src2 string) {
 // ============================================================================
 
 func (o *Out) vhaddARM64VectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	src1Reg, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
@@ -178,9 +178,9 @@ func (o *Out) vhaddARM64VectorToVector(dst, src1, src2 string) {
 // ============================================================================
 
 func (o *Out) vhaddRISCVVectorToVector(dst, src1, src2 string) {
-	dstReg, dstOk := GetRegister(o.machine.Arch, dst)
-	src1Reg, src1Ok := GetRegister(o.machine.Arch, src1)
-	src2Reg, src2Ok := GetRegister(o.machine.Arch, src2)
+	dstReg, dstOk := GetRegister(o.target.Arch(), dst)
+	src1Reg, src1Ok := GetRegister(o.target.Arch(), src1)
+	src2Reg, src2Ok := GetRegister(o.target.Arch(), src2)
 	if !dstOk || !src1Ok || !src2Ok {
 		return
 	}
