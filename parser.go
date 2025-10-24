@@ -4702,8 +4702,13 @@ func (fc *FlapCompiler) collectLoopsFromExpression(expr Expression) {
 		}
 
 	case *BlockExpr:
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG collectLoopsFromExpression BlockExpr: variables BEFORE = %v, stackOffset=%d\n",
+				fc.variables, fc.stackOffset)
+		}
 		oldVariables := fc.variables
 		oldMutableVars := fc.mutableVars
+		oldStackOffset := fc.stackOffset // Save stackOffset to restore after processing block
 		fc.variables = make(map[string]int)
 		fc.mutableVars = make(map[string]bool)
 		for k, v := range oldVariables {
@@ -4721,6 +4726,11 @@ func (fc *FlapCompiler) collectLoopsFromExpression(expr Expression) {
 
 		fc.variables = oldVariables
 		fc.mutableVars = oldMutableVars
+		fc.stackOffset = oldStackOffset // Restore stackOffset - block variables will be re-allocated in compileExpression
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG collectLoopsFromExpression BlockExpr: variables AFTER = %v, stackOffset=%d\n",
+				fc.variables, fc.stackOffset)
+		}
 
 	case *UnaryExpr:
 		fc.collectLoopsFromExpression(e.Operand)
