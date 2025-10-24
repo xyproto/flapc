@@ -1658,8 +1658,8 @@ func (p *Parser) parseStatement() Statement {
 		return p.parseDeferStmt()
 	}
 
-	// Check for ret/retval/reterr keywords (but not if followed by assignment operator)
-	if p.current.Type == TOKEN_RET || p.current.Type == TOKEN_RETVAL || p.current.Type == TOKEN_RETERR {
+	// Check for ret/err keywords (but not if followed by assignment operator)
+	if p.current.Type == TOKEN_RET || p.current.Type == TOKEN_ERR {
 		// If TOKEN_RET followed by assignment operator, treat as identifier for assignment
 		if p.current.Type == TOKEN_RET &&
 			(p.peek.Type == TOKEN_COLON_EQUALS || p.peek.Type == TOKEN_EQUALS ||
@@ -2084,8 +2084,7 @@ func (p *Parser) parseMatchClause() (*MatchClause, bool) {
 	// - { (block statements)
 	// - identifier <- (assignment statements)
 	isStatementToken := p.current.Type == TOKEN_RET ||
-		p.current.Type == TOKEN_RETVAL ||
-		p.current.Type == TOKEN_RETERR ||
+		p.current.Type == TOKEN_ERR ||
 		p.current.Type == TOKEN_AT_EQUALS ||
 		p.current.Type == TOKEN_LBRACE ||
 		(p.current.Type == TOKEN_AT && p.peek.Type == TOKEN_NUMBER) ||
@@ -2154,9 +2153,9 @@ func (p *Parser) parseMatchTarget() Expression {
 
 		return &BlockExpr{Statements: statements}
 
-	case TOKEN_RET, TOKEN_RETVAL, TOKEN_RETERR:
-		// ret/retval/reterr or ret @N or ret value or ret @N value
-		p.nextToken() // skip 'ret'/'retval'/'reterr'
+	case TOKEN_RET, TOKEN_ERR:
+		// ret/err or ret @N or ret value or ret @N value
+		p.nextToken() // skip 'ret'/'err'
 
 		label := 0 // 0 means return from function
 		var value Expression

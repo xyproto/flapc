@@ -1,4 +1,4 @@
-Nested loop with retval (exit inner loop):
+Nested loop with ret (exit inner loop):
 i=0: 0 1 2 
 i=1: 0 1 2 
 i=2: 0 1 2 
