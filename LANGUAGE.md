@@ -1278,9 +1278,10 @@ escape_sequence         = "\\" ( "n" | "t" | "r" | "\\" | '"' ) ;
 ## Keywords
 
 ```
-and as err in not or or! ret xor &b |b ^b ~b <b >b >>b <<b
+and as cstruct err hot in not or or! ret xor &b |b ^b ~b <b >b >>b <<b
 i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 cstr ptr
 number string list
+packed aligned sizeof
 ```
 
 **Recursion Keywords:**
@@ -1396,6 +1397,188 @@ x_val = read_f32(point_ptr, 0)
 y_val = read_f32(point_ptr, 1)
 call("free", point_ptr as ptr)
 ```
+
+### C-Compatible Structs
+
+The `cstruct` keyword defines C-compatible struct types for FFI. These structs have explicit memory layout, padding, and alignment compatible with C libraries.
+
+**Syntax:**
+
+```flap
+cstruct StructName {
+    field1: c_type,
+    field2: c_type,
+    ...
+}
+
+// With modifiers
+cstruct StructName packed {  // No padding between fields
+    ...
+}
+
+cstruct StructName aligned(16) {  // 16-byte alignment
+    ...
+}
+```
+
+**Examples:**
+
+```flap
+// Basic C struct
+cstruct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32
+}  // 12 bytes, standard C layout
+
+// Packed struct (no padding)
+cstruct PackedData packed {
+    flag: u8,      // 1 byte
+    value: u32,    // 4 bytes (no padding before)
+    count: u16     // 2 bytes
+}  // 7 bytes total (no padding)
+
+// Aligned struct for SIMD
+cstruct AlignedVec4 aligned(16) {
+    x: f32,
+    y: f32,
+    z: f32,
+    w: f32
+}  // 16 bytes, 16-byte aligned
+
+// Struct with pointers and strings
+cstruct Entity {
+    name: cstr,        // C string pointer
+    position: *Vec3,   // Pointer to Vec3
+    health: i32,
+    flags: u32
+}
+
+// Nested structs
+cstruct Transform {
+    position: Vec3,
+    rotation: Vec3,
+    scale: Vec3
+}
+```
+
+**Creating and Using:**
+
+```flap
+// Allocate struct memory
+entity_ptr := call("malloc", sizeof(Entity) as u64)
+
+// Write fields (field offsets calculated by compiler)
+write_cstr(entity_ptr, Entity.name_offset, "Player" as cstr)
+write_i32(entity_ptr, Entity.health_offset, 100)
+write_u32(entity_ptr, Entity.flags_offset, 0x1)
+
+// Read fields
+health := read_i32(entity_ptr, Entity.health_offset)
+
+// Pass to C functions
+call("process_entity", entity_ptr as ptr)
+
+// Cleanup
+call("free", entity_ptr as ptr)
+```
+
+**Benefits:**
+- **C-compatible**: Exact same layout as C structs
+- **Explicit**: No hidden padding or alignment surprises
+- **Safe offsets**: Compiler calculates field offsets
+- **FFI-ready**: Works seamlessly with SDL, Raylib, etc.
+
+### Hot Code Reload
+
+Hot code reload allows recompiling and reloading functions at runtime without restarting the program - essential for rapid gamedev iteration.
+
+**Marking Functions for Hot Reload:**
+
+```flap
+// Mark function as hot-reloadable
+hot update_player = (player, dt) => {
+    player.x <- player.x + player.velocity_x * dt
+    player.y <- player.y + player.velocity_y * dt
+
+    // Can edit this code and reload without restart
+    player.x < 0 { player.x <- 0 }
+    player.x > 800 { player.x <- 800 }
+
+    ret player
+}
+
+hot draw_particles = particles => {
+    @ p in particles {
+        draw_circle(p.x, p.y, p.radius, p.color)
+    }
+}
+```
+
+**Reload Workflow:**
+
+```bash
+# 1. Start game with hot reload enabled
+./flapc game.flap --hot -o game
+./game
+
+# 2. Edit hot functions in game.flap
+
+# 3. Trigger reload (sends SIGUSR1 to running process)
+./flapc game.flap --reload-pid $(pidof game)
+
+# Game continues running with updated functions!
+```
+
+**Implementation Details:**
+
+- Hot functions compiled to shared libraries (`.so` files)
+- Reloading replaces function pointers atomically
+- State preserved across reloads (global variables, heap)
+- Non-hot functions cannot be reloaded
+- Works with `--watch` mode for automatic recompilation
+
+**Example Gamedev Loop:**
+
+```flap
+// main.flap - Core game loop (not hot)
+main ==> {
+    window := sdl.SDL_CreateWindow("Game", 0, 0, 800, 600, 0)
+    renderer := sdl.SDL_CreateRenderer(window, -1, 0)
+
+    running := true
+    @ running {
+        // Hot-reloadable game logic
+        hot_update(state, dt)
+        hot_render(renderer, state)
+
+        sdl.SDL_RenderPresent(renderer)
+    }
+}
+
+// Can edit these while game runs
+hot hot_update = (state, dt) => {
+    // Update game logic here
+    // Change behavior without restarting
+}
+
+hot hot_render = (renderer, state) => {
+    // Rendering code here
+    // Tweak visuals in real-time
+}
+```
+
+**Use Cases:**
+- **Rapid iteration**: Test gameplay changes instantly
+- **Visual tuning**: Adjust rendering without restarts
+- **Debugging**: Fix bugs while game is running
+- **Live coding**: Develop with immediate feedback
+
+**Limitations:**
+- Only functions marked `hot` can be reloaded
+- Cannot change data structure layouts (use versioning)
+- State is preserved (may cause issues if logic changes drastically)
+- Platform-specific (requires dynamic linking support)
 
 ## Testing Convention
 
