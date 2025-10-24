@@ -67,7 +67,7 @@ flapc
 
 release/
 
-# Compiled test binaries
-test_*
-trace_*
-block_param
+# Compiled test binaries (in root only)
+/test_*
+/trace_*
+/block_param
