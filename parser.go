@@ -3657,6 +3657,7 @@ type FlapCompiler struct {
 	cacheEnabledLambdas map[string]bool              // Track which lambdas use cme
 	deferredExprs       [][]Expression               // Stack of deferred expressions per scope (LIFO order)
 	currentAssignName   string                       // Name of variable being assigned (for lambda naming)
+	inTailPosition      bool                         // True when compiling expression in tail position
 
 	metaArenaGrowthErrorJump      int
 	firstMetaArenaMallocErrorJump int
@@ -6752,7 +6753,13 @@ func (fc *FlapCompiler) compileMatchClauseResult(result Expression, endJumps *[]
 		return
 	}
 
+	// Check if this result is in tail position for TCO
+	// A call is in tail position ONLY if it's the direct result expression
+	// NOT if it's wrapped in a BinaryExpr or other operation
+	savedTailPosition := fc.inTailPosition
+	fc.inTailPosition = true
 	fc.compileExpression(result)
+	fc.inTailPosition = savedTailPosition
 	jumpPos := fc.eb.text.Len()
 	fc.out.JumpUnconditional(0)
 	*endJumps = append(*endJumps, jumpPos)
@@ -6764,7 +6771,11 @@ func (fc *FlapCompiler) compileMatchDefault(result Expression) {
 		return
 	}
 
+	// Default expression is also in tail position
+	savedTailPosition := fc.inTailPosition
+	fc.inTailPosition = true
 	fc.compileExpression(result)
+	fc.inTailPosition = savedTailPosition
 }
 
 func (fc *FlapCompiler) compileMatchJump(jumpExpr *JumpExpr) {
@@ -9341,6 +9352,11 @@ func (fc *FlapCompiler) compileLambdaDirectCall(call *CallExpr) {
 // intermediate storage to avoid register clobbering.
 // This is the recommended pattern for all binary operations.
 func (fc *FlapCompiler) compileBinaryOpSafe(left, right Expression, operator string) {
+	// Clear tail position - operands of binary expressions cannot be in tail position
+	// because the operation happens AFTER the operands are evaluated
+	savedTailPosition := fc.inTailPosition
+	fc.inTailPosition = false
+
 	// Compile left into xmm0
 	fc.compileExpression(left)
 	// Save left to stack (registers may be clobbered by function calls in right expr)
@@ -9354,6 +9370,8 @@ func (fc *FlapCompiler) compileBinaryOpSafe(left, right Expression, operator str
 	fc.out.MovMemToXmm("xmm0", "rsp", 0)
 	fc.out.AddImmToReg("rsp", 16)
 	// Now xmm0 has left, xmm1 has right - ready for operation
+
+	fc.inTailPosition = savedTailPosition
 
 	// Perform the operation
 	switch operator {
@@ -10404,7 +10422,11 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 
 func (fc *FlapCompiler) compileCall(call *CallExpr) {
 	// Check for "me" self-reference (tail recursion candidate)
-	if call.Function == "me" && fc.currentLambda != nil {
+	// IMPORTANT: Only apply TCO if we're actually in tail position!
+	// A call is in tail position ONLY if it's the last operation before return
+	// Example: `~> me(n-1)` is tail position (YES, optimize)
+	// Example: `~> me(n-1) * n` is NOT tail position (NO, don't optimize)
+	if call.Function == "me" && fc.currentLambda != nil && fc.inTailPosition {
 		fc.compileTailCall(call)
 		return
 	}

@@ -37,15 +37,110 @@ These bugs prevent proper testing and limit language usability:
   - Working tests: test_string_print_var.flap, test_match_string_test.flap, programs/match_unicode.flap
   - Impact: Fixed string variables in printf, match expressions with strings now work
 
-- [ ] **Recursive lambdas** - Multiple related issues:
+- [~] **Recursive lambdas** - PARTIALLY FIXED
   - Issue 1: Can't call lambda by its own name (symbol lookup error)
     - Workaround: Use `me` keyword for self-reference
-  - Issue 2: Non-tail recursion with `me` returns wrong values
-    - Root cause: Tail call optimization applied to non-tail-recursive calls
-    - Example: `me(n-1) * n` treats recursive call as tail call
-    - Workaround: Use accumulator pattern for tail recursion
-  - Affects: programs/factorial.flap (non-tail-recursive version)
-  - Impact: Medium - requires specific recursion patterns
+    - Status: Still requires implementing
+  - **Issue 2: Non-tail recursion with `me` returns wrong values** - FIXED ✓
+    - **Fixed**: Implemented proper tail position detection
+    - **Fixed**: Only apply TCO when call is actually in tail position
+    - Now correctly handles: `me(n-1) * n` (NOT optimized - correct!)
+    - Now correctly handles: `me(n-1, acc * n)` (IS optimized - correct!)
+    - Implementation: Added `fc.inTailPosition` flag set by match clause compilation
+    - Implementation: Clear tail position flag in binary expressions
+    - Test passing: programs/factorial.flap now works correctly
+  - Impact: High - enables proper functional recursion patterns
+
+## Essential - LISP/StandardML-Style Function Handling
+
+Goal: Proper functional programming support with correct recursion semantics
+
+### Phase 1: Fix Broken TCO (Critical - Immediate) ✓ COMPLETE
+- [x] **Implement proper tail position detection** - DONE
+  - A call is in tail position ONLY if it's the last operation before return
+  - `~> me(n-1)` - YES, tail position ✓
+  - `~> me(n-1) * n` - NO, multiplication happens after ✓
+  - `~> me(n-1) + me(n-2)` - NO, addition happens after ✓
+  - Must analyze the AST to determine if call is truly final operation ✓
+
+- [x] **Fix TCO application logic** - DONE
+  - Previously: Always applied TCO to `me` calls (WRONG)
+  - Now: Only applies TCO when call is in actual tail position (CORRECT)
+  - Implementation: Added `fc.inTailPosition` flag ✓
+  - Set by `compileMatchClauseResult` and `compileMatchDefault` ✓
+  - Cleared by `compileBinaryOpSafe` for operands ✓
+  - Checked in `compileCall` before applying TCO ✓
+
+- [ ] **Add tail call validation in debug mode** (Future enhancement)
+  - When `~tailcall>` or similar syntax is used, verify it's actually in tail position
+  - Emit warning or error if non-tail call is marked for TCO
+  - Helps developers write correct tail-recursive code
+
+### Phase 2: Better Stack Management (Important - Near-term)
+- [ ] **Implement precalculated stack frames**
+  - Scan entire function body before code generation
+  - Calculate total stack space needed (all variables + loop state)
+  - Allocate entire frame once at function entry: `sub rsp, <total>`
+  - All variables get fixed offsets from rbp
+  - No dynamic allocation during execution
+  - Benefits:
+    - No stack tracking bugs
+    - No loop cleanup issues
+    - Easier to debug (stack layout is predictable)
+    - Matches C/C++/ML compiler behavior
+
+- [ ] **Separate frame calculation from code generation**
+  - Phase 1: collectSymbols → calculate offsets
+  - Phase 2: calculateFrameSize → determine total frame size
+  - Phase 3: generate code → use fixed offsets
+  - Clear separation of concerns
+
+### Phase 3: Advanced Functional Features (Future)
+- [ ] **Implement continuation-passing style (CPS) transform**
+  - Internal optimization to convert all calls to tail calls
+  - Enables advanced control flow without stack growth
+  - Example: Transform `f() + g()` to `f((r1) => g((r2) => r1 + r2))`
+  - Optional - only for advanced optimization pass
+
+- [ ] **Add trampoline execution for deep recursion**
+  - Instead of direct recursion, return "thunk" (suspended computation)
+  - Executor loop evaluates thunks iteratively
+  - Prevents stack overflow for non-tail-recursive functions
+  - Example: Fibonacci without TCO but without stack overflow
+
+- [ ] **Implement proper closure capture analysis**
+  - Track which variables are captured by inner lambdas
+  - Allocate capture environment on heap
+  - Enable lambda-returning-lambda patterns
+  - Fixes the "undefined variable" error for nested closures
+
+### Phase 4: Functional Programming Conveniences (Nice to Have)
+- [ ] **Add explicit tail call syntax**
+  - `~> expr` - normal return
+  - `~tailcall> expr` - guaranteed tail call (error if not in tail position)
+  - `~call> expr` - guaranteed non-tail call (allocate frame even if in tail position)
+  - Makes programmer intent explicit
+
+- [ ] **Add pattern matching on function arguments**
+  ```flap
+  factorial := (0) => 1
+             | (n) => n * factorial(n - 1)
+  ```
+  - Matches StandardML style
+  - Cleaner than match expressions
+
+- [ ] **Add `let` bindings for local scope**
+  ```flap
+  factorial := (n) => {
+    let rec loop = (n, acc) => n <= 1 {
+      -> acc
+      ~> loop(n-1, acc * n)
+    }
+    loop(n, 1)
+  }
+  ```
+  - Separates helper functions from main logic
+  - Common functional pattern
 
 ## Essential - Core Language Features
 
