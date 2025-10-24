@@ -4,7 +4,7 @@
 
 Compiler for Flap, a functional language targeting game development. Generates native x86-64 machine code directly—no LLVM, no GCC, no runtime.
 
-**Current status:** x86-64 Linux stable (216/216 tests passing). Windows/macOS/ARM64 in progress.
+**Current status:** x86-64 Arch Linux stable (216/216 tests passing).
 
 ## What's Interesting
 
@@ -211,15 +211,7 @@ All three implementations compiled into every binary.
 
 ## Platform Support
 
-| OS | Arch | Status |
-|----|------|--------|
-| Linux | x86-64 | ✅ Stable |
-| Linux | ARM64 | 🔧 In progress |
-| Linux | RISC-V | 🔧 In progress |
-| macOS | ARM64 | ⚠️ Runtime issues |
-| Windows | x64 | ❌ Not yet |
-
-Focus: x86-64 Linux. Other platforms deferred.
+Arch Linux x86-64 only. Other platforms (Windows, macOS, ARM64, RISC-V) planned but not yet implemented.
 
 ## Known Issues
 
@@ -250,8 +242,8 @@ Short-term:
 
 Long-term:
 - Game development with SDL3/RayLib5
-- Steam publishing (Windows/Linux/macOS)
-- Steamworks integration
+- Multiplatform support (Windows, macOS, ARM64, RISC-V)
+- Steam publishing and Steamworks integration
 
 ## License
 
