@@ -15,14 +15,7 @@ import (
 
 // NegReg generates NEG dst (dst = -dst)
 func (o *Out) NegReg(dst string) {
-	switch o.machine.Arch {
-	case ArchX86_64:
-		o.negX86Reg(dst)
-	case ArchARM64:
-		o.negARM64Reg(dst)
-	case ArchRiscv64:
-		o.negRISCVReg(dst)
-	}
+	o.backend.NegReg(dst)
 }
 
 // NegRegToReg generates NEG dst, src (dst = -src)

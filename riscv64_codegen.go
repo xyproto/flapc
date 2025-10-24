@@ -14,8 +14,9 @@ type RiscvCodeGen struct {
 
 // NewRiscvCodeGen creates a new RISC-V64 code generator
 func NewRiscvCodeGen(eb *ExecutableBuilder) *RiscvCodeGen {
+	platform := Platform{Arch: ArchRiscv64, OS: OSLinux}
 	return &RiscvCodeGen{
-		out:       &RiscvOut{out: &Out{machine: Platform{Arch: ArchRiscv64, OS: OSLinux}, writer: eb.TextWriter(), eb: eb}},
+		out:       &RiscvOut{out: NewOut(platform, eb.TextWriter(), eb)},
 		eb:        eb,
 		stackVars: make(map[string]int),
 		stackSize: 0,

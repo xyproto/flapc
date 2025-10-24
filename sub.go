@@ -15,26 +15,12 @@ import (
 
 // SubRegFromReg generates SUB dst, src (dst = dst - src)
 func (o *Out) SubRegFromReg(dst, src string) {
-	switch o.machine.Arch {
-	case ArchX86_64:
-		o.subX86RegFromReg(dst, src)
-	case ArchARM64:
-		o.subARM64RegFromReg(dst, src)
-	case ArchRiscv64:
-		o.subRISCVRegFromReg(dst, src)
-	}
+	o.backend.SubRegToReg(dst, src)
 }
 
 // SubImmFromReg generates SUB dst, imm (dst = dst - imm)
 func (o *Out) SubImmFromReg(dst string, imm int64) {
-	switch o.machine.Arch {
-	case ArchX86_64:
-		o.subX86ImmFromReg(dst, imm)
-	case ArchARM64:
-		o.subARM64ImmFromReg(dst, imm)
-	case ArchRiscv64:
-		o.subRISCVImmFromReg(dst, imm)
-	}
+	o.backend.SubImmFromReg(dst, imm)
 }
 
 // SubRegFromRegToReg generates SUB dst, src1, src2 (dst = src1 - src2)

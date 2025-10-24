@@ -7,14 +7,7 @@ import (
 
 // Syscall generates a raw syscall instruction for unsafe blocks
 func (o *Out) Syscall() {
-	switch o.machine.Arch {
-	case ArchX86_64:
-		o.syscallX86()
-	case ArchARM64:
-		o.syscallARM64()
-	case ArchRiscv64:
-		o.syscallRISCV()
-	}
+	o.backend.Syscall()
 }
 
 // x86-64: syscall instruction

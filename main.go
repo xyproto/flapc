@@ -686,11 +686,7 @@ func (eb *ExecutableBuilder) WriteData(data []byte) uint64 {
 }
 
 func (eb *ExecutableBuilder) MovInstruction(dst, src string) error {
-	out := &Out{
-		machine: eb.platform,
-		writer:  eb.TextWriter(),
-		eb:      eb,
-	}
+	out := NewOut(eb.platform, eb.TextWriter(), eb)
 	out.MovInstruction(dst, src)
 	return nil
 }
@@ -793,11 +789,7 @@ func (eb *ExecutableBuilder) GenerateCallInstruction(funcName string) error {
 
 // EmitArenaRuntimeCode emits arena allocator runtime functions
 func (eb *ExecutableBuilder) EmitArenaRuntimeCode() {
-	out := &Out{
-		machine: eb.platform,
-		writer:  &BufferWrapper{&eb.text},
-		eb:      eb,
-	}
+	out := NewOut(eb.platform, &BufferWrapper{&eb.text}, eb)
 
 	// Helper function to patch jump immediates
 	patchJump := func(pos int, offset int32) {

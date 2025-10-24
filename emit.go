@@ -147,7 +147,7 @@ func (eb *ExecutableBuilder) Emit(assembly string) error {
 		}
 	}
 
-	out := &Out{machine: eb.platform, writer: w, eb: eb}
+	out := NewOut(eb.platform, w, eb)
 
 	switch head {
 	case "vmovupd":

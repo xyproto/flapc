@@ -48,8 +48,9 @@ type ARM64LoopInfo struct {
 
 // NewARM64CodeGen creates a new ARM64 code generator
 func NewARM64CodeGen(eb *ExecutableBuilder) *ARM64CodeGen {
+	platform := Platform{Arch: ArchARM64, OS: OSDarwin}
 	return &ARM64CodeGen{
-		out:           &ARM64Out{out: &Out{machine: Platform{Arch: ArchARM64, OS: OSDarwin}, writer: eb.TextWriter(), eb: eb}},
+		out:           &ARM64Out{out: NewOut(platform, eb.TextWriter(), eb)},
 		eb:            eb,
 		stackVars:     make(map[string]int),
 		mutableVars:   make(map[string]bool),

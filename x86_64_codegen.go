@@ -86,6 +86,14 @@ func (x *X86_64CodeGen) JumpConditional(condition JumpCondition, offset int32) {
 		opcode = 0x8F
 	case JumpGreaterOrEqual:
 		opcode = 0x8D
+	case JumpAbove:
+		opcode = 0x87
+	case JumpAboveOrEqual:
+		opcode = 0x83
+	case JumpBelow:
+		opcode = 0x82
+	case JumpBelowOrEqual:
+		opcode = 0x86
 	default:
 		compilerError("Unknown jump condition: %v", condition)
 	}

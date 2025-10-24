@@ -13,14 +13,7 @@ import (
 
 // OrRegWithReg generates OR dst, src (dst = dst | src)
 func (o *Out) OrRegWithReg(dst, src string) {
-	switch o.machine.Arch {
-	case ArchX86_64:
-		o.orX86RegWithReg(dst, src)
-	case ArchARM64:
-		o.orARM64RegWithReg(dst, src)
-	case ArchRiscv64:
-		o.orRISCVRegWithReg(dst, src)
-	}
+	o.backend.OrRegWithReg(dst, src)
 }
 
 // OrRegWithImm generates OR dst, imm (dst = dst | imm)

@@ -14,14 +14,7 @@ import (
 
 // AndRegWithReg generates AND dst, src (dst = dst & src)
 func (o *Out) AndRegWithReg(dst, src string) {
-	switch o.machine.Arch {
-	case ArchX86_64:
-		o.andX86RegWithReg(dst, src)
-	case ArchARM64:
-		o.andARM64RegWithReg(dst, src)
-	case ArchRiscv64:
-		o.andRISCVRegWithReg(dst, src)
-	}
+	o.backend.AndRegWithReg(dst, src)
 }
 
 // AndRegWithImm generates AND dst, imm (dst = dst & imm)

@@ -19,11 +19,7 @@ func TestLeaSymbolToReg(t *testing.T) {
 	eb.DefineAddr("message", 0x1000)
 
 	// Create Out structure
-	out := &Out{
-		machine: eb.platform,
-		writer:  &BufferWrapper{&eb.text},
-		eb:      eb,
-	}
+	out := NewOut(eb.platform, &BufferWrapper{&eb.text}, eb)
 
 	// Generate LEA instruction: lea rdi, [rip + message]
 	out.LeaSymbolToReg("rdi", "message")
@@ -63,11 +59,7 @@ func TestLeaImmToReg(t *testing.T) {
 		t.Fatalf("Failed to create ExecutableBuilder: %v", err)
 	}
 
-	out := &Out{
-		machine: eb.platform,
-		writer:  &BufferWrapper{&eb.text},
-		eb:      eb,
-	}
+	out := NewOut(eb.platform, &BufferWrapper{&eb.text}, eb)
 
 	// Test LEA with 8-bit displacement: lea rax, [rsp + 16]
 	out.LeaImmToReg("rax", "rsp", 16)
@@ -107,11 +99,7 @@ func TestLeaARM64(t *testing.T) {
 	eb.useDynamicLinking = true
 	eb.Define("data", "test\x00")
 
-	out := &Out{
-		machine: eb.platform,
-		writer:  &BufferWrapper{&eb.text},
-		eb:      eb,
-	}
+	out := NewOut(eb.platform, &BufferWrapper{&eb.text}, eb)
 
 	// Generate ADRP for loading symbol address
 	out.LeaSymbolToReg("x0", "data")
@@ -147,11 +135,7 @@ func TestLeaRISCV(t *testing.T) {
 	eb.useDynamicLinking = true
 	eb.Define("label", "value\x00")
 
-	out := &Out{
-		machine: eb.platform,
-		writer:  &BufferWrapper{&eb.text},
-		eb:      eb,
-	}
+	out := NewOut(eb.platform, &BufferWrapper{&eb.text}, eb)
 
 	// Generate AUIPC for loading symbol address
 	out.LeaSymbolToReg("a0", "label")
@@ -185,11 +169,7 @@ func TestMovVsLea(t *testing.T) {
 	eb1.Define("sym1", "data\x00")
 	eb1.DefineAddr("sym1", 0x2000)
 
-	out1 := &Out{
-		machine: eb1.platform,
-		writer:  &BufferWrapper{&eb1.text},
-		eb:      eb1,
-	}
+	out1 := NewOut(eb1.platform, &BufferWrapper{&eb1.text}, eb1)
 
 	out1.MovInstruction("rax", "sym1")
 	mov := eb1.text.Bytes()
@@ -212,11 +192,7 @@ func TestMovVsLea(t *testing.T) {
 	eb2.Define("sym2", "data\x00")
 	eb2.DefineAddr("sym2", 0x2000)
 
-	out2 := &Out{
-		machine: eb2.platform,
-		writer:  &BufferWrapper{&eb2.text},
-		eb:      eb2,
-	}
+	out2 := NewOut(eb2.platform, &BufferWrapper{&eb2.text}, eb2)
 
 	out2.MovInstruction("rax", "sym2")
 	lea := eb2.text.Bytes()

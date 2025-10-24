@@ -12,14 +12,7 @@ import (
 
 // NotReg generates NOT dst (dst = ~dst) - one's complement
 func (o *Out) NotReg(dst string) {
-	switch o.machine.Arch {
-	case ArchX86_64:
-		o.notX86Reg(dst)
-	case ArchARM64:
-		o.notARM64Reg(dst)
-	case ArchRiscv64:
-		o.notRISCVReg(dst)
-	}
+	o.backend.NotReg(dst)
 }
 
 // ============================================================================

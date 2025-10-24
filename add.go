@@ -15,26 +15,12 @@ import (
 
 // AddRegToReg generates ADD dst, src (dst = dst + src)
 func (o *Out) AddRegToReg(dst, src string) {
-	switch o.machine.Arch {
-	case ArchX86_64:
-		o.addX86RegToReg(dst, src)
-	case ArchARM64:
-		o.addARM64RegToReg(dst, src)
-	case ArchRiscv64:
-		o.addRISCVRegToReg(dst, src)
-	}
+	o.backend.AddRegToReg(dst, src)
 }
 
 // AddImmToReg generates ADD dst, imm (dst = dst + imm)
 func (o *Out) AddImmToReg(dst string, imm int64) {
-	switch o.machine.Arch {
-	case ArchX86_64:
-		o.addX86ImmToReg(dst, imm)
-	case ArchARM64:
-		o.addARM64ImmToReg(dst, imm)
-	case ArchRiscv64:
-		o.addRISCVImmToReg(dst, imm)
-	}
+	o.backend.AddImmToReg(dst, imm)
 }
 
 // AddRegToRegToReg generates ADD dst, src1, src2 (dst = src1 + src2)

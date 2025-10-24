@@ -15,14 +15,7 @@ import (
 
 // Ret generates a return instruction
 func (o *Out) Ret() {
-	switch o.machine.Arch {
-	case ArchX86_64:
-		o.retX86()
-	case ArchARM64:
-		o.retARM64()
-	case ArchRiscv64:
-		o.retRISCV()
-	}
+	o.backend.Ret()
 }
 
 // RetImm generates a return with immediate pop (x86-64 only)

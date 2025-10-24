@@ -3840,11 +3840,7 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 	// Don't set neededFunctions yet - we'll build it dynamically
 
 	// Create Out wrapper
-	out := &Out{
-		machine: eb.platform,
-		writer:  eb.TextWriter(),
-		eb:      eb,
-	}
+	out := NewOut(eb.platform, eb.TextWriter(), eb)
 
 	// Check if debug mode is enabled
 	debugEnabled := os.Getenv("DEBUG_FLAP") != ""

@@ -10,14 +10,7 @@ import (
 // Cvtsi2sd - Convert int64 to scalar double (SSE2)
 // cvtsi2sd xmm, r64
 func (o *Out) Cvtsi2sd(dst, src string) {
-	switch o.machine.Arch {
-	case ArchX86_64:
-		o.cvtsi2sdX86(dst, src)
-	case ArchARM64:
-		o.scvtfARM64(dst, src)
-	case ArchRiscv64:
-		o.fcvtRISCV(dst, src)
-	}
+	o.backend.Cvtsi2sd(dst, src)
 }
 
 func (o *Out) cvtsi2sdX86(dst, src string) {
@@ -121,14 +114,7 @@ func (o *Out) fcvtRISCV(dst, src string) {
 
 // AddpdXmm - Add Packed Double (SIMD addition)
 func (o *Out) AddpdXmm(dst, src string) {
-	switch o.machine.Arch {
-	case ArchX86_64:
-		o.addpdX86(dst, src)
-	case ArchARM64:
-		o.faddARM64(dst, src)
-	case ArchRiscv64:
-		o.faddRISCV(dst, src)
-	}
+	o.backend.AddpdXmm(dst, src)
 }
 
 func (o *Out) addpdX86(dst, src string) {
@@ -170,10 +156,7 @@ func (o *Out) addpdX86(dst, src string) {
 
 // SubpdXmm - Subtract Packed Double
 func (o *Out) SubpdXmm(dst, src string) {
-	switch o.machine.Arch {
-	case ArchX86_64:
-		o.subpdX86(dst, src)
-	}
+	o.backend.SubpdXmm(dst, src)
 }
 
 func (o *Out) subpdX86(dst, src string) {
@@ -199,10 +182,7 @@ func (o *Out) subpdX86(dst, src string) {
 
 // MulpdXmm - Multiply Packed Double
 func (o *Out) MulpdXmm(dst, src string) {
-	switch o.machine.Arch {
-	case ArchX86_64:
-		o.mulpdX86(dst, src)
-	}
+	o.backend.MulpdXmm(dst, src)
 }
 
 func (o *Out) mulpdX86(dst, src string) {
@@ -228,10 +208,7 @@ func (o *Out) mulpdX86(dst, src string) {
 
 // DivpdXmm - Divide Packed Double
 func (o *Out) DivpdXmm(dst, src string) {
-	switch o.machine.Arch {
-	case ArchX86_64:
-		o.divpdX86(dst, src)
-	}
+	o.backend.DivpdXmm(dst, src)
 }
 
 func (o *Out) divpdX86(dst, src string) {
@@ -448,10 +425,7 @@ func (o *Out) cvttsd2siX86(dst, src string) {
 // Ucomisd - Compare scalar double-precision floating-point values and set EFLAGS
 // ucomisd xmm1, xmm2
 func (o *Out) Ucomisd(xmm1, xmm2 string) {
-	switch o.machine.Arch {
-	case ArchX86_64:
-		o.ucomisdX86(xmm1, xmm2)
-	}
+	o.backend.Ucomisd(xmm1, xmm2)
 }
 
 func (o *Out) ucomisdX86(xmm1, xmm2 string) {

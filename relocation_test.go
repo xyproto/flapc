@@ -16,11 +16,7 @@ func TestPCRelocationPatchingX86(t *testing.T) {
 	eb.DefineAddr("test_symbol", 0x404000)
 
 	// Generate LEA instruction that references the symbol
-	out := &Out{
-		machine: eb.platform,
-		writer:  eb.TextWriter(),
-		eb:      eb,
-	}
+	out := NewOut(eb.platform, eb.TextWriter(), eb)
 	out.LeaSymbolToReg("rdi", "test_symbol")
 
 	// Verify relocation was recorded
@@ -72,11 +68,7 @@ func TestPCRelocationPatchingARM64(t *testing.T) {
 	eb.DefineAddr("test_symbol", 0x404123) // Non-page-aligned to test low 12 bits
 
 	// Generate ADRP + ADD instructions
-	out := &Out{
-		machine: eb.platform,
-		writer:  eb.TextWriter(),
-		eb:      eb,
-	}
+	out := NewOut(eb.platform, eb.TextWriter(), eb)
 	out.LeaSymbolToReg("x0", "test_symbol")
 
 	// Verify relocation was recorded
@@ -133,11 +125,7 @@ func TestPCRelocationPatchingRISCV(t *testing.T) {
 	eb.DefineAddr("test_symbol", 0x404000)
 
 	// Generate AUIPC + ADDI instructions
-	out := &Out{
-		machine: eb.platform,
-		writer:  eb.TextWriter(),
-		eb:      eb,
-	}
+	out := NewOut(eb.platform, eb.TextWriter(), eb)
 	out.LeaSymbolToReg("a0", "test_symbol")
 
 	// Verify relocation was recorded

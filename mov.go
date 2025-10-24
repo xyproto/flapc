@@ -11,6 +11,18 @@ type Out struct {
 	machine Platform
 	writer  Writer
 	eb      *ExecutableBuilder
+	backend CodeGenerator
+}
+
+// NewOut creates a new Out instance with the backend properly initialized
+func NewOut(platform Platform, writer Writer, eb *ExecutableBuilder) *Out {
+	backend := NewCodeGenerator(platform.Arch, writer, eb)
+	return &Out{
+		machine: platform,
+		writer:  writer,
+		eb:      eb,
+		backend: backend,
+	}
 }
 
 func (o *Out) Write(b uint8) {
@@ -27,26 +39,12 @@ func (o *Out) Lookup(name string) string {
 
 // MovRegToReg generates a register-to-register move instruction
 func (o *Out) MovRegToReg(dst, src string) {
-	switch o.machine.Arch {
-	case ArchX86_64:
-		o.movX86RegToReg(dst, src)
-	case ArchARM64:
-		o.movARM64RegToReg(dst, src)
-	case ArchRiscv64:
-		o.movRISCVRegToReg(dst, src)
-	}
+	o.backend.MovRegToReg(dst, src)
 }
 
 // MovImmToReg generates an immediate-to-register move instruction
 func (o *Out) MovImmToReg(dst, imm string) {
-	switch o.machine.Arch {
-	case ArchX86_64:
-		o.movX86ImmToReg(dst, imm)
-	case ArchARM64:
-		o.movARM64ImmToReg(dst, imm)
-	case ArchRiscv64:
-		o.movRISCVImmToReg(dst, imm)
-	}
+	o.backend.MovImmToReg(dst, imm)
 }
 
 // x86_64 register-to-register move
@@ -373,14 +371,7 @@ func (o *Out) MovInstruction(dst, src string) {
 
 // MovRegToXmm moves a general purpose register to an XMM register
 func (o *Out) MovRegToXmm(dst, src string) {
-	switch o.machine.Arch {
-	case ArchX86_64:
-		o.movX86RegToXmm(dst, src)
-	case ArchARM64:
-		o.movARM64RegToFP(dst, src)
-	case ArchRiscv64:
-		o.movRISCVRegToFP(dst, src)
-	}
+	o.backend.MovRegToXmm(dst, src)
 }
 
 // x86-64 MOVQ GP register to XMM register

@@ -13,26 +13,12 @@ import (
 
 // XorRegWithReg generates XOR dst, src (dst = dst ^ src)
 func (o *Out) XorRegWithReg(dst, src string) {
-	switch o.machine.Arch {
-	case ArchX86_64:
-		o.xorX86RegWithReg(dst, src)
-	case ArchARM64:
-		o.xorARM64RegWithReg(dst, src)
-	case ArchRiscv64:
-		o.xorRISCVRegWithReg(dst, src)
-	}
+	o.backend.XorRegWithReg(dst, src)
 }
 
 // XorRegWithImm generates XOR dst, imm (dst = dst ^ imm)
 func (o *Out) XorRegWithImm(dst string, imm int32) {
-	switch o.machine.Arch {
-	case ArchX86_64:
-		o.xorX86RegWithImm(dst, imm)
-	case ArchARM64:
-		o.xorARM64RegWithImm(dst, imm)
-	case ArchRiscv64:
-		o.xorRISCVRegWithImm(dst, imm)
-	}
+	o.backend.XorRegWithImm(dst, int64(imm))
 }
 
 // XorRegWithRegToReg generates XOR dst, src1, src2 (dst = src1 ^ src2)

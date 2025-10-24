@@ -17,27 +17,13 @@ import (
 // This sets flags that can be used by conditional branches
 // Essential for implementing Flap's comparison operators: >=, <=, >, <, ==, !=
 func (o *Out) CmpRegToReg(src1, src2 string) {
-	switch o.machine.Arch {
-	case ArchX86_64:
-		o.cmpX86RegToReg(src1, src2)
-	case ArchARM64:
-		o.cmpARM64RegToReg(src1, src2)
-	case ArchRiscv64:
-		o.cmpRISCVRegToReg(src1, src2)
-	}
+	o.backend.CmpRegToReg(src1, src2)
 }
 
 // CmpRegToImm generates a comparison between a register and an immediate value
 // Used for constant comparisons like: x > 0, x <= 1, etc.
 func (o *Out) CmpRegToImm(reg string, imm int64) {
-	switch o.machine.Arch {
-	case ArchX86_64:
-		o.cmpX86RegToImm(reg, imm)
-	case ArchARM64:
-		o.cmpARM64RegToImm(reg, imm)
-	case ArchRiscv64:
-		o.cmpRISCVRegToImm(reg, imm)
-	}
+	o.backend.CmpRegToImm(reg, imm)
 }
 
 // x86-64 CMP instruction: CMP src2, src1 (computes src1 - src2 and sets flags)
