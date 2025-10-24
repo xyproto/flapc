@@ -83,47 +83,51 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
     - Note: Optional optimization pass, no IR needed
     - Files: New `cps.go`, modify compilation pipeline
 
+11. Whole program optimization.
+
+12. Loop unrolling and other optimization tricks.
+
 ## Language Features
 
-11. **Add alias keyword for language packs** (MEDIUM)
+13. **Add alias keyword for language packs** (MEDIUM)
     - Syntax: `alias for=@`, `alias break=@-`, `alias continue=@=`
     - Enables: python.flap, gdscript.flap style packs
     - Files: `lexer.go`, `parser.go`, new alias map
 
-12. **Add Python-style colon + indentation** (MEDIUM)
+14. **Add Python-style colon + indentation** (MEDIUM)
     - Opt-in alternative to braces: `if x > 0:\n    print(x)`
     - Enables: Python/GDScript-like syntax
     - Files: `lexer.go` (indentation tracking), `parser.go`
 
-13. **Add pattern matching on function parameters** (HIGH)
+15. **Add pattern matching on function parameters** (HIGH)
     - Syntax: `factorial := (0) => 1 | (n) => n * factorial(n-1)`
     - StandardML-style elegance
     - Files: `parser.go` lambda parsing, new pattern match system
 
-14. **Add let bindings for local scope** (MEDIUM)
+16. **Add let bindings for local scope** (MEDIUM)
     - Syntax: `let rec loop = (n, acc) => ...`
     - Common functional pattern
     - Files: `parser.go`, new LetExpr type
 
 ## Nice to Have
 
-15. **Add tail call validation in debug mode** (LOW)
+17. **Add tail call validation in debug mode** (LOW)
     - Warn if `~tailcall>` used incorrectly
     - Helps developers write correct code
 
-16. **Add approximate equality operator** (LOW)
+18. **Add approximate equality operator** (LOW)
     - Syntax: `0.3 =0.1= 0.2`
     - Useful for floating-point game physics comparisons
 
-17. **Add macro system** (VERY HIGH)
+19. **Add macro system** (VERY HIGH)
     - Pattern-based code transformation
     - Enables advanced language packs
 
-18. **Add custom infix operators** (HIGH)
+20. **Add custom infix operators** (HIGH)
     - For language packs (e.g., Python's `**`)
     - Requires precedence handling
 
-19. **Add multi-precision arithmetic operators** (MEDIUM)
+21. **Add multi-precision arithmetic operators** (MEDIUM)
     - `++` (add with carry)
     - `<->` (swap/exchange)
 
@@ -131,35 +135,35 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
 These items are lower priority. Focus on x86-64 Linux first.
 
-20. **Add Windows x64 code generation** (HIGH)
+22. **Add Windows x64 code generation** (HIGH)
     - Goal: Compile to PE/COFF executables for Windows x64
     - Calling convention: Microsoft x64 (different from System V)
     - Binary format: PE32+ (Portable Executable)
     - Impact: Required for Steam Windows builds
     - Files: New `pe_builder.go`, `codegen_windows.go`
 
-21. **Add Windows ARM64 code generation** (HIGH)
+23. **Add Windows ARM64 code generation** (HIGH)
     - Goal: Support Windows on ARM (Surface, future gaming devices)
     - Calling convention: Microsoft ARM64
     - Binary format: PE32+ ARM64
     - Impact: Future-proofing for Windows ARM gaming PCs
     - Files: Extend ARM64 codegen with Windows support
 
-22. **Fix macOS ARM64 runtime issues** (HIGH)
+24. **Fix macOS ARM64 runtime issues** (HIGH)
     - Current: Binaries hang before entering main()
     - Problem: dyld/code signing/entitlements
     - Impact: Blocks macOS game distribution
     - Approach: Debug Mach-O generation, test codesigning
     - Files: `macho_builder.go`, startup code
 
-23. **Complete Linux ARM64 support** (MEDIUM)
+25. **Complete Linux ARM64 support** (MEDIUM)
     - Goal: Raspberry Pi 4+ and Linux ARM gaming devices
     - Current: Basic ARM64 codegen exists
     - Need: Full ELF generation and runtime testing
     - Impact: Enables embedded/portable Linux gaming
     - Files: `arm64.go`, `elf_builder.go`
 
-24. **Complete RISC-V 64-bit support** (LOW)
+26. **Complete RISC-V 64-bit support** (LOW)
     - Goal: Future RISC-V gaming handhelds
     - Current: Instruction encoders ready
     - Need: Full codegen implementation
