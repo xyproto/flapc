@@ -8,7 +8,7 @@ Flap uses `map[uint64]float64` as its unified type representation:
 
 - **Numbers**: `{0: 42.0}`
 - **Strings**: `{0: 72.0, 1: 101.0, ...}` (index → character code)
-- **Lists**: `{0: 1.0, 1: 2.0, ...}` (index → element value)
+- **Lists**: `{0: 1.0, 1: 2.0, ...}` (index → element val)
 - **Maps**: Direct representation
 - **Functions**: Pointers stored as float64 values
 
@@ -16,24 +16,24 @@ All values use IEEE 754 double-precision floating point. This single underlying 
 
 ### Result Type
 
-All expressions and functions in Flap implicitly return a **Result** type, which represents either success with value(s) or failure with an error:
+All expressions and functions in Flap implicitly return a **Result** type, which represents either success with val(s) or failure with an err:
 
 ```
-Result = Ok(value1, value2, ...) | Err(error_message)
+Result = Val(val1, val2, ...) | Err(err_message)
 ```
 
 **Key Properties:**
-- A Result contains **either** values **or** an error string, never both
-- Values can be zero, one, or multiple (returned as a list)
-- The `ret` keyword creates an Ok result
+- A Result contains **either** vals **or** an err string, never both
+- Vals can be zero, one, or multiple (returned as a list)
+- The `ret` keyword creates a Val result
 - The `err` keyword creates an Err result
-- Pattern matching extracts values or errors
-- The `or!` operator propagates errors automatically
+- Pattern matching extracts vals or errs
+- The `or!` operator propagates errs automatically
 
 **Examples:**
 
 ```flap
-// Function returning a single value
+// Function returning a single val
 divide = (a, b) => {
     b == 0 { err "division by zero" }
     ret a / b
@@ -42,8 +42,8 @@ divide = (a, b) => {
 // Pattern match on Result
 result := divide(10, 2)
 result {
-    -> value { printf("Result: %v\n", value) }
-    ~> error { printf("Error: %v\n", error) }
+    -> val { printf("Result: %v\n", val) }
+    ~> err { printf("Error: %v\n", err) }
 }
 
 // Multiple return values
@@ -55,28 +55,28 @@ parse_coords = text => {
 coords := parse_coords("1,2,3")
 coords {
     -> x, y, z { printf("x=%v, y=%v, z=%v\n", x, y, z) }
-    ~> error { printf("Parse error: %v\n", error) }
+    ~> err { printf("Parse err: %v\n", err) }
 }
 
-// Error propagation with or!
+// Err propagation with or!
 safe_divide = (a, b) => {
-    result := divide(a, b) or! 0  // Returns 0 if error
+    result := divide(a, b) or! 0  // Returns 0 if err
     ret result * 2
 }
 
 // Loops can return Results
 find_item = items => @ i in items {
-    i > 100 { ret @ i }  // Ok(i)
-    i < 0 { err @ "negative value found" }  // Err("negative value found")
+    i > 100 { ret @ i }  // Val(i)
+    i < 0 { err @ "negative val found" }  // Err("negative val found")
 }
 ```
 
 **Benefits:**
-- **Explicit error handling**: All errors must be handled or propagated
-- **No null/undefined**: Missing values are explicit Err results
-- **Multiple returns**: Functions can return multiple values naturally
+- **Explicit err handling**: All errs must be handled or propagated
+- **No null/undefined**: Missing vals are explicit Err results
+- **Multiple returns**: Functions can return multiple vals naturally
 - **Railway-oriented**: `or!` chains operations that might fail
-- **Type safety**: Cannot accidentally use error as value
+- **Type safety**: Cannot accidentally use err as val
 
 ## Compilation
 
@@ -90,10 +90,10 @@ find_item = items => @ i in items {
 ## Design Philosophy
 
 **Avoid Magic Numbers**: Flap prefers explicit keywords and proper types over magic numbers like `-1` for special values:
-- ❌ Use `-1` for "infinite", "error", or "missing"
-- ✓ Use `inf` keyword for infinite iterations/values
-- ✓ Use explicit error handling (match expressions, error types)
-- ✓ Use optional types or nullable representations for missing values
+- ❌ Use `-1` for "infinite", "err", or "missing"
+- ✓ Use `inf` keyword for infinite iterations/vals
+- ✓ Use explicit err handling (match expressions, err types)
+- ✓ Use optional types or nullable representations for missing vals
 
 This makes code more readable and prevents confusion between legitimate negative values and special sentinel values.
 
@@ -247,7 +247,7 @@ result := unsafe {
     a0 <- a1
 }
 
-// The result is the value in the accumulator register:
+// The result is the val in the accumulator register:
 // x86_64: rax, arm64: x0, riscv64: a0
 printf("Result: %.0f\n", result)  // Output: 42
 
@@ -272,7 +272,7 @@ flags := unsafe {
 - Only register-to-register and immediate-to-register moves are supported
 - Immediates can be decimal, hex (`0xFF`), or binary (`0b11110000`)
 - The compiler selects the appropriate block for the target architecture
-- The return value is the accumulator register (rax/x0/a0) converted to float64
+- The return val is the accumulator register (rax/x0/a0) converted to float64
 - Use for: low-level bit manipulation, custom SIMD operations, performance-critical paths
 
 **Common x86_64 Registers:** rax, rbx, rcx, rdx, rsi, rdi, r8-r15
@@ -288,7 +288,7 @@ flags := unsafe {
 sum := 0
 sum += 10     // Equivalent to: sum <- sum + 10
 count -= 1    // count = count - 1
-value *= 2    // value = value * 2
+val *= 2      // val = val * 2
 x /= 3        // x = x / 3
 x %= 5        // x = x % 5
 ```
@@ -325,9 +325,9 @@ x %= 5        // x = x % 5
 
 **List:** `^` (head), `&` (tail), `#` (length), `::` (cons)
 
-**Error handling:** `or!` (railway-oriented programming / error propagation)
+**Err handling:** `or!` (railway-oriented programming / err propagation)
 
-**Control flow:** `ret` (return value from function/lambda), `err` (return error from function/lambda)
+**Control flow:** `ret` (return val from function/lambda), `err` (return err from function/lambda)
 
 **Type Casting:** `as` (convert between Flap and C types for FFI)
 - To C: `as i8`, `as i16`, `as i32`, `as i64` (signed integers)
@@ -360,12 +360,12 @@ x > 42 {
     123           // sugar for "-> 123"
 }
 
-// Default-only (preserves condition value when true)
+// Default-only (preserves condition val when true)
 x > 42 {
     ~> 123           // yields 1.0/yes when true, 123 when false
 }
 
-// Shorthand: ~> without -> is equivalent to { -> ~> value }
+// Shorthand: ~> without -> is equivalent to { -> ~> val }
 x > 42 { ~> 123 }    // same as { -> ~> 123 }
 
 // Super-shorthand: Single case + default without braces
@@ -435,8 +435,8 @@ price = ages[1]      // returns 25.0
 missing = ages[999]  // returns 0.0 (key doesn't exist)
 
 // Maps preserve insertion order
-@ key, value in ages {
-    println(f"{key}: {value}")  // Always prints in order: 1: 25, 2: 30, 3: 35
+@ key, val in ages {
+    println(f"{key}: {val}")  // Always prints in order: 1: 25, 2: 30, 3: 35
 }
 ```
 
@@ -475,6 +475,28 @@ data.name            // Access by string key
 - At runtime, everything is still `map[uint64]float64` - no new data types
 - String keys preserve insertion order just like numeric keys
 - Namespaced function calls (`sdl.SDL_init()`) are supported through dot notation
+
+**Err Handling with Dot Notation:**
+
+When using the `.` operator, if the field doesn't exist or the left side is an err:
+
+```flap
+// Accessing non-existent field returns Err
+player = {health: 100, x: 10}
+result := player.asdf  // Err("asdf is not a member of player")
+
+// If left side is Err, dot operator propagates with new message
+x := Err("something went wrong")
+result := x.field  // Err("field is not a member of x")
+
+// Handle with pattern matching
+player.health {
+    -> val { printf("Health: %v\n", val) }
+    ~> err { printf("Err: %v\n", err) }
+}
+```
+
+This ensures that field access errs are explicit and can be handled through the Result type system.
 
 ### Membership Testing
 
@@ -515,7 +537,7 @@ Loops use `@` for iteration:
 
 // Explicit max for safety bounds or variable ranges
 @ i in 0..<100 max 1000 {
-    println(i)  // Runtime check: will error if somehow exceeds 1000 iterations
+    println(i)  // Runtime check: will err if somehow exceeds 1000 iterations
 }
 
 // Variable ranges REQUIRE explicit max
@@ -555,11 +577,11 @@ numbers := [10, 20, 30]
 - `max inf`: allows unlimited iterations (use cautiously!)
 
 **Loop Control:**
-- `ret` - returns from function with value
-- `ret value` - returns value from function
+- `ret` - returns from function with val
+- `ret val` - returns val from function
 - `ret @1`, `ret @2`, `ret @3`, ... - exits loop at nesting level 1, 2, 3, ... and all inner loops
-- `ret @1 value` - exits loop and returns value
-- `err "message"` - returns error from function (for error handling)
+- `ret @1 val` - exits loop and returns val
+- `err "message"` - returns err from function (for err handling)
 - `@=` - continues current loop (jumps to top of innermost loop)
 - `@1`, `@2`, `@3`, ... - continues (jumps to top of) loop at nesting level 1, 2, 3, ...
 
@@ -567,7 +589,7 @@ numbers := [10, 20, 30]
 - `@first` - true on first iteration
 - `@last` - true on last iteration
 - `@counter` - iteration count (starts at 0)
-- `@i` - current element value (same as loop variable)
+- `@i` - current element val (same as loop variable)
 
 **Example:**
 ```flap
@@ -580,13 +602,13 @@ numbers := [10, 20, 30]
 // Note: max is optional for list literals
 ```
 
-### Error Handling
+### Err Handling
 
-Flap uses Result types and pattern matching for explicit, type-safe error handling. All functions and expressions return Results containing either value(s) or an error.
+Flap uses Result types and pattern matching for explicit, type-safe err handling. All functions and expressions return Results containing either val(s) or an err.
 
 #### Pattern Matching on Results
 
-The primary way to handle Results is through pattern matching with `->` (success) and `~>` (error):
+The primary way to handle Results is through pattern matching with `->` (success) and `~>` (err):
 
 ```flap
 // Function that returns Result
@@ -598,11 +620,11 @@ parse_int = text => {
 // Handle Result with pattern matching
 result := parse_int("42")
 result {
-    -> value { printf("Parsed: %v\n", value) }
-    ~> error { printf("Error: %v\n", error) }
+    -> val { printf("Parsed: %v\n", val) }
+    ~> err { printf("Err: %v\n", err) }
 }
 
-// Multiple return values
+// Multiple return vals
 read_user = id => {
     valid { ret name, age, email }
     ~> err "user not found"
@@ -611,16 +633,16 @@ read_user = id => {
 user := read_user(123)
 user {
     -> name, age, email { printf("%v (%v): %v\n", name, age, email) }
-    ~> error { printf("Failed: %v\n", error) }
+    ~> err { printf("Failed: %v\n", err) }
 }
 ```
 
-#### Error Propagation with `or!`
+#### Err Propagation with `or!`
 
-The `or!` operator provides automatic error propagation (railway-oriented programming). If the left side is an error, the right side determines what happens:
+The `or!` operator provides automatic err propagation (railway-oriented programming). If the left side is an err, the right side determines what happens:
 
-- **String**: Replace error message and propagate: `operation() or! "custom error"`
-- **Value**: Return value as default: `operation() or! 0`
+- **String**: Replace err message and propagate: `operation() or! "custom err"`
+- **Val**: Return val as default: `operation() or! 0`
 - **Block**: Execute block (usually exits): `operation() or! { exit(1) }`
 
 ```flap
@@ -632,13 +654,13 @@ process_file = filename => {
     ret result
 }
 
-// or! with default values
+// or! with default vals
 safe_divide = (a, b) => {
-    result := divide(a, b) or! 0  // Returns 0 if error
+    result := divide(a, b) or! 0  // Returns 0 if err
     ret result
 }
 
-// or! propagates errors up the call chain
+// or! propagates errs up the call chain
 main ==> {
     result := process_file("data.txt") or! {
         printf("File processing failed\n")
@@ -648,38 +670,38 @@ main ==> {
 }
 ```
 
-#### Loop Error Handling
+#### Loop Err Handling
 
-Loops can return Results, allowing early exit with value or error:
+Loops can return Results, allowing early exit with val or err:
 
 ```flap
-// Exit loop with value
+// Exit loop with val
 find_first = items => @ i in items {
-    i > 100 { ret @ i }  // Returns Ok(i)
+    i > 100 { ret @ i }  // Returns Val(i)
 }
 
-// Exit loop with error
+// Exit loop with err
 validate_all = items => @ i in items {
-    i < 0 { err @ "negative value found" }
-    i > 1000 { err @ "value too large" }
+    i < 0 { err @ "negative val found" }
+    i > 1000 { err @ "val too large" }
 }
 
 // Handle loop result
 result := find_first([1, 50, 150, 200])
 result {
-    -> value { printf("Found: %v\n", value) }
-    ~> error { printf("Not found\n") }
+    -> val { printf("Found: %v\n", val) }
+    ~> err { printf("Not found\n") }
 }
 ```
 
-#### Error Handling Patterns
+#### Err Handling Patterns
 
 **1. Explicit Handling (pattern matching)**
 ```flap
 result := risky_operation()
 result {
-    -> value { process(value) }
-    ~> error { log_error(error) }
+    -> val { process(val) }
+    ~> err { log_err(err) }
 }
 ```
 
@@ -693,22 +715,22 @@ chained_operation = () => {
 }
 ```
 
-**3. Default Values**
+**3. Default Vals**
 ```flap
-value := unsafe_operation() or! default_value
+val := unsafe_operation() or! default_val
 ```
 
-**4. Panic on Error**
+**4. Panic on Err**
 ```flap
-value := must_succeed() or! {
-    printf("Fatal error\n")
+val := must_succeed() or! {
+    printf("Fatal err\n")
     exit(1)
 }
 ```
 
 **Benefits:**
-- **Explicit**: All errors must be handled or propagated
-- **Type-safe**: Cannot accidentally use error as value
+- **Explicit**: All errs must be handled or propagated
+- **Type-safe**: Cannot accidentally use err as val
 - **No exceptions**: No hidden control flow or stack unwinding
 - **Composable**: `or!` chains operations naturally
 - **Railway-oriented**: Success path stays clean and linear
@@ -748,7 +770,7 @@ classify = x => x > 0 {
 process = x => {
     temp := x * 2
     result := temp + 10
-    result  // Last expression is return value
+    result  // Last expression is return val
 }
 ```
 
@@ -818,7 +840,7 @@ println(fib(20))   // Very fast: reuses cached results
 - `sizeof_i8()`, `sizeof_i16()`, `sizeof_i32()`, `sizeof_i64()`, `sizeof_u8()`, `sizeof_u16()`, `sizeof_u32()`, `sizeof_u64()`, `sizeof_f32()`, `sizeof_f64()` - get size of type in bytes
 
 **Format Specifiers:**
-- `%v` - smart value (42.0→"42", 3.14→"3.14")
+- `%v` - smart val (42.0→"42", 3.14→"3.14")
 - `%b` - boolean (0.0→"no", non-zero→"yes")
 - `%f` - float
 - `%d` - integer
@@ -867,7 +889,7 @@ Unsafe blocks support three operations:
 
 #### 1. Immediate to Register
 ```flap
-rax <- 42          // Load immediate value
+rax <- 42          // Load immediate val
 rcx <- 0xFF        // Hex literals work
 rdx <- 0b1010      // Binary literals work
 ```
@@ -921,7 +943,7 @@ unsafe {
 } { /* arm64 */ } { /* riscv64 */ }
 ```
 
-**Exchange/Swap** - Atomic value exchange:
+**Exchange/Swap** - Atomic val exchange:
 ```flap
 unsafe {
     rax <- 100
@@ -940,7 +962,7 @@ unsafe {
 ```flap
 unsafe {
     rbx <- 0x1000        // Address to load from
-    rax <- [rbx]         // Load 64-bit value from address in rbx
+    rax <- [rbx]         // Load 64-bit val from address in rbx
     rcx <- [rbx + 16]    // Load from rbx + 16 offset
 } { /* arm64 */ } { /* riscv64 */ }
 ```
@@ -984,14 +1006,14 @@ unsafe {
 } { /* arm64 */ } { /* riscv64 */ }
 ```
 
-### Return Value
+### Return Val
 
-Unsafe blocks return the value in the **accumulator register**:
+Unsafe blocks return the val in the **accumulator register**:
 - **x86_64**: `rax`
 - **ARM64**: `x0`
 - **RISC-V**: `a0`
 
-The value is automatically converted from integer to `float64` (Flap's native type).
+The val is automatically converted from integer to `float64` (Flap's native type).
 
 ```flap
 result := unsafe {
@@ -1026,7 +1048,7 @@ result := unsafe {
 
 #### Example 1: Bit Manipulation
 ```flap
-// Swap two values using XOR trick
+// Swap two vals using XOR trick
 swapped := unsafe {
     rax <- 42
     rbx <- 100
@@ -1064,7 +1086,7 @@ result := unsafe {
 
 #### Example 3: Color Packing
 ```flap
-// Pack RGBA bytes into single value
+// Pack RGBA bytes into single val
 packed_color := unsafe {
     rax <- 0xFF      // R
     rcx <- 0x80      // G
@@ -1267,18 +1289,18 @@ escape_sequence         = "\\" ( "n" | "t" | "r" | "\\" | '"' ) ;
 * `@1`, `@2`, `@3`, ... continues the loop at that nesting level by jumping to its top.
 * `unsafe` blocks can return register values as expressions (e.g., `rax`, `rbx`)
 * When used in a loop statement (`@1 identifier in expression`), it explicitly labels that loop.
-* `ret` returns from the current function with a value. `ret @` exits the current loop. `ret @1`, `ret @2`, `ret @3`, ... exits the loop at that nesting level and all inner loops. `err` returns an error.
+* `ret` returns from the current function with a val. `ret @` exits the current loop. `ret @1`, `ret @2`, `ret @3`, ... exits the loop at that nesting level and all inner loops. `err` returns an err.
 * Lambda syntax: `x => expr` or `x, y => expr` (no parentheses around parameters).
-* Type casting with `as`: Bidirectional conversion for FFI (e.g., `42 as i32` to C, `c_value as number` from C).
+* Type casting with `as`: Bidirectional conversion for FFI (e.g., `42 as i32` to C, `c_val as number` from C).
 * Match blocks attach to the preceding expression. When omitted, implicit default is `0`.
 * A single bare expression inside braces is shorthand for `-> expression`.
-* A block with only `~>` leaves the condition's value untouched when true.
+* A block with only `~>` leaves the condition's val untouched when true.
 * Type annotations use `:b64` or `:f32` syntax for precision control.
 
 ## Keywords
 
 ```
-and as cstruct err in not or or! ret xor &b |b ^b ~b <b >b >>b <<b
+and as cstruct err hot in not or or! ret xor &b |b ^b ~b <b >b >>b <<b
 i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 cstr ptr
 number string list
 packed aligned sizeof
@@ -1384,7 +1406,7 @@ printf("HOME: %s\n", home_str)
 ptr = call("malloc", 64 as u64)
 write_f64(ptr, 0, 42.0)         // Write float64 at index 0
 write_i32(ptr, 1, 100)          // Write int32 at index 1
-value = read_f64(ptr, 0)        // Read back float64
+val = read_f64(ptr, 0)          // Read back float64
 int_val = read_i32(ptr, 1)      // Read back int32
 call("free", ptr as ptr)
 
@@ -1434,7 +1456,7 @@ cstruct Vec3 {
 // Packed struct (no padding)
 cstruct PackedData packed {
     flag: u8,      // 1 byte
-    value: u32,    // 4 bytes (no padding before)
+    val: u32,      // 4 bytes (no padding before)
     count: u16     // 2 bytes
 }  // 7 bytes total (no padding)
 
@@ -1488,6 +1510,183 @@ call("free", entity_ptr as ptr)
 - **Explicit**: No hidden padding or alignment surprises
 - **Safe offsets**: Compiler calculates field offsets
 - **FFI-ready**: Works seamlessly with SDL, Raylib, etc.
+
+### Hot Code Reload
+
+Hot code reload allows recompiling and hot-swapping functions in a running program **without restart or re-launch**. The executable modifies its own machine code pages and atomically swaps to the new implementation - essential for rapid gamedev iteration.
+
+**How It Works:**
+
+Unlike traditional hot reload (restart process or dlopen), Flap's hot reload works by:
+
+1. **Function indirection** - Hot functions called through function pointer table
+2. **File watching** - Monitor source files with `inotify`/`kqueue`/`FSEvents`
+3. **Incremental recompilation** - Recompile only changed functions
+4. **Executable memory** - Allocate new pages with `mmap(PROT_EXEC)`
+5. **Atomic swap** - Update function pointer (single atomic store)
+6. **Self-modification** - Running executable patches itself
+
+**Performance:** ~1-2 CPU cycles overhead per hot function call (indirect branch, branch predictor friendly)
+
+**Marking Functions for Hot Reload:**
+
+```flap
+// Mark function as hot-swappable
+hot update_player = (state, dt) => {
+    state.x <- state.x + state.vx * dt
+    state.y <- state.y + state.vy * dt
+
+    // Edit this code while game runs
+    state.x < 0 { state.x <- 0 }
+    state.x > 800 { state.x <- 800 }
+
+    ret state
+}
+
+hot draw_particles = particles => {
+    @ p in particles {
+        draw_circle(p.x, p.y, p.radius, p.color)
+    }
+}
+
+// Normal function - no indirection overhead
+init_game = () => {
+    // Cannot be hot-swapped
+    ret GameState { ... }
+}
+```
+
+**Compilation & Usage:**
+
+```bash
+# Start game with file watching enabled
+./flapc game.flap --watch -o game &
+./game
+
+# Edit hot functions in game.flap
+# Compiler detects changes and hot-swaps automatically
+# Game continues running with new code!
+
+# Or manual trigger:
+kill -USR1 $(pidof game)  # Reload signal
+```
+
+**Implementation Details:**
+
+```c
+// Compiler generates function table
+struct FunctionTable {
+    void (*update_player)(State*, f64);
+    void (*draw_particles)(List*);
+} hot_functions;
+
+// All hot function calls go through table:
+hot_functions.update_player(state, dt);  // One indirect jump
+
+// On file change:
+// 1. Recompile changed function
+// 2. Generate new machine code
+// 3. code = mmap(NULL, size, PROT_READ|PROT_WRITE|PROT_EXEC, ...)
+// 4. memcpy(code, new_machine_code, size)
+// 5. atomic_store(&hot_functions.update_player, code)
+// 6. Old code pages freed after grace period
+```
+
+**File Watching:**
+
+- **Linux**: `inotify` watches `*.flap` files
+- **macOS**: `FSEvents` / `kqueue`
+- **FreeBSD**: `kqueue`
+- Detects: saves, renames, modifications
+- Triggers: incremental recompilation
+
+**What Can Be Hot-Swapped:**
+
+✅ **Allowed:**
+- Function bodies (logic changes)
+- Algorithms and control flow
+- Constants used in functions
+- Bug fixes
+
+❌ **Not Allowed:**
+- Function signatures (arg count/types locked)
+- Struct layouts (field offsets fixed)
+- Global variable sizes
+- Inlined functions (callers have old code baked in)
+
+**Example Gamedev Workflow:**
+
+```flap
+// main.flap
+import sdl3 as sdl
+
+main ==> {
+    window := sdl.SDL_CreateWindow("Game", 0, 0, 800, 600, 0)
+    renderer := sdl.SDL_CreateRenderer(window, -1, 0)
+
+    state := init_game()  // Not hot - runs once
+    running := true
+
+    @ running {
+        // Hot functions - can edit while running
+        state <- hot_update(state, 0.016)
+        hot_render(renderer, state)
+
+        sdl.SDL_RenderPresent(renderer)
+    }
+}
+
+// These can be edited and reloaded live
+hot hot_update = (state, dt) => {
+    // Change gameplay logic here
+    // See changes in ~50ms without restart
+    state.player.x <- state.player.x + state.player.vx * dt
+    ret state
+}
+
+hot hot_render = (renderer, state) => {
+    // Tweak colors, positions, effects
+    // Instant visual feedback
+    sdl.SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255)
+    sdl.SDL_RenderClear(renderer)
+
+    // Draw game...
+}
+```
+
+**Use Cases:**
+
+- **Rapid iteration**: Test gameplay changes in seconds
+- **Visual tuning**: Adjust colors, positions, timing instantly
+- **Live debugging**: Fix bugs while reproducing issue
+- **Immediate feedback**: No wait for compile+restart cycle
+- **State preservation**: Keep game state across code changes
+
+**Comparison to Other Systems:**
+
+| System | Method | Overhead | Restart Required |
+|--------|--------|----------|------------------|
+| **Flap** | Self-modifying code | ~0.1% | No |
+| **SBCL (Lisp)** | Symbol table | ~5% | No |
+| **Live++** | DLL patching | ~1% | No |
+| **Rust hot reload** | dlopen | ~2% | No |
+| **C++ recompile** | Full rebuild | 0% | Yes (slow) |
+
+**Limitations:**
+
+- Hot functions have slight overhead (indirect call)
+- Cannot change function signatures
+- Cannot change struct layouts mid-game
+- Platform-specific (requires `mmap` + executable pages)
+- Debug symbols may be stale
+
+**Technical Notes:**
+
+- Function table stored in `.data` section (mutable)
+- Old code pages kept alive ~1 second for in-flight calls
+- Atomic pointer updates ensure no torn reads
+- Recompilation is incremental (only changed functions)
+- Compatible with debuggers (gdb/lldb attach works)
 
 ## Testing Convention
 

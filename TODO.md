@@ -69,38 +69,72 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
    - Impact: Required for commercial Steam releases
    - Files: New `steamworks.go`, FFI extensions
 
+6. **Implement hot code reload** (HIGH) 🎮 GAMEDEV
+   - Goal: Recompile and hot-swap functions without restarting executable
+   - Method: Self-modifying code via function pointer table + mmap
+   - Subtasks:
+     a. Add `hot` keyword to lexer/parser (mark hot-swappable functions)
+     b. Generate function pointer table for hot functions
+     c. Compile hot functions with indirection (call through table)
+     d. Implement file watching (inotify/kqueue/FSEvents)
+     e. Add incremental recompilation (parse + codegen changed functions only)
+     f. Implement mmap(PROT_EXEC) for new code pages
+     g. Add atomic pointer swap (update function table)
+     h. Add grace period for old code pages (1 second delay before munmap)
+     i. Add --watch flag to compiler
+     j. Add USR1 signal handler for manual reload trigger
+   - Performance: ~1-2 cycle overhead per hot function call (indirect branch)
+   - Limitations: Cannot change function signatures or struct layouts
+   - Impact: Essential for rapid gamedev iteration (50ms reload vs minutes)
+   - Benefits: Fix bugs while game runs, tune visuals in real-time
+   - Files: `lexer.go`, `parser.go`, new `hotreload.go`, `filewatcher.go`
+
+7. **Implement cstruct keyword** (HIGH) 🎮 GAMEDEV
+   - Goal: Define C-compatible structs with explicit layout
+   - Syntax: `cstruct Vec3 { x: f32, y: f32, z: f32 }`
+   - Modifiers: `packed` (no padding), `aligned(N)` (alignment)
+   - Features:
+     a. Calculate struct size and field offsets at compile time
+     b. Generate StructName.field_offset constants
+     c. Generate sizeof(StructName) constant
+     d. Support nested structs and pointers
+     e. Support C types (i8/i16/i32/i64/u8/u16/u32/u64/f32/f64/cstr/ptr)
+   - Impact: Required for SDL3, RayLib5, physics engines
+   - Benefits: Exact C struct layout, no surprises, compiler-calculated offsets
+   - Files: `lexer.go`, `parser.go`, new `cstruct.go`
+
 ## Fundamental - Enable Core Patterns
 
-6. **Add automatic memoization for pure recursive functions** (MEDIUM)
+8. **Add automatic memoization for pure recursive functions** (MEDIUM)
    - Current: Recursive functions with `max N` track depth but no caching
    - Goal: Automatically memoize pure recursive functions
    - Approach: Detect purity, use max value to size cache
    - Benefits: Efficient fibonacci, dynamic programming
    - Files: `parser.go:compileRecursiveCall`, add cache logic
 
-7. **Add trampoline execution for deep recursion** (MEDIUM)
+9. **Add trampoline execution for deep recursion** (MEDIUM)
    - Current: Non-tail-recursive functions can stack overflow
    - Goal: Handle deep recursion without TCO (e.g., tree traversal)
    - Approach: Return thunk (suspended computation), evaluate iteratively
    - Benefits: Fibonacci, tree recursion without stack limits
    - Files: New `trampoline.go`, modify lambda returns
 
-8. **Implement precalculated stack frames** (MEDIUM)
-   - Current: Dynamic stack allocation causes tracking bugs
-   - Goal: Allocate entire frame at function entry (C/C++ style)
-   - Benefits: No stack tracking bugs, predictable layout, easier debug
-   - Approach: Calculate frame size in collectSymbols, allocate once
-   - Files: `parser.go:Compile`, `parser.go:collectSymbols`
+10. **Implement precalculated stack frames** (MEDIUM)
+    - Current: Dynamic stack allocation causes tracking bugs
+    - Goal: Allocate entire frame at function entry (C/C++ style)
+    - Benefits: No stack tracking bugs, predictable layout, easier debug
+    - Approach: Calculate frame size in collectSymbols, allocate once
+    - Files: `parser.go:Compile`, `parser.go:collectSymbols`
 
-9. **Implement infinite loop syntax** (LOW)
-   - Goal: `@ { ... }` without arguments for infinite loops
-   - Current: Must use range loop with large number
-   - Impact: Cleaner game loop syntax
-   - Files: `parser.go:parseLoopStatement`
+11. ~~**Implement infinite loop syntax**~~ ✓ COMPLETED (LOW)
+    - Goal: `@ { ... }` without arguments for infinite loops
+    - Completed in recent commits
+    - Impact: Cleaner game loop syntax
+    - Files: `parser.go:parseLoopStatement`
 
 ## Advanced - Optimization
 
-10. **Add CPS (Continuation-Passing Style) transform** (VERY HIGH)
+12. **Add CPS (Continuation-Passing Style) transform** (VERY HIGH)
     - Goal: Convert all calls to tail calls internally
     - Benefits: Advanced control flow, no stack growth
     - Approach: Transform AST before code generation
@@ -108,9 +142,9 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
     - Note: Optional optimization pass, no IR needed
     - Files: New `cps.go`, modify compilation pipeline
 
-11. Whole program optimization.
+13. Whole program optimization.
 
-12. Loop unrolling and other optimization tricks.
+14. Loop unrolling and other optimization tricks.
 
 ## Language Features
 
