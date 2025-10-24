@@ -1,9 +1,0 @@
-// Test tail recursion with "me" keyword
-// Factorial using tail recursion with accumulator
-factorial := (n, acc) => n <= 1.0 {
-    -> acc
-    ~> me(n - 1.0, acc * n)
-}
-
-result := factorial(5.0, 1.0)
-println(result)  // Should print 120

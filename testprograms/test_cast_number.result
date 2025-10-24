@@ -1,0 +1,4 @@
+x = 42
+x as number = 42
+y = 120.50
+y as number = 120

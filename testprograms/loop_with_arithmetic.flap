@@ -1,6 +1,6 @@
 // loop_with_arithmetic.flap - test loops with arithmetic
 sum := 0
-@ i in 0..<5 {
+@ i in 0..<5  max 50 {
     sum <- sum + i
 }
 println(sum)

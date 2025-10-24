@@ -9,7 +9,7 @@ factorial := (n, acc) => n <= 1 {
 
 // Calculate and display factorials
 printf("Factorials:\n")
-@ i in 1..<11 {
+@ i in 1..<11  max 100 {
     result := factorial(i, 1)
     printf("%v! = %v\n", i, result)
 }

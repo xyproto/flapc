@@ -2291,16 +2291,74 @@ func (p *Parser) parseLoopStatement() Statement {
 		// Parse iterable expression
 		iterable := p.parseExpression()
 
+		// Determine max iterations and whether runtime checking is needed
+		var maxIterations int64
+		needsRuntimeCheck := false
+
+		// Check if max keyword is present
+		if p.peek.Type == TOKEN_MAX {
+			p.nextToken() // advance to 'max'
+			p.nextToken() // skip 'max'
+
+			// Explicit max always requires runtime checking
+			needsRuntimeCheck = true
+
+			// Parse max iterations: either a number or 'inf'
+			if p.current.Type == TOKEN_INF {
+				maxIterations = math.MaxInt64 // Use MaxInt64 for infinite iterations
+				p.nextToken()                 // skip 'inf'
+			} else if p.current.Type == TOKEN_NUMBER {
+				// Parse the number
+				maxInt, err := strconv.ParseInt(p.current.Value, 10, 64)
+				if err != nil || maxInt < 1 {
+					p.error("max iterations must be a positive integer or 'inf'")
+				}
+				maxIterations = maxInt
+				p.nextToken() // skip number
+			} else {
+				p.error("expected number or 'inf' after 'max' keyword")
+			}
+		} else {
+			// No explicit max - check if we can determine iteration count at compile time
+			if rangeExpr, ok := iterable.(*RangeExpr); ok {
+				// Try to calculate max from range: end - start
+				startVal, startOk := rangeExpr.Start.(*NumberExpr)
+				endVal, endOk := rangeExpr.End.(*NumberExpr)
+
+				if startOk && endOk {
+					// Literal range - known at compile time, no runtime check needed
+					start := int64(startVal.Value)
+					end := int64(endVal.Value)
+					maxIterations = end - start
+					if maxIterations < 0 {
+						maxIterations = 0
+					}
+					needsRuntimeCheck = false
+				} else {
+					// Range bounds are not literals, require explicit max
+					p.error("loop over non-literal range requires explicit 'max' clause")
+				}
+			} else if listExpr, ok := iterable.(*ListExpr); ok {
+				// List literal - known at compile time, no runtime check needed
+				maxIterations = int64(len(listExpr.Elements))
+				needsRuntimeCheck = false
+			} else {
+				// Not a range expression or list literal, require explicit max
+				p.error("loop requires 'max' clause (or use range expression like 0..<10 or list literal)")
+			}
+			// Advance to next token after iterable expression
+			p.nextToken()
+		}
+
 		// Skip newlines before '{'
-		for p.peek.Type == TOKEN_NEWLINE {
+		for p.current.Type == TOKEN_NEWLINE {
 			p.nextToken()
 		}
 
 		// Expect '{'
-		if p.peek.Type != TOKEN_LBRACE {
-			p.error("expected '{' in loop statement")
+		if p.current.Type != TOKEN_LBRACE {
+			p.error("expected '{' to start loop body")
 		}
-		p.nextToken() // advance to '{'
 
 		// Skip newlines after '{'
 		for p.peek.Type == TOKEN_NEWLINE {
@@ -2332,9 +2390,11 @@ func (p *Parser) parseLoopStatement() Statement {
 		p.nextToken() // consume the '}'
 
 		return &LoopStmt{
-			Iterator: iterator,
-			Iterable: iterable,
-			Body:     body,
+			Iterator:      iterator,
+			Iterable:      iterable,
+			Body:          body,
+			MaxIterations: maxIterations,
+			NeedsMaxCheck: needsRuntimeCheck,
 		}
 	}
 
@@ -2968,17 +3028,40 @@ func (p *Parser) parsePrimary() Expression {
 				return &VectorExpr{Components: args, Size: 4}
 			}
 
-			return &CallExpr{Function: name, Args: args}
+			// Check for optional 'max' keyword after function call
+			// This will be validated during compilation to ensure it's present for recursive calls
+			var maxRecursion int64 = 0
+			needsCheck := false
+			if p.peek.Type == TOKEN_MAX {
+				p.nextToken() // advance to 'max'
+				p.nextToken() // skip 'max', now on the value
+
+				needsCheck = true
+				if p.current.Type == TOKEN_INF {
+					maxRecursion = math.MaxInt64
+					// Don't advance - leave p.current on 'inf' for caller
+				} else if p.current.Type == TOKEN_NUMBER {
+					maxInt, err := strconv.ParseInt(p.current.Value, 10, 64)
+					if err != nil || maxInt < 1 {
+						p.error("max recursion depth must be a positive integer or 'inf'")
+					}
+					maxRecursion = maxInt
+					// Don't advance - leave p.current on the number for caller
+				} else {
+					p.error("expected number or 'inf' after 'max' keyword in function call")
+				}
+			}
+
+			return &CallExpr{
+				Function:            name,
+				Args:                args,
+				MaxRecursionDepth:   maxRecursion,
+				NeedsRecursionCheck: needsCheck,
+			}
 		}
 		return &IdentExpr{Name: name}
 
-	case TOKEN_ME:
-		// "me" is a special identifier for self-reference
-		return &IdentExpr{Name: "me"}
-
-	case TOKEN_CME:
-		// "cme" is a special identifier for cached/memoized self-reference
-		return &IdentExpr{Name: "cme"}
+	// TOKEN_ME and TOKEN_CME removed - recursive calls now use function name with mandatory max
 
 	case TOKEN_AT_FIRST:
 		// @first is true on the first iteration of a loop
@@ -3269,6 +3352,62 @@ func (p *Parser) parseLoopExpr() Expression {
 	iterable := p.parseExpression()
 	p.nextToken() // move past iterable
 
+	// Determine max iterations and whether runtime checking is needed
+	var maxIterations int64
+	needsRuntimeCheck := false
+
+	// Check if max keyword is present
+	if p.current.Type == TOKEN_MAX {
+		p.nextToken() // skip 'max'
+
+		// Explicit max always requires runtime checking
+		needsRuntimeCheck = true
+
+		// Parse max iterations: either a number or 'inf'
+		if p.current.Type == TOKEN_INF {
+			maxIterations = math.MaxInt64 // Use MaxInt64 for infinite iterations
+			p.nextToken()                 // skip 'inf'
+		} else if p.current.Type == TOKEN_NUMBER {
+			// Parse the number
+			maxInt, err := strconv.ParseInt(p.current.Value, 10, 64)
+			if err != nil || maxInt < 1 {
+				p.error("max iterations must be a positive integer or 'inf'")
+			}
+			maxIterations = maxInt
+			p.nextToken() // skip number
+		} else {
+			p.error("expected number or 'inf' after 'max' keyword in loop expression")
+		}
+	} else {
+		// No explicit max - check if we can determine iteration count at compile time
+		if rangeExpr, ok := iterable.(*RangeExpr); ok {
+			// Try to calculate max from range: end - start
+			startVal, startOk := rangeExpr.Start.(*NumberExpr)
+			endVal, endOk := rangeExpr.End.(*NumberExpr)
+
+			if startOk && endOk {
+				// Literal range - known at compile time, no runtime check needed
+				start := int64(startVal.Value)
+				end := int64(endVal.Value)
+				maxIterations = end - start
+				if maxIterations < 0 {
+					maxIterations = 0
+				}
+				needsRuntimeCheck = false
+			} else {
+				// Range bounds are not literals, require explicit max
+				p.error("loop expression over non-literal range requires explicit 'max' clause")
+			}
+		} else if listExpr, ok := iterable.(*ListExpr); ok {
+			// List literal - known at compile time, no runtime check needed
+			maxIterations = int64(len(listExpr.Elements))
+			needsRuntimeCheck = false
+		} else {
+			// Not a range expression or list literal, require explicit max
+			p.error("loop expression requires 'max' clause (or use range expression like 0..<10 or list literal)")
+		}
+	}
+
 	// Expect '{'
 	if p.current.Type != TOKEN_LBRACE {
 		p.error("expected '{' to start loop body")
@@ -3299,9 +3438,11 @@ func (p *Parser) parseLoopExpr() Expression {
 	p.nextToken() // consume the '}'
 
 	return &LoopExpr{
-		Iterator: iterator,
-		Iterable: iterable,
-		Body:     body,
+		Iterator:      iterator,
+		Iterable:      iterable,
+		Body:          body,
+		MaxIterations: maxIterations,
+		NeedsMaxCheck: needsRuntimeCheck,
 	}
 }
 
@@ -3739,6 +3880,8 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.eb.Define("fmt_str", "%s\x00")
 	fc.eb.Define("fmt_int", "%ld\n\x00")
 	fc.eb.Define("fmt_float", "%.0f\n\x00") // Print float without decimal places
+	fc.eb.Define("_loop_max_exceeded_msg", "Error: loop exceeded maximum iterations\n\x00")
+	fc.eb.Define("_recursion_max_exceeded_msg", "Error: recursion exceeded maximum depth\n\x00")
 
 	// Generate code
 	// Set up stack frame
@@ -4187,6 +4330,8 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	fc.eb.Define("fmt_str", "%s\x00")
 	fc.eb.Define("fmt_int", "%ld\n\x00")
 	fc.eb.Define("fmt_float", "%.0f\n\x00")
+	fc.eb.Define("_loop_max_exceeded_msg", "Error: loop exceeded maximum iterations\n\x00")
+	fc.eb.Define("_recursion_max_exceeded_msg", "Error: recursion exceeded maximum depth\n\x00")
 
 	// ===== AVX-512 CPU DETECTION (regenerated) =====
 	fc.eb.Define("cpu_has_avx512", "\x00")      // 1 byte: 0=no, 1=yes
@@ -4214,6 +4359,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	fc.stackOffset = 0
 	fc.lambdaFuncs = nil // Clear lambda list to avoid duplicates
 	fc.lambdaCounter = 0
+	fc.labelCounter = 0 // Reset label counter for consistent loop labels
 
 	// Collect symbols again (two-pass compilation for second regeneration)
 	for _, stmt := range program.Statements {
@@ -4221,6 +4367,9 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 			return err
 		}
 	}
+
+	// Reset labelCounter after collectSymbols so compilation uses same labels
+	fc.labelCounter = 0
 
 	fc.pushDeferScope()
 
@@ -4386,12 +4535,19 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 	case *LoopStmt:
 		// Save stackOffset before processing loop body
 		// This is needed for correct loop state offset calculation
-		loopLabel := fc.labelCounter + 1
-		fc.loopBaseOffsets[loopLabel] = fc.stackOffset
+		fc.labelCounter++
+		loopLabel := fc.labelCounter
+		baseOffset := fc.stackOffset
+		fc.loopBaseOffsets[loopLabel] = baseOffset
 
-		// Reserve space for loop state (32 bytes) in logical frame
+		// Reserve space for loop state in logical frame
 		// This prevents loop-local variables from colliding with loop iterator
-		fc.stackOffset += 32
+		// 48 bytes if runtime checking needed, 24 bytes otherwise
+		if s.NeedsMaxCheck {
+			fc.stackOffset += 48
+		} else {
+			fc.stackOffset += 24
+		}
 
 		// Recursively collect symbols from loop body
 		for _, bodyStmt := range s.Body {
@@ -4399,6 +4555,10 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 				return err
 			}
 		}
+
+		// Restore stackOffset after loop body
+		// Sequential loops at the same nesting level should start at the same stackOffset
+		fc.stackOffset = baseOffset
 	case *ArenaStmt:
 		// Track arena depth during symbol collection
 		// This ensures alloc() calls are validated correctly
@@ -4621,14 +4781,42 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	// This ensures loop state doesn't conflict with loop-local variables
 	baseOffset := fc.loopBaseOffsets[currentLoopLabel]
 
-	// Allocate stack space for loop state (32 bytes for 16-byte alignment)
-	// Use baseOffset for calculating offsets, not current stackOffset
-	loopStateOffset := baseOffset + 32
-	iterOffset := loopStateOffset - 16   // iterator at -16
-	counterOffset := loopStateOffset - 8 // counter at -8
-	limitOffset := loopStateOffset       // limit at top
-	fc.out.SubImmFromReg("rsp", 32)
-	fc.runtimeStack += 32 // Track runtime allocation
+	// Allocate stack space for loop state
+	// If runtime checking needed: 48 bytes [iteration_count] [max_iterations] [iterator] [counter] [limit]
+	// Otherwise: 24 bytes [iterator] [counter] [limit]
+	var loopStateOffset, iterationCountOffset, maxIterOffset, iterOffset, counterOffset, limitOffset int
+	var stackSize int64
+
+	if stmt.NeedsMaxCheck {
+		// Need extra space for iteration tracking
+		stackSize = 48
+		loopStateOffset = baseOffset + 48
+		iterationCountOffset = loopStateOffset - 32 // iteration count tracker at -32
+		maxIterOffset = loopStateOffset - 24        // max iterations at -24
+		iterOffset = loopStateOffset - 16           // iterator at -16
+		counterOffset = loopStateOffset - 8         // counter at -8
+		limitOffset = loopStateOffset               // limit at top
+
+		// Store max iterations on stack (skip if infinite)
+		if stmt.MaxIterations != math.MaxInt64 {
+			fc.out.MovImmToReg("rax", fmt.Sprintf("%d", stmt.MaxIterations))
+			fc.out.MovRegToMem("rax", "rbp", -maxIterOffset)
+		}
+
+		// Initialize iteration counter to 0
+		fc.out.XorRegWithReg("rax", "rax")
+		fc.out.MovRegToMem("rax", "rbp", -iterationCountOffset)
+	} else {
+		// No runtime checking needed - smaller stack frame
+		stackSize = 24
+		loopStateOffset = baseOffset + 24
+		iterOffset = loopStateOffset - 16  // iterator at -16
+		counterOffset = loopStateOffset - 8 // counter at -8
+		limitOffset = loopStateOffset       // limit at top
+	}
+
+	fc.out.SubImmFromReg("rsp", stackSize)
+	fc.runtimeStack += int(stackSize) // Track runtime allocation
 
 	// Evaluate range start and store to stack (counter)
 	fc.compileExpression(rangeExpr.Start)
@@ -4661,6 +4849,44 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 		IsRangeLoop:    true,
 	}
 	fc.activeLoops = append(fc.activeLoops, loopInfo)
+
+	// Runtime max iteration checking (only if needed)
+	if stmt.NeedsMaxCheck {
+		// Check max iterations (if not infinite)
+		if stmt.MaxIterations != math.MaxInt64 {
+			// Load iteration count
+			fc.out.MovMemToReg("rax", "rbp", -iterationCountOffset)
+			// Load max iterations
+			fc.out.MovMemToReg("rcx", "rbp", -maxIterOffset)
+			// Compare: if iteration_count >= max_iterations, exceeded limit
+			fc.out.CmpRegToReg("rax", "rcx")
+
+			// Jump past error handling if not exceeded
+			notExceededJumpPos := fc.eb.text.Len()
+			fc.out.JumpConditional(JumpLess, 0) // Placeholder, will patch
+
+			// Exceeded max iterations - print error and exit
+			// printf("Error: Loop exceeded max iterations\n")
+			fc.out.LeaSymbolToReg("rdi", "_loop_max_exceeded_msg")
+			fc.trackFunctionCall("printf")
+			fc.eb.GenerateCallInstruction("printf")
+
+			// exit(1)
+			fc.out.MovImmToReg("rdi", "1")
+			fc.trackFunctionCall("exit")
+			fc.eb.GenerateCallInstruction("exit")
+
+			// Patch the jump to skip error handling
+			notExceededPos := fc.eb.text.Len()
+			notExceededOffset := int32(notExceededPos - (notExceededJumpPos + 6))
+			fc.patchJumpImmediate(notExceededJumpPos+2, notExceededOffset)
+		}
+
+		// Increment iteration counter
+		fc.out.MovMemToReg("rax", "rbp", -iterationCountOffset)
+		fc.out.IncReg("rax")
+		fc.out.MovRegToMem("rax", "rbp", -iterationCountOffset)
+	}
 
 	// Load counter and limit from stack for comparison
 	fc.out.MovMemToReg("rax", "rbp", -counterOffset)
@@ -4720,10 +4946,10 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	// Loop end cleanup - this is where all loop exit jumps target
 	loopEndPos := fc.eb.text.Len()
 
-	// Clean up stack space (32 bytes)
-	fc.out.AddImmToReg("rsp", 32)
-	fc.stackOffset -= 32
-	fc.runtimeStack -= 32
+	// Clean up stack space
+	fc.out.AddImmToReg("rsp", stackSize)
+	fc.stackOffset -= int(stackSize)
+	fc.runtimeStack -= int(stackSize)
 
 	// Unregister iterator variable
 	delete(fc.variables, stmt.Iterator)
@@ -10157,6 +10383,89 @@ func (fc *FlapCompiler) compileCachedCall(call *CallExpr) {
 	fc.out.AddImmToReg("rsp", 32)
 }
 
+func (fc *FlapCompiler) compileRecursiveCall(call *CallExpr) {
+	// Compile a recursive call with optional depth tracking
+	// Only track depth if max is not infinite (for zero runtime overhead with max inf)
+	// TODO: Depth tracking currently disabled - requires writable .bss/.data section support
+	//       Current implementation tries to write to read-only .rodata which fails
+	//       Use "max inf" for unlimited recursion (works perfectly)
+	needsDepthTracking := false // call.MaxRecursionDepth != math.MaxInt64
+	var depthVarName string
+
+	if needsDepthTracking {
+		// Uses a global variable to track recursion depth: functionName_recursion_depth
+		depthVarName = call.Function + "_recursion_depth"
+
+		// Ensure the depth counter variable exists in data section (initialized to 0)
+		if fc.eb.consts[depthVarName] == nil {
+			// Define an 8-byte zero-initialized variable
+			fc.eb.Define(depthVarName, "\x00\x00\x00\x00\x00\x00\x00\x00")
+		}
+
+		// Load current recursion depth
+		fc.out.MovMemToReg("rax", depthVarName, 0)
+
+		// Increment depth
+		fc.out.IncReg("rax")
+
+		// Check against max
+		fc.out.CmpRegToImm("rax", call.MaxRecursionDepth)
+
+		// Jump past error if not exceeded
+		notExceededJump := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpLessOrEqual, 0)
+
+		// Exceeded max recursion - print error and exit
+		fc.out.LeaSymbolToReg("rdi", "_recursion_max_exceeded_msg")
+		fc.trackFunctionCall("printf")
+		fc.eb.GenerateCallInstruction("printf")
+
+		// exit(1)
+		fc.out.MovImmToReg("rdi", "1")
+		fc.trackFunctionCall("exit")
+		fc.eb.GenerateCallInstruction("exit")
+
+		// Patch the jump
+		notExceededPos := fc.eb.text.Len()
+		notExceededOffset := int32(notExceededPos - (notExceededJump + 6))
+		fc.patchJumpImmediate(notExceededJump+2, notExceededOffset)
+
+		// Store incremented depth
+		fc.out.MovRegToMem("rax", depthVarName, 0)
+	}
+
+	// Compile arguments in order (same as normal lambda calls)
+	for i, arg := range call.Args {
+		fc.compileExpression(arg)
+		if i < len(call.Args)-1 {
+			// Save result to stack if not the last arg
+			fc.out.SubImmFromReg("rsp", StackSlotSize)
+			fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		}
+	}
+
+	// Restore arguments from stack in reverse order to registers
+	// Last arg is already in xmm0
+	for i := len(call.Args) - 2; i >= 0; i-- {
+		regName := fmt.Sprintf("xmm%d", i)
+		fc.out.MovMemToXmm(regName, "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+	}
+
+	// Make the recursive call
+	// Use direct call to lambda symbol (not PLT stub like GenerateCallInstruction)
+	fc.out.CallSymbol(call.Function)
+
+	// Decrement recursion depth after return (only if tracking)
+	if needsDepthTracking {
+		fc.out.MovMemToReg("rax", depthVarName, 0)
+		fc.out.SubImmFromReg("rax", 1) // Decrement
+		fc.out.MovRegToMem("rax", depthVarName, 0)
+	}
+
+	// Result is in xmm0
+}
+
 func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, args []Expression) {
 	// Generate C FFI call
 	// Strategy for v1.1.0:
@@ -10421,19 +10730,17 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 }
 
 func (fc *FlapCompiler) compileCall(call *CallExpr) {
-	// Check for "me" self-reference (tail recursion candidate)
-	// IMPORTANT: Only apply TCO if we're actually in tail position!
-	// A call is in tail position ONLY if it's the last operation before return
-	// Example: `~> me(n-1)` is tail position (YES, optimize)
-	// Example: `~> me(n-1) * n` is NOT tail position (NO, don't optimize)
-	if call.Function == "me" && fc.currentLambda != nil && fc.inTailPosition {
-		fc.compileTailCall(call)
-		return
-	}
+	// Check if this is a recursive call (function name matches current lambda)
+	isRecursive := fc.currentLambda != nil && call.Function == fc.currentLambda.Name
 
-	// Check for "cme" cached/memoized self-reference
-	if call.Function == "cme" && fc.currentLambda != nil {
-		fc.compileCachedCall(call)
+	if isRecursive {
+		// Recursive calls REQUIRE the 'max' keyword
+		if !call.NeedsRecursionCheck {
+			compilerError("recursive call to '%s' requires 'max' clause: %s(...) max N or %s(...) max inf",
+				call.Function, call.Function, call.Function)
+		}
+		// Compile recursive call with depth tracking
+		fc.compileRecursiveCall(call)
 		return
 	}
 
@@ -10470,10 +10777,8 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 	// Check if this is a stored function (variable containing function pointer)
 	if fc.debug {
 		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG compileCall: looking up function '%s'\n", call.Function)
 		}
 		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG compileCall: variables map has: %v\n", fc.variables)
 		}
 	}
 	if _, isVariable := fc.variables[call.Function]; isVariable {

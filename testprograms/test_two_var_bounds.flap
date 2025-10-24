@@ -1,12 +1,12 @@
 // Two sequential inner loops with variable bounds - exactly like ascii_art
-@ i in 0..<3 {
+@ i in 0..<3  max 30 {
     spaces := 3 - i - 1
-    @ j in 0..<spaces {
+    @ j in 0..<spaces  max 100000 {
         printf(" ")
     }
 
     stars := 2 * i + 1
-    @ k in 0..<stars {
+    @ k in 0..<stars  max 100000 {
         printf("*")
     }
 

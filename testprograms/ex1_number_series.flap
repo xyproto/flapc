@@ -8,7 +8,7 @@ count := 20
 
 printf("Squares of first %v numbers:\n", count)
 
-@ i in 1..<(count + 1) {
+@ i in 1..<(count + 1)  max 100000 {
     square := i * i
     sum <- sum + square
     printf("%v² = %v\n", i, square)

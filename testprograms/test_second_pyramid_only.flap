@@ -4,17 +4,17 @@ height := 10
 printf("\nInverted Pyramid:\n\n")
 
 // Draw inverted pyramid
-@ i in 0..<height {
+@ i in 0..<height  max 100000 {
     row := height - i - 1
 
     // Print spaces
-    @ j in 0..<i {
+    @ j in 0..<i  max 100000 {
         printf(" ")
     }
 
     // Print stars
     numStars := 2 * row + 1
-    @ k in 0..<numStars {
+    @ k in 0..<numStars  max 100000 {
         printf("*")
     }
 

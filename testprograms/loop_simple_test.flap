@@ -2,7 +2,7 @@
 println("Starting loop test")
 
 total := 0
-@ i in 0..<5 {
+@ i in 0..<5  max 50 {
     println(i)
     total += i
 }

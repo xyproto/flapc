@@ -1,8 +1,0 @@
-// Simple factorial test without loop
-factorial := (n, acc) => n <= 1 {
-    -> acc
-    ~> me(n - 1, acc * n)
-}
-
-result := factorial(5.0, 1.0)
-printf("5! = %.0f\n", result)

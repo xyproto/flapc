@@ -23,6 +23,16 @@ All values use IEEE 754 double-precision floating point. This single underlying 
 - **FFI**: PLT/GOT dynamic linking for C library calls
 - **Calling convention**: System V AMD64 ABI
 
+## Design Philosophy
+
+**Avoid Magic Numbers**: Flap prefers explicit keywords and proper types over magic numbers like `-1` for special values:
+- ❌ Use `-1` for "infinite", "error", or "missing"
+- ✓ Use `inf` keyword for infinite iterations/values
+- ✓ Use explicit error handling (match expressions, error types)
+- ✓ Use optional types or nullable representations for missing values
+
+This makes code more readable and prevents confusion between legitimate negative values and special sentinel values.
+
 ## Language Spec
 
 ### Variables
@@ -49,7 +59,7 @@ y := 10   // ERROR: variable already defined
 
 // This prevents shadowing bugs in loops
 sum := 0
-@ i in range(5) {
+@ i in 0..<5 {
     sum := sum + i  // ERROR: variable already defined
     sum <- sum + i  // ✓ Correct: use <- to update
 }
@@ -294,6 +304,10 @@ x > 42 {
 // Shorthand: ~> without -> is equivalent to { -> ~> value }
 x > 42 { ~> 123 }    // same as { -> ~> 123 }
 
+// Super-shorthand: Single case + default without braces
+x > 2 -> 42 ~> 128   // same as { -> 42 ~> 128 }
+                     // Only valid for exactly one case + default
+
 // Subject/guard matching
 x {
     x < 10 -> 0
@@ -418,34 +432,57 @@ result = 5 in mylist  // returns 1.0 or 0.0
 Loops use `@` for iteration:
 
 ```flap
-// Basic loop - iterates from 0 (inclusive) to 5 (exclusive): 0,1,2,3,4
-@ i in 5 {
-    println(i)
+// Basic loop with literal range - max is OPTIONAL (inferred as 5)
+@ i in 0..<5 {
+    println(i)  // Prints 0, 1, 2, 3, 4
 }
 
-// Iterate over range
-@ i in 0..<10 {
-    println(i)
+// Range operator - max inferred from literal bounds
+@ i in 1..<10 {
+    println(i)  // Prints 1, 2, 3, ..., 9
 }
 
 // Nested loops (auto-labeled @1, @2, @3, ...)
-@ i in 3 {       // @1
-    @ j in 3 {   // @2
+@ i in 0..<3 {       // @1 - max inferred as 3
+    @ j in 0..<3 {   // @2 - max inferred as 3
         printf(f"{i},{j} ")
     }
 }
 
-// Iterate over lists
-numbers = [10, 20, 30]
-@ n in numbers {
+// Explicit max for safety bounds or variable ranges
+@ i in 0..<100 max 1000 {
+    println(i)  // Runtime check: will error if somehow exceeds 1000 iterations
+}
+
+// Variable ranges REQUIRE explicit max
+end := 100
+@ i in 0..<end max 10000 {
+    println(i)
+}
+
+// For unbounded loops, use 'max inf'
+@ i in 0..<1000000 max inf {
+    println(i)
+    i == 100 ? ret : 0  // Usually exits via some condition
+}
+
+// List iteration with inferred max (when literal)
+@ n in [10, 20, 30] {
     println(n)
 }
 
-// Range operator ..<
-@ i in 0..<3 {   // 0, 1, 2
-    println(i)
+// Variable list iteration requires explicit max
+numbers := [10, 20, 30]
+@ n in numbers max 1000 {
+    println(n)
 }
 ```
+
+**Max Iteration Safety:**
+- Literal ranges (`0..<5`) and list literals: `max` is **optional** (inferred, no runtime overhead)
+- Variable ranges/lists: `max` is **required** (runtime checking enforced)
+- Explicit `max N`: adds runtime checking to ensure loop doesn't exceed N iterations
+- `max inf`: allows unlimited iterations (use cautiously!)
 
 **Loop Control:**
 - `ret` - returns from function
@@ -468,6 +505,7 @@ numbers = [10, 20, 30]
     @last { printf("]") ~> printf(", ") }
 }
 // Output: [a, b, c]
+// Note: max is optional for list literals
 ```
 
 ### Error Handling (Railway-Oriented Programming)
@@ -934,8 +972,8 @@ arena_statement = "arena" block ;
 defer_statement = "defer" expression ;
 
 loop_statement  = "@" block
-                | "@" identifier "in" expression block
-                | "@" number identifier "in" expression block ;
+                | "@" identifier "in" expression [ "max" (number | "inf") ] block
+                | "@" number identifier "in" expression [ "max" (number | "inf") ] block ;
 
 jump_statement  = "ret" [ "@" number ] [ expression ]
                 | "@" number

@@ -23,7 +23,7 @@ update := (value, token) => {
 
 accumulator := 0
 
-@ token in program_tokens {
+@ token in program_tokens  max 100000 {
     accumulator <- update(accumulator, token)
 }
 

@@ -1,0 +1,26 @@
+=== SDL3 Window Example ===
+This demonstrates Flap's C FFI capabilities
+
+Initializing SDL...
+SDL_Init returned: 0
+SDL initialized!
+
+Creating window...
+Window created!
+  Title: Flap + SDL3 = ❤️
+  Size: 1024 x 768
+  Window handle: 0
+
+Creating renderer...
+Renderer created!
+  Renderer handle: 0
+
+SDL Constants from headers:
+  SDL_INIT_VIDEO = 32
+  SDL_INIT_AUDIO = 16
+  SDL_INIT_EVENTS = 16384
+
+Cleaning up...
+SDL shut down successfully!
+
+=== Example Complete ===

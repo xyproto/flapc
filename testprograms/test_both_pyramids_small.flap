@@ -3,13 +3,13 @@ height := 3
 
 printf("ASCII Pyramid:\n")
 
-@ i in 0..<height {
+@ i in 0..<height  max 100000 {
     spaces := height - i - 1
-    @ j in 0..<spaces {
+    @ j in 0..<spaces  max 100000 {
         printf(" ")
     }
     stars := 2 * i + 1
-    @ k in 0..<stars {
+    @ k in 0..<stars  max 100000 {
         printf("*")
     }
     printf("\n")
@@ -17,13 +17,13 @@ printf("ASCII Pyramid:\n")
 
 printf("Inverted:\n")
 
-@ i in 0..<height {
+@ i in 0..<height  max 100000 {
     row := height - i - 1
-    @ j in 0..<i {
+    @ j in 0..<i  max 100000 {
         printf(" ")
     }
     numStars := 2 * row + 1
-    @ k in 0..<numStars {
+    @ k in 0..<numStars  max 100000 {
         printf("*")
     }
     printf("\n")

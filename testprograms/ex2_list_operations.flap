@@ -12,26 +12,26 @@ square := x => x * x
 isEven := x => (x mod 2) == 0
 
 printf("Original list: ")
-@ n in numbers {
+@ n in numbers  max 100000 {
     printf("%v ", n)
 }
 printf("\n")
 
 // Transform list elements
 printf("\nDoubled: ")
-@ n in numbers {
+@ n in numbers  max 100000 {
     printf("%v ", double(n))
 }
 printf("\n")
 
 printf("Squared: ")
-@ n in numbers {
+@ n in numbers  max 100000 {
     printf("%v ", square(n))
 }
 printf("\n")
 
 printf("Even numbers: ")
-@ n in numbers {
+@ n in numbers  max 100000 {
     isEven(n) {
         printf("%v ", n)
     }
@@ -41,7 +41,7 @@ printf("\n")
 // Parallel transformation using built-in parallel map
 printf("\nParallel doubled: ")
 doubled := numbers | double
-@ n in doubled {
+@ n in doubled  max 100000 {
     printf("%v ", n)
 }
 printf("\n")

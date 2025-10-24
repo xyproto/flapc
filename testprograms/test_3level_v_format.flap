@@ -1,8 +1,8 @@
-@ i in 0..<2 {
+@ i in 0..<2  max 20 {
     printf("i=%v\n", i)
-    @ j in 0..<2 {
+    @ j in 0..<2  max 20 {
         printf("  j=%v\n", j)
-        @ k in 0..<2 {
+        @ k in 0..<2  max 20 {
             printf("    k=%v (i=%v, j=%v, k=%v)\n", k, i, j, k)
         }
     }

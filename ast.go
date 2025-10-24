@@ -99,16 +99,20 @@ func (e *ExpressionStmt) statementNode() {}
 
 type LoopStmt struct {
 	// No explicit label - determined by nesting depth when created with @
-	Iterator string     // Variable name (e.g., "i")
-	Iterable Expression // Expression to iterate over (e.g., range(10))
-	Body     []Statement
+	Iterator      string     // Variable name (e.g., "i")
+	Iterable      Expression // Expression to iterate over (e.g., range(10))
+	Body          []Statement
+	MaxIterations int64 // Maximum allowed iterations (math.MaxInt64 for infinite)
+	NeedsMaxCheck bool  // Whether to emit runtime max iteration checking
 }
 
 type LoopExpr struct {
 	// No explicit label - determined by nesting depth when created with @
-	Iterator string      // Variable name (e.g., "i")
-	Iterable Expression  // Expression to iterate over (e.g., range(10))
-	Body     []Statement // Body statements
+	Iterator      string      // Variable name (e.g., "i")
+	Iterable      Expression  // Expression to iterate over (e.g., range(10))
+	Body          []Statement // Body statements
+	MaxIterations int64       // Maximum allowed iterations (math.MaxInt64 for infinite)
+	NeedsMaxCheck bool        // Whether to emit runtime max iteration checking
 }
 
 func (l *LoopExpr) String() string {
@@ -331,8 +335,10 @@ func (b *BlockExpr) String() string {
 func (b *BlockExpr) expressionNode() {}
 
 type CallExpr struct {
-	Function string
-	Args     []Expression
+	Function            string
+	Args                []Expression
+	MaxRecursionDepth   int64 // Maximum recursion depth (math.MaxInt64 for infinite)
+	NeedsRecursionCheck bool  // Whether to emit runtime recursion depth checking
 }
 
 func (c *CallExpr) String() string {

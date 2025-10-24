@@ -1,6 +1,6 @@
-@ i in 0..<2 {
-    @ j in 0..<2 {
-        @ k in 0..<2 {
+@ i in 0..<2  max 20 {
+    @ j in 0..<2  max 20 {
+        @ k in 0..<2  max 20 {
             printf("i=%ld j=%ld k=%ld\n", i as number, j as number, k as number)
         }
     }

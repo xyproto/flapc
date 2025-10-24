@@ -47,18 +47,19 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
 ## Fundamental - Enable Core Patterns
 
-6. **Add trampoline execution for deep recursion** (MEDIUM)
+6. **Add automatic memoization for pure recursive functions** (MEDIUM)
+   - Current: Recursive functions with `max N` track depth but no caching
+   - Goal: Automatically memoize pure recursive functions
+   - Approach: Detect purity, use max value to size cache
+   - Benefits: Efficient fibonacci, dynamic programming
+   - Files: `parser.go:compileRecursiveCall`, add cache logic
+
+7. **Add trampoline execution for deep recursion** (MEDIUM)
    - Current: Non-tail-recursive functions can stack overflow
    - Goal: Handle deep recursion without TCO (e.g., tree traversal)
    - Approach: Return thunk (suspended computation), evaluate iteratively
    - Benefits: Fibonacci, tree recursion without stack limits
    - Files: New `trampoline.go`, modify lambda returns
-
-7. **Enable lambda self-reference by name** (LOW)
-   - Current: Must use `me` keyword, can't call lambda by its own name
-   - Impact: Quality of life, clearer recursive code
-   - Approach: Add lambda name to scope before compiling body
-   - Files: `parser.go:compileExpression` LambdaExpr case
 
 8. **Implement precalculated stack frames** (MEDIUM)
    - Current: Dynamic stack allocation causes tracking bugs
@@ -109,25 +110,37 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
     - Common functional pattern
     - Files: `parser.go`, new LetExpr type
 
+17. **Extend `inf` keyword for other contexts** (LOW-MEDIUM)
+    - Current: Only used for `max inf` in loops
+    - Proposed uses:
+      a. **Numeric constant**: `x := inf` for IEEE 754 infinity
+      b. **Unbounded ranges**: `@ i in 0..<inf max inf { }` for infinite sequences
+      c. **Timeout values**: `wait(inf)` to wait indefinitely
+      d. **Comparisons**: `x < inf` always true for finite x
+      e. **Math operations**: `1 / inf` → 0
+    - Design: Map `inf` to `math.Inf(1)` in numeric contexts
+    - Impact: Cleaner syntax than using large numbers or special functions
+    - Files: `lexer.go`, `parser.go:parseExpression`
+
 ## Nice to Have
 
-17. **Add tail call validation in debug mode** (LOW)
+18. **Add tail call validation in debug mode** (LOW)
     - Warn if `~tailcall>` used incorrectly
     - Helps developers write correct code
 
-18. **Add approximate equality operator** (LOW)
+19. **Add approximate equality operator** (LOW)
     - Syntax: `0.3 =0.1= 0.2`
     - Useful for floating-point game physics comparisons
 
-19. **Add macro system** (VERY HIGH)
+20. **Add macro system** (VERY HIGH)
     - Pattern-based code transformation
     - Enables advanced language packs
 
-20. **Add custom infix operators** (HIGH)
+21. **Add custom infix operators** (HIGH)
     - For language packs (e.g., Python's `**`)
     - Requires precedence handling
 
-21. **Add multi-precision arithmetic operators** (MEDIUM)
+22. **Add multi-precision arithmetic operators** (MEDIUM)
     - `++` (add with carry)
     - `<->` (swap/exchange)
 
@@ -135,35 +148,35 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
 These items are lower priority. Focus on x86-64 Linux first.
 
-22. **Add Windows x64 code generation** (HIGH)
+23. **Add Windows x64 code generation** (HIGH)
     - Goal: Compile to PE/COFF executables for Windows x64
     - Calling convention: Microsoft x64 (different from System V)
     - Binary format: PE32+ (Portable Executable)
     - Impact: Required for Steam Windows builds
     - Files: New `pe_builder.go`, `codegen_windows.go`
 
-23. **Add Windows ARM64 code generation** (HIGH)
+24. **Add Windows ARM64 code generation** (HIGH)
     - Goal: Support Windows on ARM (Surface, future gaming devices)
     - Calling convention: Microsoft ARM64
     - Binary format: PE32+ ARM64
     - Impact: Future-proofing for Windows ARM gaming PCs
     - Files: Extend ARM64 codegen with Windows support
 
-24. **Fix macOS ARM64 runtime issues** (HIGH)
+25. **Fix macOS ARM64 runtime issues** (HIGH)
     - Current: Binaries hang before entering main()
     - Problem: dyld/code signing/entitlements
     - Impact: Blocks macOS game distribution
     - Approach: Debug Mach-O generation, test codesigning
     - Files: `macho_builder.go`, startup code
 
-25. **Complete Linux ARM64 support** (MEDIUM)
+26. **Complete Linux ARM64 support** (MEDIUM)
     - Goal: Raspberry Pi 4+ and Linux ARM gaming devices
     - Current: Basic ARM64 codegen exists
     - Need: Full ELF generation and runtime testing
     - Impact: Enables embedded/portable Linux gaming
     - Files: `arm64.go`, `elf_builder.go`
 
-26. **Complete RISC-V 64-bit support** (LOW)
+27. **Complete RISC-V 64-bit support** (LOW)
     - Goal: Future RISC-V gaming handhelds
     - Current: Instruction encoders ready
     - Need: Full codegen implementation

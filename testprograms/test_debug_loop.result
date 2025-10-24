@@ -1,0 +1,11 @@
+Outer i=0
+First inner: 0..<1
+j=0 
+Second inner: 0..<2
+k=0 k=1 
+Outer i=1
+First inner: 0..<2
+j=0 j=1 
+Second inner: 0..<3
+k=0 k=1 k=2 
+Done

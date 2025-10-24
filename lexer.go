@@ -68,8 +68,7 @@ const (
 	TOKEN_DECREMENT        // --
 	TOKEN_FMA              // *+ (fused multiply-add)
 	TOKEN_OR_BANG          // or! (error handling)
-	TOKEN_ME               // me (self-reference)
-	TOKEN_CME              // cme (cached/memoized self-reference)
+	// TOKEN_ME and TOKEN_CME removed - recursive calls now use mandatory max
 	TOKEN_RET              // ret keyword (return/break)
 	TOKEN_AT_FIRST         // @first (first iteration)
 	TOKEN_AT_LAST          // @last (last iteration)
@@ -113,6 +112,8 @@ const (
 	TOKEN_SYSCALL     // syscall (system call in unsafe blocks)
 	TOKEN_ARENA       // arena (arena memory blocks)
 	TOKEN_DEFER       // defer (deferred execution)
+	TOKEN_MAX         // max (maximum iterations for loops)
+	TOKEN_INF         // inf (infinity, for unlimited iterations or numeric infinity)
 )
 
 // Code generation constants
@@ -341,10 +342,7 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_OR, Value: value, Line: l.line}
 		case "not":
 			return Token{Type: TOKEN_NOT, Value: value, Line: l.line}
-		case "me":
-			return Token{Type: TOKEN_ME, Value: value, Line: l.line}
-		case "cme":
-			return Token{Type: TOKEN_CME, Value: value, Line: l.line}
+		// "me" and "cme" removed - recursive calls now use function name with mandatory max
 		case "ret":
 			return Token{Type: TOKEN_RET, Value: value, Line: l.line}
 		case "use":
@@ -363,6 +361,10 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_ARENA, Value: value, Line: l.line}
 		case "defer":
 			return Token{Type: TOKEN_DEFER, Value: value, Line: l.line}
+		case "max":
+			return Token{Type: TOKEN_MAX, Value: value, Line: l.line}
+		case "inf":
+			return Token{Type: TOKEN_INF, Value: value, Line: l.line}
 		case "xor":
 			return Token{Type: TOKEN_XOR, Value: value, Line: l.line}
 		case "shl":
@@ -413,15 +415,7 @@ func (l *Lexer) NextToken() Token {
 			l.pos += 2
 			return Token{Type: TOKEN_MINUS_EQUALS, Value: "-=", Line: l.line}
 		}
-		// Check for negative number literal
-		if l.pos+1 < len(l.input) && unicode.IsDigit(rune(l.peek())) {
-			start := l.pos
-			l.pos++ // skip '-'
-			for l.pos < len(l.input) && (unicode.IsDigit(rune(l.input[l.pos])) || l.input[l.pos] == '.') {
-				l.pos++
-			}
-			return Token{Type: TOKEN_NUMBER, Value: l.input[start:l.pos], Line: l.line}
-		}
+		// Always emit MINUS as separate token - let parser handle unary negation
 		l.pos++
 		return Token{Type: TOKEN_MINUS, Value: "-", Line: l.line}
 	case '*':

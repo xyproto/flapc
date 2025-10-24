@@ -11,7 +11,7 @@ printf("Collatz sequence starting from %v:\n", n)
 printf("%v ", n)
 
 // Apply Collatz rules until we reach 1
-@ i in 0..<1000 {
+@ i in 0..<1000  max 5000 {
     // Stop if we reached 1
     n == 1 {
         ret @1

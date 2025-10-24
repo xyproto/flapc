@@ -1,6 +1,6 @@
 // Simple nested loop test
-@ i in 0..<2 {
-    @ j in 0..<3 {
+@ i in 0..<2  max 20 {
+    @ j in 0..<3  max 30 {
         println(i * 10 + j)
     }
 }

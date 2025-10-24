@@ -1,0 +1,8 @@
+Before inner: i=0
+  In inner: i=0 j=0
+  In inner: i=0 j=1
+After inner: i=0
+Before inner: i=1
+  In inner: i=1 j=0
+  In inner: i=1 j=1
+After inner: i=1

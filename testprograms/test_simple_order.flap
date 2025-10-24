@@ -1,6 +1,6 @@
-@ i in 0..<2 {
+@ i in 0..<2  max 20 {
     printf("A")
-    @ j in 0..<2 {
+    @ j in 0..<2  max 20 {
         printf("B")
     }
     printf("C\n")

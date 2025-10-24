@@ -3,14 +3,14 @@ height := 10
 
 printf("ASCII Pyramid (height %v):\n\n", height)
 
-@ i in 0..<height {
+@ i in 0..<height  max 100000 {
     spaces := height - i - 1
-    @ j in 0..<spaces {
+    @ j in 0..<spaces  max 100000 {
         printf(" ")
     }
 
     stars := 2 * i + 1
-    @ k in 0..<stars {
+    @ k in 0..<stars  max 100000 {
         printf("*")
     }
 

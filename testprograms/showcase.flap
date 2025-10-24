@@ -50,7 +50,7 @@ printf("  cube(3) = %v\n\n", cube(3.0))
 // 7. Loops
 printf("→ Loops\n")
 printf("  First 3 primes: ")
-@ p in [2.0, 3.0, 5.0] {
+@ p in [2.0, 3.0, 5.0]  max 100000 {
     printf("%v ", p)
 }
 printf("\n\n")

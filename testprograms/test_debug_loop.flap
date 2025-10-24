@@ -1,17 +1,17 @@
 // Debug version to see what's happening
-@ i in 0..<2 {
+@ i in 0..<2  max 20 {
     printf("Outer i=%v\n", i)
 
     count1 := i + 1
     printf("First inner: 0..<%.0f\n", count1)
-    @ j in 0..<count1 {
+    @ j in 0..<count1  max 100000 {
         printf("j=%v ", j)
     }
     printf("\n")
 
     count2 := i + 2
     printf("Second inner: 0..<%.0f\n", count2)
-    @ k in 0..<count2 {
+    @ k in 0..<count2  max 100000 {
         printf("k=%v ", k)
     }
     printf("\n")

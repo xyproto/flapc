@@ -1,9 +1,9 @@
 // Test 3-level nested loops with individual prints
-@ i in 0..<2 {
+@ i in 0..<2  max 20 {
     printf("i=%v ", i)
-    @ j in 0..<2 {
+    @ j in 0..<2  max 20 {
         printf("j=%v ", j)
-        @ k in 0..<2 {
+        @ k in 0..<2  max 20 {
             printf("k=%v ", k)
             printf("-> %v\n", i * 100 + j * 10 + k)
         }

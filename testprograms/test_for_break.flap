@@ -1,6 +1,6 @@
 // test_for_break.flap - test @ syntax for loops
 printf("Testing @ loop:\n")
-@ i in 0..<5 {
+@ i in 0..<5  max 50 {
     printf("%.0f ", i)
 }
 printf("\n")

@@ -1,14 +1,14 @@
 // Two sequential inner loops
-@ i in 0..<2 {
+@ i in 0..<2  max 20 {
     printf("i=%v: ", i)
 
     // First inner loop
-    @ j in 0..<2 {
+    @ j in 0..<2  max 20 {
         printf("a")
     }
 
     // Second inner loop
-    @ k in 0..<3 {
+    @ k in 0..<3  max 30 {
         printf("b")
     }
 
