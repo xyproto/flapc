@@ -98,7 +98,7 @@ This makes code more readable and prevents confusion between legitimate negative
 
 ### Variables
 
-Flap has **three distinct assignment operators** to make mutability and updates explicit:
+Flap has **five distinct assignment operators** to make mutability and updates explicit:
 
 ```flap
 // = defines IMMUTABLE variable
@@ -126,7 +126,7 @@ sum := 0
 }
 ```
 
-**The Three Operators:**
+**The Five Operators:**
 1. **`=`** - Define/initialize **immutable** variable
    - Can shadow existing immutable variables
    - Cannot shadow mutable variables
@@ -141,10 +141,21 @@ sum := 0
    - Requires variable to be mutable
    - Makes mutations explicit and visible
 
-**Why three operators?**
+4. **`=?`** - Define/initialize **immutable** with error propagation
+   - If right side is err, return from function with that err
+   - If right side has val, assign to immutable variable
+   - Railway-oriented assignment for immutable values
+
+5. **`<-?`** - Update **mutable** variable with error propagation
+   - If right side is err, return from function with that err
+   - If right side has val, update mutable variable
+   - Railway-oriented assignment for mutable values
+
+**Why five operators?**
 - Prevents accidental variable shadowing bugs (the #1 cause of logic errors in loops)
 - Makes mutability explicit at definition site
 - Makes mutations explicit at update site
+- `=?` and `<-?` eliminate boilerplate error handling
 - Compiler catches common mistakes at compile time
 
 **Note on Arrow Symbols:**
@@ -713,6 +724,57 @@ main ==> {
     printf("Success: %v\n", result)
 }
 ```
+
+#### Err Propagation with `=?` and `<-?`
+
+The `=?` and `<-?` operators combine assignment with error propagation - if the right side is an err, the function returns with that err immediately:
+
+```flap
+// Without =?: verbose error handling
+process_data = input => {
+    result1 := parse(input)
+    result1.err? {
+        err result1  // Must explicitly return error
+    }
+    data = result1  // Extract value
+
+    result2 := validate(data)
+    result2.err? {
+        err result2
+    }
+    validated = result2
+
+    ret validated
+}
+
+// With =?: concise and clean
+process_data = input => {
+    data =? parse(input)       // If err, returns from function
+    validated =? validate(data)  // If err, returns from function
+    ret validated
+}
+
+// With mutable variables using <-?
+update_state = new_val => {
+    state := get_state()
+    state <-? validate(new_val)  // If err, returns from function
+    state <-? transform(state)   // If err, returns from function
+    save_state(state)
+}
+
+// Mix with or! for defaults
+load_config = () => {
+    port =? read_port() or! 8080     // Use default if err
+    host =? read_host() or! "localhost"
+    timeout =? read_timeout()  // Propagate err (no default)
+    ret {port: port, host: host, timeout: timeout}
+}
+```
+
+**When to use:**
+- Use `=?` / `<-?` when you want to propagate errors immediately
+- Use `or!` when you want to provide defaults or custom handling
+- `=?` / `<-?` is like Rust's `?` operator but integrated into assignment
 
 #### Success Handler `and!`
 

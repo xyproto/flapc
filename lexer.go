@@ -21,11 +21,13 @@ const (
 	TOKEN_MOD
 	TOKEN_EQUALS
 	TOKEN_COLON_EQUALS
-	TOKEN_PLUS_EQUALS  // +=
-	TOKEN_MINUS_EQUALS // -=
-	TOKEN_STAR_EQUALS  // *=
-	TOKEN_SLASH_EQUALS // /=
-	TOKEN_MOD_EQUALS   // %=
+	TOKEN_EQUALS_QUESTION     // =? (immutable assignment with error propagation)
+	TOKEN_LEFT_ARROW_QUESTION // <-? (mutable update with error propagation)
+	TOKEN_PLUS_EQUALS         // +=
+	TOKEN_MINUS_EQUALS        // -=
+	TOKEN_STAR_EQUALS         // *=
+	TOKEN_SLASH_EQUALS        // /=
+	TOKEN_MOD_EQUALS          // %=
 	TOKEN_LPAREN
 	TOKEN_RPAREN
 	TOKEN_COMMA
