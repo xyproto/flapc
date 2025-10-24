@@ -14,6 +14,70 @@ Flap uses `map[uint64]float64` as its unified type representation:
 
 All values use IEEE 754 double-precision floating point. This single underlying type enables uniform operations and consistent SIMD optimization.
 
+### Result Type
+
+All expressions and functions in Flap implicitly return a **Result** type, which represents either success with value(s) or failure with an error:
+
+```
+Result = Ok(value1, value2, ...) | Err(error_message)
+```
+
+**Key Properties:**
+- A Result contains **either** values **or** an error string, never both
+- Values can be zero, one, or multiple (returned as a list)
+- The `ret` keyword creates an Ok result
+- The `err` keyword creates an Err result
+- Pattern matching extracts values or errors
+- The `or!` operator propagates errors automatically
+
+**Examples:**
+
+```flap
+// Function returning a single value
+divide = (a, b) => {
+    b == 0 { err "division by zero" }
+    ret a / b
+}
+
+// Pattern match on Result
+result := divide(10, 2)
+result {
+    -> value { printf("Result: %v\n", value) }
+    ~> error { printf("Error: %v\n", error) }
+}
+
+// Multiple return values
+parse_coords = text => {
+    valid { ret x, y, z }
+    ~> err "invalid coordinates"
+}
+
+coords := parse_coords("1,2,3")
+coords {
+    -> x, y, z { printf("x=%v, y=%v, z=%v\n", x, y, z) }
+    ~> error { printf("Parse error: %v\n", error) }
+}
+
+// Error propagation with or!
+safe_divide = (a, b) => {
+    result := divide(a, b) or! 0  // Returns 0 if error
+    ret result * 2
+}
+
+// Loops can return Results
+find_item = items => @ i in items {
+    i > 100 { ret @ i }  // Ok(i)
+    i < 0 { err @ "negative value found" }  // Err("negative value found")
+}
+```
+
+**Benefits:**
+- **Explicit error handling**: All errors must be handled or propagated
+- **No null/undefined**: Missing values are explicit Err results
+- **Multiple returns**: Functions can return multiple values naturally
+- **Railway-oriented**: `or!` chains operations that might fail
+- **Type safety**: Cannot accidentally use error as value
+
 ## Compilation
 
 - **Direct code generation**: x86-64, ARM64, RISC-V machine code (no LLVM, no GCC)
@@ -516,39 +580,134 @@ numbers := [10, 20, 30]
 // Note: max is optional for list literals
 ```
 
-### Error Handling (Railway-Oriented Programming)
+### Error Handling
 
-The `or!` operator enables clean error handling using railway-oriented programming:
+Flap uses Result types and pattern matching for explicit, type-safe error handling. All functions and expressions return Results containing either value(s) or an error.
+
+#### Pattern Matching on Results
+
+The primary way to handle Results is through pattern matching with `->` (success) and `~>` (error):
 
 ```flap
-// Convention: functions return 0.0 on error, non-zero on success
-// or! checks the left side and either continues (success) or exits (error)
-
-// Example: file operations with error handling
-file = open("data.txt") or! "Failed to open file"
-data = read(file) or! "Failed to read data"
-result = process(data) or! "Failed to process data"
-
-// Each operation either succeeds (continues with value) or fails (exits with message)
-// This creates a "railway" where success stays on the main track
-// and errors branch off to the error handling track (exit)
-
-// Equivalent verbose version without or!:
-file = open("data.txt")
-file == 0 {
-    -> println("Failed to open file") :: exit(1)
+// Function that returns Result
+parse_int = text => {
+    is_number(text) { ret string_to_int(text) }
+    ~> err "not a valid integer"
 }
-data = read(file)
-data == 0 {
-    -> println("Failed to read data") :: exit(1)
+
+// Handle Result with pattern matching
+result := parse_int("42")
+result {
+    -> value { printf("Parsed: %v\n", value) }
+    ~> error { printf("Error: %v\n", error) }
+}
+
+// Multiple return values
+read_user = id => {
+    valid { ret name, age, email }
+    ~> err "user not found"
+}
+
+user := read_user(123)
+user {
+    -> name, age, email { printf("%v (%v): %v\n", name, age, email) }
+    ~> error { printf("Failed: %v\n", error) }
+}
+```
+
+#### Error Propagation with `or!`
+
+The `or!` operator provides automatic error propagation (railway-oriented programming):
+
+```flap
+// Chain operations that might fail
+process_file = filename => {
+    file := open(filename) or! err "cannot open file"
+    data := read(file) or! err "cannot read data"
+    result := parse(data) or! err "cannot parse data"
+    ret result
+}
+
+// or! with default values
+safe_divide = (a, b) => {
+    result := divide(a, b) or! 0  // Returns 0 if error
+    ret result
+}
+
+// or! propagates errors up the call chain
+main ==> {
+    result := process_file("data.txt") or! {
+        printf("File processing failed\n")
+        exit(1)
+    }
+    printf("Success: %v\n", result)
+}
+```
+
+#### Loop Error Handling
+
+Loops can return Results, allowing early exit with value or error:
+
+```flap
+// Exit loop with value
+find_first = items => @ i in items {
+    i > 100 { ret @ i }  // Returns Ok(i)
+}
+
+// Exit loop with error
+validate_all = items => @ i in items {
+    i < 0 { err @ "negative value found" }
+    i > 1000 { err @ "value too large" }
+}
+
+// Handle loop result
+result := find_first([1, 50, 150, 200])
+result {
+    -> value { printf("Found: %v\n", value) }
+    ~> error { printf("Not found\n") }
+}
+```
+
+#### Error Handling Patterns
+
+**1. Explicit Handling (pattern matching)**
+```flap
+result := risky_operation()
+result {
+    -> value { process(value) }
+    ~> error { log_error(error) }
+}
+```
+
+**2. Propagation (railway-oriented)**
+```flap
+chained_operation = () => {
+    a := step1() or! err "step1 failed"
+    b := step2(a) or! err "step2 failed"
+    c := step3(b) or! err "step3 failed"
+    ret c
+}
+```
+
+**3. Default Values**
+```flap
+value := unsafe_operation() or! default_value
+```
+
+**4. Panic on Error**
+```flap
+value := must_succeed() or! {
+    printf("Fatal error\n")
+    exit(1)
 }
 ```
 
 **Benefits:**
-- No nested if/else for error checking
-- Errors propagate automatically with clear messages
-- Success path remains clean and readable
-- Similar to Rust's `?` operator or Haskell's Either monad
+- **Explicit**: All errors must be handled or propagated
+- **Type-safe**: Cannot accidentally use error as value
+- **No exceptions**: No hidden control flow or stack unwinding
+- **Composable**: `or!` chains operations naturally
+- **Railway-oriented**: Success path stays clean and linear
 
 ### Lambdas
 
