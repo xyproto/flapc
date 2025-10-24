@@ -6,33 +6,37 @@ End goal: Publishable Steam games with Steamworks integration.
 
 Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
+## Recent Progress
+
+**Test Framework Enhancement** (2025-10-24)
+- Added wildcard pattern matching for non-deterministic test output
+- Supports `*` wildcard for matching memory addresses, PIDs, timestamps
+- Correctly handles ASCII art (doesn't treat `         *` as wildcard)
+- Updated 6 test result files with wildcard patterns
+- Test pass rate: 303/306 (99%)
+- 3 remaining failures are documented segfault issues (#2 below)
+
 ## Critical - Compiler Correctness
 
-1. **Change 'ret' keyword to 'retval' and introduce 'reterr'** (MEDIUM)
-   - Current: `ret` returns a value from function/lambda
-   - Goal: Separate value returns (`retval`) from error returns (`reterr`)
-   - Design: Functions return either a value OR an error, not both
-   - Syntax: `retval x` returns value, `reterr "error message"` returns error string
-   - Impact: Better error handling semantics, clearer code intent
-   - Files: `lexer.go` (add TOKEN_RETVAL, TOKEN_RETERR), `parser.go` (update all ret handling)
-   - Update: LANGUAGE.md to document new keywords
+1. ~~**Change 'ret' keyword to 'retval' and introduce 'reterr'**~~ ✓ COMPLETED
+   - Completed in commit 858db49
+   - `retval` and `reterr` keywords now implemented
 
-2. **Fix higher-order function segfaults** (HIGH)
+2. **Fix higher-order function segfaults** (HIGH) 🔴 ACTIVE
    - Current: Passing lambdas as parameters causes segfaults
-   - Error: Programs like lambda_calculator crash with exit code 139
+   - Error: Programs crash with exit code 139 (SIGSEGV)
+   - Failing tests: test_lambda_match, test_map_simple, ex2_list_operations
    - Impact: Blocks functional programming patterns (map, filter, reduce)
-   - Root cause: Likely closure environment handling or calling convention mismatch
-   - Files: `parser.go` lambda call codegen, closure compilation
-   - Tests: lambda_calculator, lambda_direct_test, pipe_test fail
+   - Root cause: Call stub generation failures, dynamic linking issues
+   - Symptoms: "Warning: Label $stub not found for call patch"
+   - Files: `parser.go` lambda call codegen, `main.go` stub generation
 
-3. **Fix nested loops with loop-local variables** (MEDIUM)
-   - Current: Simple loops work, nested loops with locals fail
-   - Problem: Loop state offset calculation breaks with nesting
-   - Impact: Blocks programs like ascii_art pyramid
-   - Approach: Extend `loopBaseOffsets` tracking to handle nesting depth
-   - Files: `parser.go:compileRangeLoop`, `parser.go:collectSymbols`
+3. ~~**Fix nested loops with loop-local variables**~~ ✓ COMPLETED
+   - Fixed in commits 8cbb7b9 and 987e746
+   - Stack offset management and iteration counter initialization corrected
+   - Test status: 303/306 tests passing (99%)
 
-2. **Implement proper closure capture for nested lambdas** (HIGH)
+4. **Implement proper closure capture for nested lambdas** (HIGH)
    - Current: Inner lambdas can't access outer lambda parameters
    - Error: "undefined variable" when lambda returns lambda
    - Impact: Blocks higher-order functional programming
