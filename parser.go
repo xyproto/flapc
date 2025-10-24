@@ -4611,12 +4611,25 @@ func (fc *FlapCompiler) collectLoopsFromExpression(expr Expression) {
 			fc.stackOffset += 24
 		}
 
+		oldVariables := fc.variables
+		oldMutableVars := fc.mutableVars
+		fc.variables = make(map[string]int)
+		fc.mutableVars = make(map[string]bool)
+		for k, v := range oldVariables {
+			fc.variables[k] = v
+		}
+		for k, v := range oldMutableVars {
+			fc.mutableVars[k] = v
+		}
+
 		for _, bodyStmt := range e.Body {
 			if err := fc.collectSymbols(bodyStmt); err != nil {
 				return
 			}
 		}
 
+		fc.variables = oldVariables
+		fc.mutableVars = oldMutableVars
 		fc.stackOffset = baseOffset
 
 	case *BinaryExpr:
@@ -4678,11 +4691,25 @@ func (fc *FlapCompiler) collectLoopsFromExpression(expr Expression) {
 		}
 
 	case *BlockExpr:
+		oldVariables := fc.variables
+		oldMutableVars := fc.mutableVars
+		fc.variables = make(map[string]int)
+		fc.mutableVars = make(map[string]bool)
+		for k, v := range oldVariables {
+			fc.variables[k] = v
+		}
+		for k, v := range oldMutableVars {
+			fc.mutableVars[k] = v
+		}
+
 		for _, stmt := range e.Statements {
 			if err := fc.collectSymbols(stmt); err != nil {
 				return
 			}
 		}
+
+		fc.variables = oldVariables
+		fc.mutableVars = oldMutableVars
 
 	case *UnaryExpr:
 		fc.collectLoopsFromExpression(e.Operand)
