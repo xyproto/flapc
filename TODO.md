@@ -1,202 +1,165 @@
 # Flapc TODO
 
-## Essential - Compiler Bugs (Highest Priority)
+Actionable items sorted by importance and fundamentality for **game development with SDL3 and RayLib5**.
+Target platforms: macOS (arm64), Linux (x86_64/arm64/riscv64), Windows (x86_64/arm64).
+End goal: Publishable Steam games with Steamworks integration.
 
-These bugs prevent proper testing and limit language usability:
+Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
-- [~] **Loop-local variables and stack management** - PARTIALLY FIXED
-  - **Fixed**: Simple loops with loop-local variables (fibonacci, basic use cases)
-  - **Fixed**: Proper runtime stack tracking to prevent unbounded stack growth
-  - **Fixed**: Loop state offset calculation using pre-body stack position
-  - **Remaining issue**: Nested loops with loop-local variables have incorrect behavior
-  - **Implementation**: Added runtime stack tracking (`fc.runtimeStack`) separate from logical offsets
-  - **Implementation**: Added `loopBaseOffsets` map to track stack position before each loop body
-  - **Impact**: Critical improvement - fixes infinite loops and stack corruption in simple cases
-  - **Next step**: Debug nested loop interaction with loop-local variables
+## Critical - Platform Support for Game Distribution
 
-- [x] **Nested loops bug** - FIXED ✓
-  - Fixed using pure stack-based storage (following C/Go approach)
-  - All loop counters and limits stored on stack, avoiding register conflicts
-  - Working tests: test_nested_var_bounds, test_nested_simple, ascii_art, test_nested_loops_i
-  - Works correctly for all nesting depths with simple variable access
-  - Known limitation: 3+ level nesting with complex arithmetic expressions (i*100+j*10+k) shows incorrect output
-    - Simple arithmetic (i+j+k) works fine
-    - Individual variable access works fine
-    - Issue appears to be with expression evaluation, not loop structure
-  - Impact: Major improvement - covers 99% of real-world nested loop use cases
+1. **Add Windows x64 code generation** (HIGH)
+   - Goal: Compile to PE/COFF executables for Windows x64
+   - Calling convention: Microsoft x64 (different from System V)
+   - Binary format: PE32+ (Portable Executable)
+   - Impact: Required for Steam Windows builds
+   - Files: New `pe_builder.go`, `codegen_windows.go`
 
-- [ ] **Lambda-returning-lambda (closures)** - Compilation error "undefined variable"
-  - Root cause: Inner lambdas can't access outer lambda parameters (no closure capture)
-  - Affects: Any lambda that returns another lambda
-  - Impact: High - prevents functional programming patterns
-  - Status: Requires implementing closure capture mechanism
+2. **Add Windows ARM64 code generation** (HIGH)
+   - Goal: Support Windows on ARM (Surface, future gaming devices)
+   - Calling convention: Microsoft ARM64
+   - Binary format: PE32+ ARM64
+   - Impact: Future-proofing for Windows ARM gaming PCs
+   - Files: Extend ARM64 codegen with Windows support
 
-- [x] **String variables with printf %s** - FIXED ✓
-  - Root cause: Stack misalignment before malloc call in `flap_string_to_cstr`
-  - Fix: Removed premature stack restoration (line 7520) to keep 16-byte alignment for malloc
-  - Working tests: test_string_print_var.flap, test_match_string_test.flap, programs/match_unicode.flap
-  - Impact: Fixed string variables in printf, match expressions with strings now work
+3. **Fix macOS ARM64 runtime issues** (HIGH)
+   - Current: Binaries hang before entering main()
+   - Problem: dyld/code signing/entitlements
+   - Impact: Blocks macOS game distribution
+   - Approach: Debug Mach-O generation, test codesigning
+   - Files: `macho_builder.go`, startup code
 
-- [~] **Recursive lambdas** - PARTIALLY FIXED
-  - Issue 1: Can't call lambda by its own name (symbol lookup error)
-    - Workaround: Use `me` keyword for self-reference
-    - Status: Still requires implementing
-  - **Issue 2: Non-tail recursion with `me` returns wrong values** - FIXED ✓
-    - **Fixed**: Implemented proper tail position detection
-    - **Fixed**: Only apply TCO when call is actually in tail position
-    - Now correctly handles: `me(n-1) * n` (NOT optimized - correct!)
-    - Now correctly handles: `me(n-1, acc * n)` (IS optimized - correct!)
-    - Implementation: Added `fc.inTailPosition` flag set by match clause compilation
-    - Implementation: Clear tail position flag in binary expressions
-    - Test passing: programs/factorial.flap now works correctly
-  - Impact: High - enables proper functional recursion patterns
+4. **Complete Linux ARM64 support** (MEDIUM)
+   - Goal: Raspberry Pi 4+ and Linux ARM gaming devices
+   - Current: Basic ARM64 codegen exists
+   - Need: Full ELF generation and runtime testing
+   - Impact: Enables embedded/portable Linux gaming
+   - Files: `arm64.go`, `elf_builder.go`
 
-## Essential - LISP/StandardML-Style Function Handling
+5. **Complete RISC-V 64-bit support** (LOW)
+   - Goal: Future RISC-V gaming handhelds
+   - Current: Instruction encoders ready
+   - Need: Full codegen implementation
+   - Impact: Future-proofing for RISC-V gaming
+   - Files: `riscv64.go`
 
-Goal: Proper functional programming support with correct recursion semantics
+## Critical - Compiler Correctness
 
-### Phase 1: Fix Broken TCO (Critical - Immediate) ✓ COMPLETE
-- [x] **Implement proper tail position detection** - DONE
-  - A call is in tail position ONLY if it's the last operation before return
-  - `~> me(n-1)` - YES, tail position ✓
-  - `~> me(n-1) * n` - NO, multiplication happens after ✓
-  - `~> me(n-1) + me(n-2)` - NO, addition happens after ✓
-  - Must analyze the AST to determine if call is truly final operation ✓
+6. **Fix nested loops with loop-local variables** (MEDIUM)
+   - Current: Simple loops work, nested loops with locals fail
+   - Problem: Loop state offset calculation breaks with nesting
+   - Impact: Blocks programs like ascii_art pyramid
+   - Approach: Extend `loopBaseOffsets` tracking to handle nesting depth
+   - Files: `parser.go:compileRangeLoop`, `parser.go:collectSymbols`
 
-- [x] **Fix TCO application logic** - DONE
-  - Previously: Always applied TCO to `me` calls (WRONG)
-  - Now: Only applies TCO when call is in actual tail position (CORRECT)
-  - Implementation: Added `fc.inTailPosition` flag ✓
-  - Set by `compileMatchClauseResult` and `compileMatchDefault` ✓
-  - Cleared by `compileBinaryOpSafe` for operands ✓
-  - Checked in `compileCall` before applying TCO ✓
+7. **Implement proper closure capture for nested lambdas** (HIGH)
+   - Current: Inner lambdas can't access outer lambda parameters
+   - Error: "undefined variable" when lambda returns lambda
+   - Impact: Blocks higher-order functional programming
+   - Approach: Track captured variables, allocate environment on heap
+   - Reference: Already have heap-allocated closures, extend for capture
+   - Files: `parser.go:collectCapturedVarsExpr`, lambda compilation
 
-- [ ] **Add tail call validation in debug mode** (Future enhancement)
-  - When `~tailcall>` or similar syntax is used, verify it's actually in tail position
-  - Emit warning or error if non-tail call is marked for TCO
-  - Helps developers write correct tail-recursive code
+## Critical - Game Development FFI
 
-### Phase 2: Better Stack Management (Important - Near-term)
-- [ ] **Implement precalculated stack frames**
-  - Scan entire function body before code generation
-  - Calculate total stack space needed (all variables + loop state)
-  - Allocate entire frame once at function entry: `sub rsp, <total>`
-  - All variables get fixed offsets from rbp
-  - No dynamic allocation during execution
-  - Benefits:
-    - No stack tracking bugs
-    - No loop cleanup issues
-    - Easier to debug (stack layout is predictable)
-    - Matches C/C++/ML compiler behavior
+8. **Enhance unsafe blocks to return register values** (MEDIUM)
+   - Current: unsafe blocks execute but don't return expressions
+   - Goal: Return register values (rax, xmm0, etc.) as expressions
+   - Syntax: `result := unsafe { rax <- 42; rax }`
+   - Impact: Essential for low-level game optimizations
+   - Files: `parser.go:parseUnsafeExpr`, unsafe codegen
 
-- [ ] **Separate frame calculation from code generation**
-  - Phase 1: collectSymbols → calculate offsets
-  - Phase 2: calculateFrameSize → determine total frame size
-  - Phase 3: generate code → use fixed offsets
-  - Clear separation of concerns
+9. **Extend C FFI for SDL3/RayLib5** (HIGH)
+   - Current: Only 6 integer arguments, no floats/pointers/structs
+   - Need: Float arguments (colors, positions), pointer arguments (structs)
+   - Goal: Full SDL3 and RayLib5 API access
+   - Impact: Blocks 90% of game development functions
+   - Files: `parser.go` FFI handling, ABI conversion
 
-### Phase 3: Advanced Functional Features (Future)
-- [ ] **Implement continuation-passing style (CPS) transform**
-  - Internal optimization to convert all calls to tail calls
-  - Enables advanced control flow without stack growth
-  - Example: Transform `f() + g()` to `f((r1) => g((r2) => r1 + r2))`
-  - Optional - only for advanced optimization pass
+10. **Add Steamworks FFI support** (HIGH)
+    - Goal: Steam achievements, leaderboards, cloud saves
+    - Approach: C FFI with proper struct/callback handling
+    - Impact: Required for commercial Steam releases
+    - Files: New `steamworks.go`, FFI extensions
 
-- [ ] **Add trampoline execution for deep recursion**
-  - Instead of direct recursion, return "thunk" (suspended computation)
-  - Executor loop evaluates thunks iteratively
-  - Prevents stack overflow for non-tail-recursive functions
-  - Example: Fibonacci without TCO but without stack overflow
+## Fundamental - Enable Core Patterns
 
-- [ ] **Implement proper closure capture analysis**
-  - Track which variables are captured by inner lambdas
-  - Allocate capture environment on heap
-  - Enable lambda-returning-lambda patterns
-  - Fixes the "undefined variable" error for nested closures
+11. **Add trampoline execution for deep recursion** (MEDIUM)
+   - Current: Non-tail-recursive functions can stack overflow
+   - Goal: Handle deep recursion without TCO (e.g., tree traversal)
+   - Approach: Return thunk (suspended computation), evaluate iteratively
+   - Benefits: Fibonacci, tree recursion without stack limits
+   - Files: New `trampoline.go`, modify lambda returns
 
-### Phase 4: Functional Programming Conveniences (Nice to Have)
-- [ ] **Add explicit tail call syntax**
-  - `~> expr` - normal return
-  - `~tailcall> expr` - guaranteed tail call (error if not in tail position)
-  - `~call> expr` - guaranteed non-tail call (allocate frame even if in tail position)
-  - Makes programmer intent explicit
+12. **Enable lambda self-reference by name** (LOW)
+    - Current: Must use `me` keyword, can't call lambda by its own name
+    - Impact: Quality of life, clearer recursive code
+    - Approach: Add lambda name to scope before compiling body
+    - Files: `parser.go:compileExpression` LambdaExpr case
 
-- [ ] **Add pattern matching on function arguments**
-  ```flap
-  factorial := (0) => 1
-             | (n) => n * factorial(n - 1)
-  ```
-  - Matches StandardML style
-  - Cleaner than match expressions
+13. **Implement precalculated stack frames** (MEDIUM)
+    - Current: Dynamic stack allocation causes tracking bugs
+    - Goal: Allocate entire frame at function entry (C/C++ style)
+    - Benefits: No stack tracking bugs, predictable layout, easier debug
+    - Approach: Calculate frame size in collectSymbols, allocate once
+    - Files: `parser.go:Compile`, `parser.go:collectSymbols`
 
-- [ ] **Add `let` bindings for local scope**
-  ```flap
-  factorial := (n) => {
-    let rec loop = (n, acc) => n <= 1 {
-      -> acc
-      ~> loop(n-1, acc * n)
-    }
-    loop(n, 1)
-  }
-  ```
-  - Separates helper functions from main logic
-  - Common functional pattern
+14. **Implement infinite loop syntax** (LOW)
+    - Goal: `@ { ... }` without arguments for infinite loops
+    - Current: Must use range loop with large number
+    - Impact: Cleaner game loop syntax
+    - Files: `parser.go:parseLoopStatement`
 
-## Essential - Core Language Features
+## Advanced - Optimization
 
-- [ ] Add an "alias" keyword for creating keyword aliases
-  - Examples: `alias for=@`, `alias break=@-`, `alias continue=@=`
-  - Enables language packs (python.flap, gdscript.flap, etc.)
+15. **Add CPS (Continuation-Passing Style) transform** (VERY HIGH)
+    - Goal: Convert all calls to tail calls internally
+    - Benefits: Advanced control flow, no stack growth
+    - Approach: Transform AST before code generation
+    - Example: `f() + g()` → `f((r1) => g((r2) => r1 + r2))`
+    - Note: Optional optimization pass, no IR needed
+    - Files: New `cps.go`, modify compilation pipeline
 
-- [ ] Add optional use of `:` followed by indentation (like Python) instead of `{}` blocks
-  - Enables Python/GDScript-style syntax in language packs
-  - Should be opt-in, not replacing existing brace syntax
+## Language Features
 
-## Important - Bug Fixes
+16. **Add alias keyword for language packs** (MEDIUM)
+   - Syntax: `alias for=@`, `alias break=@-`, `alias continue=@=`
+   - Enables: python.flap, gdscript.flap style packs
+   - Files: `lexer.go`, `parser.go`, new alias map
 
-- [ ] Fix the TODO issues mentioned in examples/*.flap
+17. **Add Python-style colon + indentation** (MEDIUM)
+    - Opt-in alternative to braces: `if x > 0:\n    print(x)`
+    - Enables: Python/GDScript-like syntax
+    - Files: `lexer.go` (indentation tracking), `parser.go`
 
-## Nice to Have - Advanced Features
+18. **Add pattern matching on function parameters** (HIGH)
+    - Syntax: `factorial := (0) => 1 | (n) => n * factorial(n-1)`
+    - StandardML-style elegance
+    - Files: `parser.go` lambda parsing, new pattern match system
 
-- [ ] Add unsafe block with platform-agnostic register names
-  - Use "a" for first register, "b" for next, etc.
-  - Inspired by the Battlestar programming language
-  - Combines all platforms into one assembly syntax
+19. **Add let bindings for local scope** (MEDIUM)
+    - Syntax: `let rec loop = (n, acc) => ...`
+    - Common functional pattern
+    - Files: `parser.go`, new LetExpr type
 
-- [ ] Add approximate equality operator for float matching
-  - Syntax: `0.3 =0.1= 0.2` (checks if 0.3 is within 0.2±0.1)
-  - Useful for floating-point comparisons
+## Nice to Have
 
-- [ ] Add macro system for complex syntax transformations
-  - Enables advanced language pack features
-  - Pattern-based code transformation
+20. **Add tail call validation in debug mode** (LOW)
+    - Warn if `~tailcall>` used incorrectly
+    - Helps developers write correct code
 
-- [ ] Add custom infix operator definitions
-  - For language packs with different operator precedence
-  - Example: Python's `**` for exponentiation
+21. **Add approximate equality operator** (LOW)
+    - Syntax: `0.3 =0.1= 0.2`
+    - Useful for floating-point game physics comparisons
 
-## Nice to Have - New Operators (After All Tests Pass)
+22. **Add macro system** (VERY HIGH)
+    - Pattern-based code transformation
+    - Enables advanced language packs
 
-These operators work in both safe and unsafe blocks:
+23. **Add custom infix operators** (HIGH)
+    - For language packs (e.g., Python's `**`)
+    - Requires precedence handling
 
-- [ ] `++` (add with carry) - Multi-precision arithmetic
-  - Safe mode: Automatic carry propagation between operations
-  - Unsafe mode: Uses `adc` instruction (x86-64) for explicit carry handling
-  - Syntax: `result <- high1 ++ high2`
-
-- [ ] `<->` (swap/exchange) - Exchange two values
-  - Safe mode: Swap variables or memory locations
-  - Unsafe mode: Uses `xchg` instruction (x86-64) for atomic operations
-  - Syntax: `a <-> b` or `rax <-> rbx` (unsafe)
-
-**Not implementing** (obsolete, privileged, or redundant):
-- `aad`, `aam` - Obsolete BCD instructions
-- `cbw`, `cwd` - Sign extension (can use movsx instead)
-- `in` - Port I/O (privileged, not useful in userspace)
-- `int` - Software interrupt (already have syscall support)
-- `stosw` - String operations (can use mov in loops)
-- `xadd` - Atomic exchange-and-add (niche use case)
-
-**Already implemented:**
-- `add`, `imul`, `mov`, `or`, `pop`, `xor` - All have dedicated .go files
-- Jump instructions (`jnp`, `jns`, `jnz`, `jp`, `jz`) - Handled in jmp.go
+24. **Add multi-precision arithmetic operators** (MEDIUM)
+    - `++` (add with carry)
+    - `<->` (swap/exchange)

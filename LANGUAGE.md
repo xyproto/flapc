@@ -916,18 +916,34 @@ The hand-written recursive-descent parser accepts the following grammar. Newline
 ```ebnf
 program         = { newline } { statement { newline } } ;
 
-statement       = loop_statement
+statement       = use_statement
+                | import_statement
+                | arena_statement
+                | defer_statement
+                | loop_statement
                 | jump_statement
                 | assignment
                 | expression_statement ;
 
-loop_statement  = "@" identifier "in" expression block
+use_statement   = "use" string ;
+
+import_statement = "import" string ;
+
+arena_statement = "arena" block ;
+
+defer_statement = "defer" expression ;
+
+loop_statement  = "@" block
+                | "@" identifier "in" expression block
                 | "@" number identifier "in" expression block ;
 
 jump_statement  = "ret" [ "@" number ] [ expression ]
-                | "@" number ;
+                | "@" number
+                | "@-"
+                | "@=" ;
 
-assignment      = identifier [ ":" type_annotation ] ("=" | ":=") expression ;
+assignment      = identifier [ ":" type_annotation ] ("=" | ":=" | "<-") expression
+                | identifier ("+=" | "-=" | "*=" | "/=" | "%=") expression ;
 
 type_annotation = ("b" | "f") number ;
 
@@ -950,7 +966,11 @@ block           = "{" { statement { newline } } "}" ;
 
 expression              = or_bang_expr ;
 
-or_bang_expr            = pipe_expr [ "or!" string ] ;
+or_bang_expr            = concurrent_gather_expr [ "or!" string ] ;
+
+concurrent_gather_expr  = parallel_expr { "|||" parallel_expr } ;
+
+parallel_expr           = pipe_expr { "||" pipe_expr } ;
 
 pipe_expr               = logical_or_expr { "|" logical_or_expr } ;
 
@@ -995,8 +1015,14 @@ primary_expr            = number
                         | lambda_expr
                         | list_literal
                         | map_literal
+                        | arena_expr
+                        | unsafe_expr
                         | "^" primary_expr
                         | "&" primary_expr ;
+
+arena_expr              = "arena" "{" { statement { newline } } expression "}" ;
+
+unsafe_expr             = "unsafe" "{" { statement { newline } } [ expression ] "}" ;
 
 loop_state_var          = "@first" | "@last" | "@counter" | "@i" ;
 
@@ -1027,8 +1053,10 @@ escape_sequence         = "\\" ( "n" | "t" | "r" | "\\" | '"' ) ;
 
 ### Grammar Notes
 
-* `@` introduces auto-labeled loops. The loop label is the current nesting depth (1, 2, 3, ...).
+* `@` without arguments creates an infinite loop: `@ { ... }`
+* `@` with identifier introduces auto-labeled loops. The loop label is the current nesting depth (1, 2, 3, ...).
 * `@1`, `@2`, `@3`, ... continues the loop at that nesting level by jumping to its top.
+* `unsafe` blocks can return register values as expressions (e.g., `rax`, `rbx`)
 * When used in a loop statement (`@1 identifier in expression`), it explicitly labels that loop.
 * `ret` returns from the current function. `ret @1`, `ret @2`, `ret @3`, ... exits the loop at that nesting level and all inner loops.
 * Lambda syntax: `x => expr` or `x, y => expr` (no parentheses around parameters).
