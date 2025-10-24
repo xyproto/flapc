@@ -1,7 +1,7 @@
 // Test that exercises the cache (and the refactored malloc call)
 // Using map operations which internally use the cache
 
-m := [:]
+m := []
 m[5] = 10
 m[10] = 20
 m[15] = 30
