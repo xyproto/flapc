@@ -4,6 +4,16 @@
 
 These bugs prevent proper testing and limit language usability:
 
+- [~] **Loop-local variables and stack management** - PARTIALLY FIXED
+  - **Fixed**: Simple loops with loop-local variables (fibonacci, basic use cases)
+  - **Fixed**: Proper runtime stack tracking to prevent unbounded stack growth
+  - **Fixed**: Loop state offset calculation using pre-body stack position
+  - **Remaining issue**: Nested loops with loop-local variables have incorrect behavior
+  - **Implementation**: Added runtime stack tracking (`fc.runtimeStack`) separate from logical offsets
+  - **Implementation**: Added `loopBaseOffsets` map to track stack position before each loop body
+  - **Impact**: Critical improvement - fixes infinite loops and stack corruption in simple cases
+  - **Next step**: Debug nested loop interaction with loop-local variables
+
 - [x] **Nested loops bug** - FIXED ✓
   - Fixed using pure stack-based storage (following C/Go approach)
   - All loop counters and limits stored on stack, avoiding register conflicts

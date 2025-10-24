@@ -3639,7 +3639,9 @@ type FlapCompiler struct {
 	cLibHandles         map[string]string            // Track library handles: library -> handle var name
 	cConstants          map[string]*CHeaderConstants // Track C constants: alias -> constants
 	stringCounter       int                          // Counter for unique string labels
-	stackOffset         int                          // Current stack offset for variables
+	stackOffset         int                          // Current stack offset for variables (logical)
+	runtimeStack        int                          // Actual runtime stack usage (updated during compilation)
+	loopBaseOffsets     map[int]int                  // Loop label -> stackOffset before loop body (for state calculation)
 	labelCounter        int                          // Counter for unique labels (if/else, loops, etc)
 	lambdaCounter       int                          // Counter for unique lambda function names
 	activeLoops         []LoopInfo                   // Stack of active loops (for @N jump resolution)
@@ -3702,6 +3704,7 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 		cLibHandles:         make(map[string]string),
 		cConstants:          make(map[string]*CHeaderConstants),
 		lambdaOffsets:       make(map[string]int),
+		loopBaseOffsets:     make(map[int]int),
 		cacheEnabledLambdas: make(map[string]bool),
 		debug:               debugEnabled,
 		currentArena:        -1,
@@ -4380,6 +4383,15 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 			}
 		}
 	case *LoopStmt:
+		// Save stackOffset before processing loop body
+		// This is needed for correct loop state offset calculation
+		loopLabel := fc.labelCounter + 1
+		fc.loopBaseOffsets[loopLabel] = fc.stackOffset
+
+		// Reserve space for loop state (32 bytes) in logical frame
+		// This prevents loop-local variables from colliding with loop iterator
+		fc.stackOffset += 32
+
 		// Recursively collect symbols from loop body
 		for _, bodyStmt := range s.Body {
 			if err := fc.collectSymbols(bodyStmt); err != nil {
@@ -4424,6 +4436,7 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 		// Updates (a <- value) reuse existing stack space
 		if !s.IsUpdate {
 			fc.out.SubImmFromReg("rsp", 16)
+			fc.runtimeStack += 16  // Track actual runtime allocation
 		}
 
 		// Set current assignment name for lambda naming (allows recursive calls)
@@ -4601,17 +4614,20 @@ func (fc *FlapCompiler) compileLoopStatement(stmt *LoopStmt) {
 func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	// Increment label counter for uniqueness
 	fc.labelCounter++
+	currentLoopLabel := fc.labelCounter
 
-	// PURE STACK APPROACH (like C/Go): Store counter and limit on stack
-	// This avoids ALL register conflicts and works for arbitrary nesting depth
-	// Layout per loop: [limit: 8][counter: 8][iterator: 8][padding: 8] = 32 bytes (16-byte aligned)
+	// Get the stack offset from BEFORE loop body was processed
+	// This ensures loop state doesn't conflict with loop-local variables
+	baseOffset := fc.loopBaseOffsets[currentLoopLabel]
 
 	// Allocate stack space for loop state (32 bytes for 16-byte alignment)
-	fc.stackOffset += 32
-	iterOffset := fc.stackOffset - 16    // iterator at -16
-	counterOffset := fc.stackOffset - 8  // counter at -8
-	limitOffset := fc.stackOffset        // limit at top
+	// Use baseOffset for calculating offsets, not current stackOffset
+	loopStateOffset := baseOffset + 32
+	iterOffset := loopStateOffset - 16    // iterator at -16
+	counterOffset := loopStateOffset - 8  // counter at -8
+	limitOffset := loopStateOffset        // limit at top
 	fc.out.SubImmFromReg("rsp", 32)
+	fc.runtimeStack += 32  // Track runtime allocation
 
 	// Evaluate range start and store to stack (counter)
 	fc.compileExpression(rangeExpr.Start)
@@ -4664,8 +4680,8 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	fc.out.Cvtsi2sd("xmm0", "rax")
 	fc.out.MovXmmToMem("xmm0", "rbp", -iterOffset)
 
-	// Save stack offset before loop body (to clean up loop-local variables)
-	stackOffsetBeforeBody := fc.stackOffset
+	// Save runtime stack before loop body (to clean up loop-local variables)
+	runtimeStackBeforeBody := fc.runtimeStack
 
 	// Compile loop body
 	for _, s := range stmt.Body {
@@ -4683,11 +4699,11 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	}
 
 	// Clean up loop-local variables allocated during loop body
-	// Calculate how much stack was used by loop body
-	bodyStackUsage := fc.stackOffset - stackOffsetBeforeBody
+	// Calculate how much stack was actually allocated during loop body
+	bodyStackUsage := fc.runtimeStack - runtimeStackBeforeBody
 	if bodyStackUsage > 0 {
 		fc.out.AddImmToReg("rsp", int64(bodyStackUsage))
-		fc.stackOffset = stackOffsetBeforeBody
+		fc.runtimeStack = runtimeStackBeforeBody
 	}
 
 	// Increment loop counter: load, increment, store back
@@ -4706,6 +4722,7 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	// Clean up stack space (32 bytes)
 	fc.out.AddImmToReg("rsp", 32)
 	fc.stackOffset -= 32
+	fc.runtimeStack -= 32
 
 	// Unregister iterator variable
 	delete(fc.variables, stmt.Iterator)
