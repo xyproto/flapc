@@ -617,14 +617,18 @@ user {
 
 #### Error Propagation with `or!`
 
-The `or!` operator provides automatic error propagation (railway-oriented programming):
+The `or!` operator provides automatic error propagation (railway-oriented programming). If the left side is an error, the right side determines what happens:
+
+- **String**: Replace error message and propagate: `operation() or! "custom error"`
+- **Value**: Return value as default: `operation() or! 0`
+- **Block**: Execute block (usually exits): `operation() or! { exit(1) }`
 
 ```flap
 // Chain operations that might fail
 process_file = filename => {
-    file := open(filename) or! err "cannot open file"
-    data := read(file) or! err "cannot read data"
-    result := parse(data) or! err "cannot parse data"
+    file := open(filename) or! "cannot open file"
+    data := read(file) or! "cannot read data"
+    result := parse(data) or! "cannot parse data"
     ret result
 }
 
@@ -682,9 +686,9 @@ result {
 **2. Propagation (railway-oriented)**
 ```flap
 chained_operation = () => {
-    a := step1() or! err "step1 failed"
-    b := step2(a) or! err "step2 failed"
-    c := step3(b) or! err "step3 failed"
+    a := step1() or! "step1 failed"
+    b := step2(a) or! "step2 failed"
+    c := step3(b) or! "step3 failed"
     ret c
 }
 ```
