@@ -48,8 +48,8 @@ renderer == 0 {
 }
 
 // Game state variables
-mutable snake_length := 3
-mutable snake_x := [400, 400, 400, 400, 400, 400, 400, 400, 400, 400,
+snake_length := 3
+snake_x := [400, 400, 400, 400, 400, 400, 400, 400, 400, 400,
              400, 400, 400, 400, 400, 400, 400, 400, 400, 400,
              400, 400, 400, 400, 400, 400, 400, 400, 400, 400,
              400, 400, 400, 400, 400, 400, 400, 400, 400, 400,
@@ -60,7 +60,7 @@ mutable snake_x := [400, 400, 400, 400, 400, 400, 400, 400, 400, 400,
              400, 400, 400, 400, 400, 400, 400, 400, 400, 400,
              400, 400, 400, 400, 400, 400, 400, 400, 400, 400]
 
-mutable snake_y := [300, 280, 260, 300, 300, 300, 300, 300, 300, 300,
+snake_y := [300, 280, 260, 300, 300, 300, 300, 300, 300, 300,
              300, 300, 300, 300, 300, 300, 300, 300, 300, 300,
              300, 300, 300, 300, 300, 300, 300, 300, 300, 300,
              300, 300, 300, 300, 300, 300, 300, 300, 300, 300,
@@ -71,11 +71,11 @@ mutable snake_y := [300, 280, 260, 300, 300, 300, 300, 300, 300, 300,
              300, 300, 300, 300, 300, 300, 300, 300, 300, 300,
              300, 300, 300, 300, 300, 300, 300, 300, 300, 300]
 
-mutable direction := DIR_DOWN
-mutable food_x := 200
-mutable food_y := 200
-mutable game_over := 0
-mutable score := 0
+direction := DIR_DOWN
+food_x := 200
+food_y := 200
+game_over := 0
+score := 0
 
 printf("Snake Game Controls:\n")
 printf("  Arrow keys to move\n")
@@ -83,58 +83,56 @@ printf("  ESC to quit\n")
 printf("Starting game...\n")
 
 // Game loop
-mutable frame_count := 0
+frame_count := 0
 max_frames := 200
 
 @ i in 0..<max_frames max 1000 {
     // Delay to control game speed (every 10 frames = ~150ms)
     sdl.SDL_Delay(15)
-    frame_count = frame_count + 1
+    frame_count <- frame_count + 1
 
     // Only update game state every 10 frames - skip rendering on other frames
     (frame_count % 10) != 0 {
         @++
     }
 
+    // Move snake (declare variables at loop level to avoid scoping issues)
+    new_x := snake_x[0]
+    new_y := snake_y[0]
+
+    direction == DIR_UP { new_y <- new_y - GRID_SIZE }
+    direction == DIR_DOWN { new_y <- new_y + GRID_SIZE }
+    direction == DIR_LEFT { new_x <- new_x - GRID_SIZE }
+    direction == DIR_RIGHT { new_x <- new_x + GRID_SIZE }
+
+    // Check wall collision
+    (new_x < 0) | (new_x >= WINDOW_WIDTH) | (new_y < 0) | (new_y >= WINDOW_HEIGHT) {
+        game_over <- 1
+        printf("Game Over! Final Score: %.0f\n", score)
+    }
+
+    // Update snake position (only if game not over)
+    seg_count := snake_length - 1
     game_over == 0 {
-        // Move snake
-        new_x := snake_x[0]
-        new_y := snake_y[0]
-
-        direction == DIR_UP { new_y = new_y - GRID_SIZE }
-        direction == DIR_DOWN { new_y = new_y + GRID_SIZE }
-        direction == DIR_LEFT { new_x = new_x - GRID_SIZE }
-        direction == DIR_RIGHT { new_x = new_x + GRID_SIZE }
-
-        // Check wall collision
-        (new_x < 0) | (new_x >= WINDOW_WIDTH) | (new_y < 0) | (new_y >= WINDOW_HEIGHT) {
-            game_over = 1
-            printf("Game Over! Final Score: %.0f\n", score)
+        @ j in 1..<snake_length max 100 {
+            idx := seg_count - j + 1
+            snake_x[idx] <- snake_x[idx - 1]
+            snake_y[idx] <- snake_y[idx - 1]
         }
 
-        game_over == 0 {
-            // Move body segments (backwards from tail to head)
-            seg_count := snake_length - 1
-            @ j in 1..<snake_length max 100 {
-                idx := seg_count - j + 1
-                snake_x[idx] = snake_x[idx - 1]
-                snake_y[idx] = snake_y[idx - 1]
-            }
+        snake_x[0] <- new_x
+        snake_y[0] <- new_y
+    }
 
-            snake_x[0] = new_x
-            snake_y[0] = new_y
+    // Check food collision
+    (snake_x[0] == food_x) & (snake_y[0] == food_y) & (game_over == 0) {
+        snake_length <- snake_length + 1
+        score <- score + 10
+        printf("Score: %.0f\n", score)
 
-            // Check food collision
-            (snake_x[0] == food_x) & (snake_y[0] == food_y) {
-                snake_length = snake_length + 1
-                score = score + 10
-                printf("Score: %.0f\n", score)
-
-                // Generate new food position (simple random using frame count)
-                food_x = ((frame_count * 137) % GRID_WIDTH) * GRID_SIZE
-                food_y = ((frame_count * 211) % GRID_HEIGHT) * GRID_SIZE
-            }
-        }
+        // Generate new food position (simple random using frame count)
+        food_x <- ((frame_count * 137) % GRID_WIDTH) * GRID_SIZE
+        food_y <- ((frame_count * 211) % GRID_HEIGHT) * GRID_SIZE
     }
 
     // Clear screen (dark background)
