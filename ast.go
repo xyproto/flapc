@@ -583,9 +583,9 @@ type UnsafeReturnStmt struct {
 
 func (u *UnsafeReturnStmt) String() string {
 	if u.AsType != "" {
-		return fmt.Sprintf("ret %s as %s", u.Register, u.AsType)
+		return fmt.Sprintf("%s as %s", u.Register, u.AsType)
 	}
-	return fmt.Sprintf("ret %s", u.Register)
+	return u.Register
 }
 func (u *UnsafeReturnStmt) statementNode() {}
 

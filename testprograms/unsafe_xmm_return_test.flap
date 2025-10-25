@@ -15,15 +15,15 @@ printf("Result (default): %.0f\n", result1)
 result2 := unsafe {
     rbx <- 999
     rax <- 123
-    ret rax
+    rax
 } {
     x1 <- 999
     x0 <- 123
-    ret x0
+    x0
 } {
     a1 <- 999
     a0 <- 123
-    ret a0
+    a0
 }
 
 printf("Result (explicit rax): %.0f\n", result2)
@@ -33,17 +33,17 @@ result3 := unsafe {
     rax <- 10
     rbx <- 20
     rcx <- rax + rbx
-    ret rcx
+    rcx
 } {
     x0 <- 10
     x1 <- 20
     x2 <- x0 + x1
-    ret x2
+    x2
 } {
     a0 <- 10
     a1 <- 20
     a2 <- a0 + a1
-    ret a2
+    a2
 }
 
 printf("Result (computed): %.0f\n", result3)

@@ -3546,38 +3546,6 @@ func (p *Parser) parseUnsafeBlock() ([]Statement, *UnsafeReturnStmt) {
 	statements := []Statement{}
 
 	for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
-		// Check for ret statement
-		if p.current.Type == TOKEN_RET {
-			p.nextToken() // skip 'ret'
-			if p.current.Type != TOKEN_IDENT {
-				p.error("expected register name after 'ret'")
-			}
-			regName := p.current.Value
-			p.nextToken() // skip register name
-
-			// Check for optional "as type"
-			asType := ""
-			if p.current.Type == TOKEN_AS {
-				p.nextToken() // skip 'as'
-				if p.current.Type != TOKEN_IDENT {
-					p.error("expected type name after 'as' in ret statement")
-				}
-				asType = p.current.Value
-				p.nextToken() // skip type name
-			}
-
-			p.skipNewlines()
-			if p.current.Type != TOKEN_RBRACE {
-				p.error("ret statement must be last in unsafe block")
-			}
-			p.nextToken() // skip '}'
-
-			return statements, &UnsafeReturnStmt{
-				Register: regName,
-				AsType:   asType,
-			}
-		}
-
 		// Check for syscall
 		if p.current.Type == TOKEN_SYSCALL {
 			statements = append(statements, &SyscallStmt{})
@@ -3652,15 +3620,36 @@ func (p *Parser) parseUnsafeBlock() ([]Statement, *UnsafeReturnStmt) {
 			continue
 		}
 
-		// Regular register assignment
+		// Regular register assignment or return expression
 		if p.current.Type != TOKEN_IDENT {
-			p.error("expected register name, memory address, ret, or syscall in unsafe block")
+			p.error("expected register name, memory address, or syscall in unsafe block")
 		}
 
 		regName := p.current.Value
 		p.nextToken() // skip register name
 
 		if p.current.Type != TOKEN_LEFT_ARROW {
+			// Not a register assignment - check if this is a return expression
+			// Syntax: "register" or "register as type"
+			asType := ""
+			if p.current.Type == TOKEN_AS {
+				p.nextToken() // skip 'as'
+				if p.current.Type != TOKEN_IDENT {
+					p.error("expected type name after 'as' in return expression")
+				}
+				asType = p.current.Value
+				p.nextToken() // skip type name
+			}
+
+			p.skipNewlines()
+			if p.current.Type == TOKEN_RBRACE {
+				// This is a return expression
+				p.nextToken() // skip '}'
+				return statements, &UnsafeReturnStmt{
+					Register: regName,
+					AsType:   asType,
+				}
+			}
 			p.error(fmt.Sprintf("expected '<-' after register %s in unsafe block", regName))
 		}
 		p.nextToken() // skip '<-'
