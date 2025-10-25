@@ -1,0 +1,29 @@
+// Test unsafe blocks with ret register as cstr/pointer
+
+// Test: Return a C string pointer
+str_ptr := unsafe {
+    rax <- 0x48656C6C6F
+    ret rax as cstr
+} {
+    x0 <- 0x48656C6C6F
+    ret x0 as cstr
+} {
+    a0 <- 0x48656C6C6F
+    ret a0 as cstr
+}
+
+printf("String pointer value: %.0f\n", str_ptr)
+
+// Test 2: Return a pointer value
+ptr := unsafe {
+    rbx <- 12345678
+    ret rbx as pointer
+} {
+    x1 <- 12345678
+    ret x1 as pointer
+} {
+    a1 <- 12345678
+    ret a1 as pointer
+}
+
+printf("Pointer value: %.0f\n", ptr)

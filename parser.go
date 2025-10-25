@@ -3513,35 +3513,71 @@ func (p *Parser) parseUnsafeExpr() Expression {
 	if p.current.Type != TOKEN_LBRACE {
 		p.error("expected '{' for x86_64 block in unsafe expression")
 	}
-	x86_64Block := p.parseUnsafeBlock()
+	x86_64Stmts, x86_64Ret := p.parseUnsafeBlock()
 
 	// Parse arm64 block
 	if p.current.Type != TOKEN_LBRACE {
 		p.error("expected '{' for arm64 block in unsafe expression")
 	}
-	arm64Block := p.parseUnsafeBlock()
+	arm64Stmts, arm64Ret := p.parseUnsafeBlock()
 
 	// Parse riscv64 block
 	if p.current.Type != TOKEN_LBRACE {
 		p.error("expected '{' for riscv64 block in unsafe expression")
 	}
-	riscv64Block := p.parseUnsafeBlock()
+	riscv64Stmts, riscv64Ret := p.parseUnsafeBlock()
 
 	return &UnsafeExpr{
-		X86_64Block:  x86_64Block,
-		ARM64Block:   arm64Block,
-		RISCV64Block: riscv64Block,
+		X86_64Block:   x86_64Stmts,
+		ARM64Block:    arm64Stmts,
+		RISCV64Block:  riscv64Stmts,
+		X86_64Return:  x86_64Ret,
+		ARM64Return:   arm64Ret,
+		RISCV64Return: riscv64Ret,
 	}
 }
 
 // parseUnsafeBlock parses a single architecture block with extended syntax
-func (p *Parser) parseUnsafeBlock() []Statement {
+// Returns: statements and optional return statement
+func (p *Parser) parseUnsafeBlock() ([]Statement, *UnsafeReturnStmt) {
 	p.nextToken() // skip '{'
 	p.skipNewlines()
 
 	statements := []Statement{}
 
 	for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+		// Check for ret statement
+		if p.current.Type == TOKEN_RET {
+			p.nextToken() // skip 'ret'
+			if p.current.Type != TOKEN_IDENT {
+				p.error("expected register name after 'ret'")
+			}
+			regName := p.current.Value
+			p.nextToken() // skip register name
+
+			// Check for optional "as type"
+			asType := ""
+			if p.current.Type == TOKEN_AS {
+				p.nextToken() // skip 'as'
+				if p.current.Type != TOKEN_IDENT {
+					p.error("expected type name after 'as' in ret statement")
+				}
+				asType = p.current.Value
+				p.nextToken() // skip type name
+			}
+
+			p.skipNewlines()
+			if p.current.Type != TOKEN_RBRACE {
+				p.error("ret statement must be last in unsafe block")
+			}
+			p.nextToken() // skip '}'
+
+			return statements, &UnsafeReturnStmt{
+				Register: regName,
+				AsType:   asType,
+			}
+		}
+
 		// Check for syscall
 		if p.current.Type == TOKEN_SYSCALL {
 			statements = append(statements, &SyscallStmt{})
@@ -3618,7 +3654,7 @@ func (p *Parser) parseUnsafeBlock() []Statement {
 
 		// Regular register assignment
 		if p.current.Type != TOKEN_IDENT {
-			p.error("expected register name, memory address, or syscall in unsafe block")
+			p.error("expected register name, memory address, ret, or syscall in unsafe block")
 		}
 
 		regName := p.current.Value
@@ -3645,7 +3681,7 @@ func (p *Parser) parseUnsafeBlock() []Statement {
 	}
 	p.nextToken() // skip '}'
 
-	return statements
+	return statements, nil
 }
 
 // parseUnsafeValue parses the RHS of a register assignment in unsafe blocks
@@ -7506,13 +7542,17 @@ func (fc *FlapCompiler) compileUnsafeExpr(expr *UnsafeExpr) {
 	arch := "x86_64" // TODO: Get from build target
 
 	var block []Statement
+	var retStmt *UnsafeReturnStmt
 	switch arch {
 	case "x86_64":
 		block = expr.X86_64Block
+		retStmt = expr.X86_64Return
 	case "arm64":
 		block = expr.ARM64Block
+		retStmt = expr.ARM64Return
 	case "riscv64":
 		block = expr.RISCV64Block
+		retStmt = expr.RISCV64Return
 	default:
 		compilerError("unsupported architecture: %s", arch)
 	}
@@ -7531,10 +7571,42 @@ func (fc *FlapCompiler) compileUnsafeExpr(expr *UnsafeExpr) {
 		}
 	}
 
-	// The result of an unsafe block is the value in the accumulator register
-	// x86_64: rax, arm64: x0, riscv64: a0
-	// Convert the integer in rax to float64 in xmm0
-	fc.out.Cvtsi2sd("xmm0", "rax")
+	// Handle return value
+	if retStmt != nil {
+		reg := retStmt.Register
+		asType := retStmt.AsType
+
+		if asType == "" {
+			// Return as Flap value (convert to float64 in xmm0)
+			if len(reg) >= 3 && reg[:3] == "xmm" {
+				// Already in a float register
+				if reg != "xmm0" {
+					fc.out.MovXmmToXmm("xmm0", reg)
+				}
+			} else {
+				// Integer register - convert to float64 in xmm0
+				if reg != "rax" {
+					fc.out.MovRegToReg("rax", reg)
+				}
+				fc.out.Cvtsi2sd("xmm0", "rax")
+			}
+		} else {
+			// Return as C-like value (e.g., cstr, pointer)
+			// For C-like values, we treat them as opaque pointers and convert to float64
+			if len(reg) >= 3 && reg[:3] == "xmm" {
+				compilerError("cannot return xmm register as C type %s", asType)
+			}
+			// Move the register value to rax if needed, then convert to xmm0
+			if reg != "rax" {
+				fc.out.MovRegToReg("rax", reg)
+			}
+			// Convert pointer/cstr (integer) to float64 representation
+			fc.out.Cvtsi2sd("xmm0", "rax")
+		}
+	} else {
+		// Default behavior: convert rax to xmm0
+		fc.out.Cvtsi2sd("xmm0", "rax")
+	}
 }
 
 func (fc *FlapCompiler) compileSyscall() {

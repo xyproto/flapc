@@ -1,0 +1,52 @@
+// Test unsafe blocks with explicit return values using ret keyword
+
+// Test 1: Return from rbx instead of rax
+result1 := unsafe {
+    rax <- 100
+    rbx <- 42
+    ret rbx
+} {
+    x0 <- 100
+    x1 <- 42
+    ret x1
+} {
+    a0 <- 100
+    a1 <- 42
+    ret a1
+}
+
+printf("Result from rbx: %.0f\n", result1)
+
+// Test 2: Return from rcx
+result2 := unsafe {
+    rax <- 10
+    rbx <- 20
+    rcx <- 30
+    ret rcx
+} {
+    x0 <- 10
+    x1 <- 20
+    x2 <- 30
+    ret x2
+} {
+    a0 <- 10
+    a1 <- 20
+    a2 <- 30
+    ret a2
+}
+
+printf("Result from rcx: %.0f\n", result2)
+
+// Test 3: Explicit rax return (should work like before)
+result3 := unsafe {
+    rax <- 99
+    ret rax
+} {
+    x0 <- 99
+    ret x0
+} {
+    a0 <- 99
+    ret a0
+}
+
+printf("Result from rax: %.0f\n", result3)

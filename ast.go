@@ -532,9 +532,12 @@ func (c *CastExpr) String() string {
 func (c *CastExpr) expressionNode() {}
 
 type UnsafeExpr struct {
-	X86_64Block  []Statement // x86_64 architecture block
-	ARM64Block   []Statement // arm64 architecture block
-	RISCV64Block []Statement // riscv64 architecture block
+	X86_64Block   []Statement        // x86_64 architecture block
+	ARM64Block    []Statement        // arm64 architecture block
+	RISCV64Block  []Statement        // riscv64 architecture block
+	X86_64Return  *UnsafeReturnStmt  // optional return value for x86_64
+	ARM64Return   *UnsafeReturnStmt  // optional return value for arm64
+	RISCV64Return *UnsafeReturnStmt  // optional return value for riscv64
 }
 
 func (u *UnsafeExpr) String() string {
@@ -542,6 +545,15 @@ func (u *UnsafeExpr) String() string {
 		len(u.X86_64Block), len(u.ARM64Block), len(u.RISCV64Block))
 }
 func (u *UnsafeExpr) expressionNode() {}
+
+type RegisterExpr struct {
+	Name string // Register name (e.g., "rax", "xmm0", "x0", "a0")
+}
+
+func (r *RegisterExpr) String() string {
+	return r.Name
+}
+func (r *RegisterExpr) expressionNode() {}
 
 type RegisterAssignStmt struct {
 	Register string      // Register name (e.g., "rax", "x0", "a0") or memory address like "[rax]"
@@ -563,6 +575,19 @@ func (r *RegisterAssignStmt) String() string {
 	}
 }
 func (r *RegisterAssignStmt) statementNode() {}
+
+type UnsafeReturnStmt struct {
+	Register string // Register to return (e.g., "rax", "xmm0")
+	AsType   string // Optional type cast (e.g., "cstr", "pointer", empty for Flap value)
+}
+
+func (u *UnsafeReturnStmt) String() string {
+	if u.AsType != "" {
+		return fmt.Sprintf("ret %s as %s", u.Register, u.AsType)
+	}
+	return fmt.Sprintf("ret %s", u.Register)
+}
+func (u *UnsafeReturnStmt) statementNode() {}
 
 type RegisterOp struct {
 	Left     string      // Register name or empty for unary
