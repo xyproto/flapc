@@ -1,0 +1,108 @@
+// Test cstruct with arena allocation and unsafe memory operations
+
+cstruct Vec3 {
+    x: f64,
+    y: f64,
+    z: f64
+}
+
+printf("Vec3 cstruct:\n")
+printf("  size=%.0f\n", Vec3_SIZEOF)
+printf("  x_offset=%.0f\n", Vec3_x_OFFSET)
+printf("  y_offset=%.0f\n", Vec3_y_OFFSET)
+printf("  z_offset=%.0f\n", Vec3_z_OFFSET)
+
+arena {
+    // Allocate memory for a Vec3
+    vec_ptr := alloc(Vec3_SIZEOF)
+
+    printf("Allocated Vec3 at pointer: %.0f\n", vec_ptr)
+
+    // Write Vec3 fields using unsafe block
+    // f64 fields: x=0, y=8, z=16 (8 bytes each)
+    unsafe {
+        rax <- vec_ptr as pointer
+
+        // Write x = 10.5 (offset 0)
+        rbx <- 10.5
+        [rax + 0] <- rbx
+
+        // Write y = 20.3 (offset 8)
+        rbx <- 20.3
+        [rax + 8] <- rbx
+
+        // Write z = 30.7 (offset 16)
+        rbx <- 30.7
+        [rax + 16] <- rbx
+    } {
+        x0 <- vec_ptr as pointer
+        x1 <- 10.5
+        [x0 + 0] <- x1
+        x1 <- 20.3
+        [x0 + 8] <- x1
+        x1 <- 30.7
+        [x0 + 16] <- x1
+    } {
+        a0 <- vec_ptr as pointer
+        a1 <- 10.5
+        [a0 + 0] <- a1
+        a1 <- 20.3
+        [a0 + 8] <- a1
+        a1 <- 30.7
+        [a0 + 16] <- a1
+    }
+
+    // Read Vec3 fields back
+    x_val := unsafe {
+        rax <- vec_ptr as pointer
+        rax <- [rax + 0]
+    } {
+        x0 <- vec_ptr as pointer
+        x0 <- [x0 + 0]
+    } {
+        a0 <- vec_ptr as pointer
+        a0 <- [a0 + 0]
+    }
+
+    y_val := unsafe {
+        rax <- vec_ptr as pointer
+        rax <- [rax + 8]
+    } {
+        x0 <- vec_ptr as pointer
+        x0 <- [x0 + 8]
+    } {
+        a0 <- vec_ptr as pointer
+        a0 <- [a0 + 8]
+    }
+
+    z_val := unsafe {
+        rax <- vec_ptr as pointer
+        rax <- [rax + 16]
+    } {
+        x0 <- vec_ptr as pointer
+        x0 <- [x0 + 16]
+    } {
+        a0 <- vec_ptr as pointer
+        a0 <- [a0 + 16]
+    }
+
+    printf("Read back Vec3:\n")
+    printf("  x=%.10f (expected 10.5)\n", x_val)
+    printf("  y=%.10f (expected 20.3)\n", y_val)
+    printf("  z=%.10f (expected 30.7)\n", z_val)
+
+    // Verify values
+    success := 1
+    x_val != 10.5 { success = 0 }
+    y_val != 20.3 { success = 0 }
+    z_val != 30.7 { success = 0 }
+
+    success == 1 {
+        printf("✓ CStruct + Arena + Unsafe operations working!\n")
+    }
+    success == 0 {
+        printf("✗ Values don't match\n")
+    }
+}
+
+printf("Arena deallocated, test complete!\n")
