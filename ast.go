@@ -177,8 +177,10 @@ func (c *CStructDecl) CalculateStructLayout() {
 		maxAlign = c.Align
 	}
 
-	// Add padding at end to align to struct's natural alignment
-	if !c.Packed && maxAlign > 0 {
+	// Add padding at end to align to struct's alignment
+	// If packed, only add padding if custom alignment is specified
+	// If not packed, always add padding to natural alignment
+	if maxAlign > 0 && (!c.Packed || c.Align > 0) {
 		padding := (maxAlign - (currentOffset % maxAlign)) % maxAlign
 		currentOffset += padding
 	}
