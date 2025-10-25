@@ -916,6 +916,17 @@ func collectCapturedVarsExpr(expr Expression, paramSet map[string]bool, captured
 		if !paramSet[e.Name] {
 			captured[e.Name] = true
 		}
+	case *LambdaExpr:
+		// Nested lambda: extend paramSet with nested lambda's parameters
+		// and recursively collect from its body
+		nestedParamSet := make(map[string]bool)
+		for k, v := range paramSet {
+			nestedParamSet[k] = v
+		}
+		for _, param := range e.Params {
+			nestedParamSet[param] = true
+		}
+		collectCapturedVarsExpr(e.Body, nestedParamSet, captured)
 	case *BinaryExpr:
 		collectCapturedVarsExpr(e.Left, paramSet, captured)
 		collectCapturedVarsExpr(e.Right, paramSet, captured)
