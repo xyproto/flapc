@@ -1,0 +1,3 @@
+Sum 0..9 = 45 (expected 45)
+Nested sum = 99 (expected 99)
+Simple alias test complete!

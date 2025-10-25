@@ -836,7 +836,16 @@ type DeferStmt struct {
 	Call Expression // Expression to execute at scope exit (typically a function call)
 }
 
-func (d *DeferStmt) String() string {
-	return "defer " + d.Call.String()
-}
+func (d *DeferStmt) String() string { return "defer " + d.Call.String() }
 func (d *DeferStmt) statementNode() {}
+
+// AliasStmt represents a keyword alias: alias for=@
+// Creates alternative syntax for existing keywords (useful for language packs)
+type AliasStmt struct {
+	NewName    string    // New keyword name (e.g., "for")
+	TargetName string    // Target keyword/token (e.g., "@")
+	Target     TokenType // Resolved target token type
+}
+
+func (a *AliasStmt) String() string { return "alias " + a.NewName + "=" + a.TargetName }
+func (a *AliasStmt) statementNode() {}

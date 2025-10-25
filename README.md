@@ -4,7 +4,7 @@
 
 Compiler for Flap, a functional language targeting game development. Generates native x86-64 machine code directly—no LLVM, no GCC, no runtime.
 
-**Current status:** x86-64 Arch Linux stable (312/312 tests passing).
+**Current status:** x86-64 Arch Linux stable (313/313 tests passing).
 
 ## What's Interesting
 

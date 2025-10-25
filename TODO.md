@@ -209,10 +209,17 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
 ## Language Features
 
-13. **Add alias keyword for language packs** (MEDIUM)
-    - Syntax: `alias for=@`, `alias break=@-`, `alias continue=@=`
-    - Enables: python.flap, gdscript.flap style packs
-    - Files: `lexer.go`, `parser.go`, new alias map
+13. **Add alias keyword for language packs** (MEDIUM) ✅ COMPLETE
+    - Status: FULLY IMPLEMENTED for single-token aliases
+    - Syntax: `alias for=@`, `alias in=in` (creates alternative keywords)
+    - Features:
+      - ✅ Single-token keyword aliasing (e.g., `for` -> `@`)
+      - ✅ Applies from point of declaration onward (like variable scoping)
+      - ✅ Parser-level token substitution
+      - ✅ Enables Python-style, GDScript-style syntax via language packs
+    - Limitation: Multi-token constructs (e.g., `@-`, `@=`) not yet supported
+    - Test Results: alias_simple_test.flap passing
+    - Files: `lexer.go`, `parser.go`, `ast.go`
 
 14. **Add Python-style colon + indentation** (MEDIUM)
     - Opt-in alternative to braces: `if x > 0:\n    print(x)`

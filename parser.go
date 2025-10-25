@@ -74,6 +74,7 @@ type Parser struct {
 	source    string
 	loopDepth int                   // Current loop nesting level (0 = not in loop, 1 = outer loop, etc.)
 	constants map[string]Expression // Compile-time constants (immutable literals)
+	aliases   map[string]TokenType  // Keyword aliases (e.g., "for" -> TOKEN_AT)
 }
 
 func NewParser(input string) *Parser {
@@ -82,6 +83,7 @@ func NewParser(input string) *Parser {
 		filename:  "<input>",
 		source:    input,
 		constants: make(map[string]Expression),
+		aliases:   make(map[string]TokenType),
 	}
 	p.nextToken()
 	p.nextToken()
@@ -94,6 +96,7 @@ func NewParserWithFilename(input, filename string) *Parser {
 		filename:  filename,
 		source:    input,
 		constants: make(map[string]Expression),
+		aliases:   make(map[string]TokenType),
 	}
 	p.nextToken()
 	p.nextToken()
@@ -137,6 +140,18 @@ func compilerError(format string, args ...interface{}) {
 func (p *Parser) nextToken() {
 	p.current = p.peek
 	p.peek = p.lexer.NextToken()
+
+	// Apply aliases: if current token is an identifier that matches an alias, replace its type
+	if p.current.Type == TOKEN_IDENT {
+		if aliasTarget, exists := p.aliases[p.current.Value]; exists {
+			p.current.Type = aliasTarget
+		}
+	}
+	if p.peek.Type == TOKEN_IDENT {
+		if aliasTarget, exists := p.aliases[p.peek.Value]; exists {
+			p.peek.Type = aliasTarget
+		}
+	}
 }
 
 func (p *Parser) skipNewlines() {
@@ -152,7 +167,14 @@ func (p *Parser) ParseProgram() *Program {
 	for p.current.Type != TOKEN_EOF {
 		stmt := p.parseStatement()
 		if stmt != nil {
-			program.Statements = append(program.Statements, stmt)
+			// Handle alias statements: process them immediately and don't add to AST
+			if aliasStmt, ok := stmt.(*AliasStmt); ok {
+				// Store the alias in the parser's alias map
+				p.aliases[aliasStmt.NewName] = aliasStmt.Target
+			} else {
+				// Regular statements are added to the program
+				program.Statements = append(program.Statements, stmt)
+			}
 		}
 		p.nextToken()
 		p.skipNewlines()
@@ -1643,6 +1665,53 @@ func (p *Parser) parseDeferStmt() *DeferStmt {
 	return &DeferStmt{Call: expr}
 }
 
+func (p *Parser) parseAliasStmt() *AliasStmt {
+	p.nextToken() // skip 'alias'
+
+	// Parse new keyword name
+	if p.current.Type != TOKEN_IDENT {
+		p.error("expected identifier after 'alias'")
+	}
+	newName := p.current.Value
+	p.nextToken()
+
+	// Expect '='
+	if p.current.Type != TOKEN_EQUALS {
+		p.error("expected '=' in alias declaration")
+	}
+	p.nextToken()
+
+	// Parse target keyword/token
+	targetName := p.current.Value
+	targetType := p.current.Type
+
+	// Validate that target is a valid keyword or operator
+	validTargets := map[TokenType]bool{
+		TOKEN_AT: true, TOKEN_IN: true, TOKEN_RET: true, TOKEN_ERR: true,
+		TOKEN_UNSAFE: true, TOKEN_ARENA: true, TOKEN_DEFER: true,
+		TOKEN_MAX: true, TOKEN_INF: true, TOKEN_AND: true, TOKEN_OR: true,
+		TOKEN_NOT: true, TOKEN_XOR: true, TOKEN_SHL: true, TOKEN_SHR: true,
+		TOKEN_ROL: true, TOKEN_ROR: true, TOKEN_AT_PLUSPLUS: true,
+	}
+
+	// Special handling for @ operators (break/continue)
+	if targetName == "@-" {
+		targetType = TOKEN_AT // Break will be handled by checking targetName
+	} else if targetName == "@=" || targetName == "@++" {
+		targetType = TOKEN_AT_PLUSPLUS
+	} else if !validTargets[targetType] {
+		p.error("alias target must be a valid keyword or operator (e.g., @, @-, @=, in, ret, etc.)")
+	}
+
+	p.nextToken()
+
+	return &AliasStmt{
+		NewName:    newName,
+		TargetName: targetName,
+		Target:     targetType,
+	}
+}
+
 func (p *Parser) parseCStructDecl() *CStructDecl {
 	p.nextToken() // skip 'cstruct'
 
@@ -1836,6 +1905,11 @@ func (p *Parser) parseStatement() Statement {
 	// Check for defer keyword
 	if p.current.Type == TOKEN_DEFER {
 		return p.parseDeferStmt()
+	}
+
+	// Check for alias keyword
+	if p.current.Type == TOKEN_ALIAS {
+		return p.parseAliasStmt()
 	}
 
 	// Check for ret/err keywords (but not if followed by assignment operator)
