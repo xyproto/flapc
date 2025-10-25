@@ -1764,6 +1764,49 @@ func (p *Parser) parseCStructDecl() *CStructDecl {
 	return decl
 }
 
+func (p *Parser) parseStructLiteral(structName string) *StructLiteralExpr {
+	p.nextToken() // skip identifier (now on '{')
+	p.nextToken() // skip '{'
+	p.skipNewlines()
+
+	fields := make(map[string]Expression)
+
+	for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+		if p.current.Type != TOKEN_IDENT {
+			p.error("expected field name in struct literal")
+		}
+		fieldName := p.current.Value
+		p.nextToken() // skip field name
+
+		if p.current.Type != TOKEN_COLON {
+			p.error("expected ':' after field name in struct literal")
+		}
+		p.nextToken() // skip ':'
+
+		fieldValue := p.parseExpression()
+		fields[fieldName] = fieldValue
+
+		p.nextToken() // move past expression
+		p.skipNewlines()
+
+		if p.current.Type == TOKEN_COMMA {
+			p.nextToken() // skip ','
+			p.skipNewlines()
+		} else if p.current.Type != TOKEN_RBRACE {
+			p.error("expected ',' or '}' in struct literal")
+		}
+	}
+
+	if p.current.Type != TOKEN_RBRACE {
+		p.error("expected '}' at end of struct literal")
+	}
+
+	return &StructLiteralExpr{
+		StructName: structName,
+		Fields:     fields,
+	}
+}
+
 func (p *Parser) parseStatement() Statement {
 	// Check for use keyword (imports)
 	if p.current.Type == TOKEN_USE {
@@ -3176,6 +3219,11 @@ func (p *Parser) parsePrimary() Expression {
 				return &ListExpr{Elements: elements}
 			}
 			return expr
+		}
+
+		// Check for struct literal: StructName { field: value, ... }
+		if p.peek.Type == TOKEN_LBRACE {
+			return p.parseStructLiteral(name)
 		}
 
 		// Check for lambda: x => expr or x, y => expr

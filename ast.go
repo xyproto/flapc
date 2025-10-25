@@ -549,6 +549,20 @@ func (r *RangeExpr) String() string {
 }
 func (r *RangeExpr) expressionNode() {}
 
+type StructLiteralExpr struct {
+	StructName string
+	Fields     map[string]Expression
+}
+
+func (s *StructLiteralExpr) String() string {
+	var fields []string
+	for name, expr := range s.Fields {
+		fields = append(fields, name+": "+expr.String())
+	}
+	return s.StructName + " { " + strings.Join(fields, ", ") + " }"
+}
+func (s *StructLiteralExpr) expressionNode() {}
+
 type LambdaExpr struct {
 	Params         []string
 	Body           Expression
