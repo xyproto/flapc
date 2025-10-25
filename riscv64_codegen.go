@@ -60,6 +60,10 @@ func (rcg *RiscvCodeGen) compileStatement(stmt Statement) error {
 		return rcg.compileExpression(s.Expr)
 	case *AssignStmt:
 		return rcg.compileAssignment(s)
+	case *CStructDecl:
+		// Cstruct declarations generate no runtime code
+		// Constants are already available via Name_SIZEOF and Name_field_OFFSET
+		return nil
 	default:
 		return fmt.Errorf("unsupported statement type for RISC-V64: %T", stmt)
 	}

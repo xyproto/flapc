@@ -90,6 +90,102 @@ func (c *CImportStmt) String() string {
 }
 func (c *CImportStmt) statementNode() {}
 
+// CStructField represents a field in a C struct
+type CStructField struct {
+	Name   string // Field name
+	Type   string // C type (i8, i16, i32, i64, u8, u16, u32, u64, f32, f64, cstr, ptr)
+	Offset int    // Byte offset from struct start (calculated)
+	Size   int    // Size in bytes (calculated)
+}
+
+// CStructDecl represents a C-compatible struct definition
+type CStructDecl struct {
+	Name    string          // Struct name
+	Fields  []CStructField  // Struct fields
+	Packed  bool            // true if #[packed] - no padding
+	Align   int             // Custom alignment (0 = natural alignment)
+	Size    int             // Total struct size in bytes (calculated)
+}
+
+func (c *CStructDecl) String() string {
+	return fmt.Sprintf("cstruct %s { ... }", c.Name)
+}
+func (c *CStructDecl) statementNode() {}
+
+// GetCTypeSize returns the size in bytes for a C type string
+func GetCTypeSize(ctype string) int {
+	switch ctype {
+	case "i8", "u8":
+		return 1
+	case "i16", "u16":
+		return 2
+	case "i32", "u32", "f32":
+		return 4
+	case "i64", "u64", "f64", "ptr", "cstr":
+		return 8
+	default:
+		return 0 // Unknown type
+	}
+}
+
+// GetCTypeAlignment returns the natural alignment in bytes for a C type string
+func GetCTypeAlignment(ctype string) int {
+	// Natural alignment is the same as size for primitives
+	return GetCTypeSize(ctype)
+}
+
+// CalculateStructLayout calculates field offsets and total size for a C struct
+// Returns the total size of the struct
+func (c *CStructDecl) CalculateStructLayout() {
+	if len(c.Fields) == 0 {
+		c.Size = 0
+		return
+	}
+
+	currentOffset := 0
+	maxAlign := 1
+
+	for i := range c.Fields {
+		field := &c.Fields[i]
+		field.Size = GetCTypeSize(field.Type)
+
+		if field.Size == 0 {
+			// Unknown type - this will be caught during compilation
+			continue
+		}
+
+		align := GetCTypeAlignment(field.Type)
+		if c.Packed {
+			// Packed: no padding between fields
+			field.Offset = currentOffset
+		} else {
+			// Add padding to align field
+			padding := (align - (currentOffset % align)) % align
+			field.Offset = currentOffset + padding
+		}
+
+		currentOffset = field.Offset + field.Size
+
+		// Track maximum alignment for struct alignment
+		if align > maxAlign {
+			maxAlign = align
+		}
+	}
+
+	// Custom alignment override
+	if c.Align > 0 {
+		maxAlign = c.Align
+	}
+
+	// Add padding at end to align to struct's natural alignment
+	if !c.Packed && maxAlign > 0 {
+		padding := (maxAlign - (currentOffset % maxAlign)) % maxAlign
+		currentOffset += padding
+	}
+
+	c.Size = currentOffset
+}
+
 type ExpressionStmt struct {
 	Expr Expression
 }

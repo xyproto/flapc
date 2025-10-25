@@ -1,0 +1,79 @@
+// Test SDL3 cstruct declarations for Snake game
+import sdl3 as sdl
+
+// Define SDL3 structs that we need for rendering
+cstruct SDL_FRect {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32
+}
+
+cstruct SDL_Rect {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32
+}
+
+// Verify struct layouts match SDL3 expectations
+printf("SDL_FRect layout:\n")
+printf("  SIZEOF = %.0f (expected 16)\n", SDL_FRect_SIZEOF)
+printf("  x_OFFSET = %.0f\n", SDL_FRect_x_OFFSET)
+printf("  y_OFFSET = %.0f\n", SDL_FRect_y_OFFSET)
+printf("  w_OFFSET = %.0f\n", SDL_FRect_w_OFFSET)
+printf("  h_OFFSET = %.0f\n", SDL_FRect_h_OFFSET)
+
+printf("\nSDL_Rect layout:\n")
+printf("  SIZEOF = %.0f (expected 16)\n", SDL_Rect_SIZEOF)
+printf("  x_OFFSET = %.0f\n", SDL_Rect_x_OFFSET)
+printf("  y_OFFSET = %.0f\n", SDL_Rect_y_OFFSET)
+printf("  w_OFFSET = %.0f\n", SDL_Rect_w_OFFSET)
+printf("  h_OFFSET = %.0f\n", SDL_Rect_h_OFFSET)
+
+// Verify correctness
+SDL_FRect_SIZEOF == 16 {
+    printf("\n✓ SDL_FRect size correct (16 bytes)\n")
+}
+
+SDL_Rect_SIZEOF == 16 {
+    printf("✓ SDL_Rect size correct (16 bytes)\n")
+}
+
+// Now demonstrate using these with SDL3
+printf("\nInitializing SDL3...\n")
+init_result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
+init_result != 0 {
+    printf("SDL_Init Error: %s\n", sdl.SDL_GetError())
+    exit(1)
+}
+
+window := sdl.SDL_CreateWindow("CStruct Test", 400, 300, 0)
+window == 0 {
+    printf("SDL_CreateWindow Error\n")
+    sdl.SDL_Quit()
+    exit(1)
+}
+
+renderer := sdl.SDL_CreateRenderer(window, 0)
+renderer == 0 {
+    printf("SDL_DestroyWindow Error\n")
+    sdl.SDL_DestroyWindow(window)
+    sdl.SDL_Quit()
+    exit(1)
+}
+
+printf("✓ SDL3 window and renderer created successfully\n")
+
+// Note: To actually use these structs with SDL_RenderFillRect, we would need:
+// 1. Heap allocation (alloc() or C malloc via FFI)
+// 2. Struct field write operations (ptr + offset)
+// 3. Passing struct pointer to SDL functions
+// This test just verifies the struct layout is correct
+
+// Cleanup
+sdl.SDL_DestroyRenderer(renderer)
+sdl.SDL_DestroyWindow(window)
+sdl.SDL_Quit()
+
+printf("\n✓ SDL3 CStruct test complete!\n")

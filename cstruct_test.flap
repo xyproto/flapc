@@ -1,0 +1,55 @@
+// Test cstruct declarations and constants
+
+// Basic cstruct with different field types
+cstruct Vec3 {
+    x: f32,
+    y: f32,
+    z: f32
+}
+
+// Packed cstruct (no padding)
+cstruct PackedStruct packed {
+    a: u8,
+    b: u64,
+    c: u8
+}
+
+// Regular struct (with padding for alignment)
+cstruct AlignedStruct {
+    a: u8,
+    b: u64,
+    c: u8
+}
+
+// Test accessing the generated constants
+printf("Vec3_SIZEOF = %.0f\n", Vec3_SIZEOF)
+printf("Vec3_x_OFFSET = %.0f\n", Vec3_x_OFFSET)
+printf("Vec3_y_OFFSET = %.0f\n", Vec3_y_OFFSET)
+printf("Vec3_z_OFFSET = %.0f\n", Vec3_z_OFFSET)
+
+printf("\nPackedStruct_SIZEOF = %.0f\n", PackedStruct_SIZEOF)
+printf("PackedStruct_a_OFFSET = %.0f\n", PackedStruct_a_OFFSET)
+printf("PackedStruct_b_OFFSET = %.0f\n", PackedStruct_b_OFFSET)
+printf("PackedStruct_c_OFFSET = %.0f\n", PackedStruct_c_OFFSET)
+
+printf("\nAlignedStruct_SIZEOF = %.0f\n", AlignedStruct_SIZEOF)
+printf("AlignedStruct_a_OFFSET = %.0f\n", AlignedStruct_a_OFFSET)
+printf("AlignedStruct_b_OFFSET = %.0f\n", AlignedStruct_b_OFFSET)
+printf("AlignedStruct_c_OFFSET = %.0f\n", AlignedStruct_c_OFFSET)
+
+// Verify Vec3 layout: 3 x f32 (4 bytes each) = 12 bytes
+Vec3_SIZEOF == 12 {
+    printf("\n✓ Vec3 size correct (12 bytes)\n")
+}
+
+// Verify packed struct has no padding
+PackedStruct_SIZEOF == 10 {
+    printf("✓ PackedStruct has no padding (1+8+1 = 10 bytes)\n")
+}
+
+// Verify aligned struct has padding
+AlignedStruct_SIZEOF == 24 {
+    printf("✓ AlignedStruct has padding (aligned to 8 bytes = 24 bytes total)\n")
+}
+
+printf("\nCStruct test complete!\n")

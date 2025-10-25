@@ -1643,6 +1643,127 @@ func (p *Parser) parseDeferStmt() *DeferStmt {
 	return &DeferStmt{Call: expr}
 }
 
+func (p *Parser) parseCStructDecl() *CStructDecl {
+	p.nextToken() // skip 'cstruct'
+
+	// Parse struct name
+	if p.current.Type != TOKEN_IDENT {
+		p.error("expected struct name after 'cstruct'")
+	}
+	name := p.current.Value
+	p.nextToken() // skip struct name
+
+	// Check for optional 'packed' modifier
+	packed := false
+	if p.current.Type == TOKEN_PACKED {
+		packed = true
+		p.nextToken() // skip 'packed'
+	}
+
+	// Check for optional 'aligned(N)' modifier
+	align := 0
+	if p.current.Type == TOKEN_ALIGNED {
+		p.nextToken() // skip 'aligned'
+		if p.current.Type != TOKEN_LPAREN {
+			p.error("expected '(' after 'aligned'")
+		}
+		p.nextToken() // skip '('
+		if p.current.Type != TOKEN_NUMBER {
+			p.error("expected alignment value")
+		}
+		alignVal, err := strconv.Atoi(p.current.Value)
+		if err != nil || alignVal <= 0 {
+			p.error("alignment must be a positive integer")
+		}
+		align = alignVal
+		p.nextToken() // skip number
+		if p.current.Type != TOKEN_RPAREN {
+			p.error("expected ')' after alignment value")
+		}
+		p.nextToken() // skip ')'
+	}
+
+	// Expect '{'
+	if p.current.Type != TOKEN_LBRACE {
+		p.error("expected '{' after struct name")
+	}
+	p.nextToken() // skip '{'
+	p.skipNewlines()
+
+	// Parse field list: field1: type1, field2: type2, ...
+	fields := []CStructField{}
+	for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+		// Parse field name
+		if p.current.Type != TOKEN_IDENT {
+			p.error("expected field name in struct definition")
+		}
+		fieldName := p.current.Value
+		p.nextToken() // skip field name
+
+		// Expect ':'
+		if p.current.Type != TOKEN_COLON {
+			p.error("expected ':' after field name")
+		}
+		p.nextToken() // skip ':'
+
+		// Parse field type
+		if p.current.Type != TOKEN_IDENT {
+			p.error("expected field type")
+		}
+		fieldType := p.current.Value
+
+		// Validate C type
+		validTypes := map[string]bool{
+			"i8": true, "i16": true, "i32": true, "i64": true,
+			"u8": true, "u16": true, "u32": true, "u64": true,
+			"f32": true, "f64": true, "ptr": true, "cstr": true,
+		}
+		if !validTypes[fieldType] {
+			p.error(fmt.Sprintf("invalid C type '%s' (must be i8/i16/i32/i64/u8/u16/u32/u64/f32/f64/ptr/cstr)", fieldType))
+		}
+
+		fields = append(fields, CStructField{
+			Name: fieldName,
+			Type: fieldType,
+		})
+
+		p.nextToken() // skip field type
+		p.skipNewlines()
+
+		// Check for comma (more fields) or closing brace
+		if p.current.Type == TOKEN_COMMA {
+			p.nextToken() // skip ','
+			p.skipNewlines()
+		} else if p.current.Type != TOKEN_RBRACE {
+			p.error("expected ',' or '}' after field definition")
+		}
+	}
+
+	// Expect '}'
+	if p.current.Type != TOKEN_RBRACE {
+		p.error("expected '}' at end of struct definition")
+	}
+
+	// Create struct declaration and calculate layout
+	decl := &CStructDecl{
+		Name:   name,
+		Fields: fields,
+		Packed: packed,
+		Align:  align,
+	}
+	decl.CalculateStructLayout()
+
+	// Register constants for struct size and field offsets
+	// These can be used in expressions like: SDL_Rect_SIZEOF, SDL_Rect_x_OFFSET
+	p.constants[name+"_SIZEOF"] = &NumberExpr{Value: float64(decl.Size)}
+	for _, field := range decl.Fields {
+		constantName := name + "_" + field.Name + "_OFFSET"
+		p.constants[constantName] = &NumberExpr{Value: float64(field.Offset)}
+	}
+
+	return decl
+}
+
 func (p *Parser) parseStatement() Statement {
 	// Check for use keyword (imports)
 	if p.current.Type == TOKEN_USE {
@@ -1657,6 +1778,11 @@ func (p *Parser) parseStatement() Statement {
 	// Check for import keyword (git URL imports)
 	if p.current.Type == TOKEN_IMPORT {
 		return p.parseImport()
+	}
+
+	// Check for cstruct keyword (C-compatible struct definition)
+	if p.current.Type == TOKEN_CSTRUCT {
+		return p.parseCStructDecl()
 	}
 
 	// Check for arena keyword
@@ -4672,6 +4798,9 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 
 		// Restore arena depth
 		fc.currentArena = previousArena
+	case *CStructDecl:
+		// Cstruct declarations don't allocate runtime stack space
+		// Constants are already registered in parser (Name_SIZEOF, Name_field_OFFSET)
 	case *ExpressionStmt:
 		// No symbols to collect from expression statements
 	}
@@ -4924,6 +5053,10 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 		}
 		currentScope := len(fc.deferredExprs) - 1
 		fc.deferredExprs[currentScope] = append(fc.deferredExprs[currentScope], s.Call)
+
+	case *CStructDecl:
+		// Cstruct declarations generate no runtime code
+		// Constants are already available via Name_SIZEOF and Name_field_OFFSET
 	}
 }
 

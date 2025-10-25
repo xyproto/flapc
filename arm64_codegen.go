@@ -132,6 +132,10 @@ func (acg *ARM64CodeGen) compileStatement(stmt Statement) error {
 		return acg.compileAssignment(s)
 	case *LoopStmt:
 		return acg.compileLoopStatement(s)
+	case *CStructDecl:
+		// Cstruct declarations generate no runtime code
+		// Constants are already available via Name_SIZEOF and Name_field_OFFSET
+		return nil
 	default:
 		return fmt.Errorf("unsupported statement type for ARM64: %T", stmt)
 	}

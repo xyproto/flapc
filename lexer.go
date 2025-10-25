@@ -119,6 +119,9 @@ const (
 	TOKEN_DEFER       // defer (deferred execution)
 	TOKEN_MAX         // max (maximum iterations for loops)
 	TOKEN_INF         // inf (infinity, for unlimited iterations or numeric infinity)
+	TOKEN_CSTRUCT     // cstruct (C-compatible struct definition)
+	TOKEN_PACKED      // packed (no padding modifier for cstruct)
+	TOKEN_ALIGNED     // aligned (alignment modifier for cstruct)
 )
 
 // Code generation constants
@@ -389,6 +392,12 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_MAX, Value: value, Line: l.line}
 		case "inf":
 			return Token{Type: TOKEN_INF, Value: value, Line: l.line}
+		case "cstruct":
+			return Token{Type: TOKEN_CSTRUCT, Value: value, Line: l.line}
+		case "packed":
+			return Token{Type: TOKEN_PACKED, Value: value, Line: l.line}
+		case "aligned":
+			return Token{Type: TOKEN_ALIGNED, Value: value, Line: l.line}
 		case "xor":
 			return Token{Type: TOKEN_XOR, Value: value, Line: l.line}
 		case "shl":
