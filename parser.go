@@ -4081,6 +4081,7 @@ type LambdaFunc struct {
 	Body         Expression
 	CapturedVars []string // Variables captured from outer scope
 	IsNested     bool     // True if this lambda is nested inside another
+	IsPure       bool     // True if function has no side effects (eligible for memoization)
 }
 
 func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
@@ -5004,6 +5005,79 @@ func (fc *FlapCompiler) collectLoopsFromExpression(expr Expression) {
 		}
 
 	case *NumberExpr, *IdentExpr, *StringExpr, *FStringExpr, *NamespacedIdentExpr:
+	}
+}
+
+func (fc *FlapCompiler) isExpressionPure(expr Expression, pureFunctions map[string]bool) bool {
+	switch e := expr.(type) {
+	case *NumberExpr, *StringExpr:
+		return true
+	case *IdentExpr:
+		return true
+	case *BinaryExpr:
+		return fc.isExpressionPure(e.Left, pureFunctions) && fc.isExpressionPure(e.Right, pureFunctions)
+	case *UnaryExpr:
+		return fc.isExpressionPure(e.Operand, pureFunctions)
+	case *MatchExpr:
+		if !fc.isExpressionPure(e.Condition, pureFunctions) {
+			return false
+		}
+		for _, clause := range e.Clauses {
+			if !fc.isExpressionPure(clause.Result, pureFunctions) {
+				return false
+			}
+		}
+		return true
+	case *CallExpr:
+		impureBuiltins := map[string]bool{
+			"println": true, "printf": true, "exit": true,
+			"syscall": true, "alloc": true, "free": true,
+		}
+		if impureBuiltins[e.Function] {
+			return false
+		}
+		if !pureFunctions[e.Function] {
+			return false
+		}
+		for _, arg := range e.Args {
+			if !fc.isExpressionPure(arg, pureFunctions) {
+				return false
+			}
+		}
+		return true
+	case *LambdaExpr:
+		return len(e.CapturedVars) == 0 && fc.isExpressionPure(e.Body, pureFunctions)
+	case *IndexExpr:
+		return fc.isExpressionPure(e.List, pureFunctions) && fc.isExpressionPure(e.Index, pureFunctions)
+	case *ListExpr:
+		for _, elem := range e.Elements {
+			if !fc.isExpressionPure(elem, pureFunctions) {
+				return false
+			}
+		}
+		return true
+	case *MapExpr:
+		for _, key := range e.Keys {
+			if !fc.isExpressionPure(key, pureFunctions) {
+				return false
+			}
+		}
+		for _, val := range e.Values {
+			if !fc.isExpressionPure(val, pureFunctions) {
+				return false
+			}
+		}
+		return true
+	case *RangeExpr:
+		return fc.isExpressionPure(e.Start, pureFunctions) && fc.isExpressionPure(e.End, pureFunctions)
+	case *LengthExpr:
+		return fc.isExpressionPure(e.Operand, pureFunctions)
+	case *InExpr:
+		return fc.isExpressionPure(e.Value, pureFunctions) && fc.isExpressionPure(e.Container, pureFunctions)
+	case *LoopExpr, *BlockExpr:
+		return false
+	default:
+		return false
 	}
 }
 
@@ -7152,6 +7226,11 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fmt.Fprintf(os.Stderr, "DEBUG compileExpression: adding lambda '%s' with %d params, body type: %T\n", funcName, len(e.Params), e.Body)
 		}
 
+		// Detect if lambda is pure (eligible for memoization)
+		pureFunctions := make(map[string]bool)
+		pureFunctions[funcName] = true // Assume self-recursion is pure initially
+		isPure := len(e.CapturedVars) == 0 && fc.isExpressionPure(e.Body, pureFunctions)
+
 		// Store lambda for later code generation
 		fc.lambdaFuncs = append(fc.lambdaFuncs, LambdaFunc{
 			Name:         funcName,
@@ -7159,6 +7238,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			Body:         e.Body,
 			CapturedVars: e.CapturedVars,
 			IsNested:     e.IsNestedLambda,
+			IsPure:       isPure,
 		})
 
 		// For closures with captured variables, we need runtime allocation
@@ -10040,11 +10120,26 @@ func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
 }
 
 func (fc *FlapCompiler) compileLambdaDirectCall(call *CallExpr) {
+	// Check if this is a pure function eligible for memoization
+	var targetLambda *LambdaFunc
+	for i := range fc.lambdaFuncs {
+		if fc.lambdaFuncs[i].Name == call.Function {
+			targetLambda = &fc.lambdaFuncs[i]
+			break
+		}
+	}
+
 	// Direct call to a lambda by name (for recursion)
 	// Compile arguments and put them in xmm registers
 	xmmRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"}
 	if len(call.Args) > len(xmmRegs) {
 		compilerError("too many arguments to lambda function (max 6)")
+	}
+
+	// For pure single-argument functions, add memoization
+	if targetLambda != nil && targetLambda.IsPure && len(call.Args) == 1 {
+		fc.compileMemoizedCall(call, targetLambda)
+		return
 	}
 
 	// Evaluate all arguments and save to stack
@@ -10063,6 +10158,23 @@ func (fc *FlapCompiler) compileLambdaDirectCall(call *CallExpr) {
 	// Call the lambda function directly by name
 	fc.trackFunctionCall(call.Function)
 	fc.out.CallSymbol(call.Function)
+
+	// Result is in xmm0
+}
+
+func (fc *FlapCompiler) compileMemoizedCall(call *CallExpr, lambda *LambdaFunc) {
+	// For now, disable complex memoization and just do normal call
+	// Memoization requires proper cache existence checking which is complex
+	// TODO: Implement full memoization with proper "in" operator check
+
+	// Fall back to normal direct call
+	// Evaluate argument
+	fc.compileExpression(call.Args[0])
+	// Result in xmm0, ready to call
+
+	// Call the function
+	fc.trackFunctionCall(lambda.Name)
+	fc.out.CallSymbol(lambda.Name)
 
 	// Result is in xmm0
 }

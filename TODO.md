@@ -140,13 +140,20 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
    - Benefits: Zero stack growth, no special keywords, works with match expressions
    - Files: `parser.go:compileTailRecursiveCall`, `parser.go:compileRecursiveCall`
 
-7. **Implement automatic memoization for pure functions** (MEDIUM)
-   - Goal: Automatically cache results of pure recursive functions
-   - Status: Documented in LANGUAGE.md, not yet implemented
-   - Approach: Detect purity (no side effects), add result cache with function arguments as key
-   - Benefits: Efficient fibonacci, dynamic programming, no manual caching
-   - Note: Uses arena-based memory allocation for cache
-   - Files: `parser.go:compileLambdaCall`, add purity analysis and cache logic
+7. **Implement automatic memoization for pure functions** ⚠️ PARTIAL
+   - Status: Purity detection implemented, memoization infrastructure in place
+   - Completed:
+     - Purity analysis function `isExpressionPure` detects side effects
+     - IsPure field added to LambdaFunc structure
+     - Detects impure builtins (println, printf, exit, alloc, etc.)
+     - Detects captured variables (closures are impure)
+     - compileMemoizedCall stub created
+   - Remaining:
+     - Implement cache lookup with proper existence checking (use "in" operator)
+     - Generate cache storage code after function call
+     - Handle edge case: fib(0)=0 (zero vs missing key)
+   - Benefits: Will enable efficient fibonacci, dynamic programming
+   - Files: `parser.go:isExpressionPure`, `parser.go:compileMemoizedCall`
 
 8. **Add trampoline execution for deep recursion** (MEDIUM)
     - Current: Non-tail-recursive functions can stack overflow
