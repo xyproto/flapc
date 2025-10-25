@@ -8,6 +8,15 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
 ## Recent Progress
 
+**Precalculated Stack Frames** (2025-10-26)
+- Implemented upfront stack frame allocation at function entry
+- Added maxStackOffset tracking during symbol collection
+- Emits `sub rsp, N` at function prologue (16-byte aligned)
+- Eliminates dynamic stack allocation bugs
+- Predictable stack layout for all variables
+- All 315 tests passing with precalculated frames
+- Files: parser.go:4396-4402 (frame allocation), parser.go:4844-4849 (tracking)
+
 **Same-Directory File Cross-Referencing** (2025-10-26)
 - Implemented automatic sibling file loading for .flap files in same directory
 - Files can reference functions from other files in the same directory without explicit imports
@@ -191,12 +200,11 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
     - Benefits: Fibonacci, tree recursion without stack limits
     - Files: New `trampoline.go`, modify lambda returns
 
-9. **Implement precalculated stack frames** (MEDIUM)
-    - Current: Dynamic stack allocation causes tracking bugs
-    - Goal: Allocate entire frame at function entry (C/C++ style)
-    - Benefits: No stack tracking bugs, predictable layout, easier debug
-    - Approach: Calculate frame size in collectSymbols, allocate once
-    - Files: `parser.go:Compile`, `parser.go:collectSymbols`
+9. **Implement precalculated stack frames** (MEDIUM) ✅ COMPLETE
+    - Status: FULLY IMPLEMENTED
+    - Implementation: Tracks maxStackOffset during collectSymbols, emits aligned allocation
+    - Benefits: Eliminates dynamic allocation bugs, predictable layout, proper C ABI compliance
+    - Files: parser.go:4844-4849 (updateStackOffset helper), parser.go:4396-4402 (allocation)
 
 ## Advanced - Optimization
 

@@ -4134,6 +4134,7 @@ type FlapCompiler struct {
 	cConstants          map[string]*CHeaderConstants // Track C constants: alias -> constants
 	stringCounter       int                          // Counter for unique string labels
 	stackOffset         int                          // Current stack offset for variables (logical)
+	maxStackOffset      int                          // Maximum stack offset reached (for frame allocation)
 	runtimeStack        int                          // Actual runtime stack usage (updated during compilation)
 	loopBaseOffsets     map[int]int                  // Loop label -> stackOffset before loop body (for state calculation)
 	labelCounter        int                          // Counter for unique labels (if/else, loops, etc)
@@ -4389,9 +4390,16 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.currentArena = 0
 
 	// Function prologue - set up stack frame for main code
-	// This allows stack-relative addressing via RBP
 	fc.out.PushReg("rbp")
 	fc.out.MovRegToReg("rbp", "rsp")
+
+	if fc.maxStackOffset > 0 {
+		alignedSize := int64((fc.maxStackOffset + 15) & ^15)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Allocating %d bytes of stack space (maxStackOffset=%d)\n", alignedSize, fc.maxStackOffset)
+		}
+		fc.out.SubImmFromReg("rsp", alignedSize)
+	}
 
 	fc.pushDeferScope()
 
@@ -4840,6 +4848,13 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 
 // collectSymbols performs the first pass: collect all variable declarations
 // without generating any code. This allows forward references.
+func (fc *FlapCompiler) updateStackOffset(delta int) {
+	fc.stackOffset += delta
+	if fc.stackOffset > fc.maxStackOffset {
+		fc.maxStackOffset = fc.stackOffset
+	}
+}
+
 func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 	switch s := stmt.(type) {
 	case *AssignStmt:
@@ -4858,7 +4873,7 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 			if exists {
 				return fmt.Errorf("variable '%s' already defined (use <- to update)", s.Name)
 			}
-			fc.stackOffset += 16
+			fc.updateStackOffset(16)
 			offset := fc.stackOffset
 			fc.variables[s.Name] = offset
 			fc.mutableVars[s.Name] = true
@@ -4878,8 +4893,7 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 			if exists && fc.mutableVars[s.Name] {
 				return fmt.Errorf("cannot shadow mutable variable '%s' with immutable variable", s.Name)
 			}
-			// Allocate stack space (16 bytes for alignment) - even if shadowing
-			fc.stackOffset += 16
+			fc.updateStackOffset(16)
 			offset := fc.stackOffset
 			fc.variables[s.Name] = offset
 			fc.mutableVars[s.Name] = false
@@ -4913,12 +4927,12 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 		_, isRange := s.Iterable.(*RangeExpr)
 		if isRange {
 			if s.NeedsMaxCheck {
-				fc.stackOffset += 48
+				fc.updateStackOffset(48)
 			} else {
-				fc.stackOffset += 32
+				fc.updateStackOffset(32)
 			}
 		} else {
-			fc.stackOffset += 64
+			fc.updateStackOffset(64)
 		}
 
 		for _, bodyStmt := range s.Body {
@@ -4968,9 +4982,9 @@ func (fc *FlapCompiler) collectLoopsFromExpression(expr Expression) {
 		fc.loopBaseOffsets[loopLabel] = baseOffset
 
 		if e.NeedsMaxCheck {
-			fc.stackOffset += 48
+			fc.updateStackOffset(48)
 		} else {
-			fc.stackOffset += 24
+			fc.updateStackOffset(24)
 		}
 
 		oldVariables := fc.variables
