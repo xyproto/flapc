@@ -1,0 +1,63 @@
+// Simplified Snake Game Test - Just test SDL3 basics
+import sdl3 as sdl
+
+// Initialize SDL3
+init_result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
+init_result != 0 {
+    printf("SDL_Init Error: %s\n", sdl.SDL_GetError())
+    exit(1)
+}
+
+printf("SDL3 initialized successfully!\n")
+
+// Create window
+window := sdl.SDL_CreateWindow("Flap Snake", 800, 600, 0)
+window == 0 {
+    printf("SDL_CreateWindow Error\n")
+    sdl.SDL_Quit()
+    exit(1)
+}
+
+printf("Window created!\n")
+
+// Create renderer
+renderer := sdl.SDL_CreateRenderer(window, 0)
+renderer == 0 {
+    printf("SDL_CreateRenderer Error\n")
+    sdl.SDL_DestroyWindow(window)
+    sdl.SDL_Quit()
+    exit(1)
+}
+
+printf("Renderer created!\n")
+
+// Simple game loop
+printf("Running game loop for 30 frames...\n")
+
+@ frame in 0..<30 {
+    // Clear screen (black)
+    sdl.SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)
+    sdl.SDL_RenderClear(renderer)
+
+    // Set draw color (green)
+    sdl.SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255)
+
+    // Present
+    sdl.SDL_RenderPresent(renderer)
+
+    // Delay
+    sdl.SDL_Delay(33)  // ~30 FPS
+
+    (frame % 10) == 0 {
+        printf("Frame %.0f\n", frame)
+    }
+}
+
+printf("Game loop complete!\n")
+
+// Cleanup
+sdl.SDL_DestroyRenderer(renderer)
+sdl.SDL_DestroyWindow(window)
+sdl.SDL_Quit()
+
+printf("Snake demo complete!\n")
