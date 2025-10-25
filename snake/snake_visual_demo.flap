@@ -1,0 +1,150 @@
+// Snake Visual Demo - Showcases CStruct + Arena + Unsafe + SDL3 rendering
+import sdl3 as sdl
+
+// Define SDL_Rect cstruct
+cstruct SDL_Rect {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32
+}
+
+printf("Snake Rendering Demo with CStruct\n")
+printf("==================================\n")
+
+// Initialize SDL3
+init_result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
+init_result != 0 {
+    printf("SDL_Init failed\n")
+    exit(1)
+}
+
+window := sdl.SDL_CreateWindow("Snake Demo", 800, 600, 0)
+window == 0 {
+    printf("Window creation failed\n")
+    sdl.SDL_Quit()
+    exit(1)
+}
+
+renderer := sdl.SDL_CreateRenderer(window, 0)
+renderer == 0 {
+    printf("Renderer creation failed\n")
+    sdl.SDL_DestroyWindow(window)
+    sdl.SDL_Quit()
+    exit(1)
+}
+
+printf("✓ SDL3 ready\n")
+printf("Rendering animated snake for 60 frames...\n")
+
+arena {
+    rect_ptr := alloc(SDL_Rect_SIZEOF)
+
+    @ frame in 0..<60 max 80 {
+        sdl.SDL_Delay(50)  // 20 FPS
+
+        // Clear to dark blue
+        sdl.SDL_SetRenderDrawColor(renderer, 20, 20, 40, 255)
+        sdl.SDL_RenderClear(renderer)
+
+        // Draw snake segments
+        @ seg in 0..<8 max 12 {
+            // Animate position
+            x_off := (frame % 30) * 5
+            x_val := 100 + (seg * 25) + x_off
+            y_val := 250 + (seg * 3)
+
+            // Color: bright green head, fading body
+            green_val := 220 - (seg * 15)
+            seg == 0 {
+                sdl.SDL_SetRenderDrawColor(renderer, 0, 255, 100, 255)
+            }
+            seg != 0 {
+                sdl.SDL_SetRenderDrawColor(renderer, 0, green_val, 0, 255)
+            }
+
+            unsafe {
+                rax <- rect_ptr as pointer
+                rbx <- x_val
+                [rax + 0] <- rbx
+                rbx <- y_val
+                [rax + 4] <- rbx
+                rbx <- 18
+                [rax + 8] <- rbx
+                [rax + 12] <- rbx
+            } {
+                x0 <- rect_ptr as pointer
+                x1 <- x_val
+                [x0 + 0] <- x1
+                x1 <- y_val
+                [x0 + 4] <- x1
+                x1 <- 18
+                [x0 + 8] <- x1
+                [x0 + 12] <- x1
+            } {
+                a0 <- rect_ptr as pointer
+                a1 <- x_val
+                [a0 + 0] <- a1
+                a1 <- y_val
+                [a0 + 4] <- a1
+                a1 <- 18
+                [a0 + 8] <- a1
+                [a0 + 12] <- a1
+            }
+
+            sdl.SDL_RenderFillRect(renderer, rect_ptr)
+        }
+
+        // Draw pulsing food
+        food_pulse := (frame % 15)
+        food_pulse > 7 {
+            food_pulse = 15 - food_pulse
+        }
+        food_sz := 20 + food_pulse
+
+        sdl.SDL_SetRenderDrawColor(renderer, 255, 50, 50, 255)
+
+        unsafe {
+            rax <- rect_ptr as pointer
+            rbx <- 450
+            [rax + 0] <- rbx
+            rbx <- 300
+            [rax + 4] <- rbx
+            rbx <- food_sz
+            [rax + 8] <- rbx
+            [rax + 12] <- rbx
+        } {
+            x0 <- rect_ptr as pointer
+            x1 <- 450
+            [x0 + 0] <- x1
+            x1 <- 300
+            [x0 + 4] <- x1
+            x1 <- food_sz
+            [x0 + 8] <- x1
+            [x0 + 12] <- x1
+        } {
+            a0 <- rect_ptr as pointer
+            a1 <- 450
+            [a0 + 0] <- a1
+            a1 <- 300
+            [a0 + 4] <- a1
+            a1 <- food_sz
+            [a0 + 8] <- a1
+            [a0 + 12] <- a1
+        }
+
+        sdl.SDL_RenderFillRect(renderer, rect_ptr)
+        sdl.SDL_RenderPresent(renderer)
+
+        (frame % 15) == 0 {
+            printf("Frame %.0f\n", frame)
+        }
+    }
+}
+
+sdl.SDL_DestroyRenderer(renderer)
+sdl.SDL_DestroyWindow(window)
+sdl.SDL_Quit()
+
+printf("\n✓ Demo complete!\n")
+printf("✓ CStruct + Arena + Unsafe + SDL3 = Working!\n")
