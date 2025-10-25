@@ -3260,6 +3260,9 @@ func (p *Parser) parsePrimary() Expression {
 		val := p.parseNumberLiteral(p.current.Value)
 		return &NumberExpr{Value: val}
 
+	case TOKEN_INF:
+		return &NumberExpr{Value: math.Inf(1)}
+
 	case TOKEN_STRING:
 		return &StringExpr{Value: p.current.Value}
 

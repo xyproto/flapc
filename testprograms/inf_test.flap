@@ -1,0 +1,30 @@
+// Test inf keyword as numeric constant
+
+// Test 1: inf as constant
+x := inf
+printf("inf = %v\n", x)
+
+// Test 2: Comparisons with inf
+a := 100
+b := inf
+printf("100 < inf: %v (expected 1)\n", a < b)
+printf("inf > 100: %v (expected 1)\n", b > a)
+printf("inf == inf: %v (expected 1)\n", inf == inf)
+
+// Test 3: Negative infinity
+neginf := -inf
+printf("-inf = %v\n", neginf)
+printf("-inf < 0: %v (expected 1)\n", neginf < 0)
+
+// Test 4: Math operations
+result := 1 / inf
+printf("1 / inf = %v (expected 0)\n", result)
+
+zero := inf - inf
+printf("inf - inf = %v (expected nan)\n", zero)
+
+// Test 5: inf in match expressions
+value := 100 < inf { 1 ~> 0 }
+printf("Match with inf: 100 < inf returns %v (expected 1)\n", value)
+
+printf("inf test complete!\n")

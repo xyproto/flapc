@@ -236,17 +236,18 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
     - Common functional pattern
     - Files: `parser.go`, new LetExpr type
 
-17. **Extend `inf` keyword for other contexts** (LOW-MEDIUM)
-    - Current: Only used for `max inf` in loops
-    - Proposed uses:
-      a. **Numeric constant**: `x := inf` for IEEE 754 infinity
-      b. **Unbounded ranges**: `@ i in 0..<inf max inf { }` for infinite sequences
-      c. **Timeout values**: `wait(inf)` to wait indefinitely
-      d. **Comparisons**: `x < inf` always true for finite x
-      e. **Math operations**: `1 / inf` → 0
-    - Design: Map `inf` to `math.Inf(1)` in numeric contexts
-    - Impact: Cleaner syntax than using large numbers or special functions
-    - Files: `lexer.go`, `parser.go:parseExpression`
+17. **Extend `inf` keyword for other contexts** (LOW-MEDIUM) ✅ COMPLETE
+    - Status: FULLY IMPLEMENTED as numeric constant
+    - Syntax: `x := inf` assigns IEEE 754 positive infinity
+    - Features:
+      - ✅ Numeric constant: `inf` returns IEEE 754 +∞
+      - ✅ Negative infinity: `-inf` returns IEEE 754 -∞
+      - ✅ Comparisons: `x < inf` works correctly
+      - ✅ Math operations: `1 / inf` → 0, `inf - inf` → NaN
+      - ✅ Match expressions: `100 < inf { ... }` works
+    - Implementation: TOKEN_INF handled in parsePrimary() → NumberExpr{Value: math.Inf(1)}
+    - Test Results: inf_test.flap passing
+    - Files: `parser.go:parsePrimary` (line 3263-3264)
 
 ## Nice to Have
 
