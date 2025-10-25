@@ -2,4 +2,3 @@
 @ i in 0..<5  max 50 {
     printf("i = %.0f\n", @i)
 }
-exit(0)

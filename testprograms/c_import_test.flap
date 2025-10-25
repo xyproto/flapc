@@ -2,4 +2,3 @@
 import sdl2 as sdl
 
 println("C import syntax test")
-exit(0)

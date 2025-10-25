@@ -10,5 +10,3 @@ arena {
         ~> println("FAIL: alloc returned null")
     }
 }
-
-exit(0)

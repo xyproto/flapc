@@ -16,4 +16,3 @@ printf("SDL3 initialized successfully!\n")
 sdl.SDL_Quit()
 printf("SDL3 C FFI test passed!\n")
 
-exit(0)

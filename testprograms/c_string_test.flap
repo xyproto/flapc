@@ -17,4 +17,3 @@ printf("Window pointer: %.0f\n", window)
 // SDL calls for cleanup
 sdl.SDL_Quit()
 
-exit(0)

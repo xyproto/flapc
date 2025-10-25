@@ -38,5 +38,3 @@ result := unsafe {
 }
 
 printf("Syscall returned: %.0f bytes\n", result)
-
-exit(0)

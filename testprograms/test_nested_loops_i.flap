@@ -4,4 +4,3 @@
         printf("@i1 (outer)=%v, @i2 (inner)=%v, @i (current)=%v\n", @i1, @i2, @i)
     }
 }
-exit(0)

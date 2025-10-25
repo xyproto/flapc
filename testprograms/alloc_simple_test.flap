@@ -3,4 +3,3 @@ arena {
     buffer := alloc(64)
     printf("buffer = %.0f\n", buffer)
 }
-exit(0)

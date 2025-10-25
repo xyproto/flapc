@@ -8,4 +8,3 @@ pid := libc.getpid()
 println("Process ID:")
 println(pid)
 
-exit(0)

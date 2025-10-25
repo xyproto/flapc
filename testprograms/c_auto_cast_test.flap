@@ -17,4 +17,3 @@ printf("Window created: %.0f\n", window)
 printf("Title was: %s\n", title)
 
 sdl.SDL_Quit()
-exit(0)

@@ -51,5 +51,3 @@ sdl.SDL_Quit()
 
 printf("SDL shut down successfully!\n")
 printf("\n=== Example Complete ===\n")
-
-exit(0)

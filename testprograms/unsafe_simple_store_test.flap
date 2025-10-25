@@ -28,5 +28,3 @@ result := unsafe {
 }
 
 printf("Store/load test: %.0f\n", result)
-
-exit(0)

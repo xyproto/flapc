@@ -981,7 +981,7 @@ Pure recursive functions (no side effects) are automatically memoized by the com
 
 ```flap
 // Fibonacci with automatic memoization (pure function)
-fib := (n) => n <= 1 {
+fib := n => n <= 1 {
     -> n
     ~> fib(n - 1) + fib(n - 2)  // Auto-memoized (pure function)
 }
@@ -996,6 +996,8 @@ println(fib(20))   // Reuses cached results (very fast)
 - **Zero overhead**: No special syntax required, optimizations happen automatically
 - **Smart caching**: Memoization uses arena-based memory allocation
 
+**Note:** Recursive calls use the function name directly. There is no special `me` or `cme` keyword.
+
 ### Builtin Functions
 
 **I/O:**
@@ -1004,7 +1006,7 @@ println(fib(20))   // Reuses cached results (very fast)
 - `exit(code)` - exit program explicitly (syscall-based)
 - `cexit(code)` - exit program explicitly (libc-based)
 
-**Note:** Programs automatically call `exit(0)` at the end if no explicit exit is present
+**Note:** Programs automatically exit with code 0 if no explicit exit is present
 
 **FFI:**
 - `call(fn_name, ...)` - call C function with type-cast arguments
@@ -1510,7 +1512,7 @@ text = c_string as string
 ### Factorial
 
 ```flap
-factorial = n => n <= 1 {
+factorial := n => n <= 1 {
     -> 1
     ~> n * factorial(n - 1)
 }
@@ -1903,7 +1905,6 @@ result != 12 {
 }
 
 println("PASS: All tests passed")
-exit(0)
 ```
 
 ### Test Helper Functions
@@ -1967,7 +1968,6 @@ assert_eq(core.sum([]), 0)
 assert_eq(core.sum([-1, -2, -3]), -6)
 
 println("PASS: sum tests")
-exit(0)
 ```
 
 ## Module System
@@ -2078,7 +2078,6 @@ window := sdl.SDL_CreateWindow(
 // Game loop would go here...
 
 sdl.SDL_Quit()
-exit(0)
 ```
 
 **Example: Standard C Library**

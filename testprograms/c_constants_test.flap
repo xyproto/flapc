@@ -16,4 +16,3 @@ printf("Testing C constant extraction...\n")
 // For now, we just test that the feature compiles
 printf("C constant feature implemented successfully\n")
 
-exit(0)

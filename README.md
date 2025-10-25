@@ -25,7 +25,7 @@ No type tags, no polymorphism, no generics. Just IEEE 754 doubles and SIMD-optim
 ### Functional + Imperative
 ```flap
 // Immutable by default
-fib := (n) => n < 2 { n ~> me(n-1) + me(n-2) }
+fib := (n) => n < 2 { n ~> fib(n-1) + fib(n-2) }
 
 // Mutable when needed
 x := 0.0
@@ -106,14 +106,12 @@ flapc -o game program.flap
 **Hello World**
 ```flap
 println("Hello, World!")
-exit(0)
 ```
 
 **Factorial**
 ```flap
-factorial := (n) => n == 0 { 1 ~> n * me(n - 1) }
+factorial := (n) => n == 0 { 1 ~> n * factorial(n - 1) }
 println(factorial(10))
-exit(0)
 ```
 
 **Game Loop**
@@ -140,7 +138,7 @@ See `programs/` for more examples.
 - Loops: `@ i in list { ... }`, `@ { ... }` (infinite)
 - Match: `x > 0 { positive() ~> negative() }`
 - Lambdas: `x => x * 2` or `(x, y) => x + y`
-- Recursion: `me()` for tail calls
+- Recursion: Use function name for tail calls
 
 ### Data Types
 All values are `map[uint64]float64`, but syntax sugar makes them feel typed:

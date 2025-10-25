@@ -65,5 +65,3 @@ arena {
 
     printf("Stored and loaded immediate value: %.0f\n", result2)
 }
-
-exit(0)
