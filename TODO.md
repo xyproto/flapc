@@ -27,21 +27,19 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
    - Previously failing tests now pass: test_lambda_match, test_map_simple, ex2_list_operations
    - Fixed issues with map operations, lambda match expressions, and pipe operator
 
-2. **Implement proper closure capture for nested lambdas** (HIGH)
-   - Current: Inner lambdas can't access outer lambda parameters
-   - Error: "undefined variable" when lambda returns lambda
-   - Impact: Blocks higher-order functional programming
-   - Approach: Track captured variables, allocate environment on heap
-   - Reference: Already have heap-allocated closures, extend for capture
+2. **Implement proper closure capture for nested lambdas** (HIGH) ⚠️ PARTIAL
+   - Status: 2-level closures work perfectly, 3+ levels need environment chaining
+   - Improved: Added nested lambda support to collectCapturedVarsExpr
+   - Working: `(a) => (b) => a + b` fully functional
+   - Limitation: `(a) => (b) => (c) => a * b + c` captures detected but runtime env chain needed
    - Files: `parser.go:collectCapturedVarsExpr`, lambda compilation
 
 ## Critical - Game Development FFI
 
-3. **Enhance unsafe blocks to return register values** (MEDIUM)
-   - Current: unsafe blocks execute but don't return expressions
-   - Goal: Return register values (rax, xmm0, etc.) as expressions
-   - Syntax: `result := unsafe { rax <- 42; rax }`
-   - Impact: Essential for low-level game optimizations
+3. **Enhance unsafe blocks to return register values** (MEDIUM) ✅ COMPLETE
+   - Status: ALREADY IMPLEMENTED - unsafe blocks return register values
+   - Syntax: `result := unsafe { rax <- 42; rax }` or implicit return
+   - Supports: Explicit returns, implicit rax/xmm0 return, computations
    - Files: `parser.go:parseUnsafeExpr`, unsafe codegen
 
 4. **Extend C FFI for SDL3/RayLib5** (HIGH)
