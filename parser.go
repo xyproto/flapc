@@ -14183,7 +14183,7 @@ func CompileFlap(inputPath string, outputPath string, platform Platform) (err er
 		dirEntries, err := os.ReadDir(inputDir)
 
 		// For /tmp, only skip if it's the root temp dir with many files
-		if (strings.HasPrefix(inputDir, "/tmp/") || strings.HasPrefix(inputDir, "C:\\tmp\\")) && err == nil {
+		if (inputDir == "/tmp" || inputDir == "C:\\tmp" || strings.HasPrefix(inputDir, "/tmp/") || strings.HasPrefix(inputDir, "C:\\tmp\\")) && err == nil {
 			// Count .flap files - if there are more than 10, likely temp files
 			flapCount := 0
 			for _, entry := range dirEntries {
