@@ -3499,6 +3499,7 @@ func (p *Parser) parsePrimary() Expression {
 
 	case TOKEN_LBRACKET:
 		p.nextToken() // skip '['
+		p.skipNewlines()
 		elements := []Expression{}
 
 		if p.current.Type != TOKEN_RBRACKET {
@@ -3506,6 +3507,7 @@ func (p *Parser) parsePrimary() Expression {
 			for p.peek.Type == TOKEN_COMMA {
 				p.nextToken() // skip current
 				p.nextToken() // skip ','
+				p.skipNewlines()
 				elements = append(elements, p.parseExpression())
 			}
 			// current should be on last element
