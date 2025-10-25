@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 )
 
 // OptimizationPass represents a single optimization transformation
@@ -15,10 +16,11 @@ type OptimizationPass interface {
 type Optimizer struct {
 	passes  []OptimizationPass
 	maxIter int
+	timeout time.Duration
 }
 
 // NewOptimizer creates an optimizer with default passes
-func NewOptimizer() *Optimizer {
+func NewOptimizer(timeoutSeconds float64) *Optimizer {
 	return &Optimizer{
 		passes: []OptimizationPass{
 			&ConstantPropagation{},
@@ -26,16 +28,34 @@ func NewOptimizer() *Optimizer {
 			&FunctionInlining{},
 		},
 		maxIter: 10,
+		timeout: time.Duration(timeoutSeconds * float64(time.Second)),
 	}
 }
 
-// Optimize runs all optimization passes until fixed point
+// Optimize runs all optimization passes until fixed point or timeout
 func (opt *Optimizer) Optimize(program *Program) error {
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "-> Starting whole program optimization\n")
+	if opt.timeout <= 0 {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "-> Skipping WPO (disabled via --opt-timeout=0)\n")
+		}
+		return nil
 	}
 
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "-> Starting whole program optimization (timeout: %.1fs)\n", opt.timeout.Seconds())
+	}
+
+	startTime := time.Now()
+
 	for i := 0; i < opt.maxIter; i++ {
+		// Check timeout
+		if time.Since(startTime) > opt.timeout {
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "-> Optimization stopped: timeout reached (%.1fs)\n", opt.timeout.Seconds())
+			}
+			break
+		}
+
 		anyChanged := false
 		for _, pass := range opt.passes {
 			if VerboseMode {
@@ -54,7 +74,7 @@ func (opt *Optimizer) Optimize(program *Program) error {
 		}
 		if !anyChanged {
 			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "-> Optimization converged after %d iterations\n", i+1)
+				fmt.Fprintf(os.Stderr, "-> Optimization converged after %d iterations (%.3fs)\n", i+1, time.Since(startTime).Seconds())
 			}
 			break
 		}

@@ -13723,13 +13723,11 @@ func CompileFlap(inputPath string, outputPath string, platform Platform) (err er
 		fmt.Fprintf(os.Stderr, "-> Finished analyzing closures\n")
 	}
 
-	// Run whole program optimization (currently opt-in via WPO_ENABLED env var)
-	if os.Getenv("WPO_ENABLED") == "1" {
-		optimizer := NewOptimizer()
-		err = optimizer.Optimize(program)
-		if err != nil {
-			return fmt.Errorf("optimization failed: %v", err)
-		}
+	// Run whole program optimization
+	optimizer := NewOptimizer(WPOTimeout)
+	err = optimizer.Optimize(program)
+	if err != nil {
+		return fmt.Errorf("optimization failed: %v", err)
 	}
 
 	// Compile

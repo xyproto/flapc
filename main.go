@@ -926,6 +926,7 @@ func (eb *ExecutableBuilder) patchTextInELF() {
 // Global flags for controlling output verbosity and dependencies
 var VerboseMode bool
 var UpdateDepsFlag bool
+var WPOTimeout float64
 
 func main() {
 	// Create default output filename in system temp directory
@@ -953,6 +954,7 @@ func main() {
 	var updateDeps = flag.Bool("u", false, "update all dependency repositories from Git")
 	var updateDepsLong = flag.Bool("update-deps", false, "update all dependency repositories from Git")
 	var codeFlag = flag.String("c", "", "execute Flap code from command line")
+	var optTimeout = flag.Float64("opt-timeout", 2.0, "optimization timeout in seconds (0 to disable)")
 	flag.Parse()
 
 	// Set global update-deps flag (use whichever was specified)
@@ -965,6 +967,9 @@ func main() {
 
 	// Set global verbosity flag (use whichever was specified)
 	VerboseMode = *verbose || *verboseLong
+
+	// Set global WPO timeout
+	WPOTimeout = *optTimeout
 
 	// Parse target platform
 	var targetArch Arch
