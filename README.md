@@ -25,7 +25,7 @@ No type tags, no polymorphism, no generics. Just IEEE 754 doubles and SIMD-optim
 ### Functional + Imperative
 ```flap
 // Immutable by default
-fib := (n) => n < 2 { n ~> fib(n-1) + fib(n-2) }
+fib := (n) => n < 2 { n ~> fib(n-1) + fib(n-2) max inf }
 
 // Mutable when needed
 x := 0.0
@@ -110,7 +110,7 @@ println("Hello, World!")
 
 **Factorial**
 ```flap
-factorial := (n) => n == 0 { 1 ~> n * factorial(n - 1) }
+factorial := (n) => n == 0 { 1 ~> n * factorial(n - 1) max inf }
 println(factorial(10))
 ```
 

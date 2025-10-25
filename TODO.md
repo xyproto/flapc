@@ -34,6 +34,13 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 - All SDL3 window flags now properly extracted (SDL_WINDOW_RESIZABLE = 32, etc.)
 - Grumpy cat SDL3 texture demo now compiles with proper window flags
 
+**Tail-Call Optimization** (2025-10-25)
+- Implemented automatic TCO for tail-recursive calls
+- Converts tail recursion to loops (no stack growth)
+- Fixed critical bug: operands of binary expressions are not in tail position
+- All 306 tests passing with TCO enabled
+- Files: `parser.go:compileTailRecursiveCall`, `parser.go:compileRecursiveCall`
+
 **Unsafe Block Syntax Simplification** (2025-10-25)
 - Removed ret keyword from unsafe blocks - simplified to implicit return
 - All tests passing: 306/306 (100%)
@@ -123,12 +130,15 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
 ## Fundamental - Enable Core Patterns
 
-6. **Implement automatic tail-call optimization** (HIGH)
-   - Goal: Detect tail-recursive calls and convert to loops automatically
-   - Status: Documented in LANGUAGE.md, not yet implemented
-   - Approach: Analyze function to detect tail position calls, emit loop instead of call
-   - Benefits: No stack growth for tail recursion, no special keywords needed
-   - Files: `parser.go:compileLambdaCall`, add tail-call detection
+6. **Implement automatic tail-call optimization** ✅ COMPLETE
+   - Status: FULLY IMPLEMENTED
+   - Features: Automatic detection of tail position, converts recursive calls to loops
+   - Implementation:
+     - Added inTailPosition tracking throughout expression compilation
+     - Binary expression operands correctly marked as non-tail position
+     - Tail-recursive calls converted to parameter updates + jump to lambda body
+   - Benefits: Zero stack growth, no special keywords, works with match expressions
+   - Files: `parser.go:compileTailRecursiveCall`, `parser.go:compileRecursiveCall`
 
 7. **Implement automatic memoization for pure functions** (MEDIUM)
    - Goal: Automatically cache results of pure recursive functions

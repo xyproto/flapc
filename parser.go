@@ -6071,6 +6071,10 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		compilerError("%s can only be used as a statement, not in an expression (like Go)", e.Operator)
 
 	case *BinaryExpr:
+		savedTailPosition := fc.inTailPosition
+		fc.inTailPosition = false
+		defer func() { fc.inTailPosition = savedTailPosition }()
+
 		// Handle or! error handling operator (special case: short-circuit)
 		if e.Operator == "or!" {
 			// Evaluate the condition expression (comparisons now return 0.0/1.0)
@@ -10875,7 +10879,47 @@ func (fc *FlapCompiler) compileCachedCall(call *CallExpr) {
 	fc.out.AddImmToReg("rsp", 32)
 }
 
+func (fc *FlapCompiler) compileTailRecursiveCall(call *CallExpr) {
+	if fc.currentLambda == nil {
+		compilerError("tail call optimization requires lambda context")
+	}
+
+	if len(call.Args) != len(fc.currentLambda.Params) {
+		compilerError("tail call to '%s' has %d args but function has %d params",
+			call.Function, len(call.Args), len(fc.currentLambda.Params))
+	}
+
+	// Step 1: Evaluate all arguments and save to temporary stack locations
+	tempOffsets := make([]int, len(call.Args))
+	for i, arg := range call.Args {
+		fc.compileExpression(arg)
+		fc.out.SubImmFromReg("rsp", 16)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		tempOffsets[i] = fc.stackOffset + 16*(i+1)
+	}
+
+	// Step 2: Copy temporary values to parameter locations
+	for i, paramName := range fc.currentLambda.Params {
+		paramOffset := fc.variables[paramName]
+		tempStackPos := 16 * (len(call.Args) - 1 - i)
+		fc.out.MovMemToXmm("xmm0", "rsp", tempStackPos)
+		fc.out.MovXmmToMem("xmm0", "rbp", -paramOffset)
+	}
+
+	// Step 3: Clean up temporary stack space
+	fc.out.AddImmToReg("rsp", int64(16*len(call.Args)))
+
+	// Step 4: Jump back to lambda body start (tail recursion!)
+	jumpOffset := int32(fc.lambdaBodyStart - (fc.eb.text.Len() + 5))
+	fc.out.JumpUnconditional(jumpOffset)
+}
+
 func (fc *FlapCompiler) compileRecursiveCall(call *CallExpr) {
+	if fc.inTailPosition {
+		fc.compileTailRecursiveCall(call)
+		return
+	}
+
 	// Compile a recursive call with optional depth tracking
 	// Only track depth if max is not infinite (for zero runtime overhead with max inf)
 	// TODO: Depth tracking currently disabled - requires writable .bss/.data section support
