@@ -3221,10 +3221,12 @@ func (p *Parser) parsePrimary() Expression {
 			return expr
 		}
 
-		// Check for struct literal: StructName { field: value, ... }
-		if p.peek.Type == TOKEN_LBRACE {
-			return p.parseStructLiteral(name)
-		}
+		// TODO: Struct literal syntax conflicts with lambda match
+		// Need to redesign syntax or add explicit keyword (e.g., new StructName { ... })
+		// Temporarily disabled to fix lambda match expressions
+		// if p.peek.Type == TOKEN_LBRACE {
+		// 	return p.parseStructLiteral(name)
+		// }
 
 		// Check for lambda: x => expr or x, y => expr
 		if p.peek.Type == TOKEN_FAT_ARROW {
@@ -13719,6 +13721,15 @@ func CompileFlap(inputPath string, outputPath string, platform Platform) (err er
 	}
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "-> Finished analyzing closures\n")
+	}
+
+	// Run whole program optimization (currently opt-in via WPO_ENABLED env var)
+	if os.Getenv("WPO_ENABLED") == "1" {
+		optimizer := NewOptimizer()
+		err = optimizer.Optimize(program)
+		if err != nil {
+			return fmt.Errorf("optimization failed: %v", err)
+		}
 	}
 
 	// Compile
