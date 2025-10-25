@@ -8,27 +8,24 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
 ## Recent Progress
 
+**Unsafe Block Syntax Simplification** (2025-10-25)
+- Removed ret keyword from unsafe blocks - simplified to implicit return
+- All tests passing: 306/306 (100%)
+- Fixed lambda/map/pipe operator issues that were causing runtime crashes
+- Removed obsolete unsafe_ret_cstr_test and unsafe_return_test files
+
 **Test Framework Enhancement** (2025-10-24)
 - Added wildcard pattern matching for non-deterministic test output
 - Supports `*` wildcard for matching memory addresses, PIDs, timestamps
 - Correctly handles ASCII art (doesn't treat `         *` as wildcard)
 - Updated 6 test result files with wildcard patterns
-- Test pass rate: 303/306 (99%)
-- 3 remaining failures are documented segfault issues (#2 below)
 
 ## Critical - Compiler Correctness
 
-1. **Fix advanced lambda/map features** (HIGH) 🔴 BLOCKED
-   - Status: Programs compile successfully but crash immediately at runtime
-   - Failing tests (3/306): test_lambda_match, test_map_simple, ex2_list_operations
-   - Analysis:
-     - `test_map_simple`: Map indexing `m[5] = 10` on scalar value generates invalid code
-     - `test_lambda_match`: Recursive lambda with match expressions crashes in closure
-     - `ex2_list_operations`: Pipe operator with lambdas segfaults during transformation
-   - Note: Stub warnings ("Label $stub not found") are benign - PLT calls work correctly
-   - Impact: Blocks advanced functional programming patterns
-   - Root cause: Code generation bugs in map operations and complex lambda/match combinations
-   - Files: `parser.go` (map indexing codegen, lambda match expressions, pipe operator)
+1. **Fix advanced lambda/map features** (HIGH) ✅ COMPLETE
+   - Status: FIXED - All tests passing (306/306)
+   - Previously failing tests now pass: test_lambda_match, test_map_simple, ex2_list_operations
+   - Fixed issues with map operations, lambda match expressions, and pipe operator
 
 2. **Implement proper closure capture for nested lambdas** (HIGH)
    - Current: Inner lambdas can't access outer lambda parameters
