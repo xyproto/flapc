@@ -4501,6 +4501,13 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 		ds.AddSymbol(funcName, STB_GLOBAL, STT_FUNC)
 	}
 
+	// Add cache pointer storage to rodata (8 bytes of zeros for each cache)
+	if len(fc.memoCaches) > 0 {
+		for cacheName := range fc.memoCaches {
+			fc.eb.Define(cacheName, "\x00\x00\x00\x00\x00\x00\x00\x00") // 8 bytes of zeros for cache pointer
+		}
+	}
+
 	// Write rodata - get symbols and sort for consistent ordering
 	rodataSymbols := fc.eb.RodataSection()
 
@@ -4601,6 +4608,13 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	fc.eb.Define("fmt_float", "%.0f\n\x00")
 	fc.eb.Define("_loop_max_exceeded_msg", "Error: loop exceeded maximum iterations\n\x00")
 	fc.eb.Define("_recursion_max_exceeded_msg", "Error: recursion exceeded maximum depth\n\x00")
+
+	// Re-define cache pointer storage (will get correct addresses in second pass)
+	if len(fc.memoCaches) > 0 {
+		for cacheName := range fc.memoCaches {
+			fc.eb.Define(cacheName, "\x00\x00\x00\x00\x00\x00\x00\x00") // 8 bytes of zeros
+		}
+	}
 
 	// ===== AVX-512 CPU DETECTION (regenerated) =====
 	fc.eb.Define("cpu_has_avx512", "\x00")      // 1 byte: 0=no, 1=yes
@@ -10122,7 +10136,7 @@ func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
 
 func (fc *FlapCompiler) compileLambdaDirectCall(call *CallExpr) {
 	// Check if this is a pure function eligible for memoization
-	// TODO: Disabled temporarily - need to allocate cache storage in data section
+	// TODO: Temporarily disabled - memoization causes heap corruption
 	// var targetLambda *LambdaFunc
 	// for i := range fc.lambdaFuncs {
 	// 	if fc.lambdaFuncs[i].Name == call.Function {
@@ -10139,7 +10153,7 @@ func (fc *FlapCompiler) compileLambdaDirectCall(call *CallExpr) {
 	}
 
 	// For pure single-argument functions, add memoization
-	// TODO: Disabled temporarily - need to allocate cache storage in data section
+	// TODO: Temporarily disabled due to malloc heap corruption - needs debugging
 	// if targetLambda != nil && targetLambda.IsPure && len(call.Args) == 1 {
 	// 	fc.compileMemoizedCall(call, targetLambda)
 	// 	return
@@ -10347,7 +10361,7 @@ func (fc *FlapCompiler) compileMemoizedCall(call *CallExpr, lambda *LambdaFunc) 
 	fc.patchJumpImmediate(endJump+1, int32(endPos-(endJump+5)))
 	fc.patchJumpImmediate(doneJump+1, int32(endPos-(doneJump+5)))
 
-	// Track cache for later storage allocation
+	// Track cache for rodata storage allocation (defined before ELF generation)
 	if fc.memoCaches == nil {
 		fc.memoCaches = make(map[string]bool)
 	}

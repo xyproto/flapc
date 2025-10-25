@@ -141,7 +141,7 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
    - Files: `parser.go:compileTailRecursiveCall`, `parser.go:compileRecursiveCall`
 
 7. **Implement automatic memoization for pure functions** ⚠️ PARTIAL
-   - Status: Full implementation complete but disabled pending data section support
+   - Status: Full implementation complete but disabled due to malloc heap corruption
    - Completed:
      - ✅ Purity analysis function `isExpressionPure` detects side effects
      - ✅ IsPure field added to LambdaFunc structure
@@ -151,15 +151,24 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
      - ✅ Linear cache structure: [count][key1][value1][key2][value2]...
      - ✅ Cache initialization with malloc on first call
      - ✅ Cache growth with realloc pattern (malloc/memcpy/free)
-     - ✅ Tested and working (fib(10) = 55 correct)
-   - Remaining:
-     - Allocate cache pointer storage in data section (currently missing)
-     - Define cache symbols before code generation
-     - Enable memoization by uncommenting code in compileLambdaDirectCall
-   - Current Issue: LeaSymbolToReg fails because cache symbols undefined
+     - ✅ Cache pointer storage in rodata (writable segment PF_R|PF_W)
+     - ✅ Tested working with simple fibonacci (fib(10) = 55)
+   - Current Issue:
+     - Malloc assertion failure when used with factorial
+     - Error: "assertion failed: (old_top == initial_top (av) && old_size == 0)"
+     - Suggests heap corruption in memoization realloc logic
+     - Happens during cache growth (malloc/memcpy/free sequence)
    - Temporary Solution: Memoization disabled to keep all 306 tests passing
-   - Benefits: Will enable efficient fibonacci, dynamic programming
-   - Files: `parser.go:isExpressionPure` (lines 5011-5082), `parser.go:compileMemoizedCall` (lines 10165-10352)
+   - Remaining Work:
+     - Debug heap corruption in cache growth code
+     - Verify register preservation across malloc/memcpy/free calls
+     - Check cache size calculations and bounds
+     - Test with more complex recursive functions
+   - Benefits: Will enable efficient fibonacci, dynamic programming, DP algorithms
+   - Files:
+     - `parser.go:isExpressionPure` (lines 5011-5082)
+     - `parser.go:compileMemoizedCall` (lines 10179-10369)
+     - `parser.go` (lines 4504-4509, 4612-4617): Cache storage allocation
 
 8. **Add trampoline execution for deep recursion** (MEDIUM)
     - Current: Non-tail-recursive functions can stack overflow
