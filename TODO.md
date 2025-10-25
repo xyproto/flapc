@@ -60,11 +60,17 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
    - Previously failing tests now pass: test_lambda_match, test_map_simple, ex2_list_operations
    - Fixed issues with map operations, lambda match expressions, and pipe operator
 
-2. **Implement proper closure capture for nested lambdas** (HIGH) ⚠️ PARTIAL
-   - Status: 2-level closures work perfectly, 3+ levels need environment chaining
-   - Improved: Added nested lambda support to collectCapturedVarsExpr
-   - Working: `(a) => (b) => a + b` fully functional
-   - Limitation: `(a) => (b) => (c) => a * b + c` captures detected but runtime env chain needed
+2. **Implement proper closure capture for nested lambdas** (HIGH) ✅ COMPLETE
+   - Status: FULLY IMPLEMENTED - All nesting levels work perfectly
+   - Features:
+     - ✅ 2-level closures: `(a) => (b) => a + b` fully functional
+     - ✅ 3-level closures: `(a) => (b) => (c) => a + b + c` working
+     - ✅ 4-level closures: `(a) => (b) => (c) => (d) => a * b + c * d` working
+     - ✅ Environment chaining implemented correctly
+     - ✅ Multiple independent closures with different captured values
+   - Test Results:
+     - test_closure.flap: All 2-level closure tests passing
+     - Verified 3-level and 4-level closures with complex expressions
    - Files: `parser.go:collectCapturedVarsExpr`, lambda compilation
 
 ## Critical - Game Development FFI

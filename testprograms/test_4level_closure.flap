@@ -1,0 +1,28 @@
+// Test 4-level nested closures
+// Verifies deep environment chaining with complex expressions
+
+// 4-level closure: a -> (b -> (c -> (d -> a * b + c * d)))
+make4Level := (a) => {
+    level2 := (b) => {
+        level3 := (c) => {
+            level4 := (d) => a * b + c * d
+            ret level4
+        }
+        ret level3
+    }
+    ret level2
+}
+
+// Test: 2 * 3 + 4 * 5 = 6 + 20 = 26
+f := make4Level(2)
+g := f(3)
+h := g(4)
+result := h(5)
+printf("4-level: 2 * 3 + 4 * 5 = %v (expected 26)\n", result)
+
+// Test multiple independent closures
+f2 := make4Level(10)
+g2 := f2(20)
+h2 := g2(30)
+result2 := h2(40)
+printf("4-level: 10 * 20 + 30 * 40 = %v (expected 1400)\n", result2)

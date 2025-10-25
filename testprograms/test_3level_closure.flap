@@ -1,0 +1,17 @@
+// Test 3-level nested closures
+// Verifies environment chaining works correctly for deeply nested lambdas
+
+// 3-level closure: a -> (b -> (c -> a + b + c))
+make3Level := (a) => {
+    level2 := (b) => {
+        level3 := (c) => a + b + c
+        ret level3
+    }
+    ret level2
+}
+
+// Test: 10 + 20 + 30 = 60
+f := make3Level(10)
+g := f(20)
+result := g(30)
+printf("3-level closure: 10 + 20 + 30 = %v (expected 60)\n", result)
