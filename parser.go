@@ -1880,6 +1880,12 @@ func (p *Parser) parseStructLiteral(structName string) *StructLiteralExpr {
 }
 
 func (p *Parser) parseStatement() Statement {
+	isHot := false
+	if p.current.Type == TOKEN_HOT {
+		isHot = true
+		p.nextToken()
+	}
+
 	// Check for use keyword (imports)
 	if p.current.Type == TOKEN_USE {
 		p.nextToken() // skip 'use'
@@ -1960,6 +1966,9 @@ func (p *Parser) parseStatement() Statement {
 	if p.current.Type == TOKEN_IDENT && (p.peek.Type == TOKEN_EQUALS || p.peek.Type == TOKEN_EQUALS_FAT_ARROW || p.peek.Type == TOKEN_COLON_EQUALS || p.peek.Type == TOKEN_LEFT_ARROW || p.peek.Type == TOKEN_COLON ||
 		p.peek.Type == TOKEN_PLUS_EQUALS || p.peek.Type == TOKEN_MINUS_EQUALS ||
 		p.peek.Type == TOKEN_STAR_EQUALS || p.peek.Type == TOKEN_SLASH_EQUALS || p.peek.Type == TOKEN_MOD_EQUALS) {
+		if isHot {
+			return p.parseAssignmentWithHot(true)
+		}
 		return p.parseAssignment()
 	}
 
@@ -2132,6 +2141,10 @@ func (p *Parser) parseFString() Expression {
 }
 
 func (p *Parser) parseAssignment() *AssignStmt {
+	return p.parseAssignmentWithHot(false)
+}
+
+func (p *Parser) parseAssignmentWithHot(isHot bool) *AssignStmt {
 	name := p.current.Value
 	p.nextToken() // skip identifier
 
@@ -2271,7 +2284,7 @@ func (p *Parser) parseAssignment() *AssignStmt {
 		}
 	}
 
-	return &AssignStmt{Name: name, Value: value, Mutable: mutable, IsUpdate: isUpdate, Precision: precision}
+	return &AssignStmt{Name: name, Value: value, Mutable: mutable, IsUpdate: isUpdate, Precision: precision, IsHot: isHot}
 }
 
 func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
@@ -4154,6 +4167,7 @@ type FlapCompiler struct {
 	memoCaches          map[string]bool              // Track memoization caches that need storage allocation
 	currentAssignName   string                       // Name of variable being assigned (for lambda naming)
 	inTailPosition      bool                         // True when compiling expression in tail position
+	hotFunctions        map[string]bool              // Track hot-reloadable functions
 
 	metaArenaGrowthErrorJump      int
 	firstMetaArenaMallocErrorJump int
@@ -4200,6 +4214,7 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 		lambdaOffsets:       make(map[string]int),
 		loopBaseOffsets:     make(map[int]int),
 		cacheEnabledLambdas: make(map[string]bool),
+		hotFunctions:        make(map[string]bool),
 		debug:               debugEnabled,
 		currentArena:        -1,
 	}, nil
@@ -5208,13 +5223,15 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 			fc.runtimeStack += 16
 		}
 
-		// Set current assignment name for lambda naming (allows recursive calls)
+		if s.IsHot {
+			if _, isLambda := s.Value.(*LambdaExpr); isLambda {
+				fc.hotFunctions[s.Name] = true
+			}
+		}
+
 		fc.currentAssignName = s.Name
-		// Evaluate expression into xmm0
 		fc.compileExpression(s.Value)
-		// Clear assignment name
 		fc.currentAssignName = ""
-		// Store xmm0 to stack at variable's offset
 		fc.out.MovXmmToMem("xmm0", "rbp", -offset)
 
 	case *LoopStmt:

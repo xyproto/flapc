@@ -123,6 +123,7 @@ const (
 	TOKEN_PACKED      // packed (no padding modifier for cstruct)
 	TOKEN_ALIGNED     // aligned (alignment modifier for cstruct)
 	TOKEN_ALIAS       // alias (create keyword aliases for language packs)
+	TOKEN_HOT         // hot (mark function as hot-reloadable)
 )
 
 // Code generation constants
@@ -401,6 +402,8 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_ALIGNED, Value: value, Line: l.line}
 		case "alias":
 			return Token{Type: TOKEN_ALIAS, Value: value, Line: l.line}
+		case "hot":
+			return Token{Type: TOKEN_HOT, Value: value, Line: l.line}
 		case "xor":
 			return Token{Type: TOKEN_XOR, Value: value, Line: l.line}
 		case "shl":

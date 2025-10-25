@@ -34,6 +34,7 @@ type AssignStmt struct {
 	Mutable   bool   // true for := or <-, false for =
 	IsUpdate  bool   // true for <-, false for = and :=
 	Precision string // Type annotation: "b64", "f32", etc. (empty if none)
+	IsHot     bool   // true if marked with hot keyword (hot-reloadable function)
 }
 
 func (a *AssignStmt) String() string {
