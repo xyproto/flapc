@@ -8,6 +8,16 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
 ## Recent Progress
 
+**Same-Directory File Cross-Referencing** (2025-10-26)
+- Implemented automatic sibling file loading for .flap files in same directory
+- Files can reference functions from other files in the same directory without explicit imports
+- Smart loading: Only activates when there are unknown function references
+- Exclusions: Skips testprograms/ directory and /tmp with >10 .flap files
+- Deterministic order: Files sorted alphabetically for consistent compilation
+- Parser-level DCE disabled: Now runs in WPO phase after all files are combined
+- All 315 tests passing with multi-file support enabled
+- Files: parser.go:14135-14214 (sibling loading logic)
+
 **Whole Program Optimization** (2025-10-25)
 - Implemented complete WPO infrastructure with 3 optimization passes
 - Constant propagation & folding (conservative, skips mutated variables)

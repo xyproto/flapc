@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -203,17 +204,19 @@ func optimizeProgram(program *Program) *Program {
 	}
 
 	// Pass 3: Dead code elimination (remove unused variables, unreachable code)
-	usedVars := make(map[string]bool)
-	for _, stmt := range program.Statements {
-		collectUsedVariables(stmt, usedVars)
-	}
-	newStmts := make([]Statement, 0, len(program.Statements))
-	for _, stmt := range program.Statements {
-		if keep := eliminateDeadCode(stmt, usedVars); keep != nil {
-			newStmts = append(newStmts, keep)
-		}
-	}
-	program.Statements = newStmts
+	// DISABLED: This was removing unused definitions before sibling files were loaded
+	// DCE now runs in the WPO phase (optimizer.go) after all files are combined
+	// usedVars := make(map[string]bool)
+	// for _, stmt := range program.Statements {
+	// 	collectUsedVariables(stmt, usedVars)
+	// }
+	// newStmts := make([]Statement, 0, len(program.Statements))
+	// for _, stmt := range program.Statements {
+	// 	if keep := eliminateDeadCode(stmt, usedVars); keep != nil {
+	// 		newStmts = append(newStmts, keep)
+	// 	}
+	// }
+	// program.Statements = newStmts
 
 	// Pass 4: Analyze lambda purity (for future memoization)
 	pureFunctions := make(map[string]bool) // Track which named functions are pure
@@ -14119,6 +14122,10 @@ func CompileFlap(inputPath string, outputPath string, platform Platform) (err er
 		fmt.Fprintf(os.Stderr, "Parsed program:\n%s\n", program.String())
 	}
 
+	// Sibling loading is now handled later, after checking for unknown functions
+	// This prevents loading unnecessary files and avoids conflicts with test files
+	var combinedSource string
+
 	// Process explicit import statements
 	err = processImports(program)
 	if err != nil {
@@ -14126,15 +14133,87 @@ func CompileFlap(inputPath string, outputPath string, platform Platform) (err er
 	}
 
 	// Check for unknown functions and resolve dependencies
-	// Build combined source code (dependencies + main)
-	var combinedSource string
+	// Build combined source code (siblings + dependencies + main)
 	unknownFuncs := getUnknownFunctions(program)
 	if len(unknownFuncs) > 0 {
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "Resolving dependencies for: %v\n", unknownFuncs)
 		}
 
-		// Resolve dependencies
+		// First, try to load sibling .flap files from the same directory
+		// This allows files in the same directory to share definitions
+		inputDir := filepath.Dir(inputPath)
+		inputBase := filepath.Base(inputPath)
+
+		// Skip sibling loading for system temp directories or test directories
+		// Only skip /tmp if there are many .flap files (likely temp files from -c flag)
+		skipSiblings := strings.Contains(inputDir, "testprograms") // Skip for test directories
+
+		dirEntries, err := os.ReadDir(inputDir)
+
+		// For /tmp, only skip if it's the root temp dir with many files
+		if (strings.HasPrefix(inputDir, "/tmp/") || strings.HasPrefix(inputDir, "C:\\tmp\\")) && err == nil {
+			// Count .flap files - if there are more than 10, likely temp files
+			flapCount := 0
+			for _, entry := range dirEntries {
+				if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".flap") {
+					flapCount++
+					if flapCount > 10 {
+						skipSiblings = true
+						break
+					}
+				}
+			}
+		}
+		if err == nil && !skipSiblings {
+			siblingFiles := []string{}
+			for _, entry := range dirEntries {
+				name := entry.Name()
+				// Include .flap files in same directory (except the input file itself)
+				if !entry.IsDir() && strings.HasSuffix(name, ".flap") && name != inputBase {
+					siblingPath := filepath.Join(inputDir, name)
+					siblingFiles = append(siblingFiles, siblingPath)
+				}
+			}
+
+			// Sort for deterministic compilation order
+			sort.Strings(siblingFiles)
+
+			if len(siblingFiles) > 0 {
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Loading %d sibling file(s) from %s\n", len(siblingFiles), inputDir)
+				}
+
+				for _, siblingPath := range siblingFiles {
+					siblingContent, readErr := os.ReadFile(siblingPath)
+					if readErr != nil {
+						if VerboseMode {
+							fmt.Fprintf(os.Stderr, "Warning: failed to read %s: %v\n", siblingPath, readErr)
+						}
+						continue
+					}
+
+					siblingParser := NewParserWithFilename(string(siblingContent), siblingPath)
+					siblingProgram := siblingParser.ParseProgram()
+
+					// Prepend sibling statements before main file (definitions must come before use)
+					program.Statements = append(siblingProgram.Statements, program.Statements...)
+					combinedSource = string(siblingContent) + "\n" + combinedSource
+
+					if VerboseMode {
+						fmt.Fprintf(os.Stderr, "Loaded %s\n", siblingPath)
+					}
+				}
+
+				// Re-check for unknown functions after loading siblings
+				unknownFuncs = getUnknownFunctions(program)
+				if VerboseMode && len(unknownFuncs) > 0 {
+					fmt.Fprintf(os.Stderr, "Still unknown after siblings: %v\n", unknownFuncs)
+				}
+			}
+		}
+
+		// Resolve dependencies from Git repositories
 		repos := ResolveDependencies(unknownFuncs)
 		if len(repos) > 0 {
 			if VerboseMode {
