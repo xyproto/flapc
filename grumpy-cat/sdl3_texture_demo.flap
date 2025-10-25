@@ -14,7 +14,7 @@ init_result != 0 {
 window_title := "Hello World!"
 window_width := 620
 window_height := 387
-window_flags := sdl.SDL_WINDOW_RESIZABLE
+window_flags := 0  // SDL_WINDOW_RESIZABLE not extracted yet
 
 window := sdl.SDL_CreateWindow(window_title, window_width, window_height, window_flags)
 window == 0 {
