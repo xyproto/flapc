@@ -289,26 +289,44 @@ func (p *CParser) parsePreprocessor() {
 // parseDefine parses a #define directive
 func (p *CParser) parseDefine(content string) {
 	// Check for function-like macro: NAME(params) body
+	// Must have no space between NAME and (
 	if idx := strings.Index(content, "("); idx != -1 {
-		nameEnd := idx
-		name := strings.TrimSpace(content[:nameEnd])
+		// Get everything before the first (
+		beforeParen := content[:idx]
 
-		// Find closing paren
-		closeIdx := strings.Index(content, ")")
-		if closeIdx == -1 {
+		// Check if there's ANY whitespace in beforeParen
+		// If yes: it's a constant with macro value (e.g., "NAME VALUE(arg)")
+		// If no: it's a function-like macro (e.g., "NAME(params)")
+		hasWhitespace := false
+		for _, ch := range beforeParen {
+			if unicode.IsSpace(ch) {
+				hasWhitespace = true
+				break
+			}
+		}
+
+		if !hasWhitespace {
+			// This is a function-like macro: NAME(params)
+			name := beforeParen
+
+			// Find closing paren
+			closeIdx := strings.Index(content, ")")
+			if closeIdx == -1 {
+				return
+			}
+
+			// Get the body after the closing paren
+			body := strings.TrimSpace(content[closeIdx+1:])
+
+			// Store the macro
+			p.results.Macros[name] = body
+
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "  Macro: %s = %s\n", name, body)
+			}
 			return
 		}
-
-		// Get the body after the closing paren
-		body := strings.TrimSpace(content[closeIdx+1:])
-
-		// Store the macro
-		p.results.Macros[name] = body
-
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "  Macro: %s = %s\n", name, body)
-		}
-		return
+		// Otherwise fall through to handle as constant with macro value
 	}
 
 	// Simple constant: NAME value
@@ -376,6 +394,29 @@ func (p *CParser) evalConstant(expr string) (int64, bool) {
 	// Try to resolve reference to another constant
 	if val, ok := p.results.Constants[expr]; ok {
 		return val, true
+	}
+
+	// Try to handle function-like macro calls (e.g., SDL_UINT64_C(0x20))
+	if idx := strings.Index(expr, "("); idx != -1 && strings.HasSuffix(expr, ")") {
+		macroName := strings.TrimSpace(expr[:idx])
+		argsStr := expr[idx+1 : len(expr)-1]
+
+		// Common SDL/library macros that just wrap their arguments
+		wrapperMacros := map[string]bool{
+			"SDL_UINT64_C": true,
+			"SDL_SINT64_C": true,
+			"UINT64_C":     true,
+			"INT64_C":      true,
+			"SDL_FOURCC":   true, // SDL_FOURCC(A,B,C,D) - would need special handling
+		}
+
+		if wrapperMacros[macroName] {
+			// For wrapper macros, just evaluate the argument
+			return p.evalConstant(argsStr)
+		}
+
+		// If it's not a known wrapper, treat it as a simple parenthesized expression
+		return p.evalConstant(argsStr)
 	}
 
 	// Try simple expressions (parentheses)
