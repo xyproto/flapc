@@ -140,9 +140,9 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
    - Benefits: Zero stack growth, no special keywords, works with match expressions
    - Files: `parser.go:compileTailRecursiveCall`, `parser.go:compileRecursiveCall`
 
-7. **Implement automatic memoization for pure functions** ⚠️ PARTIAL
-   - Status: Full implementation complete but disabled due to malloc heap corruption
-   - Completed:
+7. **Implement automatic memoization for pure functions** ✅ COMPLETE
+   - Status: FULLY IMPLEMENTED AND WORKING - All tests passing
+   - Features:
      - ✅ Purity analysis function `isExpressionPure` detects side effects
      - ✅ IsPure field added to LambdaFunc structure
      - ✅ Detects impure builtins (println, printf, exit, alloc, etc.)
@@ -152,23 +152,21 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
      - ✅ Cache initialization with malloc on first call
      - ✅ Cache growth with realloc pattern (malloc/memcpy/free)
      - ✅ Cache pointer storage in rodata (writable segment PF_R|PF_W)
-     - ✅ Tested working with simple fibonacci (fib(10) = 55)
-   - Current Issue:
-     - Malloc assertion failure when used with factorial
-     - Error: "assertion failed: (old_top == initial_top (av) && old_size == 0)"
-     - Suggests heap corruption in memoization realloc logic
-     - Happens during cache growth (malloc/memcpy/free sequence)
-   - Temporary Solution: Memoization disabled to keep all 306 tests passing
-   - Remaining Work:
-     - Debug heap corruption in cache growth code
-     - Verify register preservation across malloc/memcpy/free calls
-     - Check cache size calculations and bounds
-     - Test with more complex recursive functions
-   - Benefits: Will enable efficient fibonacci, dynamic programming, DP algorithms
+     - ✅ Register preservation fix: Use r14 (callee-saved) instead of rcx (caller-saved)
+   - Bug Fixed:
+     - Root cause: Used rcx (caller-saved) to store old count, corrupted by malloc
+     - Solution: Changed to r14 (callee-saved) at parser.go:10260
+     - r14 preserved across malloc/memcpy/free per System V ABI
+   - Test Results:
+     - fibonacci(10) = 55 ✓
+     - factorial(5) = 120 ✓
+     - All 306 tests passing ✓
+   - Benefits: Efficient fibonacci, factorial, dynamic programming algorithms
    - Files:
      - `parser.go:isExpressionPure` (lines 5011-5082)
      - `parser.go:compileMemoizedCall` (lines 10179-10369)
      - `parser.go` (lines 4504-4509, 4612-4617): Cache storage allocation
+     - `parser.go` (line 10260): CRITICAL FIX - rcx → r14
 
 8. **Add trampoline execution for deep recursion** (MEDIUM)
     - Current: Non-tail-recursive functions can stack overflow
