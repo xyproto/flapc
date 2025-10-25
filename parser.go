@@ -12585,6 +12585,59 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Clean up
 		fc.out.AddImmToReg("rsp", 32)
 
+	case "approx":
+		// Approximate equality: approx(a, b, epsilon) returns 1 if abs(a-b) <= epsilon
+		if len(call.Args) != 3 {
+			compilerError("approx() requires exactly 3 arguments: approx(a, b, epsilon)")
+		}
+
+		// Compile a and b
+		fc.compileExpression(call.Args[0])
+		fc.out.SubImmFromReg("rsp", 16)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+		fc.compileExpression(call.Args[1])
+		fc.out.SubImmFromReg("rsp", 16)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+		// Compile epsilon
+		fc.compileExpression(call.Args[2])
+
+		// Load a and b
+		fc.out.MovMemToXmm("xmm1", "rsp", 0)  // b
+		fc.out.MovMemToXmm("xmm2", "rsp", 16) // a
+		fc.out.AddImmToReg("rsp", 32)
+
+		// xmm2 = a, xmm1 = b, xmm0 = epsilon
+		// Calculate diff = a - b
+		fc.out.MovXmmToXmm("xmm3", "xmm2")
+		fc.out.SubsdXmm("xmm3", "xmm1") // xmm3 = a - b
+
+		// abs(diff): if diff < 0, negate it
+		fc.out.XorpdXmm("xmm4", "xmm4") // xmm4 = 0.0
+		fc.out.Ucomisd("xmm3", "xmm4")  // compare diff with 0
+		fc.out.JumpConditional(JumpAboveOrEqual, 0) // if diff >= 0, skip negation
+		negateJumpPos := fc.eb.text.Len() - 4
+
+		// Negate: diff = 0 - diff
+		fc.out.MovXmmToXmm("xmm4", "xmm3")
+		fc.out.XorpdXmm("xmm3", "xmm3")
+		fc.out.SubsdXmm("xmm3", "xmm4") // xmm3 = 0 - diff
+
+		// Patch jump
+		skipNegateLabel := fc.eb.text.Len()
+		offset := int32(skipNegateLabel - (negateJumpPos + 4))
+		fc.patchJumpImmediate(negateJumpPos, offset)
+
+		// Compare: abs(diff) <= epsilon
+		fc.out.Ucomisd("xmm3", "xmm0")
+
+		// Set result based on comparison (1 if <=, 0 otherwise)
+		fc.out.MovImmToReg("rax", "0")
+		fc.out.MovImmToReg("rcx", "1")
+		fc.out.Cmovbe("rax", "rcx") // rax = (abs(diff) <= epsilon) ? 1 : 0
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
 	case "num":
 		// Parse string to number
 		// num(string) converts a Flap string to a number
@@ -13872,7 +13925,7 @@ func getUnknownFunctions(program *Program) []string {
 		"asin": true, "acos": true, "atan": true, "atan2": true,
 		"exp": true, "log": true, "pow": true,
 		"floor": true, "ceil": true, "round": true,
-		"abs": true,
+		"abs": true, "approx": true,
 	}
 
 	// Collect all function calls
