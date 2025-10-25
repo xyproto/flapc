@@ -8,6 +8,16 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
 ## Recent Progress
 
+**Whole Program Optimization** (2025-10-25)
+- Implemented complete WPO infrastructure with 3 optimization passes
+- Constant propagation & folding (conservative, skips mutated variables)
+- Dead code elimination (removes unused assignments)
+- Function inlining (simple lambdas only, no closures)
+- Fixed-point iteration with configurable timeout (default 2s)
+- Enabled by default with --opt-timeout flag
+- All 306 tests passing with WPO enabled
+- Optimizations converge in <1ms for most programs
+
 **CStruct Implementation** (2025-10-25)
 - Implemented cstruct keyword for C-compatible struct definitions
 - Syntax: `cstruct Name { field: type, ... }` with packed/aligned(N) modifiers
@@ -144,15 +154,20 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
 ## Advanced - Optimization
 
-10. **Add CPS (Continuation-Passing Style) transform** (VERY HIGH)
+10. **Whole program optimization** ✅ COMPLETE
+    - Status: FULLY IMPLEMENTED
+    - Features: Constant propagation, dead code elimination, function inlining
+    - Performance: <1ms for simple programs, configurable timeout
+    - Integration: Runs automatically with --opt-timeout flag (default 2s)
+    - Files: `optimizer.go`, integrated into `parser.go:CompileFlap`
+
+11. **Add CPS (Continuation-Passing Style) transform** (VERY HIGH)
     - Goal: Convert all calls to tail calls internally
     - Benefits: Advanced control flow, no stack growth
     - Approach: Transform AST before code generation
     - Example: `f() + g()` → `f((r1) => g((r2) => r1 + r2))`
     - Note: Optional optimization pass, no IR needed
     - Files: New `cps.go`, modify compilation pipeline
-
-11. Whole program optimization.
 
 12. Loop unrolling and other optimization tricks.
 
