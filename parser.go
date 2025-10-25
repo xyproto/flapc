@@ -4545,11 +4545,9 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 				return fmt.Errorf("cannot update immutable variable '%s' (use <- only for mutable variables)", s.Name)
 			}
 		} else if s.Mutable {
-			// := - Define mutable variable (error if already exists)
 			if exists {
 				return fmt.Errorf("variable '%s' already defined (use <- to update)", s.Name)
 			}
-			// Allocate stack space (16 bytes for alignment)
 			fc.stackOffset += 16
 			offset := fc.stackOffset
 			fc.variables[s.Name] = offset
@@ -4588,12 +4586,8 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 			}
 		}
 	case *LoopStmt:
-		// Save stackOffset before processing loop body
-		// This is needed for correct loop state offset calculation
 		baseOffset := fc.stackOffset
 
-		// Store baseOffset directly in the LoopStmt (only on first pass)
-		// This avoids issues with label counter synchronization between passes
 		if s.BaseOffset == 0 {
 			s.BaseOffset = baseOffset
 			if VerboseMode {
@@ -4606,16 +4600,17 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 			}
 		}
 
-		// Reserve space for loop state in logical frame
-		// This prevents loop-local variables from colliding with loop iterator
-		// 48 bytes if runtime checking needed, 32 bytes otherwise (16-byte aligned)
-		if s.NeedsMaxCheck {
-			fc.stackOffset += 48
+		_, isRange := s.Iterable.(*RangeExpr)
+		if isRange {
+			if s.NeedsMaxCheck {
+				fc.stackOffset += 48
+			} else {
+				fc.stackOffset += 32
+			}
 		} else {
-			fc.stackOffset += 32
+			fc.stackOffset += 64
 		}
 
-		// Recursively collect symbols from loop body
 		for _, bodyStmt := range s.Body {
 			if err := fc.collectSymbols(bodyStmt); err != nil {
 				return err
@@ -4800,7 +4795,6 @@ func (fc *FlapCompiler) collectLoopsFromExpression(expr Expression) {
 func (fc *FlapCompiler) compileStatement(stmt Statement) {
 	switch s := stmt.(type) {
 	case *AssignStmt:
-		// Variable already registered in collectSymbols pass
 		offset := fc.variables[s.Name]
 
 		if fc.debug {
@@ -4809,11 +4803,9 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 			}
 		}
 
-		// Allocate actual stack space only for new variables (not updates)
-		// Updates (a <- value) reuse existing stack space
 		if !s.IsUpdate {
 			fc.out.SubImmFromReg("rsp", 16)
-			fc.runtimeStack += 16 // Track actual runtime allocation
+			fc.runtimeStack += 16
 		}
 
 		// Set current assignment name for lambda naming (allows recursive calls)
@@ -5195,54 +5187,41 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 }
 
 func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
-	// Increment label counter for uniqueness
 	fc.labelCounter++
 
-	// Evaluate the list expression (returns pointer as float64 in xmm0)
 	fc.compileExpression(stmt.Iterable)
 
-	// Save list pointer to stack (16 bytes for alignment)
-	fc.stackOffset += 16
-	listPtrOffset := fc.stackOffset
-	fc.out.SubImmFromReg("rsp", 16)
+	baseOffset := stmt.BaseOffset
+	stackSize := int64(64)
+
+	listPtrOffset := baseOffset + 16
+	lengthOffset := baseOffset + 32
+	indexOffset := baseOffset + 48
+	iterOffset := baseOffset + 64
+
+	fc.out.SubImmFromReg("rsp", stackSize)
+	fc.runtimeStack += int(stackSize)
+
 	fc.out.MovXmmToMem("xmm0", "rbp", -listPtrOffset)
 
-	// Convert pointer from float64 to integer in rax
 	fc.out.MovMemToXmm("xmm1", "rbp", -listPtrOffset)
 	fc.out.SubImmFromReg("rsp", StackSlotSize)
 	fc.out.MovXmmToMem("xmm1", "rsp", 0)
 	fc.out.MovMemToReg("rax", "rsp", 0)
 	fc.out.AddImmToReg("rsp", StackSlotSize)
 
-	// Load list length from [rax] (first 8 bytes)
 	fc.out.MovMemToXmm("xmm0", "rax", 0)
 
-	// Convert length to integer
 	fc.out.Cvttsd2si("rax", "xmm0")
 
-	// Store length in stack
-	fc.stackOffset += 16
-	lengthOffset := fc.stackOffset
-	fc.out.SubImmFromReg("rsp", 16)
 	fc.out.MovRegToMem("rax", "rbp", -lengthOffset)
 
-	// Allocate stack space for index variable
-	fc.stackOffset += 16
-	indexOffset := fc.stackOffset
-	fc.out.SubImmFromReg("rsp", 16)
-
-	// Initialize index to 0
 	fc.out.XorRegWithReg("rax", "rax")
 	fc.out.MovRegToMem("rax", "rbp", -indexOffset)
 
-	// Allocate stack space for iterator variable (the actual value from the list)
-	fc.stackOffset += 16
-	iterOffset := fc.stackOffset
 	fc.variables[stmt.Iterator] = iterOffset
 	fc.mutableVars[stmt.Iterator] = true
-	fc.out.SubImmFromReg("rsp", 16)
 
-	// Loop start label
 	loopStartPos := fc.eb.text.Len()
 
 	// Register this loop on the active loop stack
@@ -5329,14 +5308,11 @@ func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
 	backOffset := int32(loopStartPos - (loopBackJumpPos + UnconditionalJumpSize)) // 5 bytes for unconditional jump
 	fc.out.JumpUnconditional(backOffset)
 
-	// Loop end label
 	loopEndPos := fc.eb.text.Len()
 
-	// Clean up stack space (64 bytes: 16 for iterator + 16 for index + 16 for length + 16 for list ptr)
-	fc.out.AddImmToReg("rsp", 64)
-	fc.stackOffset -= 64
+	fc.out.AddImmToReg("rsp", stackSize)
+	fc.runtimeStack -= int(stackSize)
 
-	// Unregister iterator variable
 	delete(fc.variables, stmt.Iterator)
 	delete(fc.mutableVars, stmt.Iterator)
 
