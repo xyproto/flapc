@@ -4068,6 +4068,7 @@ type FlapCompiler struct {
 	usesArenas          bool                         // Track if program uses any arena blocks
 	cacheEnabledLambdas map[string]bool              // Track which lambdas use cme
 	deferredExprs       [][]Expression               // Stack of deferred expressions per scope (LIFO order)
+	memoCaches          map[string]bool              // Track memoization caches that need storage allocation
 	currentAssignName   string                       // Name of variable being assigned (for lambda naming)
 	inTailPosition      bool                         // True when compiling expression in tail position
 
@@ -10121,13 +10122,14 @@ func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
 
 func (fc *FlapCompiler) compileLambdaDirectCall(call *CallExpr) {
 	// Check if this is a pure function eligible for memoization
-	var targetLambda *LambdaFunc
-	for i := range fc.lambdaFuncs {
-		if fc.lambdaFuncs[i].Name == call.Function {
-			targetLambda = &fc.lambdaFuncs[i]
-			break
-		}
-	}
+	// TODO: Disabled temporarily - need to allocate cache storage in data section
+	// var targetLambda *LambdaFunc
+	// for i := range fc.lambdaFuncs {
+	// 	if fc.lambdaFuncs[i].Name == call.Function {
+	// 		targetLambda = &fc.lambdaFuncs[i]
+	// 		break
+	// 	}
+	// }
 
 	// Direct call to a lambda by name (for recursion)
 	// Compile arguments and put them in xmm registers
@@ -10137,10 +10139,11 @@ func (fc *FlapCompiler) compileLambdaDirectCall(call *CallExpr) {
 	}
 
 	// For pure single-argument functions, add memoization
-	if targetLambda != nil && targetLambda.IsPure && len(call.Args) == 1 {
-		fc.compileMemoizedCall(call, targetLambda)
-		return
-	}
+	// TODO: Disabled temporarily - need to allocate cache storage in data section
+	// if targetLambda != nil && targetLambda.IsPure && len(call.Args) == 1 {
+	// 	fc.compileMemoizedCall(call, targetLambda)
+	// 	return
+	// }
 
 	// Evaluate all arguments and save to stack
 	for _, arg := range call.Args {
@@ -10163,20 +10166,192 @@ func (fc *FlapCompiler) compileLambdaDirectCall(call *CallExpr) {
 }
 
 func (fc *FlapCompiler) compileMemoizedCall(call *CallExpr, lambda *LambdaFunc) {
-	// For now, disable complex memoization and just do normal call
-	// Memoization requires proper cache existence checking which is complex
-	// TODO: Implement full memoization with proper "in" operator check
+	cacheName := fmt.Sprintf("_memo_%s", lambda.Name)
 
-	// Fall back to normal direct call
-	// Evaluate argument
+	// Evaluate argument (single argument for memoization)
 	fc.compileExpression(call.Args[0])
-	// Result in xmm0, ready to call
+	// xmm0 = argument
+	fc.out.SubImmFromReg("rsp", 16)
+	fc.out.MovXmmToMem("xmm0", "rsp", 0) // Save argument on stack
 
-	// Call the function
+	// Load cache map pointer
+	fc.out.LeaSymbolToReg("rbx", cacheName)
+	fc.out.MovMemToReg("rbx", "rbx", 0) // rbx = cache pointer
+
+	// Check if cache is NULL (not yet initialized)
+	fc.out.TestRegReg("rbx", "rbx")
+	initCacheJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0) // Jump to init if NULL
+
+	// Cache exists - check if argument is in cache
+	// Implement "arg in cache" check
+	fc.out.MovMemToXmm("xmm2", "rsp", 0) // xmm2 = argument to search for
+	fc.out.MovMemToXmm("xmm1", "rbx", 0) // Load count from cache
+	fc.out.Cvttsd2si("rcx", "xmm1")      // rcx = count
+
+	// Loop through cache entries
+	fc.out.XorRegWithReg("rdi", "rdi") // rdi = index
+	searchLoopStart := fc.eb.text.Len()
+	fc.out.CmpRegToReg("rdi", "rcx")
+	notFoundJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreaterOrEqual, 0) // Exit loop if index >= count
+
+	// Load key at index: cache[8 + index*16]
+	fc.out.MovRegToReg("rax", "rdi")
+	fc.out.MulRegWithImm("rax", 16) // 16 bytes per key-value pair
+	fc.out.AddImmToReg("rax", 8)    // Skip count field
+	fc.out.AddRegToReg("rax", "rbx")
+	fc.out.MovMemToXmm("xmm3", "rax", 0) // xmm3 = key
+
+	// Compare key with argument
+	fc.out.Ucomisd("xmm2", "xmm3")
+	notEqualJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpNotEqual, 0)
+
+	// Found! Load cached value at cache[8 + index*16 + 8]
+	fc.out.MovMemToXmm("xmm0", "rax", 8) // Load value (8 bytes after key)
+	fc.out.AddImmToReg("rsp", 16)         // Clean up stack
+	endJump := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0) // Jump to end
+
+	// Not equal: try next entry
+	notEqualPos := fc.eb.text.Len()
+	fc.patchJumpImmediate(notEqualJump+2, int32(notEqualPos-(notEqualJump+6)))
+	fc.out.IncReg("rdi")
+	backJump := int32(searchLoopStart - (fc.eb.text.Len() + 5))
+	fc.out.JumpUnconditional(backJump)
+
+	// Not found: call function and cache result
+	notFoundPos := fc.eb.text.Len()
+	fc.patchJumpImmediate(notFoundJump+2, int32(notFoundPos-(notFoundJump+6)))
+
+	// Load argument and call function
+	fc.out.MovMemToXmm("xmm0", "rsp", 0)
 	fc.trackFunctionCall(lambda.Name)
 	fc.out.CallSymbol(lambda.Name)
+	// xmm0 = result
 
-	// Result is in xmm0
+	// Save result
+	fc.out.SubImmFromReg("rsp", 16)
+	fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+	// Store in cache: need to add key-value pair to map
+	// For simplicity, use linear growth (reallocate and copy)
+	// Load cache pointer
+	fc.out.LeaSymbolToReg("r12", cacheName)
+	fc.out.MovMemToReg("rbx", "r12", 0)
+
+	// Load current count
+	fc.out.MovMemToXmm("xmm1", "rbx", 0)
+	fc.out.Cvttsd2si("rcx", "xmm1") // rcx = old count
+
+	// Calculate new size: 8 + (count+1)*16 bytes
+	fc.out.MovRegToReg("rax", "rcx")
+	fc.out.IncReg("rax")            // rax = new count
+	fc.out.MulRegWithImm("rax", 16) // rax = new count * 16
+	fc.out.AddImmToReg("rax", 8)    // rax = total bytes needed
+
+	// Reallocate with malloc
+	fc.out.MovRegToReg("rdi", "rax")
+	fc.out.SubImmFromReg("rsp", 16) // Align stack
+	fc.trackFunctionCall("malloc")
+	fc.eb.GenerateCallInstruction("malloc")
+	fc.out.AddImmToReg("rsp", 16)
+	// rax = new cache pointer
+
+	// Copy old entries
+	fc.out.MovRegToReg("r13", "rax") // r13 = new cache
+	fc.out.LeaSymbolToReg("r12", cacheName)
+	fc.out.MovMemToReg("rbx", "r12", 0) // rbx = old cache
+
+	// Calculate bytes to copy: 8 + count*16
+	fc.out.MovRegToReg("rdx", "rcx")
+	fc.out.MulRegWithImm("rdx", 16)
+	fc.out.AddImmToReg("rdx", 8)
+
+	// memcpy: rdi=dest, rsi=src, rdx=size
+	fc.out.MovRegToReg("rdi", "r13")
+	fc.out.MovRegToReg("rsi", "rbx")
+	fc.out.SubImmFromReg("rsp", 16)
+	fc.trackFunctionCall("memcpy")
+	fc.eb.GenerateCallInstruction("memcpy")
+	fc.out.AddImmToReg("rsp", 16)
+
+	// Free old cache
+	fc.out.MovRegToReg("rdi", "rbx")
+	fc.out.SubImmFromReg("rsp", 16)
+	fc.trackFunctionCall("free")
+	fc.eb.GenerateCallInstruction("free")
+	fc.out.AddImmToReg("rsp", 16)
+
+	// Update cache pointer
+	fc.out.LeaSymbolToReg("r12", cacheName)
+	fc.out.MovRegToMem("r13", "r12", 0)
+
+	// Increment count in new cache
+	fc.out.MovMemToXmm("xmm1", "r13", 0)
+	fc.out.Cvttsd2si("rax", "xmm1")
+	fc.out.IncReg("rax")
+	fc.out.Cvtsi2sd("xmm1", "rax")
+	fc.out.MovXmmToMem("xmm1", "r13", 0)
+
+	// Add new entry at end: key = arg, value = result
+	// Position: 8 + (count)*16
+	fc.out.Cvttsd2si("rcx", "xmm1") // rcx = new count
+	fc.out.SubImmFromReg("rcx", 1)  // rcx = old count
+	fc.out.MulRegWithImm("rcx", 16)
+	fc.out.AddImmToReg("rcx", 8)
+	fc.out.AddRegToReg("rcx", "r13") // rcx = address for new entry
+
+	// Store key (argument)
+	fc.out.MovMemToXmm("xmm2", "rsp", 16)
+	fc.out.MovXmmToMem("xmm2", "rcx", 0)
+
+	// Store value (result)
+	fc.out.MovMemToXmm("xmm0", "rsp", 0)
+	fc.out.MovXmmToMem("xmm0", "rcx", 8)
+
+	// Clean up stack and return result
+	fc.out.AddImmToReg("rsp", 32) // Remove result + argument
+	doneJump := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0)
+
+	// Initialize cache (first call)
+	initPos := fc.eb.text.Len()
+	fc.patchJumpImmediate(initCacheJump+2, int32(initPos-(initCacheJump+6)))
+
+	// Allocate initial cache: 8 bytes for count
+	fc.out.MovImmToReg("rdi", "8")
+	fc.out.SubImmFromReg("rsp", 16)
+	fc.trackFunctionCall("malloc")
+	fc.eb.GenerateCallInstruction("malloc")
+	fc.out.AddImmToReg("rsp", 16)
+	// rax = cache pointer
+
+	// Initialize count to 0
+	fc.out.XorRegWithReg("rcx", "rcx")
+	fc.out.Cvtsi2sd("xmm1", "rcx")
+	fc.out.MovXmmToMem("xmm1", "rax", 0)
+
+	// Store cache pointer
+	fc.out.LeaSymbolToReg("rbx", cacheName)
+	fc.out.MovRegToMem("rax", "rbx", 0)
+	fc.out.MovRegToReg("rbx", "rax")
+
+	// Jump back to check (cache now exists)
+	backToCheck := int32(initCacheJump + 6 - (fc.eb.text.Len() + 5))
+	fc.out.JumpUnconditional(backToCheck)
+
+	// End label
+	endPos := fc.eb.text.Len()
+	fc.patchJumpImmediate(endJump+1, int32(endPos-(endJump+5)))
+	fc.patchJumpImmediate(doneJump+1, int32(endPos-(doneJump+5)))
+
+	// Track cache for later storage allocation
+	if fc.memoCaches == nil {
+		fc.memoCaches = make(map[string]bool)
+	}
+	fc.memoCaches[cacheName] = true
 }
 
 // compileBinaryOpSafe compiles a binary operation with proper stack-based
