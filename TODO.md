@@ -8,6 +8,12 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
 ## Recent Progress
 
+**C FFI Constant Extraction Enhancement** (2025-10-25)
+- Improved handling of wrapper macros like SDL_UINT64_C(value)
+- Fixed distinction between function-like macros and constants with macro values
+- All SDL3 window flags now properly extracted (SDL_WINDOW_RESIZABLE = 32, etc.)
+- Grumpy cat SDL3 texture demo now compiles with proper window flags
+
 **Unsafe Block Syntax Simplification** (2025-10-25)
 - Removed ret keyword from unsafe blocks - simplified to implicit return
 - All tests passing: 306/306 (100%)
