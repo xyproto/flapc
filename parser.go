@@ -10136,14 +10136,13 @@ func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
 
 func (fc *FlapCompiler) compileLambdaDirectCall(call *CallExpr) {
 	// Check if this is a pure function eligible for memoization
-	// TODO: Temporarily disabled - memoization causes heap corruption
-	// var targetLambda *LambdaFunc
-	// for i := range fc.lambdaFuncs {
-	// 	if fc.lambdaFuncs[i].Name == call.Function {
-	// 		targetLambda = &fc.lambdaFuncs[i]
-	// 		break
-	// 	}
-	// }
+	var targetLambda *LambdaFunc
+	for i := range fc.lambdaFuncs {
+		if fc.lambdaFuncs[i].Name == call.Function {
+			targetLambda = &fc.lambdaFuncs[i]
+			break
+		}
+	}
 
 	// Direct call to a lambda by name (for recursion)
 	// Compile arguments and put them in xmm registers
@@ -10153,11 +10152,10 @@ func (fc *FlapCompiler) compileLambdaDirectCall(call *CallExpr) {
 	}
 
 	// For pure single-argument functions, add memoization
-	// TODO: Temporarily disabled due to malloc heap corruption - needs debugging
-	// if targetLambda != nil && targetLambda.IsPure && len(call.Args) == 1 {
-	// 	fc.compileMemoizedCall(call, targetLambda)
-	// 	return
-	// }
+	if targetLambda != nil && targetLambda.IsPure && len(call.Args) == 1 {
+		fc.compileMemoizedCall(call, targetLambda)
+		return
+	}
 
 	// Evaluate all arguments and save to stack
 	for _, arg := range call.Args {
@@ -10255,12 +10253,12 @@ func (fc *FlapCompiler) compileMemoizedCall(call *CallExpr, lambda *LambdaFunc) 
 	fc.out.LeaSymbolToReg("r12", cacheName)
 	fc.out.MovMemToReg("rbx", "r12", 0)
 
-	// Load current count
+	// Load current count and save to callee-saved register (malloc will preserve it)
 	fc.out.MovMemToXmm("xmm1", "rbx", 0)
-	fc.out.Cvttsd2si("rcx", "xmm1") // rcx = old count
+	fc.out.Cvttsd2si("r14", "xmm1") // r14 = old count (callee-saved, preserved across malloc)
 
 	// Calculate new size: 8 + (count+1)*16 bytes
-	fc.out.MovRegToReg("rax", "rcx")
+	fc.out.MovRegToReg("rax", "r14")
 	fc.out.IncReg("rax")            // rax = new count
 	fc.out.MulRegWithImm("rax", 16) // rax = new count * 16
 	fc.out.AddImmToReg("rax", 8)    // rax = total bytes needed
@@ -10271,7 +10269,7 @@ func (fc *FlapCompiler) compileMemoizedCall(call *CallExpr, lambda *LambdaFunc) 
 	fc.trackFunctionCall("malloc")
 	fc.eb.GenerateCallInstruction("malloc")
 	fc.out.AddImmToReg("rsp", 16)
-	// rax = new cache pointer
+	// rax = new cache pointer (r14 still has old count - malloc preserves callee-saved regs)
 
 	// Copy old entries
 	fc.out.MovRegToReg("r13", "rax") // r13 = new cache
@@ -10279,7 +10277,7 @@ func (fc *FlapCompiler) compileMemoizedCall(call *CallExpr, lambda *LambdaFunc) 
 	fc.out.MovMemToReg("rbx", "r12", 0) // rbx = old cache
 
 	// Calculate bytes to copy: 8 + count*16
-	fc.out.MovRegToReg("rdx", "rcx")
+	fc.out.MovRegToReg("rdx", "r14") // Use preserved old count from r14
 	fc.out.MulRegWithImm("rdx", 16)
 	fc.out.AddImmToReg("rdx", 8)
 
