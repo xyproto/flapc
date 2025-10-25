@@ -71,3 +71,8 @@ release/
 /test_*
 /trace_*
 /block_param
+/cstruct_*
+/sdl*
+/factorial
+/snake_*
+snake/snake_*
