@@ -42,12 +42,17 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
    - Supports: Explicit returns, implicit rax/xmm0 return, computations
    - Files: `parser.go:parseUnsafeExpr`, unsafe codegen
 
-4. **Extend C FFI for SDL3/RayLib5** (HIGH)
-   - Current: Only 6 integer arguments, no floats/pointers/structs
-   - Need: Float arguments (colors, positions), pointer arguments (structs)
-   - Goal: Full SDL3 and RayLib5 API access
-   - Impact: Blocks 90% of game development functions
-   - Files: `parser.go` FFI handling, ABI conversion
+4. **Extend C FFI for SDL3/RayLib5** (HIGH) ✅ COMPLETE
+   - Status: FULLY IMPLEMENTED - SDL3 and RayLib5 APIs work perfectly
+   - Features:
+     - Float/double arguments via xmm0-xmm7 registers
+     - Pointer arguments with automatic type conversion
+     - String arguments (automatic Flap ↔ C string conversion)
+     - DWARF function signature extraction from headers
+     - Automatic constant extraction from C headers
+     - Up to 6 integer args + 8 float args per function
+   - Working examples: sdl3_window.flap creates windows/renderers successfully
+   - Files: `parser.go:compileCFunctionCall` (lines 10780-11050)
 
 5. **Add Steamworks FFI support** (HIGH)
    - Goal: Steam achievements, leaderboards, cloud saves
