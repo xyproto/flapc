@@ -68,14 +68,38 @@ func (p *Parser) parseNumberLiteral(s string) float64 {
 }
 
 type Parser struct {
-	lexer     *Lexer
+	lexer        *Lexer
+	current      Token
+	peek         Token
+	filename     string
+	source       string
+	loopDepth    int                   // Current loop nesting level (0 = not in loop, 1 = outer loop, etc.)
+	constants    map[string]Expression // Compile-time constants (immutable literals)
+	aliases      map[string]TokenType  // Keyword aliases (e.g., "for" -> TOKEN_AT)
+	speculative  bool                  // True when in speculative parsing mode (suppress errors)
+}
+
+type parserState struct {
+	lexerPos  int
+	lexerLine int
 	current   Token
 	peek      Token
-	filename  string
-	source    string
-	loopDepth int                   // Current loop nesting level (0 = not in loop, 1 = outer loop, etc.)
-	constants map[string]Expression // Compile-time constants (immutable literals)
-	aliases   map[string]TokenType  // Keyword aliases (e.g., "for" -> TOKEN_AT)
+}
+
+func (p *Parser) saveState() parserState {
+	return parserState{
+		lexerPos:  p.lexer.pos,
+		lexerLine: p.lexer.line,
+		current:   p.current,
+		peek:      p.peek,
+	}
+}
+
+func (p *Parser) restoreState(state parserState) {
+	p.lexer.pos = state.lexerPos
+	p.lexer.line = state.lexerLine
+	p.current = state.current
+	p.peek = state.peek
 }
 
 func NewParser(input string) *Parser {
@@ -120,13 +144,21 @@ func (p *Parser) formatError(line int, msg string) string {
 }
 
 // error prints a formatted error and panics (to be recovered by CompileFlap)
+// In speculative mode, errors are suppressed and parsing fails silently
 func (p *Parser) error(msg string) {
+	if p.speculative {
+		// In speculative mode, don't panic - let the caller handle failure
+		panic(speculativeError{})
+	}
 	errMsg := p.formatError(p.current.Line, msg)
 	if VerboseMode {
 		fmt.Fprintln(os.Stderr, errMsg)
 	}
 	panic(fmt.Errorf("%s", errMsg))
 }
+
+// speculativeError is used to signal parse failure during speculative parsing
+type speculativeError struct{}
 
 // compilerError prints an error message and panics (to be recovered by CompileFlap)
 // Use this instead of fmt.Fprintf + os.Exit in code generation
@@ -2831,19 +2863,47 @@ func (p *Parser) tryParsePatternLambda() *PatternLambdaExpr {
 	// Pattern lambda syntax: (pattern) => body | (pattern) => body | ...
 	// We're at TOKEN_LPAREN
 
+	// Enable speculative mode to suppress errors
+	p.speculative = true
+	defer func() {
+		p.speculative = false
+		// Recover from speculative errors (they indicate "not a pattern lambda")
+		if r := recover(); r != nil {
+			if _, ok := r.(speculativeError); !ok {
+				// Re-panic if it's not a speculative error
+				panic(r)
+			}
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG: Pattern lambda parse failed with speculative error\n")
+			}
+		}
+	}()
+
 	// Parse first clause
 	clause := p.parseOnePatternClause()
 	if clause == nil {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: parseOnePatternClause returned nil\n")
+		}
 		return nil
 	}
 
 	// Check if there's a | for additional clauses
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: After first clause, current token: %v\n", p.current.Type)
+	}
 	if p.current.Type != TOKEN_PIPE {
 		// Not a pattern lambda, just a single clause (which could be regular lambda)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: No pipe after first clause, not a pattern lambda\n")
+		}
 		return nil
 	}
 
-	// It's a pattern lambda! Collect all clauses
+	// It's a pattern lambda! Disable speculative mode now that we know
+	p.speculative = false
+
+	// Collect all clauses
 	clauses := []*PatternClause{clause}
 
 	for p.current.Type == TOKEN_PIPE {
@@ -2891,6 +2951,17 @@ func (p *Parser) parseOnePatternClause() *PatternClause {
 
 	body := p.parseLambdaBody()
 
+	// parseLambdaBody leaves current on the last token of the body
+	// We need to advance to get to the token after the body (likely '|' or EOF)
+	// For blocks, this advances past '}'; for expressions, past the expression
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG parseOnePatternClause: before advancing, current=%v ('%s') peek=%v ('%s')\n", p.current.Type, p.current.Value, p.peek.Type, p.peek.Value)
+	}
+	p.nextToken()
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG parseOnePatternClause: after advancing, current=%v ('%s')\n", p.current.Type, p.current.Value)
+	}
+
 	return &PatternClause{Patterns: patterns, Body: body}
 }
 
@@ -2929,7 +3000,9 @@ func (p *Parser) parseConcurrentGather() Expression {
 func (p *Parser) parsePipe() Expression {
 	left := p.parseParallel()
 
-	for p.peek.Type == TOKEN_PIPE {
+	// In speculative mode (pattern lambda parsing), don't treat | as pipe operator
+	// It's used to separate pattern clauses
+	for p.peek.Type == TOKEN_PIPE && !p.speculative {
 		p.nextToken() // skip current
 		p.nextToken() // skip '|'
 		right := p.parseParallel()
@@ -3533,11 +3606,13 @@ func (p *Parser) parsePrimary() Expression {
 		// 2. Regular lambda: (x) => x * 2
 		// 3. Parenthesized expression: (x + y)
 
-		// Try pattern lambda first
+		// Try pattern lambda first with backtracking
+		state := p.saveState()
 		patternLambda := p.tryParsePatternLambda()
 		if patternLambda != nil {
 			return patternLambda
 		}
+		p.restoreState(state)
 
 		p.nextToken() // skip '('
 
@@ -4177,7 +4252,11 @@ func (p *Parser) parseUnsafeValue() interface{} {
 	case TOKEN_AMP:
 		op = "&"
 	case TOKEN_PIPE:
-		op = "|"
+		// In speculative mode (pattern lambda parsing), don't treat | as binary operator
+		// It's used to separate pattern clauses
+		if !p.speculative {
+			op = "|"
+		}
 	case TOKEN_CARET_B:
 		op = "^b"
 	case TOKEN_LT:
@@ -8667,7 +8746,13 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 }
 
 func (fc *FlapCompiler) generatePatternLambdaFunctions() {
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG generatePatternLambdaFunctions: generating %d pattern lambdas\n", len(fc.patternLambdaFuncs))
+	}
 	for _, patternLambda := range fc.patternLambdaFuncs {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG generating pattern lambda '%s' with %d clauses\n", patternLambda.Name, len(patternLambda.Clauses))
+		}
 		// Record offset
 		fc.lambdaOffsets[patternLambda.Name] = fc.eb.text.Len()
 		fc.eb.MarkLabel(patternLambda.Name)
@@ -8712,6 +8797,9 @@ func (fc *FlapCompiler) generatePatternLambdaFunctions() {
 		for clauseIdx, clause := range patternLambda.Clauses {
 			fc.eb.MarkLabel(clauseLabels[clauseIdx])
 
+			// Track jump locations that need patching
+			var jumpsToPatch []int
+
 			// Check each pattern in this clause
 			for paramIdx, pattern := range clause.Patterns {
 				paramOffset := paramOffsets[paramIdx]
@@ -8722,10 +8810,10 @@ func (fc *FlapCompiler) generatePatternLambdaFunctions() {
 					fc.compileExpression(p.Value) // Result in xmm0
 					fc.out.MovMemToXmm("xmm1", "rbp", -paramOffset)
 					fc.out.Ucomisd("xmm0", "xmm1")
-					// If not equal, jump to next clause (TODO: implement proper jump patching)
-					_ = fc.eb.text.Len() // TODO: use for jump patching
+					// If not equal, jump to next clause
+					jumpOffset := fc.eb.text.Len()
 					fc.out.JumpConditional(JumpNotEqual, 0)
-					// Patch will be added later
+					jumpsToPatch = append(jumpsToPatch, jumpOffset)
 
 				case *VarPattern:
 					// Bind parameter to variable name
@@ -8744,7 +8832,26 @@ func (fc *FlapCompiler) generatePatternLambdaFunctions() {
 
 			// All patterns matched, execute body
 			fc.compileExpression(clause.Body)
-			// For now, just return (TODO: implement proper control flow for multiple clauses)
+
+			// After executing body, return (don't fall through to next clause)
+			fc.out.MovRegToReg("rsp", "rbp")
+			fc.out.PopReg("rbp")
+			fc.out.Ret()
+
+			// Patch jumps: if this isn't the last clause, jump to next clause; otherwise jump to fail
+			nextTarget := failLabel
+			if clauseIdx < len(patternLambda.Clauses)-1 {
+				nextTarget = clauseLabels[clauseIdx+1]
+			}
+
+			for _, jumpPos := range jumpsToPatch {
+				targetOffset := fc.eb.LabelOffset(nextTarget)
+				offset := targetOffset - (jumpPos + 6) // 6 = size of conditional jump instruction
+				fc.eb.text.Bytes()[jumpPos+2] = byte(offset)
+				fc.eb.text.Bytes()[jumpPos+3] = byte(offset >> 8)
+				fc.eb.text.Bytes()[jumpPos+4] = byte(offset >> 16)
+				fc.eb.text.Bytes()[jumpPos+5] = byte(offset >> 24)
+			}
 		}
 
 		// Fail label
