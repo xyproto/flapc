@@ -577,6 +577,66 @@ func (l *LambdaExpr) String() string {
 }
 func (l *LambdaExpr) expressionNode() {}
 
+// Pattern represents a pattern match clause parameter
+type Pattern interface {
+	Node
+	patternNode()
+}
+
+// LiteralPattern matches a specific literal value
+type LiteralPattern struct {
+	Value Expression // NumberExpr, StringExpr, or BoolExpr
+}
+
+func (lp *LiteralPattern) String() string { return lp.Value.String() }
+func (lp *LiteralPattern) patternNode()   {}
+
+// VarPattern binds the argument to a variable
+type VarPattern struct {
+	Name string // Variable name to bind
+}
+
+func (vp *VarPattern) String() string { return vp.Name }
+func (vp *VarPattern) patternNode()   {}
+
+// WildcardPattern matches any value without binding
+type WildcardPattern struct{}
+
+func (wp *WildcardPattern) String() string { return "_" }
+func (wp *WildcardPattern) patternNode()   {}
+
+// PatternClause represents one pattern case: (pattern1, pattern2, ...) => body
+type PatternClause struct {
+	Patterns []Pattern
+	Body     Expression
+}
+
+func (pc *PatternClause) String() string {
+	pats := make([]string, len(pc.Patterns))
+	for i, p := range pc.Patterns {
+		pats[i] = p.String()
+	}
+	return "(" + strings.Join(pats, ", ") + ") => " + pc.Body.String()
+}
+
+// PatternLambdaExpr: lambda with pattern matching on parameters
+// Example: factorial := (0) => 1 | (n) => n * factorial(n-1)
+type PatternLambdaExpr struct {
+	Clauses        []*PatternClause
+	IsPure         bool
+	CapturedVars   []string
+	IsNestedLambda bool
+}
+
+func (pl *PatternLambdaExpr) String() string {
+	clauses := make([]string, len(pl.Clauses))
+	for i, c := range pl.Clauses {
+		clauses[i] = c.String()
+	}
+	return strings.Join(clauses, " | ")
+}
+func (pl *PatternLambdaExpr) expressionNode() {}
+
 // MultiLambdaExpr: multiple lambda dispatch based on argument count
 // Example: f = (x) -> x, (x, y) -> x + y
 type MultiLambdaExpr struct {

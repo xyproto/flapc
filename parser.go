@@ -2794,6 +2794,106 @@ func (p *Parser) parseJumpStatement() Statement {
 	return &JumpStmt{IsBreak: true, Label: label, Value: value}
 }
 
+// parsePattern parses a single pattern (literal, variable, or wildcard)
+func (p *Parser) parsePattern() Pattern {
+	switch p.current.Type {
+	case TOKEN_NUMBER:
+		value := p.current.Value
+		p.nextToken()
+		// Convert string to float64
+		numVal, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			p.error("invalid number in pattern: " + value)
+			return nil
+		}
+		return &LiteralPattern{Value: &NumberExpr{Value: numVal}}
+	case TOKEN_STRING:
+		value := p.current.Value
+		p.nextToken()
+		return &LiteralPattern{Value: &StringExpr{Value: value}}
+	case TOKEN_IDENT:
+		if p.current.Value == "_" {
+			p.nextToken()
+			return &WildcardPattern{}
+		}
+		name := p.current.Value
+		p.nextToken()
+		return &VarPattern{Name: name}
+	default:
+		p.error("expected pattern (literal, variable, or _)")
+		return nil
+	}
+}
+
+// tryParsePatternLambda attempts to parse a pattern lambda starting from current position
+// Returns nil if this is not a pattern lambda
+func (p *Parser) tryParsePatternLambda() *PatternLambdaExpr {
+	// Pattern lambda syntax: (pattern) => body | (pattern) => body | ...
+	// We're at TOKEN_LPAREN
+
+	// Parse first clause
+	clause := p.parseOnePatternClause()
+	if clause == nil {
+		return nil
+	}
+
+	// Check if there's a | for additional clauses
+	if p.current.Type != TOKEN_PIPE {
+		// Not a pattern lambda, just a single clause (which could be regular lambda)
+		return nil
+	}
+
+	// It's a pattern lambda! Collect all clauses
+	clauses := []*PatternClause{clause}
+
+	for p.current.Type == TOKEN_PIPE {
+		p.nextToken() // skip '|'
+		clause := p.parseOnePatternClause()
+		if clause == nil {
+			p.error("expected pattern clause after '|'")
+			break
+		}
+		clauses = append(clauses, clause)
+	}
+
+	return &PatternLambdaExpr{Clauses: clauses}
+}
+
+// parseOnePatternClause parses one pattern clause: (pattern, ...) => body
+func (p *Parser) parseOnePatternClause() *PatternClause {
+	if p.current.Type != TOKEN_LPAREN {
+		return nil
+	}
+	p.nextToken() // skip '('
+
+	var patterns []Pattern
+	if p.current.Type == TOKEN_RPAREN {
+		// Empty pattern list
+	} else {
+		patterns = append(patterns, p.parsePattern())
+		for p.current.Type == TOKEN_COMMA {
+			p.nextToken() // skip ','
+			patterns = append(patterns, p.parsePattern())
+		}
+	}
+
+	if p.current.Type != TOKEN_RPAREN {
+		p.error("expected ')' after patterns")
+		return nil
+	}
+	p.nextToken() // skip ')'
+
+	if p.current.Type != TOKEN_FAT_ARROW {
+		// Not a pattern clause
+		return nil
+	}
+	p.nextToken() // skip '=>'
+
+	body := p.parseLambdaBody()
+
+	return &PatternClause{Patterns: patterns, Body: body}
+}
+
 func (p *Parser) parseExpression() Expression {
 	return p.parseErrorHandling()
 }
@@ -3428,7 +3528,17 @@ func (p *Parser) parsePrimary() Expression {
 		return &LoopStateExpr{Type: "i", LoopLevel: level}
 
 	case TOKEN_LPAREN:
-		// Could be lambda (params) -> expr or parenthesized expression (expr)
+		// Could be:
+		// 1. Pattern lambda: (0) => 1 | (n) => n * fact(n-1)
+		// 2. Regular lambda: (x) => x * 2
+		// 3. Parenthesized expression: (x + y)
+
+		// Try pattern lambda first
+		patternLambda := p.tryParsePatternLambda()
+		if patternLambda != nil {
+			return patternLambda
+		}
+
 		p.nextToken() // skip '('
 
 		// Check for empty parameter list: () =>
@@ -4154,6 +4264,7 @@ type FlapCompiler struct {
 	lambdaCounter       int                          // Counter for unique lambda function names
 	activeLoops         []LoopInfo                   // Stack of active loops (for @N jump resolution)
 	lambdaFuncs         []LambdaFunc                 // List of lambda functions to generate
+	patternLambdaFuncs  []PatternLambdaFunc          // List of pattern lambda functions to generate
 	lambdaOffsets       map[string]int               // Lambda name -> offset in .text
 	currentLambda       *LambdaFunc                  // Currently compiling lambda (for "me" self-reference)
 	lambdaBodyStart     int                          // Offset where lambda body starts (for tail recursion)
@@ -4180,6 +4291,11 @@ type LambdaFunc struct {
 	CapturedVars []string // Variables captured from outer scope
 	IsNested     bool     // True if this lambda is nested inside another
 	IsPure       bool     // True if function has no side effects (eligible for memoization)
+}
+
+type PatternLambdaFunc struct {
+	Name    string
+	Clauses []*PatternClause
 }
 
 func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
@@ -4781,6 +4897,9 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 
 	// Generate lambda functions
 	fc.generateLambdaFunctions()
+
+	// Generate pattern lambda functions
+	fc.generatePatternLambdaFunctions()
 
 	// Generate runtime helper functions
 	fc.generateRuntimeHelpers()
@@ -7438,6 +7557,42 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.AddImmToReg("rsp", StackSlotSize)
 		}
 
+	case *PatternLambdaExpr:
+		// Pattern lambda: (pattern1) => body1 | (pattern2) => body2 | ...
+		// Compiles to a function that checks patterns in order and executes first match
+		var funcName string
+		if fc.currentAssignName != "" {
+			funcName = fc.currentAssignName
+		} else {
+			fc.lambdaCounter++
+			funcName = fmt.Sprintf("lambda_%d", fc.lambdaCounter)
+		}
+
+		// Create synthetic lambda body that implements pattern matching
+		// The body will be a series of if-else checks for each pattern
+		// For now, we'll generate the pattern matching code directly during lambda codegen
+
+		// Store pattern lambda for later code generation
+		fc.patternLambdaFuncs = append(fc.patternLambdaFuncs, PatternLambdaFunc{
+			Name:    funcName,
+			Clauses: e.Clauses,
+		})
+
+		// Create static closure object (pattern lambdas don't capture vars)
+		closureLabel := fmt.Sprintf("closure_%s", funcName)
+		fc.eb.Define(closureLabel, strings.Repeat("\x00", 16))
+
+		// Initialize closure at runtime
+		fc.out.LeaSymbolToReg("r12", closureLabel)
+		fc.out.LeaSymbolToReg("rax", funcName)
+		fc.out.MovRegToMem("rax", "r12", 0)
+
+		// Return closure object pointer in xmm0
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovRegToMem("r12", "rsp", 0)
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
 	case *LengthExpr:
 		// Compile the operand (should be a list, returns pointer as float64 in xmm0)
 		fc.compileExpression(e.Operand)
@@ -8505,6 +8660,104 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 		fc.out.Ret()
 
 		// Restore previous state
+		fc.variables = oldVariables
+		fc.mutableVars = oldMutableVars
+		fc.stackOffset = oldStackOffset
+	}
+}
+
+func (fc *FlapCompiler) generatePatternLambdaFunctions() {
+	for _, patternLambda := range fc.patternLambdaFuncs {
+		// Record offset
+		fc.lambdaOffsets[patternLambda.Name] = fc.eb.text.Len()
+		fc.eb.MarkLabel(patternLambda.Name)
+
+		// Function prologue
+		fc.out.PushReg("rbp")
+		fc.out.MovRegToReg("rbp", "rsp")
+
+		// Save state
+		oldVariables := fc.variables
+		oldMutableVars := fc.mutableVars
+		oldStackOffset := fc.stackOffset
+
+		fc.variables = make(map[string]int)
+		fc.mutableVars = make(map[string]bool)
+		fc.stackOffset = 0
+
+		// Determine number of parameters from first clause
+		numParams := len(patternLambda.Clauses[0].Patterns)
+
+		// Store parameters from xmm0, xmm1, ... to stack
+		xmmRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"}
+		paramOffsets := make([]int, numParams)
+		for i := 0; i < numParams; i++ {
+			fc.stackOffset += 16
+			paramOffsets[i] = fc.stackOffset
+			fc.out.SubImmFromReg("rsp", 16)
+			fc.out.MovXmmToMem(xmmRegs[i], "rbp", -paramOffsets[i])
+		}
+
+		// Generate pattern matching code
+		// For each clause, check if patterns match, execute body if so
+		clauseLabels := make([]string, len(patternLambda.Clauses))
+		for i := range patternLambda.Clauses {
+			fc.labelCounter++
+			clauseLabels[i] = fmt.Sprintf("pattern_clause_%d", fc.labelCounter)
+		}
+
+		fc.labelCounter++
+		failLabel := fmt.Sprintf("pattern_fail_%d", fc.labelCounter)
+
+		for clauseIdx, clause := range patternLambda.Clauses {
+			fc.eb.MarkLabel(clauseLabels[clauseIdx])
+
+			// Check each pattern in this clause
+			for paramIdx, pattern := range clause.Patterns {
+				paramOffset := paramOffsets[paramIdx]
+
+				switch p := pattern.(type) {
+				case *LiteralPattern:
+					// Compare parameter against literal value
+					fc.compileExpression(p.Value) // Result in xmm0
+					fc.out.MovMemToXmm("xmm1", "rbp", -paramOffset)
+					fc.out.Ucomisd("xmm0", "xmm1")
+					// If not equal, jump to next clause (TODO: implement proper jump patching)
+					_ = fc.eb.text.Len() // TODO: use for jump patching
+					fc.out.JumpConditional(JumpNotEqual, 0)
+					// Patch will be added later
+
+				case *VarPattern:
+					// Bind parameter to variable name
+					fc.stackOffset += 16
+					varOffset := fc.stackOffset
+					fc.variables[p.Name] = varOffset
+					fc.mutableVars[p.Name] = false
+					fc.out.SubImmFromReg("rsp", 16)
+					fc.out.MovMemToXmm("xmm15", "rbp", -paramOffset)
+					fc.out.MovXmmToMem("xmm15", "rbp", -varOffset)
+
+				case *WildcardPattern:
+					// Match anything, no binding
+				}
+			}
+
+			// All patterns matched, execute body
+			fc.compileExpression(clause.Body)
+			// For now, just return (TODO: implement proper control flow for multiple clauses)
+		}
+
+		// Fail label
+		fc.eb.MarkLabel(failLabel)
+		// No pattern matched - return 0
+		fc.out.XorpdXmm("xmm0", "xmm0")
+
+		// Function epilogue
+		fc.out.MovRegToReg("rsp", "rbp")
+		fc.out.PopReg("rbp")
+		fc.out.Ret()
+
+		// Restore state
 		fc.variables = oldVariables
 		fc.mutableVars = oldMutableVars
 		fc.stackOffset = oldStackOffset
