@@ -12193,6 +12193,14 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		}
 	}
 
+	// Check if this is a stored function (variable containing function pointer)
+	// This check must come BEFORE the known lambda check, because closures
+	// with captured variables must be called through the closure object (to set up r15)
+	if _, isVariable := fc.variables[call.Function]; isVariable {
+		fc.compileStoredFunctionCall(call)
+		return
+	}
+
 	// Check if this is a known lambda function (for recursive calls)
 	isKnownLambda := false
 	for _, lambda := range fc.lambdaFuncs {
@@ -12215,18 +12223,6 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 	if isKnownLambda {
 		// Direct call to a known lambda function
 		fc.compileLambdaDirectCall(call)
-		return
-	}
-
-	// Check if this is a stored function (variable containing function pointer)
-	if fc.debug {
-		if VerboseMode {
-		}
-		if VerboseMode {
-		}
-	}
-	if _, isVariable := fc.variables[call.Function]; isVariable {
-		fc.compileStoredFunctionCall(call)
 		return
 	}
 
