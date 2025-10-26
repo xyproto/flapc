@@ -688,9 +688,22 @@ func (lu *LoopUnrolling) tryUnrollLoop(stmt Statement) ([]Statement, bool) {
 	}
 
 	unrolled := make([]Statement, 0, iterations*len(loopStmt.Body))
+	definedVars := make(map[string]bool)
 	for i := start; i < end; i++ {
 		for _, bodyStmt := range loopStmt.Body {
 			substituted := lu.substituteIterator(bodyStmt, loopStmt.Iterator, float64(i))
+			// Track variable definitions and convert subsequent definitions to updates
+			if assignStmt, ok := substituted.(*AssignStmt); ok {
+				if !assignStmt.IsUpdate && assignStmt.Mutable {
+					if definedVars[assignStmt.Name] {
+						// Already defined in a previous iteration - convert to update
+						assignStmt.IsUpdate = true
+					} else {
+						// First definition
+						definedVars[assignStmt.Name] = true
+					}
+				}
+			}
 			unrolled = append(unrolled, substituted)
 		}
 	}
@@ -712,6 +725,20 @@ func (lu *LoopUnrolling) substituteIterator(stmt Statement, iterator string, val
 	case *ExpressionStmt:
 		return &ExpressionStmt{
 			Expr: lu.substituteIteratorInExpr(s.Expr, iterator, value),
+		}
+	case *LoopStmt:
+		// Substitute iterator in nested loop's iterable expression
+		newBody := make([]Statement, len(s.Body))
+		for i, bodyStmt := range s.Body {
+			newBody[i] = lu.substituteIterator(bodyStmt, iterator, value)
+		}
+		return &LoopStmt{
+			Iterator:      s.Iterator,
+			Iterable:      lu.substituteIteratorInExpr(s.Iterable, iterator, value),
+			Body:          newBody,
+			MaxIterations: s.MaxIterations,
+			NeedsMaxCheck: s.NeedsMaxCheck,
+			BaseOffset:    s.BaseOffset,
 		}
 	default:
 		return stmt
