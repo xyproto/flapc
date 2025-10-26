@@ -1132,6 +1132,7 @@ func main() {
 					fmt.Fprintf(os.Stderr, "%v\n", err)
 					os.Exit(1)
 				}
+
 				if VerboseMode {
 					fmt.Fprintf(os.Stderr, "-> Wrote executable: %s\n", writeToFilename)
 				} else if !outputFlagProvided {

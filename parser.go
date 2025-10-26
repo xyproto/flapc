@@ -4425,8 +4425,6 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 		}
 	}
 	// Use ARM64 code generator if target is ARM64
-	if VerboseMode {
-	}
 	if fc.eb.target.Arch() == ArchARM64 {
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "-> Using ARM64 code generator\n")
@@ -14904,14 +14902,6 @@ func (fc *FlapCompiler) writeMachOARM64(outputPath string) error {
 
 	// Write the executable
 	machoBytes := fc.eb.elf.Bytes() // Note: elf buffer is reused for Mach-O
-
-	// Debug: check flags in buffer before writing
-	if len(machoBytes) >= 28 {
-		flagsInBytes := binary.LittleEndian.Uint32(machoBytes[24:28])
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG: machoBytes flags before writing = 0x%08x\n", flagsInBytes)
-		}
-	}
 
 	if err := os.WriteFile(outputPath, machoBytes, 0755); err != nil {
 		return fmt.Errorf("failed to write executable: %v", err)
