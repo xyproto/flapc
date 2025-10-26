@@ -4808,6 +4808,11 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 		}
 	}
 
+	// Check if hot functions are used with WPO disabled
+	if len(fc.hotFunctions) > 0 && WPOTimeout == 0 {
+		return fmt.Errorf("hot functions require whole-program optimization (do not use --opt-timeout=0)")
+	}
+
 	fc.buildHotFunctionTable()
 	fc.generateHotFunctionTable()
 
@@ -8953,12 +8958,18 @@ func (fc *FlapCompiler) patchHotFunctionTable() {
 	sort.Strings(hotNames)
 
 	for idx, name := range hotNames {
-		if funcConst, ok := fc.eb.consts[name]; ok {
-			funcAddr := funcConst.addr
+		closureName := "closure_" + name
+		if closureConst, ok := fc.eb.consts[closureName]; ok {
+			closureAddr := closureConst.addr
 			offset := tableOffsetInRodata + idx*8
 			if offset >= 0 && offset+8 <= len(rodataBytes) {
-				binary.LittleEndian.PutUint64(rodataBytes[offset:offset+8], funcAddr)
+				binary.LittleEndian.PutUint64(rodataBytes[offset:offset+8], closureAddr)
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Hot table: %s -> closure at 0x%x\n", name, closureAddr)
+				}
 			}
+		} else if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Hot table: closure_%s not found\n", name)
 		}
 	}
 }
@@ -10735,10 +10746,25 @@ func (fc *FlapCompiler) compileLambdaDirectCall(call *CallExpr) {
 		fc.out.AddImmToReg("rsp", 16)
 	}
 
-	// Call the lambda function
-	// TODO: Implement indirect calling for hot functions once we figure out the closure calling convention
+	// Call the lambda function (direct or indirect for hot functions)
 	fc.trackFunctionCall(call.Function)
-	fc.out.CallSymbol(call.Function)
+
+	if idx, isHot := fc.hotFunctionTable[call.Function]; isHot {
+		// Hot function: load closure object pointer from table and call through it
+		fc.out.LeaSymbolToReg("r11", "_hot_function_table")
+		offset := idx * 8
+		fc.out.MovMemToReg("rax", "r11", offset)  // Load closure object pointer into rax
+
+		// Extract function pointer from closure object (offset 0)
+		fc.out.MovMemToReg("r11", "rax", 0)
+		// Extract environment pointer from closure object (offset 8)
+		fc.out.MovMemToReg("r15", "rax", 8)
+
+		// Call the function pointer
+		fc.out.CallRegister("r11")
+	} else {
+		fc.out.CallSymbol(call.Function)
+	}
 
 	// Result is in xmm0
 }
@@ -14591,6 +14617,15 @@ func addNamespaceToFunctions(program *Program, namespace string) {
 }
 
 func CompileFlap(inputPath string, outputPath string, platform Platform) (err error) {
+	// Default to WPO if not explicitly set
+	originalWPOTimeout := WPOTimeout
+	if WPOTimeout == 0 {
+		WPOTimeout = 2.0
+	}
+	defer func() {
+		WPOTimeout = originalWPOTimeout
+	}()
+
 	// Recover from parser panics and convert to errors
 	defer func() {
 		if r := recover(); r != nil {
