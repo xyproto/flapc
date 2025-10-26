@@ -120,9 +120,46 @@ func (cp *ConstantPropagation) findMutations(stmt Statement) {
 		if s.IsUpdate {
 			cp.mutated[s.Name] = true
 		}
+		cp.findMutationsInExpr(s.Value)
 	case *LoopStmt:
 		for _, bodyStmt := range s.Body {
 			cp.findMutations(bodyStmt)
+		}
+	case *ExpressionStmt:
+		cp.findMutationsInExpr(s.Expr)
+	}
+}
+
+func (cp *ConstantPropagation) findMutationsInExpr(expr Expression) {
+	switch e := expr.(type) {
+	case *MatchExpr:
+		for _, clause := range e.Clauses {
+			cp.findMutationsInExpr(clause.Result)
+		}
+		if e.DefaultExpr != nil {
+			cp.findMutationsInExpr(e.DefaultExpr)
+		}
+	case *BlockExpr:
+		for _, stmt := range e.Statements {
+			cp.findMutations(stmt)
+		}
+	case *BinaryExpr:
+		if e.Operator == "<-" {
+			if ident, ok := e.Left.(*IdentExpr); ok {
+				cp.mutated[ident.Name] = true
+			}
+		}
+		cp.findMutationsInExpr(e.Left)
+		cp.findMutationsInExpr(e.Right)
+	case *LambdaExpr:
+		cp.findMutationsInExpr(e.Body)
+	case *CallExpr:
+		for _, arg := range e.Args {
+			cp.findMutationsInExpr(arg)
+		}
+	case *PostfixExpr:
+		if ident, ok := e.Operand.(*IdentExpr); ok {
+			cp.mutated[ident.Name] = true
 		}
 	}
 }
