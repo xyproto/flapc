@@ -232,7 +232,13 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
     - Note: Optional optimization pass, no IR needed
     - Files: New `cps.go`, modify compilation pipeline
 
-12. Loop unrolling and other optimization tricks.
+12. **Loop unrolling and other optimization tricks** ✅ COMPLETE
+    - Status: FULLY IMPLEMENTED
+    - Features: Unrolls small constant loops (≤8 iterations) to eliminate overhead
+    - Implementation: Integrated into WPO framework as LoopUnrolling pass
+    - Transforms: `@ i in 0..<4 { f(i) }` → `f(0); f(1); f(2); f(3)`
+    - Benefits: Eliminates loop overhead for small constant iterations
+    - Files: `optimizer.go:624-741` (LoopUnrolling pass)
 
 ## Language Features
 
