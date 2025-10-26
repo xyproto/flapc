@@ -64,13 +64,13 @@ func NewARM64CodeGen(eb *ExecutableBuilder) *ARM64CodeGen {
 
 // CompileProgram compiles a Flap program to ARM64
 func (acg *ARM64CodeGen) CompileProgram(program *Program) error {
-	// Function prologue - follow ARM64 ABI
-	// Allocate stack frame: 16 bytes for saved registers + 256 bytes for local variables
-	// Total: 272 bytes, rounded to 16-byte alignment = 272 bytes
-	stackFrameSize := uint64(272)
-	if err := acg.out.SubImm64("sp", "sp", uint32(stackFrameSize)); err != nil {
-		return err
-	}
+	// PHASE 1: Compile program to calculate needed stack size
+	// Save the current text buffer position to patch prologue later
+	prologueStart := acg.eb.text.Len()
+
+	// Emit placeholder prologue (we'll patch this later with correct stack size)
+	// Reserve space for: sub sp, sp, #SIZE (4 bytes)
+	acg.out.out.writer.WriteBytes([]byte{0xff, 0x43, 0x04, 0xd1}) // placeholder: sub sp, sp, #0x110
 	// Save frame pointer and link register
 	if err := acg.out.StrImm64("x29", "sp", 0); err != nil {
 		return err
@@ -83,15 +83,45 @@ func (acg *ARM64CodeGen) CompileProgram(program *Program) error {
 		return err
 	}
 
-	// Store stack frame size for epilogue
-	acg.stackFrameSize = stackFrameSize
-
 	// Compile each statement
 	for _, stmt := range program.Statements {
 		if err := acg.compileStatement(stmt); err != nil {
 			return err
 		}
 	}
+
+	// PHASE 2: Calculate actual stack frame size needed
+	// Stack frame = 16 bytes (saved fp+lr) + acg.stackSize (local vars) + padding
+	// Round up to 16-byte alignment
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: CompileProgram finished, acg.stackSize = %d bytes\n", acg.stackSize)
+	}
+	actualStackSize := uint64((16 + acg.stackSize + 15) &^ 15)
+	acg.stackFrameSize = actualStackSize
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Calculated actualStackSize = %d bytes (0x%x)\n", actualStackSize, actualStackSize)
+	}
+
+	// PHASE 3: Patch the prologue with correct stack size
+	if actualStackSize > 0xFFF {
+		// Stack frame too large for immediate encoding
+		// This requires using a different instruction sequence
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Warning: Stack frame size %d exceeds 12-bit immediate limit\n", actualStackSize)
+		}
+		// For now, cap at maximum encodable value
+		actualStackSize = 0xFFF
+		acg.stackFrameSize = actualStackSize
+	}
+
+	// Patch the SUB sp instruction at prologueStart
+	// ARM64 SUB immediate encoding: 0xd10003ff | (imm12 << 10)
+	textBytes := acg.eb.text.Bytes()
+	subInstr := uint32(0xd10003ff) | (uint32(actualStackSize) << 10)
+	textBytes[prologueStart] = byte(subInstr)
+	textBytes[prologueStart+1] = byte(subInstr >> 8)
+	textBytes[prologueStart+2] = byte(subInstr >> 16)
+	textBytes[prologueStart+3] = byte(subInstr >> 24)
 
 	// Function epilogue (if no explicit exit)
 	if err := acg.out.MovImm64("x0", 0); err != nil {
@@ -949,6 +979,10 @@ func (acg *ARM64CodeGen) compileAssignment(assign *AssignStmt) error {
 		acg.stackSize += 8
 		acg.stackVars[assign.Name] = acg.stackSize
 		acg.mutableVars[assign.Name] = assign.Mutable
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Allocated variable '%s' at stackSize=%d (offset from fp=%d)\n",
+				assign.Name, acg.stackSize, 16+acg.stackSize-8)
+		}
 		// Track the type of the value being assigned
 		acg.varTypes[assign.Name] = acg.getExprType(assign.Value)
 		// x29 points to saved fp location, variables start at offset 16
@@ -1119,8 +1153,8 @@ func (acg *ARM64CodeGen) compileParallelExpr(expr *ParallelExpr) error {
 	}
 
 	// Save lambda function pointer (currently in d0) to stack
-	// str d0, [sp, #-16]!
-	acg.out.out.writer.WriteBytes([]byte{0xe0, 0x0f, 0x1f, 0xfd})
+	// str d0, [sp, #-16]! (pre-indexed: decrement sp by 16, then store)
+	acg.out.out.writer.WriteBytes([]byte{0xe0, 0xef, 0x1f, 0xfd})
 	// Convert d0 to integer pointer: fmov x11, d0
 	acg.out.out.writer.WriteBytes([]byte{0x0b, 0x00, 0x67, 0x9e})
 	// Save integer pointer: str x11, [sp, #8]
@@ -1132,8 +1166,8 @@ func (acg *ARM64CodeGen) compileParallelExpr(expr *ParallelExpr) error {
 	}
 
 	// Save list pointer and load as integer pointer
-	// str d0, [sp, #-8]!
-	acg.out.out.writer.WriteBytes([]byte{0xe0, 0x87, 0x1f, 0xfd})
+	// str d0, [sp, #-8]! (pre-indexed: decrement sp by 8, then store)
+	acg.out.out.writer.WriteBytes([]byte{0xe0, 0xff, 0x1f, 0xfd})
 	// Load as integer: ldr x13, [sp]
 	acg.out.out.writer.WriteBytes([]byte{0xed, 0x03, 0x40, 0xf9})
 
@@ -1208,8 +1242,8 @@ func (acg *ARM64CodeGen) compileParallelExpr(expr *ParallelExpr) error {
 	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x40, 0xfd})
 
 	// Save loop index x15 to stack (will be clobbered by environment pointer)
-	// str x15, [sp, #-16]!
-	acg.out.out.writer.WriteBytes([]byte{0xef, 0x0f, 0x1f, 0xf8})
+	// str x15, [sp, #-16]! (pre-indexed: decrement sp by 16, then store)
+	acg.out.out.writer.WriteBytes([]byte{0xef, 0xef, 0x1f, 0xf8})
 
 	// Load lambda closure object pointer from scratch slot
 	// ldr x0, [x12, #lambdaScratchOffset]
