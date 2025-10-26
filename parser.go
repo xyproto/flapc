@@ -2860,7 +2860,7 @@ func (p *Parser) parsePattern() Pattern {
 // tryParsePatternLambda attempts to parse a pattern lambda starting from current position
 // Returns nil if this is not a pattern lambda
 func (p *Parser) tryParsePatternLambda() *PatternLambdaExpr {
-	// Pattern lambda syntax: (pattern) => body | (pattern) => body | ...
+	// Pattern lambda syntax: (pattern) => body, (pattern) => body, ...
 	// We're at TOKEN_LPAREN
 
 	// Enable speculative mode to suppress errors
@@ -2888,14 +2888,14 @@ func (p *Parser) tryParsePatternLambda() *PatternLambdaExpr {
 		return nil
 	}
 
-	// Check if there's a | for additional clauses
+	// Check if there's a comma for additional clauses
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG: After first clause, current token: %v\n", p.current.Type)
 	}
-	if p.current.Type != TOKEN_PIPE {
+	if p.current.Type != TOKEN_COMMA {
 		// Not a pattern lambda, just a single clause (which could be regular lambda)
 		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG: No pipe after first clause, not a pattern lambda\n")
+			fmt.Fprintf(os.Stderr, "DEBUG: No comma after first clause, not a pattern lambda\n")
 		}
 		return nil
 	}
@@ -2906,11 +2906,11 @@ func (p *Parser) tryParsePatternLambda() *PatternLambdaExpr {
 	// Collect all clauses
 	clauses := []*PatternClause{clause}
 
-	for p.current.Type == TOKEN_PIPE {
-		p.nextToken() // skip '|'
+	for p.current.Type == TOKEN_COMMA {
+		p.nextToken() // skip ','
 		clause := p.parseOnePatternClause()
 		if clause == nil {
-			p.error("expected pattern clause after '|'")
+			p.error("expected pattern clause after ','")
 			break
 		}
 		clauses = append(clauses, clause)
@@ -3000,9 +3000,7 @@ func (p *Parser) parseConcurrentGather() Expression {
 func (p *Parser) parsePipe() Expression {
 	left := p.parseParallel()
 
-	// In speculative mode (pattern lambda parsing), don't treat | as pipe operator
-	// It's used to separate pattern clauses
-	for p.peek.Type == TOKEN_PIPE && !p.speculative {
+	for p.peek.Type == TOKEN_PIPE {
 		p.nextToken() // skip current
 		p.nextToken() // skip '|'
 		right := p.parseParallel()
@@ -3602,7 +3600,7 @@ func (p *Parser) parsePrimary() Expression {
 
 	case TOKEN_LPAREN:
 		// Could be:
-		// 1. Pattern lambda: (0) => 1 | (n) => n * fact(n-1)
+		// 1. Pattern lambda: (0) => 1, (n) => n * fact(n-1)
 		// 2. Regular lambda: (x) => x * 2
 		// 3. Parenthesized expression: (x + y)
 
@@ -4252,11 +4250,7 @@ func (p *Parser) parseUnsafeValue() interface{} {
 	case TOKEN_AMP:
 		op = "&"
 	case TOKEN_PIPE:
-		// In speculative mode (pattern lambda parsing), don't treat | as binary operator
-		// It's used to separate pattern clauses
-		if !p.speculative {
-			op = "|"
-		}
+		op = "|"
 	case TOKEN_CARET_B:
 		op = "^b"
 	case TOKEN_LT:
@@ -7637,7 +7631,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		}
 
 	case *PatternLambdaExpr:
-		// Pattern lambda: (pattern1) => body1 | (pattern2) => body2 | ...
+		// Pattern lambda: (pattern1) => body1, (pattern2) => body2, ...
 		// Compiles to a function that checks patterns in order and executes first match
 		var funcName string
 		if fc.currentAssignName != "" {

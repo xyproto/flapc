@@ -1,4 +1,4 @@
-factorial := (0) => 1 | (n) => n * factorial(n - 1)
+factorial := (0) => 1, (n) => n * factorial(n - 1)
 
 printf("%g\n", factorial(5))
 printf("%g\n", factorial(0))

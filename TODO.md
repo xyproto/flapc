@@ -8,19 +8,21 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
 ## Recent Progress
 
-**Loop Unrolling & Pattern Matching Foundation** (2025-10-26)
+**Loop Unrolling & Pattern Matching** (2025-10-26)
 - Implemented loop unrolling optimization pass
   - Unrolls small constant loops (≤8 iterations) to eliminate overhead
   - Integrated into WPO framework
   - Transforms `@ i in 0..<4 { f(i) }` → `f(0); f(1); f(2); f(3)`
   - Test: testprograms/loop_unroll_test.flap
   - All 316+ tests passing
-- Added pattern matching foundation (WIP)
-  - Syntax: `factorial := (0) => 1 | (n) => n * factorial(n-1)`
+- Implemented pattern matching (multiple dispatch)
+  - Syntax: `factorial := (0) => 1, (n) => n * factorial(n-1)`
   - Pattern AST nodes: LiteralPattern, VarPattern, WildcardPattern
   - PatternLambdaExpr with pattern clause support
-  - Parser infrastructure complete
-  - Basic codegen implemented (jump patching TODO)
+  - Full codegen with jump patching and recursive call support
+  - Comma separator doesn't conflict with pipe operator
+  - Test: testprograms/pattern_match_test.flap
+  - All 316+ tests passing
   - Files: ast.go, parser.go (pattern parsing & codegen)
 
 **Hot Keyword Foundation** (2025-10-26)
