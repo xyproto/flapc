@@ -14907,6 +14907,15 @@ func (fc *FlapCompiler) writeMachOARM64(outputPath string) error {
 		return fmt.Errorf("failed to write executable: %v", err)
 	}
 
+	// Sign the binary with codesign (required on modern macOS)
+	cmd := exec.Command("codesign", "--force", "--sign", "-", outputPath)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Warning: codesign failed: %v\n%s\n", err, output)
+		}
+		// Don't fail compilation if codesign fails - binary might still work
+	}
+
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "-> Wrote ARM64 Mach-O executable: %s\n", outputPath)
 		fmt.Fprintf(os.Stderr, "   Text size: %d bytes\n", fc.eb.text.Len())

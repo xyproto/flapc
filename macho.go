@@ -537,9 +537,9 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		dylibCmdSize := (uint32(binary.Size(LoadCommand{})+16+len(dylibPath)) + 7) &^ 7
 		prelimLoadCmdsSize += dylibCmdSize // LC_LOAD_DYLIB
 
-		// Always include LINKEDIT load commands for macOS (needed for code signature)
-		prelimLoadCmdsSize += uint32(binary.Size(SymtabCommand{}))       // LC_SYMTAB
-		prelimLoadCmdsSize += uint32(binary.Size(LinkEditDataCommand{})) // LC_CODE_SIGNATURE
+		// Include LINKEDIT load commands for macOS
+		prelimLoadCmdsSize += uint32(binary.Size(SymtabCommand{}))          // LC_SYMTAB
+		prelimLoadCmdsSize += uint32(binary.Size(LinkEditDataCommand{}))    // LC_CODE_SIGNATURE
 
 		if numImports > 0 {
 			prelimLoadCmdsSize += uint32(binary.Size(DysymtabCommand{})) // LC_DYSYMTAB
@@ -682,11 +682,9 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	// Chained fixups removed - using lazy binding instead
 	var chainedFixupsSize uint32 = 0
 
-	// Calculate code signature size - flapc generates ad-hoc signatures
-	// The size needs to account for the SuperBlob header, CodeDirectory, identifier, and code hashes
-	// We'll allocate enough space for a reasonable number of pages
-	// For a simple binary, 416 bytes is typical (observed from reference binaries)
-	codeSignatureSize := uint32(4096) // Allocate 4KB - plenty for most binaries
+	// Reserve space for code signature (will be filled by codesign tool)
+	// Ad-hoc signatures are typically ~400-1000 bytes, use 4KB to be safe
+	codeSignatureSize := uint32(4096)
 
 	linkeditSize := symtabSize + strtabSize + alignmentPadding + indirectSymTabSize + chainedFixupsSize + codeSignatureSize
 
@@ -981,16 +979,16 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		ncmds++
 	}
 
-	// 10. LC_CODE_SIGNATURE (required for macOS executables)
-	if eb.useDynamicLinking {
-		// LC_CODE_SIGNATURE - must come LAST in load commands
-		codeSignatureCmd := LinkEditDataCommand{
-			Cmd:      LC_CODE_SIGNATURE,
-			CmdSize:  uint32(binary.Size(LinkEditDataCommand{})),
-			DataOff:  uint32(linkeditFileOffset) + symtabSize + strtabSize + alignmentPadding + indirectSymTabSize + chainedFixupsSize,
+	// LC_CODE_SIGNATURE: Reserve space for codesign tool to fill
+	{
+		codeSignatureOffset := linkeditFileOffset + uint64(symtabSize) + uint64(strtabSize) + uint64(alignmentPadding) + uint64(indirectSymTabSize)
+		codeSignCmd := LinkEditDataCommand{
+			Cmd:     LC_CODE_SIGNATURE,
+			CmdSize: uint32(binary.Size(LinkEditDataCommand{})),
+			DataOff: uint32(codeSignatureOffset),
 			DataSize: codeSignatureSize,
 		}
-		binary.Write(&loadCmdsBuf, binary.LittleEndian, &codeSignatureCmd)
+		binary.Write(&loadCmdsBuf, binary.LittleEndian, &codeSignCmd)
 		ncmds++
 	}
 
@@ -1169,41 +1167,9 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 			binary.Write(&buf, binary.LittleEndian, idx)
 		}
 
-		// Pad to code signature offset
-		codeSignatureStart := linkeditFileOffset + uint64(symtabSize) + uint64(strtabSize) + uint64(alignmentPadding) + uint64(indirectSymTabSize) + uint64(chainedFixupsSize)
-		for uint64(buf.Len()) < codeSignatureStart {
+		// Reserve space for code signature (zeros - codesign tool will fill it)
+		for i := uint32(0); i < codeSignatureSize; i++ {
 			buf.WriteByte(0)
-		}
-
-		// 8. Generate and write code signature
-		// Get the identifier for the binary (use "a.out" as default)
-		identifier := "a.out"
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG: Generating code signature for %s\n", identifier)
-		}
-
-		// Generate signature for the current binary data
-		binaryData := buf.Bytes()
-		execSegBase := uint64(0)                // __TEXT starts at file offset 0
-		execSegLimit := uint64(len(binaryData)) // Size up to this point (before signature)
-
-		signature, err := generateCodeSignature(identifier, binaryData, execSegBase, execSegLimit)
-		if err != nil {
-			return fmt.Errorf("failed to generate code signature: %v", err)
-		}
-
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG: Generated signature size: %d bytes (allocated: %d)\n",
-				len(signature), codeSignatureSize)
-		}
-
-		// Write the signature
-		buf.Write(signature)
-
-		// Pad to allocated size if needed
-		for uint32(len(signature)) < codeSignatureSize {
-			buf.WriteByte(0)
-			signature = append(signature, 0)
 		}
 	}
 
