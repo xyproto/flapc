@@ -93,13 +93,6 @@ func testFlapProgram(t *testing.T, name, srcPath, buildDir string) {
 	executable := filepath.Join(buildDir, name)
 	expectedPattern, shouldFailCompile := compileExpectations[name]
 
-	// Enable verbose mode for hot_keyword_test to debug
-	if name == "hot_keyword_test" {
-		oldVerbose := VerboseMode
-		VerboseMode = true
-		defer func() { VerboseMode = oldVerbose }()
-	}
-
 	// Compile the program using Go API directly
 	// Use current platform for testing
 	platform := GetDefaultPlatform()
@@ -121,11 +114,6 @@ func testFlapProgram(t *testing.T, name, srcPath, buildDir string) {
 		t.Fatalf("Expected compilation to fail, but it succeeded")
 	}
 
-	// Debug: Check if executable exists
-	if _, err := os.Stat(executable); os.IsNotExist(err) {
-		t.Fatalf("Executable not found at expected path: %s", executable)
-	}
-
 	// Check if this is a compile-only program (e.g., requires runtime libraries)
 	if compileOnlyPrograms[name] {
 		t.Logf("Program %s compiled successfully (compile-only test, not run)", name)
@@ -141,7 +129,7 @@ func testFlapProgram(t *testing.T, name, srcPath, buildDir string) {
 	if runErr != nil {
 		if exitErr, ok := runErr.(*exec.ExitError); ok {
 			if exitErr.ExitCode() != expectedExitCode {
-				t.Errorf("Expected exit code %d, got %d\nError: %v\nOutput: %s", expectedExitCode, exitErr.ExitCode(), runErr, string(actualOutput))
+				t.Errorf("Expected exit code %d, got %d\nOutput: %s", expectedExitCode, exitErr.ExitCode(), string(actualOutput))
 			}
 		} else if expectedExitCode == 0 {
 			t.Errorf("Program failed to run: %v\nOutput: %s", runErr, string(actualOutput))

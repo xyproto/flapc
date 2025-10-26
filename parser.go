@@ -8928,18 +8928,9 @@ func (fc *FlapCompiler) patchHotFunctionTable() {
 		return
 	}
 
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG: Patching hot function table with %d entries\n", len(fc.hotFunctions))
-	}
-
 	tableConst, ok := fc.eb.consts["_hot_function_table"]
 	if !ok {
-		fmt.Fprintf(os.Stderr, "Hot function table symbol not found\n")
 		return
-	}
-
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG: Hot function table at address 0x%x\n", tableConst.addr)
 	}
 
 	rodataSymbols := fc.eb.RodataSection()
@@ -8967,9 +8958,6 @@ func (fc *FlapCompiler) patchHotFunctionTable() {
 			offset := tableOffsetInRodata + idx*8
 			if offset >= 0 && offset+8 <= len(rodataBytes) {
 				binary.LittleEndian.PutUint64(rodataBytes[offset:offset+8], funcAddr)
-				if VerboseMode {
-					fmt.Fprintf(os.Stderr, "DEBUG:   Patched %s at table offset %d with address 0x%x\n", name, offset, funcAddr)
-				}
 			}
 		}
 	}
@@ -14797,17 +14785,9 @@ func CompileFlap(inputPath string, outputPath string, platform Platform) (err er
 	}
 	compiler.sourceCode = combinedSource
 
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG CompileFlap: calling Compile with outputPath=%s\n", outputPath)
-	}
-
 	err = compiler.Compile(program, outputPath)
 	if err != nil {
 		return fmt.Errorf("compilation failed: %v", err)
-	}
-
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG CompileFlap: Compile succeeded\n")
 	}
 
 	return nil
