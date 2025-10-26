@@ -436,7 +436,8 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	debug := os.Getenv("FLAP_DEBUG") != ""
 
 	if debug || VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG: WriteMachO() called, text.Len()=%d, text=%x\n", eb.text.Len(), eb.text.Bytes())
+		fmt.Fprintf(os.Stderr, "DEBUG: WriteMachO() called, text.Len()=%d, useDynamicLinking=%v, neededFunctions=%v\n",
+			eb.text.Len(), eb.useDynamicLinking, eb.neededFunctions)
 	}
 
 	var buf bytes.Buffer
@@ -520,8 +521,8 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		prelimLoadCmdsSize += uint32(binary.Size(SegmentCommand64{}) + int(dataNSects)*binary.Size(Section64{}))
 	}
 
-	// __LINKEDIT segment (if dynamic linking)
-	if eb.useDynamicLinking && numImports > 0 {
+	// __LINKEDIT segment (for macOS executables - needed for symbol table and code signature)
+	if eb.useDynamicLinking {
 		prelimLoadCmdsSize += uint32(binary.Size(SegmentCommand64{}))
 	}
 
@@ -536,10 +537,12 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		dylibCmdSize := (uint32(binary.Size(LoadCommand{})+16+len(dylibPath)) + 7) &^ 7
 		prelimLoadCmdsSize += dylibCmdSize // LC_LOAD_DYLIB
 
+		// Always include LINKEDIT load commands for macOS (needed for code signature)
+		prelimLoadCmdsSize += uint32(binary.Size(SymtabCommand{}))       // LC_SYMTAB
+		prelimLoadCmdsSize += uint32(binary.Size(LinkEditDataCommand{})) // LC_CODE_SIGNATURE
+
 		if numImports > 0 {
-			prelimLoadCmdsSize += uint32(binary.Size(SymtabCommand{}))       // LC_SYMTAB
-			prelimLoadCmdsSize += uint32(binary.Size(DysymtabCommand{}))     // LC_DYSYMTAB
-			prelimLoadCmdsSize += uint32(binary.Size(LinkEditDataCommand{})) // LC_CODE_SIGNATURE
+			prelimLoadCmdsSize += uint32(binary.Size(DysymtabCommand{})) // LC_DYSYMTAB
 		}
 	}
 
@@ -846,8 +849,8 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		ncmds++
 	}
 
-	// 4. LC_SEGMENT_64 for __LINKEDIT (if dynamic linking)
-	if eb.useDynamicLinking && numImports > 0 {
+	// 4. LC_SEGMENT_64 for __LINKEDIT (for macOS executables)
+	if eb.useDynamicLinking {
 		seg := SegmentCommand64{
 			Cmd:      LC_SEGMENT_64,
 			CmdSize:  uint32(binary.Size(SegmentCommand64{})),
@@ -923,10 +926,10 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 			CmdSize: cmdSize,
 		}
 		binary.Write(&loadCmdsBuf, binary.LittleEndian, &cmd)
-		binary.Write(&loadCmdsBuf, binary.LittleEndian, uint32(24)) // name offset
-		binary.Write(&loadCmdsBuf, binary.LittleEndian, uint32(0))  // timestamp
-		binary.Write(&loadCmdsBuf, binary.LittleEndian, uint32(0))  // current version
-		binary.Write(&loadCmdsBuf, binary.LittleEndian, uint32(0))  // compatibility version
+		binary.Write(&loadCmdsBuf, binary.LittleEndian, uint32(24))       // name offset
+		binary.Write(&loadCmdsBuf, binary.LittleEndian, uint32(0))        // timestamp
+		binary.Write(&loadCmdsBuf, binary.LittleEndian, uint32(0x5000000)) // current version (e.g., 1280.0.0)
+		binary.Write(&loadCmdsBuf, binary.LittleEndian, uint32(0x10000))  // compatibility version 1.0.0
 		loadCmdsBuf.WriteString(dylibPath)
 
 		// Pad to alignment
@@ -936,8 +939,8 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		ncmds++
 	}
 
-	// 8. LC_SYMTAB (if dynamic linking)
-	if eb.useDynamicLinking && numImports > 0 {
+	// 8. LC_SYMTAB (required for macOS executables)
+	if eb.useDynamicLinking {
 		symtabCmd := SymtabCommand{
 			Cmd:     LC_SYMTAB,
 			CmdSize: uint32(binary.Size(SymtabCommand{})),
@@ -978,8 +981,8 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		ncmds++
 	}
 
-	// 10. LC_CODE_SIGNATURE (if dynamic linking)
-	if eb.useDynamicLinking && numImports > 0 {
+	// 10. LC_CODE_SIGNATURE (required for macOS executables)
+	if eb.useDynamicLinking {
 		// LC_CODE_SIGNATURE - must come LAST in load commands
 		codeSignatureCmd := LinkEditDataCommand{
 			Cmd:      LC_CODE_SIGNATURE,
@@ -1141,8 +1144,8 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		}
 	}
 
-	// Write __LINKEDIT segment (if dynamic linking)
-	if eb.useDynamicLinking && numImports > 0 {
+	// Write __LINKEDIT segment (for macOS executables - needed for code signature)
+	if eb.useDynamicLinking {
 		// Pad to linkedit file offset
 		for uint64(buf.Len()) < linkeditFileOffset {
 			buf.WriteByte(0)
