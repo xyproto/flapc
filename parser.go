@@ -661,6 +661,12 @@ func collectUsedVariablesExpr(expr Expression, usedVars map[string]bool) {
 		usedVars[e.Namespace] = true
 	case *FStringExpr:
 		// FStringExpr.Parts is []Expression, each part is either StringExpr or an expression
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: FStringExpr with %d parts\n", len(e.Parts))
+			for i, part := range e.Parts {
+				fmt.Fprintf(os.Stderr, "  Part %d: %T\n", i, part)
+			}
+		}
 		for _, part := range e.Parts {
 			collectUsedVariablesExpr(part, usedVars)
 		}

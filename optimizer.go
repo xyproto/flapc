@@ -459,6 +459,38 @@ func (dce *DeadCodeElimination) markUsedInExpr(expr Expression, used map[string]
 	case *ParallelExpr:
 		dce.markUsedInExpr(e.List, used)
 		dce.markUsedInExpr(e.Operation, used)
+
+	case *FStringExpr:
+		for _, part := range e.Parts {
+			dce.markUsedInExpr(part, used)
+		}
+
+	case *DirectCallExpr:
+		dce.markUsedInExpr(e.Callee, used)
+		for _, arg := range e.Args {
+			dce.markUsedInExpr(arg, used)
+		}
+
+	case *NamespacedIdentExpr:
+		used[e.Namespace] = true
+
+	case *PostfixExpr:
+		dce.markUsedInExpr(e.Operand, used)
+
+	case *VectorExpr:
+		for _, comp := range e.Components {
+			dce.markUsedInExpr(comp, used)
+		}
+
+	case *LoopExpr:
+		for _, stmt := range e.Body {
+			dce.markUsedInStmt(stmt, used)
+		}
+
+	case *MultiLambdaExpr:
+		for _, lambda := range e.Lambdas {
+			dce.markUsedInExpr(lambda.Body, used)
+		}
 	}
 }
 
