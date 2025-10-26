@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -4386,9 +4387,11 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 		return nil, err
 	}
 
-	// Don't enable dynamic linking by default - it will be enabled
-	// when we actually call external functions (printf, etc)
-	// eb.useDynamicLinking = false (default)
+	// On macOS, always enable dynamic linking (even simple binaries link to libSystem)
+	// On Linux, only enable when actually calling external functions
+	if runtime.GOOS == "darwin" {
+		eb.useDynamicLinking = true
+	}
 	// Don't set neededFunctions yet - we'll build it dynamically
 
 	// Create Out wrapper

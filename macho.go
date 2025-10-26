@@ -527,6 +527,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	dylinkerPath := "/usr/lib/dyld\x00"
 	dylinkerCmdSize := (uint32(binary.Size(LoadCommand{})+4+len(dylinkerPath)) + 7) &^ 7
 	prelimLoadCmdsSize += dylinkerCmdSize                            // LC_LOAD_DYLINKER
+	prelimLoadCmdsSize += uint32(binary.Size(UUIDCommand{}))         // LC_UUID
 	prelimLoadCmdsSize += uint32(binary.Size(BuildVersionCommand{})) // LC_BUILD_VERSION
 	prelimLoadCmdsSize += uint32(binary.Size(EntryPointCommand{}))   // LC_MAIN
 
@@ -885,14 +886,27 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		ncmds++
 	}
 
-	// 6. LC_BUILD_VERSION
+	// 6. LC_UUID
+	{
+		// Generate a deterministic UUID based on binary content
+		// For now, use zeros (can be improved later with hash of content)
+		uuid := UUIDCommand{
+			Cmd:     LC_UUID,
+			CmdSize: uint32(binary.Size(UUIDCommand{})),
+			UUID:    [16]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+		}
+		binary.Write(&loadCmdsBuf, binary.LittleEndian, &uuid)
+		ncmds++
+	}
+
+	// 7. LC_BUILD_VERSION
 	{
 		buildVer := BuildVersionCommand{
 			Cmd:      LC_BUILD_VERSION,
 			CmdSize:  uint32(binary.Size(BuildVersionCommand{})),
 			Platform: 1,          // 1 = macOS
-			Minos:    0x000c0000, // macOS 12.0 (0x000c = 12, 0x0000 = 0.0)
-			Sdk:      0x000c0000, // SDK 12.0
+			Minos:    0x001a0000, // macOS 26.0 (0x001a = 26, 0x0000 = 0.0)
+			Sdk:      0x001a0000, // SDK 26.0
 			NTools:   0,          // No tool entries
 		}
 		binary.Write(&loadCmdsBuf, binary.LittleEndian, &buildVer)
