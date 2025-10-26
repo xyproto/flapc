@@ -4386,8 +4386,9 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 		return nil, err
 	}
 
-	// Enable dynamic linking
-	eb.useDynamicLinking = true
+	// Don't enable dynamic linking by default - it will be enabled
+	// when we actually call external functions (printf, etc)
+	// eb.useDynamicLinking = false (default)
 	// Don't set neededFunctions yet - we'll build it dynamically
 
 	// Create Out wrapper
@@ -14907,13 +14908,14 @@ func (fc *FlapCompiler) writeMachOARM64(outputPath string) error {
 		return fmt.Errorf("failed to write executable: %v", err)
 	}
 
-	// Sign the binary with codesign (required on modern macOS)
-	cmd := exec.Command("codesign", "--force", "--sign", "-", outputPath)
+	// Sign the binary with ldid (required on modern macOS)
+	// ldid is more lenient than codesign and works with flapc binaries
+	cmd := exec.Command("ldid", "-S", outputPath)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "Warning: codesign failed: %v\n%s\n", err, output)
+			fmt.Fprintf(os.Stderr, "Warning: ldid signing failed: %v\n%s\n", err, output)
 		}
-		// Don't fail compilation if codesign fails - binary might still work
+		// Don't fail compilation if signing fails - binary might still work
 	}
 
 	if VerboseMode {

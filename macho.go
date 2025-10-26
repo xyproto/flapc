@@ -521,10 +521,8 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		prelimLoadCmdsSize += uint32(binary.Size(SegmentCommand64{}) + int(dataNSects)*binary.Size(Section64{}))
 	}
 
-	// __LINKEDIT segment (for macOS executables - needed for symbol table and code signature)
-	if eb.useDynamicLinking {
-		prelimLoadCmdsSize += uint32(binary.Size(SegmentCommand64{}))
-	}
+	// __LINKEDIT segment (always required for macOS executables - needed for symbol table and code signature)
+	prelimLoadCmdsSize += uint32(binary.Size(SegmentCommand64{}))
 
 	dylinkerPath := "/usr/lib/dyld\x00"
 	dylinkerCmdSize := (uint32(binary.Size(LoadCommand{})+4+len(dylinkerPath)) + 7) &^ 7
@@ -532,14 +530,14 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	prelimLoadCmdsSize += uint32(binary.Size(BuildVersionCommand{})) // LC_BUILD_VERSION
 	prelimLoadCmdsSize += uint32(binary.Size(EntryPointCommand{}))   // LC_MAIN
 
+	// Always include LINKEDIT load commands on macOS (needed for code signature)
+	prelimLoadCmdsSize += uint32(binary.Size(SymtabCommand{}))          // LC_SYMTAB
+	prelimLoadCmdsSize += uint32(binary.Size(LinkEditDataCommand{}))    // LC_CODE_SIGNATURE
+
 	if eb.useDynamicLinking {
 		dylibPath := "/usr/lib/libSystem.B.dylib\x00"
 		dylibCmdSize := (uint32(binary.Size(LoadCommand{})+16+len(dylibPath)) + 7) &^ 7
 		prelimLoadCmdsSize += dylibCmdSize // LC_LOAD_DYLIB
-
-		// Include LINKEDIT load commands for macOS
-		prelimLoadCmdsSize += uint32(binary.Size(SymtabCommand{}))          // LC_SYMTAB
-		prelimLoadCmdsSize += uint32(binary.Size(LinkEditDataCommand{}))    // LC_CODE_SIGNATURE
 
 		if numImports > 0 {
 			prelimLoadCmdsSize += uint32(binary.Size(DysymtabCommand{})) // LC_DYSYMTAB
@@ -847,8 +845,8 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		ncmds++
 	}
 
-	// 4. LC_SEGMENT_64 for __LINKEDIT (for macOS executables)
-	if eb.useDynamicLinking {
+	// 4. LC_SEGMENT_64 for __LINKEDIT (always required for macOS executables - needed for code signature)
+	{
 		seg := SegmentCommand64{
 			Cmd:      LC_SEGMENT_64,
 			CmdSize:  uint32(binary.Size(SegmentCommand64{})),
@@ -857,7 +855,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 			FileOff:  linkeditFileOffset,
 			FileSize: uint64(linkeditSize),
 			MaxProt:  VM_PROT_READ,
-			InitProt: VM_PROT_READ,
+			InitProt:  VM_PROT_READ,
 			NSects:   0,
 			Flags:    0,
 		}
@@ -937,8 +935,8 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		ncmds++
 	}
 
-	// 8. LC_SYMTAB (required for macOS executables)
-	if eb.useDynamicLinking {
+	// 8. LC_SYMTAB (always required for macOS executables - needed for code signature)
+	{
 		symtabCmd := SymtabCommand{
 			Cmd:     LC_SYMTAB,
 			CmdSize: uint32(binary.Size(SymtabCommand{})),
@@ -1004,9 +1002,15 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	if debug {
 		fmt.Fprintf(os.Stderr, "DEBUG: About to write Mach-O header with NCmds=%d, SizeOfCmds=%d\n", ncmds, loadCmdsSize)
 	}
-	flags := uint32(MH_NOUNDEFS | MH_DYLDLINK | MH_TWOLEVEL | MH_PIE)
+
+	// Set appropriate flags based on whether we're using dynamic linking
+	flags := uint32(MH_PIE) // Always position-independent on macOS
+	if eb.useDynamicLinking {
+		flags |= MH_NOUNDEFS | MH_DYLDLINK | MH_TWOLEVEL
+	}
+
 	if debug || VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG: Mach-O header flags = 0x%08x (MH_PIE=0x%x)\n", flags, MH_PIE)
+		fmt.Fprintf(os.Stderr, "DEBUG: Mach-O header flags = 0x%08x (MH_PIE=0x%x, useDynamicLinking=%v)\n", flags, MH_PIE, eb.useDynamicLinking)
 	}
 	header := MachOHeader64{
 		Magic:      MH_MAGIC_64,
@@ -1142,8 +1146,8 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		}
 	}
 
-	// Write __LINKEDIT segment (for macOS executables - needed for code signature)
-	if eb.useDynamicLinking {
+	// Write __LINKEDIT segment (always required for macOS executables - needed for code signature)
+	{
 		// Pad to linkedit file offset
 		for uint64(buf.Len()) < linkeditFileOffset {
 			buf.WriteByte(0)
@@ -1162,12 +1166,14 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 			buf.WriteByte(0)
 		}
 
-		// Write indirect symbol table
-		for _, idx := range indirectSymTab {
-			binary.Write(&buf, binary.LittleEndian, idx)
+		// Write indirect symbol table (if dynamic linking)
+		if eb.useDynamicLinking && numImports > 0 {
+			for _, idx := range indirectSymTab {
+				binary.Write(&buf, binary.LittleEndian, idx)
+			}
 		}
 
-		// Reserve space for code signature (zeros - codesign tool will fill it)
+		// Reserve space for code signature (zeros - ldid will fill it)
 		for i := uint32(0); i < codeSignatureSize; i++ {
 			buf.WriteByte(0)
 		}
