@@ -8794,11 +8794,21 @@ func (fc *FlapCompiler) generatePatternLambdaFunctions() {
 		fc.labelCounter++
 		failLabel := fmt.Sprintf("pattern_fail_%d", fc.labelCounter)
 
+		// Track all jumps that need patching across all clauses
+		type jumpPatch struct {
+			jumpPos int
+			target  string
+		}
+		var allJumps []jumpPatch
+
 		for clauseIdx, clause := range patternLambda.Clauses {
 			fc.eb.MarkLabel(clauseLabels[clauseIdx])
 
-			// Track jump locations that need patching
-			var jumpsToPatch []int
+			// Determine target for failed pattern matches in this clause
+			nextTarget := failLabel
+			if clauseIdx < len(patternLambda.Clauses)-1 {
+				nextTarget = clauseLabels[clauseIdx+1]
+			}
 
 			// Check each pattern in this clause
 			for paramIdx, pattern := range clause.Patterns {
@@ -8813,7 +8823,7 @@ func (fc *FlapCompiler) generatePatternLambdaFunctions() {
 					// If not equal, jump to next clause
 					jumpOffset := fc.eb.text.Len()
 					fc.out.JumpConditional(JumpNotEqual, 0)
-					jumpsToPatch = append(jumpsToPatch, jumpOffset)
+					allJumps = append(allJumps, jumpPatch{jumpOffset, nextTarget})
 
 				case *VarPattern:
 					// Bind parameter to variable name
@@ -8837,25 +8847,27 @@ func (fc *FlapCompiler) generatePatternLambdaFunctions() {
 			fc.out.MovRegToReg("rsp", "rbp")
 			fc.out.PopReg("rbp")
 			fc.out.Ret()
-
-			// Patch jumps: if this isn't the last clause, jump to next clause; otherwise jump to fail
-			nextTarget := failLabel
-			if clauseIdx < len(patternLambda.Clauses)-1 {
-				nextTarget = clauseLabels[clauseIdx+1]
-			}
-
-			for _, jumpPos := range jumpsToPatch {
-				targetOffset := fc.eb.LabelOffset(nextTarget)
-				offset := targetOffset - (jumpPos + 6) // 6 = size of conditional jump instruction
-				fc.eb.text.Bytes()[jumpPos+2] = byte(offset)
-				fc.eb.text.Bytes()[jumpPos+3] = byte(offset >> 8)
-				fc.eb.text.Bytes()[jumpPos+4] = byte(offset >> 16)
-				fc.eb.text.Bytes()[jumpPos+5] = byte(offset >> 24)
-			}
 		}
 
-		// Fail label
+		// Fail label - must be marked before patching jumps
 		fc.eb.MarkLabel(failLabel)
+
+		// Now patch all jumps after all labels have been marked
+		for _, jump := range allJumps {
+			targetOffset := fc.eb.LabelOffset(jump.target)
+			if targetOffset < 0 {
+				compilerError("pattern lambda jump target not found: %s", jump.target)
+			}
+			offset := int32(targetOffset - (jump.jumpPos + 6)) // 6 = size of conditional jump instruction
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG: Patching jump at %d to target %s (offset %d -> %d, relative %d)\n",
+					jump.jumpPos, jump.target, jump.jumpPos, targetOffset, offset)
+			}
+			fc.eb.text.Bytes()[jump.jumpPos+2] = byte(offset)
+			fc.eb.text.Bytes()[jump.jumpPos+3] = byte(offset >> 8)
+			fc.eb.text.Bytes()[jump.jumpPos+4] = byte(offset >> 16)
+			fc.eb.text.Bytes()[jump.jumpPos+5] = byte(offset >> 24)
+		}
 		// No pattern matched - return 0
 		fc.out.XorpdXmm("xmm0", "xmm0")
 
@@ -12072,6 +12084,16 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		if lambda.Name == call.Function {
 			isKnownLambda = true
 			break
+		}
+	}
+
+	// Also check pattern lambdas
+	if !isKnownLambda {
+		for _, lambda := range fc.patternLambdaFuncs {
+			if lambda.Name == call.Function {
+				isKnownLambda = true
+				break
+			}
 		}
 	}
 
