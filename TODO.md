@@ -13,19 +13,23 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
    - Use case: Tweak physics parameters, adjust visual effects, modify AI behavior in real-time
    - Current status: `hot` keyword foundation complete (lexer, parser, hotFunctions map)
 
-   **Phase 1: Function Pointer Table & Indirection** (MEDIUM) - IN PROGRESS
+   **Phase 1: Function Pointer Table & Indirection** (MEDIUM) - BLOCKED
    - ✅ Hot function registration and table index mapping
    - ✅ Function pointer table generation in rodata segment
-   - ✅ Indirect call code generation (LEA + MOV + CALL)
-   - ✅ Table patching with function addresses
-   - ❌ BLOCKED: Two-phase compilation offset mismatch
-     * Issue: Regenerated code has different offsets than initial compilation
-     * Relocations created for offset 0x6a but code ends up at offset 0xf8
-     * Result: PC-relative displacement off by 1 byte (0x1012 vs 0x1011)
-     * Impact: Hot function calls segfault due to incorrect function pointer load
-   - Next: Fix offset tracking in two-phase compilation OR regenerate relocations
-   - Performance cost: ~1-2 CPU cycles per hot function call (acceptable)
-   - Files: `parser.go` (hotFunctionTable, compileLambdaDirectCall, patchHotFunctionTable), `main.go` (patchRodataInELF)
+   - ✅ Table patching with final function addresses
+   - ✅ Two-phase compilation offset mismatch FIXED
+     * Solution: Preserve rodata between compilation passes
+     * Don't regenerate rodata in second pass to keep addresses stable
+     * Only patch hot function table in-place at the end
+   - ✅ DCE preservation of hot functions (won't be removed even if inlined)
+   - ❌ BLOCKED: Indirect calling causes segfault without WPO
+     * Issue: Closure vs direct function calling convention mismatch
+     * Hot functions work when WPO inlines them (no actual call)
+     * Segfault when WPO disabled and indirect call is executed
+     * Crash occurs at function entry, suggests calling convention issue
+   - Next: Resolve closure calling convention for indirect hot function calls
+   - Performance cost: ~1-2 CPU cycles per hot function call (when implemented)
+   - Files: `parser.go` (compileLambdaDirectCall line 10753 has TODO), `optimizer.go` (DCE), `main.go` (patchRodataInELF)
 
    **Phase 2: File Watching** (MEDIUM)
    - Implement inotify-based file watcher for Linux
