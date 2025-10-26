@@ -273,6 +273,9 @@ const (
 	N_EXT  = 0x1  // External symbol
 	N_TYPE = 0x0e // Type mask
 	N_SECT = 0xe  // Defined in section
+
+	REFERENCE_FLAG_UNDEFINED_NON_LAZY = 0x0
+	REFERENCE_FLAG_UNDEFINED_LAZY     = 0x1
 )
 
 // Chained fixups structures
@@ -629,9 +632,9 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 
 			sym := Nlist64{
 				N_strx:  strOffset,
-				N_type:  N_UNDF | N_EXT, // Undefined external symbol
+				N_type:  N_UNDF | N_EXT,
 				N_sect:  0,
-				N_desc:  0,
+				N_desc:  uint16(1 << 8), // Two-level namespace: dylib ordinal 1 (libSystem.B.dylib)
 				N_value: 0,
 			}
 			symtab = append(symtab, sym)
@@ -643,13 +646,14 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	// Indirect symbols must point to the correct symbol indices based on final ordering
 	var indirectSymTab []uint32
 	if eb.useDynamicLinking && numImports > 0 {
-		// Undefined symbols start at index numDefinedSyms (after defined symbols)
 		undefSymStartIdx := numDefinedSyms
 		for i := uint32(0); i < numImports; i++ {
-			indirectSymTab = append(indirectSymTab, undefSymStartIdx+i) // GOT entries
+			idx := undefSymStartIdx + i
+			indirectSymTab = append(indirectSymTab, idx) // GOT entries
 		}
 		for i := uint32(0); i < numImports; i++ {
-			indirectSymTab = append(indirectSymTab, undefSymStartIdx+i) // Stub entries
+			idx := undefSymStartIdx + i
+			indirectSymTab = append(indirectSymTab, idx) // Stub entries
 		}
 	}
 
@@ -946,35 +950,36 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	}
 
 	// 8. LC_SYMTAB (always required for macOS executables - needed for code signature)
+	// Apple's LINKEDIT order: symtab → indirect symtab → strtab → code signature
 	{
+		indirectSymOff := uint32(0)
+		stroffValue := uint32(linkeditFileOffset) + symtabSize
+		if eb.useDynamicLinking && numImports > 0 {
+			indirectSymOff = uint32(linkeditFileOffset) + symtabSize
+			stroffValue = uint32(linkeditFileOffset) + symtabSize + indirectSymTabSize
+		}
+
 		symtabCmd := SymtabCommand{
 			Cmd:     LC_SYMTAB,
 			CmdSize: uint32(binary.Size(SymtabCommand{})),
 			Symoff:  uint32(linkeditFileOffset),
 			Nsyms:   uint32(len(symtab)),
-			Stroff:  uint32(linkeditFileOffset) + symtabSize,
+			Stroff:  stroffValue,
 			Strsize: strtabSize,
 		}
 		binary.Write(&loadCmdsBuf, binary.LittleEndian, &symtabCmd)
 		ncmds++
-	}
 
-	// 9. LC_DYSYMTAB (required for all macOS executables)
-	{
-		indirectSymOff := uint32(0)
-		if eb.useDynamicLinking && numImports > 0 {
-			indirectSymOff = uint32(linkeditFileOffset) + symtabSize + strtabSize + alignmentPadding
-		}
-
+		// 9. LC_DYSYMTAB (required for all macOS executables)
 		dysymtabCmd := DysymtabCommand{
 			Cmd:            LC_DYSYMTAB,
 			CmdSize:        uint32(binary.Size(DysymtabCommand{})),
 			ILocalSym:      0,
 			NLocalSym:      0,
-			IExtDefSym:     0,              // External defined symbols start at index 0
-			NExtDefSym:     numDefinedSyms, // Count of external defined symbols (always >= 2)
-			IUndefSym:      numDefinedSyms, // Undefined symbols start after defined symbols
-			NUndefSym:      numUndefSyms,   // Count of undefined symbols
+			IExtDefSym:     0,
+			NExtDefSym:     numDefinedSyms,
+			IUndefSym:      numDefinedSyms,
+			NUndefSym:      numUndefSyms,
 			TOCOff:         0,
 			NTOC:           0,
 			ModTabOff:      0,
@@ -994,7 +999,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 
 	// LC_CODE_SIGNATURE: Reserve space for codesign tool to fill
 	{
-		codeSignatureOffset := linkeditFileOffset + uint64(symtabSize) + uint64(strtabSize) + uint64(alignmentPadding) + uint64(indirectSymTabSize)
+		codeSignatureOffset := linkeditFileOffset + uint64(symtabSize) + uint64(indirectSymTabSize) + uint64(strtabSize)
 		codeSignCmd := LinkEditDataCommand{
 			Cmd:     LC_CODE_SIGNATURE,
 			CmdSize: uint32(binary.Size(LinkEditDataCommand{})),
@@ -1170,20 +1175,16 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 			binary.Write(&buf, binary.LittleEndian, &sym)
 		}
 
-		// Write string table
-		buf.Write(strtab.Bytes())
-
-		// Align to 8 bytes before indirect symbol table (required by dyld)
-		for buf.Len()%8 != 0 {
-			buf.WriteByte(0)
-		}
-
 		// Write indirect symbol table (if dynamic linking)
+		// Apple's LINKEDIT order: symtab → indirect symtab → strtab → code signature
 		if eb.useDynamicLinking && numImports > 0 {
 			for _, idx := range indirectSymTab {
 				binary.Write(&buf, binary.LittleEndian, idx)
 			}
 		}
+
+		// Write string table
+		buf.Write(strtab.Bytes())
 
 		// Reserve space for code signature (zeros - ldid will fill it)
 		for i := uint32(0); i < codeSignatureSize; i++ {

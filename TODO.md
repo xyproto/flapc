@@ -160,12 +160,14 @@ Focus on x86-64 Linux first. These are lower priority.
     - Impact: Future-proofing for Windows ARM gaming PCs
     - Files: Extend ARM64 codegen with Windows support
 
-13. **Fix macOS ARM64 runtime issues** (HIGH)
-    - Current: Binaries hang before entering main()
-    - Problem: dyld/code signing/entitlements
-    - Impact: Blocks macOS game distribution
-    - Approach: Debug Mach-O generation, test codesigning
-    - Files: `macho_builder.go`, startup code
+13. **macOS ARM64 support** (✅ MOSTLY COMPLETE - 2025-10-26)
+    - ✅ Dynamic linking now works! (GOT/stubs for printf, etc.)
+    - ✅ Fixed LINKEDIT section order (Apple expects: symtab → indirect symtab → strtab)
+    - ✅ Fixed two-level namespace (N_desc now includes library ordinal)
+    - ✅ ldid signing works without corrupting indirect symbol table
+    - Validation: testprograms/const_test.flap compiles and runs successfully
+    - Remaining: Test full game development workflow with SDL3/RayLib5
+    - Files: `macho.go` (LINKEDIT order, N_desc field), `parser.go` (ldid integration)
 
 14. **Complete Linux ARM64 support** (MEDIUM)
     - Goal: Raspberry Pi 4+ and Linux ARM gaming devices

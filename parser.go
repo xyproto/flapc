@@ -14902,20 +14902,17 @@ func (fc *FlapCompiler) writeMachOARM64(outputPath string) error {
 	}
 
 	// Write the executable
-	machoBytes := fc.eb.elf.Bytes() // Note: elf buffer is reused for Mach-O
+	machoBytes := fc.eb.elf.Bytes()
 
 	if err := os.WriteFile(outputPath, machoBytes, 0755); err != nil {
 		return fmt.Errorf("failed to write executable: %v", err)
 	}
 
-	// Sign the binary with ldid (required on modern macOS)
-	// ldid is more lenient than codesign and works with flapc binaries
 	cmd := exec.Command("ldid", "-S", outputPath)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "Warning: ldid signing failed: %v\n%s\n", err, output)
 		}
-		// Don't fail compilation if signing fails - binary might still work
 	}
 
 	if VerboseMode {
