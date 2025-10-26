@@ -2125,28 +2125,12 @@ func (acg *ARM64CodeGen) compilePrintf(call *CallExpr) error {
 					// fcmp d0, d1
 					acg.out.out.writer.WriteBytes([]byte{0x00, 0x20, 0x61, 0x1e})
 
-					// Branch if not equal (non-zero -> "yes")
+					// Branch if equal (zero -> "no")
 					acg.labelCounter++
-					yesJumpPos := acg.eb.text.Len()
-					acg.out.BranchCond("ne", 0) // Placeholder
-
-					// 0.0 -> "no"
-					noOffset := uint64(acg.eb.text.Len())
-					acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
-						offset:     noOffset,
-						symbolName: noLabel,
-					})
-					// ADRP x9, no_label@PAGE
-					acg.out.out.writer.WriteBytes([]byte{0x09, 0x00, 0x00, 0x90})
-					// ADD x9, x9, no_label@PAGEOFF
-					acg.out.out.writer.WriteBytes([]byte{0x29, 0x01, 0x00, 0x91})
-
-					// Jump over "yes" case
-					endJumpPos := acg.eb.text.Len()
-					acg.out.Branch(0) // Placeholder
+					noJumpPos := acg.eb.text.Len()
+					acg.out.BranchCond("eq", 0) // Placeholder
 
 					// Non-zero -> "yes"
-					yesPos := acg.eb.text.Len()
 					yesOffset := uint64(acg.eb.text.Len())
 					acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
 						offset:     yesOffset,
@@ -2157,9 +2141,25 @@ func (acg *ARM64CodeGen) compilePrintf(call *CallExpr) error {
 					// ADD x9, x9, yes_label@PAGEOFF
 					acg.out.out.writer.WriteBytes([]byte{0x29, 0x01, 0x00, 0x91})
 
+					// Jump over "no" case
+					endJumpPos := acg.eb.text.Len()
+					acg.out.Branch(0) // Placeholder
+
+					// Zero -> "no"
+					noPos := acg.eb.text.Len()
+					noOffset := uint64(acg.eb.text.Len())
+					acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
+						offset:     noOffset,
+						symbolName: noLabel,
+					})
+					// ADRP x9, no_label@PAGE
+					acg.out.out.writer.WriteBytes([]byte{0x09, 0x00, 0x00, 0x90})
+					// ADD x9, x9, no_label@PAGEOFF
+					acg.out.out.writer.WriteBytes([]byte{0x29, 0x01, 0x00, 0x91})
+
 					// Patch jumps
 					endPos := acg.eb.text.Len()
-					acg.patchJumpOffset(yesJumpPos, int32(yesPos-yesJumpPos))
+					acg.patchJumpOffset(noJumpPos, int32(noPos-noJumpPos))
 					acg.patchJumpOffset(endJumpPos, int32(endPos-endJumpPos))
 
 					// Store x9 (pointer) at [sp, #offset]
