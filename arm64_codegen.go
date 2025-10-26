@@ -1820,7 +1820,16 @@ func (acg *ARM64CodeGen) compileExit(call *CallExpr) error {
 	}
 
 callExit:
-	// Mark that we need dynamic linking
+	// On macOS, use syscall instead of dynamic linking (chained fixups not working yet)
+	if acg.eb.target.IsMachO() {
+		// mov x16, #1 (sys_exit)
+		acg.out.out.writer.WriteBytes([]byte{0x30, 0x00, 0x80, 0xd2})
+		// svc #0x80
+		acg.out.out.writer.WriteBytes([]byte{0x01, 0x10, 0x00, 0xd4})
+		return nil
+	}
+
+	// Non-macOS: use dynamic linking
 	acg.eb.useDynamicLinking = true
 
 	// Add exit to needed functions list if not already there
