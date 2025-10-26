@@ -26,6 +26,7 @@ func NewOptimizer(timeoutSeconds float64) *Optimizer {
 			&ConstantPropagation{},
 			&DeadCodeElimination{},
 			&FunctionInlining{},
+			&LoopUnrolling{},
 		},
 		maxIter: 10,
 		timeout: time.Duration(timeoutSeconds * float64(time.Second)),
@@ -615,6 +616,125 @@ func (fi *FunctionInlining) substituteExpr(expr Expression, subst map[string]Exp
 			NeedsRecursionCheck: e.NeedsRecursionCheck,
 		}
 
+	default:
+		return expr
+	}
+}
+
+type LoopUnrolling struct{}
+
+func (lu *LoopUnrolling) Name() string {
+	return "Loop Unrolling"
+}
+
+func (lu *LoopUnrolling) Run(program *Program) (bool, error) {
+	changed := false
+	newStatements := []Statement{}
+
+	for _, stmt := range program.Statements {
+		unrolled, wasUnrolled := lu.tryUnrollLoop(stmt)
+		if wasUnrolled {
+			changed = true
+			newStatements = append(newStatements, unrolled...)
+		} else {
+			newStatements = append(newStatements, stmt)
+		}
+	}
+
+	if changed {
+		program.Statements = newStatements
+	}
+	return changed, nil
+}
+
+func (lu *LoopUnrolling) tryUnrollLoop(stmt Statement) ([]Statement, bool) {
+	loopStmt, ok := stmt.(*LoopStmt)
+	if !ok {
+		return nil, false
+	}
+
+	rangeExpr, ok := loopStmt.Iterable.(*RangeExpr)
+	if !ok {
+		return nil, false
+	}
+
+	startNum, ok := rangeExpr.Start.(*NumberExpr)
+	if !ok {
+		return nil, false
+	}
+
+	endNum, ok := rangeExpr.End.(*NumberExpr)
+	if !ok {
+		return nil, false
+	}
+
+	start := int(startNum.Value)
+	end := int(endNum.Value)
+
+	if rangeExpr.Inclusive {
+		end++
+	}
+
+	iterations := end - start
+	if iterations <= 0 || iterations > 8 {
+		return nil, false
+	}
+
+	unrolled := make([]Statement, 0, iterations*len(loopStmt.Body))
+	for i := start; i < end; i++ {
+		for _, bodyStmt := range loopStmt.Body {
+			substituted := lu.substituteIterator(bodyStmt, loopStmt.Iterator, float64(i))
+			unrolled = append(unrolled, substituted)
+		}
+	}
+
+	return unrolled, true
+}
+
+func (lu *LoopUnrolling) substituteIterator(stmt Statement, iterator string, value float64) Statement {
+	switch s := stmt.(type) {
+	case *AssignStmt:
+		return &AssignStmt{
+			Name:      s.Name,
+			Value:     lu.substituteIteratorInExpr(s.Value, iterator, value),
+			Mutable:   s.Mutable,
+			IsUpdate:  s.IsUpdate,
+			Precision: s.Precision,
+			IsHot:     s.IsHot,
+		}
+	case *ExpressionStmt:
+		return &ExpressionStmt{
+			Expr: lu.substituteIteratorInExpr(s.Expr, iterator, value),
+		}
+	default:
+		return stmt
+	}
+}
+
+func (lu *LoopUnrolling) substituteIteratorInExpr(expr Expression, iterator string, value float64) Expression {
+	switch e := expr.(type) {
+	case *IdentExpr:
+		if e.Name == iterator {
+			return &NumberExpr{Value: value}
+		}
+		return e
+	case *BinaryExpr:
+		return &BinaryExpr{
+			Left:     lu.substituteIteratorInExpr(e.Left, iterator, value),
+			Operator: e.Operator,
+			Right:    lu.substituteIteratorInExpr(e.Right, iterator, value),
+		}
+	case *CallExpr:
+		newArgs := make([]Expression, len(e.Args))
+		for i, arg := range e.Args {
+			newArgs[i] = lu.substituteIteratorInExpr(arg, iterator, value)
+		}
+		return &CallExpr{
+			Function:            e.Function,
+			Args:                newArgs,
+			MaxRecursionDepth:   e.MaxRecursionDepth,
+			NeedsRecursionCheck: e.NeedsRecursionCheck,
+		}
 	default:
 		return expr
 	}
