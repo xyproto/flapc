@@ -688,27 +688,35 @@ func (lu *LoopUnrolling) tryUnrollLoop(stmt Statement) ([]Statement, bool) {
 	}
 
 	unrolled := make([]Statement, 0, iterations*len(loopStmt.Body))
-	definedVars := make(map[string]bool)
 	for i := start; i < end; i++ {
 		for _, bodyStmt := range loopStmt.Body {
 			substituted := lu.substituteIterator(bodyStmt, loopStmt.Iterator, float64(i))
-			// Track variable definitions and convert subsequent definitions to updates
-			if assignStmt, ok := substituted.(*AssignStmt); ok {
-				if !assignStmt.IsUpdate && assignStmt.Mutable {
-					if definedVars[assignStmt.Name] {
-						// Already defined in a previous iteration - convert to update
-						assignStmt.IsUpdate = true
-					} else {
-						// First definition
-						definedVars[assignStmt.Name] = true
-					}
-				}
-			}
 			unrolled = append(unrolled, substituted)
 		}
 	}
 
+	// Convert duplicate variable definitions to updates (recursively)
+	seenDefs := make(map[string]bool)
+	lu.fixDuplicateDefinitions(unrolled, seenDefs)
+
 	return unrolled, true
+}
+
+func (lu *LoopUnrolling) fixDuplicateDefinitions(stmts []Statement, seenDefs map[string]bool) {
+	for _, stmt := range stmts {
+		switch s := stmt.(type) {
+		case *AssignStmt:
+			if !s.IsUpdate && s.Mutable {
+				if seenDefs[s.Name] {
+					s.IsUpdate = true
+				} else {
+					seenDefs[s.Name] = true
+				}
+			}
+		case *LoopStmt:
+			lu.fixDuplicateDefinitions(s.Body, seenDefs)
+		}
+	}
 }
 
 func (lu *LoopUnrolling) substituteIterator(stmt Statement, iterator string, value float64) Statement {
