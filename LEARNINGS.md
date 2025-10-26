@@ -359,3 +359,140 @@ fc.out.MovRegToReg("rsp", "r10")  // BROKEN: r10 was clobbered!
 2. Removed buggy printf alignment code - no longer needed since stack is always aligned
 
 **Lesson:** Stack must be 16-byte aligned before any function call. Use proper multiples (16, 32, 48, ...) for stack allocations.
+
+## Variable Scoping and Priority Order in Optimization Passes
+
+When resolving variable/parameter references during optimization, the priority order is:
+
+1. **Lambda parameters** - Highest priority, shadows all outer scopes
+2. **Loop iterators** - Local to loop scope
+3. **Local variables** - Variables defined in the current scope
+4. **Outer scope variables** - Variables from enclosing scopes
+5. **Constants** - Constant propagation applies last, only if not shadowed
+
+### Constant Propagation and Lambda Scoping
+
+**Critical Rule:** Lambda parameters must shadow outer variables during constant propagation.
+
+**Bug Pattern:**
+```flap
+x := 10.5              // Outer variable marked as constant
+square := x => x * x   // Lambda parameter 'x'
+square(4.0)            // WRONG: returns 110.25 (10.5 * 10.5)
+                       // RIGHT: should return 16 (4.0 * 4.0)
+```
+
+**Cause:** Constant propagation replaced lambda parameter `x` with outer constant `10.5`.
+
+**Solution:** When propagating into lambda bodies, temporarily remove lambda parameters from the constants map:
+
+```go
+case *LambdaExpr:
+    savedConstants := make(map[string]Expression)
+    for _, param := range e.Params {
+        if oldVal, existed := cp.constants[param]; existed {
+            savedConstants[param] = oldVal
+            delete(cp.constants, param)
+        }
+    }
+
+    // Propagate into body with parameters shadowing outer constants
+    if newBody, bodyChanged := cp.propagateInExpr(e.Body); bodyChanged {
+        e.Body = newBody
+    }
+
+    // Restore outer constants
+    for param, oldVal := range savedConstants {
+        cp.constants[param] = oldVal
+    }
+```
+
+### Mutation Tracking in Expressions
+
+Constant propagation must detect mutations that occur within expressions, not just in assignment statements.
+
+**Mutations can occur in:**
+- Match expression branches: `n % 2 == 0 { -> n <- n / 2 }`
+- Block expressions
+- Lambda bodies
+- Binary expressions with `<-` operator
+- Postfix expressions: `steps++`
+
+**Implementation:** Add `findMutationsInExprWithDepth()` that recursively searches expressions with depth limiting (max 100 levels) to prevent infinite recursion.
+
+**Example requiring mutation tracking:**
+```flap
+n := 27
+n % 2 == 0 {
+    -> n <- n / 2      // Mutation in match branch
+    ~> n <- (3*n) + 1  // Must be detected
+}
+```
+
+### Dead Code Elimination Expression Handling
+
+DCE must track variable usage in all expression types:
+
+**Critical expression types:**
+- `FStringExpr` - F-string interpolations: `f"Hello {name}"`
+- `DirectCallExpr` - Direct function calls
+- `NamespacedIdentExpr` - Dot notation: `data.field`
+- `PostfixExpr` - Postfix operations: `i++`
+- `VectorExpr` - Vector literals
+- `LoopExpr` - Loop expressions
+- `MultiLambdaExpr` - Pattern matching lambdas
+
+**Bug Pattern:** Variable marked as unused and removed, causing "undefined variable" errors.
+
+**Solution:** Add cases in `markUsedInExpr()` for all expression types that can reference variables.
+
+### Loop Unrolling State Expression Handling
+
+When unrolling loops with loop state expressions (`@i`, `@i1`, `@i2`):
+
+**Loop Level Semantics:**
+- `@i` (LoopLevel=0) - Current loop iterator
+- `@i1` (LoopLevel=1) - Outermost loop iterator
+- `@i2` (LoopLevel=2) - Second level loop iterator
+- etc.
+
+**Unrolling Rules:**
+1. Only unroll loops with constant bounds and ≤ 8 iterations
+2. Check if loop contains nested loops before substitution
+3. When unrolling:
+   - Replace `@i1` (LoopLevel=1) with iteration value
+   - Decrement LoopLevel for `@i2+` (LoopLevel>1)
+   - Only replace `@i` (LoopLevel=0) if no nested loops
+
+**Example:**
+```flap
+@ i in 0..<3 {              // Outer loop
+    @ j in 10..<12 {         // Inner loop
+        printf("@i1=%v, @i2=%v, @i=%v", @i1, @i2, @i)
+    }
+}
+```
+
+After outer loop unrolls:
+- `@i1` → 0, 1, 2 (replaced with values)
+- `@i2` → `@i1` (LoopLevel decremented from 2 to 1)
+- `@i` → `@i` (stays as-is, will be replaced when inner loop unrolls)
+
+### Recursion Safety
+
+All recursive AST traversals must include depth limiting to prevent stack overflow on malformed or adversarial input.
+
+**Implementation Pattern:**
+```go
+const maxRecursionDepth = 100
+
+func traverse(node Node, depth int) {
+    if depth > maxRecursionDepth {
+        return  // Or return error
+    }
+    // Process node...
+    traverse(child, depth+1)
+}
+```
+
+**Apply to:** findMutations, propagateInExpr, markUsedInExpr, and any other recursive AST traversal.

@@ -100,7 +100,7 @@ func (cp *ConstantPropagation) Run(program *Program) (bool, error) {
 
 	// First pass: identify all mutated variables
 	for _, stmt := range program.Statements {
-		cp.findMutations(stmt)
+		cp.findMutationsWithDepth(stmt, 0)
 	}
 
 	// Second pass: propagate constants (skipping mutated variables)
@@ -114,34 +114,42 @@ func (cp *ConstantPropagation) Run(program *Program) (bool, error) {
 	return changed, nil
 }
 
-func (cp *ConstantPropagation) findMutations(stmt Statement) {
+const maxRecursionDepth = 100
+
+func (cp *ConstantPropagation) findMutationsWithDepth(stmt Statement, depth int) {
+	if depth > maxRecursionDepth {
+		return
+	}
 	switch s := stmt.(type) {
 	case *AssignStmt:
 		if s.IsUpdate {
 			cp.mutated[s.Name] = true
 		}
-		cp.findMutationsInExpr(s.Value)
+		cp.findMutationsInExprWithDepth(s.Value, depth+1)
 	case *LoopStmt:
 		for _, bodyStmt := range s.Body {
-			cp.findMutations(bodyStmt)
+			cp.findMutationsWithDepth(bodyStmt, depth+1)
 		}
 	case *ExpressionStmt:
-		cp.findMutationsInExpr(s.Expr)
+		cp.findMutationsInExprWithDepth(s.Expr, depth+1)
 	}
 }
 
-func (cp *ConstantPropagation) findMutationsInExpr(expr Expression) {
+func (cp *ConstantPropagation) findMutationsInExprWithDepth(expr Expression, depth int) {
+	if depth > maxRecursionDepth {
+		return
+	}
 	switch e := expr.(type) {
 	case *MatchExpr:
 		for _, clause := range e.Clauses {
-			cp.findMutationsInExpr(clause.Result)
+			cp.findMutationsInExprWithDepth(clause.Result, depth+1)
 		}
 		if e.DefaultExpr != nil {
-			cp.findMutationsInExpr(e.DefaultExpr)
+			cp.findMutationsInExprWithDepth(e.DefaultExpr, depth+1)
 		}
 	case *BlockExpr:
 		for _, stmt := range e.Statements {
-			cp.findMutations(stmt)
+			cp.findMutationsWithDepth(stmt, depth+1)
 		}
 	case *BinaryExpr:
 		if e.Operator == "<-" {
@@ -149,13 +157,13 @@ func (cp *ConstantPropagation) findMutationsInExpr(expr Expression) {
 				cp.mutated[ident.Name] = true
 			}
 		}
-		cp.findMutationsInExpr(e.Left)
-		cp.findMutationsInExpr(e.Right)
+		cp.findMutationsInExprWithDepth(e.Left, depth+1)
+		cp.findMutationsInExprWithDepth(e.Right, depth+1)
 	case *LambdaExpr:
-		cp.findMutationsInExpr(e.Body)
+		cp.findMutationsInExprWithDepth(e.Body, depth+1)
 	case *CallExpr:
 		for _, arg := range e.Args {
-			cp.findMutationsInExpr(arg)
+			cp.findMutationsInExprWithDepth(arg, depth+1)
 		}
 	case *PostfixExpr:
 		if ident, ok := e.Operand.(*IdentExpr); ok {
@@ -254,10 +262,24 @@ func (cp *ConstantPropagation) propagateInExpr(expr Expression) (Expression, boo
 
 	case *LambdaExpr:
 		changed := false
+
+		savedConstants := make(map[string]Expression)
+		for _, param := range e.Params {
+			if oldVal, existed := cp.constants[param]; existed {
+				savedConstants[param] = oldVal
+				delete(cp.constants, param)
+			}
+		}
+
 		if newBody, bodyChanged := cp.propagateInExpr(e.Body); bodyChanged {
 			e.Body = newBody
 			changed = true
 		}
+
+		for param, oldVal := range savedConstants {
+			cp.constants[param] = oldVal
+		}
+
 		return e, changed
 
 	case *MatchExpr:
