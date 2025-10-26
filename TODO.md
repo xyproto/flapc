@@ -8,6 +8,21 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
 ## Recent Progress
 
+**Loop Unrolling & Pattern Matching Foundation** (2025-10-26)
+- Implemented loop unrolling optimization pass
+  - Unrolls small constant loops (≤8 iterations) to eliminate overhead
+  - Integrated into WPO framework
+  - Transforms `@ i in 0..<4 { f(i) }` → `f(0); f(1); f(2); f(3)`
+  - Test: testprograms/loop_unroll_test.flap
+  - All 316+ tests passing
+- Added pattern matching foundation (WIP)
+  - Syntax: `factorial := (0) => 1 | (n) => n * factorial(n-1)`
+  - Pattern AST nodes: LiteralPattern, VarPattern, WildcardPattern
+  - PatternLambdaExpr with pattern clause support
+  - Parser infrastructure complete
+  - Basic codegen implemented (jump patching TODO)
+  - Files: ast.go, parser.go (pattern parsing & codegen)
+
 **Hot Keyword Foundation** (2025-10-26)
 - Added `hot` keyword to lexer (TOKEN_HOT)
 - Parser recognizes hot function declarations
@@ -259,10 +274,18 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
     - Enables: Python/GDScript-like syntax
     - Files: `lexer.go` (indentation tracking), `parser.go`
 
-15. **Add pattern matching on function parameters** (HIGH)
+15. **Add pattern matching on function parameters** (HIGH) 🚧 IN PROGRESS
+    - Status: FOUNDATION COMPLETE - Parser done, codegen needs jump patching fixes
     - Syntax: `factorial := (0) => 1 | (n) => n * factorial(n-1)`
-    - StandardML-style elegance
-    - Files: `parser.go` lambda parsing, new pattern match system
+    - Features:
+      - ✅ Pattern AST nodes (LiteralPattern, VarPattern, WildcardPattern)
+      - ✅ PatternLambdaExpr and PatternClause structures
+      - ✅ Parser: parsePattern, parseOnePatternClause, tryParsePatternLambda
+      - ✅ Basic codegen: generatePatternLambdaFunctions()
+      - ⚠️  TODO: Jump patching for proper control flow between clauses
+      - ⚠️  TODO: Test cases and validation
+    - StandardML-style elegance for functional programming
+    - Files: `ast.go` (patterns), `parser.go:2797-2895` (parsing), `parser.go:8666-8775` (codegen)
 
 16. **Add let bindings for local scope** (MEDIUM)
     - Syntax: `let rec loop = (n, acc) => ...`
