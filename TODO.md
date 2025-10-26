@@ -6,6 +6,28 @@ End goal: Publishable Steam games with Steamworks integration.
 
 Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
+## Critical Bugs
+
+1. **Fix inner lambda capture** (HIGH) 🐛 BUG
+   - Status: Segfaults when inner lambda captures outer lambda variable
+   - Verified: `outer = x => { inner = () => x + 1; inner() }` crashes (exit code 139)
+   - Impact: Prevents functional programming patterns (closures within closures)
+   - Files: `parser.go` (closure compilation), likely environment handling
+
+2. **Implement arena runtime** (HIGH) 🐛 INCOMPLETE
+   - Status: Syntax parses, compiles, but runtime not implemented
+   - Current: Just calls alloc(), no automatic free on arena exit
+   - Verified: Memory not freed when arena block ends
+   - Impact: Memory leaks if developers expect arena semantics
+   - Files: `parser.go` (arena codegen needs runtime integration)
+
+3. **Extend FFI to support float/pointer args** (MEDIUM) 🐛 LIMITATION
+   - Status: Only integer args/return work, float/pointer crash
+   - Verified: `libc.sqrt(25.0)` and `libc.malloc(100)` both crash
+   - Current: FFI compilation has float arg code but doesn't work at runtime
+   - Impact: Limits C library integration (no math functions, no pointer passing)
+   - Files: `parser.go` (compileCFunctionCall needs ABI fixes)
+
 ## Critical - Game Development
 
 1. **Implement hot code reload** (HIGH) 🎮 GAMEDEV
@@ -37,12 +59,13 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
    - Performance cost: Negligible with WPO (functions get inlined)
    - Files: `parser.go` (hot table, indirection), `optimizer.go` (DCE, constant propagation, loop unrolling)
 
-   **Phase 2: File Watching** (MEDIUM)
-   - Implement inotify-based file watcher for Linux
-   - Watch all .flap source files loaded during compilation
-   - Debounce file changes (500ms delay to batch rapid edits)
-   - Trigger recompilation on file modification
-   - Files: New `filewatcher.go`, integration in `main.go`
+   **Phase 2: File Watching** (MEDIUM) - ✅ COMPLETE
+   - ✅ Inotify-based file watcher for Linux implemented
+   - ✅ Watches all .flap source files loaded during compilation
+   - ✅ 500ms debounce for file changes (batches rapid edits)
+   - ✅ Recompilation triggered on file modification
+   - ✅ --watch flag added to compiler
+   - Files: `filewatcher.go`, `main.go` (watchAndRecompile)
 
    **Phase 3: Incremental Recompilation** (HIGH)
    - Parse only changed .flap files
