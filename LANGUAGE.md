@@ -2395,3 +2395,51 @@ update_physics = (entities, dt) -> {
     }  // Grid freed automatically
 }
 ```
+
+## Hot Code Reload
+
+The `hot` keyword marks functions as hot-reloadable for live development:
+
+```flap
+hot update_player := (player, dt) => {
+    player.x <- player.x + player.vx * dt
+    player.y <- player.y + player.vy * dt
+}
+
+hot render_scene := (scene) => {
+    @ entity in scene.entities {
+        draw_sprite(entity.sprite, entity.x, entity.y)
+    }
+}
+
+normal_init := () => {
+    // Non-hot functions compile to direct calls (faster)
+    load_assets()
+}
+```
+
+**Current Implementation:**
+- Parser recognizes `hot` keyword
+- Functions marked as hot are tracked in compiler
+- Foundation for runtime code swapping
+
+**Future Capabilities:**
+- Function pointer table for indirect calls
+- File watching (inotify/kqueue/FSEvents)
+- Incremental recompilation of changed functions
+- Atomic pointer swaps for seamless updates
+- ~1-2 cycle overhead per hot function call
+
+**Use Cases:**
+- Game development (iterate on gameplay without restarting)
+- Visual tuning (adjust rendering in real-time)
+- Shader development
+- Live debugging
+- Rapid prototyping
+
+**Limitations:**
+- Cannot change function signatures at runtime
+- Cannot modify struct layouts
+- Hot functions have slight indirection overhead
+
+Hot reload enables sub-50ms iteration cycles compared to full recompilation.

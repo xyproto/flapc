@@ -1,0 +1,13 @@
+hot update_position := (x, dt) => x + dt * 10
+
+hot render := (frame) => frame * 2
+
+normal_function := (x) => x + 1
+
+result1 := update_position(100, 0.5)
+result2 := render(5)
+result3 := normal_function(10)
+
+printf("update_position(100, 0.5) = %.0f\n", result1)
+printf("render(5) = %.0f\n", result2)
+printf("normal_function(10) = %.0f\n", result3)
