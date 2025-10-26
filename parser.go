@@ -4671,6 +4671,9 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 }
 
 func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
+	// Enable dynamic linking for ELF (required for WriteCompleteDynamicELF)
+	fc.eb.useDynamicLinking = true
+
 	// Build pltFunctions list from all called functions
 	// Start with essential functions that runtime helpers need
 	pltFunctions := []string{"printf", "exit", "malloc"}
