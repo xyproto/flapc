@@ -1171,15 +1171,15 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 
 	// Write __got section (if dynamic linking)
 	if eb.useDynamicLinking && numImports > 0 {
-		// GOT entries use chained fixup format DYLD_CHAINED_PTR_64 (format 2)
-		// Format: bit 63=1 (bind), bits 51-62=next (offset/8), bits 0-23=ordinal
+		// GOT entries use chained fixup format DYLD_CHAINED_PTR_64_OFFSET (format 4)
+		// Format: bit 63=1 (bind), bits 62-51=next (offset/8), bits 31-0=ordinal
 		for i := uint32(0); i < numImports; i++ {
 			// Calculate next: 0 if last entry, else 1 (next entry is 8 bytes away, 8/8=1)
 			next := uint64(0)
 			if i < numImports-1 {
 				next = 1
 			}
-			// Pack: bind(1) | next(bits 51-62) | ordinal(bits 0-23)
+			// Pack: bind(1) | next(bits 62-51) | ordinal(bits 31-0)
 			chainedPtr := uint64(0x8000000000000000) | (next << 51) | uint64(i)
 			binary.Write(&buf, binary.LittleEndian, chainedPtr)
 		}
@@ -1251,8 +1251,8 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		startsSegment := DyldChainedStartsInSegment{
 			Size:            uint32(binary.Size(DyldChainedStartsInSegment{}) + 2),
 			PageSize:        0x4000,                              // 16KB pages (ARM64 standard)
-			PointerFormat:   DYLD_CHAINED_PTR_64_OFFSET,          // Format 4
-			SegmentOffset:   rodataAddr,                          // VM address where __DATA segment begins
+			PointerFormat:   DYLD_CHAINED_PTR_ARM64E_FIRMWARE,    // Format 6 (matches Clang)
+			SegmentOffset:   0x4000,                              // File offset = 16384 (matches VM addr lower bits)
 			MaxValidPointer: 0,
 			PageCount:       1, // GOT fits in one page
 		}
