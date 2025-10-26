@@ -769,6 +769,11 @@ func (lu *LoopUnrolling) substituteIteratorInExpr(expr Expression, iterator stri
 			MaxRecursionDepth:   e.MaxRecursionDepth,
 			NeedsRecursionCheck: e.NeedsRecursionCheck,
 		}
+	case *CastExpr:
+		return &CastExpr{
+			Expr: lu.substituteIteratorInExpr(e.Expr, iterator, value),
+			Type: e.Type,
+		}
 	default:
 		return expr
 	}
