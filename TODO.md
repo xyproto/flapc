@@ -8,25 +8,19 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
 ## Critical Bugs
 
-1. **Fix inner lambda capture** (HIGH) 🐛 BUG
-   - Status: Segfaults when inner lambda captures outer lambda variable
-   - Verified: `outer = x => { inner = () => x + 1; inner() }` crashes (exit code 139)
-   - Impact: Prevents functional programming patterns (closures within closures)
-   - Files: `parser.go` (closure compilation), likely environment handling
-
-2. **Implement arena runtime** (HIGH) 🐛 INCOMPLETE
-   - Status: Syntax parses, compiles, but runtime not implemented
-   - Current: Just calls alloc(), no automatic free on arena exit
-   - Verified: Memory not freed when arena block ends
-   - Impact: Memory leaks if developers expect arena semantics
-   - Files: `parser.go` (arena codegen needs runtime integration)
-
-3. **Extend FFI to support float/pointer args** (MEDIUM) 🐛 LIMITATION
+1. **Extend FFI to support float/pointer args** (HIGH) 🐛 LIMITATION
    - Status: Only integer args/return work, float/pointer crash
    - Verified: `libc.sqrt(25.0)` and `libc.malloc(100)` both crash
    - Current: FFI compilation has float arg code but doesn't work at runtime
    - Impact: Limits C library integration (no math functions, no pointer passing)
    - Files: `parser.go` (compileCFunctionCall needs ABI fixes)
+
+2. **Fix nested arena crash** (MEDIUM) 🐛 BUG
+   - Status: Basic arenas work, but nested arenas cause double-free
+   - Verified: Crashes with "free(): invalid pointer" when outer arena exits
+   - Current: Arena runtime implemented but meta-arena management has issues
+   - Impact: Can't use nested arenas (single-level arenas work fine)
+   - Files: `parser.go` (compileArenaStmt, generateArenaEnsureCapacity)
 
 ## Critical - Game Development
 

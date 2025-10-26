@@ -220,9 +220,8 @@ Arch Linux x86-64 only. Other platforms (Windows, macOS, ARM64, RISC-V) planned 
 
 ## Known Issues
 
-- Inner lambdas can't capture outer lambda variables (segfaults)
 - FFI limited to integer args/return (float/pointer crash)
-- Arena syntax parsed but runtime not implemented (no auto-free)
+- Nested arenas crash with double-free (single-level arenas work fine)
 
 See [TODO.md](TODO.md) for roadmap.
 
