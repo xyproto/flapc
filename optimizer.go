@@ -719,10 +719,13 @@ func (lu *LoopUnrolling) tryUnrollLoop(stmt Statement) ([]Statement, bool) {
 		return nil, false
 	}
 
+	// Check if this loop contains nested loops
+	hasNestedLoops := lu.containsNestedLoops(loopStmt.Body)
+
 	unrolled := make([]Statement, 0, iterations*len(loopStmt.Body))
 	for i := start; i < end; i++ {
 		for _, bodyStmt := range loopStmt.Body {
-			substituted := lu.substituteIterator(bodyStmt, loopStmt.Iterator, float64(i))
+			substituted := lu.substituteIterator(bodyStmt, loopStmt.Iterator, float64(i), hasNestedLoops)
 			unrolled = append(unrolled, substituted)
 		}
 	}
@@ -732,6 +735,15 @@ func (lu *LoopUnrolling) tryUnrollLoop(stmt Statement) ([]Statement, bool) {
 	lu.fixDuplicateDefinitions(unrolled, seenDefs)
 
 	return unrolled, true
+}
+
+func (lu *LoopUnrolling) containsNestedLoops(stmts []Statement) bool {
+	for _, stmt := range stmts {
+		if _, isLoop := stmt.(*LoopStmt); isLoop {
+			return true
+		}
+	}
+	return false
 }
 
 func (lu *LoopUnrolling) fixDuplicateDefinitions(stmts []Statement, seenDefs map[string]bool) {
@@ -751,12 +763,12 @@ func (lu *LoopUnrolling) fixDuplicateDefinitions(stmts []Statement, seenDefs map
 	}
 }
 
-func (lu *LoopUnrolling) substituteIterator(stmt Statement, iterator string, value float64) Statement {
+func (lu *LoopUnrolling) substituteIterator(stmt Statement, iterator string, value float64, hasNestedLoops bool) Statement {
 	switch s := stmt.(type) {
 	case *AssignStmt:
 		return &AssignStmt{
 			Name:      s.Name,
-			Value:     lu.substituteIteratorInExpr(s.Value, iterator, value),
+			Value:     lu.substituteIteratorInExpr(s.Value, iterator, value, hasNestedLoops),
 			Mutable:   s.Mutable,
 			IsUpdate:  s.IsUpdate,
 			Precision: s.Precision,
@@ -764,17 +776,17 @@ func (lu *LoopUnrolling) substituteIterator(stmt Statement, iterator string, val
 		}
 	case *ExpressionStmt:
 		return &ExpressionStmt{
-			Expr: lu.substituteIteratorInExpr(s.Expr, iterator, value),
+			Expr: lu.substituteIteratorInExpr(s.Expr, iterator, value, hasNestedLoops),
 		}
 	case *LoopStmt:
 		// Substitute iterator in nested loop's iterable expression
 		newBody := make([]Statement, len(s.Body))
 		for i, bodyStmt := range s.Body {
-			newBody[i] = lu.substituteIterator(bodyStmt, iterator, value)
+			newBody[i] = lu.substituteIterator(bodyStmt, iterator, value, hasNestedLoops)
 		}
 		return &LoopStmt{
 			Iterator:      s.Iterator,
-			Iterable:      lu.substituteIteratorInExpr(s.Iterable, iterator, value),
+			Iterable:      lu.substituteIteratorInExpr(s.Iterable, iterator, value, hasNestedLoops),
 			Body:          newBody,
 			MaxIterations: s.MaxIterations,
 			NeedsMaxCheck: s.NeedsMaxCheck,
@@ -785,7 +797,7 @@ func (lu *LoopUnrolling) substituteIterator(stmt Statement, iterator string, val
 	}
 }
 
-func (lu *LoopUnrolling) substituteIteratorInExpr(expr Expression, iterator string, value float64) Expression {
+func (lu *LoopUnrolling) substituteIteratorInExpr(expr Expression, iterator string, value float64, hasNestedLoops bool) Expression {
 	switch e := expr.(type) {
 	case *IdentExpr:
 		if e.Name == iterator {
@@ -794,14 +806,14 @@ func (lu *LoopUnrolling) substituteIteratorInExpr(expr Expression, iterator stri
 		return e
 	case *BinaryExpr:
 		return &BinaryExpr{
-			Left:     lu.substituteIteratorInExpr(e.Left, iterator, value),
+			Left:     lu.substituteIteratorInExpr(e.Left, iterator, value, hasNestedLoops),
 			Operator: e.Operator,
-			Right:    lu.substituteIteratorInExpr(e.Right, iterator, value),
+			Right:    lu.substituteIteratorInExpr(e.Right, iterator, value, hasNestedLoops),
 		}
 	case *CallExpr:
 		newArgs := make([]Expression, len(e.Args))
 		for i, arg := range e.Args {
-			newArgs[i] = lu.substituteIteratorInExpr(arg, iterator, value)
+			newArgs[i] = lu.substituteIteratorInExpr(arg, iterator, value, hasNestedLoops)
 		}
 		return &CallExpr{
 			Function:            e.Function,
@@ -811,9 +823,26 @@ func (lu *LoopUnrolling) substituteIteratorInExpr(expr Expression, iterator stri
 		}
 	case *CastExpr:
 		return &CastExpr{
-			Expr: lu.substituteIteratorInExpr(e.Expr, iterator, value),
+			Expr: lu.substituteIteratorInExpr(e.Expr, iterator, value, hasNestedLoops),
 			Type: e.Type,
 		}
+	case *LoopStateExpr:
+		if e.Type == "i" {
+			if e.LoopLevel == 1 {
+				// Always replace @i1 (outermost loop reference) with the value
+				return &NumberExpr{Value: value}
+			} else if e.LoopLevel > 1 {
+				// Decrement loop levels deeper than outermost
+				return &LoopStateExpr{
+					Type:      e.Type,
+					LoopLevel: e.LoopLevel - 1,
+				}
+			} else if e.LoopLevel == 0 && !hasNestedLoops {
+				// Only replace @i (current loop) if there are no nested loops
+				return &NumberExpr{Value: value}
+			}
+		}
+		return e
 	default:
 		return expr
 	}
