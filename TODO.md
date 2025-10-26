@@ -8,6 +8,15 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
 ## Recent Progress
 
+**Hot Keyword Foundation** (2025-10-26)
+- Added `hot` keyword to lexer (TOKEN_HOT)
+- Parser recognizes hot function declarations
+- Compiler tracks hot functions in hotFunctions map
+- Test suite includes hot keyword test (testprograms/hot_keyword_test.flap)
+- Documentation in LANGUAGE.md with examples and use cases
+- Foundation for future hot reload implementation
+- All 316 tests passing
+
 **Precalculated Stack Frames** (2025-10-26)
 - Implemented upfront stack frame allocation at function entry
 - Added maxStackOffset tracking during symbol collection
@@ -118,11 +127,11 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
    - Impact: Required for commercial Steam releases
    - Files: New `steamworks.go`, FFI extensions
 
-6. **Implement hot code reload** (HIGH) 🎮 GAMEDEV
+6. **Implement hot code reload** (HIGH) 🎮 GAMEDEV - IN PROGRESS
    - Goal: Recompile and hot-swap functions without restarting executable
    - Method: Self-modifying code via function pointer table + mmap
    - Subtasks:
-     a. Add `hot` keyword to lexer/parser (mark hot-swappable functions)
+     a. ✅ Add `hot` keyword to lexer/parser (mark hot-swappable functions)
      b. Generate function pointer table for hot functions
      c. Compile hot functions with indirection (call through table)
      d. Implement file watching (inotify/kqueue/FSEvents)
