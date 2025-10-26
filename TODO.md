@@ -29,12 +29,13 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
    - ✅ Indirect calling infrastructure in place
      * Closure-based calling through hot function table
      * Works when WPO inlines functions (default behavior)
-   - ✅ Loop unrolling fix for variable scoping
-     * Fixed "already defined" errors in unrolled loops with local variables
-     * Converts subsequent variable definitions to updates across iterations
-     * Handles nested loops correctly with iterator substitution
+   - ✅ Optimizer fixes for all expression types
+     * DCE: Handle all expression types (FStringExpr, DirectCallExpr, PostfixExpr, etc.)
+     * Constant propagation: Lambda parameter shadowing, mutation tracking in expressions
+     * Loop unrolling: LoopStateExpr (@i, @i1, @i2) handling with level decrementing
+     * Recursion safety: Depth limiting (maxRecursionDepth = 100) to prevent hangs
    - Performance cost: Negligible with WPO (functions get inlined)
-   - Files: `parser.go` (hot table, indirection), `optimizer.go` (DCE, loop unrolling fix)
+   - Files: `parser.go` (hot table, indirection), `optimizer.go` (DCE, constant propagation, loop unrolling)
 
    **Phase 2: File Watching** (MEDIUM)
    - Implement inotify-based file watcher for Linux

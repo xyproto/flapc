@@ -4,7 +4,7 @@
 
 Compiler for Flap, a functional language targeting game development. Generates native x86-64 machine code directly—no LLVM, no GCC, no runtime.
 
-**Current status:** x86-64 Arch Linux stable (315/315 tests passing).
+**Current status:** x86-64 Arch Linux stable (435+ tests passing, all optimizations working).
 
 ## What's Interesting
 
@@ -213,7 +213,6 @@ Arch Linux x86-64 only. Other platforms (Windows, macOS, ARM64, RISC-V) planned 
 
 ## Known Issues
 
-- Nested loops with loop-local variables broken
 - Inner lambdas can't capture outer lambda variables
 - FFI limited to integer args/return (no float/pointer/struct)
 - Unsafe blocks missing multiply/divide/bitwise
@@ -230,11 +229,20 @@ See [TODO.md](TODO.md) for roadmap.
 
 No other documentation exists.
 
+## Recent Improvements
+
+**Optimizer Enhancements:**
+- Dead Code Elimination now handles all expression types
+- Constant propagation respects lambda parameter shadowing
+- Loop unrolling supports loop state expressions (@i, @i1, @i2)
+- Recursion depth limiting prevents compiler hangs
+- All 435+ tests passing with optimizations enabled
+
 ## Goals
 
 Short-term:
-1. Fix nested loop bug
-2. Implement closure capture
+1. Implement hot code reload (Phase 2: File watching)
+2. Implement closure capture for nested lambdas
 3. Enhance FFI (float/pointer args for SDL3/RayLib5)
 4. Unsafe block improvements (multiply/divide, return values)
 
