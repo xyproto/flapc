@@ -535,15 +535,11 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	prelimLoadCmdsSize += uint32(binary.Size(SymtabCommand{}))          // LC_SYMTAB
 	prelimLoadCmdsSize += uint32(binary.Size(LinkEditDataCommand{}))    // LC_CODE_SIGNATURE
 
-	if eb.useDynamicLinking {
-		dylibPath := "/usr/lib/libSystem.B.dylib\x00"
-		dylibCmdSize := (uint32(binary.Size(LoadCommand{})+16+len(dylibPath)) + 7) &^ 7
-		prelimLoadCmdsSize += dylibCmdSize // LC_LOAD_DYLIB
-
-		if numImports > 0 {
-			prelimLoadCmdsSize += uint32(binary.Size(DysymtabCommand{})) // LC_DYSYMTAB
-		}
-	}
+	// ALL macOS executables must link libSystem (macOS doesn't support true static linking)
+	dylibPath := "/usr/lib/libSystem.B.dylib\x00"
+	dylibCmdSize := (uint32(binary.Size(LoadCommand{})+16+len(dylibPath)) + 7) &^ 7
+	prelimLoadCmdsSize += dylibCmdSize                              // LC_LOAD_DYLIB
+	prelimLoadCmdsSize += uint32(binary.Size(DysymtabCommand{}))    // LC_DYSYMTAB (always required)
 
 	fileHeaderSize := headerSize + prelimLoadCmdsSize
 
@@ -594,37 +590,37 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	numDefinedSyms := uint32(0)
 	numUndefSyms := uint32(0)
 
+	// ALL macOS executables need at minimum these 2 symbols for code signing to work:
+	// 1. __mh_execute_header - the Mach-O header symbol
+	mhStrOffset := uint32(strtab.Len())
+	strtab.WriteString("__mh_execute_header")
+	strtab.WriteByte(0)
+	mhSym := Nlist64{
+		N_strx:  mhStrOffset,
+		N_type:  N_SECT | N_EXT, // Defined external symbol in section 1
+		N_sect:  1,              // Section 1 (__text)
+		N_desc:  0,
+		N_value: textAddr, // Address of Mach-O header
+	}
+	symtab = append(symtab, mhSym)
+	numDefinedSyms++
+
+	// 2. main - the program entry point
+	mainStrOffset := uint32(strtab.Len())
+	strtab.WriteString("_main")
+	strtab.WriteByte(0)
+	mainSym := Nlist64{
+		N_strx:  mainStrOffset,
+		N_type:  N_SECT | N_EXT, // Defined external symbol in section 1
+		N_sect:  1,              // Section 1 (__text)
+		N_desc:  0,
+		N_value: textSectAddr, // Entry point at start of __text
+	}
+	symtab = append(symtab, mainSym)
+	numDefinedSyms++
+
+	// 3. Add undefined external symbols for dynamic linking (if used)
 	if eb.useDynamicLinking && numImports > 0 {
-		// 1. Add defined external symbols (must come first)
-		// __mh_execute_header - the Mach-O header symbol
-		mhStrOffset := uint32(strtab.Len())
-		strtab.WriteString("__mh_execute_header")
-		strtab.WriteByte(0)
-		mhSym := Nlist64{
-			N_strx:  mhStrOffset,
-			N_type:  N_SECT | N_EXT, // Defined external symbol in section 1
-			N_sect:  1,              // Section 1 (__text)
-			N_desc:  0,
-			N_value: textAddr, // Address of Mach-O header
-		}
-		symtab = append(symtab, mhSym)
-		numDefinedSyms++
-
-		// main - the program entry point
-		mainStrOffset := uint32(strtab.Len())
-		strtab.WriteString("main")
-		strtab.WriteByte(0)
-		mainSym := Nlist64{
-			N_strx:  mainStrOffset,
-			N_type:  N_SECT | N_EXT, // Defined external symbol in section 1
-			N_sect:  1,              // Section 1 (__text)
-			N_desc:  0,
-			N_value: textSectAddr, // Entry point at start of __text
-		}
-		symtab = append(symtab, mainSym)
-		numDefinedSyms++
-
-		// 2. Add undefined external symbols (must come after defined symbols)
 		for _, funcName := range eb.neededFunctions {
 			strOffset := uint32(strtab.Len())
 			// macOS symbols need underscore prefix
@@ -925,8 +921,8 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		ncmds++
 	}
 
-	// 7. LC_LOAD_DYLIB for libSystem.B.dylib (required for any macOS executable)
-	if eb.useDynamicLinking {
+	// 7. LC_LOAD_DYLIB for libSystem.B.dylib (REQUIRED - macOS doesn't support true static linking)
+	{
 		dylibPath := "/usr/lib/libSystem.B.dylib\x00"
 		cmdSize := uint32(binary.Size(LoadCommand{}) + 16 + len(dylibPath))
 		cmdSize = (cmdSize + 7) &^ 7 // 8-byte align
@@ -936,10 +932,10 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 			CmdSize: cmdSize,
 		}
 		binary.Write(&loadCmdsBuf, binary.LittleEndian, &cmd)
-		binary.Write(&loadCmdsBuf, binary.LittleEndian, uint32(24))       // name offset
-		binary.Write(&loadCmdsBuf, binary.LittleEndian, uint32(0))        // timestamp
-		binary.Write(&loadCmdsBuf, binary.LittleEndian, uint32(0x5000000)) // current version (e.g., 1280.0.0)
-		binary.Write(&loadCmdsBuf, binary.LittleEndian, uint32(0x10000))  // compatibility version 1.0.0
+		binary.Write(&loadCmdsBuf, binary.LittleEndian, uint32(24))        // name offset
+		binary.Write(&loadCmdsBuf, binary.LittleEndian, uint32(0))         // timestamp
+		binary.Write(&loadCmdsBuf, binary.LittleEndian, uint32(0x54c0000)) // current version 1356.0.0
+		binary.Write(&loadCmdsBuf, binary.LittleEndian, uint32(0x10000))   // compatibility version 1.0.0
 		loadCmdsBuf.WriteString(dylibPath)
 
 		// Pad to alignment
@@ -963,15 +959,20 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		ncmds++
 	}
 
-	// 9. LC_DYSYMTAB (if dynamic linking)
-	if eb.useDynamicLinking && numImports > 0 {
+	// 9. LC_DYSYMTAB (required for all macOS executables)
+	{
+		indirectSymOff := uint32(0)
+		if eb.useDynamicLinking && numImports > 0 {
+			indirectSymOff = uint32(linkeditFileOffset) + symtabSize + strtabSize + alignmentPadding
+		}
+
 		dysymtabCmd := DysymtabCommand{
 			Cmd:            LC_DYSYMTAB,
 			CmdSize:        uint32(binary.Size(DysymtabCommand{})),
 			ILocalSym:      0,
 			NLocalSym:      0,
 			IExtDefSym:     0,              // External defined symbols start at index 0
-			NExtDefSym:     numDefinedSyms, // Count of external defined symbols
+			NExtDefSym:     numDefinedSyms, // Count of external defined symbols (always >= 2)
 			IUndefSym:      numDefinedSyms, // Undefined symbols start after defined symbols
 			NUndefSym:      numUndefSyms,   // Count of undefined symbols
 			TOCOff:         0,
@@ -980,7 +981,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 			NModTab:        0,
 			ExtRefSymOff:   0,
 			NExtRefSyms:    0,
-			IndirectSymOff: uint32(linkeditFileOffset) + symtabSize + strtabSize + alignmentPadding,
+			IndirectSymOff: indirectSymOff,
 			NIndirectSyms:  uint32(len(indirectSymTab)),
 			ExtRelOff:      0,
 			NExtRel:        0,
@@ -1017,11 +1018,8 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		fmt.Fprintf(os.Stderr, "DEBUG: About to write Mach-O header with NCmds=%d, SizeOfCmds=%d\n", ncmds, loadCmdsSize)
 	}
 
-	// Set appropriate flags based on whether we're using dynamic linking
-	flags := uint32(MH_PIE) // Always position-independent on macOS
-	if eb.useDynamicLinking {
-		flags |= MH_NOUNDEFS | MH_DYLDLINK | MH_TWOLEVEL
-	}
+	// Set Mach-O header flags - ALL macOS executables are dynamically linked (at minimum to libSystem)
+	flags := uint32(MH_PIE | MH_NOUNDEFS | MH_DYLDLINK | MH_TWOLEVEL)
 
 	if debug || VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG: Mach-O header flags = 0x%08x (MH_PIE=0x%x, useDynamicLinking=%v)\n", flags, MH_PIE, eb.useDynamicLinking)
