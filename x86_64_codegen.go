@@ -42,10 +42,10 @@ func (x *X86_64CodeGen) Syscall() {
 
 func (x *X86_64CodeGen) CallSymbol(symbol string) {
 	x.write(0xE8)
-	
+
 	callPos := x.eb.text.Len()
 	x.writeUnsigned(0x00000000)
-	
+
 	x.eb.callPatches = append(x.eb.callPatches, CallPatch{
 		position:   callPos,
 		targetName: symbol,

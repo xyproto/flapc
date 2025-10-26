@@ -40,7 +40,7 @@ type CodeGenerator interface {
 	MovImmToReg(dst, imm string)
 	MovMemToReg(dst, symbol string, offset int32)
 	MovRegToMem(src, symbol string, offset int32)
-	
+
 	// ===== Integer Arithmetic =====
 	AddRegToReg(dst, src string)
 	AddImmToReg(dst string, imm int64)
@@ -51,18 +51,18 @@ type CodeGenerator interface {
 	IncReg(dst string)
 	DecReg(dst string)
 	NegReg(dst string)
-	
+
 	// ===== Bitwise Operations =====
 	XorRegWithReg(dst, src string)
 	XorRegWithImm(dst string, imm int64)
 	AndRegWithReg(dst, src string)
 	OrRegWithReg(dst, src string)
 	NotReg(dst string)
-	
+
 	// ===== Stack Operations =====
 	PushReg(reg string)
 	PopReg(reg string)
-	
+
 	// ===== Control Flow =====
 	JumpConditional(condition JumpCondition, offset int32)
 	JumpUnconditional(offset int32)
@@ -70,15 +70,15 @@ type CodeGenerator interface {
 	CallRelative(offset int32)
 	CallRegister(reg string)
 	Ret()
-	
+
 	// ===== Comparisons =====
 	CmpRegToReg(reg1, reg2 string)
 	CmpRegToImm(reg string, imm int64)
-	
+
 	// ===== Address Calculation =====
 	LeaSymbolToReg(dst, symbol string)
 	LeaImmToReg(dst, base string, offset int32)
-	
+
 	// ===== Floating Point (SIMD) =====
 	MovXmmToMem(src, base string, offset int32)
 	MovMemToXmm(dst, base string, offset int32)
@@ -91,10 +91,10 @@ type CodeGenerator interface {
 	MulpdXmm(dst, src string)
 	DivpdXmm(dst, src string)
 	Ucomisd(reg1, reg2 string)
-	
+
 	// ===== System Calls =====
 	Syscall()
-	
+
 	// TODO: Add remaining methods as needed during migration:
 	// - Shift operations (ShlRegByImm, ShrRegByImm, etc.)
 	// - More SIMD operations (VAddPDVectorToVector, etc.)

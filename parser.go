@@ -68,15 +68,15 @@ func (p *Parser) parseNumberLiteral(s string) float64 {
 }
 
 type Parser struct {
-	lexer        *Lexer
-	current      Token
-	peek         Token
-	filename     string
-	source       string
-	loopDepth    int                   // Current loop nesting level (0 = not in loop, 1 = outer loop, etc.)
-	constants    map[string]Expression // Compile-time constants (immutable literals)
-	aliases      map[string]TokenType  // Keyword aliases (e.g., "for" -> TOKEN_AT)
-	speculative  bool                  // True when in speculative parsing mode (suppress errors)
+	lexer       *Lexer
+	current     Token
+	peek        Token
+	filename    string
+	source      string
+	loopDepth   int                   // Current loop nesting level (0 = not in loop, 1 = outer loop, etc.)
+	constants   map[string]Expression // Compile-time constants (immutable literals)
+	aliases     map[string]TokenType  // Keyword aliases (e.g., "for" -> TOKEN_AT)
+	speculative bool                  // True when in speculative parsing mode (suppress errors)
 }
 
 type parserState struct {
@@ -4322,42 +4322,42 @@ type LoopInfo struct {
 
 // Code Generator for Flap
 type FlapCompiler struct {
-	eb                  *ExecutableBuilder
-	out                 *Out
-	variables           map[string]int               // variable name -> stack offset
-	mutableVars         map[string]bool              // variable name -> is mutable
-	varTypes            map[string]string            // variable name -> "map" or "list"
-	sourceCode          string                       // Store source for recompilation
-	usedFunctions       map[string]bool              // Track which functions are called
-	unknownFunctions    map[string]bool              // Track functions called but not defined
-	callOrder           []string                     // Track order of function calls
-	cImports            map[string]string            // Track C imports: alias -> library name
-	cLibHandles         map[string]string            // Track library handles: library -> handle var name
-	cConstants          map[string]*CHeaderConstants // Track C constants: alias -> constants
-	stringCounter       int                          // Counter for unique string labels
-	stackOffset         int                          // Current stack offset for variables (logical)
-	maxStackOffset      int                          // Maximum stack offset reached (for frame allocation)
-	runtimeStack        int                          // Actual runtime stack usage (updated during compilation)
-	loopBaseOffsets     map[int]int                  // Loop label -> stackOffset before loop body (for state calculation)
-	labelCounter        int                          // Counter for unique labels (if/else, loops, etc)
-	lambdaCounter       int                          // Counter for unique lambda function names
-	activeLoops         []LoopInfo                   // Stack of active loops (for @N jump resolution)
-	lambdaFuncs         []LambdaFunc                 // List of lambda functions to generate
-	patternLambdaFuncs  []PatternLambdaFunc          // List of pattern lambda functions to generate
-	lambdaOffsets       map[string]int               // Lambda name -> offset in .text
-	currentLambda       *LambdaFunc                  // Currently compiling lambda (for "me" self-reference)
-	lambdaBodyStart     int                          // Offset where lambda body starts (for tail recursion)
-	hasExplicitExit     bool                         // Track if program contains explicit exit() call
-	debug               bool                         // Enable debug output (set via DEBUG_FLAP env var)
-	cContext            bool                         // When true, compile expressions for C FFI (affects strings, pointers, ints)
-	currentArena        int                          // Arena depth (0=none, 1=first arena, 2=nested, etc.)
-	usesArenas          bool                         // Track if program uses any arena blocks
-	cacheEnabledLambdas map[string]bool              // Track which lambdas use cme
-	deferredExprs       [][]Expression               // Stack of deferred expressions per scope (LIFO order)
-	memoCaches          map[string]bool              // Track memoization caches that need storage allocation
-	currentAssignName   string                       // Name of variable being assigned (for lambda naming)
-	inTailPosition      bool                         // True when compiling expression in tail position
-	hotFunctions        map[string]bool              // Track hot-reloadable functions
+	eb                   *ExecutableBuilder
+	out                  *Out
+	variables            map[string]int               // variable name -> stack offset
+	mutableVars          map[string]bool              // variable name -> is mutable
+	varTypes             map[string]string            // variable name -> "map" or "list"
+	sourceCode           string                       // Store source for recompilation
+	usedFunctions        map[string]bool              // Track which functions are called
+	unknownFunctions     map[string]bool              // Track functions called but not defined
+	callOrder            []string                     // Track order of function calls
+	cImports             map[string]string            // Track C imports: alias -> library name
+	cLibHandles          map[string]string            // Track library handles: library -> handle var name
+	cConstants           map[string]*CHeaderConstants // Track C constants: alias -> constants
+	stringCounter        int                          // Counter for unique string labels
+	stackOffset          int                          // Current stack offset for variables (logical)
+	maxStackOffset       int                          // Maximum stack offset reached (for frame allocation)
+	runtimeStack         int                          // Actual runtime stack usage (updated during compilation)
+	loopBaseOffsets      map[int]int                  // Loop label -> stackOffset before loop body (for state calculation)
+	labelCounter         int                          // Counter for unique labels (if/else, loops, etc)
+	lambdaCounter        int                          // Counter for unique lambda function names
+	activeLoops          []LoopInfo                   // Stack of active loops (for @N jump resolution)
+	lambdaFuncs          []LambdaFunc                 // List of lambda functions to generate
+	patternLambdaFuncs   []PatternLambdaFunc          // List of pattern lambda functions to generate
+	lambdaOffsets        map[string]int               // Lambda name -> offset in .text
+	currentLambda        *LambdaFunc                  // Currently compiling lambda (for "me" self-reference)
+	lambdaBodyStart      int                          // Offset where lambda body starts (for tail recursion)
+	hasExplicitExit      bool                         // Track if program contains explicit exit() call
+	debug                bool                         // Enable debug output (set via DEBUG_FLAP env var)
+	cContext             bool                         // When true, compile expressions for C FFI (affects strings, pointers, ints)
+	currentArena         int                          // Arena depth (0=none, 1=first arena, 2=nested, etc.)
+	usesArenas           bool                         // Track if program uses any arena blocks
+	cacheEnabledLambdas  map[string]bool              // Track which lambdas use cme
+	deferredExprs        [][]Expression               // Stack of deferred expressions per scope (LIFO order)
+	memoCaches           map[string]bool              // Track memoization caches that need storage allocation
+	currentAssignName    string                       // Name of variable being assigned (for lambda naming)
+	inTailPosition       bool                         // True when compiling expression in tail position
+	hotFunctions         map[string]bool              // Track hot-reloadable functions
 	hotFunctionTable     map[string]int
 	hotTableRodataOffset int
 
@@ -4898,13 +4898,13 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	fc.eb.text.Reset()
 	// DON'T reset rodata - it already has correct addresses from first pass
 	// Resetting rodata causes all symbols to move, breaking PC-relative addressing
-	fc.eb.pcRelocations = []PCRelocation{}  // Reset PC relocations for recompilation
-	fc.eb.callPatches = []CallPatch{}       // Reset call patches for recompilation
-	fc.eb.labels = make(map[string]int)     // Reset labels for recompilation
-	fc.callOrder = []string{}               // Clear call order for recompilation
-	fc.stringCounter = 0                    // Reset string counter for recompilation
-	fc.labelCounter = 0                     // Reset label counter for recompilation
-	fc.lambdaCounter = 0                    // Reset lambda counter for recompilation
+	fc.eb.pcRelocations = []PCRelocation{} // Reset PC relocations for recompilation
+	fc.eb.callPatches = []CallPatch{}      // Reset call patches for recompilation
+	fc.eb.labels = make(map[string]int)    // Reset labels for recompilation
+	fc.callOrder = []string{}              // Clear call order for recompilation
+	fc.stringCounter = 0                   // Reset string counter for recompilation
+	fc.labelCounter = 0                    // Reset label counter for recompilation
+	fc.lambdaCounter = 0                   // Reset lambda counter for recompilation
 	// DON'T clear lambdaFuncs - we need them for second pass lambda generation
 	fc.lambdaOffsets = make(map[string]int) // Reset lambda offsets
 	fc.variables = make(map[string]int)     // Reset variables map
@@ -5644,7 +5644,7 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 		// Must be 16-byte aligned for x86-64 calling convention
 		stackSize = 32
 		loopStateOffset = baseOffset + 32
-		iterOffset = loopStateOffset - 16  // iterator at -16
+		iterOffset = loopStateOffset - 16   // iterator at -16
 		counterOffset = loopStateOffset - 8 // counter at -8
 		limitOffset = loopStateOffset       // limit at top
 	}
@@ -10759,7 +10759,7 @@ func (fc *FlapCompiler) compileLambdaDirectCall(call *CallExpr) {
 		// Hot function: load closure object pointer from table and call through it
 		fc.out.LeaSymbolToReg("r11", "_hot_function_table")
 		offset := idx * 8
-		fc.out.MovMemToReg("rax", "r11", offset)  // Load closure object pointer into rax
+		fc.out.MovMemToReg("rax", "r11", offset) // Load closure object pointer into rax
 
 		// Extract function pointer from closure object (offset 0)
 		fc.out.MovMemToReg("r11", "rax", 0)
@@ -10820,7 +10820,7 @@ func (fc *FlapCompiler) compileMemoizedCall(call *CallExpr, lambda *LambdaFunc) 
 
 	// Found! Load cached value at cache[8 + index*16 + 8]
 	fc.out.MovMemToXmm("xmm0", "rax", 8) // Load value (8 bytes after key)
-	fc.out.AddImmToReg("rsp", 16)         // Clean up stack
+	fc.out.AddImmToReg("rsp", 16)        // Clean up stack
 	endJump := fc.eb.text.Len()
 	fc.out.JumpUnconditional(0) // Jump to end
 
@@ -13145,8 +13145,8 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.SubsdXmm("xmm3", "xmm1") // xmm3 = a - b
 
 		// abs(diff): if diff < 0, negate it
-		fc.out.XorpdXmm("xmm4", "xmm4") // xmm4 = 0.0
-		fc.out.Ucomisd("xmm3", "xmm4")  // compare diff with 0
+		fc.out.XorpdXmm("xmm4", "xmm4")             // xmm4 = 0.0
+		fc.out.Ucomisd("xmm3", "xmm4")              // compare diff with 0
 		fc.out.JumpConditional(JumpAboveOrEqual, 0) // if diff >= 0, skip negation
 		negateJumpPos := fc.eb.text.Len() - 4
 

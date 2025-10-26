@@ -101,11 +101,11 @@ type CStructField struct {
 
 // CStructDecl represents a C-compatible struct definition
 type CStructDecl struct {
-	Name    string          // Struct name
-	Fields  []CStructField  // Struct fields
-	Packed  bool            // true if #[packed] - no padding
-	Align   int             // Custom alignment (0 = natural alignment)
-	Size    int             // Total struct size in bytes (calculated)
+	Name   string         // Struct name
+	Fields []CStructField // Struct fields
+	Packed bool           // true if #[packed] - no padding
+	Align  int            // Custom alignment (0 = natural alignment)
+	Size   int            // Total struct size in bytes (calculated)
 }
 
 func (c *CStructDecl) String() string {
@@ -705,12 +705,12 @@ func (c *CastExpr) String() string {
 func (c *CastExpr) expressionNode() {}
 
 type UnsafeExpr struct {
-	X86_64Block   []Statement        // x86_64 architecture block
-	ARM64Block    []Statement        // arm64 architecture block
-	RISCV64Block  []Statement        // riscv64 architecture block
-	X86_64Return  *UnsafeReturnStmt  // optional return value for x86_64
-	ARM64Return   *UnsafeReturnStmt  // optional return value for arm64
-	RISCV64Return *UnsafeReturnStmt  // optional return value for riscv64
+	X86_64Block   []Statement       // x86_64 architecture block
+	ARM64Block    []Statement       // arm64 architecture block
+	RISCV64Block  []Statement       // riscv64 architecture block
+	X86_64Return  *UnsafeReturnStmt // optional return value for x86_64
+	ARM64Return   *UnsafeReturnStmt // optional return value for arm64
+	RISCV64Return *UnsafeReturnStmt // optional return value for riscv64
 }
 
 func (u *UnsafeExpr) String() string {

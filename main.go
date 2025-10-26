@@ -215,7 +215,7 @@ type ExecutableBuilder struct {
 	pcRelocations           []PCRelocation
 	callPatches             []CallPatch
 	elf, rodata, data, text bytes.Buffer
-	rodataOffsetInELF        uint64
+	rodataOffsetInELF       uint64
 }
 
 func (eb *ExecutableBuilder) ELFWriter() Writer {
