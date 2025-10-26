@@ -300,11 +300,18 @@ func (dce *DeadCodeElimination) Run(program *Program) (bool, error) {
 	for _, stmt := range program.Statements {
 		if assign, ok := stmt.(*AssignStmt); ok {
 			if !used[assign.Name] {
-				changed = true
-				if VerboseMode {
-					fmt.Fprintf(os.Stderr, "   DCE: Removing unused assignment: %s\n", assign.Name)
+				// Never remove hot functions - they must exist for hot reload
+				if assign.IsHot {
+					if VerboseMode {
+						fmt.Fprintf(os.Stderr, "   DCE: Preserving hot function: %s\n", assign.Name)
+					}
+				} else {
+					changed = true
+					if VerboseMode {
+						fmt.Fprintf(os.Stderr, "   DCE: Removing unused assignment: %s\n", assign.Name)
+					}
+					continue
 				}
-				continue
 			}
 		}
 		newStmts = append(newStmts, stmt)

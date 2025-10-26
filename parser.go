@@ -4352,6 +4352,8 @@ type FlapCompiler struct {
 	currentAssignName   string                       // Name of variable being assigned (for lambda naming)
 	inTailPosition      bool                         // True when compiling expression in tail position
 	hotFunctions        map[string]bool              // Track hot-reloadable functions
+	hotFunctionTable     map[string]int
+	hotTableRodataOffset int
 
 	metaArenaGrowthErrorJump      int
 	firstMetaArenaMallocErrorJump int
@@ -4404,6 +4406,7 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 		loopBaseOffsets:     make(map[int]int),
 		cacheEnabledLambdas: make(map[string]bool),
 		hotFunctions:        make(map[string]bool),
+		hotFunctionTable:    make(map[string]int),
 		debug:               debugEnabled,
 		currentArena:        -1,
 	}, nil
@@ -4607,6 +4610,9 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 
 	fc.pushDeferScope()
 
+	// Predeclare lambda symbols so closure initialization can reference them
+	fc.predeclareLambdaSymbols()
+
 	// Second pass: Generate actual code with all symbols known
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG: Compiling %d statements\n", len(program.Statements))
@@ -4798,11 +4804,13 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	// Add cache pointer storage to rodata (8 bytes of zeros for each cache)
 	if len(fc.memoCaches) > 0 {
 		for cacheName := range fc.memoCaches {
-			fc.eb.Define(cacheName, "\x00\x00\x00\x00\x00\x00\x00\x00") // 8 bytes of zeros for cache pointer
+			fc.eb.Define(cacheName, "\x00\x00\x00\x00\x00\x00\x00\x00")
 		}
 	}
 
-	// Write rodata - get symbols and sort for consistent ordering
+	fc.buildHotFunctionTable()
+	fc.generateHotFunctionTable()
+
 	rodataSymbols := fc.eb.RodataSection()
 
 	// Create sorted list of symbol names for deterministic ordering
@@ -4854,6 +4862,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 			fmt.Fprintf(os.Stderr, "=== pltFunctions (unique): %v ===\n", pltFunctions)
 		}
 	}
+
 	gotBase, rodataBaseAddr, textAddr, pltBase, err := fc.eb.WriteCompleteDynamicELF(ds, pltFunctions)
 	if err != nil {
 		return err
@@ -4876,6 +4885,8 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 
 	// Regenerate code with correct addresses
 	fc.eb.text.Reset()
+	// DON'T reset rodata - it already has correct addresses from first pass
+	// Resetting rodata causes all symbols to move, breaking PC-relative addressing
 	fc.eb.pcRelocations = []PCRelocation{}  // Reset PC relocations for recompilation
 	fc.eb.callPatches = []CallPatch{}       // Reset call patches for recompilation
 	fc.eb.labels = make(map[string]int)     // Reset labels for recompilation
@@ -4883,7 +4894,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	fc.stringCounter = 0                    // Reset string counter for recompilation
 	fc.labelCounter = 0                     // Reset label counter for recompilation
 	fc.lambdaCounter = 0                    // Reset lambda counter for recompilation
-	fc.lambdaFuncs = []LambdaFunc{}         // Clear lambda functions list
+	// DON'T clear lambdaFuncs - we need them for second pass lambda generation
 	fc.lambdaOffsets = make(map[string]int) // Reset lambda offsets
 	fc.variables = make(map[string]int)     // Reset variables map
 	fc.mutableVars = make(map[string]bool)  // Reset mutability tracking
@@ -4896,22 +4907,10 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	fc.out.XorRegWithReg("rdi", "rdi")
 	fc.out.XorRegWithReg("rsi", "rsi")
 
-	// Re-define format strings for printf
-	fc.eb.Define("fmt_str", "%s\x00")
-	fc.eb.Define("fmt_int", "%ld\n\x00")
-	fc.eb.Define("fmt_float", "%.0f\n\x00")
-	fc.eb.Define("_loop_max_exceeded_msg", "Error: loop exceeded maximum iterations\n\x00")
-	fc.eb.Define("_recursion_max_exceeded_msg", "Error: recursion exceeded maximum depth\n\x00")
-
-	// Re-define cache pointer storage (will get correct addresses in second pass)
-	if len(fc.memoCaches) > 0 {
-		for cacheName := range fc.memoCaches {
-			fc.eb.Define(cacheName, "\x00\x00\x00\x00\x00\x00\x00\x00") // 8 bytes of zeros
-		}
-	}
+	// DON'T re-define rodata symbols - they already exist from first pass
+	// Re-defining them would change their addresses and break PC-relative references
 
 	// ===== AVX-512 CPU DETECTION (regenerated) =====
-	fc.eb.Define("cpu_has_avx512", "\x00")      // 1 byte: 0=no, 1=yes
 	fc.out.MovImmToReg("rax", "7")              // CPUID leaf 7
 	fc.out.XorRegWithReg("rcx", "rcx")          // subleaf 0
 	fc.out.Emit([]byte{0x0f, 0xa2})             // cpuid
@@ -4947,6 +4946,9 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 
 	// Reset labelCounter after collectSymbols so compilation uses same labels
 	fc.labelCounter = 0
+
+	// DON'T rebuild hot function table - it already exists in rodata from first pass
+	// Rebuilding it would change its address and break PC-relative references
 
 	fc.pushDeferScope()
 
@@ -5036,8 +5038,12 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	}
 	fc.eb.PatchCallSites(textAddr)
 
+	// Patch hot function pointer table
+	fc.patchHotFunctionTable()
+
 	// Update ELF with regenerated code
 	fc.eb.patchTextInELF()
+	fc.eb.patchRodataInELF()
 
 	// Output the executable file
 	elfBytes := fc.eb.Bytes()
@@ -8635,6 +8641,14 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	// End of parallel operator - xmm0 contains result pointer as float64
 }
 
+func (fc *FlapCompiler) predeclareLambdaSymbols() {
+	for _, lambda := range fc.lambdaFuncs {
+		if _, ok := fc.eb.consts[lambda.Name]; !ok {
+			fc.eb.consts[lambda.Name] = &Const{value: ""}
+		}
+	}
+}
+
 func (fc *FlapCompiler) generateLambdaFunctions() {
 	if fc.debug {
 		if VerboseMode {
@@ -8650,7 +8664,7 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 		// Record the offset of this lambda function in .text
 		fc.lambdaOffsets[lambda.Name] = fc.eb.text.Len()
 
-		// Mark the start of the lambda function with a label
+		// Mark the start of the lambda function with a label (again, to update offset)
 		fc.eb.MarkLabel(lambda.Name)
 
 		// Function prologue
@@ -8874,6 +8888,90 @@ func (fc *FlapCompiler) generatePatternLambdaFunctions() {
 		fc.variables = oldVariables
 		fc.mutableVars = oldMutableVars
 		fc.stackOffset = oldStackOffset
+	}
+}
+
+func (fc *FlapCompiler) buildHotFunctionTable() {
+	if len(fc.hotFunctions) == 0 {
+		return
+	}
+
+	var hotNames []string
+	for name := range fc.hotFunctions {
+		hotNames = append(hotNames, name)
+	}
+	sort.Strings(hotNames)
+
+	for idx, name := range hotNames {
+		fc.hotFunctionTable[name] = idx
+	}
+}
+
+func (fc *FlapCompiler) generateHotFunctionTable() {
+	if len(fc.hotFunctions) == 0 {
+		return
+	}
+
+	var hotNames []string
+	for name := range fc.hotFunctions {
+		hotNames = append(hotNames, name)
+	}
+	sort.Strings(hotNames)
+
+	fc.hotTableRodataOffset = fc.eb.rodata.Len()
+	tableData := make([]byte, len(hotNames)*8)
+	fc.eb.Define("_hot_function_table", string(tableData))
+}
+
+func (fc *FlapCompiler) patchHotFunctionTable() {
+	if len(fc.hotFunctions) == 0 {
+		return
+	}
+
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Patching hot function table with %d entries\n", len(fc.hotFunctions))
+	}
+
+	tableConst, ok := fc.eb.consts["_hot_function_table"]
+	if !ok {
+		fmt.Fprintf(os.Stderr, "Hot function table symbol not found\n")
+		return
+	}
+
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Hot function table at address 0x%x\n", tableConst.addr)
+	}
+
+	rodataSymbols := fc.eb.RodataSection()
+	firstRodataAddr := uint64(0xFFFFFFFFFFFFFFFF)
+	for symName := range rodataSymbols {
+		if c, ok := fc.eb.consts[symName]; ok {
+			if c.addr > 0 && c.addr < firstRodataAddr {
+				firstRodataAddr = c.addr
+			}
+		}
+	}
+
+	tableOffsetInRodata := int(tableConst.addr - firstRodataAddr)
+	rodataBytes := fc.eb.rodata.Bytes()
+
+	var hotNames []string
+	for name := range fc.hotFunctions {
+		hotNames = append(hotNames, name)
+	}
+	sort.Strings(hotNames)
+
+	for idx, name := range hotNames {
+		if funcConst, ok := fc.eb.consts[name]; ok {
+			funcAddr := funcConst.addr
+			offset := tableOffsetInRodata + idx*8
+			if offset >= 0 && offset+8 <= len(rodataBytes) {
+				binary.LittleEndian.PutUint64(rodataBytes[offset:offset+8], funcAddr)
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "DEBUG:   Patched %s at table offset %d with address 0x%x\n", name, offset, funcAddr)
+				}
+			}
+		}
 	}
 }
 
@@ -10649,7 +10747,8 @@ func (fc *FlapCompiler) compileLambdaDirectCall(call *CallExpr) {
 		fc.out.AddImmToReg("rsp", 16)
 	}
 
-	// Call the lambda function directly by name
+	// Call the lambda function
+	// TODO: Implement indirect calling for hot functions once we figure out the closure calling convention
 	fc.trackFunctionCall(call.Function)
 	fc.out.CallSymbol(call.Function)
 
@@ -14698,9 +14797,17 @@ func CompileFlap(inputPath string, outputPath string, platform Platform) (err er
 	}
 	compiler.sourceCode = combinedSource
 
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG CompileFlap: calling Compile with outputPath=%s\n", outputPath)
+	}
+
 	err = compiler.Compile(program, outputPath)
 	if err != nil {
 		return fmt.Errorf("compilation failed: %v", err)
+	}
+
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG CompileFlap: Compile succeeded\n")
 	}
 
 	return nil

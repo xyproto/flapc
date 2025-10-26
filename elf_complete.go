@@ -311,6 +311,7 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 		addr   uint64
 		size   int
 	}{rodataOffset, rodataAddr, layout["rodata"].size}
+	eb.rodataOffsetInELF = rodataOffset
 
 	// Entry point is already set to _start above
 	// (entryPoint := layout["_start"].addr)

@@ -13,12 +13,19 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
    - Use case: Tweak physics parameters, adjust visual effects, modify AI behavior in real-time
    - Current status: `hot` keyword foundation complete (lexer, parser, hotFunctions map)
 
-   **Phase 1: Function Pointer Table & Indirection** (MEDIUM)
-   - Add function pointer table to rodata segment
-   - Generate pointers for all hot functions at compile time
-   - Modify hot function calls to use indirect jumps through table
+   **Phase 1: Function Pointer Table & Indirection** (MEDIUM) - IN PROGRESS
+   - ✅ Hot function registration and table index mapping
+   - ✅ Function pointer table generation in rodata segment
+   - ✅ Indirect call code generation (LEA + MOV + CALL)
+   - ✅ Table patching with function addresses
+   - ❌ BLOCKED: Two-phase compilation offset mismatch
+     * Issue: Regenerated code has different offsets than initial compilation
+     * Relocations created for offset 0x6a but code ends up at offset 0xf8
+     * Result: PC-relative displacement off by 1 byte (0x1012 vs 0x1011)
+     * Impact: Hot function calls segfault due to incorrect function pointer load
+   - Next: Fix offset tracking in two-phase compilation OR regenerate relocations
    - Performance cost: ~1-2 CPU cycles per hot function call (acceptable)
-   - Files: `parser.go` (codegen for hot calls), `elf_builder.go` (pointer table)
+   - Files: `parser.go` (hotFunctionTable, compileLambdaDirectCall, patchHotFunctionTable), `main.go` (patchRodataInELF)
 
    **Phase 2: File Watching** (MEDIUM)
    - Implement inotify-based file watcher for Linux

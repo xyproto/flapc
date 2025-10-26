@@ -215,6 +215,7 @@ type ExecutableBuilder struct {
 	pcRelocations           []PCRelocation
 	callPatches             []CallPatch
 	elf, rodata, data, text bytes.Buffer
+	rodataOffsetInELF        uint64
 }
 
 func (eb *ExecutableBuilder) ELFWriter() Writer {
@@ -921,6 +922,18 @@ func (eb *ExecutableBuilder) patchTextInELF() {
 
 	// No need to rebuild - elfBuf is a slice of eb.elf's internal buffer,
 	// so modifications to elfBuf are already reflected in eb.elf
+}
+
+func (eb *ExecutableBuilder) patchRodataInELF() {
+	elfBuf := eb.elf.Bytes()
+	newRodata := eb.rodata.Bytes()
+
+	rodataOffset := int(eb.rodataOffsetInELF)
+	rodataSize := len(newRodata)
+
+	if rodataOffset > 0 && rodataOffset+rodataSize <= len(elfBuf) {
+		copy(elfBuf[rodataOffset:rodataOffset+rodataSize], newRodata)
+	}
 }
 
 // Global flags for controlling output verbosity and dependencies
