@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // A tiny compiler for x86_64, aarch64, and riscv64 for Linux, macOS, FreeBSD
@@ -968,6 +969,7 @@ func main() {
 	var updateDepsLong = flag.Bool("update-deps", false, "update all dependency repositories from Git")
 	var codeFlag = flag.String("c", "", "execute Flap code from command line")
 	var optTimeout = flag.Float64("opt-timeout", 2.0, "optimization timeout in seconds (0 to disable)")
+	var watchFlag = flag.Bool("watch", false, "watch mode: recompile on file changes (requires hot functions)")
 	flag.Parse()
 
 	// Set global update-deps flag (use whichever was specified)
@@ -1138,6 +1140,14 @@ func main() {
 				} else if !outputFlagProvided {
 					fmt.Println(writeToFilename)
 				}
+
+				// Enter watch mode if requested
+				if *watchFlag {
+					if err := watchAndRecompile(file, writeToFilename, targetPlatform); err != nil {
+						fmt.Fprintf(os.Stderr, "Watch error: %v\n", err)
+						os.Exit(1)
+					}
+				}
 				return
 			}
 		}
@@ -1148,4 +1158,37 @@ func main() {
 		os.Exit(1)
 	}
 
+}
+
+func watchAndRecompile(sourceFile, outputFile string, platform Platform) error {
+	absPath, err := filepath.Abs(sourceFile)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(os.Stderr, "\n🔥 Watch mode enabled - monitoring %s\n", absPath)
+	fmt.Fprintf(os.Stderr, "Press Ctrl+C to stop\n\n")
+
+	watcher, err := NewFileWatcher(func(path string) {
+		fmt.Fprintf(os.Stderr, "\n[%s] File changed: %s\n", time.Now().Format("15:04:05"), filepath.Base(path))
+		fmt.Fprintf(os.Stderr, "Recompiling...\n")
+
+		if err := CompileFlap(path, outputFile, platform); err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Compilation failed: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "✅ Recompiled successfully\n\n")
+		}
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to create file watcher: %v", err)
+	}
+	defer watcher.Close()
+
+	if err := watcher.AddFile(absPath); err != nil {
+		return fmt.Errorf("failed to watch file: %v", err)
+	}
+
+	watcher.Watch()
+	return nil
 }
