@@ -178,9 +178,10 @@ All values are `map[uint64]float64`, but syntax sugar makes them feel typed:
 
 ### Unsafe
 - Register operations: `rax <- 42`, `rax <- [rbx]`, `[rax] <- value`
+- Arithmetic: `rax * rbx`, `rax / rbx` (multiply/divide)
+- Bitwise: `rax << rbx`, `rax >> rbx` (shifts)
 - Return values: Last expression in unsafe block
 - Multi-arch: `unsafe { /* x64 */ } { /* arm64 */ } { /* riscv */ }`
-- **Missing:** Multiply/divide, bitwise ops, sized loads (in progress)
 
 ## Technical Details
 
@@ -221,7 +222,6 @@ Arch Linux x86-64 only. Other platforms (Windows, macOS, ARM64, RISC-V) planned 
 
 - Inner lambdas can't capture outer lambda variables
 - FFI limited to integer args/return (no float/pointer/struct)
-- Unsafe blocks missing multiply/divide/bitwise
 - Arena/defer syntax parsed but not implemented
 
 See [TODO.md](TODO.md) for roadmap.
