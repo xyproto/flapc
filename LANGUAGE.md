@@ -1293,11 +1293,12 @@ printf("Bound to port: %v\n", port)
 // Check if port is available
 :5000?       // Returns 1 if available, 0 if in use
 
-// Use available port or fallback
-port := :5000? { :5000 ~> :5001 }
+// Port with fallback (using or)
+port := :5000 or :5001  // Try 5000, if taken use 5001
+port := :game_server or :9000+  // Named port with dynamic fallback
 
-// Named port with fallback
-port := :game_server? { :game_server ~> :9000+ }
+// Using ?: for explicit checking
+port := :5000? or :3000  // If 5000 available, use it, else 3000
 ```
 
 **Receiving Messages:**
