@@ -5416,14 +5416,14 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 		}
 
 		// Allocate stack space for:
-		// - message variable (8 bytes)
-		// - sender variable (8 bytes)
-		// - socket fd (8 bytes)
-		// - sockaddr_in (16 bytes)
-		// - buffer (256 bytes)
-		// - addrlen (8 bytes)
-		// Total: 304 bytes
-		fc.updateStackOffset(304)
+		// - message variable (8 bytes) at baseOffset+8
+		// - sender variable (8 bytes) at baseOffset+16
+		// - socket fd (8 bytes) at baseOffset+24
+		// - sockaddr_in (16 bytes) at baseOffset+40 (with padding to avoid overlap)
+		// - buffer (256 bytes) starting at baseOffset+56
+		// - addrlen (8 bytes) at baseOffset+320
+		// Total: 320 bytes
+		fc.updateStackOffset(320)
 
 		for _, bodyStmt := range s.Body {
 			if err := fc.collectSymbols(bodyStmt); err != nil {
@@ -14790,20 +14790,24 @@ func (fc *FlapCompiler) compileReceiveLoopStmt(stmt *ReceiveLoopStmt) {
 	endLabel := fmt.Sprintf("receive_end_%d", fc.labelCounter)
 
 	// Allocate stack space: we use the base offset from symbol collection
-	// Layout: msg_var(8), sender_var(8), socket_fd(8), sockaddr_in(16), buffer(256), addrlen(8) = 304 bytes
+	// Layout: msg_var(8), sender_var(8), socket_fd(8), [padding], sockaddr_in(16), buffer(256), addrlen(8) = 320 bytes
 	baseOffset := stmt.BaseOffset
 
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG: ReceiveLoop baseOffset = %d\n", baseOffset)
 	}
 
-	// Stack layout offsets:
-	// msg_var:     baseOffset + 8
-	// sender_var:  baseOffset + 16
-	// socket_fd:   baseOffset + 24
-	// sockaddr_in: baseOffset + 32 to 48
-	// buffer:      baseOffset + 48 to 304
-	// addrlen:     baseOffset + 304
+	// Stack layout offsets (from rbp going downward):
+	// msg_var:     rbp-(baseOffset+8)
+	// sender_var:  rbp-(baseOffset+16)
+	// socket_fd:   rbp-(baseOffset+24)
+	// sockaddr_in: rbp-(baseOffset+40) [16 bytes: 40,38,36,32 to avoid overlap with socket_fd]
+	//   - sin_family (2 bytes): offset 0 from start = rbp-(baseOffset+40)
+	//   - sin_port (2 bytes):   offset 2 from start = rbp-(baseOffset+38)
+	//   - sin_addr (4 bytes):   offset 4 from start = rbp-(baseOffset+36)
+	//   - sin_zero (8 bytes):   offset 8 from start = rbp-(baseOffset+32)
+	// buffer:      rbp-(baseOffset+56) to rbp-(baseOffset+311) [256 bytes]
+	// addrlen:     rbp-(baseOffset+320)
 
 	// Step 1: Create UDP socket
 	fc.out.MovImmToReg("rax", "41")  // socket syscall
@@ -14811,30 +14815,36 @@ func (fc *FlapCompiler) compileReceiveLoopStmt(stmt *ReceiveLoopStmt) {
 	fc.out.MovImmToReg("rsi", "2")   // SOCK_DGRAM
 	fc.out.MovImmToReg("rdx", "0")   // protocol
 	fc.out.Syscall()
-	fc.out.MovRegToMem("rax", "rbp", -(baseOffset + 24)) // socket fd at baseOffset+24
+	fc.out.MovRegToMem("rax", "rbp", -(baseOffset + 24)) // socket fd
 
-	// Step 2: Build sockaddr_in for bind (starts at baseOffset+32)
-	// sin_family = AF_INET (2)
+	// Step 2: Build sockaddr_in for bind (starts at rbp-(baseOffset+40))
+	// sockaddr_in structure (16 bytes total):
+	// Offset 0: sin_family (2 bytes)
+	// Offset 2: sin_port (2 bytes)
+	// Offset 4: sin_addr (4 bytes)
+	// Offset 8: sin_zero (8 bytes padding)
+
+	// sin_family = AF_INET (2) - at offset 0 from structure start
 	fc.out.MovImmToReg("rax", "2")
-	fc.out.MovU16RegToMem("ax", "rbp", -(baseOffset + 32))
+	fc.out.MovU16RegToMem("ax", "rbp", -(baseOffset + 40))
 
-	// sin_port = htons(port)
+	// sin_port = htons(port) - at offset 2 from structure start
 	portNetOrder := (port&0xff)<<8 | (port>>8)&0xff
 	fc.out.MovImmToReg("rax", fmt.Sprintf("%d", portNetOrder))
-	fc.out.MovU16RegToMem("ax", "rbp", -(baseOffset + 34))
+	fc.out.MovU16RegToMem("ax", "rbp", -(baseOffset + 38))
 
-	// sin_addr = INADDR_ANY (0.0.0.0) - bind to all interfaces
+	// sin_addr = INADDR_ANY (0.0.0.0) - at offset 4 from structure start
 	fc.out.MovImmToReg("rax", "0")
 	fc.out.MovRegToMem("rax", "rbp", -(baseOffset + 36))
 
-	// sin_zero = 0 (padding)
+	// sin_zero = 0 (padding) - at offset 8 from structure start
 	fc.out.MovImmToReg("rax", "0")
-	fc.out.MovRegToMem("rax", "rbp", -(baseOffset + 40))
+	fc.out.MovRegToMem("rax", "rbp", -(baseOffset + 32))
 
 	// Step 3: Bind socket to port (syscall 49: bind)
 	// bind(sockfd, sockaddr, addrlen)
 	fc.out.MovMemToReg("rdi", "rbp", -(baseOffset + 24)) // socket fd
-	fc.out.LeaMemToReg("rsi", "rbp", -(baseOffset + 32)) // sockaddr_in
+	fc.out.LeaMemToReg("rsi", "rbp", -(baseOffset + 40)) // sockaddr_in structure start
 	fc.out.MovImmToReg("rdx", "16")                       // addrlen
 	fc.out.MovImmToReg("rax", "49")                       // bind syscall
 	fc.out.Syscall()
@@ -14846,16 +14856,16 @@ func (fc *FlapCompiler) compileReceiveLoopStmt(stmt *ReceiveLoopStmt) {
 
 	// Initialize addrlen for recvfrom
 	fc.out.MovImmToReg("rax", "16")
-	fc.out.MovRegToMem("rax", "rbp", -(baseOffset + 304))
+	fc.out.MovRegToMem("rax", "rbp", -(baseOffset + 320))
 
 	// Call recvfrom (syscall 45: recvfrom)
 	// recvfrom(sockfd, buf, len, flags, src_addr, addrlen)
 	fc.out.MovMemToReg("rdi", "rbp", -(baseOffset + 24)) // socket fd
-	fc.out.LeaMemToReg("rsi", "rbp", -(baseOffset + 48)) // buffer
+	fc.out.LeaMemToReg("rsi", "rbp", -(baseOffset + 56)) // buffer (starts after sockaddr)
 	fc.out.MovImmToReg("rdx", "256")                      // buffer size
 	fc.out.MovImmToReg("r10", "0")                        // flags
-	fc.out.LeaMemToReg("r8", "rbp", -(baseOffset + 32))  // src_addr (sockaddr_in)
-	fc.out.LeaMemToReg("r9", "rbp", -(baseOffset + 304)) // addrlen pointer
+	fc.out.LeaMemToReg("r8", "rbp", -(baseOffset + 40))  // src_addr (sockaddr_in start)
+	fc.out.LeaMemToReg("r9", "rbp", -(baseOffset + 320)) // addrlen pointer
 	fc.out.MovImmToReg("rax", "45")                       // recvfrom syscall
 	fc.out.Syscall()
 
