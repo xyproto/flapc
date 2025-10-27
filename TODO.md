@@ -1,213 +1,84 @@
-# Flapc TODO
+# Flapc TODO - Version 1.6 Release
 
-Actionable items sorted by importance for **game development with SDL3 and RayLib5**.
-Current focus: x86-64 Linux. Multiplatform support (Windows/macOS/ARM64/RISC-V) deferred.
-End goal: Publishable Steam games with Steamworks integration.
+Actionable items for **Flap 1.6 release**.
+Current focus: x86-64 Linux. Multiplatform support deferred to post-1.6.
+End goal: Minimal, elegant, implementable language ready for game development.
 
 Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
-## Critical Bugs
+## Critical - Language Core (1.6 Blockers)
 
-1. **Extend FFI to support float/pointer args** (HIGH) ✅ COMPLETE
-   - Status: Full automatic signature discovery working
-   - Discovery pipeline: pkg-config → header parsing → DWARF → symbol table
-   - Header parsing: Uses `gcc -E` to preprocess, regex to extract signatures
-   - DWARF extraction: Works for libraries with debug info
-   - Symbol table: Extracts function names when types unavailable
-   - Coverage: math.h, stdlib.h, stdio.h, string.h, SDL3, etc.
-   - Testing: sqrt(25.0) = 5.0, malloc(100) = valid pointer
-   - No manual casts or debug packages needed for standard libraries
-   - Files: `cffi.go` (DiscoverFunctionSignatures, parseHeaderForFunctions)
+1. **Implement ENet networking in assembly** (VERY HIGH) 🔥 CRITICAL FOR 1.6
+   - Goal: Built-in reliable UDP networking as fundamental language feature
+   - Implementation: Generate ENet protocol machine code directly in Flapc
+   - NOT an external library - core part of the compiler like printf/malloc
+   - Syntax support: `:port` literals, `@ msg, from in :port` loops, `:port <- data` sending
+   - Port literals: `:5000` (numeric), `:game_server` (string, hashed), `:5000+` (next available), `:5000?` (check)
+   - Port fallback: `:5000 or :5001` using `or` operator
+   - String port hashing: Deterministic hash to port numbers
+   - Protocol features: Connection management, reliable/unreliable channels, packet fragmentation
+   - Files: New `enet_codegen.go` (protocol implementation), extend `parser.go` (port literals, message loops)
 
-2. **Smart arena implementation with unlimited nesting** (LOW) ✅ COMPLETE
-   - Status: Arenas support unlimited nesting depth (tested up to 20 levels)
-   - Implementation: Doubling growth strategy via realloc (8 → 16 → 32 → ...)
-   - Optimization: Arena structures are reused (reset instead of destroy)
-   - Performance: O(1) access, O(log n) amortized growth, minimal memory overhead
-   - Testing: Deep nesting tested (20 levels = 210), sequential reuse tested
-   - Files: `parser.go` (compileArenaStmt), `grow.go` (capacity management)
+2. **Implement parallel loops runtime** (HIGH) 🔥 CRITICAL FOR 1.6
+   - Goal: CPU parallelism with `N @` and `@@` syntax
+   - Implementation: Thread pool with work stealing, OpenMP-style execution
+   - Syntax: `4 @ item in data max 1000 { }` (4 cores), `@@ item in data max 1000 { }` (all cores)
+   - Thread safety: Need atomics, mutex builtins for shared state
+   - Work distribution: Chunk-based splitting, load balancing
+   - Files: New `parallel.go` (thread pool, work queue), extend `parser.go` (parallel loop codegen)
 
-## Critical - Game Development
+3. **Implement `fork() &` background processes** (MEDIUM) 🔥 CRITICAL FOR 1.6
+   - Goal: Process-based concurrency with `&` operator
+   - Implementation: Unix fork() for isolated processes
+   - Syntax: `worker_function() &` spawns process in background
+   - Process management: Track PIDs, cleanup on exit
+   - Files: Extend `parser.go` (fork codegen), new `process.go` (process lifecycle)
 
-1. **Implement hot code reload** (HIGH) 🎮 GAMEDEV
-   - Goal: Enable rapid iteration for game development - reload code without restarting
-   - Use case: Tweak physics parameters, adjust visual effects, modify AI behavior in real-time
-   - Current status: `hot` keyword foundation complete (lexer, parser, hotFunctions map)
+## Important - Language Features (1.6 Nice-to-Have)
 
-   **Phase 1: Function Pointer Table & Indirection** (MEDIUM) - ✅ COMPLETE
-   - ✅ Hot function registration and table index mapping
-   - ✅ Function pointer table generation in rodata segment
-   - ✅ Table patching with final function addresses
-   - ✅ Two-phase compilation offset mismatch FIXED
-     * Solution: Preserve rodata between compilation passes
-     * Don't regenerate rodata in second pass to keep addresses stable
-     * Only patch hot function table in-place at the end
-   - ✅ DCE preservation of hot functions (won't be removed even if inlined)
-   - ✅ WPO integration fixed
-     * Issue: Tests were breaking when WPOTimeout was forced globally
-     * Solution: Default to WPO=2.0 in CompileFlap, restore original value after
-     * Hot functions now work correctly with WPO enabled (default)
-   - ✅ Indirect calling infrastructure in place
-     * Closure-based calling through hot function table
-     * Works when WPO inlines functions (default behavior)
-   - ✅ Optimizer fixes for all expression types
-     * DCE: Handle all expression types (FStringExpr, DirectCallExpr, PostfixExpr, etc.)
-     * Constant propagation: Lambda parameter shadowing, mutation tracking in expressions
-     * Loop unrolling: LoopStateExpr (@i, @i1, @i2) handling with level decrementing
-     * Recursion safety: Depth limiting (maxRecursionDepth = 100) to prevent hangs
-   - Performance cost: Negligible with WPO (functions get inlined)
-   - Files: `parser.go` (hot table, indirection), `optimizer.go` (DCE, constant propagation, loop unrolling)
-
-   **Phase 2: File Watching** (MEDIUM) - ✅ COMPLETE
-   - ✅ Inotify-based file watcher for Linux implemented
-   - ✅ Watches all .flap source files loaded during compilation
-   - ✅ 500ms debounce for file changes (batches rapid edits)
-   - ✅ Recompilation triggered on file modification
-   - ✅ --watch flag added to compiler
-   - Files: `filewatcher.go`, `main.go` (watchAndRecompile)
-
-   **Phase 3: Incremental Recompilation** (HIGH) - ✅ COMPLETE
-   - ✅ Parse only changed .flap files (cached ASTs for unchanged files)
-   - ✅ Extract hot functions from changed files
-   - ✅ Track which hot functions need recompilation
-   - ✅ Incremental state management (source caching, file modification tracking)
-   - ✅ Full recompilation with change detection optimization
-   - Note: Machine code extraction deferred to Phase 4 (requires binary analysis)
-   - Files: `incremental.go` (IncrementalState, change detection, hot function tracking)
-
-   **Phase 4: Code Injection** (HIGH) - ✅ COMPLETE
-   - ✅ Allocate executable memory pages with mmap(PROT_READ|PROT_WRITE|PROT_EXEC)
-   - ✅ Copy new hot function machine code to allocated pages
-   - ✅ Atomically update function pointer table (single 8-byte write)
-   - ✅ 1-second grace period before munmap of old code (prevent crashes)
-   - ✅ Extract function machine code from compiled ELF binaries
-   - ✅ Code page management with automatic cleanup
-   - Remaining: Integration with watch mode and incremental recompilation
-   - Files: `hotreload.go` (complete infrastructure), `incremental.go` (state management)
-
-   **Phase 5: Developer Experience** (LOW) - ✅ MOSTLY COMPLETE
-   - ✅ `--watch` flag implemented (enables hot reload mode)
-   - ✅ USR1 signal handler for manual reload trigger (kill -USR1 <pid>)
-   - ✅ Reload notifications printed to stderr with timestamps
-   - Remaining: Configuration file support to save/restore game state
-   - Files: `main.go` (flag handling complete), `config.go` (state persistence - future)
-
-   **Constraints & Safety**
-   - Cannot change function signatures (parameter count/types)
-   - Cannot change struct layouts (breaks memory compatibility)
-   - Cannot add/remove global variables
-   - If recompilation fails, keep old code running (no crashes)
-   - Hot reload only works for functions marked with `hot` keyword
-
-   **Testing Strategy**
-   - Test: Hot reload simple function (e.g., physics gravity constant)
-   - Test: Hot reload lambda with closure (verify env preserved)
-   - Test: Rapid file changes (verify debouncing works)
-   - Test: Compilation error recovery (old code keeps running)
-   - Test: Signal-based manual reload (kill -USR1)
-
-   Files: `hotreload.go`, `filewatcher.go`, `incremental.go`, `parser.go`, `main.go`
-
-2. **Add Steamworks FFI support** (HIGH)
+4. **Add Steamworks FFI support** (HIGH) 🎮 GAMEDEV
    - Goal: Steam achievements, leaderboards, cloud saves for commercial releases
    - Approach: Extend C FFI to handle Steamworks SDK callbacks and structs
    - Requirements: Handle C++ name mangling, callback function pointers
    - Impact: Required for publishing on Steam
    - Files: New `steamworks.go`, extend FFI in `parser.go`
 
-## Fundamental - Language Features
+## Future Work (Post-1.6)
 
-3. **Add trampoline execution for deep recursion** (MEDIUM)
-   - Current: Non-tail-recursive functions can stack overflow
-   - Goal: Handle deep recursion without TCO (e.g., tree traversal, Ackermann)
-   - Approach: Return thunk (suspended computation), evaluate iteratively
-   - Benefits: Enable fibonacci, tree algorithms without stack limits
-   - Files: New `trampoline.go`, modify lambda compilation in `parser.go`
+These features are deferred until after 1.6 release:
 
-4. **Add let bindings for local scope** (MEDIUM)
-   - Syntax: `let rec loop = (n, acc) => if n == 0 { acc } else { loop(n-1, acc*n) }`
-   - Benefits: StandardML/OCaml-style local recursive definitions
-   - Common functional pattern for loop-like constructs
-   - Files: `parser.go`, new LetExpr AST node in `ast.go`
+5. **Add trampoline execution for deep recursion** (MEDIUM)
+   - Handle deep recursion without TCO (tree traversal, Ackermann)
+   - Return thunk (suspended computation), evaluate iteratively
+   - Files: New `trampoline.go`
 
-5. **Add Python-style colon + indentation** (MEDIUM)
-   - Opt-in alternative to braces: `if x > 0:\n    print(x)`
-   - Enables: Python/GDScript-like syntax for language packs
-   - Approach: Track indentation levels in lexer, emit virtual braces
-   - Files: `lexer.go` (indentation tracking), `parser.go` (virtual brace handling)
+6. **Add let bindings for local scope** (LOW)
+   - Syntax: `let rec loop = (n, acc) => ...`
+   - StandardML/OCaml-style local recursive definitions
+   - Files: `parser.go`, new LetExpr in `ast.go`
 
-## Advanced - Optimization
+7. **Add Python-style colon + indentation** (MEDIUM)
+   - Alternative syntax for language packs: `if x > 0:\n    print(x)`
+   - Track indentation levels in lexer, emit virtual braces
+   - Files: `lexer.go`, `parser.go`
 
-6. **Add CPS (Continuation-Passing Style) transform** (VERY HIGH)
-   - Goal: Convert all calls to tail calls internally
-   - Benefits: Advanced control flow, no stack growth, efficient coroutines
-   - Approach: Transform AST before code generation
-   - Example: `f() + g()` → `f((r1) => g((r2) => r1 + r2))`
-   - Note: Optional optimization pass, no IR needed
-   - Files: New `cps.go`, integrate into compilation pipeline in `parser.go`
+8. **Add CPS (Continuation-Passing Style) transform** (VERY HIGH)
+   - Convert all calls to tail calls internally
+   - Advanced control flow, no stack growth
+   - Files: New `cps.go`
 
-## Nice to Have
-
-7. **Tail call optimization summary** (LOW) ✅ COMPLETE
-   - Outputs optimization summary after compilation: "Tail call optimization: N/M recursive calls optimized"
-   - Shows how many recursive calls are in tail position vs non-tail position
-   - Can be suppressed with -q/--quiet flag
-   - Helps developers understand when TCO applies
-   - Files: `parser.go` (tracking), `main.go` (output and flags)
-
-8. **Add macro system** (VERY HIGH)
+9. **Add macro system** (VERY HIGH)
    - Pattern-based code transformation at parse time
-   - Enables advanced language packs and metaprogramming
-   - Example: `macro when(cond, body) => if cond { body }`
-   - Files: New `macro.go`, extend parser
+   - Enables language packs and metaprogramming
+   - Files: New `macro.go`
 
-9. **Add custom infix operators** (HIGH)
-   - For language packs (e.g., Python's `**` for exponentiation)
-   - Requires: Precedence table, associativity rules
-   - Files: Extend `parser.go` precedence handling
+10. **Add custom infix operators** (HIGH)
+    - For language packs (e.g., Python's `**`)
+    - Files: Extend `parser.go` precedence
 
-10. **Add multi-precision arithmetic operators** (MEDIUM)
-    - `++` (add with carry) for big integer implementations
-    - `<->` (swap/exchange) for in-place algorithms
-    - Files: Extend `parser.go` operator handling
-
-## Multiplatform Support (Deferred)
-
-Focus on x86-64 Linux first. These are lower priority.
-
-11. **Add Windows x64 code generation** (HIGH)
-    - Goal: Compile to PE/COFF executables for Windows x64
-    - Calling convention: Microsoft x64 (rcx, rdx, r8, r9 for first 4 args)
-    - Binary format: PE32+ (Portable Executable)
-    - Impact: Required for Steam Windows builds
-    - Files: New `pe_builder.go`, `codegen_windows.go`
-
-12. **Add Windows ARM64 code generation** (HIGH)
-    - Goal: Support Windows on ARM (Surface, future gaming devices)
-    - Calling convention: Microsoft ARM64
-    - Binary format: PE32+ ARM64
-    - Impact: Future-proofing for Windows ARM gaming PCs
-    - Files: Extend ARM64 codegen with Windows support
-
-13. **macOS ARM64 support** (✅ MOSTLY COMPLETE - 2025-10-26)
-    - ✅ Dynamic linking now works! (GOT/stubs for printf, etc.)
-    - ✅ Fixed LINKEDIT section order (Apple expects: symtab → indirect symtab → strtab)
-    - ✅ Fixed two-level namespace (N_desc now includes library ordinal)
-    - ✅ ldid signing works without corrupting indirect symbol table
-    - Validation: testprograms/const_test.flap compiles and runs successfully
-    - Remaining: Test full game development workflow with SDL3/RayLib5
-    - Files: `macho.go` (LINKEDIT order, N_desc field), `parser.go` (ldid integration)
-
-14. **Complete Linux ARM64 support** (MEDIUM)
-    - Goal: Raspberry Pi 4+ and Linux ARM gaming devices
-    - Current: Basic ARM64 codegen exists
-    - Need: Full ELF generation and runtime testing
-    - Impact: Enables embedded/portable Linux gaming
-    - Files: `arm64.go`, `elf_builder.go`
-
-15. **Complete RISC-V 64-bit support** (LOW)
-    - Goal: Future RISC-V gaming handhelds
-    - Current: Instruction encoders ready
-    - Need: Full codegen implementation
-    - Impact: Future-proofing for RISC-V gaming
-    - Files: `riscv64.go`
+11. **Multiplatform support** (Deferred to post-1.6)
+    - Windows x64 (PE/COFF)
+    - Windows ARM64
+    - macOS ARM64 (mostly complete, needs testing)
+    - Linux ARM64 (Raspberry Pi)
+    - RISC-V 64-bit
