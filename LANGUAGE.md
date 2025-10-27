@@ -1183,311 +1183,332 @@ data | transform | validate | { save(it) } | on_complete
 
 ### Concurrency and Parallelism
 
-Flap uses **yield-based cooperative multitasking** and **event-driven programming** for concurrency, avoiding the complexity of channels and locks.
+Flap combines the best ideas from **Unix fork()**, **OpenMP** (shared-memory parallelism), and **OpenMPI** (message passing) into a unified, minimal syntax.
 
 #### Philosophy
 
-**Two concurrency models:**
-1. **Cooperative tasks** - Use `yield` to pause and let other tasks run
-2. **Event-driven** - React to events with handlers (like JavaScript/Node.js)
+**Three models, one syntax:**
+1. **Process spawning** - `&` for fork()-style processes (Unix)
+2. **Parallel loops** - `@@` and `N @` for data parallelism (OpenMP-inspired)
+3. **Message passing** - `<~` for inter-process communication (MPI-inspired)
 
-**Why not channels?**
-- Events are simpler and more familiar
-- `yield` provides natural cooperative multitasking
-- No need for `select`, channels, or synchronization primitives
-- Aligns perfectly with FLAPGAME event system
+**Design principles:**
+- Process-based (fork model) - true parallelism, no shared state bugs
+- Zero syntax overhead - reuse existing operators
+- Works on single machine or distributed cluster
+- Explicit communication - no hidden shared memory
 
 ---
 
-#### Background Execution with `&`
+#### Process Spawning with `&`
 
-Run functions in the background (like `&` in bash):
+Spawn processes like Unix fork() with bash-style `&`:
 
 ```flap
-// Fire and forget
-fetch_data(url) &
+// Spawn process (fork + exec)
+worker() &
 
-// Background with result handling (pipe syntax)
-fetch_data(url) & | data | {
-    printf("Got data: %v\n", data)
-    save_to_cache(data)
+// Spawn with callback (wait for result)
+compute_data(large_dataset) & | result | {
+    printf("Worker done: %v\n", result)
 }
 
-// Multiple background calls
-fetch_data(url1) & | d1 | process(d1)
-fetch_data(url2) & | d2 | process(d2)
-fetch_data(url3) & | d3 | process(d3)
+// Get process ID
+pid := worker() &
+printf("Spawned PID: %v\n", pid)
 
-// Background loop (server example)
-server_loop() &
-
-// Multiple workers
+// Spawn multiple workers
 @ i in 0..<4 {
-    worker_loop(i) &  // Spawn 4 background workers
-}
-```
-
-**Syntax:**
-- `fn(args) &` - Run function in background
-- `fn(args) & | result | code` - Handle result when complete
-- Each `&` creates a lightweight task (like goroutine or green thread)
-- Tasks run concurrently, scheduled by runtime
-
----
-
-#### Cooperative Multitasking with `yield`
-
-Use `yield` to cooperatively share CPU time between tasks:
-
-```flap
-// Long-running task that yields control
-process_data := (items) => {
-    @ item in items max 100000 {
-        expensive_operation(item)
-        yield  // Let other tasks run
-    }
+    worker(i) &  // 4 independent processes
 }
 
-// Multiple cooperative tasks
-process_data(dataset1) &
-process_data(dataset2) &
-process_data(dataset3) &
-
-// All three tasks will interleave execution
+// Wait for all spawned processes
+wait_all()  // Like wait() in Unix
 ```
 
 **How it works:**
-- `yield` pauses current task and switches to another
-- Runtime scheduler round-robins between tasks
-- No preemption - tasks explicitly yield
-- Perfect for I/O-bound workloads
-
-**Generators (data iteration):**
-```flap
-// Infinite fibonacci sequence
-fibonacci := () ==> {
-    a := 0
-    b := 1
-    @ {
-        yield a
-        temp := a
-        a <- b
-        b <- temp + b
-    }
-}
-
-// Use generator
-gen := fibonacci()
-@ i in 0..<10 {
-    val := next(gen)
-    printf("%v ", val)  // 0 1 1 2 3 5 8 13 21 34
-}
-
-// Finite generator
-range := (start, end) ==> {
-    i := start
-    @ i < end max 1000000 {
-        yield i
-        i <- i + 1
-    }
-}
-```
-
-**Dual use of `yield`:**
-- **With value**: Generator/iterator (returns value to caller)
-- **Without value**: Cooperative multitasking (switches to another task)
+- `&` creates new process (fork + exec pattern)
+- Copy-on-write memory (cheap)
+- Returns process ID (PID)
+- Processes run independently
+- `wait_all()` waits for children
 
 ---
 
-#### Event-Driven Concurrency
+#### Parallel Loops (Data Parallelism)
 
-Use event emitters for communication between concurrent tasks:
+Parallelize loops automatically (inspired by OpenMP):
 
 ```flap
-// Create event emitter
-events := emitter()
-
-// Subscribe to events (multiple handlers allowed)
-events.on("data") | data | {
-    printf("Handler 1: %v\n", data)
+// Sequential
+@ i in 0..<1000 {
+    process(i)
 }
 
-events.on("data") | data | {
-    printf("Handler 2: %v\n", data)
+// Parallel with 4 cores (OpenMP-style)
+4 @ i in 0..<1000 {
+    process(i)  // Splits work across 4 cores
 }
 
-events.on("error") | err | {
-    printf("Error: %v\n", err)
+// All cores
+@@ i in 0..<1000 {
+    process(i)  // Uses all available cores
 }
 
-// Emit events (from background tasks)
-fetch_data(url) & | result | {
-    result {
-        -> data { events.emit("data", data) }
-        ~> err { events.emit("error", err) }
-    }
-}
+// Parallel with reduction (sum example)
+sum := 0
+@@ i in 0..<1000 reduce(+) {
+    compute(i)  // Each core computes partial sum
+}  // Automatically reduces to single sum
 
-// Once handler (fires only once, then removes itself)
-events.once("ready") | _ | {
-    start_app()
+// Parallel with shared array (read-only safe)
+results := [0] * 1000
+@@ i in 0..<1000 {
+    results[i] <- expensive(i)  // Each index independent
 }
-
-// Remove handler
-handler_id := events.on("tick") | _ | update()
-events.off("tick", handler_id)
 ```
 
-**Event API:**
-- `emitter()` - Create event emitter
-- `emitter.on(event) | data | code` - Add event handler
-- `emitter.once(event) | data | code` - One-time handler
-- `emitter.emit(event, data)` - Fire event
-- `emitter.off(event, id)` - Remove handler
+**Reduction operations (OpenMP-style):**
+- `reduce(+)` - Sum
+- `reduce(*)` - Product
+- `reduce(max)` - Maximum
+- `reduce(min)` - Minimum
+- `reduce(and)` - Logical AND
+- `reduce(or)` - Logical OR
+
+**How it works:**
+- Work-sharing: runtime divides iterations across cores
+- Each core gets chunk of iterations
+- Automatic synchronization at loop end
+- Reductions combine per-core results
 
 ---
 
-#### Complete Example: Web Server
+#### Message Passing (Inter-Process Communication)
+
+Communicate between processes using message passing (MPI-inspired):
 
 ```flap
-// Event-driven HTTP server
-server := () => {
-    events := emitter()
+// Point-to-point: Send/receive between processes
+pid := worker() &
 
-    // Handle requests
-    events.on("request") | req | {
-        req.path {
-            "/api/users" -> handle_users(req)
-            "/api/posts" -> handle_posts(req)
-            ~> send_404(req)
-        }
-        yield  // Let other requests process
-    }
+// Send to specific process
+pid <~ {x: 10, y: 20}  // <~ sends data to process
 
-    // Accept connections (background loop)
-    @ {
-        conn := accept_connection()
-        req := parse_request(conn)
-        events.emit("request", req)
-        yield
-    }
+// Receive from any process (blocks until message arrives)
+msg := <~  // Receive from any
+
+// Receive from specific process
+msg := <~ pid
+
+// Non-blocking receive (returns empty map if no message)
+msg := <~ or! {}
+
+// Pattern matching on messages
+msg := <~
+msg.type {
+    "data" -> process_data(msg.data)
+    "done" -> cleanup()
+    ~> printf("Unknown: %v\n", msg)
 }
-
-server() &
 ```
 
----
-
-#### Complete Example: Parallel Web Scraper
+**Collective operations (broadcast, gather, reduce):**
 
 ```flap
-import http
+// Broadcast: Send same data to all processes
+broadcast(data)  // All processes receive data
 
-scrape_urls := (urls) => {
-    events := emitter()
-    results := []
+// Gather: Collect data from all processes at rank 0
+all_results := gather()  // Rank 0 gets list of all results
 
-    // Collect results
-    events.on("scraped") | data | {
-        results <- results + [data]
+// Reduce: Combine data from all processes
+total := reduce(+)  // Sum across all processes
+max_val := reduce(max)  // Max across all processes
+
+// Scatter: Distribute chunks to processes
+chunk := scatter(big_array)  // Each process gets portion
+```
+
+**Process rank and size:**
+
+```flap
+// Get current process rank (0, 1, 2, ...)
+rank := rank()
+
+// Get total number of processes
+size := size()
+
+// Typical MPI pattern
+rank {
+    0 -> {
+        // Master process
+        data := load_data()
+        broadcast(data)
+        results := gather()
+        printf("All results: %v\n", results)
     }
-
-    // Scrape each URL (background)
-    @ url in urls max 1000 {
-        scraper := (u) => {
-            data := http.get(u)
-            yield  // Let other scrapers run
-            events.emit("scraped", data)
-        }
-        scraper(url) &
+    ~> {
+        // Worker processes
+        data := <~  // Receive broadcast
+        result := process(data)
+        0 <~ result  // Send to master
     }
-
-    // Wait for all results
-    @ results.length < urls.length {
-        yield  // Let scrapers run
-    }
-
-    -> results
 }
 ```
 
 ---
 
-#### Complete Example: Worker Pool
+#### Complete Example: Parallel Monte Carlo Pi Estimation
 
 ```flap
-worker_pool := (jobs) => {
-    events := emitter()
-    results := []
-    completed := 0
+monte_carlo_pi := (samples) => {
+    r := rank()
+    s := size()
 
-    // Collect results
-    events.on("done") | result | {
-        results <- results + [result]
-        completed <- completed + 1
-    }
+    // Each process computes portion
+    local_samples := samples / s
+    hits := 0
 
-    // Worker function
-    worker := (job) => {
-        result := process(job)
-        yield  // Cooperative
-        events.emit("done", result)
-    }
-
-    // Launch all workers (background)
-    @ job in jobs max 100000 {
-        worker(job) &
-    }
-
-    // Wait for completion
-    @ completed < jobs.length {
-        yield
-    }
-
-    -> results
-}
-```
-
----
-
-#### Complete Example: Real-Time Game Update Loop
-
-```flap
-game_loop := () => {
-    events := emitter()
-
-    // Physics (background, yields often)
-    physics := () => {
-        @ {
-            update_physics(dt)
-            events.emit("physics_done")
-            yield
+    @@ i in 0..<local_samples {
+        x := random()
+        y := random()
+        (x*x + y*y) < 1.0 {
+            -> hits <- hits + 1
         }
     }
-    physics() &
 
-    // Rendering (background, yields often)
-    renderer := () => {
-        @ {
-            events.on("physics_done") | _ | {
-                render_frame()
+    // Reduce across all processes
+    total_hits := reduce(+, hits)
+
+    r == 0 {
+        -> {
+            pi := 4.0 * total_hits / samples
+            printf("Pi estimate: %v\n", pi)
+        }
+    }
+}
+
+// Run with 4 processes
+@ i in 0..<4 {
+    monte_carlo_pi(1000000) &
+}
+wait_all()
+```
+
+---
+
+#### Complete Example: Parallel Matrix Multiplication
+
+```flap
+matmul := (A, B, n) => {
+    C := create_matrix(n, n)
+
+    // Parallelize outer loop
+    @@ i in 0..<n {
+        @ j in 0..<n max 10000 {
+            sum := 0.0
+            @ k in 0..<n max 10000 {
+                sum <- sum + A[i*n + k] * B[k*n + j]
             }
-            yield
+            C[i*n + j] <- sum
         }
     }
-    renderer() &
 
-    // Input (event-driven)
-    events.on("key_pressed") | key | {
-        handle_input(key)
-    }
+    -> C
+}
+```
 
-    // Main loop never blocks - all background
-    @ {
-        poll_events(events)  // Emit input events
-        yield  // Let workers run
+---
+
+#### Complete Example: Distributed Web Scraper
+
+```flap
+distributed_scrape := (urls) => {
+    r := rank()
+    s := size()
+
+    r {
+        0 -> {
+            // Master: Distribute URLs
+            chunk_size := urls.length / s
+            @ i in 1..<s {
+                start := i * chunk_size
+                end := (i + 1) * chunk_size
+                chunk := urls[start:end]
+                i <~ chunk
+            }
+
+            // Gather results
+            all_results := gather()
+            -> all_results
+        }
+        ~> {
+            // Workers: Scrape assigned URLs
+            my_urls := <~  // Receive from master
+            my_results := []
+
+            @@ url in my_urls max 10000 {
+                data := http.get(url)
+                my_results <- my_results + [data]
+            }
+
+            0 <~ my_results  // Send back to master
+        }
     }
 }
+
+// Launch 8 processes (1 master + 7 workers)
+@ i in 0..<8 {
+    distributed_scrape(all_urls) &
+}
+wait_all()
+```
+
+---
+
+#### Complete Example: Game Server with Multiple Processes
+
+```flap
+game_server := () => {
+    r := rank()
+
+    r {
+        0 -> {
+            // Master: Handle connections, distribute to workers
+            @ {
+                conn := accept_connection()
+                player_id := assign_player()
+
+                // Send to worker (round-robin)
+                worker := (player_id % 4) + 1
+                worker <~ {type: "player", id: player_id, conn: conn}
+            }
+        }
+        ~> {
+            // Workers: Handle game logic
+            @ {
+                msg := <~  // Receive from master or other workers
+
+                msg.type {
+                    "player" -> {
+                        handle_player(msg.id, msg.conn)
+                    }
+                    "update" -> {
+                        update_game_state(msg.data)
+                        broadcast(msg.data)  // Broadcast to all workers
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Launch master + 4 workers
+@ i in 0..<5 {
+    game_server() &
+}
+wait_all()
 ```
 
 ---
@@ -1495,18 +1516,27 @@ game_loop := () => {
 **Summary:**
 
 **Concurrency primitives:**
-- `fn() &` - Background execution
-- `fn() & | result | code` - Background with callback
-- `yield` - Cooperative task switching OR generator iteration
-- `emitter()` - Event-driven communication
+- `fn() &` - Spawn process (fork model)
+- `fn() & | result | code` - Spawn with callback
+- `@@` / `N @` - Parallel loops (OpenMP-inspired)
+- `reduce(op)` - Reduction operations in parallel loops
+- `pid <~ data` - Send message to process
+- `<~` / `<~ pid` - Receive from any/specific process
+- `broadcast(data)` - Send to all processes
+- `gather()` - Collect from all processes (at rank 0)
+- `reduce(op, val)` - Combine across processes
+- `rank()` - Current process ID
+- `size()` - Total process count
+- `wait_all()` - Wait for all children
 
 **Why this model?**
-- ✅ Simpler than channels (no select, no synchronization primitives)
-- ✅ Familiar from JavaScript, Python async, Lua coroutines
-- ✅ Natural for games (event loops, cooperative tasks)
-- ✅ Aligns with FLAPGAME event system
-- ✅ No blocking - everything yields
-- ✅ Easy to reason about (explicit yield points)
+- ✅ **Simple** - Just processes and messages (no threads, no shared state)
+- ✅ **Safe** - Process isolation prevents race conditions
+- ✅ **Scalable** - Works from 1 core to 1000s of nodes
+- ✅ **Unix-like** - Familiar fork() model with message passing
+- ✅ **OpenMP-easy** - Parallel loops with one character (`@@`)
+- ✅ **MPI-powerful** - Full message passing for distributed computing
+- ✅ **Zero magic** - Explicit communication, no hidden behavior
 
 ---
 
