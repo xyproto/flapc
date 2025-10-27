@@ -4498,6 +4498,35 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 				fmt.Fprintf(os.Stderr, "Registered C import: %s -> %s\n", cImport.Alias, cImport.Library)
 			}
 
+			// Resolve .so path if not already set (identifier-based imports)
+			if cImport.SoPath == "" {
+				libSoName := cImport.Library
+				if !strings.HasPrefix(libSoName, "lib") {
+					libSoName = "lib" + libSoName
+				}
+				if !strings.Contains(libSoName, ".so") {
+					libSoName += ".so"
+				}
+
+				// Use ldconfig to find the full path
+				ldconfigCmd := exec.Command("ldconfig", "-p")
+				if ldOutput, ldErr := ldconfigCmd.Output(); ldErr == nil {
+					lines := strings.Split(string(ldOutput), "\n")
+					for _, line := range lines {
+						if strings.Contains(line, libSoName) && strings.Contains(line, "=>") {
+							parts := strings.Split(line, "=>")
+							if len(parts) == 2 {
+								cImport.SoPath = strings.TrimSpace(parts[1])
+								if VerboseMode {
+									fmt.Fprintf(os.Stderr, "Resolved %s to %s\n", cImport.Library, cImport.SoPath)
+								}
+								break
+							}
+						}
+					}
+				}
+			}
+
 			// For .so file imports, extract symbols and function signatures
 			if cImport.SoPath != "" {
 				if VerboseMode {
@@ -4557,6 +4586,24 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 				}
 			}
 
+			// Merge builtin signatures (for common libc functions)
+			builtins := getBuiltinSignatures()
+			if fc.cConstants[cImport.Alias] == nil {
+				fc.cConstants[cImport.Alias] = &CHeaderConstants{
+					Constants: make(map[string]int64),
+					Macros:    make(map[string]string),
+					Functions: make(map[string]*CFunctionSignature),
+				}
+			}
+			for k, v := range builtins {
+				if _, exists := fc.cConstants[cImport.Alias].Functions[k]; !exists {
+					fc.cConstants[cImport.Alias].Functions[k] = v
+				}
+			}
+			if VerboseMode && len(builtins) > 0 {
+				fmt.Fprintf(os.Stderr, "Added %d builtin function signatures\n", len(builtins))
+			}
+
 			// Extract constants from C headers
 			constants, err := ExtractConstantsFromLibrary(cImport.Library)
 			if err != nil {
@@ -4565,22 +4612,17 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 					fmt.Fprintf(os.Stderr, "Warning: failed to extract constants from %s: %v\n", cImport.Library, err)
 				}
 			} else {
-				// Merge with existing data (don't overwrite DWARF signatures!)
-				if fc.cConstants[cImport.Alias] == nil {
-					fc.cConstants[cImport.Alias] = constants
-				} else {
-					// Merge constants and macros, but don't overwrite existing functions from DWARF
-					for k, v := range constants.Constants {
-						fc.cConstants[cImport.Alias].Constants[k] = v
-					}
-					for k, v := range constants.Macros {
-						fc.cConstants[cImport.Alias].Macros[k] = v
-					}
-					// Merge functions (header signatures don't overwrite DWARF)
-					for k, v := range constants.Functions {
-						if _, exists := fc.cConstants[cImport.Alias].Functions[k]; !exists {
-							fc.cConstants[cImport.Alias].Functions[k] = v
-						}
+				// Merge with existing data (don't overwrite DWARF or builtin signatures!)
+				for k, v := range constants.Constants {
+					fc.cConstants[cImport.Alias].Constants[k] = v
+				}
+				for k, v := range constants.Macros {
+					fc.cConstants[cImport.Alias].Macros[k] = v
+				}
+				// Merge functions (header signatures don't overwrite DWARF/builtin)
+				for k, v := range constants.Functions {
+					if _, exists := fc.cConstants[cImport.Alias].Functions[k]; !exists {
+						fc.cConstants[cImport.Alias].Functions[k] = v
 					}
 				}
 				if VerboseMode {

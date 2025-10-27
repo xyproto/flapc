@@ -706,6 +706,36 @@ func ExtractSymbolsFromSo(soPath string) ([]string, error) {
 	return funcSymbols, nil
 }
 
+// getBuiltinSignatures returns hardcoded signatures for common C library functions
+func getBuiltinSignatures() map[string]*CFunctionSignature {
+	sigs := make(map[string]*CFunctionSignature)
+
+	// Math functions (math.h)
+	sigs["sqrt"] = &CFunctionSignature{ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}}
+	sigs["sin"] = &CFunctionSignature{ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}}
+	sigs["cos"] = &CFunctionSignature{ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}}
+	sigs["tan"] = &CFunctionSignature{ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}}
+	sigs["exp"] = &CFunctionSignature{ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}}
+	sigs["log"] = &CFunctionSignature{ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}}
+	sigs["pow"] = &CFunctionSignature{ReturnType: "double", Params: []CFunctionParam{{Type: "double"}, {Type: "double"}}}
+	sigs["floor"] = &CFunctionSignature{ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}}
+	sigs["ceil"] = &CFunctionSignature{ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}}
+	sigs["fabs"] = &CFunctionSignature{ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}}
+
+	// Memory functions (stdlib.h)
+	sigs["malloc"] = &CFunctionSignature{ReturnType: "void*", Params: []CFunctionParam{{Type: "size_t"}}}
+	sigs["free"] = &CFunctionSignature{ReturnType: "void", Params: []CFunctionParam{{Type: "void*"}}}
+	sigs["realloc"] = &CFunctionSignature{ReturnType: "void*", Params: []CFunctionParam{{Type: "void*"}, {Type: "size_t"}}}
+	sigs["calloc"] = &CFunctionSignature{ReturnType: "void*", Params: []CFunctionParam{{Type: "size_t"}, {Type: "size_t"}}}
+
+	// Process functions (unistd.h)
+	sigs["getpid"] = &CFunctionSignature{ReturnType: "int", Params: []CFunctionParam{}}
+	sigs["getuid"] = &CFunctionSignature{ReturnType: "int", Params: []CFunctionParam{}}
+	sigs["sleep"] = &CFunctionSignature{ReturnType: "unsigned int", Params: []CFunctionParam{{Type: "unsigned int"}}}
+
+	return sigs
+}
+
 // ExtractFunctionSignatures extracts function signatures from DWARF debug info in a .so file
 // Returns a map of function name -> CFunctionSignature
 func ExtractFunctionSignatures(soPath string) (map[string]*CFunctionSignature, error) {
