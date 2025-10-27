@@ -85,12 +85,12 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
    - Remaining: Integration with watch mode and incremental recompilation
    - Files: `hotreload.go` (complete infrastructure), `incremental.go` (state management)
 
-   **Phase 5: Developer Experience** (LOW)
-   - Add `--watch` flag to compiler (enables hot reload mode)
-   - Add USR1 signal handler for manual reload trigger
-   - Print reload notifications to stderr with timestamps
-   - Add configuration file support to save/restore game state
-   - Files: `main.go` (flag handling), `config.go` (state persistence)
+   **Phase 5: Developer Experience** (LOW) - ✅ MOSTLY COMPLETE
+   - ✅ `--watch` flag implemented (enables hot reload mode)
+   - ✅ USR1 signal handler for manual reload trigger (kill -USR1 <pid>)
+   - ✅ Reload notifications printed to stderr with timestamps
+   - Remaining: Configuration file support to save/restore game state
+   - Files: `main.go` (flag handling complete), `config.go` (state persistence - future)
 
    **Constraints & Safety**
    - Cannot change function signatures (parameter count/types)

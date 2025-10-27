@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -1177,17 +1179,33 @@ func watchAndRecompile(sourceFile, outputFile string, platform Platform) error {
 	}
 
 	fmt.Fprintf(os.Stderr, "\n🔥 Watch mode enabled - monitoring %s\n", absPath)
-	fmt.Fprintf(os.Stderr, "Press Ctrl+C to stop\n\n")
+	fmt.Fprintf(os.Stderr, "Press Ctrl+C to stop, or send SIGUSR1 to trigger manual reload\n")
+	fmt.Fprintf(os.Stderr, "Command: kill -USR1 %d\n\n", os.Getpid())
 
-	watcher, err := NewFileWatcher(func(path string) {
-		fmt.Fprintf(os.Stderr, "\n[%s] File changed: %s\n", time.Now().Format("15:04:05"), filepath.Base(path))
+	// Create recompile function that can be called from multiple sources
+	recompile := func(trigger string) {
+		fmt.Fprintf(os.Stderr, "\n[%s] %s\n", time.Now().Format("15:04:05"), trigger)
 		fmt.Fprintf(os.Stderr, "Recompiling...\n")
 
-		if err := CompileFlap(path, outputFile, platform); err != nil {
+		if err := CompileFlap(absPath, outputFile, platform); err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Compilation failed: %v\n", err)
 		} else {
 			fmt.Fprintf(os.Stderr, "✅ Recompiled successfully\n\n")
 		}
+	}
+
+	// Set up signal handler for USR1
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGUSR1)
+	go func() {
+		for range sigChan {
+			recompile("Manual reload triggered (SIGUSR1)")
+		}
+	}()
+
+	// Set up file watcher
+	watcher, err := NewFileWatcher(func(path string) {
+		recompile(fmt.Sprintf("File changed: %s", filepath.Base(path)))
 	})
 
 	if err != nil {
