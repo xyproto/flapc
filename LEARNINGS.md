@@ -595,40 +595,81 @@ $ echo $?
 
 ---
 
-## Network Send Operator: Why `<=` Instead of `<-` (2025-01-27)
+## Network Send Operator: Evolution from `<-` to `<==` (2025-01-27)
 
-**Problem:** Initial ENet design used `<-` for network send (`:5000 <- "message"`), but this created ambiguity with variable updates (`x <- x + 1`). When the left-hand side is a variable holding a port number, parser cannot distinguish:
+**Problem 1:** Initial ENet design used `<-` for network send (`:5000 <- "message"`), but this created ambiguity with variable updates (`x <- x + 1`). When the left-hand side is a variable holding a port number, parser cannot distinguish:
 ```flap
 port := :5000
 port <- "message"  // Send? Or update variable?
 ```
 
-**Solutions Considered:**
-1. **Context-based parsing**: Check if left side is identifier → Not robust, requires statement-level lookahead
-2. **Different operator**: Use `<=` for send, reserve `<-` for updates → Clean separation
+**Solution 1:** Use `<=` operator for network send operations.
 
-**Decision:** Use `<=` operator for network send operations.
+**Problem 2:** Using `<=` for sends created confusion with the comparison operator (`x <= 10`). While technically unambiguous to the parser, it's confusing for developers reading code.
+
+**Final Solution:** Use `<==` operator for network send operations.
 
 **Rationale:**
-- **Unambiguous**: `<=` is comparison operator normally, but as send operator it's clear from context (message after it)
-- **Visually intuitive**: "Less than or equal" arrow suggests "send toward"
-- **No conflicts**: Variable updates stay `<-`, sends are `<=`
-- **Parser simplicity**: No special-casing of identifiers needed
+- **No ambiguity**: `<==` is distinct from both `<-` (variable update) and `<=` (comparison)
+- **Visually intuitive**: Three characters suggest "send toward" or "push to"
+- **No operator overloading**: Dedicated operator for dedicated purpose
+- **Parser simplicity**: Dedicated token (TOKEN_SEND) with no dual purposes
 
 **Implementation:**
 ```flap
-// Variable update (as before)
+// Variable update
 x <- x + 1
 
-// Network send (new syntax)
-:5000 <= "hello"                // Send to port
-port <= "message"              // Send to variable containing port
-"server.com:5000" <= "data"    // Send to remote address
+// Comparison
+if x <= 10 { }
+
+// Network send
+:5000 <== "hello"                // Send to port
+port <== "message"               // Send to variable containing port
+"server.com:5000" <== "data"     // Send to remote address
 ```
 
 **Files Modified:**
-- `ast.go`: SendExpr uses `<=` in String()
-- `parser.go`: parseSend() checks TOKEN_LE instead of TOKEN_LEFT_ARROW
+- `lexer.go`: Added TOKEN_SEND for `<==`
+- `ast.go`: SendExpr uses `<==` in String()
+- `parser.go`: parseSend() checks TOKEN_SEND instead of TOKEN_LE
 - `LANGUAGE.md`: Updated all examples and grammar rules
 
 **Key Learning:** When overloading operators, choose combinations that minimize ambiguity. If context-based resolution requires complex lookahead, consider using a different operator entirely.
+## Port Addresses: Strings vs. Special Literals (2025-01-27)
+
+**Problem:** Initial design used special port literal syntax (`:5000`, `:worker`) with TOKEN_PORT and PortExpr AST nodes. This required:
+- Special lexer handling with bracket depth tracking
+- Dedicated AST node type
+- Compile-time hashing for named ports
+- Complex parsing to avoid conflicts with slice syntax `[0:2]`
+
+**Solution:** Use regular strings for port addresses: `":5000"`, `"localhost:5000"`
+
+**Rationale:**
+- **Simpler parser**: No special token or AST node needed
+- **Familiar syntax**: Strings are already well-understood
+- **Flexible format**: Easy to extend to "host:port" format
+- **Less ambiguity**: No conflict with colon in slices/maps
+- **Runtime flexibility**: Can support variables holding addresses (future enhancement)
+
+**Implementation:**
+```flap
+// Before (special syntax)
+:5000 <== "hello"
+:worker <== "data"
+
+// After (strings)
+":5000" <== "hello"
+":8080" <== "data"
+"server.com:5000" <== "remote"
+```
+
+**Files Modified:**
+- `lexer.go`: Removed TOKEN_PORT, readPortLiteral(), bracket depth tracking
+- `ast.go`: Removed PortExpr type
+- `parser.go`: Removed portToNumber(), simplified compileSendExpr to parse string literals
+- `LANGUAGE.md`: Updated all examples to use strings
+
+**Key Learning:** Sometimes the simplest solution is to reuse existing language features rather than adding special syntax. Strings are flexible and well-understood - no need for custom literals.
+

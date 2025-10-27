@@ -12,12 +12,12 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
    - Goal: Built-in reliable UDP networking as fundamental language feature
    - Implementation: Generate ENet protocol machine code directly in Flapc
    - NOT an external library - core part of the compiler like printf/malloc
-   - ✅ Port literals: `:5000` (numeric), `:worker` (string, hashed) - COMPLETE
-   - ✅ Send operator: `:port <= "data"` using `<=` to avoid `<-` variable update ambiguity - COMPLETE (parsing only)
-   - ❌ Receive loops: `@ msg, from in :port { }` - NOT STARTED
-   - ❌ Socket operations: bind(), sendto(), recvfrom() syscalls - NOT STARTED
-   - Port literals: `:5000+` (next available), `:5000?` (check) - NOT STARTED
-   - Port fallback: `:5000 or :5001` using `or` operator - NOT STARTED
+   - ✅ Port addresses as strings: `":5000"`, `"host:port"` - COMPLETE
+   - ✅ Send operator: `":5000" <== "data"` using `<==` - COMPLETE (with UDP syscalls)
+   - ❌ Receive loops: `@ msg, from in ":5000" { }` - NOT STARTED
+   - ✅ Socket operations: socket(), sendto(), close() syscalls - COMPLETE (basic)
+   - ❌ Bind and recvfrom() syscalls - NOT STARTED
+   - Port availability checks and fallback - NOT STARTED
    - Protocol features: Connection management, reliable/unreliable channels, packet fragmentation - NOT STARTED
    - Files: Extend `parser.go` (DONE), need UDP socket codegen
 

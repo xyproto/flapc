@@ -1,0 +1,2 @@
+result := ":5000" <== "Hello"
+printf("Send result: %v\n", result)

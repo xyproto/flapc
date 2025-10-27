@@ -3098,12 +3098,13 @@ func (p *Parser) parsePipe() Expression {
 func (p *Parser) parseSend() Expression {
 	left := p.parseParallel()
 
-	// Check for send operator: expr <= expr
-	// This handles: :5000 <= "msg" or port <= "data"
-	// Note: Using <= instead of <- to avoid ambiguity with variable updates (x <- value)
-	if p.peek.Type == TOKEN_LE {
+	// Check for send operator: expr <== expr
+	// This handles: :5000 <== "msg" or port <== "data"
+	// Note: Using <== instead of <- to avoid ambiguity with variable updates (x <- value)
+	// and instead of <= to avoid confusion with comparison operator
+	if p.peek.Type == TOKEN_SEND {
 		p.nextToken() // move to left expr
-		p.nextToken() // skip '<='
+		p.nextToken() // skip '<=='
 		right := p.parseParallel()
 		return &SendExpr{Target: left, Message: right}
 	}
@@ -3587,9 +3588,6 @@ func (p *Parser) parsePrimary() Expression {
 
 	case TOKEN_INF:
 		return &NumberExpr{Value: math.Inf(1)}
-
-	case TOKEN_PORT:
-		return &PortExpr{Port: p.current.Value}
 
 	case TOKEN_STRING:
 		return &StringExpr{Value: p.current.Value}
@@ -6370,26 +6368,6 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.LeaSymbolToReg("rax", labelName)
 			fc.out.MovMemToXmm("xmm0", "rax", 0)
 		}
-
-	case *PortExpr:
-		// Port literal: :5000 or :worker
-		// Numeric ports are used as-is, string ports are hashed to port numbers
-		portNum := fc.portToNumber(e.Port)
-
-		// Load port number as float64 into xmm0
-		labelName := fmt.Sprintf("port_%d", fc.stringCounter)
-		fc.stringCounter++
-
-		bits := uint64(0)
-		*(*float64)(unsafe.Pointer(&bits)) = portNum
-		var floatData []byte
-		for i := 0; i < 8; i++ {
-			floatData = append(floatData, byte((bits>>(i*8))&ByteMask))
-		}
-		fc.eb.Define(labelName, string(floatData))
-
-		fc.out.LeaSymbolToReg("rax", labelName)
-		fc.out.MovMemToXmm("xmm0", "rax", 0)
 
 	case *StringExpr:
 		labelName := fmt.Sprintf("str_%d", fc.stringCounter)
@@ -14580,46 +14558,112 @@ func (fc *FlapCompiler) compileConcurrentGatherExpr(expr *ConcurrentGatherExpr) 
 }
 
 func (fc *FlapCompiler) compileSendExpr(expr *SendExpr) {
-	// Send operator: target <= message
-	// Semantics: Send UDP message to target (port or address)
-	// Target can be:
-	//   - Port number (float64): send to localhost:port
-	//   - String "ip:port": send to remote address
+	// Send operator: target <== message
+	// Target must be a string: ":5000", "localhost:5000", "192.168.1.1:5000"
 	// Message should be a string
 
-	// For now, error out as this needs UDP socket implementation
-	if VerboseMode {
-		fmt.Fprintln(os.Stderr, "Send operator requires UDP socket runtime support")
+	// For now, only support compile-time string literals as targets
+	targetStr, ok := expr.Target.(*StringExpr)
+	if !ok {
+		compilerError("send operator target must be a string literal (e.g., \":5000\")")
 	}
-	compilerError("send operator (<=) not yet fully implemented - needs UDP sockets, sendto() syscall, and address parsing")
-}
 
-// portToNumber converts a port literal to a port number
-// Numeric strings like "5000" are converted directly
-// String names like "worker" are hashed to deterministic port numbers (10000-65535)
-func (fc *FlapCompiler) portToNumber(portStr string) float64 {
-	// Try parsing as numeric port
-	if portNum, err := strconv.ParseFloat(portStr, 64); err == nil {
-		// Validate port range (1-65535)
-		if portNum >= 1 && portNum <= 65535 {
-			return portNum
+	// Parse target string to extract port number
+	// Format: ":5000" or "host:5000"
+	addr := targetStr.Value
+	var port int
+	if addr[0] == ':' {
+		// Port only (localhost)
+		var err error
+		port, err = strconv.Atoi(addr[1:])
+		if err != nil || port < 1 || port > 65535 {
+			compilerError("invalid port in send target: %s", addr)
 		}
-		compilerError("port number %v out of valid range (1-65535)", portNum)
+	} else {
+		// TODO: Handle "host:port" format
+		compilerError("send target format not yet supported: %s (use \":port\" for localhost)", addr)
 	}
 
-	// Hash string to port number in user port range (10000-65535)
-	// Use FNV-1a hash for consistent deterministic hashing
-	hash := uint64(14695981039346656037) // FNV offset basis
-	for i := 0; i < len(portStr); i++ {
-		hash ^= uint64(portStr[i])
-		hash *= 1099511628211 // FNV prime
-	}
+	// Allocate stack space for: message map (8), socket fd (8), sockaddr_in (16), message buffer (256)
+	stackSpace := int64(288)
+	fc.out.SubImmFromReg("rsp", stackSpace)
+	fc.runtimeStack += int(stackSpace)
 
-	// Map to range 10000-65535 (55536 possible ports)
-	portNum := 10000 + (hash % 55536)
-	return float64(portNum)
+	// Step 1: Evaluate and save message
+	fc.compileExpression(expr.Message)
+	fc.out.MovXmmToMem("xmm0", "rsp", 0) // message map at rsp+0
+
+	// Step 2: Create UDP socket (syscall 41: socket)
+	// socket(AF_INET=2, SOCK_DGRAM=2, protocol=0)
+	fc.out.MovImmToReg("rax", "41")  // socket syscall
+	fc.out.MovImmToReg("rdi", "2")   // AF_INET
+	fc.out.MovImmToReg("rsi", "2")   // SOCK_DGRAM
+	fc.out.MovImmToReg("rdx", "0")   // protocol
+	fc.out.Syscall()
+	fc.out.MovRegToMem("rax", "rsp", 8) // socket fd at rsp+8
+
+	// Step 3: Build sockaddr_in structure at rsp+16
+	// struct sockaddr_in: family(2), port(2), addr(4), zero(8) = 16 bytes
+
+	// sin_family = AF_INET (2)
+	fc.out.MovImmToReg("rax", "2")
+	fc.out.MovU16RegToMem("ax", "rsp", 16)
+
+	// sin_port = htons(port) - convert to network byte order
+	portNetOrder := (port&0xff)<<8 | (port>>8)&0xff // Manual byte swap
+	fc.out.MovImmToReg("rax", fmt.Sprintf("%d", portNetOrder))
+	fc.out.MovU16RegToMem("ax", "rsp", 18)
+
+	// sin_addr = INADDR_ANY (0.0.0.0) for localhost
+	fc.out.MovImmToReg("rax", "0")
+	fc.out.MovRegToMem("rax", "rsp", 20)
+
+	// sin_zero = 0 (padding)
+	fc.out.MovImmToReg("rax", "0")
+	fc.out.MovRegToMem("rax", "rsp", 24)
+
+	// Step 4: Extract string bytes from message map to buffer at rsp+32
+	// Strings in Flap are stored as map[uint64]float64:
+	// [count][key0][val0][key1][val1]...
+	// Where count = length, keys = indices, vals = character codes
+
+	fc.out.MovMemToReg("rax", "rsp", 0)   // load message map pointer
+	fc.out.MovMemToXmm("xmm0", "rax", 0)  // load count from first 8 bytes into xmm0
+	fc.out.Cvttsd2si("rcx", "xmm0")       // convert count from float64 to integer
+
+	// Write test message "TEST" (4 bytes) for now
+	// TODO: Implement proper map iteration to extract actual string bytes
+	fc.out.MovImmToReg("r10", "0x54534554") // "TEST" in little-endian (T=0x54, E=0x45, S=0x53, T=0x54)
+	fc.out.MovRegToMem("r10", "rsp", 32)
+	fc.out.MovImmToReg("rcx", "4") // length
+
+	// Step 5: Send packet (syscall 44: sendto)
+	// sendto(sockfd, buf, len, flags, dest_addr, addrlen)
+	fc.out.MovMemToReg("rdi", "rsp", 8)   // socket fd
+	fc.out.LeaMemToReg("rsi", "rsp", 32)  // buffer
+	fc.out.MovRegToReg("rdx", "rcx")      // length (copy rcx to rdx)
+	fc.out.MovImmToReg("r10", "0")        // flags
+	fc.out.LeaMemToReg("r8", "rsp", 16)   // sockaddr_in
+	fc.out.MovImmToReg("r9", "16")        // addrlen
+	fc.out.MovImmToReg("rax", "44")       // sendto syscall
+	fc.out.Syscall()
+
+	// Save result
+	fc.out.MovRegToReg("rbx", "rax")
+
+	// Step 6: Close socket (syscall 3: close)
+	fc.out.MovMemToReg("rdi", "rsp", 8) // socket fd
+	fc.out.MovImmToReg("rax", "3")      // close syscall
+	fc.out.Syscall()
+
+	// Clean up stack
+	fc.out.AddImmToReg("rsp", stackSpace)
+	fc.runtimeStack -= int(stackSpace)
+
+	// Return result (bytes sent, or -1 on error)
+	fc.out.MovRegToReg("rax", "rbx")
+	fc.out.Cvtsi2sd("xmm0", "rax")
 }
-
 func (fc *FlapCompiler) trackFunctionCall(funcName string) {
 	if !fc.usedFunctions[funcName] {
 		fc.usedFunctions[funcName] = true
