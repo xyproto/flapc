@@ -1172,6 +1172,24 @@ func main() {
 
 }
 
+func launchGameProcess(binaryPath string) (*os.Process, error) {
+	absPath, err := filepath.Abs(binaryPath)
+	if err != nil {
+		return nil, err
+	}
+
+	procAttr := &os.ProcAttr{
+		Files: []*os.File{os.Stdin, os.Stdout, os.Stderr},
+	}
+
+	process, err := os.StartProcess(absPath, []string{absPath}, procAttr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start process: %v", err)
+	}
+
+	return process, nil
+}
+
 func watchAndRecompile(sourceFile, outputFile string, platform Platform) error {
 	absPath, err := filepath.Abs(sourceFile)
 	if err != nil {
@@ -1182,15 +1200,59 @@ func watchAndRecompile(sourceFile, outputFile string, platform Platform) error {
 	fmt.Fprintf(os.Stderr, "Press Ctrl+C to stop, or send SIGUSR1 to trigger manual reload\n")
 	fmt.Fprintf(os.Stderr, "Command: kill -USR1 %d\n\n", os.Getpid())
 
+	// Initialize incremental state for hot reload
+	incrementalState := NewIncrementalState(platform)
+	var gameProcess *os.Process
+
+	// Initial compilation
+	fmt.Fprintf(os.Stderr, "[%s] Initial compilation...\n", time.Now().Format("15:04:05"))
+	if err := incrementalState.InitialCompile(absPath, outputFile); err != nil {
+		return fmt.Errorf("initial compilation failed: %v", err)
+	}
+	fmt.Fprintf(os.Stderr, "✅ Compiled successfully\n")
+
+	// Launch the game process
+	if len(incrementalState.hotFunctions) > 0 {
+		fmt.Fprintf(os.Stderr, "🎮 Launching game process with %d hot functions...\n", len(incrementalState.hotFunctions))
+		gameProcess, err = launchGameProcess(outputFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "⚠️  Failed to launch game: %v\n", err)
+		} else {
+			fmt.Fprintf(os.Stderr, "🎮 Game running (PID: %d)\n\n", gameProcess.Pid)
+		}
+	}
+
 	// Create recompile function that can be called from multiple sources
 	recompile := func(trigger string) {
 		fmt.Fprintf(os.Stderr, "\n[%s] %s\n", time.Now().Format("15:04:05"), trigger)
-		fmt.Fprintf(os.Stderr, "Recompiling...\n")
 
-		if err := CompileFlap(absPath, outputFile, platform); err != nil {
+		// Incremental recompilation
+		updatedFuncs, err := incrementalState.IncrementalRecompile(absPath)
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Compilation failed: %v\n", err)
-		} else {
-			fmt.Fprintf(os.Stderr, "✅ Recompiled successfully\n\n")
+			return
+		}
+
+		if len(updatedFuncs) == 0 {
+			fmt.Fprintf(os.Stderr, "ℹ️  No hot functions changed\n")
+			return
+		}
+
+		fmt.Fprintf(os.Stderr, "✅ Recompiled %d hot function(s): %v\n", len(updatedFuncs), updatedFuncs)
+
+		// Restart game process for now (live patching would go here in future)
+		if gameProcess != nil {
+			fmt.Fprintf(os.Stderr, "🔄 Restarting game process...\n")
+			gameProcess.Kill()
+			gameProcess.Wait()
+
+			gameProcess, err = launchGameProcess(outputFile)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "⚠️  Failed to restart game: %v\n", err)
+				gameProcess = nil
+			} else {
+				fmt.Fprintf(os.Stderr, "🎮 Game restarted (PID: %d)\n\n", gameProcess.Pid)
+			}
 		}
 	}
 
@@ -1216,6 +1278,15 @@ func watchAndRecompile(sourceFile, outputFile string, platform Platform) error {
 	if err := watcher.AddFile(absPath); err != nil {
 		return fmt.Errorf("failed to watch file: %v", err)
 	}
+
+	// Clean up game process on exit
+	defer func() {
+		if gameProcess != nil {
+			fmt.Fprintf(os.Stderr, "\n🛑 Stopping game process...\n")
+			gameProcess.Kill()
+			gameProcess.Wait()
+		}
+	}()
 
 	watcher.Watch()
 	return nil
