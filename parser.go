@@ -5637,10 +5637,15 @@ func (fc *FlapCompiler) compileArenaStmt(stmt *ArenaStmt) {
 	fc.currentArena = previousArena
 
 	// Load arena pointer from meta-arena and destroy
-	fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
-	fc.out.MovMemToReg("rdi", "rdi", 0)      // Load the meta-arena pointer
-	fc.out.MovMemToReg("rdi", "rdi", offset) // Load the arena pointer from slot
+	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta")
+	fc.out.MovMemToReg("rbx", "rbx", 0)      // rbx = meta-arena pointer
+	fc.out.MovMemToReg("rdi", "rbx", offset) // rdi = arena pointer from slot
 	fc.out.CallSymbol("flap_arena_destroy")
+
+	// Clear the slot in meta-arena (set to NULL) to prevent double-free
+	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta")
+	fc.out.MovMemToReg("rbx", "rbx", 0)      // rbx = meta-arena pointer
+	fc.out.MovImmToMem(0, "rbx", offset)     // meta[slot] = NULL
 }
 
 func (fc *FlapCompiler) compileLoopStatement(stmt *LoopStmt) {
@@ -14720,9 +14725,9 @@ func CompileFlap(inputPath string, outputPath string, platform Platform) (err er
 		inputDir := filepath.Dir(inputPath)
 		inputBase := filepath.Base(inputPath)
 
-		// Skip sibling loading for system temp directories or test directories
+		// Skip sibling loading for system temp directories, test directories, or if --single flag is set
 		// Only skip /tmp if there are many .flap files (likely temp files from -c flag)
-		skipSiblings := strings.Contains(inputDir, "testprograms") // Skip for test directories
+		skipSiblings := SingleFlag || strings.Contains(inputDir, "testprograms") // Skip for test directories or --single flag
 
 		dirEntries, err := os.ReadDir(inputDir)
 

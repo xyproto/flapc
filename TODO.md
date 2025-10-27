@@ -15,12 +15,12 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
    - Impact: Limits C library integration (no math functions, no pointer passing)
    - Files: `parser.go` (compileCFunctionCall needs ABI fixes)
 
-2. **Fix nested arena crash** (MEDIUM) 🐛 BUG
-   - Status: Basic arenas work, but nested arenas cause double-free
-   - Verified: Crashes with "free(): invalid pointer" when outer arena exits
-   - Current: Arena runtime implemented but meta-arena management has issues
-   - Impact: Can't use nested arenas (single-level arenas work fine)
-   - Files: `parser.go` (compileArenaStmt, generateArenaEnsureCapacity)
+2. **Fix nested arena crash** (LOW) 🐛 BUG - DEFERRED
+   - Status: Basic arenas work fine, nested arenas have slot management issue
+   - Workaround: Use single-level arenas (flatten nesting)
+   - Impact: Minor - nested arenas are rare in practice
+   - Note: Attempted slot clearing fix didn't resolve issue
+   - Files: `parser.go` (compileArenaStmt, possibly ensure_capacity logic)
 
 ## Critical - Game Development
 

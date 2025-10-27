@@ -941,6 +941,7 @@ func (eb *ExecutableBuilder) patchRodataInELF() {
 var VerboseMode bool
 var UpdateDepsFlag bool
 var WPOTimeout float64
+var SingleFlag bool
 
 func main() {
 	// Create default output filename in system temp directory
@@ -970,10 +971,15 @@ func main() {
 	var codeFlag = flag.String("c", "", "execute Flap code from command line")
 	var optTimeout = flag.Float64("opt-timeout", 2.0, "optimization timeout in seconds (0 to disable)")
 	var watchFlag = flag.Bool("watch", false, "watch mode: recompile on file changes (requires hot functions)")
+	var singleFlag = flag.Bool("single", false, "compile single file only (don't load other .flap files from directory)")
+	var singleShort = flag.Bool("s", false, "shorthand for --single")
 	flag.Parse()
 
 	// Set global update-deps flag (use whichever was specified)
 	UpdateDepsFlag = *updateDeps || *updateDepsLong
+
+	// Set global single flag (use whichever was specified)
+	SingleFlag = *singleFlag || *singleShort
 
 	if *version || *versionShort {
 		fmt.Println(versionString)
