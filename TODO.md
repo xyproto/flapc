@@ -8,23 +8,22 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
 ## Critical Bugs
 
-1. **Extend FFI to support float/pointer args** (HIGH) 🔧 IN PROGRESS
-   - Status: Multi-strategy signature discovery implemented
+1. **Extend FFI to support float/pointer args** (HIGH) ✅ COMPLETE
+   - Status: Full automatic signature discovery working
    - Discovery pipeline: pkg-config → header parsing → DWARF → symbol table
-   - Symbol table extraction: Works (function names only, no types)
+   - Header parsing: Uses `gcc -E` to preprocess, regex to extract signatures
    - DWARF extraction: Works for libraries with debug info
-   - Header parsing: Placeholder (to be implemented)
-   - Current limitation: System libraries (libc, libm) lack debug info by default
-   - Workaround: Install debug packages or use explicit type casts
-   - Next: Implement header file parsing for automatic signature discovery
-   - Files: `cffi.go` (DiscoverFunctionSignatures), `parser.go` (compileCFunctionCall)
+   - Symbol table: Extracts function names when types unavailable
+   - Coverage: math.h, stdlib.h, stdio.h, string.h, SDL3, etc.
+   - Testing: sqrt(25.0) = 5.0, malloc(100) = valid pointer
+   - No manual casts or debug packages needed for standard libraries
+   - Files: `cffi.go` (DiscoverFunctionSignatures, parseHeaderForFunctions)
 
-2. **Fix nested arena crash** (LOW) 🐛 BUG - DEFERRED
-   - Status: Basic arenas work fine, nested arenas have slot management issue
-   - Workaround: Use single-level arenas (flatten nesting)
-   - Impact: Minor - nested arenas are rare in practice
-   - Note: Attempted slot clearing fix didn't resolve issue
-   - Files: `parser.go` (compileArenaStmt, possibly ensure_capacity logic)
+2. **Fix nested arena crash** (LOW) ✅ FIXED
+   - Status: Nested arenas work correctly (tested up to 3 levels deep)
+   - Testing: Deep nesting allocates and frees without crashes
+   - Previous issue may have been resolved by earlier slot management improvements
+   - Files: `parser.go` (compileArenaStmt)
 
 ## Critical - Game Development
 

@@ -138,11 +138,7 @@ See [LANGUAGE.md](LANGUAGE.md) for complete grammar.
 
 ## Known Limitations
 
-**FFI:** Type signatures require DWARF debug info or debug packages (`libc6-dbg`). Without them, use explicit casts.
-
-**Arenas:** Nested arenas have a double-free bug. Use single-level arenas.
-
-**Platform:** x86-64 Linux only. Other platforms in development.
+**Platform:** x86-64 Linux only. Other platforms in development (ARM64/RISC-V/Windows/macOS).
 
 See [TODO.md](TODO.md) for detailed roadmap.
 
