@@ -4595,6 +4595,14 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 					fmt.Fprintf(os.Stderr, "Warning: failed to extract constants from %s: %v\n", cImport.Library, err)
 				}
 			} else {
+				// Ensure cConstants map is initialized
+				if fc.cConstants[cImport.Alias] == nil {
+					fc.cConstants[cImport.Alias] = &CHeaderConstants{
+						Constants: make(map[string]int64),
+						Macros:    make(map[string]string),
+						Functions: make(map[string]*CFunctionSignature),
+					}
+				}
 				// Merge with existing data (don't overwrite DWARF or builtin signatures!)
 				for k, v := range constants.Constants {
 					fc.cConstants[cImport.Alias].Constants[k] = v
