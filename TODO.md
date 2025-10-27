@@ -8,12 +8,16 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
 ## Critical Bugs
 
-1. **Extend FFI to support float/pointer args** (HIGH) 🐛 PARTIAL FIX
-   - Status: Float/pointer args work when DWARF signatures are available
-   - DWARF extraction: Works for some .so files, fails for others (e.g., libc, libm)
-   - Workaround: Use explicit casts - `libc.sqrt((25.0 as double))` or provide .h files
-   - Proper fix needed: Better DWARF extraction or alternative signature discovery
-   - Files: `cffi.go` (ExtractFunctionSignatures), `parser.go` (compileCFunctionCall)
+1. **Extend FFI to support float/pointer args** (HIGH) 🔧 IN PROGRESS
+   - Status: Multi-strategy signature discovery implemented
+   - Discovery pipeline: pkg-config → header parsing → DWARF → symbol table
+   - Symbol table extraction: Works (function names only, no types)
+   - DWARF extraction: Works for libraries with debug info
+   - Header parsing: Placeholder (to be implemented)
+   - Current limitation: System libraries (libc, libm) lack debug info by default
+   - Workaround: Install debug packages or use explicit type casts
+   - Next: Implement header file parsing for automatic signature discovery
+   - Files: `cffi.go` (DiscoverFunctionSignatures), `parser.go` (compileCFunctionCall)
 
 2. **Fix nested arena crash** (LOW) 🐛 BUG - DEFERRED
    - Status: Basic arenas work fine, nested arenas have slot management issue

@@ -706,6 +706,88 @@ func ExtractSymbolsFromSo(soPath string) ([]string, error) {
 	return funcSymbols, nil
 }
 
+// DiscoverFunctionSignatures attempts to discover function signatures for a library
+// using multiple strategies in order of preference:
+// 1. pkg-config for library information and include paths
+// 2. Parse header files for function declarations
+// 3. Extract DWARF debug information
+// 4. Symbol table analysis (names only, no type info)
+func DiscoverFunctionSignatures(libraryName string, soPath string) (map[string]*CFunctionSignature, error) {
+	signatures := make(map[string]*CFunctionSignature)
+
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Discovering signatures for %s (%s)\n", libraryName, soPath)
+	}
+
+	// Strategy 1: Try pkg-config for include paths
+	pkgConfigPaths := tryPkgConfig(libraryName)
+	if len(pkgConfigPaths) > 0 && VerboseMode {
+		fmt.Fprintf(os.Stderr, "  pkg-config found include paths: %v\n", pkgConfigPaths)
+	}
+
+	// Strategy 2: Try to find and parse header files
+	headerSigs := tryParseHeaders(libraryName, pkgConfigPaths)
+	for name, sig := range headerSigs {
+		signatures[name] = sig
+	}
+	if len(headerSigs) > 0 && VerboseMode {
+		fmt.Fprintf(os.Stderr, "  Parsed %d signatures from headers\n", len(headerSigs))
+	}
+
+	// Strategy 3: Try DWARF debug info
+	dwarfSigs, err := ExtractFunctionSignatures(soPath)
+	if err == nil && len(dwarfSigs) > 0 {
+		for name, sig := range dwarfSigs {
+			if _, exists := signatures[name]; !exists {
+				signatures[name] = sig
+			}
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "  DWARF extracted %d signatures\n", len(dwarfSigs))
+		}
+	}
+
+	// Strategy 4: Extract symbol names (no type info)
+	// This at least tells us which functions exist
+	symbolNames, err := ExtractSymbolsFromSo(soPath)
+	if err == nil && VerboseMode {
+		fmt.Fprintf(os.Stderr, "  Symbol table has %d function names\n", len(symbolNames))
+	}
+
+	if len(signatures) == 0 && VerboseMode {
+		fmt.Fprintf(os.Stderr, "  Warning: No type signatures discovered. FFI calls will need explicit casts.\n")
+	}
+
+	return signatures, nil
+}
+
+// tryPkgConfig attempts to get include paths from pkg-config
+func tryPkgConfig(libraryName string) []string {
+	cmd := exec.Command("pkg-config", "--cflags-only-I", libraryName)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+
+	var paths []string
+	fields := strings.Fields(string(output))
+	for _, field := range fields {
+		if strings.HasPrefix(field, "-I") {
+			path := strings.TrimPrefix(field, "-I")
+			paths = append(paths, path)
+		}
+	}
+	return paths
+}
+
+// tryParseHeaders attempts to parse C header files for function declarations
+// Returns discovered function signatures
+func tryParseHeaders(libraryName string, additionalPaths []string) map[string]*CFunctionSignature {
+	// For now, return empty - header parsing will be implemented in a follow-up
+	// This is a placeholder for the proper implementation
+	return make(map[string]*CFunctionSignature)
+}
+
 // ExtractFunctionSignatures extracts function signatures from DWARF debug info in a .so file
 // Returns a map of function name -> CFunctionSignature
 func ExtractFunctionSignatures(soPath string) (map[string]*CFunctionSignature, error) {

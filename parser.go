@@ -4547,11 +4547,12 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 					}
 				}
 
-				// Extract function signatures from DWARF debug info
+				// Discover function signatures using multiple strategies:
+				// 1. pkg-config, 2. header parsing, 3. DWARF, 4. symbol table
 				if VerboseMode {
-					fmt.Fprintf(os.Stderr, "Extracting function signatures from DWARF info...\n")
+					fmt.Fprintf(os.Stderr, "Discovering function signatures...\n")
 				}
-				signatures, err := ExtractFunctionSignatures(cImport.SoPath)
+				signatures, err := DiscoverFunctionSignatures(cImport.Library, cImport.SoPath)
 				if err != nil {
 					if VerboseMode {
 						fmt.Fprintf(os.Stderr, "Warning: failed to extract signatures: %v\n", err)
