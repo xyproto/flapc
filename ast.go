@@ -279,6 +279,13 @@ type NumberExpr struct {
 func (n *NumberExpr) String() string  { return fmt.Sprintf("%g", n.Value) }
 func (n *NumberExpr) expressionNode() {}
 
+type PortExpr struct {
+	Port string // Port name or number as string (e.g., "5000" or "worker")
+}
+
+func (p *PortExpr) String() string  { return ":" + p.Port }
+func (p *PortExpr) expressionNode() {}
+
 type StringExpr struct {
 	Value string
 }

@@ -19,11 +19,16 @@
 - ✅ Incremental state tracking
 - ❌ Final integration (live patching) - needs wiring
 
-### 3. Fork & Background Processes (WIP)
-- ✅ BackgroundExpr AST node
-- ✅ Code generation (fork syscall, child/parent branching)
-- ❌ Parser integration - conflicts with `&` as list tail operator
-- Needs: Operator precedence resolution
+### 3. Process Spawning with `spawn`
+- ✅ Replaced `&` operator with `spawn` keyword
+- ✅ TOKEN_SPAWN added to lexer
+- ✅ SpawnStmt AST node with pipe syntax support
+- ✅ parseSpawnStmt() implementation
+- ✅ compileSpawnStmt() with fork() syscall
+- ✅ Fire-and-forget spawning works
+- ✅ Proper output flushing with fflush(NULL)
+- ❌ Pipe syntax for result waiting not yet implemented
+- ❌ Tuple/map destructuring not yet implemented
 
 ## Remaining Work for 1.6.0
 
@@ -40,9 +45,9 @@
    - Work-stealing queue
    - OpenMP-style work distribution
 
-3. **Fix Fork Parsing** (MEDIUM)
-   - Resolve `&` operator ambiguity
-   - Background execution vs. list tail
+3. **~~Fix Fork Parsing~~** ✅ COMPLETE
+   - ✅ Resolved `&` operator ambiguity by using `spawn` keyword
+   - ✅ Background execution now works with spawn
 
 4. **Complete Hot Reload** (HIGH)
    - Wire watch mode to running process

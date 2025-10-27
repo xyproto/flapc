@@ -3568,6 +3568,9 @@ func (p *Parser) parsePrimary() Expression {
 	case TOKEN_INF:
 		return &NumberExpr{Value: math.Inf(1)}
 
+	case TOKEN_PORT:
+		return &PortExpr{Port: p.current.Value}
+
 	case TOKEN_STRING:
 		return &StringExpr{Value: p.current.Value}
 
@@ -6347,6 +6350,26 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.LeaSymbolToReg("rax", labelName)
 			fc.out.MovMemToXmm("xmm0", "rax", 0)
 		}
+
+	case *PortExpr:
+		// Port literal: :5000 or :worker
+		// Numeric ports are used as-is, string ports are hashed to port numbers
+		portNum := fc.portToNumber(e.Port)
+
+		// Load port number as float64 into xmm0
+		labelName := fmt.Sprintf("port_%d", fc.stringCounter)
+		fc.stringCounter++
+
+		bits := uint64(0)
+		*(*float64)(unsafe.Pointer(&bits)) = portNum
+		var floatData []byte
+		for i := 0; i < 8; i++ {
+			floatData = append(floatData, byte((bits>>(i*8))&ByteMask))
+		}
+		fc.eb.Define(labelName, string(floatData))
+
+		fc.out.LeaSymbolToReg("rax", labelName)
+		fc.out.MovMemToXmm("xmm0", "rax", 0)
 
 	case *StringExpr:
 		labelName := fmt.Sprintf("str_%d", fc.stringCounter)
@@ -14531,6 +14554,32 @@ func (fc *FlapCompiler) compileConcurrentGatherExpr(expr *ConcurrentGatherExpr) 
 		fmt.Fprintln(os.Stderr, "This feature requires runtime support for concurrency")
 	}
 	compilerError("concurrent gather operator ||| is not yet implemented")
+}
+
+// portToNumber converts a port literal to a port number
+// Numeric strings like "5000" are converted directly
+// String names like "worker" are hashed to deterministic port numbers (10000-65535)
+func (fc *FlapCompiler) portToNumber(portStr string) float64 {
+	// Try parsing as numeric port
+	if portNum, err := strconv.ParseFloat(portStr, 64); err == nil {
+		// Validate port range (1-65535)
+		if portNum >= 1 && portNum <= 65535 {
+			return portNum
+		}
+		compilerError("port number %v out of valid range (1-65535)", portNum)
+	}
+
+	// Hash string to port number in user port range (10000-65535)
+	// Use FNV-1a hash for consistent deterministic hashing
+	hash := uint64(14695981039346656037) // FNV offset basis
+	for i := 0; i < len(portStr); i++ {
+		hash ^= uint64(portStr[i])
+		hash *= 1099511628211 // FNV prime
+	}
+
+	// Map to range 10000-65535 (55536 possible ports)
+	portNum := 10000 + (hash % 55536)
+	return float64(portNum)
 }
 
 func (fc *FlapCompiler) trackFunctionCall(funcName string) {

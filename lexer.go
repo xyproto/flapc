@@ -128,6 +128,7 @@ const (
 	TOKEN_ALIAS       // alias (create keyword aliases for language packs)
 	TOKEN_HOT         // hot (mark function as hot-reloadable)
 	TOKEN_SPAWN       // spawn (spawn background process)
+	TOKEN_PORT        // :5000 or :worker (ENet port literal)
 	TOKEN_HAS         // has (type/class definitions)
 )
 
@@ -153,6 +154,25 @@ type Token struct {
 // isHexDigit checks if a byte is a valid hexadecimal digit
 func isHexDigit(ch byte) bool {
 	return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
+}
+
+// readPortLiteral reads a port literal (already consumed ':')
+// Port literals can be numeric (:5000) or named (:worker, :game_server)
+func (l *Lexer) readPortLiteral() Token {
+	start := l.pos
+
+	// Read alphanumeric characters and underscores
+	for l.pos < len(l.input) {
+		ch := l.input[l.pos]
+		if (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_' {
+			l.pos++
+		} else {
+			break
+		}
+	}
+
+	portName := l.input[start:l.pos]
+	return Token{Type: TOKEN_PORT, Value: portName, Line: l.line}
 }
 
 // processEscapeSequences converts escape sequences in a string to their actual characters
@@ -188,13 +208,14 @@ func processEscapeSequences(s string) string {
 
 // Lexer for Flap language
 type Lexer struct {
-	input string
-	pos   int
-	line  int
+	input        string
+	pos          int
+	line         int
+	bracketDepth int // Track bracket nesting for context-sensitive parsing
 }
 
 func NewLexer(input string) *Lexer {
-	return &Lexer{input: input, pos: 0, line: 1}
+	return &Lexer{input: input, pos: 0, line: 1, bracketDepth: 0}
 }
 
 func (l *Lexer) peek() byte {
@@ -515,7 +536,14 @@ func (l *Lexer) NextToken() Token {
 			l.pos += 2 // skip both ':' and ':'
 			return Token{Type: TOKEN_CONS, Value: "::", Line: l.line}
 		}
-		// Standalone : for map literals
+		// Check for port literal: :5000 or :worker
+		// Only parse as port literal outside of brackets (to avoid conflict with slice syntax [0:2])
+		nextCh := l.peek()
+		if l.bracketDepth == 0 && ((nextCh >= '0' && nextCh <= '9') || (nextCh >= 'a' && nextCh <= 'z') || (nextCh >= 'A' && nextCh <= 'Z') || nextCh == '_') {
+			l.pos++ // skip ':'
+			return l.readPortLiteral()
+		}
+		// Standalone : for map literals and slice syntax
 		l.pos++
 		return Token{Type: TOKEN_COLON, Value: ":", Line: l.line}
 	case '=':
@@ -685,9 +713,13 @@ func (l *Lexer) NextToken() Token {
 		return Token{Type: TOKEN_RBRACE, Value: "}", Line: l.line}
 	case '[':
 		l.pos++
+		l.bracketDepth++
 		return Token{Type: TOKEN_LBRACKET, Value: "[", Line: l.line}
 	case ']':
 		l.pos++
+		if l.bracketDepth > 0 {
+			l.bracketDepth--
+		}
 		return Token{Type: TOKEN_RBRACKET, Value: "]", Line: l.line}
 	case '|':
 		// Check for ||| first, then ||, then |b, then |
