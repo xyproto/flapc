@@ -27,9 +27,14 @@ var compileOnlyPrograms = map[string]bool{
 	// SDL3's library constructors attempt to initialize display subsystems even before main()
 	// This occurs before SDL_Init(0) can specify headless mode
 	// Works fine with a display; headless execution requires SDL_VIDEODRIVER=dummy or X virtual framebuffer
-	"c_auto_cast_test": true,
-	"c_ffi_test":       true,
-	"c_string_test":    true,
+	"c_auto_cast_test":   true,
+	"c_ffi_test":         true,
+	"c_string_test":      true,
+	"sdl3_texture_demo":  true,
+	"snake_cstruct_test": true,
+	"snake_simple":       true,
+	"snake_visual_demo":  true,
+	"snakegame":          true,
 	// Raylib tests are compile-only (Raylib is optional, may not be available)
 }
 
