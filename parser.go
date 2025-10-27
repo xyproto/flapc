@@ -4360,6 +4360,8 @@ type FlapCompiler struct {
 	hotFunctions         map[string]bool              // Track hot-reloadable functions
 	hotFunctionTable     map[string]int
 	hotTableRodataOffset int
+	tailCallsOptimized   int                          // Count of tail calls optimized
+	nonTailCalls         int                          // Count of non-tail recursive calls
 
 	metaArenaGrowthErrorJump      int
 	firstMetaArenaMallocErrorJump int
@@ -11705,6 +11707,8 @@ func (fc *FlapCompiler) compileTailCall(call *CallExpr) {
 	// Tail recursion optimization for "me" self-reference
 	// Instead of calling, we update parameters and jump to function start
 
+	fc.tailCallsOptimized++
+
 	if len(call.Args) != len(fc.currentLambda.Params) {
 		compilerError("tail call to 'me' has %d args but function has %d params",
 			len(call.Args), len(fc.currentLambda.Params))
@@ -11848,9 +11852,12 @@ func (fc *FlapCompiler) compileTailRecursiveCall(call *CallExpr) {
 
 func (fc *FlapCompiler) compileRecursiveCall(call *CallExpr) {
 	if fc.inTailPosition {
+		fc.tailCallsOptimized++
 		fc.compileTailRecursiveCall(call)
 		return
 	}
+
+	fc.nonTailCalls++
 
 	// Compile a recursive call with optional depth tracking
 	// Only track depth if max is not infinite (for zero runtime overhead with max inf)
@@ -14860,6 +14867,20 @@ func CompileFlap(inputPath string, outputPath string, platform Platform) (err er
 	err = compiler.Compile(program, outputPath)
 	if err != nil {
 		return fmt.Errorf("compilation failed: %v", err)
+	}
+
+	// Output optimization summary (unless in quiet mode)
+	if !QuietMode {
+		totalCalls := compiler.tailCallsOptimized + compiler.nonTailCalls
+		if totalCalls > 0 {
+			fmt.Printf("Tail call optimization: %d/%d recursive calls optimized",
+				compiler.tailCallsOptimized, totalCalls)
+			if compiler.nonTailCalls > 0 {
+				fmt.Printf(" (%d not in tail position)\n", compiler.nonTailCalls)
+			} else {
+				fmt.Println()
+			}
+		}
 	}
 
 	return nil

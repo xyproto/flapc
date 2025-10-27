@@ -148,10 +148,12 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
 ## Nice to Have
 
-7. **Add tail call validation in debug mode** (LOW)
-   - Warn if tail recursion incorrectly used (e.g., in non-tail position)
-   - Helps developers understand when TCO will apply
-   - Files: Add validation pass in `parser.go`
+7. **Tail call optimization summary** (LOW) ✅ COMPLETE
+   - Outputs optimization summary after compilation: "Tail call optimization: N/M recursive calls optimized"
+   - Shows how many recursive calls are in tail position vs non-tail position
+   - Can be suppressed with -q/--quiet flag
+   - Helps developers understand when TCO applies
+   - Files: `parser.go` (tracking), `main.go` (output and flags)
 
 8. **Add macro system** (VERY HIGH)
    - Pattern-based code transformation at parse time

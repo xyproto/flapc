@@ -939,6 +939,7 @@ func (eb *ExecutableBuilder) patchRodataInELF() {
 
 // Global flags for controlling output verbosity and dependencies
 var VerboseMode bool
+var QuietMode bool
 var UpdateDepsFlag bool
 var WPOTimeout float64
 var SingleFlag bool
@@ -966,6 +967,8 @@ func main() {
 	var version = flag.Bool("version", false, "print version information and exit")
 	var verbose = flag.Bool("v", false, "verbose mode (show detailed compilation info)")
 	var verboseLong = flag.Bool("verbose", false, "verbose mode (show detailed compilation info)")
+	var quiet = flag.Bool("q", false, "quiet mode (suppress optimization summary)")
+	var quietLong = flag.Bool("quiet", false, "quiet mode (suppress optimization summary)")
 	var updateDeps = flag.Bool("u", false, "update all dependency repositories from Git")
 	var updateDepsLong = flag.Bool("update-deps", false, "update all dependency repositories from Git")
 	var codeFlag = flag.String("c", "", "execute Flap code from command line")
@@ -988,6 +991,7 @@ func main() {
 
 	// Set global verbosity flag (use whichever was specified)
 	VerboseMode = *verbose || *verboseLong
+	QuietMode = *quiet || *quietLong
 
 	// Set global WPO timeout
 	WPOTimeout = *optTimeout
