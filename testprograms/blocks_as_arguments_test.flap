@@ -1,0 +1,73 @@
+// Test blocks-as-arguments syntax sugar
+main ==> {
+    // Simulate FLAPGAME-style API
+    printf("=== Blocks as Arguments Test ===\n\n")
+
+    // Traditional style: explicit lambda
+    execute_callback := (callback) => {
+        printf("Executing callback...\n")
+        callback()
+    }
+
+    printf("Traditional style:\n")
+    execute_callback(() => {
+        printf("  Inside callback!\n")
+    })
+
+    // New style: implicit lambda (block as argument)
+    printf("\nNew style (syntactic sugar):\n")
+    execute_callback {
+        printf("  Inside callback with block syntax!\n")
+    }
+
+    // With named function taking callback
+    on_event := (name, handler) => {
+        printf("Event '%v' triggered\n", name)
+        handler()
+    }
+
+    printf("\nWith arguments:\n")
+    on_event("click") {
+        printf("  Button was clicked!\n")
+    }
+
+    // Conditional execution with blocks
+    execute_if := (condition, action) => {
+        condition {
+            -> action()
+            ~> printf("  Condition was false\n")
+        }
+    }
+
+    printf("\nConditional execution:\n")
+    execute_if(1) {
+        printf("  Condition was true!\n")
+    }
+
+    execute_if(0) {
+        printf("  This won't print\n")
+    }
+
+    // Game-style input handling simulation
+    key_pressed := 1
+
+    printf("\nGame-style pattern:\n")
+    on_key_down := (key, action) => {
+        key_pressed {
+            -> {
+                printf("Key '%v' pressed: ", key)
+                action()
+            }
+        }
+    }
+
+    on_key_down("space") {
+        printf("Jump!\n")
+    }
+
+    on_key_down("w") {
+        printf("Move forward!\n")
+    }
+
+    printf("\n=== Test Complete ===\n")
+}

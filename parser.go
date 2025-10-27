@@ -1966,7 +1966,7 @@ func (p *Parser) parseStatement() Statement {
 			(p.peek.Type == TOKEN_COLON_EQUALS || p.peek.Type == TOKEN_EQUALS ||
 				p.peek.Type == TOKEN_LEFT_ARROW || p.peek.Type == TOKEN_COLON ||
 				p.peek.Type == TOKEN_PLUS_EQUALS || p.peek.Type == TOKEN_MINUS_EQUALS ||
-				p.peek.Type == TOKEN_STAR_EQUALS || p.peek.Type == TOKEN_SLASH_EQUALS ||
+				p.peek.Type == TOKEN_STAR_EQUALS || p.peek.Type == TOKEN_POWER_EQUALS || p.peek.Type == TOKEN_SLASH_EQUALS ||
 				p.peek.Type == TOKEN_MOD_EQUALS) {
 			// Treat TOKEN_RET as TOKEN_IDENT for assignment purposes
 			// by converting the token type temporarily
@@ -2003,7 +2003,7 @@ func (p *Parser) parseStatement() Statement {
 	// Check for assignment (=, :=, ==>, <-, with optional type annotation, and compound assignments)
 	if p.current.Type == TOKEN_IDENT && (p.peek.Type == TOKEN_EQUALS || p.peek.Type == TOKEN_EQUALS_FAT_ARROW || p.peek.Type == TOKEN_COLON_EQUALS || p.peek.Type == TOKEN_LEFT_ARROW || p.peek.Type == TOKEN_COLON ||
 		p.peek.Type == TOKEN_PLUS_EQUALS || p.peek.Type == TOKEN_MINUS_EQUALS ||
-		p.peek.Type == TOKEN_STAR_EQUALS || p.peek.Type == TOKEN_SLASH_EQUALS || p.peek.Type == TOKEN_MOD_EQUALS) {
+		p.peek.Type == TOKEN_STAR_EQUALS || p.peek.Type == TOKEN_POWER_EQUALS || p.peek.Type == TOKEN_SLASH_EQUALS || p.peek.Type == TOKEN_MOD_EQUALS) {
 		if isHot {
 			return p.parseAssignmentWithHot(true)
 		}
@@ -2198,7 +2198,7 @@ func (p *Parser) parseAssignmentWithHot(isHot bool) *AssignStmt {
 		p.nextToken() // skip precision identifier
 	}
 
-	// Check for compound assignment operators (+=, -=, *=, /=, %=)
+	// Check for compound assignment operators (+=, -=, *=, **=, /=, %=)
 	var compoundOp string
 	switch p.current.Type {
 	case TOKEN_PLUS_EQUALS:
@@ -2207,6 +2207,8 @@ func (p *Parser) parseAssignmentWithHot(isHot bool) *AssignStmt {
 		compoundOp = "-"
 	case TOKEN_STAR_EQUALS:
 		compoundOp = "*"
+	case TOKEN_POWER_EQUALS:
+		compoundOp = "**"
 	case TOKEN_SLASH_EQUALS:
 		compoundOp = "/"
 	case TOKEN_MOD_EQUALS:
@@ -3083,15 +3085,32 @@ func (p *Parser) parseComparison() Expression {
 
 // parseRange handles range expressions (0..<10 or 0..=10)
 func (p *Parser) parseRange() Expression {
-	left := p.parseAdditive()
+	left := p.parseCons()
 
 	// Check for range operators
 	if p.peek.Type == TOKEN_DOTDOTLT || p.peek.Type == TOKEN_DOTDOTEQ {
 		p.nextToken() // move to left expr
 		inclusive := p.current.Type == TOKEN_DOTDOTEQ
 		p.nextToken() // skip range operator
-		right := p.parseAdditive()
+		right := p.parseCons()
 		return &RangeExpr{Start: left, End: right, Inclusive: inclusive}
+	}
+
+	return left
+}
+
+// parseCons handles the :: (list cons/prepend) operator
+// Cons is right-associative: 1 :: 2 :: [3] = 1 :: (2 :: [3])
+func (p *Parser) parseCons() Expression {
+	left := p.parseAdditive()
+
+	if p.peek.Type == TOKEN_CONS {
+		p.nextToken() // move to ::
+		op := p.current.Value
+		p.nextToken() // move past ::
+		// Right-associative: recursively parse the right side
+		right := p.parseCons()
+		return &BinaryExpr{Left: left, Operator: op, Right: right}
 	}
 
 	return left
@@ -3183,14 +3202,31 @@ func (p *Parser) parseBitwise() Expression {
 }
 
 func (p *Parser) parseMultiplicative() Expression {
-	left := p.parseUnary()
+	left := p.parsePower()
 
 	for p.peek.Type == TOKEN_STAR || p.peek.Type == TOKEN_SLASH || p.peek.Type == TOKEN_MOD || p.peek.Type == TOKEN_FMA {
 		p.nextToken()
 		op := p.current.Value
 		p.nextToken()
-		right := p.parseUnary()
+		right := p.parsePower()
 		left = &BinaryExpr{Left: left, Operator: op, Right: right}
+	}
+
+	return left
+}
+
+// parsePower handles the ** (power/exponentiation) operator
+// Power is right-associative: 2 ** 3 ** 2 = 2 ** (3 ** 2) = 512
+func (p *Parser) parsePower() Expression {
+	left := p.parseUnary()
+
+	if p.peek.Type == TOKEN_POWER {
+		p.nextToken() // move to **
+		op := p.current.Value
+		p.nextToken() // move past **
+		// Right-associative: recursively parse the right side
+		right := p.parsePower()
+		return &BinaryExpr{Left: left, Operator: op, Right: right}
 	}
 
 	return left
@@ -3328,6 +3364,16 @@ func (p *Parser) parsePostfix() Expression {
 			}
 			// current is now on ')', whether we had args or not
 
+			// Check for blocks-as-arguments: expr() { block }
+			if p.peek.Type == TOKEN_LBRACE {
+				p.nextToken() // move to '{'
+				blockLambda := &LambdaExpr{
+					Params: []string{},
+					Body:   p.parseLambdaBody(),
+				}
+				args = append(args, blockLambda)
+			}
+
 			// Wrap the expression in a CallExpr
 			// If expr is a LambdaExpr, it will be compiled and called
 			// If expr is an IdentExpr, it will be looked up and called
@@ -3412,6 +3458,15 @@ func (p *Parser) parsePostfix() Expression {
 							args = append(args, p.parseExpression())
 						}
 						p.nextToken() // move to ')'
+					}
+					// Check for blocks-as-arguments: namespace.func() { block }
+					if p.peek.Type == TOKEN_LBRACE {
+						p.nextToken() // move to '{'
+						blockLambda := &LambdaExpr{
+							Params: []string{},
+							Body:   p.parseLambdaBody(),
+						}
+						args = append(args, blockLambda)
 					}
 					expr = &CallExpr{Function: namespacedName, Args: args}
 				} else {
@@ -3531,6 +3586,19 @@ func (p *Parser) parsePrimary() Expression {
 				p.nextToken() // move to ')'
 			}
 			// current is now on ')', whether we had args or not
+
+			// Check for blocks-as-arguments: func() { block } or func(arg) { block }
+			// Converts to: func(() => { block }) or func(arg, () => { block })
+			if p.peek.Type == TOKEN_LBRACE {
+				p.nextToken() // move to '{'
+				// Parse the block as a lambda body
+				blockLambda := &LambdaExpr{
+					Params: []string{}, // No parameters
+					Body:   p.parseLambdaBody(),
+				}
+				args = append(args, blockLambda)
+			}
+
 			// Special handling for vector constructors
 			if name == "vec2" {
 				if len(args) != 2 {

@@ -17,6 +17,7 @@ const (
 	TOKEN_PLUS
 	TOKEN_MINUS
 	TOKEN_STAR
+	TOKEN_POWER             // ** (exponentiation)
 	TOKEN_SLASH
 	TOKEN_MOD
 	TOKEN_EQUALS
@@ -26,12 +27,14 @@ const (
 	TOKEN_PLUS_EQUALS         // +=
 	TOKEN_MINUS_EQUALS        // -=
 	TOKEN_STAR_EQUALS         // *=
+	TOKEN_POWER_EQUALS        // **=
 	TOKEN_SLASH_EQUALS        // /=
 	TOKEN_MOD_EQUALS          // %=
 	TOKEN_LPAREN
 	TOKEN_RPAREN
 	TOKEN_COMMA
 	TOKEN_COLON
+	TOKEN_CONS       // :: (list cons/prepend operator)
 	TOKEN_SEMICOLON
 	TOKEN_NEWLINE
 	TOKEN_LT               // <
@@ -124,6 +127,7 @@ const (
 	TOKEN_ALIGNED     // aligned (alignment modifier for cstruct)
 	TOKEN_ALIAS       // alias (create keyword aliases for language packs)
 	TOKEN_HOT         // hot (mark function as hot-reloadable)
+	TOKEN_HAS         // has (type/class definitions)
 )
 
 // Code generation constants
@@ -404,6 +408,8 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_ALIAS, Value: value, Line: l.line}
 		case "hot":
 			return Token{Type: TOKEN_HOT, Value: value, Line: l.line}
+		case "has":
+			return Token{Type: TOKEN_HAS, Value: value, Line: l.line}
 		case "xor":
 			return Token{Type: TOKEN_XOR, Value: value, Line: l.line}
 		case "shl":
@@ -464,6 +470,16 @@ func (l *Lexer) NextToken() Token {
 			l.pos++
 			return Token{Type: TOKEN_FMA, Value: "*+", Line: l.line}
 		}
+		// Check for ** (power) and **= (power assignment)
+		if l.pos < len(l.input) && l.input[l.pos] == '*' {
+			l.pos++
+			// Check for **=
+			if l.pos < len(l.input) && l.input[l.pos] == '=' {
+				l.pos++
+				return Token{Type: TOKEN_POWER_EQUALS, Value: "**=", Line: l.line}
+			}
+			return Token{Type: TOKEN_POWER, Value: "**", Line: l.line}
+		}
 		// Check for *=
 		if l.pos < len(l.input) && l.input[l.pos] == '=' {
 			l.pos++
@@ -487,10 +503,14 @@ func (l *Lexer) NextToken() Token {
 		}
 		return Token{Type: TOKEN_MOD, Value: "%", Line: l.line}
 	case ':':
-		// Check for := before advancing
+		// Check for := and :: before advancing
 		if l.peek() == '=' {
 			l.pos += 2 // skip both ':' and '='
 			return Token{Type: TOKEN_COLON_EQUALS, Value: ":=", Line: l.line}
+		}
+		if l.peek() == ':' {
+			l.pos += 2 // skip both ':' and ':'
+			return Token{Type: TOKEN_CONS, Value: "::", Line: l.line}
 		}
 		// Standalone : for map literals
 		l.pos++

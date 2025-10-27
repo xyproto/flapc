@@ -291,19 +291,57 @@ flags := unsafe {
 
 **Arithmetic:** `+` `-` `*` `/` `%` `**` (power)
 
-**Compound Assignment:** `+=` `-=` `*=` `/=` `%=` (equivalent to `<-`)
+```flap
+// Basic arithmetic
+x + y    // Addition
+x - y    // Subtraction
+x * y    // Multiplication
+x / y    // Division
+x % y    // Modulo (remainder)
+x ** y   // Power (exponentiation)
+
+// Power operator examples
+area := radius ** 2              // Square
+volume := side ** 3              // Cube
+distance := (dx ** 2 + dy ** 2) ** 0.5  // Euclidean distance (sqrt)
+growth := principal * (1 + rate) ** years  // Compound interest
+```
+
+**Compound Assignment:** `+=` `-=` `*=` `/=` `%=` `**=` (equivalent to `<-`)
 ```flap
 sum := 0
 sum += 10     // Equivalent to: sum <- sum + 10
-count -= 1    // count = count - 1
-val *= 2      // val = val * 2
-x /= 3        // x = x / 3
-x %= 5        // x = x % 5
+count -= 1    // count <- count - 1
+val *= 2      // val <- val * 2
+x /= 3        // x <- x / 3
+x %= 5        // x <- x % 5
+x **= 2       // x <- x ** 2 (square x)
 ```
 
 **Comparison:** `<` `<=` `>` `>=` `==` `!=`
 
 **Logical:** `and` `or` `xor` `not`
+
+Logical operators provide short-circuit evaluation:
+```flap
+// and - short-circuit AND (returns 0 if left is false, else right value)
+x > 0 and x < 100    // Only evaluates x < 100 if x > 0 is true
+valid and process()  // Only calls process() if valid is true
+
+// or - short-circuit OR (returns left if true, else right value)
+x < 0 or x > 100     // Only evaluates x > 100 if x < 0 is false
+cache or compute()   // Only calls compute() if cache is false/zero
+
+// Common patterns
+has_value and { do_something() }  // Execute block only if condition is true
+get_cached() or { expensive_computation() }  // Compute only if cache miss
+
+// not - logical negation
+not ready  // Returns 1 if ready is 0, else 0
+not (x > 10)
+```
+
+Note: For bitwise AND/OR, use `&b` and `|b` instead.
 
 **Bitwise:** `&b` `|b` `^b` `~b` (operate on an integer representation of the float)
 
@@ -331,7 +369,36 @@ x %= 5        // x = x % 5
 - `||` (parallel piping)
 - `|||` (reducing, map-filter-reduce)
 
-**List:** `^` (head), `&` (tail), `#` (length), `::` (cons)
+**List:** `^` (head), `&` (tail), `#` (length), `::` (cons/prepend)
+
+List operators for common operations:
+```flap
+numbers = [1, 2, 3]
+
+// # - length
+len := #numbers       // 3
+
+// ^ - head (first element)
+first := ^numbers     // 1
+
+// & - tail (all but first)
+rest := &numbers      // [2, 3]
+
+// :: - cons (prepend element to list)
+new_list := 0 :: numbers      // [0, 1, 2, 3]
+item :: existing_list         // Prepend item
+
+// Common patterns
+@ item :: rest in list {
+    // Pattern match with cons in loops
+}
+
+// Building lists functionally
+build_list := (n) => n <= 0 {
+    -> []
+    ~> n :: build_list(n - 1)  // Prepend n to recursive result
+}
+```
 
 **Err handling:**
 - `or!` (railway-oriented programming / err propagation)
@@ -955,6 +1022,71 @@ process = x => {
     result := temp + 10
     result  // Last expression is return val
 }
+```
+
+#### Blocks as Arguments (Syntactic Sugar)
+
+For functions that take callbacks with no parameters, Flap allows omitting the lambda syntax:
+
+```flap
+// Instead of writing: func(() => { block })
+// You can write: func { block }
+
+// Traditional style (explicit lambda)
+app.key_down("space", () => { player <- jump(player) })
+
+// Syntactic sugar style (implicit lambda)
+app.key_down("space") { player <- jump(player) }
+
+// Works with match expressions too
+ready {
+    -> execute {
+        println("Running task...")
+        do_work()
+    }
+}
+
+// Especially clean for event handlers
+on_click {
+    printf("Button clicked!\n")
+    update_state()
+}
+
+// Multiple callbacks (need explicit lambdas)
+register_handlers(
+    on_start { initialize() },
+    on_stop { cleanup() }
+)
+```
+
+**How it works:**
+- When a function call is followed by a block `{ ... }`, it's automatically converted to a lambda `() => { ... }`
+- The block becomes the last argument to the function
+- If the function signature expects `fn()` or similar, the conversion happens automatically
+- This makes callback-heavy APIs (like game engines) much cleaner
+
+**Common patterns:**
+```flap
+// Event handlers
+app.on_update { update_game_state() }
+app.on_render { draw_scene() }
+
+// Conditional execution
+condition {
+    -> action { do_something() }
+    ~> { do_alternative() }
+}
+
+// Timers and loops
+@ running {
+    process_frame()
+    should_quit { ret @ }
+}
+
+// Input handling (FLAPGAME style)
+app.key_down("w") { player.y <- player.y - speed }
+app.key_down("s") { player.y <- player.y + speed }
+app.mouse_click() { shoot(mouse_x, mouse_y) }
 ```
 
 ### Automatic Recursion Optimization

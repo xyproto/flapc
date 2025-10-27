@@ -1,0 +1,68 @@
+// Test and/or logical operators (short-circuit evaluation)
+main ==> {
+    printf("=== Logical Operators Test ===\n\n")
+
+    // Short-circuit AND
+    printf("Short-circuit AND:\n")
+    x := 5
+    result1 := x > 0 and x < 10
+    printf("  5 > 0 and 5 < 10 = %v (should be 1)\n", result1)
+
+    result2 := x < 0 and x > -10
+    printf("  5 < 0 and 5 > -10 = %v (should be 0, second part not evaluated)\n", result2)
+
+    // Short-circuit OR
+    printf("\nShort-circuit OR:\n")
+    result3 := x < 0 or x > 3
+    printf("  5 < 0 or 5 > 3 = %v (should be 1)\n", result3)
+
+    result4 := x > 10 or x < 0
+    printf("  5 > 10 or 5 < 0 = %v (should be 0)\n", result4)
+
+    // Guard patterns
+    printf("\nGuard patterns:\n")
+    has_value := 1
+    value := 42
+
+    // Only execute if has_value is true
+    has_value and {
+        printf("  Value is: %v\n", value)
+    }
+
+    // Default value pattern
+    cache := 0
+    cached_or_computed := cache or 123
+    printf("  cache (0) or 123 = %v\n", cached_or_computed)
+
+    cache := 99
+    cached_or_computed2 := cache or 123
+    printf("  cache (99) or 123 = %v\n", cached_or_computed2)
+
+    // Complex conditions
+    printf("\nComplex conditions:\n")
+    age := 25
+    has_license := 1
+
+    can_drive := age >= 18 and has_license
+    printf("  age >= 18 and has_license = %v\n", can_drive)
+
+    is_special := age < 16 or age > 65
+    printf("  age < 16 or age > 65 = %v\n", is_special)
+
+    // Chained conditions (FLAPGAME-style)
+    printf("\nChained conditions:\n")
+    moving := 0 or 0 or 1  // w key OR up key OR controller
+    printf("  moving (0 or 0 or 1) = %v\n", moving)
+
+    // Not operator
+    printf("\nNOT operator:\n")
+    ready := 1
+    not_ready := not ready
+    printf("  not ready (where ready=1) = %v\n", not_ready)
+
+    idle := 0
+    not_idle := not idle
+    printf("  not idle (where idle=0) = %v\n", not_idle)
+
+    printf("\n=== Test Complete ===\n")
+}
