@@ -5627,16 +5627,11 @@ func (fc *FlapCompiler) compileArenaStmt(stmt *ArenaStmt) {
 	// Restore previous arena context
 	fc.currentArena = previousArena
 
-	// Load arena pointer from meta-arena and destroy
+	// Reset arena (resets offset to 0, keeps buffer allocated for reuse)
 	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta")
 	fc.out.MovMemToReg("rbx", "rbx", 0)      // rbx = meta-arena pointer
 	fc.out.MovMemToReg("rdi", "rbx", offset) // rdi = arena pointer from slot
-	fc.out.CallSymbol("flap_arena_destroy")
-
-	// Clear the slot in meta-arena (set to NULL) to prevent double-free
-	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta")
-	fc.out.MovMemToReg("rbx", "rbx", 0)      // rbx = meta-arena pointer
-	fc.out.MovImmToMem(0, "rbx", offset)     // meta[slot] = NULL
+	fc.out.CallSymbol("flap_arena_reset")
 }
 
 func (fc *FlapCompiler) compileLoopStatement(stmt *LoopStmt) {
