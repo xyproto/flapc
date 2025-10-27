@@ -34,9 +34,36 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
    - Process management: Track PIDs, cleanup on exit
    - Files: Extend `parser.go` (fork codegen), new `process.go` (process lifecycle)
 
+4. **Complete live hot reload integration** (HIGH) 🎮 GAMEDEV - CRITICAL FOR 1.6
+   - Goal: Live code patching in running game processes (infrastructure 90% complete)
+   - Status: Foundation exists but missing final integration step
+   - ✅ Complete: Function indirection table, memory allocation, file watching, code extraction
+   - ❌ Missing: Live injection into running process
+
+   **Remaining Work:**
+   - Wire up watch mode to keep game process running (don't rebuild binary)
+   - On file change: Extract only changed hot function machine code
+   - Inject extracted code using `HotReloadManager.ReloadHotFunction()`
+   - Update function pointer table atomically in running process
+   - Handle compilation errors (keep old code running)
+
+   **Integration Steps:**
+   1. Modify `watchAndRecompile()` to not restart process
+   2. Use `IncrementalState` to detect which hot functions changed
+   3. Compile only changed functions to temporary binary
+   4. Extract changed function code with `ExtractFunctionCode()`
+   5. Call `HotReloadManager.ReloadHotFunction()` to patch live
+
+   **Testing:**
+   - Test game with hot physics constant (gravity, jump height)
+   - Test hot render function (change colors, sizes)
+   - Test compilation error recovery (old code stays active)
+
+   Files: Wire together `main.go`, `hotreload.go`, `incremental.go`, `filewatcher.go`
+
 ## Important - Language Features (1.6 Nice-to-Have)
 
-4. **Add Steamworks FFI support** (HIGH) 🎮 GAMEDEV
+5. **Add Steamworks FFI support** (HIGH) 🎮 GAMEDEV
    - Goal: Steam achievements, leaderboards, cloud saves for commercial releases
    - Approach: Extend C FFI to handle Steamworks SDK callbacks and structs
    - Requirements: Handle C++ name mangling, callback function pointers
@@ -47,36 +74,36 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
 These features are deferred until after 1.6 release:
 
-5. **Add trampoline execution for deep recursion** (MEDIUM)
+6. **Add trampoline execution for deep recursion** (MEDIUM)
    - Handle deep recursion without TCO (tree traversal, Ackermann)
    - Return thunk (suspended computation), evaluate iteratively
    - Files: New `trampoline.go`
 
-6. **Add let bindings for local scope** (LOW)
+7. **Add let bindings for local scope** (LOW)
    - Syntax: `let rec loop = (n, acc) => ...`
    - StandardML/OCaml-style local recursive definitions
    - Files: `parser.go`, new LetExpr in `ast.go`
 
-7. **Add Python-style colon + indentation** (MEDIUM)
+8. **Add Python-style colon + indentation** (MEDIUM)
    - Alternative syntax for language packs: `if x > 0:\n    print(x)`
    - Track indentation levels in lexer, emit virtual braces
    - Files: `lexer.go`, `parser.go`
 
-8. **Add CPS (Continuation-Passing Style) transform** (VERY HIGH)
+9. **Add CPS (Continuation-Passing Style) transform** (VERY HIGH)
    - Convert all calls to tail calls internally
    - Advanced control flow, no stack growth
    - Files: New `cps.go`
 
-9. **Add macro system** (VERY HIGH)
-   - Pattern-based code transformation at parse time
-   - Enables language packs and metaprogramming
-   - Files: New `macro.go`
+10. **Add macro system** (VERY HIGH)
+    - Pattern-based code transformation at parse time
+    - Enables language packs and metaprogramming
+    - Files: New `macro.go`
 
-10. **Add custom infix operators** (HIGH)
+11. **Add custom infix operators** (HIGH)
     - For language packs (e.g., Python's `**`)
     - Files: Extend `parser.go` precedence
 
-11. **Multiplatform support** (Deferred to post-1.6)
+12. **Multiplatform support** (Deferred to post-1.6)
     - Windows x64 (PE/COFF)
     - Windows ARM64
     - macOS ARM64 (mostly complete, needs testing)
