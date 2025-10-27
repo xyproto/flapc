@@ -1,7 +1,7 @@
-// Test blocks-as-arguments syntax sugar
+// Test piping blocks to functions
 main ==> {
     // Simulate FLAPGAME-style API
-    printf("=== Blocks as Arguments Test ===\n\n")
+    printf("=== Piping Blocks Test ===\n\n")
 
     // Traditional style: explicit lambda
     execute_callback := (callback) => {
@@ -14,11 +14,9 @@ main ==> {
         printf("  Inside callback!\n")
     })
 
-    // New style: implicit lambda (block as argument)
-    printf("\nNew style (syntactic sugar):\n")
-    execute_callback {
-        printf("  Inside callback with block syntax!\n")
-    }
+    // Pipe style: block flows into function
+    printf("\nPipe style (functional):\n")
+    { printf("  Inside callback with pipe syntax!\n") } | execute_callback
 
     // With named function taking callback
     on_event := (name, handler) => {
@@ -26,10 +24,10 @@ main ==> {
         handler()
     }
 
-    printf("\nWith arguments:\n")
-    on_event("click") {
+    printf("\nWith arguments (using explicit lambda):\n")
+    on_event("click", () => {
         printf("  Button was clicked!\n")
-    }
+    })
 
     // Conditional execution with blocks
     execute_if := (condition, action) => {
@@ -40,13 +38,13 @@ main ==> {
     }
 
     printf("\nConditional execution:\n")
-    execute_if(1) {
+    execute_if(1, () => {
         printf("  Condition was true!\n")
-    }
+    })
 
-    execute_if(0) {
+    execute_if(0, () => {
         printf("  This won't print\n")
-    }
+    })
 
     // Game-style input handling simulation
     key_pressed := 1
@@ -61,13 +59,10 @@ main ==> {
         }
     }
 
-    on_key_down("space") {
-        printf("Jump!\n")
-    }
-
-    on_key_down("w") {
-        printf("Move forward!\n")
-    }
+    // Using pipe for callbacks
+    printf("\nPipe-based handlers:\n")
+    { printf("Jump!\n") } | on_key_down("space")
+    { printf("Move forward!\n") } | on_key_down("w")
 
     printf("\n=== Test Complete ===\n")
 }

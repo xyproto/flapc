@@ -1024,70 +1024,70 @@ process = x => {
 }
 ```
 
-#### Blocks as Arguments (Syntactic Sugar)
+#### Piping Blocks to Functions
 
-For functions that take callbacks with no parameters, Flap allows omitting the lambda syntax:
+For callback-heavy APIs, use the pipe operator to pass blocks as arguments:
 
 ```flap
-// Instead of writing: func(() => { block })
-// You can write: func { block }
+// Instead of: func(() => { block })
+// Use pipe: { block } | func()
 
 // Traditional style (explicit lambda)
 app.key_down("space", () => { player <- jump(player) })
 
-// Syntactic sugar style (implicit lambda)
-app.key_down("space") { player <- jump(player) }
+// Pipe style (cleaner, functional)
+{ player <- jump(player) } | app.key_down("space")
 
-// Works with match expressions too
-ready {
-    -> execute {
-        println("Running task...")
-        do_work()
-    }
-}
+// The block flows into the function as the last argument
+// This makes the data flow explicit and clear
 
-// Especially clean for event handlers
-on_click {
-    printf("Button clicked!\n")
-    update_state()
-}
+// Multiple handlers
+{ initialize() } | on_start
+{ cleanup() } | on_stop
 
-// Multiple callbacks (need explicit lambdas)
-register_handlers(
-    on_start { initialize() },
-    on_stop { cleanup() }
-)
+// With arguments
+{ process(data) } | handler(timeout: 1000)
 ```
 
 **How it works:**
-- When a function call is followed by a block `{ ... }`, it's automatically converted to a lambda `() => { ... }`
-- The block becomes the last argument to the function
-- If the function signature expects `fn()` or similar, the conversion happens automatically
-- This makes callback-heavy APIs (like game engines) much cleaner
+- The pipe operator `|` can take a block `{ ... }` on the left
+- The block is automatically wrapped as `() => { ... }`
+- It becomes the last argument to the function on the right
+- Makes callback flow explicit: data → function
 
 **Common patterns:**
 ```flap
-// Event handlers
-app.on_update { update_game_state() }
-app.on_render { draw_scene() }
+// Event handlers (FLAPGAME style)
+{ update_game_state() } | app.on_update
+{ draw_scene() } | app.on_render
 
-// Conditional execution
-condition {
-    -> action { do_something() }
+// Input handling
+{ player.y <- player.y - speed } | app.key_down("w")
+{ player.y <- player.y + speed } | app.key_down("s")
+{ shoot(mouse_x, mouse_y) } | app.mouse_click
+
+// Conditional execution (using match, not pipe)
+ready {
+    -> { do_work() }
     ~> { do_alternative() }
 }
 
-// Timers and loops
+// Loop with action
 @ running {
     process_frame()
     should_quit { ret @ }
 }
 
-// Input handling (FLAPGAME style)
-app.key_down("w") { player.y <- player.y - speed }
-app.key_down("s") { player.y <- player.y + speed }
-app.mouse_click() { shoot(mouse_x, mouse_y) }
+// Chained pipes
+data | transform | validate | { save(it) } | on_complete
 ```
+
+**Why pipe instead of suffix blocks:**
+- ✅ Clear data flow direction (left to right)
+- ✅ Consistent with functional composition
+- ✅ No ambiguity with match expressions
+- ✅ Explicit about what's being passed
+- ✅ Works naturally with Flap's existing pipe operator
 
 ### Automatic Recursion Optimization
 
