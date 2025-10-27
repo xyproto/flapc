@@ -14,9 +14,9 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
    - NOT an external library - core part of the compiler like printf/malloc
    - ✅ Port addresses as strings: `":5000"`, `"host:port"` - COMPLETE
    - ✅ Send operator: `":5000" <== "data"` using `<==` - COMPLETE (with UDP syscalls)
-   - ❌ Receive loops: `@ msg, from in ":5000" { }` - NOT STARTED
+   - ✅ Receive loops: `@ msg, from in ":5000" { }` - COMPLETE (tested and working!)
    - ✅ Socket operations: socket(), sendto(), close() syscalls - COMPLETE (basic)
-   - ❌ Bind and recvfrom() syscalls - NOT STARTED
+   - ✅ Bind and recvfrom() syscalls - COMPLETE (working UDP server)
    - Port availability checks and fallback - NOT STARTED
    - Protocol features: Connection management, reliable/unreliable channels, packet fragmentation - NOT STARTED
    - Files: Extend `parser.go` (DONE), need UDP socket codegen
