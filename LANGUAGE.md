@@ -1183,11 +1183,25 @@ data | transform | validate | { save(it) } | on_complete
 
 ### Concurrency and Parallelism
 
-Flap provides lightweight concurrency primitives inspired by Go and bash.
+Flap uses **yield-based cooperative multitasking** and **event-driven programming** for concurrency, avoiding the complexity of channels and locks.
+
+#### Philosophy
+
+**Two concurrency models:**
+1. **Cooperative tasks** - Use `yield` to pause and let other tasks run
+2. **Event-driven** - React to events with handlers (like JavaScript/Node.js)
+
+**Why not channels?**
+- Events are simpler and more familiar
+- `yield` provides natural cooperative multitasking
+- No need for `select`, channels, or synchronization primitives
+- Aligns perfectly with FLAPGAME event system
+
+---
 
 #### Background Execution with `&`
 
-Run functions in the background (like `&` in bash), with optional result handling:
+Run functions in the background (like `&` in bash):
 
 ```flap
 // Fire and forget
@@ -1207,7 +1221,7 @@ fetch_data(url3) & | d3 | process(d3)
 // Background loop (server example)
 server_loop() &
 
-// With multiple workers
+// Multiple workers
 @ i in 0..<4 {
     worker_loop(i) &  // Spawn 4 background workers
 }
@@ -1216,14 +1230,41 @@ server_loop() &
 **Syntax:**
 - `fn(args) &` - Run function in background
 - `fn(args) & | result | code` - Handle result when complete
-- Perfect for: async I/O, servers, workers, long-running tasks
+- Each `&` creates a lightweight task (like goroutine or green thread)
+- Tasks run concurrently, scheduled by runtime
 
-#### Generators with `yield`
+---
 
-Create lazy sequences and iterators:
+#### Cooperative Multitasking with `yield`
+
+Use `yield` to cooperatively share CPU time between tasks:
 
 ```flap
-// Generator function
+// Long-running task that yields control
+process_data := (items) => {
+    @ item in items max 100000 {
+        expensive_operation(item)
+        yield  // Let other tasks run
+    }
+}
+
+// Multiple cooperative tasks
+process_data(dataset1) &
+process_data(dataset2) &
+process_data(dataset3) &
+
+// All three tasks will interleave execution
+```
+
+**How it works:**
+- `yield` pauses current task and switches to another
+- Runtime scheduler round-robins between tasks
+- No preemption - tasks explicitly yield
+- Perfect for I/O-bound workloads
+
+**Generators (data iteration):**
+```flap
+// Infinite fibonacci sequence
 fibonacci := () ==> {
     a := 0
     b := 1
@@ -1235,7 +1276,7 @@ fibonacci := () ==> {
     }
 }
 
-// Use generator in loop
+// Use generator
 gen := fibonacci()
 @ i in 0..<10 {
     val := next(gen)
@@ -1250,139 +1291,92 @@ range := (start, end) ==> {
         i <- i + 1
     }
 }
-
-// Generator with filtering
-evens := (max) ==> {
-    i := 0
-    @ i < max max 1000000 {
-        i % 2 == 0 { yield i }
-        i <- i + 1
-    }
-}
 ```
 
-**How it works:**
-- `yield value` pauses execution and returns value
-- `next(generator)` resumes execution until next yield
-- Generator state is preserved between calls
-- Memory-efficient for large sequences
+**Dual use of `yield`:**
+- **With value**: Generator/iterator (returns value to caller)
+- **Without value**: Cooperative multitasking (switches to another task)
 
-#### Channels for Communication
+---
 
-Share data between concurrent tasks:
+#### Event-Driven Concurrency
 
-```flap
-// Create buffered channel
-ch := channel(100)  // Buffer size: 100
-
-// Producer (background)
-producer := () => {
-    @ i in 0..<1000 max 10000 {
-        ch <- i  // Send value to channel
-    }
-    close(ch)
-}
-producer() &
-
-// Consumer
-@ {
-    val := <- ch  // Receive value from channel
-    val {
-        -> v { printf("Got: %v\n", v) }
-        ~> err { ret @ }  // Channel closed
-    }
-}
-```
-
-**Channel operations:**
-- `channel(size)` creates buffered channel
-- `ch <- value` sends to channel (blocks if full)
-- `<- ch` receives from channel (blocks if empty)
-- `close(ch)` closes channel
-- Closed channels return err on receive
-
-#### Select for Multiple Channels
-
-Wait on multiple channel operations (like Go's select):
+Use event emitters for communication between concurrent tasks:
 
 ```flap
-ch1 := channel(10)
-ch2 := channel(10)
-timeout := channel(1)
+// Create event emitter
+events := emitter()
 
-// Producers
-fetch_data(url1) & | data | ch1 <- data
-fetch_data(url2) & | data | ch2 <- data
-timer(5000) & | _ | timeout <- 1
-
-// Select first available
-select {
-    <- ch1 -> data { printf("Got from ch1: %v\n", data) }
-    <- ch2 -> data { printf("Got from ch2: %v\n", data) }
-    <- timeout -> _ { printf("Timeout!\n") }
+// Subscribe to events (multiple handlers allowed)
+events.on("data") | data | {
+    printf("Handler 1: %v\n", data)
 }
 
-// Select with default (non-blocking)
-select {
-    <- ch1 -> data { process(data) }
-    default { printf("No data available\n") }
+events.on("data") | data | {
+    printf("Handler 2: %v\n", data)
 }
 
-// Select in loop
-@ {
-    select {
-        <- ch1 -> data { process1(data) }
-        <- ch2 -> data { process2(data) }
-        <- quit -> _ { ret @ }
-    }
-}
-```
-
-**Select features:**
-- Waits for first available channel operation
-- `default` case for non-blocking behavior
-- Pattern matching on received values
-- Perfect for timeouts, multiplexing, cancellation
-
-#### Synchronization with `wait`
-
-Wait for multiple concurrent operations (like Go's WaitGroup):
-
-```flap
-// Explicit wait group
-group := waitgroup()
-
-download := (url) => {
-    fetch(url)
-    group.done()
+events.on("error") | err | {
+    printf("Error: %v\n", err)
 }
 
-download(url1) &
-download(url2) &
-download(url3) &
-
-group.wait()  // Blocks until all 3 tasks call done()
-
-// With error handling
-group := waitgroup()
-errors := channel(10)
-
-task := (id) => {
-    result := risky_work(id)
+// Emit events (from background tasks)
+fetch_data(url) & | result | {
     result {
-        -> val { printf("Task %v success\n", id) }
-        ~> err { errors <- err }
+        -> data { events.emit("data", data) }
+        ~> err { events.emit("error", err) }
     }
-    group.done()
 }
 
-@ i in 0..<10 {
-    task(i) &
+// Once handler (fires only once, then removes itself)
+events.once("ready") | _ | {
+    start_app()
 }
 
-group.wait()
-close(errors)
+// Remove handler
+handler_id := events.on("tick") | _ | update()
+events.off("tick", handler_id)
 ```
+
+**Event API:**
+- `emitter()` - Create event emitter
+- `emitter.on(event) | data | code` - Add event handler
+- `emitter.once(event) | data | code` - One-time handler
+- `emitter.emit(event, data)` - Fire event
+- `emitter.off(event, id)` - Remove handler
+
+---
+
+#### Complete Example: Web Server
+
+```flap
+// Event-driven HTTP server
+server := () => {
+    events := emitter()
+
+    // Handle requests
+    events.on("request") | req | {
+        req.path {
+            "/api/users" -> handle_users(req)
+            "/api/posts" -> handle_posts(req)
+            ~> send_404(req)
+        }
+        yield  // Let other requests process
+    }
+
+    // Accept connections (background loop)
+    @ {
+        conn := accept_connection()
+        req := parse_request(conn)
+        events.emit("request", req)
+        yield
+    }
+}
+
+server() &
+```
+
+---
 
 #### Complete Example: Parallel Web Scraper
 
@@ -1390,89 +1384,129 @@ close(errors)
 import http
 
 scrape_urls := (urls) => {
-    results := channel(urls.length)
+    events := emitter()
+    results := []
 
-    // Worker for each URL
-    scraper := (url) => {
-        data := http.get(url)
-        results <- data
+    // Collect results
+    events.on("scraped") | data | {
+        results <- results + [data]
     }
 
-    // Launch workers in background
+    // Scrape each URL (background)
     @ url in urls max 1000 {
+        scraper := (u) => {
+            data := http.get(u)
+            yield  // Let other scrapers run
+            events.emit("scraped", data)
+        }
         scraper(url) &
     }
 
-    // Collect results
-    scraped := []
-    @ i in 0..<urls.length max 1000 {
-        data := <- results
-        scraped <- scraped + [data]
-    }
-
-    -> scraped
-}
-
-// Usage
-urls := ["http://example.com/1", "http://example.com/2", ...]
-data := scrape_urls(urls)
-```
-
-#### Complete Example: Worker Pool
-
-```flap
-worker_pool := (jobs, num_workers) => {
-    job_ch := channel(jobs.length)
-    result_ch := channel(jobs.length)
-
-    // Worker function
-    worker := () => {
-        @ {
-            job := <- job_ch
-            job {
-                -> j {
-                    result := process(j)
-                    result_ch <- result
-                }
-                ~> err { ret @ }  // Channel closed, exit
-            }
-        }
-    }
-
-    // Spawn workers in background
-    @ i in 0..<num_workers {
-        worker() &
-    }
-
-    // Send jobs (background)
-    sender := () => {
-        @ job in jobs max 1000000 {
-            job_ch <- job
-        }
-        close(job_ch)
-    }
-    sender() &
-
-    // Collect results
-    results := []
-    @ i in 0..<jobs.length max 1000000 {
-        res := <- result_ch
-        results <- results + [res]
+    // Wait for all results
+    @ results.length < urls.length {
+        yield  // Let scrapers run
     }
 
     -> results
 }
 ```
 
+---
+
+#### Complete Example: Worker Pool
+
+```flap
+worker_pool := (jobs) => {
+    events := emitter()
+    results := []
+    completed := 0
+
+    // Collect results
+    events.on("done") | result | {
+        results <- results + [result]
+        completed <- completed + 1
+    }
+
+    // Worker function
+    worker := (job) => {
+        result := process(job)
+        yield  // Cooperative
+        events.emit("done", result)
+    }
+
+    // Launch all workers (background)
+    @ job in jobs max 100000 {
+        worker(job) &
+    }
+
+    // Wait for completion
+    @ completed < jobs.length {
+        yield
+    }
+
+    -> results
+}
+```
+
+---
+
+#### Complete Example: Real-Time Game Update Loop
+
+```flap
+game_loop := () => {
+    events := emitter()
+
+    // Physics (background, yields often)
+    physics := () => {
+        @ {
+            update_physics(dt)
+            events.emit("physics_done")
+            yield
+        }
+    }
+    physics() &
+
+    // Rendering (background, yields often)
+    renderer := () => {
+        @ {
+            events.on("physics_done") | _ | {
+                render_frame()
+            }
+            yield
+        }
+    }
+    renderer() &
+
+    // Input (event-driven)
+    events.on("key_pressed") | key | {
+        handle_input(key)
+    }
+
+    // Main loop never blocks - all background
+    @ {
+        poll_events(events)  // Emit input events
+        yield  // Let workers run
+    }
+}
+```
+
+---
+
 **Summary:**
-- `fn() &` - Background execution (like bash `&`)
-- `fn() & | result | code` - Background with result callback
-- `channel(size)` - Buffered communication channel
-- `ch <- value` - Send to channel
-- `<- ch` - Receive from channel
-- `select { ... }` - Wait on multiple channels (with `default` for non-blocking)
-- `waitgroup()` - Synchronization primitive
-- `yield value` - Generator/iterator for lazy evaluation
+
+**Concurrency primitives:**
+- `fn() &` - Background execution
+- `fn() & | result | code` - Background with callback
+- `yield` - Cooperative task switching OR generator iteration
+- `emitter()` - Event-driven communication
+
+**Why this model?**
+- ✅ Simpler than channels (no select, no synchronization primitives)
+- ✅ Familiar from JavaScript, Python async, Lua coroutines
+- ✅ Natural for games (event loops, cooperative tasks)
+- ✅ Aligns with FLAPGAME event system
+- ✅ No blocking - everything yields
+- ✅ Easy to reason about (explicit yield points)
 
 ---
 
