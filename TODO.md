@@ -8,12 +8,12 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
 ## Critical Bugs
 
-1. **Extend FFI to support float/pointer args** (HIGH) 🐛 LIMITATION
-   - Status: Only integer args/return work, float/pointer crash
-   - Verified: `libc.sqrt(25.0)` and `libc.malloc(100)` both crash
-   - Current: FFI compilation has float arg code but doesn't work at runtime
-   - Impact: Limits C library integration (no math functions, no pointer passing)
-   - Files: `parser.go` (compileCFunctionCall needs ABI fixes)
+1. **Extend FFI to support float/pointer args** (HIGH) ✅ FIXED
+   - Status: Float and pointer arguments now work correctly
+   - Verified: `libc.sqrt(25.0)` returns 5, `libc.malloc(100)` returns valid pointer
+   - Solution: Added ldconfig library resolution + builtin signatures for common C functions
+   - Builtin signatures: sqrt, sin, cos, pow, malloc, free, memset, memcpy, etc.
+   - Files: `cffi.go` (getBuiltinSignatures), `parser.go` (ldconfig integration)
 
 2. **Fix nested arena crash** (LOW) 🐛 BUG - DEFERRED
    - Status: Basic arenas work fine, nested arenas have slot management issue
