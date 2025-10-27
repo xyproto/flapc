@@ -1249,32 +1249,18 @@ Parallelize loops automatically (inspired by OpenMP):
     process(i)  // Uses all available cores
 }
 
-// Parallel with reduction (sum example)
-sum := 0
-@@ i in 0..<1000 reduce(+) {
-    compute(i)  // Each core computes partial sum
-}  // Automatically reduces to single sum
-
-// Parallel with shared array (read-only safe)
+// Parallel with shared array (each index independent)
 results := [0] * 1000
 @@ i in 0..<1000 {
-    results[i] <- expensive(i)  // Each index independent
+    results[i] <- expensive(i)  // Safe - no shared state
 }
 ```
-
-**Reduction operations (OpenMP-style):**
-- `reduce(+)` - Sum
-- `reduce(*)` - Product
-- `reduce(max)` - Maximum
-- `reduce(min)` - Minimum
-- `reduce(and)` - Logical AND
-- `reduce(or)` - Logical OR
 
 **How it works:**
 - Work-sharing: runtime divides iterations across cores
 - Each core gets chunk of iterations
 - Automatic synchronization at loop end
-- Reductions combine per-core results
+- No shared mutable state (each iteration independent)
 
 ---
 
@@ -1561,8 +1547,9 @@ target <- "data"
 - `fn() &` - Spawn process (fork model)
 - `fn() & | result | code` - Spawn with callback
 - `@@` / `N @` - Parallel loops (OpenMP-inspired)
-- `reduce(op)` - Reduction operations in parallel loops
 - `:port` - ENet port literal (first-class value)
+- `:port+` - Next available port
+- `:port?` - Check if port is available
 - `"host:port"` - Remote address (string)
 - `@ msg, from in :port` - Receive messages on port
 - `:port <- data` - Send message to port
@@ -1973,7 +1960,8 @@ defer_statement = "defer" expression ;
 
 loop_statement  = "@" block
                 | [ expression ] "@" identifier "in" expression [ "max" (number | "inf") ] block
-                | "@@" identifier "in" expression [ "max" (number | "inf") ] block ;
+                | "@@" identifier "in" expression [ "max" (number | "inf") ] block
+                | "@" identifier "," identifier "in" expression [ "max" (number | "inf") ] block ;
 
 jump_statement  = ("ret" | "err") [ "@" number ] [ expression ]
                 | "@" number
@@ -2047,6 +2035,7 @@ cast_type               = "i8" | "i16" | "i32" | "i64"
 
 primary_expr            = number
                         | string
+                        | port_literal
                         | identifier
                         | loop_state_var
                         | "(" expression ")"
@@ -2057,6 +2046,8 @@ primary_expr            = number
                         | unsafe_expr
                         | "^" primary_expr
                         | "&" primary_expr ;
+
+port_literal            = ":" number [ "+" | "?" ] ;
 
 arena_expr              = "arena" "{" { statement { newline } } expression "}" ;
 
@@ -2093,8 +2084,10 @@ escape_sequence         = "\\" ( "n" | "t" | "r" | "\\" | '"' ) ;
 
 * `@` without arguments creates an infinite loop: `@ { ... }`
 * `@` with identifier introduces auto-labeled loops. The loop label is the current nesting depth (1, 2, 3, ...).
+* `@ msg, from in :port` receives ENet messages: `msg` is the message string, `from` is sender address
 * Optional numeric prefix before `@` specifies parallel execution: `4 @ i in list` uses 4 CPU cores
 * `@@` is shorthand for all-cores parallel execution: `@@ i in list` uses all available CPU cores
+* Port literals: `:5000` (port), `:5000+` (next available), `:5000?` (check if available)
 * `@++` continues the current loop (skip this iteration, jump to next).
 * `@1++`, `@2++`, `@3++`, ... continues the loop at that nesting level (skip iteration, jump to next).
 * `++` operator for pointer append: `ptr ++ value as type` writes value at current offset and auto-increments by sizeof(type)
