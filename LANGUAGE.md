@@ -348,14 +348,38 @@ Note: For bitwise AND/OR, use `&b` and `|b` instead.
 **Shifts:** `<b` `>b` (shift left/right), `<<b` `>>b` (rotate left/right)
 
 **Special:**
-- `++` (add with carry) - Multi-precision arithmetic, works in safe and unsafe blocks
+- `++` (pointer append) - Buffer building with auto-increment:
   ```flap
-  // Safe mode: automatic carry handling
+  // Allocate buffer
+  buffer := call("malloc", 1024 as u64) as cptr
+
+  // Write values sequentially with auto-increment
+  buffer ++ 42 as uint32      // Write uint32(42) at offset 0, counter becomes 4
+  buffer ++ 3.14 as f32       // Write f32(3.14) at offset 4, counter becomes 8
+  buffer ++ 255 as uint8      // Write uint8(255) at offset 8, counter becomes 9
+  buffer ++ 1000 as uint16    // Write uint16(1000) at offset 9, counter becomes 11
+
+  // The pointer address remains unchanged - only internal counter increments!
+  printf("buffer address: %v\n", buffer)  // Same address throughout
+  ```
+
+  **How it works:**
+  - Compiler maintains **hidden internal counter** for each pointer variable
+  - `ptr ++ value as type` writes value at `ptr + counter`
+  - Counter automatically increments by `sizeof(type)`
+  - **Pointer address itself never changes** - only the counter
+  - Counter is compile-time tracked, not stored in memory
+  - Perfect for building binary buffers, network packets, file formats
+
+- `+!` (add with carry) - Multi-precision arithmetic:
+  ```flap
+  // Automatic carry handling
   low := 0xFFFFFFFFFFFFFFFF  // Max uint64
   high := 0x1
-  result_low := low ++ 1      // Wraps to 0, sets carry
-  result_high := high ++ 0    // Becomes 2 due to carry
+  result_low := low +! 1      // Wraps to 0, sets carry
+  result_high := high +! 0    // Becomes 2 due to carry
   ```
+
 - `<->` (swap) - Exchange two values, works in safe and unsafe blocks
   ```flap
   // Safe mode: swap variables
@@ -582,10 +606,42 @@ data[0]              // Access by numeric key
 data.name            // Access by string key
 ```
 
+**Pointer Field Access:**
+
+The `.` operator also works with C pointers to structs, automatically handling dereferencing (like Go):
+
+```flap
+// C struct: struct Point { float x; float y; }
+point_ptr := call("malloc", 8 as u64) as cptr
+
+// Direct field access on pointer (no manual dereferencing needed)
+point_ptr.x <- 10.5   // Writes to offset 0 (x field)
+point_ptr.y <- 20.3   // Writes to offset 4 (y field)
+
+// Read fields
+x_val := point_ptr.x  // Reads from offset 0
+y_val := point_ptr.y  // Reads from offset 4
+
+// Works with cstruct definitions
+cstruct Entity {
+    x: f32,
+    y: f32,
+    health: i32
+}
+
+entity := call("malloc", sizeof(Entity) as u64) as cptr
+entity.x <- 100.0
+entity.y <- 200.0
+entity.health <- 100
+
+// No need for -> operator like in C!
+```
+
 **Implementation Details:**
 - String keys are hashed at **compile time** using FNV-1a hash algorithm
 - Hash values use a 30-bit range (`0x40000000` to `0x7FFFFFFF`) to work within current compiler limitations
-- Dot notation (`obj.field`) is syntax sugar that compiles to map indexing (`obj[hash("field")]`)
+- For maps: `obj.field` compiles to `obj[hash("field")]`
+- For pointers: `ptr.field` compiles to memory read/write at calculated offset
 - At runtime, everything is still `map[uint64]float64` - no new data types
 - String keys preserve insertion order just like numeric keys
 - Namespaced function calls (`sdl.SDL_init()`) are supported through dot notation
@@ -642,9 +698,9 @@ Loops use `@` for iteration, with optional CPU parallelism using a numeric prefi
     compute(i)  // Executes in parallel across 4 CPU cores
 }
 
-// Parallel loop with all available cores
-cpu_count() @ i in data max 100000 {
-    process(i)  // Uses all CPU cores for parallel execution
+// Parallel loop with ALL available cores (shorthand)
+@@ i in data max 100000 {
+    process(i)  // Uses all CPU cores - shorthand for cpu_count() @
 }
 
 // Range operator - max inferred from literal bounds
@@ -711,8 +767,8 @@ numbers := [10, 20, 30]
 **CPU Parallelism:**
 - Sequential loop: `@ item in collection` (default, single core)
 - Parallel loop: `N @ item in collection` (uses N CPU cores)
+- All cores: `@@ item in collection` (shorthand for all available cores)
 - Optional prefix: number of cores to use (e.g., `4 @`, `8 @`)
-- Dynamic cores: `cpu_count() @ item in list` uses all available cores
 - Use for: data processing, image processing, physics simulations, ray tracing
 - **Note:** Parallel loops require thread-safe operations (no shared mutable state without synchronization)
 
@@ -726,6 +782,11 @@ numbers := [10, 20, 30]
 // Parallel processing with 8 cores (8x faster)
 8 @ pixel in pixels max 1000000 {
     process_pixel(pixel)  // Executed across 8 threads
+}
+
+// Parallel processing with all available cores
+@@ pixel in pixels max 1000000 {
+    process_pixel(pixel)  // Uses all CPU cores automatically
 }
 ```
 
@@ -1120,6 +1181,301 @@ data | transform | validate | { save(it) } | on_complete
 - ✅ Explicit about what's being passed
 - ✅ Works naturally with Flap's existing pipe operator
 
+### Concurrency and Parallelism
+
+Flap provides lightweight concurrency primitives inspired by Go and bash.
+
+#### Background Execution with `&`
+
+Run functions in the background (like `&` in bash), with optional result handling:
+
+```flap
+// Fire and forget
+fetch_data(url) &
+
+// Background with result handling (pipe syntax)
+fetch_data(url) & | data | {
+    printf("Got data: %v\n", data)
+    save_to_cache(data)
+}
+
+// Multiple background calls
+fetch_data(url1) & | d1 | process(d1)
+fetch_data(url2) & | d2 | process(d2)
+fetch_data(url3) & | d3 | process(d3)
+
+// Background loop (server example)
+server_loop() &
+
+// With multiple workers
+@ i in 0..<4 {
+    worker_loop(i) &  // Spawn 4 background workers
+}
+```
+
+**Syntax:**
+- `fn(args) &` - Run function in background
+- `fn(args) & | result | code` - Handle result when complete
+- Perfect for: async I/O, servers, workers, long-running tasks
+
+#### Generators with `yield`
+
+Create lazy sequences and iterators:
+
+```flap
+// Generator function
+fibonacci := () ==> {
+    a := 0
+    b := 1
+    @ {
+        yield a
+        temp := a
+        a <- b
+        b <- temp + b
+    }
+}
+
+// Use generator in loop
+gen := fibonacci()
+@ i in 0..<10 {
+    val := next(gen)
+    printf("%v ", val)  // 0 1 1 2 3 5 8 13 21 34
+}
+
+// Finite generator
+range := (start, end) ==> {
+    i := start
+    @ i < end max 1000000 {
+        yield i
+        i <- i + 1
+    }
+}
+
+// Generator with filtering
+evens := (max) ==> {
+    i := 0
+    @ i < max max 1000000 {
+        i % 2 == 0 { yield i }
+        i <- i + 1
+    }
+}
+```
+
+**How it works:**
+- `yield value` pauses execution and returns value
+- `next(generator)` resumes execution until next yield
+- Generator state is preserved between calls
+- Memory-efficient for large sequences
+
+#### Channels for Communication
+
+Share data between concurrent tasks:
+
+```flap
+// Create buffered channel
+ch := channel(100)  // Buffer size: 100
+
+// Producer (background)
+producer := () => {
+    @ i in 0..<1000 max 10000 {
+        ch <- i  // Send value to channel
+    }
+    close(ch)
+}
+producer() &
+
+// Consumer
+@ {
+    val := <- ch  // Receive value from channel
+    val {
+        -> v { printf("Got: %v\n", v) }
+        ~> err { ret @ }  // Channel closed
+    }
+}
+```
+
+**Channel operations:**
+- `channel(size)` creates buffered channel
+- `ch <- value` sends to channel (blocks if full)
+- `<- ch` receives from channel (blocks if empty)
+- `close(ch)` closes channel
+- Closed channels return err on receive
+
+#### Select for Multiple Channels
+
+Wait on multiple channel operations (like Go's select):
+
+```flap
+ch1 := channel(10)
+ch2 := channel(10)
+timeout := channel(1)
+
+// Producers
+fetch_data(url1) & | data | ch1 <- data
+fetch_data(url2) & | data | ch2 <- data
+timer(5000) & | _ | timeout <- 1
+
+// Select first available
+select {
+    <- ch1 -> data { printf("Got from ch1: %v\n", data) }
+    <- ch2 -> data { printf("Got from ch2: %v\n", data) }
+    <- timeout -> _ { printf("Timeout!\n") }
+}
+
+// Select with default (non-blocking)
+select {
+    <- ch1 -> data { process(data) }
+    default { printf("No data available\n") }
+}
+
+// Select in loop
+@ {
+    select {
+        <- ch1 -> data { process1(data) }
+        <- ch2 -> data { process2(data) }
+        <- quit -> _ { ret @ }
+    }
+}
+```
+
+**Select features:**
+- Waits for first available channel operation
+- `default` case for non-blocking behavior
+- Pattern matching on received values
+- Perfect for timeouts, multiplexing, cancellation
+
+#### Synchronization with `wait`
+
+Wait for multiple concurrent operations (like Go's WaitGroup):
+
+```flap
+// Explicit wait group
+group := waitgroup()
+
+download := (url) => {
+    fetch(url)
+    group.done()
+}
+
+download(url1) &
+download(url2) &
+download(url3) &
+
+group.wait()  // Blocks until all 3 tasks call done()
+
+// With error handling
+group := waitgroup()
+errors := channel(10)
+
+task := (id) => {
+    result := risky_work(id)
+    result {
+        -> val { printf("Task %v success\n", id) }
+        ~> err { errors <- err }
+    }
+    group.done()
+}
+
+@ i in 0..<10 {
+    task(i) &
+}
+
+group.wait()
+close(errors)
+```
+
+#### Complete Example: Parallel Web Scraper
+
+```flap
+import http
+
+scrape_urls := (urls) => {
+    results := channel(urls.length)
+
+    // Worker for each URL
+    scraper := (url) => {
+        data := http.get(url)
+        results <- data
+    }
+
+    // Launch workers in background
+    @ url in urls max 1000 {
+        scraper(url) &
+    }
+
+    // Collect results
+    scraped := []
+    @ i in 0..<urls.length max 1000 {
+        data := <- results
+        scraped <- scraped + [data]
+    }
+
+    -> scraped
+}
+
+// Usage
+urls := ["http://example.com/1", "http://example.com/2", ...]
+data := scrape_urls(urls)
+```
+
+#### Complete Example: Worker Pool
+
+```flap
+worker_pool := (jobs, num_workers) => {
+    job_ch := channel(jobs.length)
+    result_ch := channel(jobs.length)
+
+    // Worker function
+    worker := () => {
+        @ {
+            job := <- job_ch
+            job {
+                -> j {
+                    result := process(j)
+                    result_ch <- result
+                }
+                ~> err { ret @ }  // Channel closed, exit
+            }
+        }
+    }
+
+    // Spawn workers in background
+    @ i in 0..<num_workers {
+        worker() &
+    }
+
+    // Send jobs (background)
+    sender := () => {
+        @ job in jobs max 1000000 {
+            job_ch <- job
+        }
+        close(job_ch)
+    }
+    sender() &
+
+    // Collect results
+    results := []
+    @ i in 0..<jobs.length max 1000000 {
+        res := <- result_ch
+        results <- results + [res]
+    }
+
+    -> results
+}
+```
+
+**Summary:**
+- `fn() &` - Background execution (like bash `&`)
+- `fn() & | result | code` - Background with result callback
+- `channel(size)` - Buffered communication channel
+- `ch <- value` - Send to channel
+- `<- ch` - Receive from channel
+- `select { ... }` - Wait on multiple channels (with `default` for non-blocking)
+- `waitgroup()` - Synchronization primitive
+- `yield value` - Generator/iterator for lazy evaluation
+
+---
+
 ### Automatic Recursion Optimization
 
 Flap automatically optimizes recursive function calls without requiring special keywords:
@@ -1288,7 +1644,7 @@ unsafe {
 unsafe {
     // 128-bit addition: add two pairs of 64-bit values
     rax <- low1 + low2      // Add lower 64 bits (sets carry flag)
-    rdx <- high1 ++ high2   // Add upper 64 bits with carry
+    rdx <- high1 +! high2   // Add upper 64 bits with carry
 } { /* arm64 */ } { /* riscv64 */ }
 ```
 
@@ -1514,7 +1870,8 @@ arena_statement = "arena" block ;
 defer_statement = "defer" expression ;
 
 loop_statement  = "@" block
-                | [ expression ] "@" identifier "in" expression [ "max" (number | "inf") ] block ;
+                | [ expression ] "@" identifier "in" expression [ "max" (number | "inf") ] block
+                | "@@" identifier "in" expression [ "max" (number | "inf") ] block ;
 
 jump_statement  = ("ret" | "err") [ "@" number ] [ expression ]
                 | "@" number
@@ -1635,8 +1992,11 @@ escape_sequence         = "\\" ( "n" | "t" | "r" | "\\" | '"' ) ;
 * `@` without arguments creates an infinite loop: `@ { ... }`
 * `@` with identifier introduces auto-labeled loops. The loop label is the current nesting depth (1, 2, 3, ...).
 * Optional numeric prefix before `@` specifies parallel execution: `4 @ i in list` uses 4 CPU cores
+* `@@` is shorthand for all-cores parallel execution: `@@ i in list` uses all available CPU cores
 * `@++` continues the current loop (skip this iteration, jump to next).
 * `@1++`, `@2++`, `@3++`, ... continues the loop at that nesting level (skip iteration, jump to next).
+* `++` operator for pointer append: `ptr ++ value as type` writes value at current offset and auto-increments by sizeof(type)
+* `+!` operator for add-with-carry in multi-precision arithmetic
 * `unsafe` blocks can return register values as expressions (e.g., `rax`, `rbx`)
 * `ret` returns from the current function with a val. `ret @` exits the current loop. `ret @1`, `ret @2`, `ret @3`, ... exits the loop at that nesting level and all inner loops. `err` returns an err.
 * Lambda syntax: `x => expr` or `x, y => expr` (no parentheses around parameters).
@@ -1764,6 +2124,99 @@ x_val = read_f32(point_ptr, 0)
 y_val = read_f32(point_ptr, 1)
 call("free", point_ptr as cptr)
 ```
+
+### Pointer Append (Buffer Building)
+
+The `++` operator in pointer context provides sequential buffer writing with automatic offset tracking:
+
+```flap
+// Build a binary packet
+build_packet := (id, x, y, health) => {
+    packet := call("malloc", 256 as u64) as cptr
+
+    // Write header
+    packet ++ 0xCAFE as uint16      // Magic number at offset 0
+    packet ++ 1 as uint8            // Version at offset 2
+    packet ++ 0 as uint8            // Flags at offset 3
+
+    // Write payload
+    packet ++ id as uint32          // ID at offset 4
+    packet ++ x as f32              // X position at offset 8
+    packet ++ y as f32              // Y position at offset 12
+    packet ++ health as uint16      // Health at offset 16
+
+    // Total size: 18 bytes (compiler knows final offset)
+    ret packet
+}
+
+// Build a file header
+write_bitmap_header := (file, width, height) => {
+    header := call("malloc", 54 as u64) as cptr
+
+    // BMP file header (14 bytes)
+    header ++ 0x4D42 as uint16      // "BM" signature
+    header ++ 54 as uint32          // File size
+    header ++ 0 as uint32           // Reserved
+    header ++ 54 as uint32          // Pixel data offset
+
+    // DIB header (40 bytes)
+    header ++ 40 as uint32          // Header size
+    header ++ width as uint32       // Image width
+    header ++ height as uint32      // Image height
+    header ++ 1 as uint16           // Planes
+    header ++ 24 as uint16          // Bits per pixel
+    header ++ 0 as uint32           // Compression
+    header ++ 0 as uint32           // Image size
+    header ++ 2835 as uint32        // X pixels per meter
+    header ++ 2835 as uint32        // Y pixels per meter
+    header ++ 0 as uint32           // Colors used
+    header ++ 0 as uint32           // Important colors
+
+    // Write to file
+    call("fwrite", header as cptr, 54 as u64, 1 as u64, file as cptr)
+    call("free", header as cptr)
+}
+
+// Build network message with mixed types
+serialize_player := (player) => {
+    buffer := call("malloc", 1024 as u64) as cptr
+
+    // Serialize player data
+    buffer ++ player.id as uint64
+    buffer ++ player.x as f64
+    buffer ++ player.y as f64
+    buffer ++ player.z as f64
+    buffer ++ player.health as uint32
+    buffer ++ player.mana as uint32
+    buffer ++ player.level as uint16
+    buffer ++ player.flags as uint8
+
+    ret buffer
+}
+
+// Read back with manual offsets (if needed)
+deserialize_player := (buffer) => {
+    player := {
+        id: read_u64(buffer, 0),        // offset 0
+        x: read_f64(buffer, 8),         // offset 8
+        y: read_f64(buffer, 16),        // offset 16
+        z: read_f64(buffer, 24),        // offset 24
+        health: read_u32(buffer, 32),   // offset 32
+        mana: read_u32(buffer, 36),     // offset 36
+        level: read_u16(buffer, 40),    // offset 40
+        flags: read_u8(buffer, 42)      // offset 42
+    }
+    ret player
+}
+```
+
+**Benefits of Pointer Append:**
+- No manual offset calculation
+- Type-safe (compiler knows size of each type)
+- Compiler error if you try to write beyond allocated size
+- Clean syntax for building binary data
+- Perfect for: network protocols, file formats, game saves, serialization
+
 
 ### C-Compatible Structs
 

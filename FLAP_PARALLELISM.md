@@ -20,9 +20,16 @@
 N @ item in collection max 10000 {
     process(item)
 }
+
+// Parallel loop with ALL cores (shorthand)
+@@ item in collection max 10000 {
+    process(item)
+}
 ```
 
 The number before `@` specifies **how many CPU cores/threads** to use for parallel execution.
+
+The `@@` syntax is shorthand for using **all available CPU cores**.
 
 ---
 
@@ -57,12 +64,11 @@ main ==> {
 process_image := (image) => {
     width := image.width
     height := image.height
-    cores := cpu_count()
 
     output := create_image(width, height)
 
-    // Split work across all CPU cores
-    cores @ y in range(0, height) max 10000 {
+    // Split work across all CPU cores using @@ shorthand
+    @@ y in range(0, height) max 10000 {
         @ x in range(0, width) max 10000 {
             pixel := image[y * width + x]
             output[y * width + x] <- blur(pixel, image, x, y)
@@ -77,11 +83,10 @@ process_image := (image) => {
 
 ```flap
 render_scene := (scene, width, height) => {
-    cores := cpu_count()
     pixels := []
 
-    // Render pixels in parallel
-    cores @ y in range(0, height) max 10000 {
+    // Render pixels in parallel using all cores
+    @@ y in range(0, height) max 10000 {
         @ x in range(0, width) max 10000 {
             ray := generate_ray(x, y, width, height)
             color := trace_ray(ray, scene, depth: 5)
@@ -98,9 +103,8 @@ render_scene := (scene, width, height) => {
 ```flap
 // Update particles in parallel
 update_particles := (particles, dt) => {
-    cores := cpu_count()
-
-    cores @ particle in particles max 100000 {
+    // Use all cores with @@ shorthand
+    @@ particle in particles max 100000 {
         // Update position
         particle.x <- particle.x + particle.vx * dt
         particle.y <- particle.y + particle.vy * dt
@@ -172,7 +176,12 @@ process_dataset := (data) => {
 ## Controlling Parallelism
 
 ```flap
-// Use all available cores
+// Use all available cores (shorthand)
+@@ item in data max 100000 {
+    process(item)
+}
+
+// Use all available cores (explicit)
 cores := cpu_count()
 cores @ item in data max 100000 {
     process(item)
