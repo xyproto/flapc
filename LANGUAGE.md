@@ -1270,21 +1270,34 @@ All communication uses ENet with `:port` syntax:
 
 **Port Literals:**
 ```flap
-// Port literal (ENet server on localhost)
+// Numeric port literal (ENet server on localhost)
 :5000        // Port 5000 on localhost
+
+// String port literal (hashed to port number)
+:game_server // Hashed to deterministic port number
+:worker      // Named ports for clarity
+:banana      // Any string works - hashed consistently
 
 // Remote address (string)
 "server.com:5000"      // Remote host + port
 "192.168.1.100:7777"   // IP address + port
 
-// Next available port (starting from N)
-:5000+       // Tries 5000, 5001, 5002, ... until free port found
+// Next available port (returns actual port number)
+port := :5000+  // Tries 5000, 5001, 5002, ... returns actual port
+printf("Bound to port: %v\n", port)
+
+@ msg, from in port {
+    printf("[Port %v] Got: %s\n", port, msg)
+}
 
 // Check if port is available
 :5000?       // Returns 1 if available, 0 if in use
 
-// Use available port or default
+// Use available port or fallback
 port := :5000? { :5000 ~> :5001 }
+
+// Named port with fallback
+port := :game_server? { :game_server ~> :9000+ }
 ```
 
 **Receiving Messages:**
@@ -2047,7 +2060,7 @@ primary_expr            = number
                         | "^" primary_expr
                         | "&" primary_expr ;
 
-port_literal            = ":" number [ "+" | "?" ] ;
+port_literal            = ":" ( number | identifier ) [ "+" | "?" ] ;
 
 arena_expr              = "arena" "{" { statement { newline } } expression "}" ;
 
@@ -2087,7 +2100,8 @@ escape_sequence         = "\\" ( "n" | "t" | "r" | "\\" | '"' ) ;
 * `@ msg, from in :port` receives ENet messages: `msg` is the message string, `from` is sender address
 * Optional numeric prefix before `@` specifies parallel execution: `4 @ i in list` uses 4 CPU cores
 * `@@` is shorthand for all-cores parallel execution: `@@ i in list` uses all available CPU cores
-* Port literals: `:5000` (port), `:5000+` (next available), `:5000?` (check if available)
+* Port literals: `:5000` (numeric port), `:worker` (string port, hashed to number)
+* Port operations: `:5000+` (next available port, returns actual port number), `:5000?` (check if available)
 * `@++` continues the current loop (skip this iteration, jump to next).
 * `@1++`, `@2++`, `@3++`, ... continues the loop at that nesting level (skip iteration, jump to next).
 * `++` operator for pointer append: `ptr ++ value as type` writes value at current offset and auto-increments by sizeof(type)
