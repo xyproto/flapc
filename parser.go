@@ -4586,24 +4586,6 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 				}
 			}
 
-			// Merge builtin signatures (for common libc functions)
-			builtins := getBuiltinSignatures()
-			if fc.cConstants[cImport.Alias] == nil {
-				fc.cConstants[cImport.Alias] = &CHeaderConstants{
-					Constants: make(map[string]int64),
-					Macros:    make(map[string]string),
-					Functions: make(map[string]*CFunctionSignature),
-				}
-			}
-			for k, v := range builtins {
-				if _, exists := fc.cConstants[cImport.Alias].Functions[k]; !exists {
-					fc.cConstants[cImport.Alias].Functions[k] = v
-				}
-			}
-			if VerboseMode && len(builtins) > 0 {
-				fmt.Fprintf(os.Stderr, "Added %d builtin function signatures\n", len(builtins))
-			}
-
 			// Extract constants from C headers
 			constants, err := ExtractConstantsFromLibrary(cImport.Library)
 			if err != nil {

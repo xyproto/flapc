@@ -8,12 +8,12 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
 
 ## Critical Bugs
 
-1. **Extend FFI to support float/pointer args** (HIGH) ✅ FIXED
-   - Status: Float and pointer arguments now work correctly
-   - Verified: `libc.sqrt(25.0)` returns 5, `libc.malloc(100)` returns valid pointer
-   - Solution: Added ldconfig library resolution + builtin signatures for common C functions
-   - Builtin signatures: sqrt, sin, cos, pow, malloc, free, memset, memcpy, etc.
-   - Files: `cffi.go` (getBuiltinSignatures), `parser.go` (ldconfig integration)
+1. **Extend FFI to support float/pointer args** (HIGH) 🐛 PARTIAL FIX
+   - Status: Float/pointer args work when DWARF signatures are available
+   - DWARF extraction: Works for some .so files, fails for others (e.g., libc, libm)
+   - Workaround: Use explicit casts - `libc.sqrt((25.0 as double))` or provide .h files
+   - Proper fix needed: Better DWARF extraction or alternative signature discovery
+   - Files: `cffi.go` (ExtractFunctionSignatures), `parser.go` (compileCFunctionCall)
 
 2. **Fix nested arena crash** (LOW) 🐛 BUG - DEFERRED
    - Status: Basic arenas work fine, nested arenas have slot management issue
