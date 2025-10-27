@@ -4,9 +4,9 @@
 
 **Flap compiler** - Generates native x86-64 machine code directly. No LLVM, no GCC, no runtime.
 
-**Built for:** Game development (SDL3/RayLib5 target)
+**Built for:** Game development (SDL3/RayLib5), systems programming, concurrent applications
 **Platform:** x86-64 Linux (Arch/Debian tested)
-**Status:** 435+ tests passing, full optimization pipeline working
+**Status:** 435+ tests passing, process spawning working, ENet networking in progress (v1.6.0 development)
 
 ## Key Features
 
@@ -29,6 +29,10 @@
 
 **Unsafe blocks** - Direct register access for performance-critical code.
 
+**Process spawning** - Unix fork()-based concurrency with `spawn` keyword.
+
+**ENet networking** - Port literals (`:5000`, `:worker`) for IPC and networking.
+
 ```flap
 // Tail recursion
 fib = n => n < 2 { -> n ~> fib(n-1) + fib(n-2) }
@@ -39,6 +43,14 @@ arena { buffer := alloc(1024) /* ... */ }  // auto-freed
 // C FFI
 import sdl3 as sdl
 window := sdl.SDL_CreateWindow("Game", 800, 600, 0)
+
+// Process spawning
+spawn worker()                    // Fire-and-forget
+spawn compute(42) | result | {}   // Wait for result (not yet implemented)
+
+// Port literals (ENet)
+port := :5000                     // Numeric port
+worker_port := :worker            // Named port (hashed to 39639)
 
 // Unsafe
 result := unsafe { rax <- 42; rax }
@@ -96,9 +108,11 @@ See `testprograms/` for 50+ examples.
 
 **Syntax**
 - Variables: `x = 42` (immutable), `x := 42` (mutable), `x <- 43` (update)
-- Loops: `@ i in 0..10 { }`, `@ { }` (infinite)
+- Loops: `@ i in 0..<10 { }`, `@ { }` (infinite)
 - Match: `x > 0 { yes() ~> no() }` (if-else)
 - Lambdas: `f = x => x * 2` or `(x, y) => x + y`
+- Processes: `spawn worker()` (Unix fork)
+- Ports: `:5000`, `:worker` (network/IPC)
 
 **Types** (all `map[uint64]float64` internally)
 - Numbers: `42`, `3.14`, `0xFF`, `0b1010`
@@ -150,14 +164,25 @@ See [TODO.md](TODO.md) for detailed roadmap.
 
 ## Roadmap
 
-**In progress:**
-- Hot code reload (Phases 1-4 complete, integration pending)
-- C header parsing for automatic FFI signatures
+**Version 1.6.0 (In Progress):**
+- ✅ Process spawning with `spawn` keyword (Unix fork)
+- ✅ Port literals for ENet (`:5000`, `:worker` with deterministic hashing)
+- ⚙️  ENet networking protocol (socket operations, send/receive)
+- 🔜 Parallel loops (`N @` and `@@` for data parallelism)
+- 🔜 Hot code reload integration (infrastructure complete)
 
-**Planned:**
-- Game development with SDL3/RayLib5
-- Multiplatform (Windows/macOS/ARM64/RISC-V)
+**Completed in 1.5.x:**
+- Tail-call optimization
+- Arena memory management
+- C FFI with DWARF auto-discovery
+- Unsafe blocks with register access
+- Pattern matching and lambdas
+
+**Future:**
+- Game development tooling (SDL3/RayLib5 examples)
+- Multiplatform support (Windows/macOS/ARM64/RISC-V)
 - Steamworks integration
+- HTTP/WebSocket support
 
 ## License
 
@@ -171,5 +196,5 @@ BSD-3-Clause - Commercial use, packaging, modification allowed. No copyleft.
 
 ---
 
-**Version:** 1.1.1
+**Version:** 1.6.0-dev
 **Refs:** System V ABI, ELF-64 spec, Intel x86-64 manual
