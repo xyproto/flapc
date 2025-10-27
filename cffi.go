@@ -783,9 +783,126 @@ func tryPkgConfig(libraryName string) []string {
 // tryParseHeaders attempts to parse C header files for function declarations
 // Returns discovered function signatures
 func tryParseHeaders(libraryName string, additionalPaths []string) map[string]*CFunctionSignature {
-	// For now, return empty - header parsing will be implemented in a follow-up
-	// This is a placeholder for the proper implementation
-	return make(map[string]*CFunctionSignature)
+	signatures := make(map[string]*CFunctionSignature)
+
+	// Map library names to common header files
+	headerMap := map[string][]string{
+		"c":     {"math.h", "stdlib.h", "string.h", "stdio.h"},
+		"m":     {"math.h"},
+		"sdl3":  {"SDL3/SDL.h"},
+		"sdl2":  {"SDL2/SDL.h"},
+		"GL":    {"GL/gl.h"},
+		"GLU":   {"GL/glu.h"},
+		"pthread": {"pthread.h"},
+	}
+
+	headers, ok := headerMap[libraryName]
+	if !ok {
+		// Try guessing header name from library name
+		// e.g., "sdl3" -> "SDL3/SDL.h" or "libfoo" -> "foo.h"
+		guessedHeader := strings.TrimPrefix(libraryName, "lib") + ".h"
+		headers = []string{guessedHeader}
+	}
+
+	// Try to parse each header
+	for _, header := range headers {
+		sigs := parseHeaderForFunctions(header, additionalPaths)
+		for name, sig := range sigs {
+			if _, exists := signatures[name]; !exists {
+				signatures[name] = sig
+			}
+		}
+	}
+
+	return signatures
+}
+
+// parseHeaderForFunctions uses gcc -E to preprocess a header, then extracts function signatures
+func parseHeaderForFunctions(headerName string, includePaths []string) map[string]*CFunctionSignature {
+	// Build gcc command to preprocess header
+	args := []string{"-E", "-dD", "-x", "c", "-"}
+	for _, path := range includePaths {
+		args = append(args, "-I"+path)
+	}
+
+	// Create a minimal C file that includes the header
+	includeCode := fmt.Sprintf("#include <%s>\n", headerName)
+
+	cmd := exec.Command("gcc", args...)
+	cmd.Stdin = strings.NewReader(includeCode)
+	output, err := cmd.Output()
+	if err != nil {
+		// Header not found or gcc failed
+		return make(map[string]*CFunctionSignature)
+	}
+
+	// Parse the preprocessed output for function declarations
+	return extractFunctionDeclarations(string(output))
+}
+
+// extractFunctionDeclarations parses preprocessed C code for function declarations
+func extractFunctionDeclarations(preprocessed string) map[string]*CFunctionSignature {
+	signatures := make(map[string]*CFunctionSignature)
+
+	// Pattern for function declarations with optional attributes
+	// Matches: extern TYPE NAME (PARAMS) ... ;
+	// Ignores attributes and modifiers between ) and ;
+	funcDeclPattern := regexp.MustCompile(`\bextern\s+(\w+(?:\s+\w+)*(?:\s*\*)?)\s+(\w+)\s*\(([^)]*)\)[^;]*;`)
+
+	matches := funcDeclPattern.FindAllStringSubmatch(preprocessed, -1)
+	for _, match := range matches {
+		if len(match) < 4 {
+			continue
+		}
+
+		returnType := strings.TrimSpace(match[1])
+		funcName := match[2]
+		paramsStr := match[3]
+
+		// Skip internal/private functions (starting with __)
+		if strings.HasPrefix(funcName, "__") && !strings.HasPrefix(funcName, "SDL_") {
+			continue
+		}
+
+		// Parse parameters
+		var params []CFunctionParam
+		if strings.TrimSpace(paramsStr) != "" && paramsStr != "void" {
+			paramParts := strings.Split(paramsStr, ",")
+			for _, paramStr := range paramParts {
+				paramStr = strings.TrimSpace(paramStr)
+				if paramStr == "" {
+					continue
+				}
+
+				// Extract type (everything before parameter name)
+				// Handle cases: "double x", "const char *str", "int", "void*"
+				parts := strings.Fields(paramStr)
+				if len(parts) == 0 {
+					continue
+				}
+
+				var paramType string
+				// Check if last part looks like a parameter name (starts with __ or lowercase)
+				lastPart := parts[len(parts)-1]
+				if len(parts) > 1 && (strings.HasPrefix(lastPart, "__") || (len(lastPart) > 0 && lastPart[0] >= 'a' && lastPart[0] <= 'z' && !strings.Contains(lastPart, "*"))) {
+					// Has parameter name - take all but last as type
+					paramType = strings.Join(parts[:len(parts)-1], " ")
+				} else {
+					// No parameter name or last part is the type
+					paramType = strings.Join(parts, " ")
+				}
+
+				params = append(params, CFunctionParam{Type: paramType})
+			}
+		}
+
+		signatures[funcName] = &CFunctionSignature{
+			ReturnType: returnType,
+			Params:     params,
+		}
+	}
+
+	return signatures
 }
 
 // ExtractFunctionSignatures extracts function signatures from DWARF debug info in a .so file
