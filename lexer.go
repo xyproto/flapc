@@ -127,6 +127,7 @@ const (
 	TOKEN_ALIGNED     // aligned (alignment modifier for cstruct)
 	TOKEN_ALIAS       // alias (create keyword aliases for language packs)
 	TOKEN_HOT         // hot (mark function as hot-reloadable)
+	TOKEN_SPAWN       // spawn (spawn background process)
 	TOKEN_HAS         // has (type/class definitions)
 )
 
@@ -408,6 +409,8 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_ALIAS, Value: value, Line: l.line}
 		case "hot":
 			return Token{Type: TOKEN_HOT, Value: value, Line: l.line}
+		case "spawn":
+			return Token{Type: TOKEN_SPAWN, Value: value, Line: l.line}
 		case "has":
 			return Token{Type: TOKEN_HAS, Value: value, Line: l.line}
 		case "xor":

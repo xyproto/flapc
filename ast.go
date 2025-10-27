@@ -909,6 +909,30 @@ type DeferStmt struct {
 func (d *DeferStmt) String() string { return "defer " + d.Call.String() }
 func (d *DeferStmt) statementNode() {}
 
+// SpawnStmt represents a spawned process: spawn expr [ | params | block ]
+// Creates a new process via fork() and optionally waits for result
+type SpawnStmt struct {
+	Expr   Expression   // Expression to execute in child process
+	Params []string     // Optional: variable names for pipe destructuring
+	Block  *BlockExpr   // Optional: block to execute with result (implies wait)
+}
+
+func (s *SpawnStmt) String() string {
+	result := "spawn " + s.Expr.String()
+	if s.Block != nil {
+		result += " | "
+		for i, param := range s.Params {
+			if i > 0 {
+				result += ", "
+			}
+			result += param
+		}
+		result += " | " + s.Block.String()
+	}
+	return result
+}
+func (s *SpawnStmt) statementNode() {}
+
 // AliasStmt represents a keyword alias: alias for=@
 // Creates alternative syntax for existing keywords (useful for language packs)
 type AliasStmt struct {

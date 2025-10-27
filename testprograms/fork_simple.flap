@@ -1,3 +1,3 @@
 // Very simple fork test
-printf("Child\n") &
+spawn printf("Child\n")
 printf("Parent\n")

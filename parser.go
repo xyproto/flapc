@@ -1706,6 +1706,74 @@ func (p *Parser) parseDeferStmt() *DeferStmt {
 	return &DeferStmt{Call: expr}
 }
 
+func (p *Parser) parseSpawnStmt() *SpawnStmt {
+	p.nextToken() // skip 'spawn'
+
+	// Parse the expression to spawn
+	expr := p.parseExpression()
+	if expr == nil {
+		p.error("expected expression after 'spawn'")
+	}
+
+	// Check for optional pipe syntax: | params | block
+	var params []string
+	var block *BlockExpr
+
+	if p.peek.Type == TOKEN_PIPE {
+		p.nextToken() // move to PIPE
+		p.nextToken() // skip PIPE
+
+		// Parse parameter list (comma-separated identifiers)
+		// For now, only support simple identifiers, not map destructuring
+		for {
+			if p.current.Type != TOKEN_IDENT {
+				p.error("expected identifier in spawn pipe parameters")
+			}
+			params = append(params, p.current.Value)
+			p.nextToken()
+
+			if p.current.Type == TOKEN_COMMA {
+				p.nextToken() // skip comma
+			} else if p.current.Type == TOKEN_PIPE {
+				break
+			} else {
+				p.error("expected ',' or '|' in spawn pipe parameters")
+			}
+		}
+
+		p.nextToken() // skip final PIPE
+
+		// Parse block
+		if p.current.Type != TOKEN_LBRACE {
+			p.error("expected block after spawn pipe parameters")
+		}
+
+		// Parse as BlockExpr
+		block = &BlockExpr{}
+		p.nextToken() // skip '{'
+		p.skipNewlines()
+
+		for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+			stmt := p.parseStatement()
+			if stmt != nil {
+				block.Statements = append(block.Statements, stmt)
+			}
+			p.nextToken()
+			p.skipNewlines()
+		}
+
+		if p.current.Type != TOKEN_RBRACE {
+			p.error("expected '}' at end of spawn block")
+		}
+	}
+
+	return &SpawnStmt{
+		Expr:   expr,
+		Params: params,
+		Block:  block,
+	}
+}
+
 func (p *Parser) parseAliasStmt() *AliasStmt {
 	p.nextToken() // skip 'alias'
 
@@ -1959,6 +2027,11 @@ func (p *Parser) parseStatement() Statement {
 		return p.parseAliasStmt()
 	}
 
+	// Check for spawn keyword
+	if p.current.Type == TOKEN_SPAWN {
+		return p.parseSpawnStmt()
+	}
+
 	// Check for ret/err keywords (but not if followed by assignment operator)
 	if p.current.Type == TOKEN_RET || p.current.Type == TOKEN_ERR {
 		// If TOKEN_RET followed by assignment operator, treat as identifier for assignment
@@ -2013,28 +2086,6 @@ func (p *Parser) parseStatement() Statement {
 	// Otherwise, it's an expression statement (or match expression)
 	expr := p.parseExpression()
 	if expr != nil {
-		// Check for background execution: expr &
-		if p.peek.Type == TOKEN_AMP {
-			// Check if this is end of statement (not binary operator)
-			// Background execution should be followed by newline, EOF, or }
-			p.nextToken() // move to &
-			// Don't consume the &, let peeker see what's after
-			isBackground := (p.peek.Type == TOKEN_NEWLINE ||
-							 p.peek.Type == TOKEN_EOF ||
-							 p.peek.Type == TOKEN_RBRACE ||
-							 p.peek.Type == TOKEN_SEMICOLON)
-
-			if isBackground {
-				// This is background execution
-				expr = &BackgroundExpr{Expr: expr}
-			} else {
-				// This is binary & operator, put token back
-				// Actually we can't put it back easily, so let the binary parser handle it
-				// This shouldn't happen if we parse correctly
-				p.error("unexpected & operator - use parentheses if this is a binary operation")
-			}
-		}
-
 		if p.peek.Type == TOKEN_LBRACE {
 			p.nextToken() // move to '{'
 			p.nextToken() // skip '{'
@@ -3488,10 +3539,6 @@ func (p *Parser) parsePostfix() Expression {
 					Index: &NumberExpr{Value: float64(hashValue)},
 				}
 			}
-		} else if p.peek.Type == TOKEN_AMP {
-			// Background execution: expr &
-			p.nextToken() // skip current expr
-			expr = &BackgroundExpr{Expr: expr}
 		} else {
 			break
 		}
@@ -5622,6 +5669,9 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 		currentScope := len(fc.deferredExprs) - 1
 		fc.deferredExprs[currentScope] = append(fc.deferredExprs[currentScope], s.Call)
 
+	case *SpawnStmt:
+		fc.compileSpawnStmt(s)
+
 	case *CStructDecl:
 		// Cstruct declarations generate no runtime code
 		// Constants are already available via Name_SIZEOF and Name_field_OFFSET
@@ -5704,6 +5754,61 @@ func (fc *FlapCompiler) compileArenaStmt(stmt *ArenaStmt) {
 	fc.out.MovMemToReg("rbx", "rbx", 0)      // rbx = meta-arena pointer
 	fc.out.MovMemToReg("rdi", "rbx", offset) // rdi = arena pointer from slot
 	fc.out.CallSymbol("flap_arena_reset")
+}
+
+func (fc *FlapCompiler) compileSpawnStmt(stmt *SpawnStmt) {
+	// Call fork() syscall (57 on x86-64 Linux)
+	// Returns: child gets 0 in rax, parent gets child PID in rax
+	fc.out.MovImmToReg("rax", "57") // fork syscall number
+	fc.out.Syscall()
+
+	// Test if we're in child or parent
+	// If rax == 0, we're in child
+	fc.out.TestRegReg("rax", "rax")
+
+	// Jump to child code if rax == 0 (we're in child)
+	childJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0) // Placeholder, will patch
+
+	// Parent path: just continue execution
+	// (child PID is in rax, but we don't use it for fire-and-forget)
+	if stmt.Block != nil {
+		// TODO: Implement pipe-based result waiting
+		// For now, just error if pipe syntax is used
+		compilerError("spawn with pipe syntax (| params | block) not yet implemented - use simple spawn for now")
+	}
+
+	// Jump over child code
+	parentJumpPos := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0) // Placeholder
+
+	// Child path: execute expression and exit
+	childStartPos := fc.eb.text.Len()
+
+	// Patch the jump to child
+	childOffset := int32(childStartPos - (childJumpPos + ConditionalJumpSize))
+	fc.patchJumpImmediate(childJumpPos+2, childOffset)
+
+	// Execute the spawned expression
+	fc.compileExpression(stmt.Expr)
+
+	// Flush all output streams before exiting
+	// Call fflush(NULL) to flush all streams
+	fc.out.MovImmToReg("rdi", "0") // NULL = 0
+	fc.trackFunctionCall("fflush")
+	fc.eb.GenerateCallInstruction("fflush")
+
+	// Exit child process with status 0
+	fc.out.MovImmToReg("rax", "60") // exit syscall number
+	fc.out.MovImmToReg("rdi", "0")  // exit status 0
+	fc.out.Syscall()
+
+	// Parent continues here
+	parentContinuePos := fc.eb.text.Len()
+
+	// Patch the parent jump
+	parentOffset := int32(parentContinuePos - (parentJumpPos + UnconditionalJumpSize))
+	fc.patchJumpImmediate(parentJumpPos+1, parentOffset)
 }
 
 func (fc *FlapCompiler) compileLoopStatement(stmt *LoopStmt) {
@@ -7873,9 +7978,6 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 	case *ConcurrentGatherExpr:
 		fc.compileConcurrentGatherExpr(e)
-
-	case *BackgroundExpr:
-		fc.compileBackgroundExpr(e)
 
 	case *CastExpr:
 		fc.compileCastExpr(e)
@@ -14429,22 +14531,6 @@ func (fc *FlapCompiler) compileConcurrentGatherExpr(expr *ConcurrentGatherExpr) 
 		fmt.Fprintln(os.Stderr, "This feature requires runtime support for concurrency")
 	}
 	compilerError("concurrent gather operator ||| is not yet implemented")
-}
-
-func (fc *FlapCompiler) compileBackgroundExpr(expr *BackgroundExpr) {
-	// Background execution: expr &
-	// TODO: Complete implementation
-	//
-	// Currently blocked on parser issues - & operator conflicts with list tail
-	// Need to resolve operator precedence before this can work
-	//
-	// Planned implementation:
-	// 1. Call fork() syscall (57 on x86-64 Linux)
-	// 2. Test if child (rax == 0)
-	// 3. Child: execute expr, flush stdout, exit(0)
-	// 4. Parent: continue execution, return 0.0
-
-	compilerError("background execution with & operator not yet implemented (parser conflict)")
 }
 
 func (fc *FlapCompiler) trackFunctionCall(funcName string) {
