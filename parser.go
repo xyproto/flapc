@@ -2013,6 +2013,28 @@ func (p *Parser) parseStatement() Statement {
 	// Otherwise, it's an expression statement (or match expression)
 	expr := p.parseExpression()
 	if expr != nil {
+		// Check for background execution: expr &
+		if p.peek.Type == TOKEN_AMP {
+			// Check if this is end of statement (not binary operator)
+			// Background execution should be followed by newline, EOF, or }
+			p.nextToken() // move to &
+			// Don't consume the &, let peeker see what's after
+			isBackground := (p.peek.Type == TOKEN_NEWLINE ||
+							 p.peek.Type == TOKEN_EOF ||
+							 p.peek.Type == TOKEN_RBRACE ||
+							 p.peek.Type == TOKEN_SEMICOLON)
+
+			if isBackground {
+				// This is background execution
+				expr = &BackgroundExpr{Expr: expr}
+			} else {
+				// This is binary & operator, put token back
+				// Actually we can't put it back easily, so let the binary parser handle it
+				// This shouldn't happen if we parse correctly
+				p.error("unexpected & operator - use parentheses if this is a binary operation")
+			}
+		}
+
 		if p.peek.Type == TOKEN_LBRACE {
 			p.nextToken() // move to '{'
 			p.nextToken() // skip '{'
@@ -3466,6 +3488,10 @@ func (p *Parser) parsePostfix() Expression {
 					Index: &NumberExpr{Value: float64(hashValue)},
 				}
 			}
+		} else if p.peek.Type == TOKEN_AMP {
+			// Background execution: expr &
+			p.nextToken() // skip current expr
+			expr = &BackgroundExpr{Expr: expr}
 		} else {
 			break
 		}
@@ -7847,6 +7873,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 	case *ConcurrentGatherExpr:
 		fc.compileConcurrentGatherExpr(e)
+
+	case *BackgroundExpr:
+		fc.compileBackgroundExpr(e)
 
 	case *CastExpr:
 		fc.compileCastExpr(e)
@@ -14400,6 +14429,54 @@ func (fc *FlapCompiler) compileConcurrentGatherExpr(expr *ConcurrentGatherExpr) 
 		fmt.Fprintln(os.Stderr, "This feature requires runtime support for concurrency")
 	}
 	compilerError("concurrent gather operator ||| is not yet implemented")
+}
+
+func (fc *FlapCompiler) compileBackgroundExpr(expr *BackgroundExpr) {
+	// Background execution: expr &
+	// Uses Unix fork() to spawn child process
+
+	// Call fork() syscall (number 57 on x86-64 Linux)
+	fc.out.MovImmToReg("rax", 57) // syscall number for fork
+	fc.out.Syscall()
+
+	// fork() returns:
+	// - 0 in child process
+	// - child PID in parent process
+	// - -1 on error (we'll ignore for now)
+
+	// Test if we're in child (rax == 0)
+	fc.out.CmpRegWithImm("rax", 0)
+
+	// Create labels for child and parent paths
+	childLabel := fmt.Sprintf("fork_child_%d", fc.labelCounter)
+	parentLabel := fmt.Sprintf("fork_parent_%d", fc.labelCounter)
+	fc.labelCounter++
+
+	// Jump to child path if rax == 0
+	fc.out.JumpIfEqual(childLabel)
+
+	// Parent process: continue execution
+	// Result is 0.0 in xmm0 (fork conceptually returns void)
+	fc.out.Xorpd("xmm0", "xmm0")
+	fc.out.Jump(parentLabel)
+
+	// Child process: execute expression then exit
+	fc.out.Label(childLabel)
+	fc.compileExpression(expr.Expr)
+
+	// Flush stdout before exit (stdout is buffered)
+	// fflush(NULL) flushes all streams
+	fc.out.MovImmToReg("rdi", 0) // NULL (flush all streams)
+	fc.trackFunctionCall("fflush")
+	fc.eb.GenerateCallInstruction("fflush")
+
+	// Call exit(0) in child
+	fc.out.MovImmToReg("rdi", 0) // exit code
+	fc.out.MovImmToReg("rax", 60) // syscall number for exit
+	fc.out.Syscall()
+
+	// Parent continues here
+	fc.out.Label(parentLabel)
 }
 
 func (fc *FlapCompiler) trackFunctionCall(funcName string) {

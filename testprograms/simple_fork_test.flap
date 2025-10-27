@@ -1,0 +1,2 @@
+// Simpler fork test
+printf("Before fork\n")

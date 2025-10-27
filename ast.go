@@ -682,6 +682,15 @@ func (c *ConcurrentGatherExpr) String() string {
 }
 func (c *ConcurrentGatherExpr) expressionNode() {}
 
+type BackgroundExpr struct {
+	Expr Expression // Expression to execute in background process
+}
+
+func (b *BackgroundExpr) String() string {
+	return b.Expr.String() + " &"
+}
+func (b *BackgroundExpr) expressionNode() {}
+
 type LengthExpr struct {
 	Operand Expression
 }

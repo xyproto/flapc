@@ -1,0 +1,14 @@
+// Fork test using write syscall directly
+unsafe {
+    x86_64 {
+        // Write "Child\n" from background process using write() syscall
+        // mov rax, 1        ; syscall: write
+        // mov rdi, 1        ; fd: stdout
+        // lea rsi, [rip+msg]; buf: message
+        // mov rdx, 6        ; count: length
+        // syscall
+        // This will be in child process due to & operator
+    }
+} &
+
+printf("Parent\n")

@@ -1,0 +1,12 @@
+// Test fork & background processes
+child_task := () => {
+    printf("Child: Running in background\n")
+}
+
+printf("Parent: Starting test\n")
+
+// Spawn background process
+child_task() &
+
+printf("Parent: Continuing after fork\n")
+printf("Parent: Done\n")

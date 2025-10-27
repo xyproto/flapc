@@ -1,0 +1,9 @@
+// Fork test with manual wait
+printf("Child\n") &
+
+// Simple busy wait to give child time
+@ i in 0..<100000000 max inf {
+    // just wait
+}
+
+printf("Parent\n")
