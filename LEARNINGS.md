@@ -592,3 +592,43 @@ $ echo $?
 1. What offset calculations assume
 2. What order data is actually written
 3. What external tools (like ldid) expect
+
+---
+
+## Network Send Operator: Why `<=` Instead of `<-` (2025-01-27)
+
+**Problem:** Initial ENet design used `<-` for network send (`:5000 <- "message"`), but this created ambiguity with variable updates (`x <- x + 1`). When the left-hand side is a variable holding a port number, parser cannot distinguish:
+```flap
+port := :5000
+port <- "message"  // Send? Or update variable?
+```
+
+**Solutions Considered:**
+1. **Context-based parsing**: Check if left side is identifier → Not robust, requires statement-level lookahead
+2. **Different operator**: Use `<=` for send, reserve `<-` for updates → Clean separation
+
+**Decision:** Use `<=` operator for network send operations.
+
+**Rationale:**
+- **Unambiguous**: `<=` is comparison operator normally, but as send operator it's clear from context (message after it)
+- **Visually intuitive**: "Less than or equal" arrow suggests "send toward"
+- **No conflicts**: Variable updates stay `<-`, sends are `<=`
+- **Parser simplicity**: No special-casing of identifiers needed
+
+**Implementation:**
+```flap
+// Variable update (as before)
+x <- x + 1
+
+// Network send (new syntax)
+:5000 <= "hello"                // Send to port
+port <= "message"              // Send to variable containing port
+"server.com:5000" <= "data"    // Send to remote address
+```
+
+**Files Modified:**
+- `ast.go`: SendExpr uses `<=` in String()
+- `parser.go`: parseSend() checks TOKEN_LE instead of TOKEN_LEFT_ARROW
+- `LANGUAGE.md`: Updated all examples and grammar rules
+
+**Key Learning:** When overloading operators, choose combinations that minimize ambiguity. If context-based resolution requires complex lookahead, consider using a different operator entirely.

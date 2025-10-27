@@ -695,6 +695,10 @@ func collectUsedVariablesExpr(expr Expression, usedVars map[string]bool) {
 		// ConcurrentGatherExpr has Left and Right
 		collectUsedVariablesExpr(e.Left, usedVars)
 		collectUsedVariablesExpr(e.Right, usedVars)
+	case *SendExpr:
+		// SendExpr has Target and Message
+		collectUsedVariablesExpr(e.Target, usedVars)
+		collectUsedVariablesExpr(e.Message, usedVars)
 	case *UnsafeExpr:
 		// UnsafeExpr has architecture-specific blocks
 		for _, stmt := range e.X86_64Block {
@@ -3079,13 +3083,29 @@ func (p *Parser) parseConcurrentGather() Expression {
 }
 
 func (p *Parser) parsePipe() Expression {
-	left := p.parseParallel()
+	left := p.parseSend()
 
 	for p.peek.Type == TOKEN_PIPE {
 		p.nextToken() // skip current
 		p.nextToken() // skip '|'
-		right := p.parseParallel()
+		right := p.parseSend()
 		left = &PipeExpr{Left: left, Right: right}
+	}
+
+	return left
+}
+
+func (p *Parser) parseSend() Expression {
+	left := p.parseParallel()
+
+	// Check for send operator: expr <= expr
+	// This handles: :5000 <= "msg" or port <= "data"
+	// Note: Using <= instead of <- to avoid ambiguity with variable updates (x <- value)
+	if p.peek.Type == TOKEN_LE {
+		p.nextToken() // move to left expr
+		p.nextToken() // skip '<='
+		right := p.parseParallel()
+		return &SendExpr{Target: left, Message: right}
 	}
 
 	return left
@@ -8001,6 +8021,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 	case *ConcurrentGatherExpr:
 		fc.compileConcurrentGatherExpr(e)
+
+	case *SendExpr:
+		fc.compileSendExpr(e)
 
 	case *CastExpr:
 		fc.compileCastExpr(e)
@@ -14556,6 +14579,21 @@ func (fc *FlapCompiler) compileConcurrentGatherExpr(expr *ConcurrentGatherExpr) 
 	compilerError("concurrent gather operator ||| is not yet implemented")
 }
 
+func (fc *FlapCompiler) compileSendExpr(expr *SendExpr) {
+	// Send operator: target <= message
+	// Semantics: Send UDP message to target (port or address)
+	// Target can be:
+	//   - Port number (float64): send to localhost:port
+	//   - String "ip:port": send to remote address
+	// Message should be a string
+
+	// For now, error out as this needs UDP socket implementation
+	if VerboseMode {
+		fmt.Fprintln(os.Stderr, "Send operator requires UDP socket runtime support")
+	}
+	compilerError("send operator (<=) not yet fully implemented - needs UDP sockets, sendto() syscall, and address parsing")
+}
+
 // portToNumber converts a port literal to a port number
 // Numeric strings like "5000" are converted directly
 // String names like "worker" are hashed to deterministic port numbers (10000-65535)
@@ -14659,6 +14697,9 @@ func collectFunctionCalls(expr Expression, calls map[string]bool) {
 	case *ConcurrentGatherExpr:
 		collectFunctionCalls(e.Left, calls)
 		collectFunctionCalls(e.Right, calls)
+	case *SendExpr:
+		collectFunctionCalls(e.Target, calls)
+		collectFunctionCalls(e.Message, calls)
 	case *MatchExpr:
 		collectFunctionCalls(e.Condition, calls)
 		for _, clause := range e.Clauses {

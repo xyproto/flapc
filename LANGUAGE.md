@@ -320,6 +320,17 @@ x **= 2       // x <- x ** 2 (square x)
 
 **Comparison:** `<` `<=` `>` `>=` `==` `!=`
 
+**Network Send:** `<=` (dual-purpose operator)
+```flap
+// Send message to port/address (ENet/UDP)
+:5000 <= "hello"              // Send to localhost:5000
+port <= "message"             // Send to variable containing port/address
+"server.com:5000" <= "data"   // Send to remote host
+
+// Comparison (when not followed by message)
+x <= 10   // Less than or equal to
+```
+
 **Logical:** `and` `or` `xor` `not`
 
 Logical operators provide short-circuit evaluation:
@@ -1334,7 +1345,7 @@ port := :5000? or :3000  // If 5000 available, use it, else 3000
 // Pattern match on messages
 @ msg, from in :5000 {
     msg {
-        "ping" -> from <- "pong"
+        "ping" -> from <= "pong"
         "quit" -> ret @
         ~> printf("Unknown: %s\n", msg)
     }
@@ -1344,19 +1355,19 @@ port := :5000? or :3000  // If 5000 available, use it, else 3000
 **Sending Messages:**
 ```flap
 // Send to local port
-:5000 <- "hello"
+:5000 <= "hello"
 
 // Send to remote host
-"server.com:5000" <- "hello"
+"server.com:5000" <= "hello"
 
 // Send from variable
 target := "192.168.1.100:7777"
-target <- "data"
+target <= "data"
 
 // Broadcast to multiple addresses
 addresses := [":8000", ":8001", ":8002", ":8003"]
 @ addr in addresses max 100 {
-    addr <- "broadcast message"
+    addr <= "broadcast message"
 }
 ```
 
@@ -1559,14 +1570,14 @@ main ==> {
 
 ```flap
 // Local IPC (same machine)
-:5000 <- "message"           // Fast - Unix domain socket
+:5000 <= "message"           // Fast - Unix domain socket
 
 // Network (different machine)
-"server.com:5000" <- "message"  // ENet over UDP
+"server.com:5000" <= "message"  // ENet over UDP
 
 // Both use same syntax!
 target := ":5000"  // or "remote.com:5000"
-target <- "data"
+target <= "data"
 
 // Automatic detection:
 // - ":port" → localhost (fast IPC)
@@ -2042,7 +2053,9 @@ concurrent_gather_expr  = parallel_expr { "|||" parallel_expr } ;
 
 parallel_expr           = pipe_expr { "||" pipe_expr } ;
 
-pipe_expr               = logical_or_expr { "|" logical_or_expr } ;
+pipe_expr               = send_expr { "|" send_expr } ;
+
+send_expr               = logical_or_expr [ "<=" logical_or_expr ] ;
 
 logical_or_expr         = logical_and_expr { ("or" | "xor") logical_and_expr } ;
 

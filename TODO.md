@@ -12,12 +12,14 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
    - Goal: Built-in reliable UDP networking as fundamental language feature
    - Implementation: Generate ENet protocol machine code directly in Flapc
    - NOT an external library - core part of the compiler like printf/malloc
-   - Syntax support: `:port` literals, `@ msg, from in :port` loops, `:port <- data` sending
-   - Port literals: `:5000` (numeric), `:game_server` (string, hashed), `:5000+` (next available), `:5000?` (check)
-   - Port fallback: `:5000 or :5001` using `or` operator
-   - String port hashing: Deterministic hash to port numbers
-   - Protocol features: Connection management, reliable/unreliable channels, packet fragmentation
-   - Files: New `enet_codegen.go` (protocol implementation), extend `parser.go` (port literals, message loops)
+   - ✅ Port literals: `:5000` (numeric), `:worker` (string, hashed) - COMPLETE
+   - ✅ Send operator: `:port <= "data"` using `<=` to avoid `<-` variable update ambiguity - COMPLETE (parsing only)
+   - ❌ Receive loops: `@ msg, from in :port { }` - NOT STARTED
+   - ❌ Socket operations: bind(), sendto(), recvfrom() syscalls - NOT STARTED
+   - Port literals: `:5000+` (next available), `:5000?` (check) - NOT STARTED
+   - Port fallback: `:5000 or :5001` using `or` operator - NOT STARTED
+   - Protocol features: Connection management, reliable/unreliable channels, packet fragmentation - NOT STARTED
+   - Files: Extend `parser.go` (DONE), need UDP socket codegen
 
 2. **Implement parallel loops runtime** (HIGH) 🔥 CRITICAL FOR 1.6
    - Goal: CPU parallelism with `N @` and `@@` syntax
@@ -27,12 +29,15 @@ Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
    - Work distribution: Chunk-based splitting, load balancing
    - Files: New `parallel.go` (thread pool, work queue), extend `parser.go` (parallel loop codegen)
 
-3. **Implement `fork() &` background processes** (MEDIUM) 🔥 CRITICAL FOR 1.6
-   - Goal: Process-based concurrency with `&` operator
+3. **Implement `spawn` background processes** (MEDIUM) ✅ COMPLETE FOR 1.6
+   - Goal: Process-based concurrency with `spawn` keyword
    - Implementation: Unix fork() for isolated processes
-   - Syntax: `worker_function() &` spawns process in background
-   - Process management: Track PIDs, cleanup on exit
-   - Files: Extend `parser.go` (fork codegen), new `process.go` (process lifecycle)
+   - ✅ Fire-and-forget: `spawn worker()` - COMPLETE
+   - ✅ Proper output flushing with fflush(NULL) - COMPLETE
+   - ❌ Pipe syntax for result waiting: `spawn f() | result | { }` - NOT STARTED
+   - ❌ Tuple destructuring: `spawn f() | x, y | { }` - NOT STARTED
+   - Status: Basic spawning complete, advanced features deferred
+   - Files: `parser.go`, `ast.go` (SpawnStmt)
 
 4. **Complete live hot reload integration** (HIGH) 🎮 GAMEDEV - CRITICAL FOR 1.6
    - Goal: Live code patching in running game processes (infrastructure 90% complete)

@@ -698,6 +698,16 @@ func (b *BackgroundExpr) String() string {
 }
 func (b *BackgroundExpr) expressionNode() {}
 
+type SendExpr struct {
+	Target  Expression // Port or address to send to (e.g., :5000, "192.168.1.1:5000")
+	Message Expression // Message to send (typically string)
+}
+
+func (s *SendExpr) String() string {
+	return s.Target.String() + " <= " + s.Message.String()
+}
+func (s *SendExpr) expressionNode() {}
+
 type LengthExpr struct {
 	Operand Expression
 }
