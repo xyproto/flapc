@@ -535,14 +535,14 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	prelimLoadCmdsSize += uint32(binary.Size(EntryPointCommand{}))   // LC_MAIN
 
 	// Always include LINKEDIT load commands on macOS (needed for code signature)
-	prelimLoadCmdsSize += uint32(binary.Size(SymtabCommand{}))          // LC_SYMTAB
-	prelimLoadCmdsSize += uint32(binary.Size(LinkEditDataCommand{}))    // LC_CODE_SIGNATURE
+	prelimLoadCmdsSize += uint32(binary.Size(SymtabCommand{}))       // LC_SYMTAB
+	prelimLoadCmdsSize += uint32(binary.Size(LinkEditDataCommand{})) // LC_CODE_SIGNATURE
 
 	// ALL macOS executables must link libSystem (macOS doesn't support true static linking)
 	dylibPath := "/usr/lib/libSystem.B.dylib\x00"
 	dylibCmdSize := (uint32(binary.Size(LoadCommand{})+16+len(dylibPath)) + 7) &^ 7
-	prelimLoadCmdsSize += dylibCmdSize                              // LC_LOAD_DYLIB
-	prelimLoadCmdsSize += uint32(binary.Size(DysymtabCommand{}))    // LC_DYSYMTAB (always required)
+	prelimLoadCmdsSize += dylibCmdSize                           // LC_LOAD_DYLIB
+	prelimLoadCmdsSize += uint32(binary.Size(DysymtabCommand{})) // LC_DYSYMTAB (always required)
 
 	fileHeaderSize := headerSize + prelimLoadCmdsSize
 
@@ -856,7 +856,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 			FileOff:  linkeditFileOffset,
 			FileSize: uint64(linkeditSize),
 			MaxProt:  VM_PROT_READ,
-			InitProt:  VM_PROT_READ,
+			InitProt: VM_PROT_READ,
 			NSects:   0,
 			Flags:    0,
 		}
@@ -1001,9 +1001,9 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	{
 		codeSignatureOffset := linkeditFileOffset + uint64(symtabSize) + uint64(indirectSymTabSize) + uint64(strtabSize)
 		codeSignCmd := LinkEditDataCommand{
-			Cmd:     LC_CODE_SIGNATURE,
-			CmdSize: uint32(binary.Size(LinkEditDataCommand{})),
-			DataOff: uint32(codeSignatureOffset),
+			Cmd:      LC_CODE_SIGNATURE,
+			CmdSize:  uint32(binary.Size(LinkEditDataCommand{})),
+			DataOff:  uint32(codeSignatureOffset),
 			DataSize: codeSignatureSize,
 		}
 		binary.Write(&loadCmdsBuf, binary.LittleEndian, &codeSignCmd)

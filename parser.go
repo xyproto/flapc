@@ -4360,8 +4360,8 @@ type FlapCompiler struct {
 	hotFunctions         map[string]bool              // Track hot-reloadable functions
 	hotFunctionTable     map[string]int
 	hotTableRodataOffset int
-	tailCallsOptimized   int                          // Count of tail calls optimized
-	nonTailCalls         int                          // Count of non-tail recursive calls
+	tailCallsOptimized   int // Count of tail calls optimized
+	nonTailCalls         int // Count of non-tail recursive calls
 
 	metaArenaGrowthErrorJump      int
 	firstMetaArenaMallocErrorJump int

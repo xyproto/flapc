@@ -18,9 +18,9 @@ type CodePage struct {
 
 // HotReloadManager manages hot code reloading
 type HotReloadManager struct {
-	activePages  map[string]*CodePage  // function name -> active code page
-	oldPages     []*CodePage           // pages pending cleanup
-	gracePeriod  time.Duration         // grace period before freeing old code
+	activePages map[string]*CodePage // function name -> active code page
+	oldPages    []*CodePage          // pages pending cleanup
+	gracePeriod time.Duration        // grace period before freeing old code
 }
 
 // NewHotReloadManager creates a new hot reload manager
@@ -43,12 +43,12 @@ func (hrm *HotReloadManager) AllocateExecutablePage(size int) (*CodePage, error)
 	// MAP_PRIVATE | MAP_ANONYMOUS = 2 | 32 = 34
 	addr, _, errno := syscall.Syscall6(
 		syscall.SYS_MMAP,
-		0,                           // addr (let kernel choose)
-		uintptr(allocSize),          // length
+		0,                  // addr (let kernel choose)
+		uintptr(allocSize), // length
 		syscall.PROT_READ|syscall.PROT_WRITE|syscall.PROT_EXEC, // prot
-		syscall.MAP_PRIVATE|syscall.MAP_ANONYMOUS, // flags
-		0,                                         // fd
-		0,                                         // offset
+		syscall.MAP_PRIVATE|syscall.MAP_ANONYMOUS,              // flags
+		0, // fd
+		0, // offset
 	)
 
 	if errno != 0 {

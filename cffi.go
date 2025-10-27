@@ -787,12 +787,12 @@ func tryParseHeaders(libraryName string, additionalPaths []string) map[string]*C
 
 	// Map library names to common header files
 	headerMap := map[string][]string{
-		"c":     {"math.h", "stdlib.h", "string.h", "stdio.h"},
-		"m":     {"math.h"},
-		"sdl3":  {"SDL3/SDL.h"},
-		"sdl2":  {"SDL2/SDL.h"},
-		"GL":    {"GL/gl.h"},
-		"GLU":   {"GL/glu.h"},
+		"c":       {"math.h", "stdlib.h", "string.h", "stdio.h"},
+		"m":       {"math.h"},
+		"sdl3":    {"SDL3/SDL.h"},
+		"sdl2":    {"SDL2/SDL.h"},
+		"GL":      {"GL/gl.h"},
+		"GLU":     {"GL/glu.h"},
 		"pthread": {"pthread.h"},
 	}
 

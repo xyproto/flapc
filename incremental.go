@@ -9,15 +9,15 @@ import (
 
 // IncrementalState holds the state needed for incremental hot reload
 type IncrementalState struct {
-	sourceFiles       map[string]string            // path -> source code
-	parsedASTs        map[string]*Program          // path -> parsed AST (cached)
-	fileModTimes      map[string]time.Time         // path -> last modification time
-	hotFunctions      map[string]*FunctionDef      // function name -> definition
-	hotFunctionAddrs  map[string]uint64            // function name -> address in memory
-	hotFunctionFiles  map[string]string            // function name -> source file path
-	compiledBinary    []byte                       // the full compiled binary
-	platform          Platform                     // target platform
-	lastBinaryPath    string                       // path to last compiled binary
+	sourceFiles      map[string]string       // path -> source code
+	parsedASTs       map[string]*Program     // path -> parsed AST (cached)
+	fileModTimes     map[string]time.Time    // path -> last modification time
+	hotFunctions     map[string]*FunctionDef // function name -> definition
+	hotFunctionAddrs map[string]uint64       // function name -> address in memory
+	hotFunctionFiles map[string]string       // function name -> source file path
+	compiledBinary   []byte                  // the full compiled binary
+	platform         Platform                // target platform
+	lastBinaryPath   string                  // path to last compiled binary
 }
 
 // NewIncrementalState creates a new incremental compilation state
