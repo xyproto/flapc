@@ -844,20 +844,49 @@ func parseHeaderForFunctions(headerName string, includePaths []string) map[strin
 func extractFunctionDeclarations(preprocessed string) map[string]*CFunctionSignature {
 	signatures := make(map[string]*CFunctionSignature)
 
-	// Pattern for function declarations with optional attributes
-	// Matches: extern TYPE NAME (PARAMS) ... ;
-	// Ignores attributes and modifiers between ) and ;
-	funcDeclPattern := regexp.MustCompile(`\bextern\s+(\w+(?:\s+\w+)*(?:\s*\*)?)\s+(\w+)\s*\(([^)]*)\)[^;]*;`)
+	// Pattern: extern EVERYTHING_BEFORE_PAREN (PARAMS) ... ;
+	funcDeclPattern := regexp.MustCompile(`\bextern\s+(.+?)\s*\(([^)]*)\)[^;]*;`)
 
 	matches := funcDeclPattern.FindAllStringSubmatch(preprocessed, -1)
 	for _, match := range matches {
-		if len(match) < 4 {
+		if len(match) < 3 {
 			continue
 		}
 
-		returnType := strings.TrimSpace(match[1])
-		funcName := match[2]
-		paramsStr := match[3]
+		declPart := strings.TrimSpace(match[1])
+		paramsStr := match[2]
+
+		// Split declPart into return type and function name
+		parts := strings.Fields(declPart)
+		if len(parts) == 0 {
+			continue
+		}
+
+		// Extract function name and return type
+		var funcName, returnType string
+		lastPart := parts[len(parts)-1]
+
+		if strings.Contains(lastPart, "*") && !strings.HasPrefix(lastPart, "*") {
+			// Pattern: type*funcname
+			starIdx := strings.Index(lastPart, "*")
+			returnType = strings.Join(parts[:len(parts)-1], " ") + " " + lastPart[:starIdx+1]
+			funcName = lastPart[starIdx+1:]
+		} else if strings.HasPrefix(lastPart, "*") {
+			// Pattern: *funcname
+			returnType = strings.Join(parts[:len(parts)-1], " ") + " *"
+			funcName = strings.TrimLeft(lastPart, "*")
+		} else {
+			// Normal case: last word is function name
+			funcName = lastPart
+			if len(parts) > 1 {
+				returnType = strings.Join(parts[:len(parts)-1], " ")
+			} else {
+				returnType = "void"
+			}
+		}
+
+		returnType = strings.TrimSpace(returnType)
+		funcName = strings.TrimSpace(funcName)
 
 		// Skip internal/private functions (starting with __)
 		if strings.HasPrefix(funcName, "__") && !strings.HasPrefix(funcName, "SDL_") {
