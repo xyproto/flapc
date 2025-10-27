@@ -600,6 +600,43 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 			acg.out.out.writer.WriteBytes([]byte{0x00, 0x2c, 0xc1, 0x9a})
 			// scvtf d0, x0 (d0 = float64(x0))
 			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
+		case "**":
+			// Power: call pow(base, exponent) from libm
+			// d0 = base, d1 = exponent
+			// Result in d0
+			if err := acg.eb.GenerateCallInstruction("pow"); err != nil {
+				return err
+			}
+		case "::":
+			// Cons: prepend element to list
+			// d0 = element, d1 = list pointer
+			// Convert to pointers for function call
+			acg.out.SubImm64("sp", "sp", 16)
+			acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x00, 0xfd}) // str d0, [sp]
+			if err := acg.out.LdrImm64("x0", "sp", 0); err != nil {
+				return err
+			}
+			acg.out.AddImm64("sp", "sp", 16)
+
+			acg.out.SubImm64("sp", "sp", 16)
+			acg.out.out.writer.WriteBytes([]byte{0xe1, 0x03, 0x00, 0xfd}) // str d1, [sp]
+			if err := acg.out.LdrImm64("x1", "sp", 0); err != nil {
+				return err
+			}
+			acg.out.AddImm64("sp", "sp", 16)
+
+			// Call _flap_list_cons(element, list) -> new_list
+			if err := acg.eb.GenerateCallInstruction("_flap_list_cons"); err != nil {
+				return err
+			}
+
+			// Convert result back to d0
+			acg.out.SubImm64("sp", "sp", 16)
+			if err := acg.out.StrImm64("x0", "sp", 0); err != nil {
+				return err
+			}
+			acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x40, 0xfd}) // ldr d0, [sp]
+			acg.out.AddImm64("sp", "sp", 16)
 		default:
 			return fmt.Errorf("unsupported binary operator for ARM64: %s", e.Operator)
 		}

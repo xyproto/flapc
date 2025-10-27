@@ -3364,15 +3364,7 @@ func (p *Parser) parsePostfix() Expression {
 			}
 			// current is now on ')', whether we had args or not
 
-			// Check for blocks-as-arguments: expr() { block }
-			if p.peek.Type == TOKEN_LBRACE {
-				p.nextToken() // move to '{'
-				blockLambda := &LambdaExpr{
-					Params: []string{},
-					Body:   p.parseLambdaBody(),
-				}
-				args = append(args, blockLambda)
-			}
+			// TODO: Blocks-as-arguments disabled (conflicts with match expressions)
 
 			// Wrap the expression in a CallExpr
 			// If expr is a LambdaExpr, it will be compiled and called
@@ -3459,15 +3451,7 @@ func (p *Parser) parsePostfix() Expression {
 						}
 						p.nextToken() // move to ')'
 					}
-					// Check for blocks-as-arguments: namespace.func() { block }
-					if p.peek.Type == TOKEN_LBRACE {
-						p.nextToken() // move to '{'
-						blockLambda := &LambdaExpr{
-							Params: []string{},
-							Body:   p.parseLambdaBody(),
-						}
-						args = append(args, blockLambda)
-					}
+					// TODO: Blocks-as-arguments disabled (conflicts with match expressions)
 					expr = &CallExpr{Function: namespacedName, Args: args}
 				} else {
 					// Could be a C constant (sdl.SDL_INIT_VIDEO) or field access
@@ -3587,17 +3571,9 @@ func (p *Parser) parsePrimary() Expression {
 			}
 			// current is now on ')', whether we had args or not
 
-			// Check for blocks-as-arguments: func() { block } or func(arg) { block }
-			// Converts to: func(() => { block }) or func(arg, () => { block })
-			if p.peek.Type == TOKEN_LBRACE {
-				p.nextToken() // move to '{'
-				// Parse the block as a lambda body
-				blockLambda := &LambdaExpr{
-					Params: []string{}, // No parameters
-					Body:   p.parseLambdaBody(),
-				}
-				args = append(args, blockLambda)
-			}
+			// TODO: Blocks-as-arguments feature disabled for now
+			// It conflicts with match expressions like: func() { -> val }
+			// Need to redesign to only apply when block doesn't start with -> or ~>
 
 			// Special handling for vector constructors
 			if name == "vec2" {
@@ -7137,6 +7113,27 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int64(xmm1)
 			fc.out.RorClReg("rax", "cl")    // ror rax, cl
 			fc.out.Cvtsi2sd("xmm0", "rax")  // xmm0 = float64(rax)
+		case "**":
+			// Power: call pow(base, exponent) from libm
+			// xmm0 = base, xmm1 = exponent -> result in xmm0
+			fc.eb.GenerateCallInstruction("pow")
+		case "::":
+			// Cons: prepend element to list
+			// xmm0 = element, xmm1 = list pointer
+			// Convert floats to pointers for C function call
+			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.MovXmmToMem("xmm0", "rsp", 0)
+			fc.out.MovMemToReg("rdi", "rsp", 0) // first arg
+			fc.out.AddImmToReg("rsp", 8)
+
+			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.MovXmmToMem("xmm1", "rsp", 0)
+			fc.out.MovMemToReg("rsi", "rsp", 0) // second arg
+			fc.out.AddImmToReg("rsp", 8)
+
+			fc.eb.GenerateCallInstruction("_flap_list_cons")
+			// Result pointer in rax, convert to float for xmm0
+			fc.out.Cvtsi2sd("xmm0", "rax")
 		}
 
 	case *CallExpr:

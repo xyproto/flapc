@@ -3,7 +3,7 @@ main ==> {
     // Basic cons operations
     list1 := 1 :: [2, 3, 4]
     printf("1 :: [2, 3, 4] = ")
-    @ item in list1 {
+    @ item in list1 max 100 {
         printf("%v ", item)
     }
     printf("\n")
@@ -11,7 +11,7 @@ main ==> {
     // Multiple cons (right-associative)
     list2 := 1 :: 2 :: 3 :: []
     printf("1 :: 2 :: 3 :: [] = ")
-    @ item in list2 {
+    @ item in list2 max 100 {
         printf("%v ", item)
     }
     printf("\n")
@@ -24,7 +24,7 @@ main ==> {
 
     countdown := build_list(5)
     printf("build_list(5) = ")
-    @ item in countdown {
+    @ item in countdown max 100 {
         printf("%v ", item)
     }
     printf("\n")
@@ -33,7 +33,7 @@ main ==> {
     numbers := [10, 20, 30]
     extended := 0 :: numbers
     printf("0 :: [10, 20, 30] = ")
-    @ item in extended {
+    @ item in extended max 100 {
         printf("%v ", item)
     }
     printf("\n")
@@ -44,7 +44,7 @@ main ==> {
     rest := &sample
     printf("head of [1, 2, 3, 4] = %v\n", first)
     printf("tail of [1, 2, 3, 4] = ")
-    @ item in rest {
+    @ item in rest max 100 {
         printf("%v ", item)
     }
     printf("\n")

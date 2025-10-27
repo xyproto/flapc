@@ -25,8 +25,8 @@ main ==> {
     value := 42
 
     // Only execute if has_value is true
-    has_value and {
-        printf("  Value is: %v\n", value)
+    has_value {
+        -> printf("  Value is: %v\n", value)
     }
 
     // Default value pattern
