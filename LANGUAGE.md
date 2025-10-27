@@ -1183,20 +1183,20 @@ data | transform | validate | { save(it) } | on_complete
 
 ### Concurrency and Parallelism
 
-Flap combines the best ideas from **Unix fork()**, **OpenMP** (shared-memory parallelism), and **OpenMPI** (message passing) into a unified, minimal syntax.
+Flap combines **Unix fork()**, **OpenMP** (data parallelism), and **ENet** (networking) into a unified, minimal syntax.
 
 #### Philosophy
 
 **Three models, one syntax:**
 1. **Process spawning** - `&` for fork()-style processes (Unix)
 2. **Parallel loops** - `@@` and `N @` for data parallelism (OpenMP-inspired)
-3. **Message passing** - `<~` for inter-process communication (MPI-inspired)
+3. **Message passing** - `:port` for ENet communication (IPC + networking unified)
 
 **Design principles:**
 - Process-based (fork model) - true parallelism, no shared state bugs
-- Zero syntax overhead - reuse existing operators
-- Works on single machine or distributed cluster
-- Explicit communication - no hidden shared memory
+- ENet for all communication - IPC and networking use same syntax
+- Network ports as first-class values (`:5000` is a port literal)
+- Zero magic - explicit communication only
 
 ---
 
@@ -1213,25 +1213,19 @@ compute_data(large_dataset) & | result | {
     printf("Worker done: %v\n", result)
 }
 
-// Get process ID
-pid := worker() &
-printf("Spawned PID: %v\n", pid)
-
 // Spawn multiple workers
 @ i in 0..<4 {
-    worker(i) &  // 4 independent processes
+    worker(:8000 + i) &  // Each worker on different port
 }
 
-// Wait for all spawned processes
-wait_all()  // Like wait() in Unix
+// Main process exits when done, child processes continue
 ```
 
 **How it works:**
 - `&` creates new process (fork + exec pattern)
 - Copy-on-write memory (cheap)
-- Returns process ID (PID)
-- Processes run independently
-- `wait_all()` waits for children
+- Processes communicate via ENet ports
+- No explicit waiting needed - processes are independent
 
 ---
 
@@ -1284,138 +1278,108 @@ results := [0] * 1000
 
 ---
 
-#### Message Passing (Inter-Process Communication)
+#### ENet Messaging (IPC + Networking Unified)
 
-Communicate between processes using message passing (MPI-inspired):
+All communication uses ENet with `:port` syntax:
 
+**Port Literals:**
 ```flap
-// Point-to-point: Send/receive between processes
-pid := worker() &
+// Port literal (ENet server on localhost)
+:5000        // Port 5000 on localhost
 
-// Send to specific process
-pid <~ {x: 10, y: 20}  // <~ sends data to process
+// Remote address (string)
+"server.com:5000"      // Remote host + port
+"192.168.1.100:7777"   // IP address + port
 
-// Receive from any process (blocks until message arrives)
-msg := <~  // Receive from any
+// Next available port (starting from N)
+:5000+       // Tries 5000, 5001, 5002, ... until free port found
 
-// Receive from specific process
-msg := <~ pid
+// Check if port is available
+:5000?       // Returns 1 if available, 0 if in use
 
-// Non-blocking receive (returns empty map if no message)
-msg := <~ or! {}
+// Use available port or default
+port := :5000? { :5000 ~> :5001 }
+```
 
-// Pattern matching on messages
-msg := <~
-msg.type {
-    "data" -> process_data(msg.data)
-    "done" -> cleanup()
-    ~> printf("Unknown: %v\n", msg)
+**Receiving Messages:**
+```flap
+// Listen on port and receive messages
+@ msg, from in :5000 {
+    printf("Got: %s from %s\n", msg, from)
+}
+
+// 'msg' is the message string
+// 'from' is the sender address (e.g., "127.0.0.1:51234")
+
+// Pattern match on messages
+@ msg, from in :5000 {
+    msg {
+        "ping" -> from <- "pong"
+        "quit" -> ret @
+        ~> printf("Unknown: %s\n", msg)
+    }
 }
 ```
 
-**Collective operations (broadcast, gather, reduce):**
-
+**Sending Messages:**
 ```flap
-// Broadcast: Send same data to all processes
-broadcast(data)  // All processes receive data
+// Send to local port
+:5000 <- "hello"
 
-// Gather: Collect data from all processes at rank 0
-all_results := gather()  // Rank 0 gets list of all results
+// Send to remote host
+"server.com:5000" <- "hello"
 
-// Reduce: Combine data from all processes
-total := reduce(+)  // Sum across all processes
-max_val := reduce(max)  // Max across all processes
+// Send from variable
+target := "192.168.1.100:7777"
+target <- "data"
 
-// Scatter: Distribute chunks to processes
-chunk := scatter(big_array)  // Each process gets portion
-```
-
-**Process rank and size:**
-
-```flap
-// Get current process rank (0, 1, 2, ...)
-rank := rank()
-
-// Get total number of processes
-size := size()
-
-// Typical MPI pattern
-rank {
-    0 -> {
-        // Master process
-        data := load_data()
-        broadcast(data)
-        results := gather()
-        printf("All results: %v\n", results)
-    }
-    ~> {
-        // Worker processes
-        data := <~  // Receive broadcast
-        result := process(data)
-        0 <~ result  // Send to master
-    }
+// Broadcast to multiple addresses
+addresses := [":8000", ":8001", ":8002", ":8003"]
+@ addr in addresses max 100 {
+    addr <- "broadcast message"
 }
 ```
 
 ---
 
-#### Complete Example: Parallel Monte Carlo Pi Estimation
+#### Complete Example: Worker Pool
 
 ```flap
-monte_carlo_pi := (samples) => {
-    r := rank()
-    s := size()
+// Worker process (listens on its port)
+worker := (port) => {
+    @ msg, from in port {
+        printf("[Worker %v] Got task: %s\n", port, msg)
 
-    // Each process computes portion
-    local_samples := samples / s
-    hits := 0
+        // Process task
+        result := expensive_computation(msg)
 
-    @@ i in 0..<local_samples {
-        x := random()
-        y := random()
-        (x*x + y*y) < 1.0 {
-            -> hits <- hits + 1
-        }
-    }
-
-    // Reduce across all processes
-    total_hits := reduce(+, hits)
-
-    r == 0 {
-        -> {
-            pi := 4.0 * total_hits / samples
-            printf("Pi estimate: %v\n", pi)
-        }
+        // Send result back
+        from <- result
     }
 }
 
-// Run with 4 processes
-@ i in 0..<4 {
-    monte_carlo_pi(1000000) &
-}
-wait_all()
-```
-
----
-
-#### Complete Example: Parallel Matrix Multiplication
-
-```flap
-matmul := (A, B, n) => {
-    C := create_matrix(n, n)
-
-    // Parallelize outer loop
-    @@ i in 0..<n {
-        @ j in 0..<n max 10000 {
-            sum := 0.0
-            @ k in 0..<n max 10000 {
-                sum <- sum + A[i*n + k] * B[k*n + j]
-            }
-            C[i*n + j] <- sum
-        }
+// Master process
+main ==> {
+    // Spawn 4 workers on next available ports starting at 8000
+    worker_ports := []
+    @ i in 0..<4 {
+        port := :8000+  // Finds next available port
+        worker_ports <- worker_ports + [port]
+        worker(port) &
     }
 
-    -> C
+    // Distribute tasks to workers
+    tasks := ["task1", "task2", "task3", "task4", "task5", "task6"]
+    @ task in tasks max 100 {
+        worker_port := worker_ports[task % 4]
+        worker_port <- task
+    }
+
+    // Collect results on available port
+    master_port := :7000? { :7000 ~> :7001 }
+    @ msg, from in master_port max 6 {
+        printf("Result: %s from %s\n", msg, from)
+    }
 }
 ```
 
@@ -1424,91 +1388,169 @@ matmul := (A, B, n) => {
 #### Complete Example: Distributed Web Scraper
 
 ```flap
-distributed_scrape := (urls) => {
-    r := rank()
-    s := size()
+// Worker: Scrapes URLs and sends results back
+scraper := (worker_port, master_addr) => {
+    @ msg, from in worker_port {
+        url := msg
+        printf("[Scraper] Fetching %s\n", url)
 
-    r {
-        0 -> {
-            // Master: Distribute URLs
-            chunk_size := urls.length / s
-            @ i in 1..<s {
-                start := i * chunk_size
-                end := (i + 1) * chunk_size
-                chunk := urls[start:end]
-                i <~ chunk
-            }
-
-            // Gather results
-            all_results := gather()
-            -> all_results
-        }
-        ~> {
-            // Workers: Scrape assigned URLs
-            my_urls := <~  // Receive from master
-            my_results := []
-
-            @@ url in my_urls max 10000 {
-                data := http.get(url)
-                my_results <- my_results + [data]
-            }
-
-            0 <~ my_results  // Send back to master
-        }
+        data := http.get(url)
+        master_addr <- data
     }
 }
 
-// Launch 8 processes (1 master + 7 workers)
-@ i in 0..<8 {
-    distributed_scrape(all_urls) &
+// Master: Distributes URLs and collects results
+main ==> {
+    master_port := :7000
+    urls := ["http://example.com", "http://test.com", "http://demo.com"]
+
+    // Spawn scrapers
+    @ i in 0..<4 {
+        scraper_port := :8000 + i
+        scraper(scraper_port, master_port) &
+    }
+
+    // Distribute URLs
+    @ url in urls max 1000 {
+        worker := :8000 + (url % 4)
+        worker <- url
+    }
+
+    // Collect results
+    results := []
+    @ msg, from in master_port max 1000 {
+        results <- results + [msg]
+        results.length >= urls.length { ret @ }
+    }
+
+    printf("Scraped %v URLs\n", results.length)
 }
-wait_all()
 ```
 
 ---
 
-#### Complete Example: Game Server with Multiple Processes
+#### Complete Example: Multiplayer Game Server
 
 ```flap
-game_server := () => {
-    r := rank()
+// Game worker: Handles subset of players
+game_worker := (port) => {
+    players := {}
 
-    r {
-        0 -> {
-            // Master: Handle connections, distribute to workers
-            @ {
-                conn := accept_connection()
-                player_id := assign_player()
+    @ msg, from in port {
+        parsed := json.parse(msg)
 
-                // Send to worker (round-robin)
-                worker := (player_id % 4) + 1
-                worker <~ {type: "player", id: player_id, conn: conn}
+        parsed.type {
+            "connect" -> {
+                players[from] <- {x: 0, y: 0, health: 100}
+                printf("[Worker] Player connected: %s\n", from)
             }
-        }
-        ~> {
-            // Workers: Handle game logic
-            @ {
-                msg := <~  // Receive from master or other workers
+            "move" -> {
+                players[from].x <- parsed.x
+                players[from].y <- parsed.y
 
-                msg.type {
-                    "player" -> {
-                        handle_player(msg.id, msg.conn)
-                    }
-                    "update" -> {
-                        update_game_state(msg.data)
-                        broadcast(msg.data)  // Broadcast to all workers
-                    }
+                // Broadcast to all players
+                @ addr in players.keys() max 1000 {
+                    addr <- json.stringify({
+                        type: "update",
+                        players: players
+                    })
                 }
+            }
+            "disconnect" -> {
+                players <- players.remove(from)
             }
         }
     }
 }
 
-// Launch master + 4 workers
-@ i in 0..<5 {
-    game_server() &
+// Load balancer: Distributes players across workers
+main ==> {
+    workers := [":8000", ":8001", ":8002", ":8003"]
+
+    // Spawn game workers
+    @ worker in workers max 100 {
+        game_worker(worker) &
+    }
+
+    // Accept client connections and route
+    @ msg, from in :7777 {
+        // Assign player to worker (consistent hashing)
+        worker_idx := hash(from) % workers.length
+        worker_addr := workers[worker_idx]
+
+        // Forward message to worker
+        worker_addr <- msg
+    }
 }
-wait_all()
+```
+
+---
+
+#### Complete Example: Distributed Monte Carlo Pi
+
+```flap
+// Worker: Computes portion of samples
+monte_worker := (port, master_addr, samples) => {
+    hits := 0
+
+    @@ i in 0..<samples {
+        x := random()
+        y := random()
+        (x*x + y*y) < 1.0 {
+            -> hits <- hits + 1
+        }
+    }
+
+    // Send result to master
+    master_addr <- f"{hits}"
+}
+
+// Master: Coordinates workers and computes final result
+main ==> {
+    total_samples := 10000000
+    num_workers := 4
+    samples_per_worker := total_samples / num_workers
+    master_port := :7000
+
+    // Spawn workers
+    @ i in 0..<num_workers {
+        worker_port := :8000 + i
+        monte_worker(worker_port, master_port, samples_per_worker) &
+    }
+
+    // Collect results
+    total_hits := 0
+    @ msg, from in master_port max 100 {
+        hits := parse_int(msg)
+        total_hits <- total_hits + hits
+
+        // Check if all workers reported
+        (@counter + 1) >= num_workers { ret @ }
+    }
+
+    pi := 4.0 * total_hits / total_samples
+    printf("Pi estimate: %v\n", pi)
+}
+```
+
+---
+
+#### Network vs Local Communication
+
+```flap
+// Local IPC (same machine)
+:5000 <- "message"           // Fast - Unix domain socket
+
+// Network (different machine)
+"server.com:5000" <- "message"  // ENet over UDP
+
+// Both use same syntax!
+target := ":5000"  // or "remote.com:5000"
+target <- "data"
+
+// Automatic detection:
+// - ":port" → localhost (fast IPC)
+// - "host:port" → network (ENet/UDP)
 ```
 
 ---
@@ -1520,23 +1562,19 @@ wait_all()
 - `fn() & | result | code` - Spawn with callback
 - `@@` / `N @` - Parallel loops (OpenMP-inspired)
 - `reduce(op)` - Reduction operations in parallel loops
-- `pid <~ data` - Send message to process
-- `<~` / `<~ pid` - Receive from any/specific process
-- `broadcast(data)` - Send to all processes
-- `gather()` - Collect from all processes (at rank 0)
-- `reduce(op, val)` - Combine across processes
-- `rank()` - Current process ID
-- `size()` - Total process count
-- `wait_all()` - Wait for all children
+- `:port` - ENet port literal (first-class value)
+- `"host:port"` - Remote address (string)
+- `@ msg, from in :port` - Receive messages on port
+- `:port <- data` - Send message to port
 
 **Why this model?**
-- ✅ **Simple** - Just processes and messages (no threads, no shared state)
+- ✅ **Unified** - IPC and networking use identical syntax
+- ✅ **Simple** - Just processes, ports, and messages
 - ✅ **Safe** - Process isolation prevents race conditions
-- ✅ **Scalable** - Works from 1 core to 1000s of nodes
-- ✅ **Unix-like** - Familiar fork() model with message passing
-- ✅ **OpenMP-easy** - Parallel loops with one character (`@@`)
-- ✅ **MPI-powerful** - Full message passing for distributed computing
-- ✅ **Zero magic** - Explicit communication, no hidden behavior
+- ✅ **Scalable** - Works from 1 core to distributed cluster
+- ✅ **Clean** - ENet handles reliability, ordering, fragmentation
+- ✅ **Fast** - Local ports use Unix sockets, network uses UDP
+- ✅ **Zero magic** - Explicit communication only
 
 ---
 
