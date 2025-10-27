@@ -30,15 +30,30 @@
 - ❌ Pipe syntax for result waiting not yet implemented
 - ❌ Tuple/map destructuring not yet implemented
 
+### 4. ENet Port Literals
+- ✅ TOKEN_PORT added to lexer
+- ✅ Port literal parsing (:5000, :worker, :game_server)
+- ✅ PortExpr AST node
+- ✅ portToNumber() with FNV-1a hashing
+- ✅ Numeric ports validated (1-65535)
+- ✅ String ports hashed to user range (10000-65535)
+- ✅ Bracket depth tracking prevents conflicts with slice syntax
+- ✅ Deterministic hashing (same string -> same port)
+- ❌ Network socket operations not yet implemented
+- ❌ Send/receive operators not yet implemented
+
 ## Remaining Work for 1.6.0
 
 ### Critical Blockers
 
-1. **ENet Networking Protocol** (VERY HIGH)
-   - Implement protocol as machine code generation
-   - Port literal lexing/parsing
-   - Message send/receive loops
-   - String port hashing
+1. **ENet Networking Protocol** (VERY HIGH - IN PROGRESS)
+   - ✅ Port literal lexing/parsing (:5000, :worker)
+   - ✅ String port hashing (FNV-1a, maps to 10000-65535)
+   - ✅ Bracket depth tracking to avoid slice syntax conflicts
+   - ❌ Socket creation and binding
+   - ❌ Message send operator (port <- "msg")
+   - ❌ Message receive loops (@ msg, from in port { ... })
+   - ❌ UDP/TCP protocol implementation
 
 2. **Parallel Loops Runtime** (HIGH)
    - Thread pool implementation
