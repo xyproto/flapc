@@ -2725,8 +2725,72 @@ func (p *Parser) parseLoopStatement() Statement {
 		if p.current.Type != TOKEN_IDENT {
 			p.error("expected identifier after @")
 		}
-		iterator := p.current.Value
+		firstIdent := p.current.Value
 		p.nextToken() // skip identifier
+
+		// Check if this is a receive loop: @ msg, from in ":5000"
+		if p.current.Type == TOKEN_COMMA {
+			p.nextToken() // skip comma
+
+			// Skip newlines after comma
+			for p.current.Type == TOKEN_NEWLINE {
+				p.nextToken()
+			}
+
+			// Expect second identifier (allow TOKEN_FROM as identifier here)
+			if p.current.Type != TOKEN_IDENT && p.current.Type != TOKEN_FROM {
+				p.error("expected identifier after comma in receive loop")
+			}
+			secondIdent := p.current.Value
+			p.nextToken() // skip second identifier
+
+			// Expect 'in' keyword
+			if p.current.Type != TOKEN_IN {
+				p.error("expected 'in' in receive loop")
+			}
+			p.nextToken() // skip 'in'
+
+			// Parse address expression
+			address := p.parseExpression()
+
+			// Expect opening brace for body
+			if p.peek.Type != TOKEN_LBRACE {
+				p.error("expected '{' after receive loop address")
+			}
+			p.nextToken() // move to '{'
+
+			// Track loop depth for nested loops
+			oldDepth := p.loopDepth
+			p.loopDepth = label
+			defer func() { p.loopDepth = oldDepth }()
+
+			// Parse loop body
+			var body []Statement
+			for p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
+				p.nextToken()
+				if p.current.Type == TOKEN_NEWLINE {
+					continue
+				}
+				stmt := p.parseStatement()
+				if stmt != nil {
+					body = append(body, stmt)
+				}
+			}
+
+			// Consume closing brace
+			if p.peek.Type == TOKEN_RBRACE {
+				p.nextToken() // move to '}'
+			}
+
+			return &ReceiveLoopStmt{
+				MessageVar: firstIdent,
+				SenderVar:  secondIdent,
+				Address:    address,
+				Body:       body,
+			}
+		}
+
+		iterator := firstIdent
 
 		// Expect 'in' keyword
 		if p.current.Type != TOKEN_IN {
@@ -5343,6 +5407,33 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 		// Restore stackOffset after loop body
 		// Sequential loops at the same nesting level should start at the same stackOffset
 		fc.stackOffset = baseOffset
+
+	case *ReceiveLoopStmt:
+		baseOffset := fc.stackOffset
+
+		if s.BaseOffset == 0 {
+			s.BaseOffset = baseOffset
+		}
+
+		// Allocate stack space for:
+		// - message variable (8 bytes)
+		// - sender variable (8 bytes)
+		// - socket fd (8 bytes)
+		// - sockaddr_in (16 bytes)
+		// - buffer (256 bytes)
+		// - addrlen (8 bytes)
+		// Total: 304 bytes
+		fc.updateStackOffset(304)
+
+		for _, bodyStmt := range s.Body {
+			if err := fc.collectSymbols(bodyStmt); err != nil {
+				return err
+			}
+		}
+
+		// Restore stackOffset after loop body
+		fc.stackOffset = baseOffset
+
 	case *ArenaStmt:
 		// Track arena depth during symbol collection
 		// This ensures alloc() calls are validated correctly
@@ -5620,6 +5711,9 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 
 	case *LoopStmt:
 		fc.compileLoopStatement(s)
+
+	case *ReceiveLoopStmt:
+		fc.compileReceiveLoopStmt(s)
 
 	case *JumpStmt:
 		fc.compileJumpStatement(s)
@@ -14664,6 +14758,150 @@ func (fc *FlapCompiler) compileSendExpr(expr *SendExpr) {
 	fc.out.MovRegToReg("rax", "rbx")
 	fc.out.Cvtsi2sd("xmm0", "rax")
 }
+
+func (fc *FlapCompiler) compileReceiveLoopStmt(stmt *ReceiveLoopStmt) {
+	// Receive loop: @ msg, from in ":5000" { }
+	// Target must be a string: ":5000"
+	// Creates socket, binds to port, loops forever receiving messages
+
+	// For now, only support compile-time string literals as addresses
+	addressStr, ok := stmt.Address.(*StringExpr)
+	if !ok {
+		compilerError("receive loop address must be a string literal (e.g., \":5000\")")
+	}
+
+	// Parse address string to extract port number
+	addr := addressStr.Value
+	var port int
+	if addr[0] == ':' {
+		// Port only (bind to all interfaces)
+		var err error
+		port, err = strconv.Atoi(addr[1:])
+		if err != nil || port < 1 || port > 65535 {
+			compilerError("invalid port in receive address: %s", addr)
+		}
+	} else {
+		compilerError("receive address format not yet supported: %s (use \":port\" for all interfaces)", addr)
+	}
+
+	// Generate unique labels for this loop
+	fc.labelCounter++
+	loopLabel := fmt.Sprintf("receive_loop_%d", fc.labelCounter)
+	endLabel := fmt.Sprintf("receive_end_%d", fc.labelCounter)
+
+	// Allocate stack space: we use the base offset from symbol collection
+	// Layout: msg_var(8), sender_var(8), socket_fd(8), sockaddr_in(16), buffer(256), addrlen(8) = 304 bytes
+	baseOffset := stmt.BaseOffset
+
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: ReceiveLoop baseOffset = %d\n", baseOffset)
+	}
+
+	// Stack layout offsets:
+	// msg_var:     baseOffset + 8
+	// sender_var:  baseOffset + 16
+	// socket_fd:   baseOffset + 24
+	// sockaddr_in: baseOffset + 32 to 48
+	// buffer:      baseOffset + 48 to 304
+	// addrlen:     baseOffset + 304
+
+	// Step 1: Create UDP socket
+	fc.out.MovImmToReg("rax", "41")  // socket syscall
+	fc.out.MovImmToReg("rdi", "2")   // AF_INET
+	fc.out.MovImmToReg("rsi", "2")   // SOCK_DGRAM
+	fc.out.MovImmToReg("rdx", "0")   // protocol
+	fc.out.Syscall()
+	fc.out.MovRegToMem("rax", "rbp", -(baseOffset + 24)) // socket fd at baseOffset+24
+
+	// Step 2: Build sockaddr_in for bind (starts at baseOffset+32)
+	// sin_family = AF_INET (2)
+	fc.out.MovImmToReg("rax", "2")
+	fc.out.MovU16RegToMem("ax", "rbp", -(baseOffset + 32))
+
+	// sin_port = htons(port)
+	portNetOrder := (port&0xff)<<8 | (port>>8)&0xff
+	fc.out.MovImmToReg("rax", fmt.Sprintf("%d", portNetOrder))
+	fc.out.MovU16RegToMem("ax", "rbp", -(baseOffset + 34))
+
+	// sin_addr = INADDR_ANY (0.0.0.0) - bind to all interfaces
+	fc.out.MovImmToReg("rax", "0")
+	fc.out.MovRegToMem("rax", "rbp", -(baseOffset + 36))
+
+	// sin_zero = 0 (padding)
+	fc.out.MovImmToReg("rax", "0")
+	fc.out.MovRegToMem("rax", "rbp", -(baseOffset + 40))
+
+	// Step 3: Bind socket to port (syscall 49: bind)
+	// bind(sockfd, sockaddr, addrlen)
+	fc.out.MovMemToReg("rdi", "rbp", -(baseOffset + 24)) // socket fd
+	fc.out.LeaMemToReg("rsi", "rbp", -(baseOffset + 32)) // sockaddr_in
+	fc.out.MovImmToReg("rdx", "16")                       // addrlen
+	fc.out.MovImmToReg("rax", "49")                       // bind syscall
+	fc.out.Syscall()
+
+	// TODO: Check bind result (rax < 0 means error)
+
+	// Step 4: Start receive loop
+	fc.eb.MarkLabel(loopLabel)
+
+	// Initialize addrlen for recvfrom
+	fc.out.MovImmToReg("rax", "16")
+	fc.out.MovRegToMem("rax", "rbp", -(baseOffset + 304))
+
+	// Call recvfrom (syscall 45: recvfrom)
+	// recvfrom(sockfd, buf, len, flags, src_addr, addrlen)
+	fc.out.MovMemToReg("rdi", "rbp", -(baseOffset + 24)) // socket fd
+	fc.out.LeaMemToReg("rsi", "rbp", -(baseOffset + 48)) // buffer
+	fc.out.MovImmToReg("rdx", "256")                      // buffer size
+	fc.out.MovImmToReg("r10", "0")                        // flags
+	fc.out.LeaMemToReg("r8", "rbp", -(baseOffset + 32))  // src_addr (sockaddr_in)
+	fc.out.LeaMemToReg("r9", "rbp", -(baseOffset + 304)) // addrlen pointer
+	fc.out.MovImmToReg("rax", "45")                       // recvfrom syscall
+	fc.out.Syscall()
+
+	// rax now contains bytes received (or -1 on error)
+	// TODO: Check for errors and convert buffer to string
+
+	// For now, just store 0.0 in msg and from variables
+	fc.out.MovImmToReg("rax", "0")
+	fc.out.Cvtsi2sd("xmm0", "rax")
+
+	// Add message and sender variables to variable map for body
+	msgOffset := baseOffset + 8
+	fromOffset := baseOffset + 16
+	fc.variables[stmt.MessageVar] = int(msgOffset)
+	fc.variables[stmt.SenderVar] = int(fromOffset)
+
+	fc.out.MovXmmToMem("xmm0", "rbp", -int(msgOffset))
+	fc.out.MovXmmToMem("xmm0", "rbp", -int(fromOffset))
+
+	// Step 5: Execute loop body
+	for _, bodyStmt := range stmt.Body {
+		fc.compileStatement(bodyStmt)
+	}
+
+	// Step 6: Jump back to loop start
+	fc.out.JumpUnconditional(0) // Will be patched
+	endOfBody := fc.eb.text.Len()
+
+	// Calculate offset back to loop start
+	loopStart := fc.eb.labels[loopLabel]
+	offset := int32(loopStart - endOfBody)
+	fc.patchJumpImmediate(endOfBody-UnconditionalJumpSize+1, offset)
+
+	// End label (for break statements)
+	fc.eb.MarkLabel(endLabel)
+
+	// Clean up: close socket
+	fc.out.MovMemToReg("rdi", "rbp", -(baseOffset + 24)) // socket fd
+	fc.out.MovImmToReg("rax", "3")                        // close syscall
+	fc.out.Syscall()
+
+	// Remove variables from scope
+	delete(fc.variables, stmt.MessageVar)
+	delete(fc.variables, stmt.SenderVar)
+}
+
 func (fc *FlapCompiler) trackFunctionCall(funcName string) {
 	if !fc.usedFunctions[funcName] {
 		fc.usedFunctions[funcName] = true

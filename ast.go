@@ -206,6 +206,20 @@ type LoopStmt struct {
 	BaseOffset    int   // Stack offset before loop body (set during collectSymbols)
 }
 
+type ReceiveLoopStmt struct {
+	MessageVar string      // Variable name for received message (e.g., "msg")
+	SenderVar  string      // Variable name for sender address (e.g., "from")
+	Address    Expression  // Address expression to bind to (e.g., ":5000")
+	Body       []Statement // Body statements to execute for each message
+	BaseOffset int         // Stack offset before loop body
+}
+
+func (r *ReceiveLoopStmt) String() string {
+	return fmt.Sprintf("@ %s, %s in %s { ... }", r.MessageVar, r.SenderVar, r.Address.String())
+}
+
+func (r *ReceiveLoopStmt) statementNode() {}
+
 type LoopExpr struct {
 	// No explicit label - determined by nesting depth when created with @
 	Iterator      string      // Variable name (e.g., "i")

@@ -1,0 +1,5 @@
+printf("Starting UDP server on :5001\n")
+@ msg, from in ":5001" {
+    printf("Received: %v from %v\n", msg, from)
+}
+printf("Done\n")
