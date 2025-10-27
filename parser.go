@@ -14433,50 +14433,18 @@ func (fc *FlapCompiler) compileConcurrentGatherExpr(expr *ConcurrentGatherExpr) 
 
 func (fc *FlapCompiler) compileBackgroundExpr(expr *BackgroundExpr) {
 	// Background execution: expr &
-	// Uses Unix fork() to spawn child process
+	// TODO: Complete implementation
+	//
+	// Currently blocked on parser issues - & operator conflicts with list tail
+	// Need to resolve operator precedence before this can work
+	//
+	// Planned implementation:
+	// 1. Call fork() syscall (57 on x86-64 Linux)
+	// 2. Test if child (rax == 0)
+	// 3. Child: execute expr, flush stdout, exit(0)
+	// 4. Parent: continue execution, return 0.0
 
-	// Call fork() syscall (number 57 on x86-64 Linux)
-	fc.out.MovImmToReg("rax", 57) // syscall number for fork
-	fc.out.Syscall()
-
-	// fork() returns:
-	// - 0 in child process
-	// - child PID in parent process
-	// - -1 on error (we'll ignore for now)
-
-	// Test if we're in child (rax == 0)
-	fc.out.CmpRegWithImm("rax", 0)
-
-	// Create labels for child and parent paths
-	childLabel := fmt.Sprintf("fork_child_%d", fc.labelCounter)
-	parentLabel := fmt.Sprintf("fork_parent_%d", fc.labelCounter)
-	fc.labelCounter++
-
-	// Jump to child path if rax == 0
-	fc.out.JumpIfEqual(childLabel)
-
-	// Parent process: continue execution
-	// Result is 0.0 in xmm0 (fork conceptually returns void)
-	fc.out.Xorpd("xmm0", "xmm0")
-	fc.out.Jump(parentLabel)
-
-	// Child process: execute expression then exit
-	fc.out.Label(childLabel)
-	fc.compileExpression(expr.Expr)
-
-	// Flush stdout before exit (stdout is buffered)
-	// fflush(NULL) flushes all streams
-	fc.out.MovImmToReg("rdi", 0) // NULL (flush all streams)
-	fc.trackFunctionCall("fflush")
-	fc.eb.GenerateCallInstruction("fflush")
-
-	// Call exit(0) in child
-	fc.out.MovImmToReg("rdi", 0) // exit code
-	fc.out.MovImmToReg("rax", 60) // syscall number for exit
-	fc.out.Syscall()
-
-	// Parent continues here
-	fc.out.Label(parentLabel)
+	compilerError("background execution with & operator not yet implemented (parser conflict)")
 }
 
 func (fc *FlapCompiler) trackFunctionCall(funcName string) {

@@ -1188,7 +1188,7 @@ Flap combines **Unix fork()**, **OpenMP** (data parallelism), and **ENet** (netw
 #### Philosophy
 
 **Three models, one syntax:**
-1. **Process spawning** - `&` for fork()-style processes (Unix)
+1. **Process spawning** - `spawn` keyword for fork()-style processes (Unix)
 2. **Parallel loops** - `@@` and `N @` for data parallelism (OpenMP-inspired)
 3. **Message passing** - `:port` for ENet communication (IPC + networking unified)
 
@@ -1200,32 +1200,52 @@ Flap combines **Unix fork()**, **OpenMP** (data parallelism), and **ENet** (netw
 
 ---
 
-#### Process Spawning with `&`
+#### Process Spawning with `spawn`
 
-Spawn processes like Unix fork() with bash-style `&`:
+Spawn processes using the `spawn` keyword (Unix fork-based):
 
 ```flap
-// Spawn process (fork + exec)
-worker() &
+// Fire and forget
+spawn worker()
 
-// Spawn with callback (wait for result)
-compute_data(large_dataset) & | result | {
-    printf("Worker done: %v\n", result)
+// Wait for single result
+spawn compute(42) | result | {
+    printf("Result: %v\n", result)
 }
+
+// Destructure multiple return values
+spawn get_coords() | x, y | {
+    printf("Position: (%v, %v)\n", x, y)
+}
+
+// Map destructuring (structured data)
+spawn fetch_user(id) | {name, age} | {
+    printf("%s is %v years old\n", name, age)
+}
+
+// Nested destructuring
+spawn load_game() | {player: {name, health}, level} | {
+    printf("Player %s (HP: %v) on level %v\n", name, health, level)
+}
+
+// Pattern matching on results
+spawn http_get(url)
+    | {status: 200, data} | process_success(data)
+    | {status: 404} | printf("Not found\n")
+    | {status, error} | printf("Error %v: %s\n", status, error)
 
 // Spawn multiple workers
 @ i in 0..<4 {
-    worker(:8000 + i) &  // Each worker on different port
+    spawn worker(:8000 + i)  // Each worker on different port
 }
-
-// Main process exits when done, child processes continue
 ```
 
 **How it works:**
-- `&` creates new process (fork + exec pattern)
+- `spawn` creates new process (Unix fork)
 - Copy-on-write memory (cheap)
-- Processes communicate via ENet ports
-- No explicit waiting needed - processes are independent
+- Pipe syntax waits for result (blocks until child returns)
+- No pipe = fire and forget (child continues after parent exits)
+- Destructuring uses same syntax as lambda parameters
 
 ---
 
@@ -1365,7 +1385,7 @@ main ==> {
     @ i in 0..<4 {
         port := :8000+  // Finds next available port
         worker_ports <- worker_ports + [port]
-        worker(port) &
+        spawn worker(port)
     }
 
     // Distribute tasks to workers
@@ -1407,7 +1427,7 @@ main ==> {
     // Spawn scrapers
     @ i in 0..<4 {
         scraper_port := :8000 + i
-        scraper(scraper_port, master_port) &
+        spawn scraper(scraper_port, master_port)
     }
 
     // Distribute URLs
@@ -1469,7 +1489,7 @@ main ==> {
 
     // Spawn game workers
     @ worker in workers max 100 {
-        game_worker(worker) &
+        spawn game_worker(worker)
     }
 
     // Accept client connections and route
@@ -1515,7 +1535,7 @@ main ==> {
     // Spawn workers
     @ i in 0..<num_workers {
         worker_port := :8000 + i
-        monte_worker(worker_port, master_port, samples_per_worker) &
+        spawn monte_worker(worker_port, master_port, samples_per_worker)
     }
 
     // Collect results
@@ -1558,8 +1578,10 @@ target <- "data"
 **Summary:**
 
 **Concurrency primitives:**
-- `fn() &` - Spawn process (fork model)
-- `fn() & | result | code` - Spawn with callback
+- `spawn fn()` - Spawn process (fork model, fire-and-forget)
+- `spawn fn() | result | code` - Spawn and wait for result
+- `spawn fn() | x, y | code` - Spawn with tuple destructuring
+- `spawn fn() | {name, age} | code` - Spawn with map destructuring
 - `@@` / `N @` - Parallel loops (OpenMP-inspired)
 - `:port` - ENet port literal (first-class value)
 - `:port+` - Next available port
@@ -1961,6 +1983,7 @@ statement       = use_statement
                 | defer_statement
                 | loop_statement
                 | jump_statement
+                | spawn_statement
                 | assignment
                 | expression_statement ;
 
@@ -1981,6 +2004,13 @@ jump_statement  = ("ret" | "err") [ "@" number ] [ expression ]
                 | "@" number
                 | "@++"
                 | "@" number "++" ;
+
+spawn_statement = "spawn" expression [ "|" spawn_params "|" block ] ;
+
+spawn_params    = identifier { "," identifier }
+                | map_destructure ;
+
+map_destructure = "{" identifier [ ":" identifier ] { "," identifier [ ":" identifier ] } "}" ;
 
 assignment      = identifier [ ":" type_annotation ] ("=" | ":=" | "<-") expression
                 | identifier ("+=" | "-=" | "*=" | "/=" | "%=") expression ;
@@ -2103,6 +2133,10 @@ escape_sequence         = "\\" ( "n" | "t" | "r" | "\\" | '"' ) ;
 * `@@` is shorthand for all-cores parallel execution: `@@ i in list` uses all available CPU cores
 * Port literals: `:5000` (numeric port), `:worker` (string port, hashed to number)
 * Port operations: `:5000+` (next available port, returns actual port number), `:5000?` (check if available)
+* `spawn expr` creates new process via fork() - fire and forget (child exits independently)
+* `spawn expr | x | { ... }` spawns process and blocks waiting for result (assigned to `x`)
+* `spawn expr | a, b, c | { ... }` tuple destructuring for multiple return values
+* `spawn expr | {name, age} | { ... }` map destructuring for structured data
 * `@++` continues the current loop (skip this iteration, jump to next).
 * `@1++`, `@2++`, `@3++`, ... continues the loop at that nesting level (skip iteration, jump to next).
 * `++` operator for pointer append: `ptr ++ value as type` writes value at current offset and auto-increments by sizeof(type)
