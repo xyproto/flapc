@@ -1,6 +1,7 @@
 package main
 
 import (
+	"debug/elf"
 	"fmt"
 	"syscall"
 	"time"
@@ -160,6 +161,63 @@ func UpdateFunctionPointer(tableAddr uintptr, index int, newAddr uintptr) {
 	// Atomic write (8-byte aligned write is atomic on x86-64)
 	ptr := (*uintptr)(unsafe.Pointer(ptrAddr))
 	*ptr = newAddr
+}
+
+// ExtractFunctionCode extracts machine code for a specific function from an ELF binary
+func ExtractFunctionCode(elfPath string, functionName string) ([]byte, error) {
+	// Open ELF file
+	elfFile, err := elf.Open(elfPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open ELF: %v", err)
+	}
+	defer elfFile.Close()
+
+	// Get symbol table
+	symbols, err := elfFile.Symbols()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read symbols: %v", err)
+	}
+
+	// Find the function symbol
+	var funcSym *elf.Symbol
+	for _, sym := range symbols {
+		if sym.Name == functionName && elf.ST_TYPE(sym.Info) == elf.STT_FUNC {
+			funcSym = &sym
+			break
+		}
+	}
+
+	if funcSym == nil {
+		return nil, fmt.Errorf("function '%s' not found in symbol table", functionName)
+	}
+
+	// Get the .text section
+	textSection := elfFile.Section(".text")
+	if textSection == nil {
+		return nil, fmt.Errorf(".text section not found")
+	}
+
+	// Read the entire .text section
+	textData, err := textSection.Data()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read .text section: %v", err)
+	}
+
+	// Calculate function offset within .text section
+	funcOffset := funcSym.Value - textSection.Addr
+	funcSize := funcSym.Size
+
+	// Validate bounds
+	if funcOffset < 0 || funcOffset+funcSize > uint64(len(textData)) {
+		return nil, fmt.Errorf("function bounds invalid: offset=%d, size=%d, text_size=%d",
+			funcOffset, funcSize, len(textData))
+	}
+
+	// Extract function code
+	code := make([]byte, funcSize)
+	copy(code, textData[funcOffset:funcOffset+funcSize])
+
+	return code, nil
 }
 
 // ReloadHotFunction is the main entry point for hot reloading a function
