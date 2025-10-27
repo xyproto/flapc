@@ -1,6 +1,6 @@
 # The Flap Programming Language
 
-### Version 1.5
+### Version 1.6
 
 ## Type System
 
@@ -629,12 +629,22 @@ result = 5 in mylist  // returns 1.0 or 0.0
 
 **The `@` symbol in Flap is loop-related**: it's used for loop iteration, loop control flow, and accessing loop state.
 
-Loops use `@` for iteration:
+Loops use `@` for iteration, with optional CPU parallelism using a numeric prefix:
 
 ```flap
-// Basic loop with literal range - max is OPTIONAL (inferred as 5)
+// Sequential loop (default) - max is OPTIONAL (inferred as 5)
 @ i in 0..<5 {
     println(i)  // Prints 0, 1, 2, 3, 4
+}
+
+// Parallel loop with 4 cores
+4 @ i in 0..<1000 {
+    compute(i)  // Executes in parallel across 4 CPU cores
+}
+
+// Parallel loop with all available cores
+cpu_count() @ i in data max 100000 {
+    process(i)  // Uses all CPU cores for parallel execution
 }
 
 // Range operator - max inferred from literal bounds
@@ -697,6 +707,27 @@ numbers := [10, 20, 30]
 - Explicit `max N`: adds runtime checking to ensure loop doesn't exceed N iterations
 - `max inf`: allows unlimited iterations for ranges/lists (use cautiously!)
 - Infinite loops (`@ {}`): no iterator, no `max` needed - truly infinite until explicit exit
+
+**CPU Parallelism:**
+- Sequential loop: `@ item in collection` (default, single core)
+- Parallel loop: `N @ item in collection` (uses N CPU cores)
+- Optional prefix: number of cores to use (e.g., `4 @`, `8 @`)
+- Dynamic cores: `cpu_count() @ item in list` uses all available cores
+- Use for: data processing, image processing, physics simulations, ray tracing
+- **Note:** Parallel loops require thread-safe operations (no shared mutable state without synchronization)
+
+**Example:**
+```flap
+// Sequential processing
+@ pixel in pixels max 1000000 {
+    process_pixel(pixel)
+}
+
+// Parallel processing with 8 cores (8x faster)
+8 @ pixel in pixels max 1000000 {
+    process_pixel(pixel)  // Executed across 8 threads
+}
+```
 
 **Loop Control:**
 - `ret` - returns from function with val
@@ -1483,8 +1514,7 @@ arena_statement = "arena" block ;
 defer_statement = "defer" expression ;
 
 loop_statement  = "@" block
-                | "@" identifier "in" expression [ "max" (number | "inf") ] block
-                | "@" number identifier "in" expression [ "max" (number | "inf") ] block ;
+                | [ expression ] "@" identifier "in" expression [ "max" (number | "inf") ] block ;
 
 jump_statement  = ("ret" | "err") [ "@" number ] [ expression ]
                 | "@" number
@@ -1604,10 +1634,10 @@ escape_sequence         = "\\" ( "n" | "t" | "r" | "\\" | '"' ) ;
 
 * `@` without arguments creates an infinite loop: `@ { ... }`
 * `@` with identifier introduces auto-labeled loops. The loop label is the current nesting depth (1, 2, 3, ...).
+* Optional numeric prefix before `@` specifies parallel execution: `4 @ i in list` uses 4 CPU cores
 * `@++` continues the current loop (skip this iteration, jump to next).
 * `@1++`, `@2++`, `@3++`, ... continues the loop at that nesting level (skip iteration, jump to next).
 * `unsafe` blocks can return register values as expressions (e.g., `rax`, `rbx`)
-* When used in a loop statement (`@1 identifier in expression`), it explicitly labels that loop.
 * `ret` returns from the current function with a val. `ret @` exits the current loop. `ret @1`, `ret @2`, `ret @3`, ... exits the loop at that nesting level and all inner loops. `err` returns an err.
 * Lambda syntax: `x => expr` or `x, y => expr` (no parentheses around parameters).
 * Type casting with `as`: Bidirectional conversion for FFI (e.g., `42 as i32` to C, `c_val as number` from C).
