@@ -1240,9 +1240,24 @@ func watchAndRecompile(sourceFile, outputFile string, platform Platform) error {
 
 		fmt.Fprintf(os.Stderr, "✅ Recompiled %d hot function(s): %v\n", len(updatedFuncs), updatedFuncs)
 
-		// Restart game process for now (live patching would go here in future)
+		// Check if any updated functions are actually hot functions
+		anyHotFuncChanged := false
+		for _, funcName := range updatedFuncs {
+			if incrementalState.hotFunctions[funcName] != nil {
+				anyHotFuncChanged = true
+				break
+			}
+		}
+
+		if !anyHotFuncChanged {
+			fmt.Fprintf(os.Stderr, "ℹ️  No hot functions changed - keeping process alive\n")
+			return
+		}
+
+		// Hot functions changed - restart process
+		// TODO: Future enhancement - patch running process via IPC instead of restart
 		if gameProcess != nil {
-			fmt.Fprintf(os.Stderr, "🔄 Restarting game process...\n")
+			fmt.Fprintf(os.Stderr, "🔄 Hot functions changed - restarting game process...\n")
 			gameProcess.Kill()
 			gameProcess.Wait()
 
