@@ -70,10 +70,17 @@ V5 is now complete! Parallel loops can execute arbitrary loop bodies with local 
 - Arithmetic: `@@ i in 0..<5 { x := i * 2; y := x + 10 }`
 - Multiple threads: `4 @ i in 0..<20 { x := i + 48 }`
 
-**Remaining (Optional):**
-- [ ] Step 7: External variables (read-only) - need to pass parent vars via stack
-- [ ] Step 8: Write syscall in loop body
-- [ ] Step 9: Printf in loop body (requires PIC or wrapper)
+**Current Limitations:**
+- External variables: Child threads have their own rbp, cannot access parent variables yet
+  - Solution: Store parent rbp in r11, use [r11-offset] for parent vars
+  - Requires tracking which variables are parent vs local scope
+- Printf/function calls: Require proper calling conventions or position-independent code
+- Shared mutable state: No atomic operations yet for thread-safe updates
+
+**Next Steps (Optional):**
+- [ ] Step 7: External variable access (store parent rbp in r11)
+- [ ] Step 8: Atomic operations for shared state (LOCK XADD, CMPXCHG)
+- [ ] Step 9: Printf support (via wrapper or PIC)
 
 **📋 V7 - Dynamic Ranges (Future):**
 - [ ] Support variable range bounds (currently constants only)
