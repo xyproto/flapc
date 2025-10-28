@@ -2961,10 +2961,136 @@ func (p *Parser) parseLoopStatement() Statement {
 		}
 	}
 
-	// Common identifier and loop body parsing for @@ and N @ goes here (TODO)
-	// For now, error if we reach here without being in TOKEN_AT branch
+	// Common identifier and loop body parsing for @@ and N @
+	// Only execute this if we have parallel loop prefix
 	if numThreads != 0 {
-		p.error("parallel loop parsing incomplete - TODO implement @@ and N @ body parsing")
+		// Expect identifier for loop variable
+		if p.current.Type != TOKEN_IDENT {
+			p.error("expected identifier after parallel loop prefix")
+		}
+		iterator := p.current.Value
+		p.nextToken() // skip identifier
+
+		// Check for receive loop syntax - not supported for parallel loops
+		if p.current.Type == TOKEN_COMMA {
+			p.error("receive loops (@ msg, from in ...) cannot be parallel")
+		}
+
+		// Expect 'in' keyword
+		if p.current.Type != TOKEN_IN {
+			p.error("expected 'in' in loop statement")
+		}
+		p.nextToken() // skip 'in'
+
+		// Parse iterable expression
+		iterable := p.parseExpression()
+
+		// Determine max iterations and whether runtime checking is needed
+		var maxIterations int64
+		needsRuntimeCheck := false
+
+		// Check if max keyword is present
+		if p.peek.Type == TOKEN_MAX {
+			p.nextToken() // advance to 'max'
+			p.nextToken() // skip 'max'
+
+			// Explicit max always requires runtime checking
+			needsRuntimeCheck = true
+
+			// Parse max iterations: either a number or 'inf'
+			if p.current.Type == TOKEN_INF {
+				maxIterations = math.MaxInt64 // Use MaxInt64 for infinite iterations
+				p.nextToken()                 // skip 'inf'
+			} else if p.current.Type == TOKEN_NUMBER {
+				// Parse the number
+				maxInt, err := strconv.ParseInt(p.current.Value, 10, 64)
+				if err != nil || maxInt < 1 {
+					p.error("max iterations must be a positive integer or 'inf'")
+				}
+				maxIterations = maxInt
+				p.nextToken() // skip number
+			} else {
+				p.error("expected number or 'inf' after 'max' keyword")
+			}
+		} else {
+			// No explicit max - check if we can determine iteration count at compile time
+			if rangeExpr, ok := iterable.(*RangeExpr); ok {
+				// Try to calculate max from range: end - start
+				startVal, startOk := rangeExpr.Start.(*NumberExpr)
+				endVal, endOk := rangeExpr.End.(*NumberExpr)
+
+				if startOk && endOk {
+					// Literal range - known at compile time, no runtime check needed
+					start := int64(startVal.Value)
+					end := int64(endVal.Value)
+					maxIterations = end - start
+					if maxIterations < 0 {
+						maxIterations = 0
+					}
+					needsRuntimeCheck = false
+				} else {
+					// Range bounds are not literals, require explicit max
+					p.error("loop over non-literal range requires explicit 'max' clause")
+				}
+			} else if listExpr, ok := iterable.(*ListExpr); ok {
+				// List literal - known at compile time, no runtime check needed
+				maxIterations = int64(len(listExpr.Elements))
+				needsRuntimeCheck = false
+			} else {
+				// Not a range expression or list literal, require explicit max
+				p.error("loop requires 'max' clause (or use range expression like 0..<10 or list literal)")
+			}
+			// Advance to next token after iterable expression
+			p.nextToken()
+		}
+
+		// Skip newlines before '{'
+		for p.current.Type == TOKEN_NEWLINE {
+			p.nextToken()
+		}
+
+		// Expect '{'
+		if p.current.Type != TOKEN_LBRACE {
+			p.error("expected '{' to start loop body")
+		}
+
+		// Skip newlines after '{'
+		for p.peek.Type == TOKEN_NEWLINE {
+			p.nextToken()
+		}
+
+		// Track loop depth for nested loops
+		oldDepth := p.loopDepth
+		p.loopDepth = label
+		defer func() { p.loopDepth = oldDepth }()
+
+		// Parse loop body
+		var body []Statement
+		for p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
+			p.nextToken()
+			if p.current.Type == TOKEN_NEWLINE {
+				continue
+			}
+			stmt := p.parseStatement()
+			if stmt != nil {
+				body = append(body, stmt)
+			}
+		}
+
+		// Expect and consume '}'
+		if p.peek.Type != TOKEN_RBRACE {
+			p.error("expected '}' at end of loop body")
+		}
+		p.nextToken() // consume the '}'
+
+		return &LoopStmt{
+			Iterator:      iterator,
+			Iterable:      iterable,
+			Body:          body,
+			MaxIterations: maxIterations,
+			NeedsMaxCheck: needsRuntimeCheck,
+			NumThreads:    numThreads,
+		}
 	}
 
 handleJump:
@@ -5986,6 +6112,21 @@ func (fc *FlapCompiler) compileSpawnStmt(stmt *SpawnStmt) {
 }
 
 func (fc *FlapCompiler) compileLoopStatement(stmt *LoopStmt) {
+	// Check if this is a parallel loop
+	if stmt.NumThreads != 0 {
+		// Parallel loop: @@ or N @
+		// Currently only range loops are supported for parallel execution
+		if rangeExpr, isRange := stmt.Iterable.(*RangeExpr); isRange {
+			fc.compileParallelRangeLoop(stmt, rangeExpr)
+		} else {
+			fmt.Fprintf(os.Stderr, "Error: Parallel loops currently only support range expressions (e.g., 0..<100)\n")
+			fmt.Fprintf(os.Stderr, "       List iteration with parallel loops not yet implemented\n")
+			os.Exit(1)
+		}
+		return
+	}
+
+	// Sequential loop
 	// Check if iterating over a range expression (0..<10, 0..=10)
 	if rangeExpr, isRange := stmt.Iterable.(*RangeExpr); isRange {
 		// Range loop (lazy iteration)
@@ -6200,6 +6341,28 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 
 	// Pop loop from active stack
 	fc.activeLoops = fc.activeLoops[:len(fc.activeLoops)-1]
+}
+
+func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
+	if VerboseMode {
+		numThreadsStr := fmt.Sprintf("%d", stmt.NumThreads)
+		if stmt.NumThreads == -1 {
+			numThreadsStr = "all cores"
+		}
+		fmt.Fprintf(os.Stderr, "DEBUG: Compiling parallel range loop with %s threads\n", numThreadsStr)
+	}
+
+	// For now, implement as a sequential loop with a TODO comment
+	// Actual parallel implementation will be added incrementally
+	fmt.Fprintf(os.Stderr, "Warning: Parallel loop syntax detected but not yet fully implemented.\n")
+	fmt.Fprintf(os.Stderr, "         Falling back to sequential execution.\n")
+	fmt.Fprintf(os.Stderr, "         Loop: %d threads, iterator '%s'\n", stmt.NumThreads, stmt.Iterator)
+
+	// Fallback: compile as sequential loop for now
+	// Create a modified LoopStmt with NumThreads = 0 to trigger sequential compilation
+	seqStmt := *stmt
+	seqStmt.NumThreads = 0
+	fc.compileRangeLoop(&seqStmt, rangeExpr)
 }
 
 func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
