@@ -27,7 +27,7 @@
 
 **C FFI** - Direct PLT/GOT calls to C libraries. Automatic type inference from DWARF debug info.
 
-**Unsafe blocks** - Direct register access for performance-critical code.
+**Unsafe blocks** - Cross-platform direct register access (x86-64/ARM64/RISC-V). Unified syntax with register aliases or per-CPU blocks.
 
 **Process spawning** - Unix fork()-based concurrency with `spawn` keyword.
 
@@ -52,8 +52,8 @@ spawn compute(42) | result | {}   // Wait for result (not yet implemented)
 port := :5000                     // Numeric port
 worker_port := :worker            // Named port (hashed to 39639)
 
-// Unsafe
-result := unsafe { rax <- 42; rax }
+// Unsafe (unified - works on all CPUs)
+result := unsafe { a <- 42; a }  // a = rax/x0/a0 depending on CPU
 ```
 
 ## Installation
@@ -130,11 +130,13 @@ See `testprograms/` for 50+ examples.
 - Signatures: Auto-discovered via DWARF/pkg-config
 
 **Unsafe**
-- Registers: `rax <- 42`, `rax <- [mem]`, `[mem] <- rax`
-- Math: `rax * rbx`, `rax / rbx`, `rax << 2`
+- Unified syntax: `a <- 42` (portable aliases: a, b, c, d, e, f)
+- Per-CPU blocks: `unsafe { x86_64 { rax <- 42 } arm64 { x0 <- 42 } riscv64 { a0 <- 42 } }`
+- Arithmetic: `c <- a + b`, `d <- a << 2`
+- Memory: `a <- [b]`, `[a] <- value`
 - Returns: Last expression value
 
-See [LANGUAGE.md](LANGUAGE.md) for complete grammar.
+See [UNSAFE.md](UNSAFE.md) for complete Battlestar assembly reference and [LANGUAGE.md](LANGUAGE.md) for full grammar.
 
 ## Technical Details
 
@@ -159,6 +161,7 @@ See [TODO.md](TODO.md) for detailed roadmap.
 ## Documentation
 
 - [LANGUAGE.md](LANGUAGE.md) - Complete language specification
+- [UNSAFE.md](UNSAFE.md) - Battlestar assembly language (unsafe blocks)
 - [TODO.md](TODO.md) - Development roadmap
 - [LEARNINGS.md](LEARNINGS.md) - Implementation notes
 
@@ -175,7 +178,7 @@ See [TODO.md](TODO.md) for detailed roadmap.
 - Tail-call optimization
 - Arena memory management
 - C FFI with DWARF auto-discovery
-- Unsafe blocks with register access
+- Cross-platform unsafe blocks with register aliases (x86-64/ARM64/RISC-V)
 - Pattern matching and lambdas
 
 **Future:**
