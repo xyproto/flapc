@@ -6445,11 +6445,11 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	// Save original rsp to restore later
 	fc.out.MovRegToReg("r14", "rsp")
 
-	// V1b: Spawn a single test thread to prove clone() works
-	// This thread will just print a message and exit
-	// Full parallel loop execution will be added in V2
+	// V2: Spawn thread that prints message to prove code execution works
+	// This validates the entire thread entry path including function calls
+	// V3 will distribute loop iterations across threads
 
-	fmt.Fprintf(os.Stderr, "      Note: V1b spawning test thread (full parallel execution in V2)\n")
+	fmt.Fprintf(os.Stderr, "      Note: V2 spawning thread with message printing\n")
 
 	// Step 1: Allocate 1MB stack for child thread using mmap
 	// mmap(addr=NULL, length=1MB, prot=PROT_READ|PROT_WRITE,
@@ -6501,9 +6501,32 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	childOffset := int32(childStartPos - (childJumpPos + ConditionalJumpSize))
 	fc.patchJumpImmediate(childJumpPos+2, childOffset)
 
-	// Child thread: print message
-	// For now, just exit immediately to prove thread spawned
-	// V2 will add actual loop body execution
+	// V2: Child thread writes a message using write() syscall
+	// This proves thread entry point works and can execute code
+	// Using write() instead of printf to avoid rodata complexity
+
+	// Set up new stack frame
+	fc.out.MovRegToReg("rbp", "rsp")
+
+	// Allocate space for message on stack
+	// Message: "T\n" (2 bytes) - simple marker that thread ran
+	fc.out.SubImmFromReg("rsp", 16)  // Allocate 16 bytes (aligned)
+
+	// Write 'T' to stack
+	fc.out.MovImmToReg("rax", "84")  // ASCII 'T' = 84
+	fc.out.MovRegToMem("rax", "rsp", 0)
+
+	// Write '\n' to stack
+	fc.out.MovImmToReg("rax", "10")  // ASCII '\n' = 10
+	fc.out.MovRegToMem("rax", "rsp", 1)
+
+	// Call write(stdout, message, length)
+	// write syscall number is 1
+	fc.out.MovImmToReg("rax", "1")   // sys_write
+	fc.out.MovImmToReg("rdi", "1")   // fd = stdout
+	fc.out.MovRegToReg("rsi", "rsp") // buf = stack pointer
+	fc.out.MovImmToReg("rdx", "2")   // count = 2 bytes
+	fc.out.Syscall()
 
 	// Exit thread with status 0
 	fc.out.MovImmToReg("rax", "60")  // sys_exit
@@ -6517,8 +6540,8 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	parentOffset := int32(parentContinuePos - (parentJumpPos + UnconditionalJumpSize))
 	fc.patchJumpImmediate(parentJumpPos+1, parentOffset)
 
-	// For V1b, parent still executes loop sequentially
-	// V2 will have parent wait on barrier instead
+	// For V2, parent still executes loop sequentially
+	// V3 will distribute work and have parent wait on barrier
 	seqStmt := *stmt
 	seqStmt.NumThreads = 0
 	fc.compileRangeLoop(&seqStmt, rangeExpr)
@@ -6527,15 +6550,12 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	fc.out.AddImmToReg("rsp", 16)
 	fc.runtimeStack -= 16
 
-	// V1b TODO: Actual thread spawning
-	// 1. Call mmap to allocate 1MB stack for each thread
-	// 2. Set up clone() syscall arguments
-	// 3. Call clone() with CLONE_VM | CLONE_THREAD flags
-	// 4. Child thread jumps to thread_entry label
-	// 5. Thread entry executes loop body for work range
-	// 6. Thread decrements barrier counter (LOCK XADD)
-	// 7. Last thread wakes others with futex
-	// 8. Parent waits on futex barrier
+	// V3 TODO: Full parallel execution
+	// 1. Pass work range to each thread via stack
+	// 2. Thread executes loop body for its assigned range
+	// 3. Thread decrements barrier counter (LOCK XADD)
+	// 4. Last thread wakes others with futex
+	// 5. Parent waits on futex barrier instead of executing sequentially
 }
 
 func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
