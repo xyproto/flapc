@@ -697,16 +697,6 @@ func (p *PipeExpr) String() string {
 }
 func (p *PipeExpr) expressionNode() {}
 
-type ConcurrentGatherExpr struct {
-	Left  Expression // Input to the concurrent gather
-	Right Expression // Operation to apply concurrently
-}
-
-func (c *ConcurrentGatherExpr) String() string {
-	return c.Left.String() + " ||| " + c.Right.String()
-}
-func (c *ConcurrentGatherExpr) expressionNode() {}
-
 type BackgroundExpr struct {
 	Expr Expression // Expression to execute in background process
 }

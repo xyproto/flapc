@@ -691,10 +691,6 @@ func collectUsedVariablesExpr(expr Expression, usedVars map[string]bool) {
 		for _, lambda := range e.Lambdas {
 			collectUsedVariablesExpr(lambda.Body, usedVars)
 		}
-	case *ConcurrentGatherExpr:
-		// ConcurrentGatherExpr has Left and Right
-		collectUsedVariablesExpr(e.Left, usedVars)
-		collectUsedVariablesExpr(e.Right, usedVars)
 	case *SendExpr:
 		// SendExpr has Target and Message
 		collectUsedVariablesExpr(e.Target, usedVars)
@@ -3381,7 +3377,7 @@ func (p *Parser) parseExpression() Expression {
 
 // parseErrorHandling handles the or! operator (lowest precedence, right-associative)
 func (p *Parser) parseErrorHandling() Expression {
-	left := p.parseConcurrentGather()
+	left := p.parsePipe()
 
 	// or! is right-associative and very low precedence
 	if p.peek.Type == TOKEN_OR_BANG {
@@ -3389,19 +3385,6 @@ func (p *Parser) parseErrorHandling() Expression {
 		p.nextToken()                   // skip 'or!'
 		right := p.parseErrorHandling() // right-associative recursion
 		return &BinaryExpr{Left: left, Operator: "or!", Right: right}
-	}
-
-	return left
-}
-
-func (p *Parser) parseConcurrentGather() Expression {
-	left := p.parsePipe()
-
-	for p.peek.Type == TOKEN_PIPEPIPEPIPE {
-		p.nextToken() // skip current
-		p.nextToken() // skip '|||'
-		right := p.parsePipe()
-		left = &ConcurrentGatherExpr{Left: left, Right: right}
 	}
 
 	return left
@@ -8922,9 +8905,6 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 	case *PipeExpr:
 		fc.compilePipeExpr(e)
-
-	case *ConcurrentGatherExpr:
-		fc.compileConcurrentGatherExpr(e)
 
 	case *SendExpr:
 		fc.compileSendExpr(e)
@@ -15471,18 +15451,6 @@ func (fc *FlapCompiler) compilePipeExpr(expr *PipeExpr) {
 	}
 }
 
-func (fc *FlapCompiler) compileConcurrentGatherExpr(expr *ConcurrentGatherExpr) {
-	// Concurrent gather operator: left ||| right
-	// Semantics: Gather results concurrently
-	// This requires goroutines or threads for true concurrency
-
-	// For now, print an error as this is not yet implemented
-	if VerboseMode {
-		fmt.Fprintln(os.Stderr, "This feature requires runtime support for concurrency")
-	}
-	compilerError("concurrent gather operator ||| is not yet implemented")
-}
-
 func (fc *FlapCompiler) compileSendExpr(expr *SendExpr) {
 	// Send operator: target <== message
 	// Target must be a string: ":5000", "localhost:5000", "192.168.1.1:5000"
@@ -15877,9 +15845,6 @@ func collectFunctionCalls(expr Expression, calls map[string]bool) {
 		collectFunctionCalls(e.Left, calls)
 		collectFunctionCalls(e.Right, calls)
 	case *PipeExpr:
-		collectFunctionCalls(e.Left, calls)
-		collectFunctionCalls(e.Right, calls)
-	case *ConcurrentGatherExpr:
 		collectFunctionCalls(e.Left, calls)
 		collectFunctionCalls(e.Right, calls)
 	case *SendExpr:

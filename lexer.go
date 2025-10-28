@@ -60,7 +60,6 @@ const (
 	TOKEN_SEND             // <== (ENet send operator)
 	TOKEN_PIPE             // |
 	TOKEN_PIPEPIPE         // ||
-	TOKEN_PIPEPIPEPIPE     // |||
 	TOKEN_HASH             // #
 	TOKEN_AND              // and keyword
 	TOKEN_OR               // or keyword
@@ -702,12 +701,8 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_RBRACKET, Value: "]", Line: l.line}
 	case '|':
-		// Check for ||| first, then ||, then |b, then |
+		// Check for ||, then |b, then |
 		if l.peek() == '|' {
-			if l.pos+2 < len(l.input) && l.input[l.pos+2] == '|' {
-				l.pos += 3
-				return Token{Type: TOKEN_PIPEPIPEPIPE, Value: "|||", Line: l.line}
-			}
 			l.pos += 2
 			return Token{Type: TOKEN_PIPEPIPE, Value: "||", Line: l.line}
 		}
