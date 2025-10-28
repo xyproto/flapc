@@ -14770,31 +14770,58 @@ func (fc *FlapCompiler) compileReceiveLoopStmt(stmt *ReceiveLoopStmt) {
 		compilerError("receive loop address must be a string literal (e.g., \":5000\")")
 	}
 
-	// Parse address string to extract port number
+	// Parse address string to extract port number or port range
 	addr := addressStr.Value
-	var port int
+	var startPort, endPort int
 	if addr[0] == ':' {
 		// Port only (bind to all interfaces)
-		var err error
-		port, err = strconv.Atoi(addr[1:])
-		if err != nil || port < 1 || port > 65535 {
-			compilerError("invalid port in receive address: %s", addr)
+		// Support ":5000" or ":5000-5010" for port ranges
+		portSpec := addr[1:]
+		if strings.Contains(portSpec, "-") {
+			// Port range: ":5000-5010"
+			parts := strings.Split(portSpec, "-")
+			if len(parts) != 2 {
+				compilerError("invalid port range in receive address: %s", addr)
+			}
+			var err error
+			startPort, err = strconv.Atoi(parts[0])
+			if err != nil || startPort < 1 || startPort > 65535 {
+				compilerError("invalid start port in receive address: %s", addr)
+			}
+			endPort, err = strconv.Atoi(parts[1])
+			if err != nil || endPort < 1 || endPort > 65535 {
+				compilerError("invalid end port in receive address: %s", addr)
+			}
+			if startPort > endPort {
+				compilerError("start port must be <= end port in receive address: %s", addr)
+			}
+		} else {
+			// Single port: ":5000"
+			var err error
+			startPort, err = strconv.Atoi(portSpec)
+			if err != nil || startPort < 1 || startPort > 65535 {
+				compilerError("invalid port in receive address: %s", addr)
+			}
+			endPort = startPort
 		}
 	} else {
-		compilerError("receive address format not yet supported: %s (use \":port\" for all interfaces)", addr)
+		compilerError("receive address format not yet supported: %s (use \":port\" or \":port1-port2\" for all interfaces)", addr)
 	}
 
 	// Generate unique labels for this loop
 	fc.labelCounter++
 	loopLabel := fmt.Sprintf("receive_loop_%d", fc.labelCounter)
 	endLabel := fmt.Sprintf("receive_end_%d", fc.labelCounter)
+	tryPortLabel := fmt.Sprintf("try_port_%d", fc.labelCounter)
+	bindSuccessLabel := fmt.Sprintf("bind_success_%d", fc.labelCounter)
+	bindFailLabel := fmt.Sprintf("bind_fail_%d", fc.labelCounter)
 
 	// Allocate stack space: we use the base offset from symbol collection
 	// Layout: msg_var(8), sender_var(8), socket_fd(8), [padding], sockaddr_in(16), buffer(256), addrlen(8) = 320 bytes
 	baseOffset := stmt.BaseOffset
 
 	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG: ReceiveLoop baseOffset = %d\n", baseOffset)
+		fmt.Fprintf(os.Stderr, "DEBUG: ReceiveLoop baseOffset = %d, port range: %d-%d\n", baseOffset, startPort, endPort)
 	}
 
 	// Stack layout offsets (from rbp going downward):
@@ -14809,7 +14836,7 @@ func (fc *FlapCompiler) compileReceiveLoopStmt(stmt *ReceiveLoopStmt) {
 	// buffer:      rbp-(baseOffset+56) to rbp-(baseOffset+311) [256 bytes]
 	// addrlen:     rbp-(baseOffset+320)
 
-	// Step 1: Create UDP socket
+	// Step 1: Create UDP socket (once, before port loop)
 	fc.out.MovImmToReg("rax", "41")  // socket syscall
 	fc.out.MovImmToReg("rdi", "2")   // AF_INET
 	fc.out.MovImmToReg("rsi", "2")   // SOCK_DGRAM
@@ -14817,39 +14844,73 @@ func (fc *FlapCompiler) compileReceiveLoopStmt(stmt *ReceiveLoopStmt) {
 	fc.out.Syscall()
 	fc.out.MovRegToMem("rax", "rbp", -(baseOffset + 24)) // socket fd
 
-	// Step 2: Build sockaddr_in for bind (starts at rbp-(baseOffset+40))
-	// sockaddr_in structure (16 bytes total):
-	// Offset 0: sin_family (2 bytes)
-	// Offset 2: sin_port (2 bytes)
-	// Offset 4: sin_addr (4 bytes)
-	// Offset 8: sin_zero (8 bytes padding)
-
-	// sin_family = AF_INET (2) - at offset 0 from structure start
+	// Step 2: Initialize sockaddr_in structure (constant fields)
+	// sin_family = AF_INET (2)
 	fc.out.MovImmToReg("rax", "2")
 	fc.out.MovU16RegToMem("ax", "rbp", -(baseOffset + 40))
 
-	// sin_port = htons(port) - at offset 2 from structure start
-	portNetOrder := (port&0xff)<<8 | (port>>8)&0xff
-	fc.out.MovImmToReg("rax", fmt.Sprintf("%d", portNetOrder))
-	fc.out.MovU16RegToMem("ax", "rbp", -(baseOffset + 38))
-
-	// sin_addr = INADDR_ANY (0.0.0.0) - at offset 4 from structure start
+	// sin_addr = INADDR_ANY (0.0.0.0)
 	fc.out.MovImmToReg("rax", "0")
 	fc.out.MovRegToMem("rax", "rbp", -(baseOffset + 36))
 
-	// sin_zero = 0 (padding) - at offset 8 from structure start
+	// sin_zero = 0 (padding)
 	fc.out.MovImmToReg("rax", "0")
 	fc.out.MovRegToMem("rax", "rbp", -(baseOffset + 32))
 
-	// Step 3: Bind socket to port (syscall 49: bind)
-	// bind(sockfd, sockaddr, addrlen)
+	// Step 3: Port availability loop (r12 = current port)
+	fc.out.MovImmToReg("r12", fmt.Sprintf("%d", startPort))
+	fc.eb.MarkLabel(tryPortLabel)
+
+	// Convert current port (r12) to network byte order and store in sin_port
+	// Load port value into rax, then convert to 16-bit with byte swap
+	fc.out.MovRegToReg("rax", "r12") // Copy r12 to rax
+	// Manual byte swap for htons: rol ax, 8
+	// Encoding: 66 C1 C0 08 (16-bit ROL AX by immediate 8)
+	fc.eb.text.WriteByte(0x66) // Operand-size override prefix
+	fc.eb.text.WriteByte(0xC1) // ROL r/m16, imm8
+	fc.eb.text.WriteByte(0xC0) // ModR/M for AX
+	fc.eb.text.WriteByte(0x08) // Immediate value 8
+	fc.out.MovU16RegToMem("ax", "rbp", -(baseOffset + 38))
+
+	// Try to bind socket to current port
 	fc.out.MovMemToReg("rdi", "rbp", -(baseOffset + 24)) // socket fd
-	fc.out.LeaMemToReg("rsi", "rbp", -(baseOffset + 40)) // sockaddr_in structure start
+	fc.out.LeaMemToReg("rsi", "rbp", -(baseOffset + 40)) // sockaddr_in structure
 	fc.out.MovImmToReg("rdx", "16")                       // addrlen
 	fc.out.MovImmToReg("rax", "49")                       // bind syscall
 	fc.out.Syscall()
 
-	// TODO: Check bind result (rax < 0 means error)
+	// Check bind result: rax == 0 means success
+	fc.out.CmpRegToImm("rax", 0)
+	fc.out.JumpConditional(JumpEqual, 0) // Will be patched to bindSuccessLabel
+	bindCheckPos := fc.eb.text.Len()
+
+	// Bind failed, try next port
+	fc.out.IncReg("r12")
+	fc.out.CmpRegToImm("r12", int64(endPort+1))
+	fc.out.JumpConditional(JumpLess, 0) // Will be patched to tryPortLabel
+	tryNextPos := fc.eb.text.Len()
+
+	// All ports failed - close socket and exit
+	fc.eb.MarkLabel(bindFailLabel)
+	fc.out.MovMemToReg("rdi", "rbp", -(baseOffset + 24)) // socket fd
+	fc.out.MovImmToReg("rax", "3")                        // close syscall
+	fc.out.Syscall()
+	fc.out.MovImmToReg("rdi", "1")                        // exit code 1
+	fc.out.MovImmToReg("rax", "60")                       // exit syscall
+	fc.out.Syscall()
+
+	// Bind succeeded, continue to receive loop
+	fc.eb.MarkLabel(bindSuccessLabel)
+
+	// Patch jump to bindSuccessLabel
+	bindSuccessPos := fc.eb.labels[bindSuccessLabel]
+	bindOffset := int32(bindSuccessPos - bindCheckPos)
+	fc.patchJumpImmediate(bindCheckPos-ConditionalJumpSize+2, bindOffset)
+
+	// Patch jump to tryPortLabel
+	tryPortPos := fc.eb.labels[tryPortLabel]
+	tryOffset := int32(tryPortPos - tryNextPos)
+	fc.patchJumpImmediate(tryNextPos-ConditionalJumpSize+2, tryOffset)
 
 	// Step 4: Start receive loop
 	fc.eb.MarkLabel(loopLabel)
