@@ -33,6 +33,9 @@ var compileOnlyPrograms = map[string]bool{
 	"sdl3_texture_demo":  true,
 	"snake_cstruct_test": true,
 	"snake_simple":       true,
+
+	// Network server tests that block waiting for input
+	"test_receive_simple": true,
 	"snake_visual_demo":  true,
 	"snakegame":          true,
 	// Raylib tests are compile-only (Raylib is optional, may not be available)
