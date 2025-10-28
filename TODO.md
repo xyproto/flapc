@@ -69,16 +69,17 @@ V5 is now complete! Parallel loops can execute arbitrary loop bodies with local 
 - Simple assignment: `@@ i in 0..<3 { y := i }`
 - Arithmetic: `@@ i in 0..<5 { x := i * 2; y := x + 10 }`
 - Multiple threads: `4 @ i in 0..<20 { x := i + 48 }`
+- External variables: `a := 100; @@ i in 0..<3 { x := i + a }` ✓
 
 **Current Limitations:**
-- External variables: Child threads have their own rbp, cannot access parent variables yet
-  - Solution: Store parent rbp in r11, use [r11-offset] for parent vars
-  - Requires tracking which variables are parent vs local scope
 - Printf/function calls: Require proper calling conventions or position-independent code
-- Shared mutable state: No atomic operations yet for thread-safe updates
+- Shared mutable state: No atomic operations yet for thread-safe updates (Step 8)
 
 **Next Steps (Optional):**
-- [ ] Step 7: External variable access (store parent rbp in r11)
+- [x] Step 7: External variable access (COMPLETE! Child threads can now read parent variables via r11)
+  - collectLoopLocalVars() distinguishes parent vs loop-local variables
+  - Variable reads/writes use r11 for parent vars, rbp for local vars
+  - Tests passing: `a := 100; @@ i in 0..<3 { x := i + a }` ✓
 - [ ] Step 8: Atomic operations for shared state (LOCK XADD, CMPXCHG)
 - [ ] Step 9: Printf support (via wrapper or PIC)
 
