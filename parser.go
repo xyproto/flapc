@@ -6416,10 +6416,11 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	fc.runtimeStack += 16
 
 	// Step 2: Initialize barrier
-	// barrier.count = actualThreads at [rsp+0]
-	// barrier.total = actualThreads at [rsp+8]
-	fc.out.MovImmToMem(int64(actualThreads), "rsp", 0)  // count at offset 0
-	fc.out.MovImmToMem(int64(actualThreads), "rsp", 8)  // total at offset 8
+	// V4: Only 1 child thread participates in barrier (parent just waits)
+	// barrier.count = 1 at [rsp+0]
+	// barrier.total = 1 at [rsp+8]
+	fc.out.MovImmToMem(int64(1), "rsp", 0)  // count at offset 0
+	fc.out.MovImmToMem(int64(1), "rsp", 8)  // total at offset 8
 
 	// Save barrier address in r15 for later use
 	fc.out.MovRegToReg("r15", "rsp")
@@ -6445,11 +6446,11 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	// Save original rsp to restore later
 	fc.out.MovRegToReg("r14", "rsp")
 
-	// V3: Spawn thread that executes loop for its work range
-	// Thread reads start/end from stack and prints each iteration
-	// V4 will add barrier synchronization and actual loop body execution
+	// V4: Full parallel execution with barrier synchronization
+	// Thread executes loop, then synchronizes at barrier
+	// Last thread wakes all others via futex
 
-	fmt.Fprintf(os.Stderr, "      Note: V3 thread executes loop for work range\n")
+	fmt.Fprintf(os.Stderr, "      Note: V4 parallel execution with barrier synchronization\n")
 
 	// Step 1: Allocate 1MB stack for child thread using mmap
 	// mmap(addr=NULL, length=1MB, prot=PROT_READ|PROT_WRITE,
@@ -6469,22 +6470,25 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	fc.out.AddImmToReg("rax", 1048576 - 16)  // Stack top
 	fc.out.MovRegToReg("r13", "rax")         // Save stack top in r13
 
-	// V3: Store work range on child stack for this thread
-	// For now, we're only spawning 1 thread, so use threadRanges[0]
-	// Stack layout: [start: int64][end: int64] = 16 bytes
+	// V4: Store work range + barrier address on child stack
+	// Stack layout: [start: int64][end: int64][barrier_ptr: int64] = 24 bytes
 	threadStart := int64(threadRanges[0][0])
 	threadEnd := int64(threadRanges[0][1])
 
-	// Store start at [r13-16]
+	// Store start at [r13-24]
 	fc.out.MovImmToReg("rax", fmt.Sprintf("%d", threadStart))
+	fc.out.MovRegToMem("rax", "r13", -24)
+
+	// Store end at [r13-16]
+	fc.out.MovImmToReg("rax", fmt.Sprintf("%d", threadEnd))
 	fc.out.MovRegToMem("rax", "r13", -16)
 
-	// Store end at [r13-8]
-	fc.out.MovImmToReg("rax", fmt.Sprintf("%d", threadEnd))
-	fc.out.MovRegToMem("rax", "r13", -8)
+	// Store barrier address at [r13-8]
+	// Barrier is at r15 (saved earlier from rsp after barrier allocation)
+	fc.out.MovRegToMem("r15", "r13", -8)
 
-	// Adjust stack pointer to account for work range
-	fc.out.SubImmFromReg("r13", 16)
+	// Adjust stack pointer to account for work range + barrier pointer
+	fc.out.SubImmFromReg("r13", 24)
 
 	// Step 2: Call clone() syscall
 	// clone(flags, child_stack, ptid, ctid, newtls)
@@ -6518,16 +6522,17 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	childOffset := int32(childStartPos - (childJumpPos + ConditionalJumpSize))
 	fc.patchJumpImmediate(childJumpPos+2, childOffset)
 
-	// V3: Child thread reads work range and executes loop
-	// Stack layout when thread starts: [start][end] at rsp+0 and rsp+8
+	// V4: Child thread reads work range + barrier and executes loop
+	// Stack layout when thread starts: [start][end][barrier_ptr] at rsp+0, rsp+8, rsp+16
 
 	// Set up new stack frame
 	fc.out.MovRegToReg("rbp", "rsp")
 
-	// Load work range from stack
-	// start is at [rbp+0], end is at [rbp+8]
+	// Load work range and barrier from stack
+	// start is at [rbp+0], end is at [rbp+8], barrier_ptr is at [rbp+16]
 	fc.out.MovMemToReg("r12", "rbp", 0)  // r12 = start
 	fc.out.MovMemToReg("r13", "rbp", 8)  // r13 = end
+	fc.out.MovMemToReg("r15", "rbp", 16) // r15 = barrier address
 
 	// Allocate stack space for loop and message
 	fc.out.SubImmFromReg("rsp", 32)  // 32 bytes for loop counter + message buffer
@@ -6578,6 +6583,62 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	loopExitOffset := int32(loopEndPos - (loopEndJumpPos + ConditionalJumpSize))
 	fc.patchJumpImmediate(loopEndJumpPos+2, loopExitOffset)
 
+	// V4: Barrier synchronization after loop completes
+	// Atomically decrement barrier counter and synchronize
+
+	// Load -1 into eax for atomic decrement
+	fc.out.MovImmToReg("rax", "-1")
+
+	// LOCK XADD [r15], eax - Atomically add -1 to barrier.count
+	// This emits: lock xadd [r15], eax
+	// Result: eax gets the OLD value, memory gets decremented
+	fc.out.LockXaddMemReg("r15", 0, "eax")
+
+	// After LOCK XADD, eax contains the OLD value of the counter
+	// Decrement eax to get the NEW value (what's now in memory)
+	fc.out.DecReg("eax")
+
+	// Check if we're the last thread (new value == 0)
+	fc.out.TestRegReg("eax", "eax")
+
+	// Jump if NOT last thread (need to wait)
+	waitJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpNotEqual, 0)  // Placeholder, will patch
+
+	// Last thread path: Wake all waiting threads
+	// futex(barrier_addr, FUTEX_WAKE_PRIVATE, num_threads)
+	fc.out.MovImmToReg("rax", "202")   // sys_futex
+	fc.out.MovRegToReg("rdi", "r15")   // addr = barrier address
+	fc.out.MovImmToReg("rsi", "129")   // op = FUTEX_WAKE_PRIVATE (1 | 128)
+	fc.out.MovMemToReg("rdx", "r15", 8) // val = barrier.total (wake all threads)
+	fc.out.Syscall()
+
+	// Jump to exit
+	wakeExitJumpPos := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0)  // Placeholder, will patch
+
+	// Not last thread: Wait on futex
+	waitStartPos := fc.eb.text.Len()
+
+	// Patch the wait jump to point here
+	waitOffset := int32(waitStartPos - (waitJumpPos + ConditionalJumpSize))
+	fc.patchJumpImmediate(waitJumpPos+2, waitOffset)
+
+	// futex(barrier_addr, FUTEX_WAIT_PRIVATE, 0)
+	// This waits until barrier.count changes from current value
+	fc.out.MovImmToReg("rax", "202")   // sys_futex
+	fc.out.MovRegToReg("rdi", "r15")   // addr = barrier address
+	fc.out.MovImmToReg("rsi", "128")   // op = FUTEX_WAIT_PRIVATE (0 | 128)
+	fc.out.MovMemToReg("rdx", "r15", 0) // val = current barrier.count
+	fc.out.Syscall()
+
+	// Exit point for all threads
+	threadExitPos := fc.eb.text.Len()
+
+	// Patch the wake exit jump
+	wakeExitOffset := int32(threadExitPos - (wakeExitJumpPos + UnconditionalJumpSize))
+	fc.patchJumpImmediate(wakeExitJumpPos+1, wakeExitOffset)
+
 	// Exit thread with status 0
 	fc.out.MovImmToReg("rax", "60")  // sys_exit
 	fc.out.MovImmToReg("rdi", "0")   // status = 0
@@ -6590,11 +6651,13 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	parentOffset := int32(parentContinuePos - (parentJumpPos + UnconditionalJumpSize))
 	fc.patchJumpImmediate(parentJumpPos+1, parentOffset)
 
-	// For V3, parent still executes loop sequentially
-	// V4 will have parent wait on barrier for thread completion
-	seqStmt := *stmt
-	seqStmt.NumThreads = 0
-	fc.compileRangeLoop(&seqStmt, rangeExpr)
+	// V4: Parent waits on barrier for thread completion
+	// Parent waits on futex until all threads complete
+	fc.out.MovImmToReg("rax", "202")    // sys_futex
+	fc.out.MovRegToReg("rdi", "r15")    // addr = barrier address
+	fc.out.MovImmToReg("rsi", "128")    // op = FUTEX_WAIT_PRIVATE
+	fc.out.MovMemToReg("rdx", "r15", 0) // val = current barrier.count
+	fc.out.Syscall()
 
 	// Step 4: Cleanup - deallocate barrier
 	fc.out.AddImmToReg("rsp", 16)
