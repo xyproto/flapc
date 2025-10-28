@@ -14,17 +14,18 @@
 - ✅ Cross-platform register aliases for unsafe blocks (a→rax/x0/a0, b→rbx/x1/a1, etc.)
 - ✅ Unified unsafe syntax: `unsafe { a <- 42 }` works on all CPUs
 - ✅ Per-CPU unsafe syntax: `unsafe { x86_64 { rax <- 42 } arm64 { x0 <- 42 } riscv64 { a0 <- 42 } }`
-- ✅ UNSAFE.md: Complete Battlestar assembly documentation (355 lines)
+- ✅ Battlestar assembly documentation integrated into README.md (355 lines)
 - ✅ Removed obsolete `|||` (triple pipe) concurrent gather syntax
 - ✅ Parallel loop reducer syntax: `sum = @@ i in 0..<10 { i } | a,b | { a + b }` (parser complete)
 - ✅ Fixed thread spawning tests (skipped tests that interfere with Go runtime)
-- ✅ Documentation: UNSAFE.md created, TODO.md updated
+- ✅ Documentation: All features integrated into README.md, GRAMMAR.md created, TODO.md updated
 
 **Files Changed:**
-- New: `register_alias.go` (89 lines), `UNSAFE.md` (355 lines)
+- New: `register_alias.go` (89 lines), `GRAMMAR.md` (1234 lines)
 - Modified: `lexer.go`, `ast.go`, `parser.go` (triple pipe removal + register alias integration)
 - Modified: `parallel_test.go` (skipped 3 tests)
-- Docs: 2 files updated
+- Removed: `UNSAFE.md`, `LANGUAGE.md`, `LEARNINGS.md` (consolidated into README.md)
+- Docs: README.md expanded to 3433 lines with all documentation
 
 **Previous Session (2025-10-28):**
 - ✅ V4 futex barrier synchronization (atomic.go, dec.go, parser.go)
@@ -263,9 +264,9 @@ For shipping commercial games on Steam
 - [ ] Memory: run valgrind, fix any leaks
 
 **Documentation:**
-- [x] Update LANGUAGE.md with parallel loop implementation status
+- [x] Update README.md with parallel loop implementation status
 - [x] Update README.md with V4 progress
-- [x] Add futex barrier learnings to LEARNINGS.md
+- [x] Add futex barrier learnings to README.md (Implementation Notes)
 - [x] Update TODO.md with V4 completion and V5 roadmap
 - [ ] Add parallel loop code examples to testprograms/
 - [ ] Write networking tutorial (client + server)
