@@ -17,7 +17,7 @@ const (
 	TOKEN_PLUS
 	TOKEN_MINUS
 	TOKEN_STAR
-	TOKEN_POWER             // ** (exponentiation)
+	TOKEN_POWER // ** (exponentiation)
 	TOKEN_SLASH
 	TOKEN_MOD
 	TOKEN_EQUALS
@@ -34,7 +34,7 @@ const (
 	TOKEN_RPAREN
 	TOKEN_COMMA
 	TOKEN_COLON
-	TOKEN_CONS       // :: (list cons/prepend operator)
+	TOKEN_CONS // :: (list cons/prepend operator)
 	TOKEN_SEMICOLON
 	TOKEN_NEWLINE
 	TOKEN_LT               // <
@@ -56,9 +56,9 @@ const (
 	TOKEN_ARROW            // ->
 	TOKEN_FAT_ARROW        // =>
 	TOKEN_EQUALS_FAT_ARROW // ==> (shorthand for = =>)
-	TOKEN_LEFT_ARROW // <-
-	TOKEN_SEND       // <== (ENet send operator)
-	TOKEN_PIPE       // |
+	TOKEN_LEFT_ARROW       // <-
+	TOKEN_SEND             // <== (ENet send operator)
+	TOKEN_PIPE             // |
 	TOKEN_PIPEPIPE         // ||
 	TOKEN_PIPEPIPEPIPE     // |||
 	TOKEN_HASH             // #
@@ -128,9 +128,9 @@ const (
 	TOKEN_PACKED      // packed (no padding modifier for cstruct)
 	TOKEN_ALIGNED     // aligned (alignment modifier for cstruct)
 	TOKEN_ALIAS       // alias (create keyword aliases for language packs)
-	TOKEN_HOT   // hot (mark function as hot-reloadable)
-	TOKEN_SPAWN // spawn (spawn background process)
-	TOKEN_HAS   // has (type/class definitions)
+	TOKEN_HOT         // hot (mark function as hot-reloadable)
+	TOKEN_SPAWN       // spawn (spawn background process)
+	TOKEN_HAS         // has (type/class definitions)
 )
 
 // Code generation constants
@@ -190,9 +190,9 @@ func processEscapeSequences(s string) string {
 
 // Lexer for Flap language
 type Lexer struct {
-	input        string
-	pos  int
-	line int
+	input string
+	pos   int
+	line  int
 }
 
 func NewLexer(input string) *Lexer {

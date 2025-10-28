@@ -944,9 +944,9 @@ func (d *DeferStmt) statementNode() {}
 // SpawnStmt represents a spawned process: spawn expr [ | params | block ]
 // Creates a new process via fork() and optionally waits for result
 type SpawnStmt struct {
-	Expr   Expression   // Expression to execute in child process
-	Params []string     // Optional: variable names for pipe destructuring
-	Block  *BlockExpr   // Optional: block to execute with result (implies wait)
+	Expr   Expression // Expression to execute in child process
+	Params []string   // Optional: variable names for pipe destructuring
+	Block  *BlockExpr // Optional: block to execute with result (implies wait)
 }
 
 func (s *SpawnStmt) String() string {

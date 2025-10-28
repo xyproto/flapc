@@ -6408,11 +6408,12 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	fc.runtimeStack += 16
 
 	// Step 2: Initialize barrier
-	// V6: actualThreads child threads participate in barrier (parent just waits)
-	// barrier.count = actualThreads at [rsp+0]
-	// barrier.total = actualThreads at [rsp+8]
-	fc.out.MovImmToMem(int64(actualThreads), "rsp", 0)  // count at offset 0
-	fc.out.MovImmToMem(int64(actualThreads), "rsp", 8)  // total at offset 8
+	// V6: actualThreads child threads + 1 parent = (actualThreads + 1) total participants
+	// barrier.count = actualThreads + 1 at [rsp+0]
+	// barrier.total = actualThreads + 1 at [rsp+8]
+	totalParticipants := actualThreads + 1
+	fc.out.MovImmToMem(int64(totalParticipants), "rsp", 0) // count at offset 0
+	fc.out.MovImmToMem(int64(totalParticipants), "rsp", 8) // total at offset 8
 
 	// Save barrier address in r15 for later use
 	fc.out.MovRegToReg("r15", "rsp")
@@ -6456,19 +6457,19 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 		// mmap(addr=NULL, length=1MB, prot=PROT_READ|PROT_WRITE,
 		//      flags=MAP_PRIVATE|MAP_ANONYMOUS, fd=-1, offset=0)
 		// mmap syscall number is 9
-		fc.out.MovImmToReg("rax", "9")                    // sys_mmap
-		fc.out.MovImmToReg("rdi", "0")                    // addr = NULL
-		fc.out.MovImmToReg("rsi", "1048576")              // length = 1MB
-		fc.out.MovImmToReg("rdx", "3")                    // prot = PROT_READ|PROT_WRITE
-		fc.out.MovImmToReg("r10", "34")                   // flags = MAP_PRIVATE|MAP_ANONYMOUS
-		fc.out.MovImmToReg("r8", "-1")                    // fd = -1
-		fc.out.MovImmToReg("r9", "0")                     // offset = 0
+		fc.out.MovImmToReg("rax", "9")       // sys_mmap
+		fc.out.MovImmToReg("rdi", "0")       // addr = NULL
+		fc.out.MovImmToReg("rsi", "1048576") // length = 1MB
+		fc.out.MovImmToReg("rdx", "3")       // prot = PROT_READ|PROT_WRITE
+		fc.out.MovImmToReg("r10", "34")      // flags = MAP_PRIVATE|MAP_ANONYMOUS
+		fc.out.MovImmToReg("r8", "-1")       // fd = -1
+		fc.out.MovImmToReg("r9", "0")        // offset = 0
 		fc.out.Syscall()
 
 		// rax now contains the stack base address
 		// Stack grows downward, so stack top = base + size - 16 (for alignment)
-		fc.out.AddImmToReg("rax", 1048576 - 16)  // Stack top
-		fc.out.MovRegToReg("r13", "rax")         // Save stack top in r13
+		fc.out.AddImmToReg("rax", 1048576-16) // Stack top
+		fc.out.MovRegToReg("r13", "rax")      // Save stack top in r13
 
 		// V6: Store work range + barrier address on child stack
 		// Stack layout: [start: int64][end: int64][barrier_ptr: int64] = 24 bytes
@@ -6496,12 +6497,12 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 
 		// CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM
 		// = 0x100 | 0x200 | 0x400 | 0x800 | 0x10000 | 0x40000 = 0x50F00
-		fc.out.MovImmToReg("rax", "56")                   // sys_clone
-		fc.out.MovImmToReg("rdi", "331520")               // flags = 0x50F00
-		fc.out.MovRegToReg("rsi", "r13")                  // child_stack = stack top
-		fc.out.MovImmToReg("rdx", "0")                    // ptid (not used)
-		fc.out.MovImmToReg("r10", "0")                    // ctid (not used)
-		fc.out.MovImmToReg("r8", "0")                     // newtls (not used)
+		fc.out.MovImmToReg("rax", "56")     // sys_clone
+		fc.out.MovImmToReg("rdi", "331520") // flags = 0x50F00
+		fc.out.MovRegToReg("rsi", "r13")    // child_stack = stack top
+		fc.out.MovImmToReg("rdx", "0")      // ptid (not used)
+		fc.out.MovImmToReg("r10", "0")      // ctid (not used)
+		fc.out.MovImmToReg("r8", "0")       // newtls (not used)
 		fc.out.Syscall()
 
 		// rax now contains: 0 if child, TID if parent
@@ -6509,7 +6510,7 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 
 		// Jump to child code if rax == 0
 		childJumpPos := fc.eb.text.Len()
-		fc.out.JumpConditional(JumpEqual, 0)  // Will patch offset later
+		fc.out.JumpConditional(JumpEqual, 0) // Will patch offset later
 		childJumpPositions = append(childJumpPositions, childJumpPos)
 
 		// Parent path: continue to next thread spawn (or fall through if last)
@@ -6517,7 +6518,7 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 
 	// Parent jumps over child code after spawning all threads
 	parentJumpPos := fc.eb.text.Len()
-	fc.out.JumpUnconditional(0)  // Will patch to skip child code
+	fc.out.JumpUnconditional(0) // Will patch to skip child code
 
 	// Child path: all children execute this code with their own work ranges
 	childStartPos := fc.eb.text.Len()
@@ -6541,10 +6542,10 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	fc.out.MovMemToReg("r15", "rbp", 16) // r15 = barrier address
 
 	// Allocate stack space for loop and message
-	fc.out.SubImmFromReg("rsp", 32)  // 32 bytes for loop counter + message buffer
+	fc.out.SubImmFromReg("rsp", 32) // 32 bytes for loop counter + message buffer
 
 	// Initialize loop counter to start
-	fc.out.MovRegToReg("r14", "r12")  // r14 = current iteration (start with r12=start)
+	fc.out.MovRegToReg("r14", "r12") // r14 = current iteration (start with r12=start)
 
 	// Loop start
 	loopStartPos := fc.eb.text.Len()
@@ -6554,25 +6555,33 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 
 	// If r14 >= r13, exit loop
 	loopEndJumpPos := fc.eb.text.Len()
-	fc.out.JumpConditional(JumpGreaterOrEqual, 0)  // Placeholder, will patch
+	fc.out.JumpConditional(JumpGreaterOrEqual, 0) // Placeholder, will patch
 
-	// Loop body: Write iteration number + newline
-	// For simplicity, write 'i' as ASCII digit (only works for 0-9)
-	// Write digit to stack
-	fc.out.MovRegToReg("rax", "r14")  // rax = iteration number
-	fc.out.AddImmToReg("rax", 48)     // Convert to ASCII ('0' = 48)
-	fc.out.MovRegToMem("rax", "rsp", 0)
+	// V5 Step 2: Set up iterator variable
+	// Convert r14 (int counter) to float64 and store at rbp-16
+	// This makes the iterator accessible as a proper float64 variable
+	iteratorOffset := 16
+	fc.out.Cvtsi2sd("xmm0", "r14")                     // xmm0 = (float64)r14
+	fc.out.MovXmmToMem("xmm0", "rbp", -iteratorOffset) // Store at rbp-16
 
-	// Write newline
-	fc.out.MovImmToReg("rax", "10")  // '\n'
-	fc.out.MovRegToMem("rax", "rsp", 1)
+	// V5 Step 3 & 4: Compile loop body with existing variable context
+	// The variables are already registered in fc.variables from collectSymbols phase
+	// We just need to ensure the iterator is set correctly for this context
 
-	// Call write(stdout, buffer, 2)
-	fc.out.MovImmToReg("rax", "1")   // sys_write
-	fc.out.MovImmToReg("rdi", "1")   // fd = stdout
-	fc.out.MovRegToReg("rsi", "rsp") // buf = stack
-	fc.out.MovImmToReg("rdx", "2")   // count = 2
-	fc.out.Syscall()
+	// Temporarily override the iterator offset for compilation
+	// (collectSymbols set it to a different offset, but in child thread it's at rbp-16)
+	savedIteratorOffset := fc.variables[stmt.Iterator]
+	fc.variables[stmt.Iterator] = iteratorOffset
+
+	// Compile actual loop body
+	// The generated code will use rbp-relative addressing
+	// which works correctly in the child thread's stack frame
+	for _, bodyStmt := range stmt.Body {
+		fc.compileStatement(bodyStmt)
+	}
+
+	// Restore original iterator offset (for parent code that comes after)
+	fc.variables[stmt.Iterator] = savedIteratorOffset
 
 	// Increment loop counter
 	fc.out.IncReg("r14")
@@ -6609,19 +6618,19 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 
 	// Jump if NOT last thread (need to wait)
 	waitJumpPos := fc.eb.text.Len()
-	fc.out.JumpConditional(JumpNotEqual, 0)  // Placeholder, will patch
+	fc.out.JumpConditional(JumpNotEqual, 0) // Placeholder, will patch
 
 	// Last thread path: Wake all waiting threads
 	// futex(barrier_addr, FUTEX_WAKE_PRIVATE, num_threads)
-	fc.out.MovImmToReg("rax", "202")   // sys_futex
-	fc.out.MovRegToReg("rdi", "r15")   // addr = barrier address
-	fc.out.MovImmToReg("rsi", "129")   // op = FUTEX_WAKE_PRIVATE (1 | 128)
+	fc.out.MovImmToReg("rax", "202")    // sys_futex
+	fc.out.MovRegToReg("rdi", "r15")    // addr = barrier address
+	fc.out.MovImmToReg("rsi", "129")    // op = FUTEX_WAKE_PRIVATE (1 | 128)
 	fc.out.MovMemToReg("rdx", "r15", 8) // val = barrier.total (wake all threads)
 	fc.out.Syscall()
 
 	// Jump to exit
 	wakeExitJumpPos := fc.eb.text.Len()
-	fc.out.JumpUnconditional(0)  // Placeholder, will patch
+	fc.out.JumpUnconditional(0) // Placeholder, will patch
 
 	// Not last thread: Wait on futex
 	waitStartPos := fc.eb.text.Len()
@@ -6632,9 +6641,9 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 
 	// futex(barrier_addr, FUTEX_WAIT_PRIVATE, 0)
 	// This waits until barrier.count changes from current value
-	fc.out.MovImmToReg("rax", "202")   // sys_futex
-	fc.out.MovRegToReg("rdi", "r15")   // addr = barrier address
-	fc.out.MovImmToReg("rsi", "128")   // op = FUTEX_WAIT_PRIVATE (0 | 128)
+	fc.out.MovImmToReg("rax", "202")    // sys_futex
+	fc.out.MovRegToReg("rdi", "r15")    // addr = barrier address
+	fc.out.MovImmToReg("rsi", "128")    // op = FUTEX_WAIT_PRIVATE (0 | 128)
 	fc.out.MovMemToReg("rdx", "r15", 0) // val = current barrier.count
 	fc.out.Syscall()
 
@@ -6646,8 +6655,8 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	fc.patchJumpImmediate(wakeExitJumpPos+1, wakeExitOffset)
 
 	// Exit thread with status 0
-	fc.out.MovImmToReg("rax", "60")  // sys_exit
-	fc.out.MovImmToReg("rdi", "0")   // status = 0
+	fc.out.MovImmToReg("rax", "60") // sys_exit
+	fc.out.MovImmToReg("rdi", "0")  // status = 0
 	fc.out.Syscall()
 
 	// Parent continues here
@@ -6657,13 +6666,57 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	parentOffset := int32(parentContinuePos - (parentJumpPos + UnconditionalJumpSize))
 	fc.patchJumpImmediate(parentJumpPos+1, parentOffset)
 
-	// V4: Parent waits on barrier for thread completion
-	// Parent waits on futex until all threads complete
+	// V5 Fix: Parent participates in barrier like any other thread
+	// Parent decrements and either wakes or waits
+
+	// Load -1 into eax for atomic decrement
+	fc.out.MovImmToReg("rax", "-1")
+
+	// LOCK XADD [r15], eax - Atomically add -1 to barrier.count
+	fc.out.LockXaddMemReg("r15", 0, "eax")
+
+	// After LOCK XADD, eax contains the OLD value
+	// Decrement to get NEW value
+	fc.out.DecReg("eax")
+
+	// Check if we're the last to arrive (new value == 0)
+	fc.out.TestRegReg("eax", "eax")
+
+	// Jump if NOT last (need to wait)
+	parentWaitJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpNotEqual, 0) // Placeholder
+
+	// Last to arrive: Wake all waiting threads
+	fc.out.MovImmToReg("rax", "202")    // sys_futex
+	fc.out.MovRegToReg("rdi", "r15")    // addr = barrier address
+	fc.out.MovImmToReg("rsi", "129")    // op = FUTEX_WAKE_PRIVATE
+	fc.out.MovMemToReg("rdx", "r15", 8) // val = barrier.total (wake all)
+	fc.out.Syscall()
+
+	// Jump to cleanup
+	parentWakeExitJumpPos := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0) // Placeholder
+
+	// Not last: Wait on futex
+	parentWaitStartPos := fc.eb.text.Len()
+
+	// Patch the wait jump
+	parentWaitOffset := int32(parentWaitStartPos - (parentWaitJumpPos + ConditionalJumpSize))
+	fc.patchJumpImmediate(parentWaitJumpPos+2, parentWaitOffset)
+
+	// futex(barrier_addr, FUTEX_WAIT_PRIVATE, current_value)
 	fc.out.MovImmToReg("rax", "202")    // sys_futex
 	fc.out.MovRegToReg("rdi", "r15")    // addr = barrier address
 	fc.out.MovImmToReg("rsi", "128")    // op = FUTEX_WAIT_PRIVATE
 	fc.out.MovMemToReg("rdx", "r15", 0) // val = current barrier.count
 	fc.out.Syscall()
+
+	// Parent cleanup point
+	parentCleanupPos := fc.eb.text.Len()
+
+	// Patch the wake exit jump
+	parentWakeExitOffset := int32(parentCleanupPos - (parentWakeExitJumpPos + UnconditionalJumpSize))
+	fc.patchJumpImmediate(parentWakeExitJumpPos+1, parentWakeExitOffset)
 
 	// Step 4: Cleanup - deallocate barrier
 	fc.out.AddImmToReg("rsp", 16)
@@ -15222,10 +15275,10 @@ func (fc *FlapCompiler) compileSendExpr(expr *SendExpr) {
 
 	// Step 2: Create UDP socket (syscall 41: socket)
 	// socket(AF_INET=2, SOCK_DGRAM=2, protocol=0)
-	fc.out.MovImmToReg("rax", "41")  // socket syscall
-	fc.out.MovImmToReg("rdi", "2")   // AF_INET
-	fc.out.MovImmToReg("rsi", "2")   // SOCK_DGRAM
-	fc.out.MovImmToReg("rdx", "0")   // protocol
+	fc.out.MovImmToReg("rax", "41") // socket syscall
+	fc.out.MovImmToReg("rdi", "2")  // AF_INET
+	fc.out.MovImmToReg("rsi", "2")  // SOCK_DGRAM
+	fc.out.MovImmToReg("rdx", "0")  // protocol
 	fc.out.Syscall()
 	fc.out.MovRegToMem("rax", "rsp", 8) // socket fd at rsp+8
 
@@ -15254,9 +15307,9 @@ func (fc *FlapCompiler) compileSendExpr(expr *SendExpr) {
 	// [count][key0][val0][key1][val1]...
 	// Where count = length, keys = indices, vals = character codes
 
-	fc.out.MovMemToReg("rax", "rsp", 0)   // load message map pointer
-	fc.out.MovMemToXmm("xmm0", "rax", 0)  // load count from first 8 bytes into xmm0
-	fc.out.Cvttsd2si("rcx", "xmm0")       // convert count from float64 to integer
+	fc.out.MovMemToReg("rax", "rsp", 0)  // load message map pointer
+	fc.out.MovMemToXmm("xmm0", "rax", 0) // load count from first 8 bytes into xmm0
+	fc.out.Cvttsd2si("rcx", "xmm0")      // convert count from float64 to integer
 
 	// Write test message "TEST" (4 bytes) for now
 	// TODO: Implement proper map iteration to extract actual string bytes
@@ -15266,13 +15319,13 @@ func (fc *FlapCompiler) compileSendExpr(expr *SendExpr) {
 
 	// Step 5: Send packet (syscall 44: sendto)
 	// sendto(sockfd, buf, len, flags, dest_addr, addrlen)
-	fc.out.MovMemToReg("rdi", "rsp", 8)   // socket fd
-	fc.out.LeaMemToReg("rsi", "rsp", 32)  // buffer
-	fc.out.MovRegToReg("rdx", "rcx")      // length (copy rcx to rdx)
-	fc.out.MovImmToReg("r10", "0")        // flags
-	fc.out.LeaMemToReg("r8", "rsp", 16)   // sockaddr_in
-	fc.out.MovImmToReg("r9", "16")        // addrlen
-	fc.out.MovImmToReg("rax", "44")       // sendto syscall
+	fc.out.MovMemToReg("rdi", "rsp", 8)  // socket fd
+	fc.out.LeaMemToReg("rsi", "rsp", 32) // buffer
+	fc.out.MovRegToReg("rdx", "rcx")     // length (copy rcx to rdx)
+	fc.out.MovImmToReg("r10", "0")       // flags
+	fc.out.LeaMemToReg("r8", "rsp", 16)  // sockaddr_in
+	fc.out.MovImmToReg("r9", "16")       // addrlen
+	fc.out.MovImmToReg("rax", "44")      // sendto syscall
 	fc.out.Syscall()
 
 	// Save result
@@ -15370,10 +15423,10 @@ func (fc *FlapCompiler) compileReceiveLoopStmt(stmt *ReceiveLoopStmt) {
 	// addrlen:     rbp-(baseOffset+320)
 
 	// Step 1: Create UDP socket (once, before port loop)
-	fc.out.MovImmToReg("rax", "41")  // socket syscall
-	fc.out.MovImmToReg("rdi", "2")   // AF_INET
-	fc.out.MovImmToReg("rsi", "2")   // SOCK_DGRAM
-	fc.out.MovImmToReg("rdx", "0")   // protocol
+	fc.out.MovImmToReg("rax", "41") // socket syscall
+	fc.out.MovImmToReg("rdi", "2")  // AF_INET
+	fc.out.MovImmToReg("rsi", "2")  // SOCK_DGRAM
+	fc.out.MovImmToReg("rdx", "0")  // protocol
 	fc.out.Syscall()
 	fc.out.MovRegToMem("rax", "rbp", -(baseOffset + 24)) // socket fd
 
@@ -15408,8 +15461,8 @@ func (fc *FlapCompiler) compileReceiveLoopStmt(stmt *ReceiveLoopStmt) {
 	// Try to bind socket to current port
 	fc.out.MovMemToReg("rdi", "rbp", -(baseOffset + 24)) // socket fd
 	fc.out.LeaMemToReg("rsi", "rbp", -(baseOffset + 40)) // sockaddr_in structure
-	fc.out.MovImmToReg("rdx", "16")                       // addrlen
-	fc.out.MovImmToReg("rax", "49")                       // bind syscall
+	fc.out.MovImmToReg("rdx", "16")                      // addrlen
+	fc.out.MovImmToReg("rax", "49")                      // bind syscall
 	fc.out.Syscall()
 
 	// Check bind result: rax == 0 means success
@@ -15426,10 +15479,10 @@ func (fc *FlapCompiler) compileReceiveLoopStmt(stmt *ReceiveLoopStmt) {
 	// All ports failed - close socket and exit
 	fc.eb.MarkLabel(bindFailLabel)
 	fc.out.MovMemToReg("rdi", "rbp", -(baseOffset + 24)) // socket fd
-	fc.out.MovImmToReg("rax", "3")                        // close syscall
+	fc.out.MovImmToReg("rax", "3")                       // close syscall
 	fc.out.Syscall()
-	fc.out.MovImmToReg("rdi", "1")                        // exit code 1
-	fc.out.MovImmToReg("rax", "60")                       // exit syscall
+	fc.out.MovImmToReg("rdi", "1")  // exit code 1
+	fc.out.MovImmToReg("rax", "60") // exit syscall
 	fc.out.Syscall()
 
 	// Bind succeeded, continue to receive loop
@@ -15456,11 +15509,11 @@ func (fc *FlapCompiler) compileReceiveLoopStmt(stmt *ReceiveLoopStmt) {
 	// recvfrom(sockfd, buf, len, flags, src_addr, addrlen)
 	fc.out.MovMemToReg("rdi", "rbp", -(baseOffset + 24)) // socket fd
 	fc.out.LeaMemToReg("rsi", "rbp", -(baseOffset + 56)) // buffer (starts after sockaddr)
-	fc.out.MovImmToReg("rdx", "256")                      // buffer size
-	fc.out.MovImmToReg("r10", "0")                        // flags
+	fc.out.MovImmToReg("rdx", "256")                     // buffer size
+	fc.out.MovImmToReg("r10", "0")                       // flags
 	fc.out.LeaMemToReg("r8", "rbp", -(baseOffset + 40))  // src_addr (sockaddr_in start)
 	fc.out.LeaMemToReg("r9", "rbp", -(baseOffset + 320)) // addrlen pointer
-	fc.out.MovImmToReg("rax", "45")                       // recvfrom syscall
+	fc.out.MovImmToReg("rax", "45")                      // recvfrom syscall
 	fc.out.Syscall()
 
 	// rax now contains bytes received (or -1 on error)
@@ -15498,7 +15551,7 @@ func (fc *FlapCompiler) compileReceiveLoopStmt(stmt *ReceiveLoopStmt) {
 
 	// Clean up: close socket
 	fc.out.MovMemToReg("rdi", "rbp", -(baseOffset + 24)) // socket fd
-	fc.out.MovImmToReg("rax", "3")                        // close syscall
+	fc.out.MovImmToReg("rax", "3")                       // close syscall
 	fc.out.Syscall()
 
 	// Remove variables from scope

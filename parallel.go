@@ -22,7 +22,7 @@ const (
 
 // Standard thread creation flags (same as pthread_create uses)
 const CLONE_THREAD_FLAGS = CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND |
-                           CLONE_THREAD | CLONE_SYSVSEM
+	CLONE_THREAD | CLONE_SYSVSEM
 
 // GetNumCPUCores returns the number of online CPU cores
 // Uses sysconf(_SC_NPROCESSORS_ONLN) via get_nprocs()
@@ -149,11 +149,11 @@ func GetTID() int {
 
 // Futex operations
 const (
-	FUTEX_WAIT            = 0
-	FUTEX_WAKE            = 1
-	FUTEX_PRIVATE_FLAG    = 128
-	FUTEX_WAIT_PRIVATE    = FUTEX_WAIT | FUTEX_PRIVATE_FLAG
-	FUTEX_WAKE_PRIVATE    = FUTEX_WAKE | FUTEX_PRIVATE_FLAG
+	FUTEX_WAIT         = 0
+	FUTEX_WAKE         = 1
+	FUTEX_PRIVATE_FLAG = 128
+	FUTEX_WAIT_PRIVATE = FUTEX_WAIT | FUTEX_PRIVATE_FLAG
+	FUTEX_WAKE_PRIVATE = FUTEX_WAKE | FUTEX_PRIVATE_FLAG
 )
 
 // FutexWait atomically checks if *addr == val, and if so, sleeps until woken
@@ -197,8 +197,8 @@ func AtomicDecrement(addr *int32) int32 {
 
 // Barrier represents a thread barrier for N threads
 type Barrier struct {
-	count   int32  // Number of threads that still need to arrive
-	total   int32  // Total number of threads
+	count int32 // Number of threads that still need to arrive
+	total int32 // Total number of threads
 }
 
 // NewBarrier creates a barrier for numThreads threads
