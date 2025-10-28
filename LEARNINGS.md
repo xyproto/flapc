@@ -881,3 +881,152 @@ For a loop with 10000 iterations:
 - pthread_barrier_wait implementation in glibc: nptl/pthread_barrier_wait.c
 - Go runtime scheduler: runtime/proc.go (similar barrier patterns)
 
+## Why V5 (Full Loop Body Execution) Is Complex
+
+### The Challenge: Separate Stacks Mean Separate Contexts
+
+After successfully implementing V4 (futex barriers working), I attempted V5: executing the actual loop body statements (like `printf("Loop: %v\n", i)`) instead of just printing ASCII digits.
+
+**V5 crashed immediately with SIGSEGV.**
+
+### The Root Problem
+
+Child threads created with `clone()` have their own separate stacks. This creates fundamental architectural challenges:
+
+**What Doesn't Work:**
+```go
+// V5 attempt (FAILS):
+fc.variables[stmt.Iterator] = iteratorOffset  // Register iterator
+for _, s := range stmt.Body {
+    fc.compileStatement(s)  // Compile loop body
+}
+```
+
+**Why It Fails:**
+
+1. **Stack-relative addressing breaks**: Parent's local variables are at offsets from parent's `rbp`. Child's `rbp` points to child's stack, so all offsets are wrong.
+
+2. **Function calls need full runtime**: `printf()` and other builtins expect:
+   - Proper stack frame setup
+   - Correct calling conventions
+   - Access to global data structures
+   - String constants at correct addresses
+
+3. **Variable access fails**: Loop body may reference parent's variables (e.g., `x <- x + 1`), but those are on parent's stack, inaccessible to child.
+
+### What V4 Does Right
+
+V4 works because it only does simple, self-contained operations:
+```asm
+; V4: Print ASCII digit (self-contained, no function calls)
+mov rax, r14
+add rax, 48        ; Convert to ASCII
+mov [rsp], rax
+mov rax, 1         ; sys_write
+mov rdi, 1         ; stdout
+mov rsi, rsp       ; buffer
+mov rdx, 2         ; length
+syscall            ; Direct syscall, no stack frame needed
+```
+
+No variables, no function calls, no stack frame dependencies. Just registers and syscalls.
+
+### What V5 Would Actually Require
+
+To support arbitrary loop body execution in child threads, we need:
+
+**1. Shared Memory Arena**
+```go
+// Allocate shared memory for loop-accessible variables
+arena := mmap(NULL, 4096, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS)
+
+// Store loop-local variables in shared arena, not on stack
+iterator_ptr = arena + 0
+temp_var_ptr = arena + 8
+...
+```
+
+**2. Thread-Safe Built-ins**
+- Reimplement `printf` to work from child thread context
+- Or: use message passing to parent thread
+- Or: use lock-protected shared stdio
+
+**3. Position-Independent Code**
+- All addresses must be absolute or RIP-relative
+- No rbp-relative addressing for cross-thread data
+- Function pointers must be globally accessible
+
+**4. Proper Call Frame Setup**
+```asm
+; Child needs full function prologue
+push rbp
+mov rbp, rsp
+sub rsp, <frame_size>
+; Align stack to 16 bytes for calls
+; Set up shadow space (Windows) or red zone (Linux)
+```
+
+**5. Variable Remapping**
+```go
+// Map parent's stack variables to shared memory locations
+parentVars := fc.variables  // Save
+fc.variables = make(map[string]int)
+
+// Remap to shared memory offsets
+fc.variables[stmt.Iterator] = sharedMemOffset(0)
+// Other variables would need similar remapping
+```
+
+### Complexity Estimation
+
+Implementing full V5 properly would require:
+- **Shared memory allocator**: 50-100 lines
+- **Thread-safe printf**: 100-200 lines or message queue
+- **Variable remapping logic**: 50-100 lines
+- **Call frame management**: 30-50 lines
+- **Position-independent addressing**: Changes throughout codebase
+
+**Total:** ~300-500 lines + architectural changes
+
+### Current V4 Status
+
+**What Works:**
+- Thread spawning with mmap + clone()
+- Futex barrier synchronization
+- Work distribution across threads
+- Simple self-contained operations in loops
+
+**What Doesn't Work:**
+- Function calls from child threads
+- Accessing parent's local variables
+- Complex loop bodies with string formatting
+- Cross-thread shared state
+
+### Recommended Path Forward
+
+**Option A: Stay with V4**
+- Document current limitations
+- V4 is still useful for embarrassingly parallel workloads
+- Simple operations (math, array updates) work fine
+
+**Option B: Implement V6 (Multiple Threads) First**
+- Spawn N threads instead of 1
+- Each gets work range
+- Still simple operations only
+- Validates parallel performance
+
+**Option C: Full V5 Later**
+- Requires shared memory infrastructure
+- Significant architectural changes
+- Better done after V6 proves performance benefits
+
+### Key Learning
+
+**Don't underestimate separate stack complexity.** What seems like "just compile the loop body" actually requires:
+- Shared memory management
+- Thread-safe runtime functions
+- Position-independent addressing
+- Proper ABI compliance
+
+V4's simple approach (direct syscalls, no shared state) is elegant precisely because it avoids these issues.
+

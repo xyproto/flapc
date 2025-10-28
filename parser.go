@@ -6401,14 +6401,6 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	fmt.Fprintf(os.Stderr, "\n")
 	fmt.Fprintf(os.Stderr, "      Emitting parallel execution assembly code\n")
 
-	// V1: For simplicity, limit to 2 threads for proof of concept
-	// This makes the assembly generation simpler while proving the concept works
-	if actualThreads > 2 {
-		fmt.Fprintf(os.Stderr, "      Note: V1 limited to 2 threads (requested %d)\n", actualThreads)
-		actualThreads = 2
-		chunkSize, remainder = CalculateWorkDistribution(totalItems, actualThreads)
-	}
-
 	// Step 1: Allocate space on stack for barrier
 	// Barrier layout: [count: int64][total: int64] = 16 bytes total
 	// Using int64 for simplicity (assembly has better support for 64-bit operations)
@@ -6416,11 +6408,11 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	fc.runtimeStack += 16
 
 	// Step 2: Initialize barrier
-	// V4: Only 1 child thread participates in barrier (parent just waits)
-	// barrier.count = 1 at [rsp+0]
-	// barrier.total = 1 at [rsp+8]
-	fc.out.MovImmToMem(int64(1), "rsp", 0)  // count at offset 0
-	fc.out.MovImmToMem(int64(1), "rsp", 8)  // total at offset 8
+	// V6: actualThreads child threads participate in barrier (parent just waits)
+	// barrier.count = actualThreads at [rsp+0]
+	// barrier.total = actualThreads at [rsp+8]
+	fc.out.MovImmToMem(int64(actualThreads), "rsp", 0)  // count at offset 0
+	fc.out.MovImmToMem(int64(actualThreads), "rsp", 8)  // total at offset 8
 
 	// Save barrier address in r15 for later use
 	fc.out.MovRegToReg("r15", "rsp")
@@ -6446,81 +6438,95 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	// Save original rsp to restore later
 	fc.out.MovRegToReg("r14", "rsp")
 
-	// V4: Full parallel execution with barrier synchronization
-	// Thread executes loop, then synchronizes at barrier
-	// Last thread wakes all others via futex
+	// V6: Spawn actualThreads threads, each with different work range
+	// All children execute the same code but with different work ranges
+	// Each thread synchronizes at barrier after completion
 
-	fmt.Fprintf(os.Stderr, "      Note: V4 parallel execution with barrier synchronization\n")
+	fmt.Fprintf(os.Stderr, "      Note: V6 spawning %d threads with barrier synchronization\n", actualThreads)
 
-	// Step 1: Allocate 1MB stack for child thread using mmap
-	// mmap(addr=NULL, length=1MB, prot=PROT_READ|PROT_WRITE,
-	//      flags=MAP_PRIVATE|MAP_ANONYMOUS, fd=-1, offset=0)
-	// mmap syscall number is 9
-	fc.out.MovImmToReg("rax", "9")                    // sys_mmap
-	fc.out.MovImmToReg("rdi", "0")                    // addr = NULL
-	fc.out.MovImmToReg("rsi", "1048576")              // length = 1MB
-	fc.out.MovImmToReg("rdx", "3")                    // prot = PROT_READ|PROT_WRITE
-	fc.out.MovImmToReg("r10", "34")                   // flags = MAP_PRIVATE|MAP_ANONYMOUS
-	fc.out.MovImmToReg("r8", "-1")                    // fd = -1
-	fc.out.MovImmToReg("r9", "0")                     // offset = 0
-	fc.out.Syscall()
+	// Collect child jump positions - all children jump to the same child code
+	childJumpPositions := make([]int, 0, actualThreads)
 
-	// rax now contains the stack base address
-	// Stack grows downward, so stack top = base + size - 16 (for alignment)
-	fc.out.AddImmToReg("rax", 1048576 - 16)  // Stack top
-	fc.out.MovRegToReg("r13", "rax")         // Save stack top in r13
+	// Spawn actualThreads child threads
+	for threadIdx := 0; threadIdx < actualThreads; threadIdx++ {
+		fmt.Fprintf(os.Stderr, "      Spawning thread %d with range [%d, %d)\n",
+			threadIdx, threadRanges[threadIdx][0], threadRanges[threadIdx][1])
 
-	// V4: Store work range + barrier address on child stack
-	// Stack layout: [start: int64][end: int64][barrier_ptr: int64] = 24 bytes
-	threadStart := int64(threadRanges[0][0])
-	threadEnd := int64(threadRanges[0][1])
+		// Step 1: Allocate 1MB stack for child thread using mmap
+		// mmap(addr=NULL, length=1MB, prot=PROT_READ|PROT_WRITE,
+		//      flags=MAP_PRIVATE|MAP_ANONYMOUS, fd=-1, offset=0)
+		// mmap syscall number is 9
+		fc.out.MovImmToReg("rax", "9")                    // sys_mmap
+		fc.out.MovImmToReg("rdi", "0")                    // addr = NULL
+		fc.out.MovImmToReg("rsi", "1048576")              // length = 1MB
+		fc.out.MovImmToReg("rdx", "3")                    // prot = PROT_READ|PROT_WRITE
+		fc.out.MovImmToReg("r10", "34")                   // flags = MAP_PRIVATE|MAP_ANONYMOUS
+		fc.out.MovImmToReg("r8", "-1")                    // fd = -1
+		fc.out.MovImmToReg("r9", "0")                     // offset = 0
+		fc.out.Syscall()
 
-	// Store start at [r13-24]
-	fc.out.MovImmToReg("rax", fmt.Sprintf("%d", threadStart))
-	fc.out.MovRegToMem("rax", "r13", -24)
+		// rax now contains the stack base address
+		// Stack grows downward, so stack top = base + size - 16 (for alignment)
+		fc.out.AddImmToReg("rax", 1048576 - 16)  // Stack top
+		fc.out.MovRegToReg("r13", "rax")         // Save stack top in r13
 
-	// Store end at [r13-16]
-	fc.out.MovImmToReg("rax", fmt.Sprintf("%d", threadEnd))
-	fc.out.MovRegToMem("rax", "r13", -16)
+		// V6: Store work range + barrier address on child stack
+		// Stack layout: [start: int64][end: int64][barrier_ptr: int64] = 24 bytes
+		threadStart := int64(threadRanges[threadIdx][0])
+		threadEnd := int64(threadRanges[threadIdx][1])
 
-	// Store barrier address at [r13-8]
-	// Barrier is at r15 (saved earlier from rsp after barrier allocation)
-	fc.out.MovRegToMem("r15", "r13", -8)
+		// Store start at [r13-24]
+		fc.out.MovImmToReg("rax", fmt.Sprintf("%d", threadStart))
+		fc.out.MovRegToMem("rax", "r13", -24)
 
-	// Adjust stack pointer to account for work range + barrier pointer
-	fc.out.SubImmFromReg("r13", 24)
+		// Store end at [r13-16]
+		fc.out.MovImmToReg("rax", fmt.Sprintf("%d", threadEnd))
+		fc.out.MovRegToMem("rax", "r13", -16)
 
-	// Step 2: Call clone() syscall
-	// clone(flags, child_stack, ptid, ctid, newtls)
-	// clone syscall number is 56
+		// Store barrier address at [r13-8]
+		// Barrier is at r15 (saved earlier from rsp after barrier allocation)
+		fc.out.MovRegToMem("r15", "r13", -8)
 
-	// CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM
-	// = 0x100 | 0x200 | 0x400 | 0x800 | 0x10000 | 0x40000 = 0x50F00
-	fc.out.MovImmToReg("rax", "56")                   // sys_clone
-	fc.out.MovImmToReg("rdi", "331520")               // flags = 0x50F00
-	fc.out.MovRegToReg("rsi", "r13")                  // child_stack = stack top
-	fc.out.MovImmToReg("rdx", "0")                    // ptid (not used)
-	fc.out.MovImmToReg("r10", "0")                    // ctid (not used)
-	fc.out.MovImmToReg("r8", "0")                     // newtls (not used)
-	fc.out.Syscall()
+		// Adjust stack pointer to account for work range + barrier pointer
+		fc.out.SubImmFromReg("r13", 24)
 
-	// rax now contains: 0 if child, TID if parent
-	fc.out.TestRegReg("rax", "rax")
+		// Step 2: Call clone() syscall
+		// clone(flags, child_stack, ptid, ctid, newtls)
+		// clone syscall number is 56
 
-	// Jump to child code if rax == 0
-	childJumpPos := fc.eb.text.Len()
-	fc.out.JumpConditional(JumpEqual, 0)  // Will patch offset later
+		// CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM
+		// = 0x100 | 0x200 | 0x400 | 0x800 | 0x10000 | 0x40000 = 0x50F00
+		fc.out.MovImmToReg("rax", "56")                   // sys_clone
+		fc.out.MovImmToReg("rdi", "331520")               // flags = 0x50F00
+		fc.out.MovRegToReg("rsi", "r13")                  // child_stack = stack top
+		fc.out.MovImmToReg("rdx", "0")                    // ptid (not used)
+		fc.out.MovImmToReg("r10", "0")                    // ctid (not used)
+		fc.out.MovImmToReg("r8", "0")                     // newtls (not used)
+		fc.out.Syscall()
 
-	// Parent path: continue execution
+		// rax now contains: 0 if child, TID if parent
+		fc.out.TestRegReg("rax", "rax")
+
+		// Jump to child code if rax == 0
+		childJumpPos := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpEqual, 0)  // Will patch offset later
+		childJumpPositions = append(childJumpPositions, childJumpPos)
+
+		// Parent path: continue to next thread spawn (or fall through if last)
+	}
+
+	// Parent jumps over child code after spawning all threads
 	parentJumpPos := fc.eb.text.Len()
 	fc.out.JumpUnconditional(0)  // Will patch to skip child code
 
-	// Child path: print message and exit
+	// Child path: all children execute this code with their own work ranges
 	childStartPos := fc.eb.text.Len()
 
-	// Patch the conditional jump to point here
-	childOffset := int32(childStartPos - (childJumpPos + ConditionalJumpSize))
-	fc.patchJumpImmediate(childJumpPos+2, childOffset)
+	// Patch all child jump positions to point here
+	for _, childJumpPos := range childJumpPositions {
+		childOffset := int32(childStartPos - (childJumpPos + ConditionalJumpSize))
+		fc.patchJumpImmediate(childJumpPos+2, childOffset)
+	}
 
 	// V4: Child thread reads work range + barrier and executes loop
 	// Stack layout when thread starts: [start][end][barrier_ptr] at rsp+0, rsp+8, rsp+16

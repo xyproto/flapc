@@ -751,6 +751,12 @@ func (lu *LoopUnrolling) tryUnrollLoop(stmt Statement) ([]Statement, bool) {
 		return nil, false
 	}
 
+	// Don't unroll parallel loops (@@  or N @)
+	// These need to remain as LoopStmt for parallel code generation
+	if loopStmt.NumThreads != 0 {
+		return nil, false
+	}
+
 	rangeExpr, ok := loopStmt.Iterable.(*RangeExpr)
 	if !ok {
 		return nil, false
