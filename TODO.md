@@ -5,205 +5,89 @@
 
 ---
 
-## 📊 Recent Progress (Session Update)
+## 📊 Current Status
 
 **Date**: 2025-10-28
-**Milestone**: Cross-Platform Unsafe Blocks + Parallel Loop Reducers
+**Version**: 1.6 (preparing for release)
 
-**Completed This Session:**
-- ✅ Cross-platform register aliases for unsafe blocks (a→rax/x0/a0, b→rbx/x1/a1, etc.)
-- ✅ Unified unsafe syntax: `unsafe { a <- 42 }` works on all CPUs
-- ✅ Per-CPU unsafe syntax: `unsafe { x86_64 { rax <- 42 } arm64 { x0 <- 42 } riscv64 { a0 <- 42 } }`
-- ✅ Battlestar assembly documentation integrated into README.md (355 lines)
-- ✅ Removed obsolete `|||` (triple pipe) concurrent gather syntax
-- ✅ Parallel loop reducer syntax: `sum = @@ i in 0..<10 { i } | a,b | { a + b }` (parser complete)
-- ✅ Fixed thread spawning tests (skipped tests that interfere with Go runtime)
-- ✅ Documentation: All features integrated into README.md, GRAMMAR.md created, TODO.md updated
+**Recent Completions:**
+- ✅ Cross-platform unsafe blocks with register aliases (a→rax/x0/a0, etc.)
+- ✅ Unified and per-CPU unsafe syntax
+- ✅ Documentation consolidation (README.md + GRAMMAR.md)
+- ✅ Parallel loop parser with reducer syntax
+- ✅ V4-V6 futex barrier synchronization
+- ✅ Full loop body execution in parallel loops
+- ✅ External variable access in child threads
 
-**Files Changed:**
-- New: `register_alias.go` (89 lines), `GRAMMAR.md` (1234 lines)
-- Modified: `lexer.go`, `ast.go`, `parser.go` (triple pipe removal + register alias integration)
-- Modified: `parallel_test.go` (skipped 3 tests)
-- Removed: `UNSAFE.md`, `LANGUAGE.md`, `LEARNINGS.md` (consolidated into README.md)
-- Docs: README.md expanded to 3433 lines with all documentation
-
-**Previous Session (2025-10-28):**
-- ✅ V4 futex barrier synchronization (atomic.go, dec.go, parser.go)
-- ✅ LOCK XADD atomic operations for x86-64/ARM64/RISC-V
-- ✅ DEC instruction for all architectures
-- ✅ Thread spawning with mmap + clone() syscalls
-- ✅ Parent-child synchronization verified with strace
-
-**Total Impact**: 8 files, ~600 insertions, ~150 deletions
+**Files**: `register_alias.go`, `GRAMMAR.md`, `atomic.go`, `parallel.go`, `lexer.go`, `parser.go`, `ast.go`
 
 ---
 
 ## 🔥 Critical Path to 1.6
 
-### 1. Parallel Loops - V6 Complete, V5 In Progress
+### 1. Parallel Loops - Finish Reducers
 
-**Status**: V6 complete! N threads spawn, distribute work, coordinate via futex barriers.
+**Current Status**: V5 complete! Parallel loops work with full loop bodies and external variables.
 
-**✅ Completed (V1-V6):**
-- Lexer & Parser: `@@` and `N @` syntax fully working
-- AST: NumThreads field tracks parallelism level
-- Thread spawning: clone() syscall with CLONE_VM (N threads)
-- Work distribution: GetThreadWorkRange() splits iterations across N threads
-- CPU detection: Reads /proc/cpuinfo for core count
-- Barrier synchronization: LOCK XADD + futex WAIT/WAKE (N+1 participants)
-- Optimizer: Skip loop unrolling for parallel loops
-- Verification: strace shows N clone() calls, futex coordination
-- Testing: 2 threads x 5 iters, 4 threads x 20 iters, 2 threads x 100 iters
+**Next: Step 8 - Reduction Operations**
 
-**✅ V5 - Full Loop Body Execution (COMPLETE!):**
+Implement parallel loop reducers for combining thread-local results:
 
-V5 is now complete! Parallel loops can execute arbitrary loop bodies with local variables.
-
-**Completed:**
-- [x] Step 1: Removed hardcoded loop body
-- [x] Step 2: Set up iterator variable on child stack (cvtsi2sd, store at rbp-16)
-- [x] Step 3: Fixed variable context (use existing fc.variables from collectSymbols)
-- [x] Step 4: Compile actual loop body statements
-- [x] Step 5: Test with iterator-only loop (`@@ i in 0..<3 { y := i }`)
-- [x] Step 6: Test with arithmetic (`@@ i in 0..<5 { x := i * 2; y := x + 10 }`)
-- [x] Fixed V6 barrier race condition (parent now participates as (N+1)th thread)
-
-**Key Learnings:**
-- Two-pass compilation: collectSymbols registers variables, compileStatement generates code
-- Loop-local variables are pre-registered during collectSymbols phase
-- Must preserve fc.variables from collectSymbols, only override iterator offset
-- Parent must participate in barrier to avoid lost wakeup race condition
-
-**Tests Passing:**
-- Empty loop body: `@@ i in 0..<3 { }`
-- Simple assignment: `@@ i in 0..<3 { y := i }`
-- Arithmetic: `@@ i in 0..<5 { x := i * 2; y := x + 10 }`
-- Multiple threads: `4 @ i in 0..<20 { x := i + 48 }`
-- External variables: `a := 100; @@ i in 0..<3 { x := i + a }` ✓
-
-**Current Limitations:**
-- Printf/function calls: Require proper calling conventions or position-independent code
-- Shared mutable state: No atomic operations yet for thread-safe updates (Step 8)
-
-**Next Steps (Optional):**
-- [x] Step 7: External variable access (COMPLETE! Child threads can now read parent variables via r11)
-  - collectLoopLocalVars() distinguishes parent vs loop-local variables
-  - Variable reads/writes use r11 for parent vars, rbp for local vars
-  - Tests passing: `a := 100; @@ i in 0..<3 { x := i + a }` ✓
-- [ ] Step 8: Reduction operations (return values from parallel loops)
-  - Syntax: `sum = @@ i in 0..<N { i * i } | a,b | { a + b }`
-  - Each thread computes partial results
-  - Reduction lambda combines results pairwise
-  - Use atomic operations (LOCK XADD) or mutex for combining
-  - Subtasks:
-    - [x] 8a: Extend AST (ParallelLoopStmt with optional reducer lambda) ✓
-      - Added Reducer field to both LoopStmt and LoopExpr
-      - Reducer is a *LambdaExpr with two parameters
-    - [x] 8b: Parse `| params | { body }` after loop body ✓
-      - Implemented in both parseLoopStatement and parseLoopExpr
-      - Supports @@ and N @ prefixes in expression context
-      - Parser validated with test: `sum := @@ i in 0..<10 { i } | a,b | { a + b }`
-    - [ ] 8c: Generate code for partial result storage (thread-local)
-    - [ ] 8d: Generate code for atomic combination (LOCK or mutex)
-    - [ ] 8e: Test with simple addition: `sum = @@ i in 0..<10 { i } | a,b | { a+b }`
-- [ ] Step 9: Atomic operations for shared state (LOCK XADD, CMPXCHG)
-- [ ] Step 10: Printf support (via wrapper or PIC)
-
-**📋 V7 - Dynamic Ranges (Future):**
-- [ ] Support variable range bounds (currently constants only)
-- [ ] Runtime work distribution calculation
-- [ ] Pass range bounds via thread arguments
-
-**Current Test:**
-```bash
-$ ./flapc test.flap -o test && ./test
-0  # Child thread output
-1
-2
-3
-4
-Done  # Parent continues after barrier
+```flap
+sum = @@ i in 0..<N { i * i } | a,b | { a + b }
 ```
 
-**Files**: `lexer.go`, `ast.go`, `parser.go`, `parallel.go`, `atomic.go`, `dec.go`
+**Subtasks:**
+- [x] 8a: Extend AST with Reducer field
+- [x] 8b: Parse `| params | { body }` syntax
+- [ ] 8c: Generate code for partial result storage (thread-local)
+- [ ] 8d: Generate code for atomic combination (LOCK or mutex)
+- [ ] 8e: Test with simple addition
+
+**Optional Future Steps:**
+- [ ] Step 9: Atomic operations for shared state (LOCK XADD, CMPXCHG)
+- [ ] Step 10: Printf support in parallel loops (via wrapper or PIC)
+- [ ] V7: Dynamic range bounds (currently constants only)
 
 ---
 
-### 2. Hot Reload Polish
+### 2. Hot Reload - Phase 2: True Hot Patching
 
-**✅ Phase 1: Smart Restart (COMPLETE)**
-- [x] Detect changed functions via `IncrementalState.IncrementalRecompile()`
-- [x] Check if any changed functions are hot functions
-- [x] Keep process alive if no hot functions changed
-- [x] Only restart when hot functions actually change
-- [x] Clear feedback messages
+**Current Status**: Phase 1 complete (smart restart when hot functions change)
 
-**Benefits**: Faster iteration on non-hot code, foundation for true hot reload
+**Next: Phase 2 - IPC-based code injection**
 
-**📋 Phase 2: True Hot Reload (Future)**
-Infrastructure exists, needs IPC wiring:
-
-**Step 1: Shared Memory Setup**
-- [ ] Game process creates mmap'd region for code
-- [ ] Game process exposes function pointer table
-- [ ] Compiler connects to shared memory
-
-**Step 2: Detect Changed Functions**
-- [x] Already working via `IncrementalState.IncrementalRecompile()`
-
-**Step 3: Extract Machine Code**
-- [ ] Call `ExtractFunctionCode()` for each changed hot function
-- [ ] Get function address, code bytes, length
-
-**Step 4: Write to Shared Memory via IPC**
-- [ ] Compiler signals game process (e.g., via Unix socket)
-- [ ] Game process receives new code bytes
-- [ ] Call `HotReloadManager.LoadHotFunction()`
-- [ ] Copy code to mmap'd executable page
-
-**Step 5: Atomic Pointer Update**
-- [ ] Update function pointer table atomically
-- [ ] Use memory barrier to ensure visibility
-- [ ] Test: change getValue() from 42 -> 100 while running
-
-**Current Approach**: Smart restart (Phase 1 complete)
-**Future Enhancement**: IPC-based hot patching (Phase 2)
+**Pending Steps:**
+- [ ] Shared memory setup (mmap'd code region + function pointer table)
+- [ ] Extract machine code with `ExtractFunctionCode()`
+- [ ] IPC signaling (Unix socket)
+- [ ] Atomic pointer updates with memory barriers
+- [ ] Test: change getValue() from 42 → 100 while running
 
 **Files**: `main.go`, `hotreload.go`, `incremental.go`
 
 ---
 
 ### 3. Networking Polish
-Basic UDP works. Add quality-of-life features.
 
-**Step 1: Check Return Values**
-- [ ] After sendto(): check rax for errors
-- [ ] After recvfrom(): check rax for errors
-- [ ] Jump to error handler on failure
+Basic UDP works. Add quality-of-life features:
 
-**Step 2: Error Messages**
-- [ ] Print "Send failed: port %d" on ECONNREFUSED
-- [ ] Print "Receive failed" with errno
-- [ ] Continue loop instead of crashing
+**Step 1: Error Handling**
+- [ ] Check sendto()/recvfrom() return values
+- [ ] Print error messages with errno
+- [ ] Continue on failure instead of crashing
 
-**Step 3: Bytes to String**
-- [ ] Allocate string from received buffer
-- [ ] Pass string length from rax (bytes received)
-- [ ] Store in message variable
+**Step 2: Parse Received Data**
+- [ ] Convert bytes to Flap string
+- [ ] Extract sender IP and port from sockaddr_in
+- [ ] Store in `msg` and `from` variables
 
-**Step 4: Extract Sender Info**
-- [ ] Parse sockaddr_in.sin_addr (4 bytes)
-- [ ] Parse sockaddr_in.sin_port (2 bytes)
-- [ ] Format as "IP:port" string
-- [ ] Store in sender variable
+**Step 3: Connection Tracking (Optional)**
+- [ ] Hash map for sender addresses
+- [ ] Track last_seen timestamp
+- [ ] Timeout stale connections (60s)
 
-**Step 5: Connection Tracking (Optional)**
-- [ ] Create hash map for sender addresses
-- [ ] Track: last_seen timestamp per sender
-- [ ] Timeout stale connections (60 seconds)
-- [ ] Clean up hash map entries
-
-**Test Case**:
+**Test Case:**
 ```flap
 @ msg, from in ":5000-5010" {
     printf("From %v: %v\n", from, msg)
@@ -217,30 +101,19 @@ Basic UDP works. Add quality-of-life features.
 ## 📋 Optional Nice-to-Haves
 
 ### Atomic Operations
-For thread-safe shared state in parallel loops
-
-- [ ] Add `atomic_add(ptr, value)` builtin
-- [ ] Use LOCK XADD instruction
-- [ ] Add `atomic_cas(ptr, old, new)` builtin
-- [ ] Use LOCK CMPXCHG instruction
-- [ ] Add `mutex_lock(ptr)` builtin
-- [ ] Use futex syscall
-- [ ] Add `mutex_unlock(ptr)` builtin
+For thread-safe shared state in parallel loops:
+- [ ] `atomic_add(ptr, value)` builtin (LOCK XADD)
+- [ ] `atomic_cas(ptr, old, new)` builtin (LOCK CMPXCHG)
+- [ ] `mutex_lock(ptr)` / `mutex_unlock(ptr)` (futex)
 - [ ] Test: increment shared counter from 4 threads
 
-**Benefit**: Safe parallel loops with shared state
-
 ### Steamworks FFI
-For shipping commercial games on Steam
-
+For commercial Steam releases:
 - [ ] Parse C++ header files
-- [ ] Handle name mangling (e.g., `_Z11SteamAPI_Initv`)
+- [ ] Handle name mangling
 - [ ] Support callback function pointers
-- [ ] Add achievement wrapper functions
-- [ ] Add leaderboard wrappers
-- [ ] Test: unlock achievement from Flap code
-
-**Benefit**: Ship on Steam platform
+- [ ] Achievement and leaderboard wrappers
+- [ ] Test: unlock achievement from Flap
 
 ---
 
@@ -252,23 +125,21 @@ For shipping commercial games on Steam
 - [x] Hot reload infrastructure
 - [x] Spawn background processes
 - [x] Tail call optimization
-- [~] Parallel loops (V4 complete: barriers working, V5 pending: full loop bodies)
+- [~] Parallel loops (V5 complete: full loop bodies work, reducers pending)
 
 **Quality:**
-- [x] Parallel loops: futex barrier synchronization verified with strace
-- [ ] Parallel loops: test full loop body with printf
-- [ ] Parallel loops: test with 10k items across N threads
+- [x] Parallel loops: futex barrier synchronization verified
+- [ ] Parallel loops: test reducers with 10k items
 - [ ] Hot reload: test changing physics constants live
 - [ ] Networking: test 1000 messages/second throughput
 - [ ] Clean VM: install and run on fresh Ubuntu 22.04
 - [ ] Memory: run valgrind, fix any leaks
 
 **Documentation:**
-- [x] Update README.md with parallel loop implementation status
-- [x] Update README.md with V4 progress
-- [x] Add futex barrier learnings to README.md (Implementation Notes)
-- [x] Update TODO.md with V4 completion and V5 roadmap
-- [ ] Add parallel loop code examples to testprograms/
+- [x] README.md comprehensive (3433 lines with all features)
+- [x] GRAMMAR.md extracted (1234 lines)
+- [x] TODO.md updated
+- [ ] Add parallel loop examples to testprograms/
 - [ ] Write networking tutorial (client + server)
 - [ ] Document hot reload workflow
 
@@ -288,4 +159,4 @@ Deferred until after 1.6 ships:
 
 ---
 
-The core is already solid. Just need parallel loops + polish.
+The core is solid. Focus: parallel loop reducers, then release!
