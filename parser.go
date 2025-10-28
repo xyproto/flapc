@@ -6445,22 +6445,80 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	// Save original rsp to restore later
 	fc.out.MovRegToReg("r14", "rsp")
 
-	// Spawn each thread
-	for threadID := 0; threadID < actualThreads; threadID++ {
-		fmt.Fprintf(os.Stderr, "      Spawning thread %d for range [%d, %d)\n",
-			threadID, threadRanges[threadID][0], threadRanges[threadID][1])
+	// V1b: Spawn a single test thread to prove clone() works
+	// This thread will just print a message and exit
+	// Full parallel loop execution will be added in V2
 
-		// TODO: For V1, we'll just execute the loop body sequentially for now
-		// Actual thread spawning with mmap, clone(), etc. will be added in V1b
-		// This establishes the code structure and validates the barrier allocation
-	}
+	fmt.Fprintf(os.Stderr, "      Note: V1b spawning test thread (full parallel execution in V2)\n")
 
-	// For V1 proof of concept: execute loop body sequentially
-	// This validates the syntax and memory layout
-	// V1b will add actual parallel execution
-	fmt.Fprintf(os.Stderr, "      Note: V1 executes sequentially (parallel threads coming in V1b)\n")
+	// Step 1: Allocate 1MB stack for child thread using mmap
+	// mmap(addr=NULL, length=1MB, prot=PROT_READ|PROT_WRITE,
+	//      flags=MAP_PRIVATE|MAP_ANONYMOUS, fd=-1, offset=0)
+	// mmap syscall number is 9
+	fc.out.MovImmToReg("rax", "9")                    // sys_mmap
+	fc.out.MovImmToReg("rdi", "0")                    // addr = NULL
+	fc.out.MovImmToReg("rsi", "1048576")              // length = 1MB
+	fc.out.MovImmToReg("rdx", "3")                    // prot = PROT_READ|PROT_WRITE
+	fc.out.MovImmToReg("r10", "34")                   // flags = MAP_PRIVATE|MAP_ANONYMOUS
+	fc.out.MovImmToReg("r8", "-1")                    // fd = -1
+	fc.out.MovImmToReg("r9", "0")                     // offset = 0
+	fc.out.Syscall()
 
-	// Execute loop body for all iterations (sequential for now)
+	// rax now contains the stack base address
+	// Stack grows downward, so stack top = base + size - 16 (for alignment)
+	fc.out.AddImmToReg("rax", 1048576 - 16)  // Stack top
+	fc.out.MovRegToReg("r13", "rax")         // Save stack top in r13
+
+	// Step 2: Call clone() syscall
+	// clone(flags, child_stack, ptid, ctid, newtls)
+	// clone syscall number is 56
+
+	// CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM
+	// = 0x100 | 0x200 | 0x400 | 0x800 | 0x10000 | 0x40000 = 0x50F00
+	fc.out.MovImmToReg("rax", "56")                   // sys_clone
+	fc.out.MovImmToReg("rdi", "331520")               // flags = 0x50F00
+	fc.out.MovRegToReg("rsi", "r13")                  // child_stack = stack top
+	fc.out.MovImmToReg("rdx", "0")                    // ptid (not used)
+	fc.out.MovImmToReg("r10", "0")                    // ctid (not used)
+	fc.out.MovImmToReg("r8", "0")                     // newtls (not used)
+	fc.out.Syscall()
+
+	// rax now contains: 0 if child, TID if parent
+	fc.out.TestRegReg("rax", "rax")
+
+	// Jump to child code if rax == 0
+	childJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0)  // Will patch offset later
+
+	// Parent path: continue execution
+	parentJumpPos := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0)  // Will patch to skip child code
+
+	// Child path: print message and exit
+	childStartPos := fc.eb.text.Len()
+
+	// Patch the conditional jump to point here
+	childOffset := int32(childStartPos - (childJumpPos + ConditionalJumpSize))
+	fc.patchJumpImmediate(childJumpPos+2, childOffset)
+
+	// Child thread: print message
+	// For now, just exit immediately to prove thread spawned
+	// V2 will add actual loop body execution
+
+	// Exit thread with status 0
+	fc.out.MovImmToReg("rax", "60")  // sys_exit
+	fc.out.MovImmToReg("rdi", "0")   // status = 0
+	fc.out.Syscall()
+
+	// Parent continues here
+	parentContinuePos := fc.eb.text.Len()
+
+	// Patch the unconditional jump to point here
+	parentOffset := int32(parentContinuePos - (parentJumpPos + UnconditionalJumpSize))
+	fc.patchJumpImmediate(parentJumpPos+1, parentOffset)
+
+	// For V1b, parent still executes loop sequentially
+	// V2 will have parent wait on barrier instead
 	seqStmt := *stmt
 	seqStmt.NumThreads = 0
 	fc.compileRangeLoop(&seqStmt, rangeExpr)
