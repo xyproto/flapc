@@ -12,26 +12,39 @@ Flap's `unsafe` blocks provide direct register access across x86_64, ARM64, and 
 
 ## Overview
 
-Unsafe blocks execute architecture-specific machine code while integrating seamlessly with Flap's high-level features:
+Unsafe blocks execute architecture-specific machine code while integrating seamlessly with Flap's high-level features.
 
+**Unified approach** (recommended - uses register aliases):
 ```flap
 result := unsafe {
-    a <- 42      // Load immediate
-    b <- 100
+    a <- 42      // Load immediate (works on all CPUs)
+    b <- 100     // Register aliases: a, b, c
     c <- a + b   // Register arithmetic
     c            // Return value (last expression)
-} {
-    // ARM64 equivalent
-    x0 <- 42
-    x1 <- 100
-    x2 <- x0 + x1
-    x2
-} {
-    // RISC-V equivalent
-    a0 <- 42
-    a1 <- 100
-    a2 <- a0 + a1
-    a2
+}
+```
+
+**Per-CPU approach** (when platform-specific code is needed):
+```flap
+result := unsafe {
+    x86_64 {
+        rax <- 42
+        rbx <- 100
+        rcx <- rax + rbx
+        rcx
+    }
+    arm64 {
+        x0 <- 42
+        x1 <- 100
+        x2 <- x0 + x1
+        x2
+    }
+    riscv64 {
+        a0 <- 42
+        a1 <- 100
+        a2 <- a0 + a1
+        a2
+    }
 }
 ```
 
@@ -63,21 +76,25 @@ value := unsafe {
 
 ### Per-Architecture Blocks
 
-Specify different implementations for each CPU:
+Specify different implementations for each CPU with labeled blocks:
 
 ```flap
 result := unsafe {
-    rax <- 100       // x86_64 block
-    rbx <- rax
-    rbx
-} {
-    x0 <- 100        // ARM64 block
-    x1 <- x0
-    x1
-} {
-    a0 <- 100        // RISC-V block
-    a1 <- a0
-    a1
+    x86_64 {
+        rax <- 100
+        rbx <- rax
+        rbx
+    }
+    arm64 {
+        x0 <- 100
+        x1 <- x0
+        x1
+    }
+    riscv64 {
+        a0 <- 100
+        a1 <- a0
+        a1
+    }
 }
 ```
 
@@ -250,31 +267,33 @@ printf("First 8 bytes: 0x%x\n", first)
 free(buffer)
 ```
 
-### Example 4: System Call (Linux x86_64)
+### Example 4: System Call (Per-CPU)
 ```flap
-// Write "Hello\n" to stdout
+// Write "Hello\n" to stdout - platform-specific syscalls
 msg := "Hello\n"
 
 unsafe {
-    a <- 1              // sys_write
-    b <- 1              // stdout
-    c <- msg as cstr    // buffer
-    d <- 6              // length
-    syscall
-} {
-    // ARM64 equivalent
-    x8 <- 64            // sys_write on ARM64
-    x0 <- 1
-    x1 <- msg as cstr
-    x2 <- 6
-    syscall
-} {
-    // RISC-V equivalent
-    a7 <- 64            // sys_write on RISC-V
-    a0 <- 1
-    a1 <- msg as cstr
-    a2 <- 6
-    syscall
+    x86_64 {
+        rax <- 1             // sys_write
+        rdi <- 1             // stdout
+        rsi <- msg as cstr   // buffer
+        rdx <- 6             // length
+        syscall
+    }
+    arm64 {
+        x8 <- 64             // sys_write on ARM64
+        x0 <- 1              // stdout
+        x1 <- msg as cstr    // buffer
+        x2 <- 6              // length
+        syscall
+    }
+    riscv64 {
+        a7 <- 64             // sys_write on RISC-V
+        a0 <- 1              // stdout
+        a1 <- msg as cstr    // buffer
+        a2 <- 6              // length
+        syscall
+    }
 }
 ```
 
