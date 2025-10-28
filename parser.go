@@ -3083,6 +3083,81 @@ func (p *Parser) parseLoopStatement() Statement {
 		}
 		p.nextToken() // consume the '}'
 
+		// Check for optional reducer: | a,b | { a + b }
+		var reducer *LambdaExpr
+		if p.peek.Type == TOKEN_PIPE {
+			// Only allow reducers for parallel loops
+			if numThreads == 0 {
+				p.error("reducer syntax '| a,b | { expr }' only allowed for parallel loops (@@ or N @)")
+			}
+
+			p.nextToken() // advance to '|'
+			p.nextToken() // consume '|', advance to first parameter
+
+			// Parse parameter list
+			var params []string
+			if p.current.Type != TOKEN_IDENT {
+				p.error("expected parameter name after '|'")
+			}
+			params = append(params, p.current.Value)
+			p.nextToken()
+
+			// Expect comma
+			if p.current.Type != TOKEN_COMMA {
+				p.error("reducer requires exactly two parameters (e.g., | a,b | ...)")
+			}
+			p.nextToken() // skip comma
+
+			// Skip newlines after comma
+			for p.current.Type == TOKEN_NEWLINE {
+				p.nextToken()
+			}
+
+			// Parse second parameter
+			if p.current.Type != TOKEN_IDENT {
+				p.error("expected second parameter name after comma")
+			}
+			params = append(params, p.current.Value)
+			p.nextToken()
+
+			// Expect second '|'
+			if p.current.Type != TOKEN_PIPE {
+				p.error("expected '|' after reducer parameters")
+			}
+			p.nextToken() // skip second '|'
+
+			// Skip newlines before '{'
+			for p.current.Type == TOKEN_NEWLINE {
+				p.nextToken()
+			}
+
+			// Expect '{'
+			if p.current.Type != TOKEN_LBRACE {
+				p.error("expected '{' to start reducer body")
+			}
+			p.nextToken() // skip '{'
+
+			// Skip newlines after '{'
+			for p.current.Type == TOKEN_NEWLINE {
+				p.nextToken()
+			}
+
+			// Parse reducer body (single expression)
+			reducerBody := p.parseExpression()
+
+			// Expect '}'
+			if p.peek.Type != TOKEN_RBRACE {
+				p.error("expected '}' at end of reducer body")
+			}
+			p.nextToken() // advance to '}'
+
+			// Create lambda expression for reducer
+			reducer = &LambdaExpr{
+				Params: params,
+				Body:   reducerBody,
+			}
+		}
+
 		return &LoopStmt{
 			Iterator:      iterator,
 			Iterable:      iterable,
@@ -3090,6 +3165,7 @@ func (p *Parser) parseLoopStatement() Statement {
 			MaxIterations: maxIterations,
 			NeedsMaxCheck: needsRuntimeCheck,
 			NumThreads:    numThreads,
+			Reducer:       reducer,
 		}
 	}
 
@@ -4175,6 +4251,10 @@ func (p *Parser) parsePrimary() Expression {
 		p.nextToken() // move to '}'
 		return &MapExpr{Keys: keys, Values: values}
 
+	case TOKEN_AT_AT:
+		// Parallel loop expression: @@ i in ... { ... } | a,b | { ... }
+		return p.parseLoopExpr()
+
 	case TOKEN_AT:
 		// Could be loop expression (@ i in...) or jump expression (@N)
 		// Look ahead to decide
@@ -4243,19 +4323,55 @@ func (p *Parser) isLoopExpr() bool {
 	return p.current.Type == TOKEN_AT
 }
 
-// parseLoopExpr parses a loop expression: @ i in iterable { body }
+// parseLoopExpr parses a loop expression: @ i in iterable { body } or @@ i in iterable { body } | a,b | { a+b }
 func (p *Parser) parseLoopExpr() Expression {
-	// Must be @
-	if p.current.Type != TOKEN_AT {
-		p.error("expected @ to start loop expression")
-	}
-
+	// Parse parallel loop prefix: @@ or N @ or just @
+	numThreads := 0 // 0 = sequential, -1 = all cores, N = specific count
 	label := p.loopDepth + 1
-	p.nextToken() // skip '@'
+
+	// Handle @@ token (parallel loop with all cores)
+	if p.current.Type == TOKEN_AT_AT {
+		numThreads = -1
+		p.nextToken() // skip '@@'
+
+		// Skip newlines after '@@'
+		for p.current.Type == TOKEN_NEWLINE {
+			p.nextToken()
+		}
+	} else if p.current.Type == TOKEN_NUMBER {
+		// Handle N @ syntax (parallel loop with N threads)
+		threadCount, err := strconv.Atoi(p.current.Value)
+		if err != nil || threadCount < 1 {
+			p.error("thread count must be a positive integer")
+		}
+		numThreads = threadCount
+		p.nextToken() // skip number
+
+		// Expect @ token after the number
+		if p.current.Type != TOKEN_AT {
+			p.error("expected @ after thread count")
+		}
+		p.nextToken() // skip '@'
+
+		// Skip newlines after '@'
+		for p.current.Type == TOKEN_NEWLINE {
+			p.nextToken()
+		}
+	} else if p.current.Type == TOKEN_AT {
+		// Regular loop: @
+		p.nextToken() // skip '@'
+
+		// Skip newlines after '@'
+		for p.current.Type == TOKEN_NEWLINE {
+			p.nextToken()
+		}
+	} else {
+		p.error("expected @ or @@ to start loop expression")
+	}
 
 	// Expect identifier for loop variable
 	if p.current.Type != TOKEN_IDENT {
-		p.error("expected identifier after @")
+		p.error("expected identifier after loop prefix")
 	}
 	iterator := p.current.Value
 	p.nextToken() // skip iterator
@@ -4354,12 +4470,89 @@ func (p *Parser) parseLoopExpr() Expression {
 	}
 	p.nextToken() // consume the '}'
 
+	// Check for optional reducer: | a,b | { a + b }
+	var reducer *LambdaExpr
+	if p.peek.Type == TOKEN_PIPE {
+		// Only allow reducers for parallel loops
+		if numThreads == 0 {
+			p.error("reducer syntax '| a,b | { expr }' only allowed for parallel loops (@@ or N @)")
+		}
+
+		p.nextToken() // advance to '|'
+		p.nextToken() // consume '|', advance to first parameter
+
+		// Parse parameter list
+		var params []string
+		if p.current.Type != TOKEN_IDENT {
+			p.error("expected parameter name after '|'")
+		}
+		params = append(params, p.current.Value)
+		p.nextToken()
+
+		// Expect comma
+		if p.current.Type != TOKEN_COMMA {
+			p.error("reducer requires exactly two parameters (e.g., | a,b | ...)")
+		}
+		p.nextToken() // skip comma
+
+		// Skip newlines after comma
+		for p.current.Type == TOKEN_NEWLINE {
+			p.nextToken()
+		}
+
+		// Parse second parameter
+		if p.current.Type != TOKEN_IDENT {
+			p.error("expected second parameter name after comma")
+		}
+		params = append(params, p.current.Value)
+		p.nextToken()
+
+		// Expect second '|'
+		if p.current.Type != TOKEN_PIPE {
+			p.error("expected '|' after reducer parameters")
+		}
+		p.nextToken() // skip second '|'
+
+		// Skip newlines before '{'
+		for p.current.Type == TOKEN_NEWLINE {
+			p.nextToken()
+		}
+
+		// Expect '{'
+		if p.current.Type != TOKEN_LBRACE {
+			p.error("expected '{' to start reducer body")
+		}
+		p.nextToken() // skip '{'
+
+		// Skip newlines after '{'
+		for p.current.Type == TOKEN_NEWLINE {
+			p.nextToken()
+		}
+
+		// Parse reducer body (single expression)
+		reducerBody := p.parseExpression()
+
+		// Expect '}'
+		if p.peek.Type != TOKEN_RBRACE {
+			p.error("expected '}' at end of reducer body")
+		}
+		p.nextToken() // advance to '}'
+
+		// Create lambda expression for reducer
+		reducer = &LambdaExpr{
+			Params: params,
+			Body:   reducerBody,
+		}
+	}
+
 	return &LoopExpr{
 		Iterator:      iterator,
 		Iterable:      iterable,
 		Body:          body,
 		MaxIterations: maxIterations,
 		NeedsMaxCheck: needsRuntimeCheck,
+		NumThreads:    numThreads,
+		Reducer:       reducer,
 	}
 }
 

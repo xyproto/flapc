@@ -198,13 +198,14 @@ func (e *ExpressionStmt) statementNode() {}
 
 type LoopStmt struct {
 	// No explicit label - determined by nesting depth when created with @
-	Iterator      string     // Variable name (e.g., "i")
-	Iterable      Expression // Expression to iterate over (e.g., range(10))
+	Iterator      string      // Variable name (e.g., "i")
+	Iterable      Expression  // Expression to iterate over (e.g., range(10))
 	Body          []Statement
-	MaxIterations int64 // Maximum allowed iterations (math.MaxInt64 for infinite)
-	NeedsMaxCheck bool  // Whether to emit runtime max iteration checking
-	BaseOffset    int   // Stack offset before loop body (set during collectSymbols)
-	NumThreads    int   // Number of threads for parallel execution (0 = sequential, -1 = all cores, N = specific count)
+	MaxIterations int64       // Maximum allowed iterations (math.MaxInt64 for infinite)
+	NeedsMaxCheck bool        // Whether to emit runtime max iteration checking
+	BaseOffset    int         // Stack offset before loop body (set during collectSymbols)
+	NumThreads    int         // Number of threads for parallel execution (0 = sequential, -1 = all cores, N = specific count)
+	Reducer       *LambdaExpr // Optional reduction lambda for parallel loops: | a,b | { a + b }
 }
 
 type ReceiveLoopStmt struct {
@@ -228,6 +229,8 @@ type LoopExpr struct {
 	Body          []Statement // Body statements
 	MaxIterations int64       // Maximum allowed iterations (math.MaxInt64 for infinite)
 	NeedsMaxCheck bool        // Whether to emit runtime max iteration checking
+	NumThreads    int         // Number of threads for parallel execution (0 = sequential, -1 = all cores, N = specific count)
+	Reducer       *LambdaExpr // Optional reduction lambda for parallel loops: | a,b | { a + b }
 }
 
 func (l *LoopExpr) String() string {

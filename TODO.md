@@ -80,8 +80,19 @@ V5 is now complete! Parallel loops can execute arbitrary loop bodies with local 
   - collectLoopLocalVars() distinguishes parent vs loop-local variables
   - Variable reads/writes use r11 for parent vars, rbp for local vars
   - Tests passing: `a := 100; @@ i in 0..<3 { x := i + a }` ✓
-- [ ] Step 8: Atomic operations for shared state (LOCK XADD, CMPXCHG)
-- [ ] Step 9: Printf support (via wrapper or PIC)
+- [ ] Step 8: Reduction operations (return values from parallel loops)
+  - Syntax: `sum = @@ i in 0..<N { i * i } | a,b | { a + b }`
+  - Each thread computes partial results
+  - Reduction lambda combines results pairwise
+  - Use atomic operations (LOCK XADD) or mutex for combining
+  - Subtasks:
+    - [ ] 8a: Extend AST (ParallelLoopStmt with optional reducer lambda)
+    - [ ] 8b: Parse `| params | { body }` after loop body
+    - [ ] 8c: Generate code for partial result storage (thread-local)
+    - [ ] 8d: Generate code for atomic combination (LOCK or mutex)
+    - [ ] 8e: Test with simple addition: `sum = @@ i in 0..<10 { i } | a,b | { a+b }`
+- [ ] Step 9: Atomic operations for shared state (LOCK XADD, CMPXCHG)
+- [ ] Step 10: Printf support (via wrapper or PIC)
 
 **📋 V7 - Dynamic Ranges (Future):**
 - [ ] Support variable range bounds (currently constants only)
