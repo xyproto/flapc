@@ -6445,11 +6445,11 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	// Save original rsp to restore later
 	fc.out.MovRegToReg("r14", "rsp")
 
-	// V2: Spawn thread that prints message to prove code execution works
-	// This validates the entire thread entry path including function calls
-	// V3 will distribute loop iterations across threads
+	// V3: Spawn thread that executes loop for its work range
+	// Thread reads start/end from stack and prints each iteration
+	// V4 will add barrier synchronization and actual loop body execution
 
-	fmt.Fprintf(os.Stderr, "      Note: V2 spawning thread with message printing\n")
+	fmt.Fprintf(os.Stderr, "      Note: V3 thread executes loop for work range\n")
 
 	// Step 1: Allocate 1MB stack for child thread using mmap
 	// mmap(addr=NULL, length=1MB, prot=PROT_READ|PROT_WRITE,
@@ -6468,6 +6468,23 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	// Stack grows downward, so stack top = base + size - 16 (for alignment)
 	fc.out.AddImmToReg("rax", 1048576 - 16)  // Stack top
 	fc.out.MovRegToReg("r13", "rax")         // Save stack top in r13
+
+	// V3: Store work range on child stack for this thread
+	// For now, we're only spawning 1 thread, so use threadRanges[0]
+	// Stack layout: [start: int64][end: int64] = 16 bytes
+	threadStart := int64(threadRanges[0][0])
+	threadEnd := int64(threadRanges[0][1])
+
+	// Store start at [r13-16]
+	fc.out.MovImmToReg("rax", fmt.Sprintf("%d", threadStart))
+	fc.out.MovRegToMem("rax", "r13", -16)
+
+	// Store end at [r13-8]
+	fc.out.MovImmToReg("rax", fmt.Sprintf("%d", threadEnd))
+	fc.out.MovRegToMem("rax", "r13", -8)
+
+	// Adjust stack pointer to account for work range
+	fc.out.SubImmFromReg("r13", 16)
 
 	// Step 2: Call clone() syscall
 	// clone(flags, child_stack, ptid, ctid, newtls)
@@ -6501,32 +6518,65 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	childOffset := int32(childStartPos - (childJumpPos + ConditionalJumpSize))
 	fc.patchJumpImmediate(childJumpPos+2, childOffset)
 
-	// V2: Child thread writes a message using write() syscall
-	// This proves thread entry point works and can execute code
-	// Using write() instead of printf to avoid rodata complexity
+	// V3: Child thread reads work range and executes loop
+	// Stack layout when thread starts: [start][end] at rsp+0 and rsp+8
 
 	// Set up new stack frame
 	fc.out.MovRegToReg("rbp", "rsp")
 
-	// Allocate space for message on stack
-	// Message: "T\n" (2 bytes) - simple marker that thread ran
-	fc.out.SubImmFromReg("rsp", 16)  // Allocate 16 bytes (aligned)
+	// Load work range from stack
+	// start is at [rbp+0], end is at [rbp+8]
+	fc.out.MovMemToReg("r12", "rbp", 0)  // r12 = start
+	fc.out.MovMemToReg("r13", "rbp", 8)  // r13 = end
 
-	// Write 'T' to stack
-	fc.out.MovImmToReg("rax", "84")  // ASCII 'T' = 84
+	// Allocate stack space for loop and message
+	fc.out.SubImmFromReg("rsp", 32)  // 32 bytes for loop counter + message buffer
+
+	// Initialize loop counter to start
+	fc.out.MovRegToReg("r14", "r12")  // r14 = current iteration (start with r12=start)
+
+	// Loop start
+	loopStartPos := fc.eb.text.Len()
+
+	// Compare r14 (current) with r13 (end)
+	fc.out.CmpRegToReg("r14", "r13")
+
+	// If r14 >= r13, exit loop
+	loopEndJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreaterOrEqual, 0)  // Placeholder, will patch
+
+	// Loop body: Write iteration number + newline
+	// For simplicity, write 'i' as ASCII digit (only works for 0-9)
+	// Write digit to stack
+	fc.out.MovRegToReg("rax", "r14")  // rax = iteration number
+	fc.out.AddImmToReg("rax", 48)     // Convert to ASCII ('0' = 48)
 	fc.out.MovRegToMem("rax", "rsp", 0)
 
-	// Write '\n' to stack
-	fc.out.MovImmToReg("rax", "10")  // ASCII '\n' = 10
+	// Write newline
+	fc.out.MovImmToReg("rax", "10")  // '\n'
 	fc.out.MovRegToMem("rax", "rsp", 1)
 
-	// Call write(stdout, message, length)
-	// write syscall number is 1
+	// Call write(stdout, buffer, 2)
 	fc.out.MovImmToReg("rax", "1")   // sys_write
 	fc.out.MovImmToReg("rdi", "1")   // fd = stdout
-	fc.out.MovRegToReg("rsi", "rsp") // buf = stack pointer
-	fc.out.MovImmToReg("rdx", "2")   // count = 2 bytes
+	fc.out.MovRegToReg("rsi", "rsp") // buf = stack
+	fc.out.MovImmToReg("rdx", "2")   // count = 2
 	fc.out.Syscall()
+
+	// Increment loop counter
+	fc.out.IncReg("r14")
+
+	// Jump back to loop start
+	loopBackJumpPos := fc.eb.text.Len()
+	loopBackOffset := int32(loopStartPos - (loopBackJumpPos + UnconditionalJumpSize))
+	fc.out.JumpUnconditional(loopBackOffset)
+
+	// Loop end
+	loopEndPos := fc.eb.text.Len()
+
+	// Patch the loop exit jump
+	loopExitOffset := int32(loopEndPos - (loopEndJumpPos + ConditionalJumpSize))
+	fc.patchJumpImmediate(loopEndJumpPos+2, loopExitOffset)
 
 	// Exit thread with status 0
 	fc.out.MovImmToReg("rax", "60")  // sys_exit
@@ -6540,8 +6590,8 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	parentOffset := int32(parentContinuePos - (parentJumpPos + UnconditionalJumpSize))
 	fc.patchJumpImmediate(parentJumpPos+1, parentOffset)
 
-	// For V2, parent still executes loop sequentially
-	// V3 will distribute work and have parent wait on barrier
+	// For V3, parent still executes loop sequentially
+	// V4 will have parent wait on barrier for thread completion
 	seqStmt := *stmt
 	seqStmt.NumThreads = 0
 	fc.compileRangeLoop(&seqStmt, rangeExpr)
@@ -6550,12 +6600,11 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	fc.out.AddImmToReg("rsp", 16)
 	fc.runtimeStack -= 16
 
-	// V3 TODO: Full parallel execution
-	// 1. Pass work range to each thread via stack
-	// 2. Thread executes loop body for its assigned range
-	// 3. Thread decrements barrier counter (LOCK XADD)
-	// 4. Last thread wakes others with futex
-	// 5. Parent waits on futex barrier instead of executing sequentially
+	// V4 TODO: Barrier synchronization
+	// 1. Thread decrements barrier counter after loop (LOCK XADD)
+	// 2. Last thread wakes others with futex
+	// 3. Parent waits on futex barrier instead of executing sequentially
+	// 4. Execute actual loop body (compileStatements) instead of just printing digits
 }
 
 func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
