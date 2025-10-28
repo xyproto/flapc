@@ -7,74 +7,52 @@
 
 ## 🔥 Critical Path to 1.6
 
-### 1. Parallel Loops (CPU Parallelism)
-Essential for game performance: physics, AI, rendering
+### 1. Parallel Loops - V4 Complete, V5 In Progress
 
-**Phase 1: Lexer & Parser** ✅ COMPLETE
-- [x] Add `@@` token to lexer (all cores syntax)
-- [x] Parse `N @` prefix (e.g., `4 @ item in data { }`)
-- [x] Handle `@@` as special case (detect cores at compile time)
-- [x] Parse full loop body for parallel loops
-- [x] Error handling for receive loops (not parallelizable)
+**Status**: Futex barrier synchronization working! Thread spawning, work distribution, and synchronization complete.
 
-**Phase 2: AST Changes** ✅ COMPLETE
-- [x] Add `NumThreads` field to `LoopStmt` in ast.go
-- [x] Update `String()` method for parallel loops
-- [x] Update `substituteParamsStmt()` to preserve NumThreads
+**✅ Completed (V1-V4):**
+- Lexer & Parser: `@@` and `N @` syntax fully working
+- AST: NumThreads field tracks parallelism level
+- Thread spawning: clone() syscall with CLONE_VM
+- Work distribution: GetThreadWorkRange() splits iterations
+- CPU detection: Reads /proc/cpuinfo for core count
+- Barrier synchronization: LOCK XADD + futex WAIT/WAKE
+- New files: atomic.go (LOCK XADD), dec.go (DEC instruction)
+- Verification: strace shows futex coordination working
 
-**Phase 3: Basic Thread Creation** ✅ COMPLETE
-- [x] Create new `parallel.go` file (265 lines)
-- [x] Add `clone()` syscall wrapper
-- [x] Implement thread spawn with CLONE_VM flag
-- [x] Test: spawn single thread, verified TID 2314102
+**⏳ V5 - Full Loop Body Execution (Next):**
+- [ ] Set up proper iterator variable in child thread stack frame
+- [ ] Register iterator in fc.variables for child thread
+- [ ] Convert iteration counter (int) to loop variable (float64)
+- [ ] Execute actual loop body statements (compileStatements)
+- [ ] Handle variable scoping in child threads
+- [ ] Test: `@@ i in 0..<10 { printf("Loop: %v\n", i) }`
 
-**Phase 4: Thread ID & Verification** ✅ COMPLETE
-- [x] Add syscall to get thread ID (GetTID)
-- [x] Test: spawn 4 threads, each gets unique TID
-- [x] Verify all threads run independently
+**📋 V6 - Multiple Threads (Future):**
+- [ ] Spawn N child threads (currently spawns 1)
+- [ ] Pass different work ranges to each thread
+- [ ] Update barrier to count=N (currently count=1)
+- [ ] All threads coordinate via single barrier
+- [ ] Test: 4 threads with 100 iterations (25 each)
 
-**Phase 5: Work Distribution Math** ✅ COMPLETE
-- [x] Calculate: `chunk_size = total_items / num_threads`
-- [x] Calculate: `start_idx = thread_id * chunk_size`
-- [x] Calculate: `end_idx = start_idx + chunk_size`
-- [x] Handle remainder items (give to last thread)
-- [x] Test coverage: 100÷2=50, 100÷4=25, 101÷4 (with remainder)
-- [x] Add CPU core detection (reads /proc/cpuinfo)
+**📋 V7 - Dynamic Ranges (Future):**
+- [ ] Support variable range bounds (currently constants only)
+- [ ] Runtime work distribution calculation
+- [ ] Pass range bounds via thread arguments
 
-**Phase 6: Pass Data to Threads** ⏳ TODO
-- [ ] Define thread argument struct in assembly
-- [ ] Pack: loop_body_addr, start_idx, end_idx, data_ptr
-- [ ] Pass struct pointer to clone()
-- [ ] Thread unpacks and executes loop body
-
-**Phase 7: Wait for Completion** ✅ COMPLETE
-- [x] Add futex syscall wrapper (FutexWait, FutexWake)
-- [x] Implement barrier: threads wait for each other
-- [x] Each thread decrements counter atomically (sync/atomic)
-- [x] Last thread wakes all waiting threads
-- [x] Test: 4 goroutines synchronized at barrier
-
-**Phase 8: Code Generation** ⏳ IN PROGRESS
-- [x] Detect parallel loop in `compileLoopStatement()`
-- [x] Validate constant range bounds
-- [x] Calculate work distribution at compile time
-- [x] Detailed diagnostic output
-- [ ] Allocate shared memory for barrier and thread args
-- [ ] Emit clone() calls in assembly
-- [ ] Emit loop body execution per thread
-- [ ] Emit futex wait barrier in assembly
-- [ ] Emit cleanup code
-
-**Testing**:
-```flap
-// Test 1: Simple parallel
-4 @ i in 0..<100 { printf("%v\n", i) }
-
-// Test 2: All cores
-@@ item in data { process(item) }
+**Current Test:**
+```bash
+$ ./flapc test.flap -o test && ./test
+0  # Child thread output
+1
+2
+3
+4
+Done  # Parent continues after barrier
 ```
 
-**Files**: `lexer.go`, `ast.go`, `parser.go`, `parallel.go`
+**Files**: `lexer.go`, `ast.go`, `parser.go`, `parallel.go`, `atomic.go`, `dec.go`
 
 ---
 
@@ -196,20 +174,25 @@ For shipping commercial games on Steam
 - [x] Hot reload infrastructure
 - [x] Spawn background processes
 - [x] Tail call optimization
-- [~] Parallel loops (Infrastructure complete, codegen pending)
+- [~] Parallel loops (V4 complete: barriers working, V5 pending: full loop bodies)
 
 **Quality:**
-- [ ] Parallel loops: test with 10k items across 8 threads
+- [x] Parallel loops: futex barrier synchronization verified with strace
+- [ ] Parallel loops: test full loop body with printf
+- [ ] Parallel loops: test with 10k items across N threads
 - [ ] Hot reload: test changing physics constants live
 - [ ] Networking: test 1000 messages/second throughput
 - [ ] Clean VM: install and run on fresh Ubuntu 22.04
 - [ ] Memory: run valgrind, fix any leaks
 
 **Documentation:**
-- [ ] Add parallel loop examples to README
+- [x] Update LANGUAGE.md with parallel loop implementation status
+- [x] Update README.md with V4 progress
+- [x] Add futex barrier learnings to LEARNINGS.md
+- [x] Update TODO.md with V4 completion and V5 roadmap
+- [ ] Add parallel loop code examples to testprograms/
 - [ ] Write networking tutorial (client + server)
 - [ ] Document hot reload workflow
-- [ ] Add troubleshooting section
 
 ---
 

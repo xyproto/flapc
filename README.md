@@ -168,7 +168,7 @@ See [TODO.md](TODO.md) for detailed roadmap.
 - ✅ Process spawning with `spawn` keyword (Unix fork)
 - ✅ Port literals for ENet (`:5000`, `:worker` with deterministic hashing)
 - ⚙️  ENet networking protocol (socket operations, send/receive)
-- 🔜 Parallel loops (`N @` and `@@` for data parallelism)
+- ⚙️  Parallel loops (`N @` and `@@` for data parallelism - V4 complete with futex barriers)
 - 🔜 Hot code reload integration (infrastructure complete)
 
 **Completed in 1.5.x:**

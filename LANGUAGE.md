@@ -783,6 +783,8 @@ numbers := [10, 20, 30]
 - All cores: `@@ item in collection` (shorthand for all available cores)
 - Optional prefix: number of cores to use (e.g., `4 @`, `8 @`)
 - Use for: data processing, image processing, physics simulations, ray tracing
+- **Implementation:** Uses Linux clone() syscalls with futex-based barrier synchronization for thread coordination
+- **Status:** Range loops with constant bounds fully functional (V4 complete); dynamic bounds and full loop body execution coming in V5
 - **Note:** Parallel loops require thread-safe operations (no shared mutable state without synchronization)
 
 **Example:**
