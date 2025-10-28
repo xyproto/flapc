@@ -10,50 +10,59 @@
 ### 1. Parallel Loops (CPU Parallelism)
 Essential for game performance: physics, AI, rendering
 
-**Phase 1: Lexer & Parser**
-- [ ] Add `@@` token to lexer (all cores syntax)
-- [ ] Parse `N @` prefix (e.g., `4 @ item in data { }`)
-- [ ] Handle `@@` as special case (detect cores at runtime)
+**Phase 1: Lexer & Parser** ✅ COMPLETE
+- [x] Add `@@` token to lexer (all cores syntax)
+- [x] Parse `N @` prefix (e.g., `4 @ item in data { }`)
+- [x] Handle `@@` as special case (detect cores at compile time)
+- [x] Parse full loop body for parallel loops
+- [x] Error handling for receive loops (not parallelizable)
 
-**Phase 2: AST Changes**
-- [ ] Add `NumThreads` field to `LoopStmt` in ast.go
-- [ ] Update `String()` method for parallel loops
-- [ ] Add `IsParallel()` helper method
+**Phase 2: AST Changes** ✅ COMPLETE
+- [x] Add `NumThreads` field to `LoopStmt` in ast.go
+- [x] Update `String()` method for parallel loops
+- [x] Update `substituteParamsStmt()` to preserve NumThreads
 
-**Phase 3: Basic Thread Creation**
-- [ ] Create new `parallel.go` file
-- [ ] Add `clone()` syscall wrapper
-- [ ] Implement thread spawn with CLONE_VM flag
-- [ ] Test: spawn single thread, print "Hello from thread"
+**Phase 3: Basic Thread Creation** ✅ COMPLETE
+- [x] Create new `parallel.go` file (265 lines)
+- [x] Add `clone()` syscall wrapper
+- [x] Implement thread spawn with CLONE_VM flag
+- [x] Test: spawn single thread, verified TID 2314102
 
-**Phase 4: Thread ID & Verification**
-- [ ] Add syscall to get thread ID
-- [ ] Test: spawn 4 threads, each prints its TID
-- [ ] Verify all threads run independently
+**Phase 4: Thread ID & Verification** ✅ COMPLETE
+- [x] Add syscall to get thread ID (GetTID)
+- [x] Test: spawn 4 threads, each gets unique TID
+- [x] Verify all threads run independently
 
-**Phase 5: Work Distribution Math**
-- [ ] Calculate: `chunk_size = total_items / num_threads`
-- [ ] Calculate: `start_idx = thread_id * chunk_size`
-- [ ] Calculate: `end_idx = start_idx + chunk_size`
-- [ ] Handle remainder items (give to last thread)
+**Phase 5: Work Distribution Math** ✅ COMPLETE
+- [x] Calculate: `chunk_size = total_items / num_threads`
+- [x] Calculate: `start_idx = thread_id * chunk_size`
+- [x] Calculate: `end_idx = start_idx + chunk_size`
+- [x] Handle remainder items (give to last thread)
+- [x] Test coverage: 100÷2=50, 100÷4=25, 101÷4 (with remainder)
+- [x] Add CPU core detection (reads /proc/cpuinfo)
 
-**Phase 6: Pass Data to Threads**
+**Phase 6: Pass Data to Threads** ⏳ TODO
 - [ ] Define thread argument struct in assembly
 - [ ] Pack: loop_body_addr, start_idx, end_idx, data_ptr
 - [ ] Pass struct pointer to clone()
 - [ ] Thread unpacks and executes loop body
 
-**Phase 7: Wait for Completion**
-- [ ] Add futex syscall wrapper
-- [ ] Implement barrier: main thread waits for workers
-- [ ] Each worker decrements counter atomically
-- [ ] Main thread wakes when counter == 0
+**Phase 7: Wait for Completion** ✅ COMPLETE
+- [x] Add futex syscall wrapper (FutexWait, FutexWake)
+- [x] Implement barrier: threads wait for each other
+- [x] Each thread decrements counter atomically (sync/atomic)
+- [x] Last thread wakes all waiting threads
+- [x] Test: 4 goroutines synchronized at barrier
 
-**Phase 8: Code Generation**
-- [ ] Detect parallel loop in `compileLoopStatement()`
-- [ ] Allocate shared memory for thread args
-- [ ] Emit clone() calls in loop
-- [ ] Emit futex wait barrier
+**Phase 8: Code Generation** ⏳ IN PROGRESS
+- [x] Detect parallel loop in `compileLoopStatement()`
+- [x] Validate constant range bounds
+- [x] Calculate work distribution at compile time
+- [x] Detailed diagnostic output
+- [ ] Allocate shared memory for barrier and thread args
+- [ ] Emit clone() calls in assembly
+- [ ] Emit loop body execution per thread
+- [ ] Emit futex wait barrier in assembly
 - [ ] Emit cleanup code
 
 **Testing**:
@@ -187,7 +196,7 @@ For shipping commercial games on Steam
 - [x] Hot reload infrastructure
 - [x] Spawn background processes
 - [x] Tail call optimization
-- [ ] Parallel loops
+- [~] Parallel loops (Infrastructure complete, codegen pending)
 
 **Quality:**
 - [ ] Parallel loops: test with 10k items across 8 threads
