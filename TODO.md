@@ -1,116 +1,170 @@
 # Flapc TODO - Version 1.6 Release
 
-Actionable items for **Flap 1.6 release**.
-Current focus: x86-64 Linux. Multiplatform support deferred to post-1.6.
-End goal: Minimal, elegant, implementable language ready for game development.
+**Target**: x86-64 Linux game development
+**Philosophy**: Minimal, elegant, implementable
 
-Complexity: (LOW/MEDIUM/HIGH/VERY HIGH)
+---
 
-## Critical - Language Core (1.6 Blockers)
+## 🔥 Critical Path to 1.6
 
-1. **Implement ENet networking in assembly** (VERY HIGH) 🔥 CRITICAL FOR 1.6
-   - Goal: Built-in reliable UDP networking as fundamental language feature
-   - Implementation: Generate ENet protocol machine code directly in Flapc
-   - NOT an external library - core part of the compiler like printf/malloc
-   - ✅ Port addresses as strings: `":5000"`, `"host:port"` - COMPLETE
-   - ✅ Send operator: `":5000" <== "data"` using `<==` - COMPLETE (with UDP syscalls)
-   - ✅ Receive loops: `@ msg, from in ":5000" { }` - COMPLETE (tested and working!)
-   - ✅ Socket operations: socket(), sendto(), close() syscalls - COMPLETE (basic)
-   - ✅ Bind and recvfrom() syscalls - COMPLETE (working UDP server)
-   - ✅ Port availability checks and fallback - COMPLETE (`:5000-5010` ranges working!)
-   - Protocol features: Connection management, reliable/unreliable channels, packet fragmentation - NOT STARTED
-   - Files: Extend `parser.go` (DONE), need UDP socket codegen
+### 1. Parallel Loops (CPU Parallelism)
+Essential for game performance: physics, AI, rendering
 
-2. **Implement parallel loops runtime** (HIGH) 🔥 CRITICAL FOR 1.6
-   - Goal: CPU parallelism with `N @` and `@@` syntax
-   - Implementation: Thread pool with work stealing, OpenMP-style execution
-   - Syntax: `4 @ item in data max 1000 { }` (4 cores), `@@ item in data max 1000 { }` (all cores)
-   - Thread safety: Need atomics, mutex builtins for shared state
-   - Work distribution: Chunk-based splitting, load balancing
-   - Files: New `parallel.go` (thread pool, work queue), extend `parser.go` (parallel loop codegen)
+**Phase 1: Parser & AST** (1-2 hours)
+- [ ] Add `@@` token to lexer (all cores syntax)
+- [ ] Parse `N @` prefix (e.g., `4 @ item in data { }`)
+- [ ] Add `NumThreads` field to `LoopStmt` in ast.go
+- [ ] Handle `@@` as `NumThreads = 0` (detect cores at runtime)
 
-3. **Implement `spawn` background processes** (MEDIUM) ✅ COMPLETE FOR 1.6
-   - Goal: Process-based concurrency with `spawn` keyword
-   - Implementation: Unix fork() for isolated processes
-   - ✅ Fire-and-forget: `spawn worker()` - COMPLETE
-   - ✅ Proper output flushing with fflush(NULL) - COMPLETE
-   - ❌ Pipe syntax for result waiting: `spawn f() | result | { }` - NOT STARTED
-   - ❌ Tuple destructuring: `spawn f() | x, y | { }` - NOT STARTED
-   - Status: Basic spawning complete, advanced features deferred
-   - Files: `parser.go`, `ast.go` (SpawnStmt)
+**Phase 2: Clone Syscall** (1 hour)
+- [ ] Add `clone()` syscall wrapper in new `parallel.go`
+- [ ] Implement basic thread creation with CLONE_VM flag
+- [ ] Test: spawn 4 threads, each prints thread ID
 
-4. **Complete live hot reload integration** (HIGH) 🎮 GAMEDEV - CRITICAL FOR 1.6
-   - Goal: Live code patching in running game processes (infrastructure 90% complete)
-   - Status: Foundation exists but missing final integration step
-   - ✅ Complete: Function indirection table, memory allocation, file watching, code extraction
-   - ❌ Missing: Live injection into running process
+**Phase 3: Work Distribution** (2-3 hours)
+- [ ] Calculate chunk size: `total_items / num_threads`
+- [ ] Each thread processes: `[start_idx .. end_idx]`
+- [ ] Pass loop body address + data range to threads
+- [ ] Use futex for thread join (wait for completion)
 
-   **Remaining Work:**
-   - Wire up watch mode to keep game process running (don't rebuild binary)
-   - On file change: Extract only changed hot function machine code
-   - Inject extracted code using `HotReloadManager.ReloadHotFunction()`
-   - Update function pointer table atomically in running process
-   - Handle compilation errors (keep old code running)
+**Phase 4: Code Generation** (2-3 hours)
+- [ ] Generate parallel dispatch in `compileLoopStatement()`
+- [ ] Allocate shared stack space for results
+- [ ] Emit clone() calls with correct flags
+- [ ] Implement barrier synchronization with futex
 
-   **Integration Steps:**
-   1. Modify `watchAndRecompile()` to not restart process
-   2. Use `IncrementalState` to detect which hot functions changed
-   3. Compile only changed functions to temporary binary
-   4. Extract changed function code with `ExtractFunctionCode()`
-   5. Call `HotReloadManager.ReloadHotFunction()` to patch live
+**Testing**:
+```flap
+// Test 1: Simple parallel
+4 @ i in 0..<100 { printf("%v\n", i) }
 
-   **Testing:**
-   - Test game with hot physics constant (gravity, jump height)
-   - Test hot render function (change colors, sizes)
-   - Test compilation error recovery (old code stays active)
+// Test 2: All cores
+@@ item in data { process(item) }
+```
 
-   Files: Wire together `main.go`, `hotreload.go`, `incremental.go`, `filewatcher.go`
+**Files**: `lexer.go`, `ast.go`, `parser.go`, `parallel.go`
+**Estimate**: 6-9 hours total
 
-## Important - Language Features (1.6 Nice-to-Have)
+---
 
-5. **Add Steamworks FFI support** (HIGH) 🎮 GAMEDEV
-   - Goal: Steam achievements, leaderboards, cloud saves for commercial releases
-   - Approach: Extend C FFI to handle Steamworks SDK callbacks and structs
-   - Requirements: Handle C++ name mangling, callback function pointers
-   - Impact: Required for publishing on Steam
-   - Files: New `steamworks.go`, extend FFI in `parser.go`
+### 2. Hot Reload Polish
+Infrastructure exists, just needs final wiring
 
-## Future Work (Post-1.6)
+**Quick Wins** (2-3 hours):
+- [ ] Modify `watchAndRecompile()`: keep process alive, don't restart
+- [ ] On file change: compile only changed hot functions
+- [ ] Extract machine code from new binary
+- [ ] Write code to shared memory region (existing mmap)
+- [ ] Update function pointer atomically
 
-These features are deferred until after 1.6 release:
+**Test Case**:
+```flap
+hot physics = () => {
+    gravity = 9.8  // Change this while running
+}
+```
 
-6. **Add trampoline execution for deep recursion** (MEDIUM)
-   - Handle deep recursion without TCO (tree traversal, Ackermann)
-   - Return thunk (suspended computation), evaluate iteratively
-   - Files: New `trampoline.go`
+**Files**: `main.go` (50 lines of changes)
+**Estimate**: 2-3 hours
 
-7. **Add let bindings for local scope** (LOW)
-   - Syntax: `let rec loop = (n, acc) => ...`
-   - StandardML/OCaml-style local recursive definitions
-   - Files: `parser.go`, new LetExpr in `ast.go`
+---
 
-8. **Add Python-style colon + indentation** (MEDIUM)
-   - Alternative syntax for language packs: `if x > 0:\n    print(x)`
-   - Track indentation levels in lexer, emit virtual braces
-   - Files: `lexer.go`, `parser.go`
+### 3. Networking Polish
+Basic UDP works. Add quality-of-life features.
 
-9. **Add CPS (Continuation-Passing Style) transform** (VERY HIGH)
-   - Convert all calls to tail calls internally
-   - Advanced control flow, no stack growth
-   - Files: New `cps.go`
+**Phase 1: Error Handling** (1 hour)
+- [ ] Check send/receive return values
+- [ ] Print error message on failure
+- [ ] Handle ECONNREFUSED gracefully
 
-10. **Add macro system** (VERY HIGH)
-    - Pattern-based code transformation at parse time
-    - Enables language packs and metaprogramming
-    - Files: New `macro.go`
+**Phase 2: String Conversion** (2 hours)
+- [ ] Convert received bytes to string
+- [ ] Pass actual message content to loop body
+- [ ] Extract sender IP:port as string
 
-11. **Add custom infix operators** (HIGH)
-    - For language packs (e.g., Python's `**`)
-    - Files: Extend `parser.go` precedence
+**Phase 3: Connection Management** (Optional, 3-4 hours)
+- [ ] Track active connections in hash map
+- [ ] Detect disconnects (timeout)
+- [ ] Clean up stale entries
 
-12. **Multiplatform support** (Deferred to post-1.6)
-    - Windows x64 (PE/COFF)
-    - Windows ARM64
-    - macOS ARM64 (mostly complete, needs testing)
-    - Linux ARM64 (Raspberry Pi)
-    - RISC-V 64-bit
+**Test Case**:
+```flap
+@ msg, from in ":5000-5010" {
+    printf("From %v: %v\n", from, msg)
+}
+```
+
+**Files**: `parser.go` (100 lines)
+**Estimate**: 3-7 hours depending on scope
+
+---
+
+## 📋 Optional Nice-to-Haves
+
+### Atomic Operations (for parallel safety)
+- [ ] Add `atomic_add(ptr, value)` builtin
+- [ ] Add `atomic_cas(ptr, old, new)` builtin
+- [ ] Add `mutex_lock(ptr)` / `mutex_unlock(ptr)` builtins
+- [ ] Use futex syscall for implementation
+
+**Estimate**: 3-4 hours
+**Benefit**: Thread-safe shared state in parallel loops
+
+### Steamworks FFI
+- [ ] Parse C++ headers with name mangling
+- [ ] Handle callback function pointers
+- [ ] Add Steam API wrappers
+
+**Estimate**: 6-8 hours
+**Benefit**: Ship commercial games on Steam
+
+---
+
+## 🎯 1.6 Release Checklist
+
+**Core Features Complete:**
+- [x] UDP networking (send/receive)
+- [x] Port availability and fallback
+- [x] Hot reload infrastructure
+- [x] Spawn background processes
+- [x] Tail call optimization
+- [ ] Parallel loops (in progress)
+
+**Quality:**
+- [ ] Test parallel loops with 10k+ items
+- [ ] Test hot reload with physics loop
+- [ ] Test UDP with 1000 messages/sec
+- [ ] Run on clean Ubuntu 22.04 VM
+- [ ] Memory leak check with valgrind
+
+**Documentation:**
+- [ ] Update README with parallel loop examples
+- [ ] Add networking tutorial
+- [ ] Document hot reload workflow
+
+---
+
+## 🚀 Post-1.6 Ideas
+
+Deferred until after 1.6 ships:
+
+- **ENet Protocol**: Reliable channels, fragmentation, ACKs
+- **Trampolines**: Deep recursion without TCO
+- **Macros**: Pattern-based metaprogramming
+- **CPS Transform**: Internal tail call conversion
+- **Multiplatform**: Windows, macOS ARM, RISC-V
+- **Python Syntax Pack**: Colon + indentation
+- **Let Bindings**: Local recursive definitions
+
+---
+
+## Summary
+
+**To ship 1.6:**
+1. Parallel loops (1-2 days)
+2. Hot reload polish (half day)
+3. Testing + docs (1 day)
+
+**Total estimate**: 2-4 days of focused work
+
+Everything else is optional or post-1.6. The core is already solid.
