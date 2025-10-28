@@ -1577,9 +1577,12 @@ func substituteParamsStmt(stmt Statement, substMap map[string]Expression) Statem
 			newBody[i] = substituteParamsStmt(bodyStmt, substMap)
 		}
 		return &LoopStmt{
-			Iterator: s.Iterator,
-			Iterable: substituteParamsExpr(s.Iterable, substMap),
-			Body:     newBody,
+			Iterator:      s.Iterator,
+			Iterable:      substituteParamsExpr(s.Iterable, substMap),
+			Body:          newBody,
+			MaxIterations: s.MaxIterations,
+			NeedsMaxCheck: s.NeedsMaxCheck,
+			NumThreads:    s.NumThreads,
 		}
 	default:
 		return stmt
@@ -2055,6 +2058,18 @@ func (p *Parser) parseStatement() Statement {
 
 	// Check for @++ (continue current loop)
 	if p.current.Type == TOKEN_AT_PLUSPLUS {
+		return p.parseLoopStatement()
+	}
+
+	// Check for parallel loops: @@ or N @
+	if p.current.Type == TOKEN_AT_AT {
+		// @@ means parallel loop with all cores
+		return p.parseLoopStatement()
+	}
+
+	// Check for N @ (parallel loop with N threads)
+	if p.current.Type == TOKEN_NUMBER && p.peek.Type == TOKEN_AT {
+		// This is N @ syntax for parallel loops
 		return p.parseLoopStatement()
 	}
 
@@ -2636,10 +2651,46 @@ func (p *Parser) parseLoopStatement() Statement {
 		return &JumpStmt{IsBreak: false, Label: p.loopDepth, Value: nil}
 	}
 
-	// Handle @ token (start loop at @(N+1))
-	if p.current.Type == TOKEN_AT {
+	// Parse parallel loop prefix: @@ or N @
+	numThreads := 0 // 0 = sequential, -1 = all cores, N = specific count
+	label := p.loopDepth + 1
+
+	// Handle @@ token (parallel loop with all cores)
+	if p.current.Type == TOKEN_AT_AT {
+		numThreads = -1
+		p.nextToken() // skip '@@'
+
+		// Skip newlines after '@@'
+		for p.current.Type == TOKEN_NEWLINE {
+			p.nextToken()
+		}
+
+		// After @@, fall through to identifier parsing below
+		// (we'll add the parsing code after the TOKEN_AT block)
+	} else if p.current.Type == TOKEN_NUMBER {
+		// Handle N @ syntax (parallel loop with N threads)
+		threadCount, err := strconv.Atoi(p.current.Value)
+		if err != nil || threadCount < 1 {
+			p.error("thread count must be a positive integer")
+		}
+		numThreads = threadCount
+		p.nextToken() // skip number
+
+		// Expect @ token after the number
+		if p.current.Type != TOKEN_AT {
+			p.error("expected @ after thread count")
+		}
+		p.nextToken() // skip '@'
+
+		// Skip newlines after '@'
+		for p.current.Type == TOKEN_NEWLINE {
+			p.nextToken()
+		}
+
+		// After N @, fall through to identifier parsing below
+	} else if p.current.Type == TOKEN_AT {
+		// Handle @ token (start loop at @(N+1))
 		// @ means start a loop at @(N+1) where N is current loop depth
-		label := p.loopDepth + 1
 		p.nextToken() // skip '@'
 
 		// Skip newlines after '@'
@@ -2718,6 +2769,7 @@ func (p *Parser) parseLoopStatement() Statement {
 				Body:          body,
 				MaxIterations: maxIterations,
 				NeedsMaxCheck: needsMaxCheck,
+				NumThreads:    numThreads,
 			}
 		}
 
@@ -2905,7 +2957,14 @@ func (p *Parser) parseLoopStatement() Statement {
 			Body:          body,
 			MaxIterations: maxIterations,
 			NeedsMaxCheck: needsRuntimeCheck,
+			NumThreads:    numThreads,
 		}
+	}
+
+	// Common identifier and loop body parsing for @@ and N @ goes here (TODO)
+	// For now, error if we reach here without being in TOKEN_AT branch
+	if numThreads != 0 {
+		p.error("parallel loop parsing incomplete - TODO implement @@ and N @ body parsing")
 	}
 
 handleJump:
@@ -2921,7 +2980,7 @@ handleJump:
 	if err != nil {
 		p.error("invalid jump label number")
 	}
-	label := int(labelNum)
+	label = int(labelNum)
 
 	p.nextToken() // skip label number
 

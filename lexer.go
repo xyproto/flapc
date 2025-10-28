@@ -46,6 +46,7 @@ const (
 	TOKEN_TILDE            // ~
 	TOKEN_DEFAULT_ARROW    // ~>
 	TOKEN_AT               // @
+	TOKEN_AT_AT            // @@ (parallel loop with all cores)
 	TOKEN_AT_PLUSPLUS      // @++
 	TOKEN_IN               // in keyword
 	TOKEN_LBRACE           // {
@@ -642,8 +643,13 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_DOT, Value: ".", Line: l.line}
 	case '@':
-		// Check for @++, @first, @last, @counter, @i
-		// Check for @++ first
+		// Check for @@, @++, @first, @last, @counter, @i
+		// Check for @@ first (parallel loop with all cores)
+		if l.peek() == '@' {
+			l.pos += 2
+			return Token{Type: TOKEN_AT_AT, Value: "@@", Line: l.line}
+		}
+		// Check for @++
 		if l.peek() == '+' && l.pos+2 < len(l.input) && l.input[l.pos+2] == '+' {
 			l.pos += 3
 			return Token{Type: TOKEN_AT_PLUSPLUS, Value: "@++", Line: l.line}

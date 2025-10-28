@@ -204,6 +204,7 @@ type LoopStmt struct {
 	MaxIterations int64 // Maximum allowed iterations (math.MaxInt64 for infinite)
 	NeedsMaxCheck bool  // Whether to emit runtime max iteration checking
 	BaseOffset    int   // Stack offset before loop body (set during collectSymbols)
+	NumThreads    int   // Number of threads for parallel execution (0 = sequential, -1 = all cores, N = specific count)
 }
 
 type ReceiveLoopStmt struct {
@@ -236,7 +237,14 @@ func (l *LoopExpr) expressionNode() {}
 
 func (l *LoopStmt) String() string {
 	var out strings.Builder
-	out.WriteString("@ ")
+	// Show parallel prefix if NumThreads is set
+	if l.NumThreads == -1 {
+		out.WriteString("@@ ")
+	} else if l.NumThreads > 0 {
+		out.WriteString(fmt.Sprintf("%d @ ", l.NumThreads))
+	} else {
+		out.WriteString("@ ")
+	}
 	out.WriteString(l.Iterator)
 	out.WriteString(" in ")
 	out.WriteString(l.Iterable.String())

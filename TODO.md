@@ -10,28 +10,51 @@
 ### 1. Parallel Loops (CPU Parallelism)
 Essential for game performance: physics, AI, rendering
 
-**Phase 1: Parser & AST** (1-2 hours)
+**Phase 1: Lexer & Parser**
 - [ ] Add `@@` token to lexer (all cores syntax)
 - [ ] Parse `N @` prefix (e.g., `4 @ item in data { }`)
+- [ ] Handle `@@` as special case (detect cores at runtime)
+
+**Phase 2: AST Changes**
 - [ ] Add `NumThreads` field to `LoopStmt` in ast.go
-- [ ] Handle `@@` as `NumThreads = 0` (detect cores at runtime)
+- [ ] Update `String()` method for parallel loops
+- [ ] Add `IsParallel()` helper method
 
-**Phase 2: Clone Syscall** (1 hour)
-- [ ] Add `clone()` syscall wrapper in new `parallel.go`
-- [ ] Implement basic thread creation with CLONE_VM flag
-- [ ] Test: spawn 4 threads, each prints thread ID
+**Phase 3: Basic Thread Creation**
+- [ ] Create new `parallel.go` file
+- [ ] Add `clone()` syscall wrapper
+- [ ] Implement thread spawn with CLONE_VM flag
+- [ ] Test: spawn single thread, print "Hello from thread"
 
-**Phase 3: Work Distribution** (2-3 hours)
-- [ ] Calculate chunk size: `total_items / num_threads`
-- [ ] Each thread processes: `[start_idx .. end_idx]`
-- [ ] Pass loop body address + data range to threads
-- [ ] Use futex for thread join (wait for completion)
+**Phase 4: Thread ID & Verification**
+- [ ] Add syscall to get thread ID
+- [ ] Test: spawn 4 threads, each prints its TID
+- [ ] Verify all threads run independently
 
-**Phase 4: Code Generation** (2-3 hours)
-- [ ] Generate parallel dispatch in `compileLoopStatement()`
-- [ ] Allocate shared stack space for results
-- [ ] Emit clone() calls with correct flags
-- [ ] Implement barrier synchronization with futex
+**Phase 5: Work Distribution Math**
+- [ ] Calculate: `chunk_size = total_items / num_threads`
+- [ ] Calculate: `start_idx = thread_id * chunk_size`
+- [ ] Calculate: `end_idx = start_idx + chunk_size`
+- [ ] Handle remainder items (give to last thread)
+
+**Phase 6: Pass Data to Threads**
+- [ ] Define thread argument struct in assembly
+- [ ] Pack: loop_body_addr, start_idx, end_idx, data_ptr
+- [ ] Pass struct pointer to clone()
+- [ ] Thread unpacks and executes loop body
+
+**Phase 7: Wait for Completion**
+- [ ] Add futex syscall wrapper
+- [ ] Implement barrier: main thread waits for workers
+- [ ] Each worker decrements counter atomically
+- [ ] Main thread wakes when counter == 0
+
+**Phase 8: Code Generation**
+- [ ] Detect parallel loop in `compileLoopStatement()`
+- [ ] Allocate shared memory for thread args
+- [ ] Emit clone() calls in loop
+- [ ] Emit futex wait barrier
+- [ ] Emit cleanup code
 
 **Testing**:
 ```flap
@@ -43,19 +66,36 @@ Essential for game performance: physics, AI, rendering
 ```
 
 **Files**: `lexer.go`, `ast.go`, `parser.go`, `parallel.go`
-**Estimate**: 6-9 hours total
 
 ---
 
 ### 2. Hot Reload Polish
 Infrastructure exists, just needs final wiring
 
-**Quick Wins** (2-3 hours):
-- [ ] Modify `watchAndRecompile()`: keep process alive, don't restart
-- [ ] On file change: compile only changed hot functions
-- [ ] Extract machine code from new binary
-- [ ] Write code to shared memory region (existing mmap)
-- [ ] Update function pointer atomically
+**Step 1: Keep Process Alive**
+- [ ] Modify `watchAndRecompile()` to not kill process
+- [ ] Store process handle in variable
+- [ ] Skip restart on successful hot reload
+
+**Step 2: Detect Changed Functions**
+- [ ] Use `IncrementalState.IncrementalRecompile()`
+- [ ] Get list of changed hot function names
+- [ ] Skip if no hot functions changed
+
+**Step 3: Extract Machine Code**
+- [ ] Compile changed functions to temp binary
+- [ ] Call `ExtractFunctionCode()` for each changed func
+- [ ] Get: function address, code bytes, length
+
+**Step 4: Write to Shared Memory**
+- [ ] Call `HotReloadManager.ReloadHotFunction()`
+- [ ] Write new code bytes to mmap'd region
+- [ ] Update function pointer in table
+
+**Step 5: Atomic Swap**
+- [ ] Use LOCK CMPXCHG to swap pointer
+- [ ] Ensure running threads see new code
+- [ ] Test: change physics value while running
 
 **Test Case**:
 ```flap
@@ -64,28 +104,39 @@ hot physics = () => {
 }
 ```
 
-**Files**: `main.go` (50 lines of changes)
-**Estimate**: 2-3 hours
+**Files**: `main.go`
 
 ---
 
 ### 3. Networking Polish
 Basic UDP works. Add quality-of-life features.
 
-**Phase 1: Error Handling** (1 hour)
-- [ ] Check send/receive return values
-- [ ] Print error message on failure
-- [ ] Handle ECONNREFUSED gracefully
+**Step 1: Check Return Values**
+- [ ] After sendto(): check rax for errors
+- [ ] After recvfrom(): check rax for errors
+- [ ] Jump to error handler on failure
 
-**Phase 2: String Conversion** (2 hours)
-- [ ] Convert received bytes to string
-- [ ] Pass actual message content to loop body
-- [ ] Extract sender IP:port as string
+**Step 2: Error Messages**
+- [ ] Print "Send failed: port %d" on ECONNREFUSED
+- [ ] Print "Receive failed" with errno
+- [ ] Continue loop instead of crashing
 
-**Phase 3: Connection Management** (Optional, 3-4 hours)
-- [ ] Track active connections in hash map
-- [ ] Detect disconnects (timeout)
-- [ ] Clean up stale entries
+**Step 3: Bytes to String**
+- [ ] Allocate string from received buffer
+- [ ] Pass string length from rax (bytes received)
+- [ ] Store in message variable
+
+**Step 4: Extract Sender Info**
+- [ ] Parse sockaddr_in.sin_addr (4 bytes)
+- [ ] Parse sockaddr_in.sin_port (2 bytes)
+- [ ] Format as "IP:port" string
+- [ ] Store in sender variable
+
+**Step 5: Connection Tracking (Optional)**
+- [ ] Create hash map for sender addresses
+- [ ] Track: last_seen timestamp per sender
+- [ ] Timeout stale connections (60 seconds)
+- [ ] Clean up hash map entries
 
 **Test Case**:
 ```flap
@@ -94,53 +145,62 @@ Basic UDP works. Add quality-of-life features.
 }
 ```
 
-**Files**: `parser.go` (100 lines)
-**Estimate**: 3-7 hours depending on scope
+**Files**: `parser.go`
 
 ---
 
 ## 📋 Optional Nice-to-Haves
 
-### Atomic Operations (for parallel safety)
-- [ ] Add `atomic_add(ptr, value)` builtin
-- [ ] Add `atomic_cas(ptr, old, new)` builtin
-- [ ] Add `mutex_lock(ptr)` / `mutex_unlock(ptr)` builtins
-- [ ] Use futex syscall for implementation
+### Atomic Operations
+For thread-safe shared state in parallel loops
 
-**Estimate**: 3-4 hours
-**Benefit**: Thread-safe shared state in parallel loops
+- [ ] Add `atomic_add(ptr, value)` builtin
+- [ ] Use LOCK XADD instruction
+- [ ] Add `atomic_cas(ptr, old, new)` builtin
+- [ ] Use LOCK CMPXCHG instruction
+- [ ] Add `mutex_lock(ptr)` builtin
+- [ ] Use futex syscall
+- [ ] Add `mutex_unlock(ptr)` builtin
+- [ ] Test: increment shared counter from 4 threads
+
+**Benefit**: Safe parallel loops with shared state
 
 ### Steamworks FFI
-- [ ] Parse C++ headers with name mangling
-- [ ] Handle callback function pointers
-- [ ] Add Steam API wrappers
+For shipping commercial games on Steam
 
-**Estimate**: 6-8 hours
-**Benefit**: Ship commercial games on Steam
+- [ ] Parse C++ header files
+- [ ] Handle name mangling (e.g., `_Z11SteamAPI_Initv`)
+- [ ] Support callback function pointers
+- [ ] Add achievement wrapper functions
+- [ ] Add leaderboard wrappers
+- [ ] Test: unlock achievement from Flap code
+
+**Benefit**: Ship on Steam platform
 
 ---
 
 ## 🎯 1.6 Release Checklist
 
-**Core Features Complete:**
+**Core Features:**
 - [x] UDP networking (send/receive)
 - [x] Port availability and fallback
 - [x] Hot reload infrastructure
 - [x] Spawn background processes
 - [x] Tail call optimization
-- [ ] Parallel loops (in progress)
+- [ ] Parallel loops
 
 **Quality:**
-- [ ] Test parallel loops with 10k+ items
-- [ ] Test hot reload with physics loop
-- [ ] Test UDP with 1000 messages/sec
-- [ ] Run on clean Ubuntu 22.04 VM
-- [ ] Memory leak check with valgrind
+- [ ] Parallel loops: test with 10k items across 8 threads
+- [ ] Hot reload: test changing physics constants live
+- [ ] Networking: test 1000 messages/second throughput
+- [ ] Clean VM: install and run on fresh Ubuntu 22.04
+- [ ] Memory: run valgrind, fix any leaks
 
 **Documentation:**
-- [ ] Update README with parallel loop examples
-- [ ] Add networking tutorial
+- [ ] Add parallel loop examples to README
+- [ ] Write networking tutorial (client + server)
 - [ ] Document hot reload workflow
+- [ ] Add troubleshooting section
 
 ---
 
@@ -148,23 +208,14 @@ Basic UDP works. Add quality-of-life features.
 
 Deferred until after 1.6 ships:
 
-- **ENet Protocol**: Reliable channels, fragmentation, ACKs
-- **Trampolines**: Deep recursion without TCO
-- **Macros**: Pattern-based metaprogramming
-- **CPS Transform**: Internal tail call conversion
+- **ENet Protocol**: Reliable channels, packet ordering, ACKs
+- **Trampolines**: Deep recursion without stack overflow
+- **Macros**: Compile-time metaprogramming
+- **CPS Transform**: All function calls become tail calls
 - **Multiplatform**: Windows, macOS ARM, RISC-V
-- **Python Syntax Pack**: Colon + indentation
+- **Python Syntax**: Colon + indentation alternative
 - **Let Bindings**: Local recursive definitions
 
 ---
 
-## Summary
-
-**To ship 1.6:**
-1. Parallel loops (1-2 days)
-2. Hot reload polish (half day)
-3. Testing + docs (1 day)
-
-**Total estimate**: 2-4 days of focused work
-
-Everything else is optional or post-1.6. The core is already solid.
+The core is already solid. Just need parallel loops + polish.
