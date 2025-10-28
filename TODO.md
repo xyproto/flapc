@@ -104,41 +104,46 @@ Done  # Parent continues after barrier
 ---
 
 ### 2. Hot Reload Polish
-Infrastructure exists, just needs final wiring
 
-**Step 1: Keep Process Alive**
-- [ ] Modify `watchAndRecompile()` to not kill process
-- [ ] Store process handle in variable
-- [ ] Skip restart on successful hot reload
+**✅ Phase 1: Smart Restart (COMPLETE)**
+- [x] Detect changed functions via `IncrementalState.IncrementalRecompile()`
+- [x] Check if any changed functions are hot functions
+- [x] Keep process alive if no hot functions changed
+- [x] Only restart when hot functions actually change
+- [x] Clear feedback messages
+
+**Benefits**: Faster iteration on non-hot code, foundation for true hot reload
+
+**📋 Phase 2: True Hot Reload (Future)**
+Infrastructure exists, needs IPC wiring:
+
+**Step 1: Shared Memory Setup**
+- [ ] Game process creates mmap'd region for code
+- [ ] Game process exposes function pointer table
+- [ ] Compiler connects to shared memory
 
 **Step 2: Detect Changed Functions**
-- [ ] Use `IncrementalState.IncrementalRecompile()`
-- [ ] Get list of changed hot function names
-- [ ] Skip if no hot functions changed
+- [x] Already working via `IncrementalState.IncrementalRecompile()`
 
 **Step 3: Extract Machine Code**
-- [ ] Compile changed functions to temp binary
-- [ ] Call `ExtractFunctionCode()` for each changed func
-- [ ] Get: function address, code bytes, length
+- [ ] Call `ExtractFunctionCode()` for each changed hot function
+- [ ] Get function address, code bytes, length
 
-**Step 4: Write to Shared Memory**
-- [ ] Call `HotReloadManager.ReloadHotFunction()`
-- [ ] Write new code bytes to mmap'd region
-- [ ] Update function pointer in table
+**Step 4: Write to Shared Memory via IPC**
+- [ ] Compiler signals game process (e.g., via Unix socket)
+- [ ] Game process receives new code bytes
+- [ ] Call `HotReloadManager.LoadHotFunction()`
+- [ ] Copy code to mmap'd executable page
 
-**Step 5: Atomic Swap**
-- [ ] Use LOCK CMPXCHG to swap pointer
-- [ ] Ensure running threads see new code
-- [ ] Test: change physics value while running
+**Step 5: Atomic Pointer Update**
+- [ ] Update function pointer table atomically
+- [ ] Use memory barrier to ensure visibility
+- [ ] Test: change getValue() from 42 -> 100 while running
 
-**Test Case**:
-```flap
-hot physics = () => {
-    gravity = 9.8  // Change this while running
-}
-```
+**Current Approach**: Smart restart (Phase 1 complete)
+**Future Enhancement**: IPC-based hot patching (Phase 2)
 
-**Files**: `main.go`
+**Files**: `main.go`, `hotreload.go`, `incremental.go`
 
 ---
 
