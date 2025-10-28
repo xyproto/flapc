@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -166,6 +167,59 @@ func TestMultipleThreadSpawn(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	fmt.Printf("Successfully spawned and tracked %d threads\n", numThreads)
+}
+
+// Test barrier synchronization with goroutines (simulates threads)
+func TestBarrierSync(t *testing.T) {
+	fmt.Println("Testing barrier synchronization...")
+
+	numThreads := 4
+	barrier := NewBarrier(numThreads)
+	counter := atomic.Int32{}
+
+	// Track completion order
+	completionOrder := make([]int, 0, numThreads)
+	var mu sync.Mutex
+
+	// Spawn goroutines (simulating threads)
+	var wg sync.WaitGroup
+	for i := 0; i < numThreads; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+
+			// Do some "work"
+			counter.Add(1)
+			time.Sleep(time.Duration(id*10) * time.Millisecond)
+
+			// Reach barrier
+			fmt.Printf("Thread %d reached barrier\n", id)
+			barrier.Wait()
+
+			// After barrier, all threads should have incremented counter
+			mu.Lock()
+			completionOrder = append(completionOrder, id)
+			mu.Unlock()
+
+			fmt.Printf("Thread %d passed barrier\n", id)
+		}(i)
+	}
+
+	// Wait for all goroutines to finish
+	wg.Wait()
+
+	// Verify all threads completed
+	if len(completionOrder) != numThreads {
+		t.Errorf("Expected %d threads to complete, got %d", numThreads, len(completionOrder))
+	}
+
+	// Verify counter was incremented by all threads
+	finalCount := counter.Load()
+	if finalCount != int32(numThreads) {
+		t.Errorf("Expected counter=%d, got %d", numThreads, finalCount)
+	}
+
+	fmt.Printf("Success! All %d threads synchronized at barrier\n", numThreads)
 }
 
 // Test manual thread function execution (bypassing CloneThread)

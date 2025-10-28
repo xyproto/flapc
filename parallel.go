@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"sync/atomic"
 	"syscall"
 	"unsafe"
 )
@@ -146,18 +147,95 @@ func GetTID() int {
 	return int(tid)
 }
 
-// WaitForThreads implements a simple barrier using futex
-// This will wait until all threads complete
-func WaitForThreads(threadIDs []int) error {
-	// TODO: Implement futex-based barrier for Phase 7
-	// For now, use a simple sleep to allow threads to execute
-	// (This is a placeholder - proper synchronization will be added later)
+// Futex operations
+const (
+	FUTEX_WAIT            = 0
+	FUTEX_WAKE            = 1
+	FUTEX_PRIVATE_FLAG    = 128
+	FUTEX_WAIT_PRIVATE    = FUTEX_WAIT | FUTEX_PRIVATE_FLAG
+	FUTEX_WAKE_PRIVATE    = FUTEX_WAKE | FUTEX_PRIVATE_FLAG
+)
 
-	fmt.Printf("Waiting for %d threads to complete...\n", len(threadIDs))
+// FutexWait atomically checks if *addr == val, and if so, sleeps until woken
+// Returns 0 on success, error on failure
+func FutexWait(addr *int32, val int32) error {
+	_, _, errno := syscall.Syscall6(
+		syscall.SYS_FUTEX,
+		uintptr(unsafe.Pointer(addr)),
+		uintptr(FUTEX_WAIT_PRIVATE),
+		uintptr(val),
+		0, // timeout (NULL = infinite)
+		0, 0,
+	)
+	if errno != 0 && errno != syscall.EAGAIN {
+		return errno
+	}
+	return nil
+}
 
-	// Placeholder: In production, this would be a futex wait
-	// For now, we'll implement proper synchronization in Phase 7
+// FutexWake wakes up to count threads waiting on *addr
+// Returns number of threads woken (or error)
+func FutexWake(addr *int32, count int) (int, error) {
+	n, _, errno := syscall.Syscall6(
+		syscall.SYS_FUTEX,
+		uintptr(unsafe.Pointer(addr)),
+		uintptr(FUTEX_WAKE_PRIVATE),
+		uintptr(count),
+		0, 0, 0,
+	)
+	if errno != 0 {
+		return 0, errno
+	}
+	return int(n), nil
+}
 
+// AtomicDecrement atomically decrements a counter and returns the new value
+func AtomicDecrement(addr *int32) int32 {
+	// Use sync/atomic which compiles to LOCK XADD on x86-64
+	return atomic.AddInt32(addr, -1)
+}
+
+// Barrier represents a thread barrier for N threads
+type Barrier struct {
+	count   int32  // Number of threads that still need to arrive
+	total   int32  // Total number of threads
+}
+
+// NewBarrier creates a barrier for numThreads threads
+func NewBarrier(numThreads int) *Barrier {
+	return &Barrier{
+		count: int32(numThreads),
+		total: int32(numThreads),
+	}
+}
+
+// Wait blocks until all threads reach the barrier
+func (b *Barrier) Wait() {
+	// Atomically decrement counter
+	remaining := AtomicDecrement(&b.count)
+
+	if remaining == 0 {
+		// Last thread: wake everyone
+		FutexWake(&b.count, int(b.total))
+		return
+	}
+
+	// Not last thread: wait until woken
+	for atomic.LoadInt32(&b.count) > 0 {
+		FutexWait(&b.count, remaining)
+		// Check again in case of spurious wakeup
+		remaining = atomic.LoadInt32(&b.count)
+	}
+}
+
+// WaitForThreads waits for all threads in threadIDs to complete
+// Uses a barrier-based approach
+func WaitForThreads(barrier *Barrier) error {
+	if barrier == nil {
+		return fmt.Errorf("barrier is nil")
+	}
+
+	barrier.Wait()
 	return nil
 }
 
