@@ -4887,6 +4887,7 @@ type LoopInfo struct {
 type FlapCompiler struct {
 	eb                   *ExecutableBuilder
 	out                  *Out
+	platform             Platform                     // Target platform (arch + OS)
 	variables            map[string]int               // variable name -> stack offset
 	mutableVars          map[string]bool              // variable name -> is mutable
 	parentVariables      map[string]bool              // Track parent-scope vars in parallel loops (use r11 instead of rbp)
@@ -4966,6 +4967,7 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 	return &FlapCompiler{
 		eb:                  eb,
 		out:                 out,
+		platform:            platform,
 		variables:           make(map[string]int),
 		mutableVars:         make(map[string]bool),
 		varTypes:            make(map[string]string),
@@ -9341,23 +9343,20 @@ func (fc *FlapCompiler) compileSliceExpr(expr *SliceExpr) {
 
 func (fc *FlapCompiler) compileUnsafeExpr(expr *UnsafeExpr) {
 	// Execute the appropriate architecture block based on target
-	// For now, we only support x86_64
-	arch := "x86_64" // TODO: Get from build target
-
 	var block []Statement
 	var retStmt *UnsafeReturnStmt
-	switch arch {
-	case "x86_64":
+	switch fc.platform.Arch {
+	case ArchX86_64:
 		block = expr.X86_64Block
 		retStmt = expr.X86_64Return
-	case "arm64":
+	case ArchARM64:
 		block = expr.ARM64Block
 		retStmt = expr.ARM64Return
-	case "riscv64":
+	case ArchRiscv64:
 		block = expr.RISCV64Block
 		retStmt = expr.RISCV64Return
 	default:
-		compilerError("unsupported architecture: %s", arch)
+		compilerError("unsupported architecture: %s", fc.platform.Arch.String())
 	}
 
 	// Compile each statement in the unsafe block
@@ -9376,7 +9375,8 @@ func (fc *FlapCompiler) compileUnsafeExpr(expr *UnsafeExpr) {
 
 	// Handle return value
 	if retStmt != nil {
-		reg := retStmt.Register
+		// Resolve register alias (a->rax, etc)
+		reg := resolveRegisterAlias(retStmt.Register, fc.platform.Arch)
 		asType := retStmt.AsType
 
 		if asType == "" {
@@ -9422,49 +9422,59 @@ func (fc *FlapCompiler) compileSyscall() {
 }
 
 func (fc *FlapCompiler) compileRegisterAssignment(stmt *RegisterAssignStmt) {
-	// Handle memory stores: [rax] <- value
-	if len(stmt.Register) > 2 && stmt.Register[0] == '[' && stmt.Register[len(stmt.Register)-1] == ']' {
-		addr := stmt.Register[1 : len(stmt.Register)-1]
+	// Resolve register aliases (a->rax, b->rbx, etc)
+	register := stmt.Register
+
+	// Handle memory stores: [a] <- value (resolve alias inside brackets)
+	if len(register) > 2 && register[0] == '[' && register[len(register)-1] == ']' {
+		addr := register[1 : len(register)-1]
+		addr = resolveRegisterAlias(addr, fc.platform.Arch)
 		fc.compileMemoryStore(addr, stmt.Value)
 		return
 	}
+
+	// Resolve register alias for direct assignments
+	register = resolveRegisterAlias(register, fc.platform.Arch)
 
 	// Handle various value types
 	switch v := stmt.Value.(type) {
 	case *NumberExpr:
 		// Immediate value: register <- 42
-		if stmt.Register == "stack" {
+		if register == "stack" {
 			compilerError("cannot assign immediate value to stack; use 'stack <- register' to push")
 		}
 		val := int64(v.Value)
-		fc.out.MovImmToReg(stmt.Register, strconv.FormatInt(val, 10))
+		fc.out.MovImmToReg(register, strconv.FormatInt(val, 10))
 
 	case string:
+		// Resolve source register alias
+		sourceReg := resolveRegisterAlias(v, fc.platform.Arch)
+
 		// Handle stack operations
-		if stmt.Register == "stack" && v != "stack" {
+		if register == "stack" && sourceReg != "stack" {
 			// Push: stack <- rax
-			fc.out.PushReg(v)
-		} else if stmt.Register != "stack" && v == "stack" {
+			fc.out.PushReg(sourceReg)
+		} else if register != "stack" && sourceReg == "stack" {
 			// Pop: rax <- stack
-			fc.out.PopReg(stmt.Register)
-		} else if stmt.Register == "stack" && v == "stack" {
+			fc.out.PopReg(register)
+		} else if register == "stack" && sourceReg == "stack" {
 			compilerError("cannot do 'stack <- stack'")
 		} else {
 			// Register-to-register move: rax <- rbx
-			fc.out.MovRegToReg(stmt.Register, v)
+			fc.out.MovRegToReg(register, sourceReg)
 		}
 
 	case *RegisterOp:
 		// Arithmetic or bitwise operation
-		fc.compileRegisterOp(stmt.Register, v)
+		fc.compileRegisterOp(register, v)
 
 	case *MemoryLoad:
 		// Memory load: rax <- [rbx] or rax <- u8 [rbx + 16]
-		fc.compileMemoryLoad(stmt.Register, v)
+		fc.compileMemoryLoad(register, v)
 
 	case *CastExpr:
 		// Type cast: rax <- 42 as uint8, rax <- ptr as pointer
-		fc.compileUnsafeCast(stmt.Register, v)
+		fc.compileUnsafeCast(register, v)
 
 	default:
 		compilerError("unsupported value type in register assignment: %T", v)
