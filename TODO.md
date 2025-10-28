@@ -86,8 +86,13 @@ V5 is now complete! Parallel loops can execute arbitrary loop bodies with local 
   - Reduction lambda combines results pairwise
   - Use atomic operations (LOCK XADD) or mutex for combining
   - Subtasks:
-    - [ ] 8a: Extend AST (ParallelLoopStmt with optional reducer lambda)
-    - [ ] 8b: Parse `| params | { body }` after loop body
+    - [x] 8a: Extend AST (ParallelLoopStmt with optional reducer lambda) ✓
+      - Added Reducer field to both LoopStmt and LoopExpr
+      - Reducer is a *LambdaExpr with two parameters
+    - [x] 8b: Parse `| params | { body }` after loop body ✓
+      - Implemented in both parseLoopStatement and parseLoopExpr
+      - Supports @@ and N @ prefixes in expression context
+      - Parser validated with test: `sum := @@ i in 0..<10 { i } | a,b | { a + b }`
     - [ ] 8c: Generate code for partial result storage (thread-local)
     - [ ] 8d: Generate code for atomic combination (LOCK or mutex)
     - [ ] 8e: Test with simple addition: `sum = @@ i in 0..<10 { i } | a,b | { a+b }`
