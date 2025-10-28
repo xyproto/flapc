@@ -1030,3 +1030,126 @@ Implementing full V5 properly would require:
 
 V4's simple approach (direct syscalls, no shared state) is elegant precisely because it avoids these issues.
 
+
+## Cross-Platform Register Aliases
+
+### Design Decision: Two Syntax Modes
+
+When implementing cross-platform support for unsafe blocks across x86-64, ARM64, and RISC-V, we faced a choice: how should users write portable assembly code?
+
+**Challenge:** Each architecture uses different register names:
+- x86-64: `rax`, `rbx`, `rcx`, `rdx`, `rsi`, `rdi`, `rsp`, `rbp`
+- ARM64: `x0`, `x1`, `x2`, `x3`, `x4`, `x5`, `sp`, `fp`
+- RISC-V: `a0`, `a1`, `a2`, `a3`, `a4`, `a5`, `sp`, `fp`
+
+**Solution:** Support TWO distinct syntaxes:
+
+### Unified Syntax (Recommended)
+
+Single `unsafe { }` block using portable aliases:
+
+```flap
+result := unsafe {
+    a <- 42      // Resolves to rax/x0/a0 based on target CPU
+    b <- 100     // Resolves to rbx/x1/a1
+    c <- a + b   // Works everywhere
+    c
+}
+```
+
+**Register alias mapping:**
+| Alias | x86-64 | ARM64 | RISC-V | Purpose |
+|-------|--------|-------|--------|---------|
+| a | rax | x0 | a0 | Accumulator |
+| b | rbx | x1 | a1 | Base |
+| c | rcx | x2 | a2 | Count |
+| d | rdx | x3 | a3 | Data |
+| e | rsi | x4 | a4 | Source index |
+| f | rdi | x5 | a5 | Destination index |
+| s | rsp | sp | sp | Stack pointer |
+| p | rbp | fp | fp | Frame pointer |
+
+**Implementation:** `register_alias.go` with `resolveRegisterAlias()` function called during compilation.
+
+### Per-CPU Syntax
+
+Multiple labeled blocks for platform-specific code:
+
+```flap
+result := unsafe {
+    x86_64 {
+        rax <- 42
+        rbx <- 100
+        rcx <- rax + rbx
+        rcx
+    }
+    arm64 {
+        x0 <- 42
+        x1 <- 100
+        x2 <- x0 + x1
+        x2
+    }
+    riscv64 {
+        a0 <- 42
+        a1 <- 100
+        a2 <- a0 + a1
+        a2
+    }
+}
+```
+
+**Use case:** When you need platform-specific behavior (e.g., different syscall numbers, CPU-specific instructions).
+
+### Critical Design Rule: No Mixing
+
+**WRONG:**
+```flap
+// DON'T DO THIS - mixes unified and per-CPU
+result := unsafe {
+    a <- 42      // Unified alias
+} {
+    x0 <- 42     // ARM64 specific
+} {
+    a0 <- 42     // RISC-V specific
+}
+```
+
+This creates confusion: are we writing unified code or per-CPU code?
+
+**Correct Options:**
+
+Option 1 - Pure unified:
+```flap
+result := unsafe { a <- 42; a }
+```
+
+Option 2 - Pure per-CPU:
+```flap
+result := unsafe {
+    x86_64 { rax <- 42; rax }
+    arm64 { x0 <- 42; x0 }
+    riscv64 { a0 <- 42; a0 }
+}
+```
+
+### Key Learning: Language Design Clarity
+
+**Lesson learned:** When designing cross-platform features, **clarity beats flexibility**.
+
+Having two well-defined modes (unified vs per-CPU) is better than one flexible mode that mixes concerns. Users can:
+1. Choose the **unified** approach for 95% of cases
+2. Drop to **per-CPU** when they truly need platform-specific behavior
+
+This prevents subtle bugs where users accidentally write non-portable code while thinking they're writing portable code.
+
+### Documentation Impact
+
+Created `UNSAFE.md` (355 lines) documenting both syntaxes with clear examples showing when to use each approach. Every example follows the "no mixing" rule.
+
+### Testing Approach
+
+Test both syntaxes independently:
+- `test_alias_simple.flap`: Unified syntax test
+- `test_register_alias.flap`: Both syntaxes shown separately
+
+This ensures the separation is maintained in practice, not just documentation.
