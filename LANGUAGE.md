@@ -1699,291 +1699,366 @@ println(fib(20))   // Reuses cached results (very fast)
 
 **Note:** Math functions from C libraries (like libm) use proper floating-point calling convention (xmm registers) for accurate results.
 
-## The Unsafe Language
+## The Unsafe Language: Battlestar Assembly
 
-Flap provides `unsafe` blocks for direct register manipulation when you need architecture-specific optimizations. Unlike inline assembly in other languages, Flap's unsafe blocks maintain portability by requiring implementations for all three target architectures.
+Flap's `unsafe` blocks provide direct register access across x86_64, ARM64, and RISC-V architectures. This Battlestar-inspired sublanguage allows low-level systems programming while maintaining portability.
 
-### Philosophy
+### Overview
 
-Unsafe blocks exist for three reasons:
+Unsafe blocks execute architecture-specific machine code while integrating seamlessly with Flap's high-level features.
 
-1. **Performance-critical paths** - Direct register control for hot loops, SIMD operations, or bit manipulation
-2. **Low-level operations** - Tasks that require precise control over CPU registers
-3. **Maintained portability** - By requiring all three architectures, code remains cross-platform
+**Unified approach** (recommended - uses register aliases):
+```flap
+result := unsafe {
+    a <- 42      // Load immediate (works on all CPUs)
+    b <- 100     // Register aliases: a, b, c
+    c <- a + b   // Register arithmetic
+    c            // Return value (last expression)
+}
+```
+
+**Per-CPU approach** (when platform-specific code is needed):
+```flap
+result := unsafe {
+    x86_64 {
+        rax <- 42
+        rbx <- 100
+        rcx <- rax + rbx
+        rcx
+    }
+    arm64 {
+        x0 <- 42
+        x1 <- 100
+        x2 <- x0 + x1
+        x2
+    }
+    riscv64 {
+        a0 <- 42
+        a1 <- 100
+        a2 <- a0 + a1
+        a2
+    }
+}
+```
+
+### Register Aliases
+
+Use portable register aliases to write **unified unsafe code** that works across all architectures:
+
+| Alias | x86_64  | ARM64 | RISC-V | Purpose              |
+|-------|---------|-------|--------|----------------------|
+| `a`   | `rax`   | `x0`  | `a0`   | Accumulator/arg 0    |
+| `b`   | `rbx`   | `x1`  | `a1`   | Base register/arg 1  |
+| `c`   | `rcx`   | `x2`  | `a2`   | Count register/arg 2 |
+| `d`   | `rdx`   | `x3`  | `a3`   | Data register/arg 3  |
+| `e`   | `rsi`   | `x4`  | `a4`   | Source index/arg 4   |
+| `f`   | `rdi`   | `x5`  | `a5`   | Dest index/arg 5     |
+| `s`   | `rsp`   | `sp`  | `sp`   | Stack pointer        |
+| `p`   | `rbp`   | `fp`  | `fp`   | Frame pointer        |
+
+**Unified Example:**
+```flap
+// Works on ALL architectures - no per-CPU blocks needed!
+value := unsafe {
+    a <- 0x2A    // Load 42 into accumulator
+    a            // Return accumulator
+}
+```
 
 ### Syntax
 
+#### Per-Architecture Blocks
+
+Specify different implementations for each CPU with labeled blocks:
+
 ```flap
 result := unsafe {
-    // x86_64 block
-    register_ops
-} {
-    // arm64 block
-    register_ops
-} {
-    // riscv64 block
-    register_ops
+    x86_64 {
+        rax <- 100
+        rbx <- rax
+        rbx
+    }
+    arm64 {
+        x0 <- 100
+        x1 <- x0
+        x1
+    }
+    riscv64 {
+        a0 <- 100
+        a1 <- a0
+        a1
+    }
 }
 ```
 
-All three blocks are **mandatory**. The compiler selects the appropriate block for the target architecture at compile time.
+#### Unified Blocks (Recommended)
+
+Use register aliases for portable code:
+
+```flap
+result := unsafe {
+    a <- 100     // Works everywhere
+    b <- a
+    b
+}
+```
 
 ### Operations
 
-Unsafe blocks support three operations:
-
-#### 1. Immediate to Register
+#### Immediate Loads
 ```flap
-rax <- 42          // Load immediate val
-rcx <- 0xFF        // Hex literals work
-rdx <- 0b1010      // Binary literals work
+a <- 42          // Decimal
+a <- 0xFF        // Hexadecimal
+a <- 0b1010      // Binary
 ```
 
-#### 2. Register to Register
+#### Register Moves
 ```flap
-rax <- rbx         // Copy rbx to rax
-x0 <- x1          // ARM64 equivalent
-a0 <- a1          // RISC-V equivalent
+a <- 100
+b <- a           // Copy a to b
+c <- b           // Copy b to c
 ```
 
-#### 3. Stack Operations
+#### Arithmetic Operations
 ```flap
-stack <- rax       // Push rax onto stack
-rbx <- stack       // Pop from stack into rbx
+a <- 10
+b <- 20
+c <- a + b       // Addition
+d <- a - b       // Subtraction
+e <- a * b       // Multiplication
+f <- a / b       // Division (unsigned)
 ```
 
-Stack operations follow LIFO (Last In, First Out) order:
+#### Bitwise Operations
 ```flap
-unsafe {
-    rax <- 10
-    stack <- rax      // Push 10
-    rax <- 20
-    stack <- rax      // Push 20
-
-    rbx <- stack      // Pop 20 into rbx
-    rcx <- stack      // Pop 10 into rcx
-} { /* arm64 */ } { /* riscv64 */ }
+a <- 0xFF
+b <- 0x0F
+c <- a & b       // AND
+d <- a | b       // OR
+e <- a ^ b       // XOR
+f <- ~a          // NOT
 ```
 
-#### 4. Arithmetic Operations
-
-**Addition and Subtraction** (v1.3.0+):
+#### Shifts and Rotates
 ```flap
-unsafe {
-    rax <- 100
-    rbx <- 50
-    rax <- rax + rbx   // rax = 150 (register + register)
-    rax <- rax + 10    // rax = 160 (register + immediate)
-    rax <- rax - 20    // rax = 140 (register - immediate)
-    rax <- rax - rbx   // rax = 90  (register - register)
-} { /* arm64 */ } { /* riscv64 */ }
+a <- 8
+b <- a << 2      // Shift left
+c <- a >> 1      // Shift right
+d <- a rol 4     // Rotate left
+e <- a ror 2     // Rotate right
 ```
 
-**Add with Carry** - Multi-precision arithmetic:
+#### Memory Access
 ```flap
-unsafe {
-    // 128-bit addition: add two pairs of 64-bit values
-    rax <- low1 + low2      // Add lower 64 bits (sets carry flag)
-    rdx <- high1 +! high2   // Add upper 64 bits with carry
-} { /* arm64 */ } { /* riscv64 */ }
+// Load from memory
+a <- [b]                // Load 64-bit from address in b
+a <- [b + 16]           // Load from b + offset
+a <- u8 [b]             // Load 8-bit (zero-extended)
+a <- u16 [b + 4]        // Load 16-bit + offset
+a <- u32 [b]            // Load 32-bit
+a <- i8 [b]             // Load signed 8-bit
+a <- i16 [b]            // Load signed 16-bit
+a <- i32 [b]            // Load signed 32-bit
+
+// Store to memory
+[a] <- 42               // Store immediate
+[a + 8] <- b            // Store register to offset
+[a] <- b as u8          // Store 8-bit
+[a] <- b as u16         // Store 16-bit
+[a] <- b as u32         // Store 32-bit
 ```
 
-**Exchange/Swap** - Atomic val exchange:
+#### Stack Operations
 ```flap
-unsafe {
-    rax <- 100
-    rbx <- 200
-    rax <-> rbx            // Swap: rax=200, rbx=100
-
-    rax <-> [rcx]          // Swap rax with memory at [rcx]
-} { /* arm64 */ } { /* riscv64 */ }
+stack <- a       // Push a onto stack
+b <- stack       // Pop stack into b
 ```
 
-**Coming in v1.5.0**: Multiply, divide, bitwise operations (AND, OR, XOR), shifts
-
-#### 5. Memory Operations
-
-**Memory Loads** (v1.3.0+):
+#### System Calls
 ```flap
-unsafe {
-    rbx <- 0x1000        // Address to load from
-    rax <- [rbx]         // Load 64-bit val from address in rbx
-    rcx <- [rbx + 16]    // Load from rbx + 16 offset
-} { /* arm64 */ } { /* riscv64 */ }
+// Set up syscall arguments, then invoke
+a <- 1           // Syscall number (write)
+b <- 1           // File descriptor (stdout)
+c <- addr        // Buffer address
+d <- len         // Buffer length
+syscall          // Invoke syscall
 ```
 
-**Sized Memory Loads** (v1.5.0+):
-```flap
-unsafe {
-    rbx <- 0x1000
+### Return Values
 
-    // Zero-extend smaller types (unsigned)
-    rax <- [rbx] as uint8    // Load byte, zero-extend to 64-bit (0x00000000000000FF)
-    rax <- [rbx] as uint16   // Load word, zero-extend to 64-bit (0x000000000000FFFF)
-    rax <- [rbx] as uint32   // Load dword, zero-extend to 64-bit (0x00000000FFFFFFFF)
-
-    // Sign-extend smaller types (signed)
-    rax <- [rbx] as int8     // Load byte, sign-extend to 64-bit (0xFFFFFFFFFFFFFFFF for -1)
-    rax <- [rbx] as int16    // Load word, sign-extend to 64-bit
-    rax <- [rbx] as int32    // Load dword, sign-extend to 64-bit
-
-    // Works with offsets too
-    rax <- [rbx + 8] as uint8
-} { /* arm64 */ } { /* riscv64 */ }
-```
-
-**Sized Memory Stores** (v1.5.0+):
-```flap
-unsafe {
-    rbx <- 0x1000
-
-    // Store byte/word/dword from register
-    [rbx] <- rax as uint8     // Store low byte of RAX to [rbx]
-    [rbx] <- rax as uint16    // Store low word of RAX to [rbx]
-    [rbx] <- rax as uint32    // Store low dword of RAX to [rbx]
-    [rbx] <- rax as uint64    // Store full 64-bit RAX to [rbx] (default)
-
-    // Works with offsets too
-    [rbx + 8] <- rax as uint8
-
-    // Note: Signed types (int8, int16, int32) are treated the same as unsigned for stores
-    // The signedness only matters when loading back with sign extension
-} { /* arm64 */ } { /* riscv64 */ }
-```
-
-### Return Val
-
-Unsafe blocks return the val in the **accumulator register**:
-- **x86_64**: `rax`
-- **ARM64**: `x0`
-- **RISC-V**: `a0`
-
-The val is automatically converted from integer to `float64` (Flap's native type).
+The **last expression** in an unsafe block is the return value:
 
 ```flap
 result := unsafe {
-    rax <- 42
-    rbx <- 100
-    rax <- rbx    // rax = 100
-} { x0 <- 100 } { a0 <- 100 }
-
-// result is 100.0 (converted to float64)
+    a <- 42
+    b <- a * 2
+    b            // Returns b (84)
+}
 ```
 
-### Common Registers
+#### Type Casting Returns
 
-**x86_64**:
-- General purpose: `rax`, `rbx`, `rcx`, `rdx`, `rsi`, `rdi`
-- Extended: `r8`, `r9`, `r10`, `r11`, `r12`, `r13`, `r14`, `r15`
-- Stack pointer: `rsp` (use with caution)
-- Base pointer: `rbp` (use with caution)
+Cast return values to C types:
 
-**ARM64**:
-- General purpose: `x0`-`x30`
-- Stack pointer: `sp` (use with caution)
-- Zero register: `xzr` (reads as 0)
+```flap
+ptr := unsafe {
+    a <- 0x1000
+    a as pointer     // Return as pointer
+}
 
-**RISC-V**:
-- Arguments/results: `a0`-`a7`
-- Temporaries: `t0`-`t6`
-- Saved: `s0`-`s11`
-- Stack pointer: `sp` (use with caution)
+text := unsafe {
+    a <- string_addr
+    a as cstr        // Return as C string
+}
+```
 
 ### Examples
 
-#### Example 1: Bit Manipulation
+#### Example 1: Simple Arithmetic
 ```flap
-// Swap two vals using XOR trick
-swapped := unsafe {
-    rax <- 42
-    rbx <- 100
-    rax <- rax      // XOR rax with rbx (not yet implemented)
-} {
-    x0 <- 42
-    x1 <- 100
-    // ARM64 implementation
-} {
-    a0 <- 42
-    a1 <- 100
-    // RISC-V implementation
+sum := unsafe {
+    a <- 10
+    b <- 32
+    c <- a + b
+    c
+}
+printf("Sum: %v\n", sum)  // Output: Sum: 42
+```
+
+#### Example 2: Bitwise Magic
+```flap
+// Fast power-of-2 check
+is_power_of_2 := unsafe {
+    a <- 16
+    b <- a - 1
+    c <- a & b
+    c            // Returns 0 if power of 2
 }
 ```
 
-#### Example 2: Stack-based Calculation
+#### Example 3: Memory Manipulation
 ```flap
-// Calculate: (10 + 20) * 30 using stack
-result := unsafe {
-    rax <- 10
-    stack <- rax
-    rax <- 20
-    stack <- rax
+// Allocate buffer
+buf_size := 1024
+buffer := malloc(buf_size)
 
-    // Pop and add (simplified - add instruction not yet supported)
-    rbx <- stack
-    rcx <- stack
-    rax <- 30
-} {
-    // ARM64 equivalent
-} {
-    // RISC-V equivalent
+// Write to buffer
+unsafe {
+    a <- buffer
+    [a] <- 0x4141414141414141 as u64      // Write "AAAAAAAA"
+    [a + 8] <- 0x4242424242424242 as u64  // Write "BBBBBBBB"
+}
+
+// Read back
+first := unsafe {
+    a <- buffer
+    b <- [a]
+    b
+}
+
+printf("First 8 bytes: 0x%x\n", first)
+free(buffer)
+```
+
+#### Example 4: System Call (Per-CPU)
+```flap
+// Write "Hello\n" to stdout - platform-specific syscalls
+msg := "Hello\n"
+
+unsafe {
+    x86_64 {
+        rax <- 1             // sys_write
+        rdi <- 1             // stdout
+        rsi <- msg as cstr   // buffer
+        rdx <- 6             // length
+        syscall
+    }
+    arm64 {
+        x8 <- 64             // sys_write on ARM64
+        x0 <- 1              // stdout
+        x1 <- msg as cstr    // buffer
+        x2 <- 6              // length
+        syscall
+    }
+    riscv64 {
+        a7 <- 64             // sys_write on RISC-V
+        a0 <- 1              // stdout
+        a1 <- msg as cstr    // buffer
+        a2 <- 6              // length
+        syscall
+    }
 }
 ```
 
-#### Example 3: Color Packing
+#### Example 5: Unified Cross-Platform Code
 ```flap
-// Pack RGBA bytes into single val
-packed_color := unsafe {
-    rax <- 0xFF      // R
-    rcx <- 0x80      // G
-    rdx <- 0x40      // B
-    rbx <- 0xFF      // A
-    // Shift and combine (shift instructions not yet implemented)
-    rax <- rax
-} { /* arm64 */ } { /* riscv64 */ }
+// Same code works on x86_64, ARM64, and RISC-V!
+factorial_5 := unsafe {
+    a <- 5          // Input
+    b <- 1          // Result
+
+    // Loop would go here (simplified)
+    c <- a * b
+    d <- c * 4
+    e <- d * 3
+    f <- e * 2
+    f              // Return 120
+}
+
+printf("5! = %v\n", factorial_5)
 ```
-
-### Limitations
-
-Current limitations (will be expanded):
-- ✅ Immediate loads
-- ✅ Register moves
-- ✅ Stack push/pop
-- ❌ Arithmetic operations (add, sub, mul, div)
-- ❌ Bitwise operations (and, or, xor, shift)
-- ❌ Memory loads/stores (beyond stack)
-- ❌ Conditional operations
 
 ### Safety Considerations
 
-Unsafe blocks bypass Flap's safety guarantees:
+1. **No Type Safety**: Unsafe blocks bypass Flap's type system
+2. **No Bounds Checking**: Memory access is unchecked
+3. **Platform Specific**: Code may behave differently across architectures
+4. **Manual Stack Management**: Push/pop must be balanced
+5. **Syscall Conventions Vary**: Different syscall numbers per OS/arch
 
-⚠️ **You can:**
-- Corrupt the stack pointer
-- Overwrite important registers
-- Create undefined behavior
+Use unsafe blocks only when:
+- Performance is critical
+- Interfacing with hardware
+- Implementing low-level primitives
+- Syscalls are required
 
-✅ **Best practices:**
-- Keep unsafe blocks small
-- Document what each block does
-- Test on all three architectures
-- Avoid modifying `rsp`/`sp` unless you know what you're doing
-- Preserve caller-saved registers if calling functions
+For most code, use Flap's safe high-level features instead.
 
-### When to Use Unsafe
+### Advanced Topics
 
-**Good uses:**
-- Performance-critical tight loops
-- Custom bit manipulation
-- Specialized SIMD operations
-- Interfacing with specific CPU features
+#### Interfacing with C
+```flap
+// Call C function that expects pointer
+c_func_ptr := unsafe {
+    a <- data_buffer
+    a as pointer
+}
+c_function(c_func_ptr)
+```
 
-**Bad uses:**
-- General arithmetic (use Flap operators instead)
-- String manipulation (use Flap builtins)
-- Control flow (use match blocks)
-- Anything portable Flap can already do
+#### Custom Allocators
+```flap
+// Implement bump allocator
+alloc := x => unsafe {
+    a <- heap_ptr        // Current heap position
+    b <- a + x           // New position
+    heap_ptr <- b        // Update heap pointer
+    a as pointer         // Return old position
+}
+```
 
-Remember: **With great power comes great responsibility**. Unsafe blocks give you the keys to the CPU, but also the ability to crash your program spectacularly.
+#### Atomic Operations
+```flap
+// LOCK prefix on x86_64
+counter := unsafe {
+    a <- counter_addr
+    b <- [a]
+    c <- b + 1
+    [a] <- c    // Note: actual atomics need LOCK prefix
+    c
+}
+```
+
 
 ## Grammar
 
