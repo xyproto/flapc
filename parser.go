@@ -6344,19 +6344,63 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 }
 
 func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
-	if VerboseMode {
-		numThreadsStr := fmt.Sprintf("%d", stmt.NumThreads)
-		if stmt.NumThreads == -1 {
-			numThreadsStr = "all cores"
+	// Determine actual thread count
+	actualThreads := stmt.NumThreads
+	if actualThreads == -1 {
+		// @@ syntax: detect CPU cores at compile time
+		actualThreads = GetNumCPUCores()
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: @@ resolved to %d CPU cores\n", actualThreads)
 		}
-		fmt.Fprintf(os.Stderr, "DEBUG: Compiling parallel range loop with %s threads\n", numThreadsStr)
 	}
 
-	// For now, implement as a sequential loop with a TODO comment
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Compiling parallel range loop with %d threads, iterator '%s'\n",
+			actualThreads, stmt.Iterator)
+	}
+
+	// Verify the range is compile-time constant
+	// For the initial implementation, we require constant ranges
+	startLit, startIsLit := rangeExpr.Start.(*NumberExpr)
+	endLit, endIsLit := rangeExpr.End.(*NumberExpr)
+
+	if !startIsLit || !endIsLit {
+		fmt.Fprintf(os.Stderr, "Error: Parallel loops currently require constant range bounds\n")
+		fmt.Fprintf(os.Stderr, "       Example: @@ i in 0..<100 { } (not @@ i in start..<end)\n")
+		fmt.Fprintf(os.Stderr, "       Dynamic ranges will be supported in a future version\n")
+		os.Exit(1)
+	}
+
+	start := int(startLit.Value)
+	end := int(endLit.Value)
+	if rangeExpr.Inclusive {
+		end++ // Convert inclusive to exclusive for calculations
+	}
+
+	totalItems := end - start
+	if totalItems <= 0 {
+		fmt.Fprintf(os.Stderr, "Error: Parallel loop has empty range [%d, %d)\n", start, end)
+		os.Exit(1)
+	}
+
+	// Calculate work distribution
+	chunkSize, remainder := CalculateWorkDistribution(totalItems, actualThreads)
+
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Range [%d, %d) = %d items\n", start, end, totalItems)
+		fmt.Fprintf(os.Stderr, "DEBUG: Each thread: ~%d items (remainder: %d)\n", chunkSize, remainder)
+	}
+
+	// For now, implement as a sequential loop with detailed diagnostics
 	// Actual parallel implementation will be added incrementally
-	fmt.Fprintf(os.Stderr, "Warning: Parallel loop syntax detected but not yet fully implemented.\n")
-	fmt.Fprintf(os.Stderr, "         Falling back to sequential execution.\n")
-	fmt.Fprintf(os.Stderr, "         Loop: %d threads, iterator '%s'\n", stmt.NumThreads, stmt.Iterator)
+	fmt.Fprintf(os.Stderr, "Info: Parallel loop detected: %d threads for range [%d, %d)\n",
+		actualThreads, start, end)
+	fmt.Fprintf(os.Stderr, "      Work distribution: %d items/thread", chunkSize)
+	if remainder > 0 {
+		fmt.Fprintf(os.Stderr, " (+%d to last thread)", remainder)
+	}
+	fmt.Fprintf(os.Stderr, "\n")
+	fmt.Fprintf(os.Stderr, "      Falling back to sequential execution (parallel codegen TODO)\n")
 
 	// Fallback: compile as sequential loop for now
 	// Create a modified LoopStmt with NumThreads = 0 to trigger sequential compilation

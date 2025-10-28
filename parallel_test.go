@@ -55,6 +55,18 @@ func TestGetTID(t *testing.T) {
 	fmt.Printf("Current thread TID: %d\n", tid)
 }
 
+// Test CPU core detection
+func TestGetNumCPUCores(t *testing.T) {
+	cores := GetNumCPUCores()
+	if cores <= 0 {
+		t.Fatalf("Invalid core count returned: %d", cores)
+	}
+	if cores > 1024 {
+		t.Fatalf("Unrealistic core count returned: %d", cores)
+	}
+	fmt.Printf("Detected CPU cores: %d\n", cores)
+}
+
 // Test work distribution calculation
 func TestWorkDistribution(t *testing.T) {
 	tests := []struct {

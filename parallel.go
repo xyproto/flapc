@@ -23,6 +23,45 @@ const (
 const CLONE_THREAD_FLAGS = CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND |
                            CLONE_THREAD | CLONE_SYSVSEM
 
+// GetNumCPUCores returns the number of online CPU cores
+// Uses sysconf(_SC_NPROCESSORS_ONLN) via get_nprocs()
+func GetNumCPUCores() int {
+	// Read /proc/cpuinfo to count processors
+	// This is more portable than sysconf and works in all Linux environments
+	data, err := syscall.Open("/proc/cpuinfo", syscall.O_RDONLY, 0)
+	if err != nil {
+		// Fallback: assume 4 cores if we can't detect
+		return 4
+	}
+	defer syscall.Close(data)
+
+	// Read file contents
+	buf := make([]byte, 16384) // 16KB should be enough for cpuinfo
+	n, err := syscall.Read(data, buf)
+	if err != nil {
+		return 4
+	}
+
+	// Count "processor" lines in /proc/cpuinfo
+	count := 0
+	for i := 0; i < n-9; i++ {
+		// Look for "processor" at start of line
+		if buf[i] == 'p' && buf[i+1] == 'r' && buf[i+2] == 'o' &&
+			buf[i+3] == 'c' && buf[i+4] == 'e' && buf[i+5] == 's' &&
+			buf[i+6] == 's' && buf[i+7] == 'o' && buf[i+8] == 'r' {
+			// Check if this is at start of line (i==0 or previous char is newline)
+			if i == 0 || buf[i-1] == '\n' {
+				count++
+			}
+		}
+	}
+
+	if count == 0 {
+		return 4 // Fallback
+	}
+	return count
+}
+
 // ThreadStack represents a thread's stack allocation
 type ThreadStack struct {
 	Memory []byte
