@@ -4713,6 +4713,7 @@ type FlapCompiler struct {
 	out                  *Out
 	variables            map[string]int               // variable name -> stack offset
 	mutableVars          map[string]bool              // variable name -> is mutable
+	parentVariables      map[string]bool              // Track parent-scope vars in parallel loops (use r11 instead of rbp)
 	varTypes             map[string]string            // variable name -> "map" or "list"
 	sourceCode           string                       // Store source for recompilation
 	usedFunctions        map[string]bool              // Track which functions are called
@@ -5892,7 +5893,12 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 		fc.currentAssignName = s.Name
 		fc.compileExpression(s.Value)
 		fc.currentAssignName = ""
-		fc.out.MovXmmToMem("xmm0", "rbp", -offset)
+		// Use r11 for parent variables in parallel loops, rbp for local variables
+		baseReg := "rbp"
+		if fc.parentVariables != nil && fc.parentVariables[s.Name] {
+			baseReg = "r11"
+		}
+		fc.out.MovXmmToMem("xmm0", baseReg, -offset)
 
 	case *LoopStmt:
 		fc.compileLoopStatement(s)
@@ -5923,8 +5929,14 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 				compilerError("cannot modify immutable variable '%s'", identExpr.Name)
 			}
 
+			// Use r11 for parent variables, rbp for local
+			baseReg := "rbp"
+			if fc.parentVariables != nil && fc.parentVariables[identExpr.Name] {
+				baseReg = "r11"
+			}
+
 			// Load current value into xmm0
-			fc.out.MovMemToXmm("xmm0", "rbp", -offset)
+			fc.out.MovMemToXmm("xmm0", baseReg, -offset)
 
 			// Create 1.0 constant
 			labelName := fmt.Sprintf("one_%d", fc.stringCounter)
@@ -5954,7 +5966,7 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 			}
 
 			// Store the modified value back to the variable
-			fc.out.MovXmmToMem("xmm0", "rbp", -offset)
+			fc.out.MovXmmToMem("xmm0", baseReg, -offset)
 		} else {
 			fc.compileExpression(s.Expr)
 		}
@@ -6343,6 +6355,29 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	fc.activeLoops = fc.activeLoops[:len(fc.activeLoops)-1]
 }
 
+// collectLoopLocalVars scans the loop body and returns a map of variables defined inside it
+func collectLoopLocalVars(body []Statement) map[string]bool {
+	localVars := make(map[string]bool)
+
+	// Recursively scan statements for variable assignments
+	var scanStatements func([]Statement)
+	scanStatements = func(stmts []Statement) {
+		for _, stmt := range stmts {
+			switch s := stmt.(type) {
+			case *AssignStmt:
+				localVars[s.Name] = true
+			case *LoopStmt:
+				// Recursively scan nested loop bodies
+				scanStatements(s.Body)
+			// Add more cases as needed for other statement types with nested statements
+			}
+		}
+	}
+
+	scanStatements(body)
+	return localVars
+}
+
 func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	// Determine actual thread count
 	actualThreads := stmt.NumThreads
@@ -6447,6 +6482,9 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 
 	// Collect child jump positions - all children jump to the same child code
 	childJumpPositions := make([]int, 0, actualThreads)
+
+	// Store parent's rbp in r11 so child threads can access parent variables
+	fc.out.MovRegToReg("r11", "rbp")
 
 	// Spawn actualThreads child threads
 	for threadIdx := 0; threadIdx < actualThreads; threadIdx++ {
@@ -6568,20 +6606,31 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	// The variables are already registered in fc.variables from collectSymbols phase
 	// We just need to ensure the iterator is set correctly for this context
 
+	// Capture parent variables: exclude iterator and loop-local vars
+	loopLocalVars := collectLoopLocalVars(stmt.Body)
+	savedParentVariables := fc.parentVariables
+	fc.parentVariables = make(map[string]bool)
+	for varName := range fc.variables {
+		// Only mark as parent if it's not the iterator and not defined inside loop
+		if varName != stmt.Iterator && !loopLocalVars[varName] {
+			fc.parentVariables[varName] = true
+		}
+	}
+
 	// Temporarily override the iterator offset for compilation
 	// (collectSymbols set it to a different offset, but in child thread it's at rbp-16)
 	savedIteratorOffset := fc.variables[stmt.Iterator]
 	fc.variables[stmt.Iterator] = iteratorOffset
 
 	// Compile actual loop body
-	// The generated code will use rbp-relative addressing
-	// which works correctly in the child thread's stack frame
+	// Parent variables will use r11, local variables use rbp
 	for _, bodyStmt := range stmt.Body {
 		fc.compileStatement(bodyStmt)
 	}
 
-	// Restore original iterator offset (for parent code that comes after)
+	// Restore original context
 	fc.variables[stmt.Iterator] = savedIteratorOffset
+	fc.parentVariables = savedParentVariables
 
 	// Increment loop counter
 	fc.out.IncReg("r14")
@@ -7181,8 +7230,12 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			}
 			compilerError("undefined variable '%s' at line %d", e.Name, 0)
 		}
-		// movsd xmm0, [rbp - offset]
-		fc.out.MovMemToXmm("xmm0", "rbp", -offset)
+		// Use r11 for parent variables in parallel loops, rbp for local variables
+		baseReg := "rbp"
+		if fc.parentVariables != nil && fc.parentVariables[e.Name] {
+			baseReg = "r11"
+		}
+		fc.out.MovMemToXmm("xmm0", baseReg, -offset)
 
 	case *NamespacedIdentExpr:
 		// Handle namespaced identifiers like sdl.SDL_INIT_VIDEO or data.field
