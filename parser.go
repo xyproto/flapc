@@ -4988,6 +4988,7 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 }
 
 func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
+	fmt.Fprintf(os.Stderr, "DEBUG COMPILE: Entering Compile function, target arch=%v\n", fc.eb.target.Arch())
 	if fc.debug {
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "DEBUG Compile: starting compilation with %d statements\n", len(program.Statements))
@@ -5220,6 +5221,15 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.predeclareLambdaSymbols()
 
 	// Second pass: Generate actual code with all symbols known
+	fmt.Fprintf(os.Stderr, "DEBUG PROGRAM: Have %d statements in program.Statements\n", len(program.Statements))
+	for i, stmt := range program.Statements {
+		loopStmt, isLoop := stmt.(*LoopStmt)
+		fmt.Fprintf(os.Stderr, "DEBUG PROGRAM:   Statement %d: %T", i, stmt)
+		if isLoop {
+			fmt.Fprintf(os.Stderr, " (parallel=%v, hasReducer=%v)", loopStmt.NumThreads != 0, loopStmt.Reducer != nil)
+		}
+		fmt.Fprintf(os.Stderr, "\n")
+	}
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG: Compiling %d statements\n", len(program.Statements))
 		for i, stmt := range program.Statements {
@@ -5227,10 +5237,12 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 		}
 	}
 	for i, stmt := range program.Statements {
+		fmt.Fprintf(os.Stderr, "DEBUG MAIN LOOP: About to compile statement %d: %T\n", i, stmt)
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "DEBUG: About to compile statement %d: %T\n", i, stmt)
 		}
 		fc.compileStatement(stmt)
+		fmt.Fprintf(os.Stderr, "DEBUG MAIN LOOP: Finished compiling statement %d\n", i)
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "DEBUG: Finished compiling statement %d\n", i)
 		}
@@ -5250,19 +5262,23 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	}
 
 	// Generate lambda functions
+	fmt.Fprintf(os.Stderr, "DEBUG LAMBDA GEN: About to generate %d lambda functions\n", len(fc.lambdaFuncs))
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG: About to generate lambda functions\n")
 	}
 	fc.generateLambdaFunctions()
+	fmt.Fprintf(os.Stderr, "DEBUG LAMBDA GEN: Finished generating lambda functions\n")
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG: Finished generating lambda functions\n")
 	}
 
 	// Generate runtime helper functions
+	fmt.Fprintf(os.Stderr, "DEBUG RUNTIME: About to generate runtime helpers\n")
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG: About to generate runtime helpers\n")
 	}
 	fc.generateRuntimeHelpers()
+	fmt.Fprintf(os.Stderr, "DEBUG RUNTIME: Finished generating runtime helpers\n")
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG: Finished generating runtime helpers\n")
 	}
@@ -5477,10 +5493,12 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 		}
 	}
 
+	fmt.Fprintf(os.Stderr, "DEBUG: About to WriteCompleteDynamicELF with text size=%d\n", fc.eb.text.Len())
 	gotBase, rodataBaseAddr, textAddr, pltBase, err := fc.eb.WriteCompleteDynamicELF(ds, pltFunctions)
 	if err != nil {
 		return err
 	}
+	fmt.Fprintf(os.Stderr, "DEBUG: After WriteCompleteDynamicELF, text size=%d\n", fc.eb.text.Len())
 
 	// Update rodata addresses using same sorted order
 	currentAddr = rodataBaseAddr
@@ -5567,14 +5585,21 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	fc.pushDeferScope()
 
 	// Generate code with symbols collected
-	for _, stmt := range program.Statements {
+	fmt.Fprintf(os.Stderr, "DEBUG: About to compile %d statements in second pass (text size=%d)\n", len(program.Statements), fc.eb.text.Len())
+	for idx, stmt := range program.Statements {
+		beforeSize := fc.eb.text.Len()
+		fmt.Fprintf(os.Stderr, "DEBUG: Compiling statement %d/%d in second pass: %T (text size before=%d)\n", idx+1, len(program.Statements), stmt, beforeSize)
 		fc.compileStatement(stmt)
+		afterSize := fc.eb.text.Len()
+		fmt.Fprintf(os.Stderr, "DEBUG: Finished compiling statement %d/%d (text size after=%d, added %d bytes)\n", idx+1, len(program.Statements), afterSize, afterSize-beforeSize)
 	}
+	fmt.Fprintf(os.Stderr, "DEBUG: Finished compiling all statements in second pass (final text size=%d)\n", fc.eb.text.Len())
 
 	fc.popDeferScope()
 
 	// Automatically exit if no explicit exit() was called
 	// Use libc's exit(0) to ensure proper cleanup (flushes printf buffers, etc.)
+	fmt.Fprintf(os.Stderr, "DEBUG: Before adding exit call in second pass, text size=%d\n", fc.eb.text.Len())
 	if !fc.hasExplicitExit {
 		fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
 		// Restore stack pointer to frame pointer (rsp % 16 == 8 for proper call alignment)
@@ -5583,6 +5608,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 		fc.trackFunctionCall("exit")
 		fc.eb.GenerateCallInstruction("exit")
 	}
+	fmt.Fprintf(os.Stderr, "DEBUG: After adding exit call in second pass, text size=%d\n", fc.eb.text.Len())
 
 	// Generate lambda functions
 	fc.generateLambdaFunctions()
@@ -5656,6 +5682,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	fc.patchHotFunctionTable()
 
 	// Update ELF with regenerated code
+	fmt.Fprintf(os.Stderr, "DEBUG: Text size before patchTextInELF: %d bytes\n", fc.eb.text.Len())
 	fc.eb.patchTextInELF()
 	fc.eb.patchRodataInELF()
 
@@ -6301,9 +6328,13 @@ func (fc *FlapCompiler) compileSpawnStmt(stmt *SpawnStmt) {
 	fc.patchJumpImmediate(parentJumpPos+1, parentOffset)
 }
 
+var globalLoopCallCounter int
+
 func (fc *FlapCompiler) compileLoopStatement(stmt *LoopStmt) {
 	// Check if this is a parallel loop
 	if stmt.NumThreads != 0 {
+		globalLoopCallCounter++
+		fmt.Fprintf(os.Stderr, "DEBUG: compileLoopStatement called #%d for parallel loop\n", globalLoopCallCounter)
 		// Parallel loop: @@ or N @
 		// Currently only range loops are supported for parallel execution
 		if rangeExpr, isRange := stmt.Iterable.(*RangeExpr); isRange {
@@ -6547,7 +6578,7 @@ func collectLoopLocalVars(body []Statement) map[string]bool {
 			case *LoopStmt:
 				// Recursively scan nested loop bodies
 				scanStatements(s.Body)
-			// Add more cases as needed for other statement types with nested statements
+				// Add more cases as needed for other statement types with nested statements
 			}
 		}
 	}
@@ -6614,22 +6645,37 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	fmt.Fprintf(os.Stderr, "\n")
 	fmt.Fprintf(os.Stderr, "      Emitting parallel execution assembly code\n")
 
-	// Step 1: Allocate space on stack for barrier
-	// Barrier layout: [count: int64][total: int64] = 16 bytes total
-	// Using int64 for simplicity (assembly has better support for 64-bit operations)
-	fc.out.SubImmFromReg("rsp", 16)
-	fc.runtimeStack += 16
+	// PART 1: Check if this loop has a reducer
+	hasReducer := stmt.Reducer != nil
+	if hasReducer {
+		fmt.Fprintf(os.Stderr, "      Parallel loop has reducer: combining %d partial results\n", actualThreads)
+	}
+
+	// PART 2: Allocate space on stack for barrier + results array (if reducer)
+	// Barrier layout: [count: int64][total: int64] = 16 bytes
+	// Results array: [result0: f64][result1: f64]...[resultN: f64] = actualThreads * 8 bytes
+	// Memory layout: [results_array][barrier]
+	var resultsArraySize int64 = 0
+	if hasReducer {
+		resultsArraySize = int64(actualThreads) * 8 // 8 bytes per float64
+	}
+	totalStackAlloc := 16 + resultsArraySize
+	fc.out.SubImmFromReg("rsp", totalStackAlloc)
+	fc.runtimeStack += int(totalStackAlloc)
 
 	// Step 2: Initialize barrier
 	// V6: actualThreads child threads + 1 parent = (actualThreads + 1) total participants
-	// barrier.count = actualThreads + 1 at [rsp+0]
-	// barrier.total = actualThreads + 1 at [rsp+8]
+	// barrier.count = actualThreads + 1 at [rsp+resultsArraySize+0]
+	// barrier.total = actualThreads + 1 at [rsp+resultsArraySize+8]
 	totalParticipants := actualThreads + 1
-	fc.out.MovImmToMem(int64(totalParticipants), "rsp", 0) // count at offset 0
-	fc.out.MovImmToMem(int64(totalParticipants), "rsp", 8) // total at offset 8
+	fc.out.MovImmToMem(int64(totalParticipants), "rsp", int(resultsArraySize)+0) // count at offset resultsArraySize+0
+	fc.out.MovImmToMem(int64(totalParticipants), "rsp", int(resultsArraySize)+8) // total at offset resultsArraySize+8
 
-	// Save barrier address in r15 for later use
+	// Save barrier address in r15 (it's at rsp + resultsArraySize)
 	fc.out.MovRegToReg("r15", "rsp")
+	if hasReducer {
+		fc.out.AddImmToReg("r15", resultsArraySize) // Barrier is AFTER results array
+	}
 
 	// Step 3: Spawn threads
 	// For V1, spawn 2 threads
@@ -6664,6 +6710,10 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	// Store parent's rbp in r11 so child threads can access parent variables
 	fc.out.MovRegToReg("r11", "rbp")
 
+	// Save parent's rbp (r11) to a register that won't be clobbered during thread spawning
+	// We'll use rbx to hold the parent rbp value to pass to children
+	fc.out.MovRegToReg("rbx", "r11") // rbx = parent rbp (will be passed to children)
+
 	// Spawn actualThreads child threads
 	for threadIdx := 0; threadIdx < actualThreads; threadIdx++ {
 		fmt.Fprintf(os.Stderr, "      Spawning thread %d with range [%d, %d)\n",
@@ -6673,6 +6723,7 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 		// mmap(addr=NULL, length=1MB, prot=PROT_READ|PROT_WRITE,
 		//      flags=MAP_PRIVATE|MAP_ANONYMOUS, fd=-1, offset=0)
 		// mmap syscall number is 9
+
 		fc.out.MovImmToReg("rax", "9")       // sys_mmap
 		fc.out.MovImmToReg("rdi", "0")       // addr = NULL
 		fc.out.MovImmToReg("rsi", "1048576") // length = 1MB
@@ -6687,25 +6738,42 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 		fc.out.AddImmToReg("rax", 1048576-16) // Stack top
 		fc.out.MovRegToReg("r13", "rax")      // Save stack top in r13
 
-		// V6: Store work range + barrier address on child stack
-		// Stack layout: [start: int64][end: int64][barrier_ptr: int64] = 24 bytes
+		// PART 3: Store work range + barrier address + parent rbp [+ results array + thread idx] on child stack
+		// Stack layout WITHOUT reducer: [start][end][barrier_ptr][parent_rbp] = 32 bytes
+		// Stack layout WITH reducer:    [start][end][barrier_ptr][parent_rbp][results_arr_ptr][thread_idx] = 48 bytes
 		threadStart := int64(threadRanges[threadIdx][0])
 		threadEnd := int64(threadRanges[threadIdx][1])
 
-		// Store start at [r13-24]
+		var childStackSize int64 = 32 // Default: start + end + barrier + parent_rbp
+		if hasReducer {
+			childStackSize = 48 // Add results_arr_ptr + thread_idx
+		}
+
+		// Store start at [r13-childStackSize]
 		fc.out.MovImmToReg("rax", fmt.Sprintf("%d", threadStart))
-		fc.out.MovRegToMem("rax", "r13", -24)
+		fc.out.MovRegToMem("rax", "r13", -int(childStackSize))
 
-		// Store end at [r13-16]
+		// Store end at [r13-(childStackSize-8)]
 		fc.out.MovImmToReg("rax", fmt.Sprintf("%d", threadEnd))
-		fc.out.MovRegToMem("rax", "r13", -16)
+		fc.out.MovRegToMem("rax", "r13", -int(childStackSize-8))
 
-		// Store barrier address at [r13-8]
-		// Barrier is at r15 (saved earlier from rsp after barrier allocation)
-		fc.out.MovRegToMem("r15", "r13", -8)
+		// Store barrier address at [r13-(childStackSize-16)]
+		fc.out.MovRegToMem("r15", "r13", -int(childStackSize-16))
 
-		// Adjust stack pointer to account for work range + barrier pointer
-		fc.out.SubImmFromReg("r13", 24)
+		// Store parent rbp at [r13-(childStackSize-24)]
+		fc.out.MovRegToMem("rbx", "r13", -int(childStackSize-24))
+
+		if hasReducer {
+			// Store results array address (r14 = original rsp = results array base) at [r13-(childStackSize-32)]
+			fc.out.MovRegToMem("r14", "r13", -int(childStackSize-32))
+
+			// Store thread index at [r13-(childStackSize-40)] (will be rbp+40 after stack adjustment)
+			fc.out.MovImmToReg("rax", fmt.Sprintf("%d", threadIdx))
+			fc.out.MovRegToMem("rax", "r13", -int(childStackSize-40))
+		}
+
+		// Adjust stack pointer
+		fc.out.SubImmFromReg("r13", childStackSize)
 
 		// Step 2: Call clone() syscall
 		// clone(flags, child_stack, ptid, ctid, newtls)
@@ -6751,14 +6819,37 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	// Set up new stack frame
 	fc.out.MovRegToReg("rbp", "rsp")
 
-	// Load work range and barrier from stack
-	// start is at [rbp+0], end is at [rbp+8], barrier_ptr is at [rbp+16]
+	// PART 4: Load thread-specific data from initial stack
+	// WITHOUT reducer: [start][end][barrier_ptr][parent_rbp] at rbp+0, rbp+8, rbp+16, rbp+24
+	// WITH reducer:    [start][end][barrier_ptr][parent_rbp][results_arr_ptr][thread_idx] at rbp+0...rbp+40
 	fc.out.MovMemToReg("r12", "rbp", 0)  // r12 = start
 	fc.out.MovMemToReg("r13", "rbp", 8)  // r13 = end
 	fc.out.MovMemToReg("r15", "rbp", 16) // r15 = barrier address
+	fc.out.MovMemToReg("r11", "rbp", 24) // r11 = parent rbp (for accessing parent variables)
 
-	// Allocate stack space for loop and message
-	fc.out.SubImmFromReg("rsp", 32) // 32 bytes for loop counter + message buffer
+	// Declare variables for results array and thread index (set below if hasReducer)
+	var resultsArrReg string // Will be "r9" if hasReducer
+	var threadIdxReg string  // Will be "r8" if hasReducer
+
+	if hasReducer {
+		fc.out.MovMemToReg("r9", "rbp", 32) // r9 = results array address
+		fc.out.MovMemToReg("r8", "rbp", 40) // r8 = thread index
+		resultsArrReg = "r9"
+		threadIdxReg = "r8"
+	}
+
+	// Allocate stack space for loop + partial result (if reducer)
+	var childLoopStackSize int64 = 32 // Default
+	if hasReducer {
+		childLoopStackSize = 48 // Add 16 bytes (8 for partial_result + 8 padding)
+	}
+	fc.out.SubImmFromReg("rsp", childLoopStackSize)
+
+	if hasReducer {
+		// Initialize partial_result to 0.0 at rbp-48 (last slot in allocated space)
+		fc.out.XorpdXmm("xmm0", "xmm0")        // xmm0 = 0.0
+		fc.out.MovXmmToMem("xmm0", "rbp", -48) // partial_result = 0.0
+	}
 
 	// Initialize loop counter to start
 	fc.out.MovRegToReg("r14", "r12") // r14 = current iteration (start with r12=start)
@@ -6810,6 +6901,18 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	fc.variables[stmt.Iterator] = savedIteratorOffset
 	fc.parentVariables = savedParentVariables
 
+	// PART 5: If reducer, accumulate loop body result into partial_result
+	if hasReducer {
+		// Loop body result is in xmm0
+		// partial_result is at rbp-48
+		// Load partial_result
+		fc.out.MovMemToXmm("xmm1", "rbp", -48)
+		// Add: xmm1 = xmm1 + xmm0
+		fc.out.AddsdXmm("xmm1", "xmm0")
+		// Store back to partial_result
+		fc.out.MovXmmToMem("xmm1", "rbp", -48)
+	}
+
 	// Increment loop counter
 	fc.out.IncReg("r14")
 
@@ -6824,6 +6927,23 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	// Patch the loop exit jump
 	loopExitOffset := int32(loopEndPos - (loopEndJumpPos + ConditionalJumpSize))
 	fc.patchJumpImmediate(loopEndJumpPos+2, loopExitOffset)
+
+	// PART 6: If reducer, write partial_result to results[thread_idx]
+	if hasReducer {
+		// Load partial_result from rbp-48
+		fc.out.MovMemToXmm("xmm0", "rbp", -48)
+
+		// Calculate address: results_arr + (thread_idx * 8)
+		// r9 = results array base
+		// r8 = thread index
+		fc.out.MovRegToReg("rax", threadIdxReg)  // rax = thread_idx
+		fc.out.ShlImmReg("rax", 3)               // rax = thread_idx * 8 (multiply by sizeof(float64))
+		fc.out.AddRegToReg("rax", resultsArrReg) // rax = results_arr + offset
+
+		// Write partial_result to results[thread_idx]
+		fc.out.MovXmmToMem("xmm0", "rax", 0)
+		// Note: barrier provides memory fence, no explicit mfence needed
+	}
 
 	// V4: Barrier synchronization after loop completes
 	// Atomically decrement barrier counter and synchronize
@@ -6945,15 +7065,33 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	parentWakeExitOffset := int32(parentCleanupPos - (parentWakeExitJumpPos + UnconditionalJumpSize))
 	fc.patchJumpImmediate(parentWakeExitJumpPos+1, parentWakeExitOffset)
 
-	// Step 4: Cleanup - deallocate barrier
-	fc.out.AddImmToReg("rsp", 16)
-	fc.runtimeStack -= 16
+	// PART 7: If reducer, combine partial results
+	if hasReducer {
+		fmt.Fprintf(os.Stderr, "      Parent: Reducing %d partial results\n", actualThreads)
 
-	// V4 TODO: Barrier synchronization
-	// 1. Thread decrements barrier counter after loop (LOCK XADD)
-	// 2. Last thread wakes others with futex
-	// 3. Parent waits on futex barrier instead of executing sequentially
-	// 4. Execute actual loop body (compileStatements) instead of just printing digits
+		// Results array is at r10 (original rsp, saved at line 6651)
+		// Load first result into xmm0 (accumulator)
+		fc.out.MovMemToXmm("xmm0", "r10", 0) // results[0] at r10+0
+
+		// Loop through remaining results and combine
+		for i := 1; i < actualThreads; i++ {
+			offset := i * 8
+			// Load results[i] into xmm1
+			fc.out.MovMemToXmm("xmm1", "r10", offset)
+
+			// Call reducer lambda: xmm0 = reducer(xmm0, xmm1)
+			// For now, implement simple addition inline
+			// TODO: Compile reducer lambda body here
+			fc.out.AddsdXmm("xmm0", "xmm1")
+		}
+
+		// Final result is in xmm0
+		fmt.Fprintf(os.Stderr, "      Final reduced result in xmm0\n")
+	}
+
+	// PART 8: Cleanup - deallocate barrier + results array
+	fc.out.AddImmToReg("rsp", totalStackAlloc)
+	fc.runtimeStack -= int(totalStackAlloc)
 }
 
 func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
@@ -10269,7 +10407,9 @@ func (fc *FlapCompiler) generateCacheInsert() {
 }
 
 func (fc *FlapCompiler) generateRuntimeHelpers() {
+	fmt.Fprintf(os.Stderr, "DEBUG RUNTIME HELPERS: Starting generateRuntimeHelpers\n")
 	fc.eb.EmitArenaRuntimeCode()
+	fmt.Fprintf(os.Stderr, "DEBUG RUNTIME HELPERS: After EmitArenaRuntimeCode\n")
 
 	if fc.usesArenas {
 		fc.eb.Define("_flap_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")

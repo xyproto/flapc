@@ -920,8 +920,25 @@ func (eb *ExecutableBuilder) patchTextInELF() {
 	textOffset := 0x2000 + pltSize + startSizeAligned
 	textSize := len(newText)
 
+	fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: elfBuf size=%d, newText size=%d, textOffset=%d, pltSize=%d, neededFunctions=%d\n",
+		len(elfBuf), textSize, textOffset, pltSize, len(eb.neededFunctions))
+	previewSize := 32
+	if len(newText) < previewSize {
+		previewSize = len(newText)
+	}
+	fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: First %d bytes of newText: %x\n", previewSize, newText[:previewSize])
+
 	// Replace the text section
-	copy(elfBuf[textOffset:textOffset+textSize], newText)
+	if textOffset+textSize <= len(elfBuf) {
+		copy(elfBuf[textOffset:textOffset+textSize], newText)
+		fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: Successfully copied %d bytes\n", textSize)
+		if textSize >= previewSize {
+			fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: First %d bytes at textOffset in elfBuf after copy: %x\n", previewSize, elfBuf[textOffset:textOffset+previewSize])
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: ERROR - would overflow: textOffset=%d + textSize=%d = %d > elfBuf size=%d\n",
+			textOffset, textSize, textOffset+textSize, len(elfBuf))
+	}
 
 	// No need to rebuild - elfBuf is a slice of eb.elf's internal buffer,
 	// so modifications to elfBuf are already reflected in eb.elf
