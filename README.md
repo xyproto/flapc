@@ -6,7 +6,7 @@
 
 **Built for:** Game development (SDL3/RayLib5), systems programming, concurrent applications
 **Platform:** x86-64 Linux (Arch/Debian tested)
-**Status:** 435+ tests passing, process spawning working, ENet networking in progress (v1.6.0 development)
+**Status:** 435+ tests passing, process spawning working, ENet networking in progress (v1.2.0 development)
 
 ## Key Features
 
@@ -1485,7 +1485,7 @@ All communication uses ENet with `:port` syntax:
 
 // Remote address (string)
 "server.com:5000"      // Remote host + port
-"192.168.1.100:7777"   // IP address + port
+"191.2.0.100:7777"   // IP address + port
 
 // Next available port (returns actual port number)
 port := :5000+  // Tries 5000, 5001, 5002, ... returns actual port
@@ -1535,7 +1535,7 @@ port := :5000? or :3000  // If 5000 available, use it, else 3000
 "server.com:5000" <== "hello"
 
 // Send from variable
-target := "192.168.1.100:7777"
+target := "191.2.0.100:7777"
 target <== "data"
 
 // Broadcast to multiple addresses
@@ -3115,7 +3115,7 @@ For a loop with 10000 iterations:
 ### References
 
 - Linux futex(2) man page: https://man7.org/linux/man-pages/man2/futex.2.html
-- Intel x86-64 LOCK prefix: Volume 2A, Section 2.1.2
+- Intel x86-64 LOCK prefix: Volume 2A, Section 1.2.0
 - pthread_barrier_wait implementation in glibc: nptl/pthread_barrier_wait.c
 - Go runtime scheduler: runtime/proc.go (similar barrier patterns)
 
@@ -3397,14 +3397,14 @@ This ensures the separation is maintained in practice, not just documentation.
 
 ## Roadmap
 
-**Version 1.6.0 (In Progress):**
+**Version 1.2.0 (In Progress):**
 - ✅ Process spawning with `spawn` keyword (Unix fork)
 - ✅ Port literals for ENet (`:5000`, `:worker` with deterministic hashing)
 - ⚙️  ENet networking protocol (socket operations, send/receive)
 - ⚙️  Parallel loops (`N @` and `@@` for data parallelism - V4 complete with futex barriers)
 - 🔜 Hot code reload integration (infrastructure complete)
 
-**Completed in 1.5.x:**
+**Completed in 1.1.x:**
 - Tail-call optimization
 - Arena memory management
 - C FFI with DWARF auto-discovery
@@ -3429,7 +3429,7 @@ BSD-3-Clause - Commercial use, packaging, modification allowed. No copyleft.
 
 ---
 
-**Version:** 1.6.0-dev
+**Version:** 1.2.0-dev
 **Refs:** System V ABI, ELF-64 spec, Intel x86-64 manual
 # FLAPGAME Event System Design
 
@@ -5410,7 +5410,7 @@ This approach:
 - Provide powerful primitives
 - Let libraries handle complexity
 - Trust the FFI for specialization
-# Flap 1.6.0 Implementation Status
+# Flap 1.2.0 Implementation Status
 
 ## Completed Features
 
@@ -5422,7 +5422,7 @@ This approach:
 - ✅ Hot reload syntax documented (`hot` keyword)
 - ✅ All grammar rules updated
 
-### 2. Hot Reload Infrastructure  
+### 2. Hot Reload Infrastructure
 - ✅ `hot` keyword parsing
 - ✅ Function pointer table generation
 - ✅ Code extraction from ELF binaries
@@ -5454,7 +5454,7 @@ This approach:
 - ❌ Network socket operations not yet implemented
 - ❌ Send/receive operators not yet implemented
 
-## Remaining Work for 1.6.0
+## Remaining Work for 1.2.0
 
 ### Critical Blockers
 
@@ -5484,7 +5484,7 @@ This approach:
 ## Test Status
 
 - ✅ Go test suite passes
-- ✅ All existing Flap tests pass  
+- ✅ All existing Flap tests pass
 - ⚠️  New features not tested (not implemented)
 
 ## Recommendation

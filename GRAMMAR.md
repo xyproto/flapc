@@ -794,7 +794,7 @@ import sdl3 as sdl
 import raylib as rl
 import c as libc  // Standard C library
 
-// Import custom .so file (NEW in v1.6.0)
+// Import custom .so file (NEW in v1.2.0)
 import "/tmp/libmylib.so" as mylib
 import "/usr/local/lib/libcustom.so.1" as custom
 
@@ -822,7 +822,7 @@ time := libc.time(0)
 5. **ABI compatibility**: Arguments are marshaled to System V AMD64 calling convention
 6. **Stack arguments**: Functions with >6 arguments use stack-based argument passing
 
-**Custom .so File Imports (v1.6.0+):**
+**Custom .so File Imports (v1.2.0+):**
 
 ```flap
 // Import custom library
@@ -835,7 +835,7 @@ result := mylib.sum10(1, 2, 3, 4, 5, 6, 7, 8, 9, 10) // 10 arguments
 // Run with: LD_LIBRARY_PATH=/tmp ./program
 ```
 
-**Current Limitations (v1.6.0):**
+**Current Limitations (v1.2.0):**
 
 - Arguments are converted to integers (uint32/int64) or float64
 - Return values are converted to Flap's `float64`
