@@ -679,7 +679,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 	indirectSymTabSize := uint32(len(indirectSymTab) * 4)
 
 	// Chained fixups removed - using lazy binding instead
-	var chainedFixupsSize uint32 = 0
+	var chainedFixupsSize uint32
 
 	// Reserve space for code signature (will be filled by codesign tool)
 	// Ad-hoc signatures are typically ~400-1000 bytes, use 4KB to be safe

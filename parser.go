@@ -3992,7 +3992,7 @@ func (p *Parser) parsePrimary() Expression {
 
 			// Check for optional 'max' keyword after function call
 			// This will be validated during compilation to ensure it's present for recursive calls
-			var maxRecursion int64 = 0
+			var maxRecursion int64
 			needsCheck := false
 			if p.peek.Type == TOKEN_MAX {
 				p.nextToken() // advance to 'max'
@@ -4600,7 +4600,7 @@ func (p *Parser) parseUnsafeBlock() ([]Statement, *UnsafeReturnStmt) {
 			p.nextToken() // skip register name
 
 			// Check for offset: [rax + 16]
-			var storeOffset int64 = 0
+			var storeOffset int64
 			if p.current.Type == TOKEN_PLUS {
 				p.nextToken() // skip '+'
 				if p.current.Type != TOKEN_NUMBER {
@@ -4720,7 +4720,7 @@ func (p *Parser) parseUnsafeValue() interface{} {
 		addrReg := p.current.Value
 		p.nextToken() // skip register
 
-		var offset int64 = 0
+		var offset int64
 		if p.current.Type == TOKEN_PLUS {
 			p.nextToken() // skip '+'
 			if p.current.Type != TOKEN_NUMBER {
@@ -4779,9 +4779,8 @@ func (p *Parser) parseUnsafeValue() interface{} {
 				p.nextToken() // skip type
 				// Wrap in cast expression
 				return &CastExpr{Expr: leftValue, Type: castType}
-			} else {
-				p.error("expected type after 'as'")
 			}
+			p.error("expected type after 'as'")
 		}
 	} else if p.current.Type == TOKEN_IDENT {
 		left = p.current.Value
@@ -4795,9 +4794,8 @@ func (p *Parser) parseUnsafeValue() interface{} {
 				p.nextToken() // skip type
 				// Return cast of variable reference
 				return &CastExpr{Expr: &IdentExpr{Name: left}, Type: castType}
-			} else {
-				p.error("expected type after 'as'")
 			}
+			p.error("expected type after 'as'")
 		}
 	} else {
 		p.error("expected number, register, memory load, or unary operator")
@@ -6547,7 +6545,7 @@ func collectLoopLocalVars(body []Statement) map[string]bool {
 			case *LoopStmt:
 				// Recursively scan nested loop bodies
 				scanStatements(s.Body)
-			// Add more cases as needed for other statement types with nested statements
+				// Add more cases as needed for other statement types with nested statements
 			}
 		}
 	}
@@ -13136,7 +13134,7 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 			// Determine the parameter type from signature or cast
 			var paramType string
 			var castType string
-			var innerExpr Expression = arg
+			innerExpr := arg
 
 			if castExpr, ok := arg.(*CastExpr); ok {
 				// Explicit cast provided

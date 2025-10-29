@@ -1502,10 +1502,9 @@ func (acg *ARM64CodeGen) compileLoopStatement(stmt *LoopStmt) error {
 	if isRangeCall && funcCall.Function == "range" && len(funcCall.Args) == 1 {
 		// Range loop
 		return acg.compileRangeLoop(stmt, funcCall)
-	} else {
-		// List iteration
-		return acg.compileListLoop(stmt)
 	}
+	// List iteration
+	return acg.compileListLoop(stmt)
 }
 
 // compileRangeLoop compiles a range-based loop (@ i in range(10) { ... })

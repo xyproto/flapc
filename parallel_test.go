@@ -15,7 +15,7 @@ func TestBasicThreadSpawn(t *testing.T) {
 	fmt.Println("Testing basic thread spawn...")
 
 	// Create a counter to verify thread executed
-	var counter int32 = 0
+	var counter int32
 
 	// Allocate stack for thread
 	stack := AllocateThreadStack(1024 * 1024) // 1MB stack
