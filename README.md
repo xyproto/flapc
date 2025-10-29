@@ -3429,8 +3429,8 @@ BSD-3-Clause - Commercial use, packaging, modification allowed. No copyleft.
 
 ---
 
-**Version:** 1.2.0-dev
 **Refs:** System V ABI, ELF-64 spec, Intel x86-64 manual
+
 # FLAPGAME Event System Design
 
 ## Philosophy
@@ -5487,10 +5487,7 @@ This approach:
 - ✅ All existing Flap tests pass
 - ⚠️  New features not tested (not implemented)
 
-## Recommendation
+## General info
 
-Focus next on:
-1. Parallel loops (most straightforward runtime)
-2. ENet networking (most complex, needs research)
-3. Fix fork parsing (operator disambiguation)
-4. Hot reload integration (needs IPC design)
+* Version: 1.2.0
+* License: BSD-3
