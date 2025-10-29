@@ -4,14 +4,16 @@ package main
 // Aliases provide a portable way to write unsafe blocks across x86_64, ARM64, and RISC-V
 //
 // Common aliases:
-//   a, b, c, d, e, f = first 6 general purpose registers
-//   s = stack pointer
-//   p = frame pointer
+//
+//	a, b, c, d, e, f = first 6 general purpose registers
+//	s = stack pointer
+//	p = frame pointer
 //
 // Examples:
-//   x86_64:  a->rax, b->rbx, c->rcx, d->rdx, e->rsi, f->rdi, s->rsp, p->rbp
-//   ARM64:   a->x0, b->x1, c->x2, d->x3, e->x4, f->x5, s->sp, p->fp (x29)
-//   RISC-V:  a->a0, b->a1, c->a2, d->a3, e->a4, f->a5, s->sp, p->fp (s0)
+//
+//	x86_64:  a->rax, b->rbx, c->rcx, d->rdx, e->rsi, f->rdi, s->rsp, p->rbp
+//	ARM64:   a->x0, b->x1, c->x2, d->x3, e->x4, f->x5, s->sp, p->fp (x29)
+//	RISC-V:  a->a0, b->a1, c->a2, d->a3, e->a4, f->a5, s->sp, p->fp (s0)
 func resolveRegisterAlias(alias string, arch Arch) string {
 	switch arch {
 	case ArchX86_64:

@@ -36,8 +36,8 @@ var compileOnlyPrograms = map[string]bool{
 
 	// Network server tests that block waiting for input
 	"test_receive_simple": true,
-	"snake_visual_demo":  true,
-	"snakegame":          true,
+	"snake_visual_demo":   true,
+	"snakegame":           true,
 	// Raylib tests are compile-only (Raylib is optional, may not be available)
 }
 

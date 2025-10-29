@@ -198,8 +198,8 @@ func (e *ExpressionStmt) statementNode() {}
 
 type LoopStmt struct {
 	// No explicit label - determined by nesting depth when created with @
-	Iterator      string      // Variable name (e.g., "i")
-	Iterable      Expression  // Expression to iterate over (e.g., range(10))
+	Iterator      string     // Variable name (e.g., "i")
+	Iterable      Expression // Expression to iterate over (e.g., range(10))
 	Body          []Statement
 	MaxIterations int64       // Maximum allowed iterations (math.MaxInt64 for infinite)
 	NeedsMaxCheck bool        // Whether to emit runtime max iteration checking
