@@ -13485,24 +13485,95 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 			// Clean up stack
 			fc.out.AddImmToReg("rsp", 260)
-		} else {
-			// Print number - convert to string and use syscall
-			fc.compileExpression(arg)
-			// xmm0 contains float64 value
+	} else if argType == "list" || argType == "map" {
+		// Print list/map - iterate through all elements and print each on a line
+		// This is the complete, final implementation for array/map printing
+		
+		// Compile the expression to get map pointer
+		fc.compileExpression(arg)
+		// xmm0 now contains the map pointer as float64
+		
+		// Convert map pointer from xmm0 to rax (integer pointer)
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovMemToReg("rax", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+		
+		// Save map pointer to r15 for later use
+		fc.out.MovRegToReg("r15", "rax")
+		
+		// Get the length of the map (stored at offset 0 as float64)
+		fc.out.MovMemToXmm("xmm0", "r15", 0)
+		fc.out.Cvttsd2si("r12", "xmm0") // r12 = length (as integer)
 
-			// Allocate 32 bytes on stack for number string
-			fc.out.SubImmFromReg("rsp", 32)
+		// Initialize index to 0 (iterate forward from 0 to length-1)
+		fc.out.XorRegWithReg("r13", "r13") // r13 = 0 (current index)
 
-			// Convert float64 in xmm0 to string at rsp
-			// Result: rsi = string pointer, rdx = length
-			fc.compileFloatToString("xmm0", "rsp")
+		// Get current position for loop start
+		loopStartPos := fc.eb.text.Len()
 
-			// Write using syscall
-			fc.eb.SysWrite("rsi", "rdx")
-
-			// Clean up stack
-			fc.out.AddImmToReg("rsp", 32)
-		}
+		// Check if index >= length (loop exit condition)
+		fc.out.CmpRegToReg("r13", "r12") // Compare index with length
+		// Jump to end if index >= length
+		loopEndJumpPos := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpGreaterOrEqual, 0) // Placeholder, will be patched
+		
+		// Calculate element address: map_base + 8 + (index * 8)
+		// The map structure is: [length (8 bytes)] [element0] [element1] ...
+		fc.out.MovRegToReg("rbx", "r15")     // rbx = map base
+		fc.out.AddImmToReg("rbx", 8)         // rbx = map base + 8 (skip length)
+		fc.out.MovRegToReg("rax", "r13")     // rax = index
+		fc.out.ShlImmReg("rax", 3)           // rax = index * 8
+		fc.out.AddRegToReg("rbx", "rax")     // rbx = element address
+		
+		// Load the element value into xmm0
+		fc.out.MovMemToXmm("xmm0", "rbx", 0)
+		
+		// Print the element value
+		// Allocate 32 bytes on stack for number-to-string conversion
+		fc.out.SubImmFromReg("rsp", 32)
+		
+		// Convert float64 in xmm0 to string at rsp
+		// compileFloatToString returns: rsi = string pointer, rdx = length
+		fc.compileFloatToString("xmm0", "rsp")
+		
+		// Write the string using syscall write(1, rsi, rdx)
+		fc.eb.SysWrite("rsi", "rdx")
+		
+		// Clean up stack space for number string
+		fc.out.AddImmToReg("rsp", 32)
+		
+		// Increment index
+		fc.out.AddImmToReg("r13", 1)
+		
+		// Jump back to loop start
+		loopBackJumpPos := fc.eb.text.Len()
+		backOffset := int32(loopStartPos - (loopBackJumpPos + 5)) // 5 bytes for unconditional jump
+		fc.out.JumpUnconditional(backOffset)
+		
+		// Patch the loop end jump to point here
+		loopEndPos := fc.eb.text.Len()
+		endOffset := int32(loopEndPos - (loopEndJumpPos + 6)) // 6 bytes for conditional jump
+		fc.patchJumpImmediate(loopEndJumpPos+2, endOffset)
+		
+	} else {
+		// Print number - convert to string and use syscall
+		fc.compileExpression(arg)
+		// xmm0 contains float64 value
+		
+		// Allocate 32 bytes on stack for number string
+		fc.out.SubImmFromReg("rsp", 32)
+		
+		// Convert float64 in xmm0 to string at rsp
+		// Result: rsi = string pointer, rdx = length
+		fc.compileFloatToString("xmm0", "rsp")
+		
+		// Write using syscall
+		fc.eb.SysWrite("rsi", "rdx")
+		
+		// Clean up stack
+		fc.out.AddImmToReg("rsp", 32)
+	}
 
 	case "printf":
 		if len(call.Args) == 0 {
