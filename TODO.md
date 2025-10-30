@@ -1,208 +1,406 @@
-# Flapc TODO - Implementation Status
+# Flapc v1.0 TODO - Production Ready for Steam Games
 
-## Currently Implemented Features ✅
+## Goal
 
-- [x] Sequential range loops (`@ i in 0..<100`)
-- [x] Sequential list loops (`@ x in myList`)
-- [x] Parallel range loops (`@@ i in 0..<100`)
-- [x] Break and continue statements (`ret @N`, `@N++`)
-- [x] Parallel map operator (`list || lambda`) - sequential implementation
-- [x] Atomic operations (atomic_add, atomic_cas, atomic_load, atomic_store)
-- [x] Array/map printing in println
-- [x] Basic C FFI via import
-- [x] Match expressions
-- [x] Lambda expressions
-- [x] String operations
-- [x] Arena allocators (parsed, runtime pending)
-- [x] Defer statements (parsed, runtime pending)
-- [x] Hot reload markers (parsed, runtime pending)
+Create a **production-ready compiler** suitable for commercial game development on Steam. Focus on reliability, debuggability, and C interoperability rather than experimental features.
 
-## Missing Core Features (From GRAMMAR.md)
+## Key Design Decisions
 
-### Loop Expressions (Priority: HIGH)
-- [ ] Loop expressions returning values: `@ i in 0..<N { expr }`
-  - Documented in GRAMMAR.md lines 26-29
-  - Currently throws: "loop expressions not yet implemented as expressions"
-  - Needed for: Functional programming patterns, result accumulation
-  - Test case: `snakegame.flap` expects this to fail
+1. **Remove parallel loops** - Complex, fragile, rarely needed for games
+2. **Add register allocator** - Reduce mov instructions, improve performance
+3. **Add struct types** - Essential for game entities and components
+4. **Focus on C FFI** - SDL3, OpenGL, Vulkan integration
+5. **DWARF debug info** - Full gdb/lldb support
+6. **No memory leaks** - Valgrind clean compiler and generated code
 
-### Parallel Loop Reducers (Priority: HIGH)
-- [ ] Parallel reduction: `@@ i in 1..=10000 { i } | a,b | { a + b }`
-  - Documented in GRAMMAR.md line 29
-  - Currently throws: "parallel loop expressions with reducers not yet implemented"
-  - Requires: Tree-reduction algorithm, thread synchronization
-  - Test case: `parallel_sum.flap` expects this to fail
-  - Use case: Parallel aggregations (sum, max, min, etc.)
+## Phase 1: Cleanup & Simplification (Week 1-2)
 
-### Parallel List Loops (Priority: MEDIUM)
-- [ ] Parallel iteration over lists: `@@ x in myList { ... }`
-  - Currently throws: "List iteration with parallel loops not yet implemented"
-  - Requires: Dynamic work distribution strategy
-  - Use case: Parallel data processing
+### Remove Complex/Unfinished Features
+- [ ] Remove parallel loop code (`@@` syntax)
+  - parser.go:6573-6971 (compileParallelRangeLoop)
+  - Delete barrier synchronization code
+  - Remove futex syscalls
+  - Update tests to remove `@@` examples
 
-### Dynamic Parallel Range Bounds (Priority: MEDIUM)
-- [ ] Support variables in parallel ranges: `@@ i in start..<end { }`
-  - Currently requires compile-time constant bounds
-  - Requires: Runtime work distribution calculation
-  - Use case: Data-dependent parallelism
+- [ ] Remove parallel map operator (`||`)
+  - parser.go:9725-9854 (compileParallelExpr)
+  - Was sequential anyway, misleading name
+  - Update GRAMMAR.md
 
-### Map/List Operators (Priority: LOW)
-- [ ] Map union operator for combining maps
-  - Currently throws: "map union not yet implemented"
-  - Line: parser.go:7878
-  - Use case: Merging configuration, state combination
+- [ ] Remove loop expressions
+  - parser.go:8954-8967 (LoopExpr case)
+  - Remove from AST
+  - Update test expectations
 
-### FFI Enhancements (Priority: MEDIUM)
-- [ ] String to C string conversion: `as string` from C char*
-  - Currently throws: "conversion not yet implemented"
-  - Line: parser.go:9223
-  - Requires: flap_cstr_to_string runtime function
+- [ ] Remove arena/defer/hot keywords
+  - These were never fully implemented
+  - Remove from lexer and parser
+  - Clean up AST types
 
-- [ ] C array to Flap list: `as list` conversion
-  - Currently throws: "'as list' conversion not yet implemented"
-  - Line: parser.go:9232
-  - Requires: Length parameter support
+- [ ] Remove networking primitives
+  - Send/receive incomplete
+  - Port literals unused
+  - Games can use SDL_net via FFI
 
-- [ ] Spawn with pipe syntax: `spawn expr | x | { ... }`
-  - Currently throws: "spawn with pipe syntax not yet implemented"
-  - Line: parser.go:6282
-  - Use case: Process communication, parallel result collection
+- [ ] Simplify expression precedence
+  - Remove `|||` (concurrent gather)
+  - Remove `||` (parallel)
+  - Remove `|` pipe in expression context (keep for match)
+  - Remove `or!` error handling
+  - Remove `<==` send operator
 
-### Networking Features (Priority: LOW)
-- [ ] Send target parsing: host:port format
-  - Currently throws: "send target format not yet supported"
-  - Line: parser.go:15719
-  - Use case: Network communication
+###  Update Grammar and Lexer
+- [ ] Update GRAMMAR.md → use GRAMMAR_V1.md
+- [ ] Remove unused tokens from lexer
+- [ ] Simplify keyword list
+- [ ] Update reserved words
 
-- [ ] Proper string message sending/receiving
-  - Currently sends placeholder "TEST" message
-  - Line: parser.go:15771
-  - Requires: Map iteration to extract string bytes
+## Phase 2: Core Features (Week 2-3)
 
-- [ ] Receive error handling and buffer conversion
-  - Currently returns 0.0 placeholder
-  - Line: parser.go:15975-15977
-  - Use case: Network message handling
+### Implement Register Allocator
+- [ ] Design register allocation strategy
+  - Use graph coloring algorithm
+  - Track register liveness
+  - Spill to stack when needed
+  - Prioritize frequently used variables
 
-### Memory Operations (Priority: MEDIUM)
-- [ ] Pointer append operator: `ptr ++ value as type`
-  - Documented in GRAMMAR.md lines 172-173, 302-393
-  - Current status: Unknown (need to check implementation)
-  - Use case: Buffer building, binary protocols
+- [ ] Create register allocator module
+  - `register_allocator.go`
+  - Liveness analysis pass
+  - Interference graph construction
+  - Allocation with spilling
 
-- [ ] Multi-precision arithmetic: `+!` add-with-carry
-  - Documented in GRAMMAR.md line 173
-  - Current status: Not implemented
-  - Use case: Arbitrary precision math
+- [ ] Integrate with code generation
+  - Replace ad-hoc register usage
+  - Generate optimal mov instructions
+  - Reduce stack traffic
 
-### Advanced Features (Documented but Not Implemented)
+- [ ] Test and validate
+  - Compare code size before/after
+  - Benchmark compilation speed
+  - Verify correctness with existing tests
 
-#### Hot Code Reload (Priority: LOW - Runtime)
-- [ ] Function pointer table generation
-- [ ] File watching (inotify/kqueue/FSEvents)
-- [ ] Incremental recompilation
-- [ ] Atomic pointer swaps
-- Status: Parser recognizes `hot` keyword, full implementation pending
+### Implement Struct Types
+- [ ] Add struct definition parsing
+  - `Player :: struct { x: f64, y: f64 }`
+  - Field types and layout
+  - Nested structs
 
-#### Arena Allocators (Priority: LOW - Runtime)
-- [ ] Bump pointer allocation
-- [ ] Auto-cleanup on block exit
-- [ ] Nested arena support
-- Status: Parser recognizes `arena` blocks, runtime implementation pending
+- [ ] Add struct literal parsing
+  - `Player { x: 10, y: 20 }`
+  - Field initialization
+  - Default values
 
-#### Defer Statements (Priority: LOW - Runtime)
-- [ ] LIFO cleanup execution
-- [ ] Scope exit handling
-- Status: Parser recognizes `defer` keyword, runtime implementation pending
+- [ ] Implement struct code generation
+  - Memory layout calculation
+  - Field offset computation
+  - Alignment handling
 
-#### CStruct System (Priority: LOW)
-- [ ] C-compatible struct layouts
-- [ ] Field offset calculation
-- [ ] Packed and aligned modifiers
-- [ ] sizeof() support
-- Status: Documented in GRAMMAR.md (lines 395-485), implementation unknown
+- [ ] Add field access (dot notation)
+  - `player.x`, `player.y`
+  - Nested field access
+  - Assignment to fields
 
-#### Module System (Priority: LOW)
-- [ ] Git-based package imports
-- [ ] Version specification (@v1.0.0, @latest, @HEAD)
-- [ ] Private functions (_prefix convention)
-- [ ] Cache management (--update-deps)
-- Status: Basic C FFI works, Flap packages pending
+- [ ] C struct interop
+  - Match C struct layout
+  - Pass structs to C functions
+  - Receive structs from C
 
-## Code Quality & Polish
+### Improve C FFI
+- [ ] String conversions
+  - Flap string → C char* (malloc + copy)
+  - C char* → Flap string (strlen + copy)
+  - Automatic cleanup tracking
 
-### Documentation
-- [ ] Add memory ordering guarantees for atomic operations to GRAMMAR.md
-- [ ] Document loop expression semantics and examples
-- [ ] Document reducer syntax and parallel reduction algorithms
-- [ ] Add troubleshooting section to README.md
-- [ ] Update LANGUAGE.md with complete loop semantics
+- [ ] Callback functions
+  - Generate C-compatible function pointers
+  - Handle closure environments
+  - Event handlers for SDL
 
-### Error Handling
-- [ ] Improve error messages with line/column numbers
-- [ ] Add parse error recovery
-- [ ] Clear errors for common syntax mistakes
-- [ ] Document all error codes and recovery strategies
+- [ ] Variadic function support
+  - Handle printf-style functions
+  - Type checking for format strings
 
-### Testing
-- [ ] Run test suite through valgrind for memory leaks
-- [ ] Add bounds checking for array/memory access
-- [ ] Validate pointer dereferences in generated assembly
-- [ ] Test on fresh Ubuntu 22.04 VM
-- [ ] Comprehensive atomic operations tests with multiple threads
-- [ ] Edge case tests for atomic operations
+- [ ] Better type safety
+  - Detect type mismatches at compile time
+  - Warn on dangerous casts
+  - Prevent common segfaults
 
-### Performance
-- [ ] Profile compiler and optimize slow parsing paths
-- [ ] Reduce memory allocations in code generation
-- [ ] Review and clean up generated assembly
-- [ ] Ensure consistent code style across Go sources
+## Phase 3: Code Quality & Debugging (Week 3-4)
 
-### Platform Compatibility
-- [ ] Verify x86-64 code generation on Arch and Ubuntu
-- [ ] Test with different kernel versions (5.x, 6.x)
-- [ ] Validate syscall numbers for target platforms
-- [ ] Document minimal libc dependencies
+### Generate DWARF Debug Info
+- [ ] Add DWARF v4 generation
+  - Line number table (.debug_line)
+  - Variable info (.debug_info)
+  - Frame info (.debug_frame)
 
-## Future Releases
+- [ ] Source location tracking
+  - Map assembly to source lines
+  - Track variable scopes
+  - Function boundaries
 
-### v1.4.0 - Complete Loop & Parallel Features
-- Implement loop expressions returning values
-- Implement parallel loop reducers with tree reduction
-- Support dynamic range bounds in parallel loops
-- Parallel list loop support
-- Thread-safe printf wrapper
-- Make parallel map operator (`||`) actually parallel
+- [ ] Test with gdb/lldb
+  - Breakpoints by line number
+  - Variable inspection
+  - Stack traces
+  - Step through code
 
-### v1.5.0 - Memory & Resource Management
-- Complete arena allocator runtime
-- Complete defer statement runtime
-- Pointer append operator (`++`)
-- Multi-precision arithmetic (`+!`)
-- Struct return values from C functions
+### Improve Error Messages
+- [ ] Add source context to errors
+  - Show line with error
+  - Underline problematic code
+  - Suggest fixes
 
-### v1.6.0 - Advanced FFI & Networking
-- C callback function pointers
-- C++ header parsing with demangling
-- String conversions (C ↔ Flap)
-- Network message handling (send/receive)
-- Connection tracking with timeouts
-- SDL3 game example with full event handling
+- [ ] Better type error messages
+  - "Expected i32, got f64"
+  - Show where types come from
+  - Suggest conversions
 
-### v2.0.0 - Hot Reload & Advanced Features
-- Hot reload runtime implementation
-- Function pointer table and swapping
-- File watching infrastructure
-- Incremental compilation
-- Trampolines for deep recursion
-- Let bindings for local recursive definitions
-- Macro system for metaprogramming
-- Windows PE executable support
+- [ ] Parse error recovery
+  - Continue parsing after error
+  - Show multiple errors at once
+  - Don't cascade errors
 
-### v3.0.0 - Tooling & Ecosystem
-- LLVM IR backend option
-- Incremental compilation with dependency tracking
-- Package manager integration
-- Language server protocol (LSP)
-- Watch mode (--watch) for auto-recompilation
-- Debugger integration improvements
+### Stack Management
+- [ ] Fix stack alignment issues
+  - Ensure 16-byte alignment
+  - Track stack depth properly
+  - Handle nested calls correctly
+
+- [ ] Add stack overflow detection (debug mode)
+  - Check stack pointer bounds
+  - Emit guard code
+  - Clear error messages
+
+- [ ] Optimize stack usage
+  - Reuse stack slots
+  - Minimize push/pop
+  - Better temporary management
+
+### Memory Safety
+- [ ] Add bounds checking (debug mode)
+  - Array index validation
+  - Pointer dereference checks
+  - Buffer overflow detection
+
+- [ ] Null pointer checks (debug mode)
+  - Check before dereference
+  - Clear error messages
+  - Stack trace on failure
+
+- [ ] Memory leak detection
+  - Track malloc/free pairs
+  - Warn on unfreed memory
+  - Integration with valgrind
+
+## Phase 4: Testing & Validation (Week 4-5)
+
+### Comprehensive Test Suite
+- [ ] Core language tests
+  - Variables and assignment
+  - Functions and lambdas
+  - Control flow
+  - Loops
+  - Structs
+
+- [ ] Type system tests
+  - All primitive types
+  - Type conversions
+  - Struct types
+  - Arrays and maps
+
+- [ ] C FFI tests
+  - Function calls
+  - Struct passing
+  - String conversion
+  - Callbacks
+
+- [ ] Edge cases
+  - Empty arrays/maps
+  - Deeply nested structures
+  - Large numbers
+  - Long strings
+
+- [ ] Error handling tests
+  - Invalid syntax
+  - Type errors
+  - Undefined variables
+  - Null pointers
+
+### Performance Testing
+- [ ] Benchmark compilation speed
+  - Small programs (< 100 lines)
+  - Medium programs (< 1000 lines)
+  - Large programs (< 10000 lines)
+  - Target: < 1s for typical game
+
+- [ ] Benchmark runtime performance
+  - Tight loops
+  - Function calls
+  - Array access
+  - Struct access
+  - Target: Within 10% of C
+
+- [ ] Memory usage
+  - Compiler memory usage
+  - Generated code size
+  - Runtime memory overhead
+  - No memory leaks (valgrind)
+
+### Example Games
+- [ ] Pong (simple)
+  - Basic SDL3 rendering
+  - Input handling
+  - Game state
+  - Collision detection
+
+- [ ] Platformer (medium)
+  - Sprite rendering
+  - Physics simulation
+  - Multiple entities
+  - Level loading
+
+- [ ] Top-down shooter (complex)
+  - Entity component system
+  - Particle effects
+  - Audio integration
+  - Performance at 60 FPS
+
+### Validation Checklist
+- [ ] Compiles cleanly (no warnings)
+- [ ] All tests pass
+- [ ] No memory leaks (valgrind)
+- [ ] No undefined behavior (ubsan)
+- [ ] Works with gdb/lldb
+- [ ] Runs at 60 FPS for typical game
+- [ ] Compiles in < 1s for typical game
+- [ ] Clear error messages
+- [ ] Example games work
+
+## Phase 5: Documentation & Polish (Week 5-6)
+
+### Update Documentation
+- [ ] Replace GRAMMAR.md with GRAMMAR_V1.md
+- [ ] Update README.md
+  - Clear feature list
+  - Installation instructions
+  - Quick start guide
+  - Example programs
+  - C FFI tutorial
+
+- [ ] Create LEARNINGS.md
+  - Design decisions and rationale
+  - What worked well
+  - What didn't work
+  - Lessons for future versions
+  - Advice for similar projects
+
+- [ ] API documentation
+  - Standard library functions
+  - Built-in functions
+  - Memory operations
+  - Type conversions
+
+- [ ] Tutorial series
+  - Hello World
+  - Basic game loop
+  - SDL3 integration
+  - Struct usage
+  - C FFI guide
+
+### Code Cleanup
+- [ ] Remove dead code
+  - Unused functions
+  - Commented-out sections
+  - Debug prints
+
+- [ ] Consistent style
+  - gofmt all files
+  - Consistent naming
+  - Clear comments
+  - Function documentation
+
+- [ ] Refactoring
+  - Extract common patterns
+  - Simplify complex functions
+  - Improve readability
+  - Better error handling
+
+### Release Preparation
+- [ ] Version tagging
+  - Tag v1.0.0 release
+  - Create GitHub release
+  - Write release notes
+
+- [ ] Binary releases
+  - Linux x86-64 binary
+  - Build instructions
+  - Dependencies list
+
+- [ ] Examples repository
+  - Separate repo for game examples
+  - Pong, platformer, shooter
+  - Documented and commented
+  - Build instructions
+
+## Success Criteria for v1.0
+
+A game built with Flapc v1.0 can be published on Steam if it:
+
+- ✅ Compiles to native ELF executable
+- ✅ Links with SDL3/OpenGL seamlessly
+- ✅ Runs at stable 60 FPS
+- ✅ Has no memory leaks (valgrind clean)
+- ✅ Has no segfaults with proper error handling
+- ✅ Compiles in < 1 second for iteration
+- ✅ Supports full debugging with gdb/lldb
+- ✅ Has clear, actionable error messages
+- ✅ Handles structs for game entities
+- ✅ Integrates with C libraries effortlessly
+
+## Beyond v1.0 (Future Versions)
+
+### v1.1 - Windows Support
+- PE executable generation
+- DirectX/Vulkan integration
+- Visual Studio debugging
+
+### v1.2 - ARM64 Support
+- ARM64 code generation
+- Raspberry Pi support
+- Mobile potential
+
+### v2.0 - Advanced Features
+- Loop expressions (if proven necessary)
+- Hot code reload (runtime implementation)
+- Arena allocators (runtime implementation)
+- Advanced optimization passes
+
+### v3.0 - Tooling
+- Language server protocol
+- Package manager
+- LLVM backend option
+- IDE integration
+
+## Current Status
+
+**In Progress:**
+- [x] Requirements analysis (STEAM_REQUIREMENTS.md)
+- [x] Grammar v1.0 design (GRAMMAR_V1.md)
+- [ ] TODO.md update (this file)
+
+**Next Steps:**
+1. Remove parallel loop code
+2. Implement register allocator
+3. Add struct types
+4. Generate DWARF debug info
+5. Comprehensive testing
+
+**Timeline:**
+- Week 1-2: Cleanup and simplification
+- Week 2-3: Core features (registers, structs, FFI)
+- Week 3-4: Quality and debugging
+- Week 4-5: Testing and validation
+- Week 5-6: Documentation and release
+
+**Target Release:** 6 weeks from now
