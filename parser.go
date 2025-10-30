@@ -15394,6 +15394,98 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.MovRegToReg("rax", "rsp")
 		fc.out.Cvtsi2sd("xmm0", "rax")
 
+	case "atomic_add":
+		// atomic_add(ptr, value) - Atomically add value to *ptr and return old value
+		// Uses LOCK XADD instruction for atomic read-modify-write
+		if len(call.Args) != 2 {
+			compilerError("atomic_add() requires exactly 2 arguments (ptr, value)")
+		}
+
+		// Compile pointer argument
+		fc.compileExpression(call.Args[0])
+		fc.out.Cvttsd2si("r10", "xmm0") // r10 = pointer
+
+		// Compile value argument
+		fc.compileExpression(call.Args[1])
+		fc.out.Cvttsd2si("rax", "xmm0") // rax = value to add
+
+		// LOCK XADD [r10], rax - atomically exchange and add
+		// Result: memory location gets old + value, rax gets old value
+		fc.out.LockXaddMemReg("r10", 0, "rax")
+
+		// Convert result to float64
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "atomic_cas":
+		// atomic_cas(ptr, old, new) - Compare and swap: if *ptr == old, set *ptr = new
+		// Returns 1 if successful, 0 if failed
+		if len(call.Args) != 3 {
+			compilerError("atomic_cas() requires exactly 3 arguments (ptr, old, new)")
+		}
+
+		// Compile pointer argument
+		fc.compileExpression(call.Args[0])
+		fc.out.Cvttsd2si("r10", "xmm0") // r10 = pointer
+
+		// Compile old value argument
+		fc.compileExpression(call.Args[1])
+		fc.out.Cvttsd2si("rax", "xmm0") // rax = expected old value
+
+		// Compile new value argument
+		fc.compileExpression(call.Args[2])
+		fc.out.Cvttsd2si("rcx", "xmm0") // rcx = new value
+
+		// LOCK CMPXCHG [r10], rcx
+		// If [r10] == rax, then [r10] := rcx and ZF := 1
+		// Otherwise, rax := [r10] and ZF := 0
+		fc.out.Emit([]byte{0xf0})             // LOCK prefix
+		fc.out.Emit([]byte{0x49, 0x0f, 0xb1}) // cmpxchg [r10], rcx
+		fc.out.Emit([]byte{0x0a})             // ModR/M byte
+
+		// Set result based on ZF flag (1 if swap succeeded, 0 if failed)
+		fc.out.MovImmToReg("rax", "0")
+		fc.out.MovImmToReg("rdx", "1")
+		fc.out.Emit([]byte{0x48, 0x0f, 0x44, 0xc2}) // cmove rax, rdx (if ZF=1, rax=rdx=1)
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "atomic_load":
+		// atomic_load(ptr) - Atomically load value from memory
+		// Uses memory barrier for acquire semantics
+		if len(call.Args) != 1 {
+			compilerError("atomic_load() requires exactly 1 argument (ptr)")
+		}
+
+		// Compile pointer argument
+		fc.compileExpression(call.Args[0])
+		fc.out.Cvttsd2si("r10", "xmm0") // r10 = pointer
+
+		// Load with acquire semantics (on x86, regular load is sufficient)
+		fc.out.MovMemToReg("rax", "r10", 0)
+
+		// Convert to float64
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "atomic_store":
+		// atomic_store(ptr, value) - Atomically store value to memory
+		// Uses memory barrier for release semantics
+		if len(call.Args) != 2 {
+			compilerError("atomic_store() requires exactly 2 arguments (ptr, value)")
+		}
+
+		// Compile pointer argument
+		fc.compileExpression(call.Args[0])
+		fc.out.Cvttsd2si("r10", "xmm0") // r10 = pointer
+
+		// Compile value argument
+		fc.compileExpression(call.Args[1])
+		fc.out.Cvttsd2si("rax", "xmm0") // rax = value
+
+		// Store with release semantics (on x86, regular store is sufficient)
+		fc.out.MovRegToMem("rax", "r10", 0)
+
+		// Return the stored value
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
 	default:
 		// Unknown function - track it for dependency resolution
 		fc.unknownFunctions[call.Function] = true

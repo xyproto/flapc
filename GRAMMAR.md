@@ -1232,3 +1232,62 @@ normal_init := () => {
 - Hot functions have slight indirection overhead
 
 Hot reload enables sub-50ms iteration cycles compared to full recompilation.
+
+## Atomic Operations
+
+Flap provides builtin atomic operations for lock-free concurrent programming:
+
+### Functions
+
+**atomic_add(ptr, value)**
+- Atomically adds `value` to the memory location pointed to by `ptr`
+- Returns the old value before the addition
+- Uses x86-64 LOCK XADD instruction
+
+**atomic_cas(ptr, old, new)**
+- Compare-and-swap: if `*ptr == old`, set `*ptr = new`
+- Returns 1.0 if successful, 0.0 if failed
+- Uses x86-64 LOCK CMPXCHG instruction
+
+**atomic_load(ptr)**
+- Atomically loads value from memory with acquire semantics
+- On x86-64, regular loads are already atomic
+
+**atomic_store(ptr, value)**
+- Atomically stores value to memory with release semantics
+- Returns the stored value
+- On x86-64, regular stores are already atomic
+
+### Example
+
+```flap
+// Atomic counter example
+counter := alloc(8)  // Allocate 8 bytes
+atomic_store(counter, 0)
+
+// Multiple threads can safely increment
+old := atomic_add(counter, 1)
+printf("Old: %.0f, New: %.0f\n", old, atomic_load(counter))
+
+// Compare and swap for lock-free algorithms
+success := atomic_cas(counter, 1, 10)
+success == 1 {
+    println("Successfully swapped 1 with 10")
+}
+```
+
+### Memory Ordering
+
+On x86-64, the atomic operations provide:
+- **atomic_load**: Acquire semantics
+- **atomic_store**: Release semantics
+- **atomic_add**: Full sequential consistency
+- **atomic_cas**: Full sequential consistency
+
+### Current Limitations
+
+- Only supports 64-bit integer atomics (treated as float64)
+- ARM64 and RISC-V implementations pending
+- No atomic operations on Flap maps/lists yet
+
+Atomic operations enable efficient parallel algorithms without locks.
