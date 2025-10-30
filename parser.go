@@ -5237,14 +5237,12 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.popDeferScope()
 
 	// Automatically exit if no explicit exit() was called
-	// Use libc's exit(0) to ensure proper cleanup (flushes printf buffers, etc.)
+	// Use direct syscall to ensure clean exit even when libc is not properly initialized
 	if !fc.hasExplicitExit {
+		// For x86-64: exit syscall is 60
+		fc.out.MovImmToReg("rax", "60") // syscall number for exit
 		fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
-		// Restore stack pointer to frame pointer (rsp % 16 == 8 for proper call alignment)
-		// Don't pop rbp since exit() never returns
-		fc.out.MovRegToReg("rsp", "rbp")
-		fc.trackFunctionCall("exit")
-		fc.eb.GenerateCallInstruction("exit")
+		fc.eb.Emit("syscall") // invoke syscall directly
 	}
 
 	// Generate lambda functions
@@ -5572,14 +5570,12 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	fc.popDeferScope()
 
 	// Automatically exit if no explicit exit() was called
-	// Use libc's exit(0) to ensure proper cleanup (flushes printf buffers, etc.)
+	// Use direct syscall to ensure clean exit even when libc is not properly initialized
 	if !fc.hasExplicitExit {
+		// For x86-64: exit syscall is 60
+		fc.out.MovImmToReg("rax", "60") // syscall number for exit
 		fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
-		// Restore stack pointer to frame pointer (rsp % 16 == 8 for proper call alignment)
-		// Don't pop rbp since exit() never returns
-		fc.out.MovRegToReg("rsp", "rbp")
-		fc.trackFunctionCall("exit")
-		fc.eb.GenerateCallInstruction("exit")
+		fc.eb.Emit("syscall") // invoke syscall directly
 	}
 
 	// Generate lambda functions
