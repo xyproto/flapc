@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 )
 
@@ -51,7 +50,8 @@ func (eb *ExecutableBuilder) CompileDefaultProgram(outputFile string) error {
 		}
 		gotBase, rodataBaseAddr, textAddr, pltBase, err := eb.WriteCompleteDynamicELF(ds, eb.neededFunctions)
 		if err != nil {
-			log.Fatalln(err)
+			fmt.Fprintf(os.Stderr, "Error: Failed to write dynamic ELF: %v\n", err)
+			os.Exit(1)
 		}
 		if VerboseMode {
 			fmt.Fprintln(os.Stderr, "-> .rodata (final addresses) and regenerating code")

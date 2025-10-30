@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -1008,12 +1007,14 @@ func main() {
 		// Parse target string like "arm64-macos" or "amd64-linux"
 		parts := strings.Split(*targetFlag, "-")
 		if len(parts) != 2 {
-			log.Fatalf("Invalid --target format '%s'. Expected format: ARCH-OS (e.g., arm64-macos, amd64-linux)", *targetFlag)
+			fmt.Fprintf(os.Stderr, "Error: Invalid --target format '%s'. Expected format: ARCH-OS (e.g., arm64-macos, amd64-linux)\n", *targetFlag)
+			os.Exit(1)
 		}
 
 		targetArch, err = ParseArch(parts[0])
 		if err != nil {
-			log.Fatalf("Invalid architecture in --target '%s': %v", *targetFlag, err)
+			fmt.Fprintf(os.Stderr, "Error: Invalid architecture in --target '%s': %v\n", *targetFlag, err)
+			os.Exit(1)
 		}
 
 		// Handle OS aliases (macos -> darwin)
@@ -1023,18 +1024,21 @@ func main() {
 		}
 		targetOS, err = ParseOS(osStr)
 		if err != nil {
-			log.Fatalf("Invalid OS in --target '%s': %v (use 'darwin' instead of 'macos')", *targetFlag, err)
+			fmt.Fprintf(os.Stderr, "Error: Invalid OS in --target '%s': %v (use 'darwin' instead of 'macos')\n", *targetFlag, err)
+			os.Exit(1)
 		}
 	} else {
 		// Use separate --arch and --os flags
 		targetArch, err = ParseArch(*archFlag)
 		if err != nil {
-			log.Fatalf("Invalid --arch '%s': %v", *archFlag, err)
+			fmt.Fprintf(os.Stderr, "Error: Invalid --arch '%s': %v\n", *archFlag, err)
+			os.Exit(1)
 		}
 
 		targetOS, err = ParseOS(*osFlag)
 		if err != nil {
-			log.Fatalf("Invalid --os '%s': %v", *osFlag, err)
+			fmt.Fprintf(os.Stderr, "Error: Invalid --os '%s': %v\n", *osFlag, err)
+			os.Exit(1)
 		}
 	}
 
@@ -1082,7 +1086,8 @@ func main() {
 
 	eb, err := NewWithPlatform(targetPlatform)
 	if err != nil {
-		log.Fatalln(err)
+		fmt.Fprintf(os.Stderr, "Error: Failed to create executable builder: %v\n", err)
+		os.Exit(1)
 	}
 
 	// Handle -c flag for inline code execution
@@ -1090,7 +1095,8 @@ func main() {
 		// Create a temporary file with the inline code
 		tmpFile, err := os.CreateTemp("", "flapc_*.flap")
 		if err != nil {
-			log.Fatalf("Failed to create temp file: %v", err)
+			fmt.Fprintf(os.Stderr, "Error: Failed to create temp file: %v\n", err)
+			os.Exit(1)
 		}
 		tmpFilename := tmpFile.Name()
 		defer os.Remove(tmpFilename)
@@ -1098,7 +1104,8 @@ func main() {
 		// Write the code to the temp file
 		if _, err := tmpFile.WriteString(*codeFlag); err != nil {
 			tmpFile.Close()
-			log.Fatalf("Failed to write to temp file: %v", err)
+			fmt.Fprintf(os.Stderr, "Error: Failed to write to temp file: %v\n", err)
+			os.Exit(1)
 		}
 		tmpFile.Close()
 
@@ -1126,7 +1133,7 @@ func main() {
 	if len(inputFiles) > 0 {
 		for _, file := range inputFiles {
 			if VerboseMode {
-				log.Printf("source file: %s", file)
+				fmt.Fprintf(os.Stderr, "source file: %s\n", file)
 			}
 
 			// Check if this is a Flap source file
