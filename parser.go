@@ -5237,12 +5237,22 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.popDeferScope()
 
 	// Automatically exit if no explicit exit() was called
-	// Use direct syscall to ensure clean exit even when libc is not properly initialized
 	if !fc.hasExplicitExit {
-		// For x86-64: exit syscall is 60
-		fc.out.MovImmToReg("rax", "60") // syscall number for exit
-		fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
-		fc.eb.Emit("syscall") // invoke syscall directly
+		// If we've used printf or other libc functions, call exit() to ensure proper cleanup
+		// Otherwise use direct syscall for minimal programs
+		if fc.usedFunctions["printf"] || fc.usedFunctions["exit"] || len(fc.usedFunctions) > 0 {
+			// Use libc's exit() for proper cleanup (flushes buffers)
+			fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
+			// Ensure stack alignment for call
+			fc.out.MovRegToReg("rsp", "rbp")
+			fc.trackFunctionCall("exit")
+			fc.eb.GenerateCallInstruction("exit")
+		} else {
+			// Use direct syscall for minimal programs without libc dependencies
+			fc.out.MovImmToReg("rax", "60") // syscall number for exit
+			fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
+			fc.eb.Emit("syscall") // invoke syscall directly
+		}
 	}
 
 	// Generate lambda functions
@@ -5570,12 +5580,22 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	fc.popDeferScope()
 
 	// Automatically exit if no explicit exit() was called
-	// Use direct syscall to ensure clean exit even when libc is not properly initialized
 	if !fc.hasExplicitExit {
-		// For x86-64: exit syscall is 60
-		fc.out.MovImmToReg("rax", "60") // syscall number for exit
-		fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
-		fc.eb.Emit("syscall") // invoke syscall directly
+		// If we've used printf or other libc functions, call exit() to ensure proper cleanup
+		// Otherwise use direct syscall for minimal programs
+		if fc.usedFunctions["printf"] || fc.usedFunctions["exit"] || len(fc.usedFunctions) > 0 {
+			// Use libc's exit() for proper cleanup (flushes buffers)
+			fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
+			// Ensure stack alignment for call
+			fc.out.MovRegToReg("rsp", "rbp")
+			fc.trackFunctionCall("exit")
+			fc.eb.GenerateCallInstruction("exit")
+		} else {
+			// Use direct syscall for minimal programs without libc dependencies
+			fc.out.MovImmToReg("rax", "60") // syscall number for exit
+			fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
+			fc.eb.Emit("syscall") // invoke syscall directly
+		}
 	}
 
 	// Generate lambda functions
