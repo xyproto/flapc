@@ -8930,6 +8930,20 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		// Load stack address into rax and convert to float64 for return
 		fc.out.MovRegToReg("rax", "rsp")
 		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case *LoopExpr:
+		// Loop expressions return a value (possibly through reduction)
+		// For now, we don't support parallel loop expressions with reducers
+		if e.NumThreads != 0 && e.Reducer != nil {
+			compilerError("parallel loop expressions with reducers not yet implemented")
+		}
+		if e.NumThreads != 0 {
+			compilerError("parallel loop expressions not yet implemented")
+		}
+
+		// For sequential loops, we need to accumulate results
+		// This is a simplified implementation - full support needs more work
+		compilerError("loop expressions (@ i in ... { expr }) not yet implemented as expressions")
 	}
 }
 
