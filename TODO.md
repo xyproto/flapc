@@ -1,98 +1,76 @@
-# Flapc v1.3.0 - Polish & Robustness Release
+# Flapc TODO - Actionable Items for v1.3.0 Polish & Robustness
 
-## Core Stability & Error Handling
-- [ ] Add proper error checking for all sendto()/recvfrom() network calls with errno reporting
-- [ ] Replace all panic/crash points with graceful error messages and recovery
+## Critical Fixes
 - [ ] Run full test suite through valgrind and fix all memory leaks
-- [ ] Test installation and execution on fresh Ubuntu 22.04 VM
-- [ ] Add bounds checking for all array/memory access operations
-- [ ] Validate all pointer dereferences before use
+- [ ] Add bounds checking for array/memory access in generated code
+- [ ] Validate pointer dereferences before use in generated assembly
+- [ ] Fix any remaining panic/crash points with graceful error messages
 
-## Parallel Loop Completion
-- [ ] Implement thread-local storage for parallel loop partial results
-- [ ] Add reducer function syntax parsing: `@@ i in 0..<N { expr } | a,b | { reducer }`
-- [ ] Generate atomic combination code using LOCK prefix for x86-64
-- [ ] Add mutex-based fallback for non-x86 architectures
-- [ ] Support dynamic range bounds instead of compile-time constants only
-- [ ] Fix printf() in parallel loops via thread-safe wrapper
-- [ ] Create parallel_sum.flap example demonstrating 10k item reduction
-- [ ] Create parallel_mandelbrot.flap example with pixel-level parallelism
-
-## Atomic Operations Support
-- [ ] Implement `atomic_add(ptr, value)` builtin using LOCK XADD instruction
-- [ ] Implement `atomic_cas(ptr, old, new)` builtin using LOCK CMPXCHG
-- [ ] Add `atomic_load(ptr)` and `atomic_store(ptr, value)` with memory barriers
-- [ ] Create atomic_counter.flap test incrementing shared counter from 4 threads
-- [ ] Document memory ordering guarantees in GRAMMAR.md
-
-## Hot Reload Infrastructure
-- [ ] Implement function extraction via ExtractFunctionCode() from running binary
-- [ ] Set up mmap'd shared memory region for function pointer table
-- [ ] Add Unix socket IPC for reload notifications
-- [ ] Implement atomic pointer swaps with proper memory barriers
-- [ ] Create hot_physics.flap demo changing gravity constant while game runs
-- [ ] Add --watch flag to compiler for automatic recompilation on file changes
-
-## Network Message Handling
-- [ ] Parse sockaddr_in to extract sender IP address as string
-- [ ] Extract sender port number from sockaddr_in structure
-- [ ] Convert received byte buffer to proper Flap string type
-- [ ] Populate `msg` and `from` variables in network receive loops
-- [ ] Implement connection tracking hashmap with sender addresses
-- [ ] Add last_seen timestamp tracking for each connection
-- [ ] Implement 60-second timeout for stale connections
-- [ ] Create network_chat.flap example with proper message handling
-
-## Parser & Language Fixes
-- [ ] Fix ambiguity in fork/spawn operator parsing with proper precedence
+## Error Handling & User Experience
+- [ ] Improve error messages with line/column numbers in parser
+- [ ] Add parse error recovery to continue checking rest of file
 - [ ] Add clear error messages for common syntax mistakes
-- [ ] Improve error reporting with line/column numbers
-- [ ] Add recovery from parse errors to continue checking rest of file
+- [ ] Document all error codes and recovery strategies in documentation
 
-## FFI Improvements
-- [ ] Add support for C callback function pointers
-- [ ] Implement basic C++ header parsing with name demangling
-- [ ] Fix string argument passing to C functions (proper null termination)
-- [ ] Add struct return value support for C functions
-- [ ] Create sdl3_game.flap example with proper event handling
+## Testing & Quality Assurance
+- [ ] Test installation and execution on fresh Ubuntu 22.04 VM
+- [ ] Verify all existing test programs compile and run correctly
+- [ ] Create comprehensive test for atomic operations with multiple threads
+- [ ] Add edge case tests for atomic operations (overflow, underflow, etc.)
 
-## Testing & Documentation
-- [ ] Add integration test for 1000 messages/second network throughput
-- [ ] Create comprehensive test for all arithmetic operations in parallel loops
-- [ ] Write user guide for parallel programming patterns
-- [ ] Document all error codes and recovery strategies
+## Documentation
+- [ ] Document atomic operations memory ordering guarantees in GRAMMAR.md
 - [ ] Add troubleshooting section to README.md
+- [ ] Write examples demonstrating proper use of atomic operations
+- [ ] Update LANGUAGE.md with complete atomic operations reference
 
-## Platform Robustness
-- [ ] Test and fix all syscalls on ARM64 Linux
-- [ ] Verify RISC-V code generation for basic programs
-- [ ] Add CI tests for all three architectures
-- [ ] Create architecture-specific optimization guide
-
-## Performance & Optimization
+## Performance & Code Quality
 - [ ] Profile compiler and optimize slowest parsing paths
-- [ ] Reduce memory allocations in hot paths
-- [ ] Implement string interning for identifiers
-- [ ] Add compilation cache for unchanged functions
+- [ ] Reduce memory allocations in hot code generation paths
+- [ ] Review and clean up generated assembly for common patterns
+- [ ] Ensure consistent code style across all Go source files
+
+## Platform Compatibility
+- [ ] Verify x86-64 code generation works on both Arch and Ubuntu
+- [ ] Test with different kernel versions (5.x, 6.x)
+- [ ] Validate syscall numbers are correct for target platforms
+- [ ] Ensure libc dependencies are minimal and documented
 
 ---
 
-## Future Releases (Post-1.3.0)
+## Future Releases
 
-### v1.4.0 - Advanced Features
+### v1.4.0 - Parallel Computing & Concurrency
+- Complete parallel loop reducer implementation (codegen for parsed syntax)
+- Thread-local storage for parallel loop partial results
+- Thread-safe printf wrapper for parallel loops
+- Parallel sum and mandelbrot example programs
+- Support dynamic range bounds in parallel loops
+
+### v1.5.0 - Advanced Networking
+- Parse sockaddr_in to extract sender IP and port
+- Network message handling with proper string conversion
+- Connection tracking with timeout support
 - ENet protocol implementation (reliable channels, packet ordering)
+- Network chat example program
+
+### v1.6.0 - FFI & Interoperability
+- C callback function pointer support
+- C++ header parsing with name demangling
+- Struct return value support for C functions
+- Complete SDL3 game example with event handling
+- Fix string argument passing edge cases
+
+### v2.0.0 - Major Features
+- Hot reload infrastructure with function pointer swapping
 - Trampolines for deep recursion without stack overflow
 - Let bindings for local recursive definitions
-- Full Windows support with PE executable generation
-
-### v1.5.0 - Language Extensions
 - Macro system for compile-time metaprogramming
-- CPS transformation for all function calls
-- Python-style syntax with colons and indentation
-- Pattern matching enhancements
+- Windows support with PE executable generation
 
-### v2.0.0 - Major Evolution
+### v3.0.0 - Advanced Tooling
 - Full LLVM IR backend option
 - Incremental compilation with dependency tracking
 - Package manager integration
 - Language server protocol support
+- Watch mode (--watch) for automatic recompilation

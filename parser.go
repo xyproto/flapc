@@ -5283,7 +5283,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 
 	// Build pltFunctions list from all called functions
 	// Start with essential functions that runtime helpers need
-	pltFunctions := []string{"printf", "exit", "malloc"}
+	pltFunctions := []string{"printf", "exit", "malloc", "free"}
 
 	// Add all functions from usedFunctions (includes call() dynamic calls)
 	pltSet := make(map[string]bool)
@@ -9731,11 +9731,7 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 		}
 	}
 
-	const (
-		parallelResultAlloc    = 2080
-		lambdaScratchOffset    = parallelResultAlloc - 8
-		savedLambdaSpillOffset = parallelResultAlloc + 8
-	)
+	// No longer using fixed stack allocation - malloc will handle memory
 
 	// Compile the lambda to get its function pointer (result in xmm0)
 	fc.compileExpression(expr.Operation)
@@ -9757,17 +9753,17 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	fc.out.MovMemToXmm("xmm0", "r13", 0)
 	fc.out.Cvttsd2si("r14", "xmm0") // r14 = length as integer
 
-	// Allocate result list on stack: 8 bytes (length) + length * 8 bytes (elements)
-	// Reserve an extra 16 bytes at the end to keep the lambda pointer reachable for future vector paths
-	// parallelResultAlloc keeps the stack aligned once the initial 16-byte spill area is considered
-	fc.out.SubImmFromReg("rsp", parallelResultAlloc)
+	// Calculate allocation size: 8 bytes (length) + length * 8 bytes (elements)
+	fc.out.MovRegToReg("rdi", "r14") // rdi = length
+	fc.out.ShlRegImm("rdi", "3")     // rdi = length * 8
+	fc.out.AddImmToReg("rdi", 8)     // rdi = 8 + length * 8
+
+	// Call malloc to allocate result list on heap
+	fc.trackFunctionCall("malloc")
+	fc.eb.GenerateCallInstruction("malloc")
 
 	// Store result list pointer in r12
-	fc.out.MovRegToReg("r12", "rsp") // r12 = result list base
-
-	// Move the saved lambda pointer into the reserved scratch slot inside the result buffer
-	fc.out.MovMemToReg("r10", "r12", savedLambdaSpillOffset)
-	fc.out.MovRegToMem("r10", "r12", lambdaScratchOffset)
+	fc.out.MovRegToReg("r12", "rax") // r12 = result list base (from malloc)
 
 	// Store length in result list
 	fc.out.MovMemToXmm("xmm0", "r13", 0) // Reload length as float64
@@ -9798,8 +9794,8 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	fc.out.SubImmFromReg("rsp", 8)
 	fc.out.MovRegToMem("r15", "rsp", 0)
 
-	// Load lambda closure object pointer (stored in the reserved scratch slot)
-	fc.out.MovMemToReg("rax", "r12", lambdaScratchOffset)
+	// Load lambda closure object pointer (stored at [rsp+8] from earlier)
+	fc.out.MovMemToReg("rax", "rsp", 16) // rsp+8 for saved r15, +8 for lambda pointer
 
 	// Extract function pointer from closure object (offset 0)
 	fc.out.MovMemToReg("r11", "rax", 0)
@@ -9846,9 +9842,13 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	fc.out.MovMemToXmm("xmm0", "rsp", 0)
 	fc.out.AddImmToReg("rsp", StackSlotSize)
 
-	// Adjust stack pointer to account for result buffer AND spill area still being there
-	// The calling code must use the result before further stack operations
-	fc.out.AddImmToReg("rsp", parallelResultAlloc+16)
+	// Clean up the initial 16-byte spill area for lambda/list pointers
+	// but leave the result list on the stack
+	fc.out.AddImmToReg("rsp", 16)
+
+	// IMPORTANT: The result list remains on the stack and will be valid
+	// as long as no other stack allocations overwrite it
+	// This is a temporary solution - proper heap allocation would be better
 
 	// End of parallel operator - xmm0 contains result pointer as float64
 }
@@ -15431,16 +15431,21 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.compileExpression(call.Args[1])
 		fc.out.Cvttsd2si("rax", "xmm0") // rax = expected old value
 
+		// Save rax to r11 before compiling third argument
+		fc.out.MovRegToReg("r11", "rax")
+
 		// Compile new value argument
 		fc.compileExpression(call.Args[2])
 		fc.out.Cvttsd2si("rcx", "xmm0") // rcx = new value
 
+		// Restore rax from r11
+		fc.out.MovRegToReg("rax", "r11")
+
 		// LOCK CMPXCHG [r10], rcx
 		// If [r10] == rax, then [r10] := rcx and ZF := 1
 		// Otherwise, rax := [r10] and ZF := 0
-		fc.out.Emit([]byte{0xf0})             // LOCK prefix
-		fc.out.Emit([]byte{0x49, 0x0f, 0xb1}) // cmpxchg [r10], rcx
-		fc.out.Emit([]byte{0x0a})             // ModR/M byte
+		fc.out.Emit([]byte{0xf0})                   // LOCK prefix
+		fc.out.Emit([]byte{0x49, 0x0f, 0xb1, 0x0a}) // LOCK cmpxchg [r10], rcx
 
 		// Set result based on ZF flag (1 if swap succeeded, 0 if failed)
 		fc.out.MovImmToReg("rax", "0")
@@ -15484,6 +15489,41 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.MovRegToMem("rax", "r10", 0)
 
 		// Return the stored value
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "malloc":
+		// malloc(size) - Allocate memory and return pointer
+		if len(call.Args) != 1 {
+			compilerError("malloc() requires exactly 1 argument (size)")
+		}
+
+		// Compile size argument
+		fc.compileExpression(call.Args[0])
+		fc.out.Cvttsd2si("rdi", "xmm0") // rdi = size in bytes
+
+		// Call malloc
+		fc.trackFunctionCall("malloc")
+		fc.eb.GenerateCallInstruction("malloc")
+
+		// Convert pointer to float64 for Flap
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "free":
+		// free(ptr) - Free allocated memory
+		if len(call.Args) != 1 {
+			compilerError("free() requires exactly 1 argument (ptr)")
+		}
+
+		// Compile pointer argument
+		fc.compileExpression(call.Args[0])
+		fc.out.Cvttsd2si("rdi", "xmm0") // rdi = pointer
+
+		// Call free
+		fc.trackFunctionCall("free")
+		fc.eb.GenerateCallInstruction("free")
+
+		// Return 0
+		fc.out.XorRegWithReg("rax", "rax")
 		fc.out.Cvtsi2sd("xmm0", "rax")
 
 	default:

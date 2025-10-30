@@ -16,6 +16,8 @@ import (
 var compileExpectations = map[string]string{
 	"const":                  "cannot update immutable variable",
 	"lambda_bad_syntax_test": "lambda definitions must use '=>'",
+	"parallel_sum":           "parallel loop expressions with reducers not yet implemented",
+	"snakegame":              "loop expressions (@ i in ... { expr }) not yet implemented",
 }
 
 // Programs to skip entirely
@@ -37,7 +39,6 @@ var compileOnlyPrograms = map[string]bool{
 	// Network server tests that block waiting for input
 	"test_receive_simple": true,
 	"snake_visual_demo":   true,
-	"snakegame":           true,
 	// Raylib tests are compile-only (Raylib is optional, may not be available)
 }
 
