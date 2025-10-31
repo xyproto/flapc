@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Programs that are expected to fail compilation
@@ -148,8 +149,25 @@ func testFlapProgram(t *testing.T, name, srcPath, buildDir string) {
 
 	// Run the program
 	expectedExitCode := expectedExitCodes[name]
-	runCmd := exec.Command(executable)
-	actualOutput, runErr := runCmd.CombinedOutput()
+
+	// Retry execution up to 3 times to handle "text file busy" errors
+	var actualOutput []byte
+	var runErr error
+	maxRetries := 3
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		runCmd := exec.Command(executable)
+		actualOutput, runErr = runCmd.CombinedOutput()
+
+		// If successful or not a "text file busy" error, break
+		if runErr == nil || !strings.Contains(runErr.Error(), "text file busy") {
+			break
+		}
+
+		// Wait a bit before retrying
+		if attempt < maxRetries-1 {
+			time.Sleep(time.Millisecond * 50 * time.Duration(attempt+1))
+		}
+	}
 
 	// Check exit code
 	if runErr != nil {
