@@ -116,13 +116,13 @@ func (c *CStructDecl) statementNode() {}
 // GetCTypeSize returns the size in bytes for a C type string
 func GetCTypeSize(ctype string) int {
 	switch ctype {
-	case "i8", "u8":
+	case "int8", "uint8":
 		return 1
-	case "i16", "u16":
+	case "int16", "uint16":
 		return 2
-	case "i32", "u32", "f32":
+	case "int32", "uint32", "float32":
 		return 4
-	case "i64", "u64", "f64", "ptr", "cstr":
+	case "int64", "uint64", "float64", "ptr", "cstr":
 		return 8
 	default:
 		return 0 // Unknown type

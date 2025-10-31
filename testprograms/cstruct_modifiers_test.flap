@@ -2,30 +2,30 @@
 
 // Normal struct (with automatic padding)
 cstruct Normal {
-    a: u8,
-    b: u64,
-    c: u8
+    a as uint8
+    b as uint64
+    c as uint8
 }
 
 // Packed struct (no padding between fields)
 cstruct Packed packed {
-    a: u8,
-    b: u64,
-    c: u8
+    a as uint8
+    b as uint64
+    c as uint8
 }
 
 // Aligned struct (custom alignment)
 cstruct Aligned16 aligned(16) {
-    a: u8,
-    b: u64,
-    c: u8
+    a as uint8
+    b as uint64
+    c as uint8
 }
 
 // Packed AND aligned (no padding, but struct aligned to 16 bytes)
 cstruct PackedAligned packed aligned(16) {
-    a: u8,
-    b: u64,
-    c: u8
+    a as uint8
+    b as uint64
+    c as uint8
 }
 
 printf("Struct Layout Comparison:\n")

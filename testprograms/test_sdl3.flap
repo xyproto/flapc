@@ -1,0 +1,26 @@
+import sdl3 as sdl
+
+// Initialize SDL
+result := sdl.SDL_Init(0x00000020)  // SDL_INIT_VIDEO
+result > 0 {
+    println("SDL_Init failed")
+    exit(1)
+}
+
+println("SDL initialized successfully")
+
+// Create window
+window := sdl.SDL_CreateWindow(
+    "Test",  // title
+    100,     // x
+    100,     // y
+    800,     // width
+    600,     // height
+    0        // flags
+)
+
+println("Window created")
+
+// Clean up
+sdl.SDL_Quit()
+println("SDL quit successfully")

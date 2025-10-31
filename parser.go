@@ -1881,11 +1881,11 @@ func (p *Parser) parseCStructDecl() *CStructDecl {
 		fieldName := p.current.Value
 		p.nextToken() // skip field name
 
-		// Expect ':'
-		if p.current.Type != TOKEN_COLON {
-			p.error("expected ':' after field name")
+		// Expect 'as'
+		if p.current.Type != TOKEN_AS {
+			p.error("expected 'as' after field name")
 		}
-		p.nextToken() // skip ':'
+		p.nextToken() // skip 'as'
 
 		// Parse field type
 		if p.current.Type != TOKEN_IDENT {
@@ -1895,12 +1895,12 @@ func (p *Parser) parseCStructDecl() *CStructDecl {
 
 		// Validate C type
 		validTypes := map[string]bool{
-			"i8": true, "i16": true, "i32": true, "i64": true,
-			"u8": true, "u16": true, "u32": true, "u64": true,
-			"f32": true, "f64": true, "ptr": true, "cstr": true,
+			"int8": true, "int16": true, "int32": true, "int64": true,
+			"uint8": true, "uint16": true, "uint32": true, "uint64": true,
+			"float32": true, "float64": true, "ptr": true, "cstr": true,
 		}
 		if !validTypes[fieldType] {
-			p.error(fmt.Sprintf("invalid C type '%s' (must be i8/i16/i32/i64/u8/u16/u32/u64/f32/f64/ptr/cstr)", fieldType))
+			p.error(fmt.Sprintf("invalid C type '%s' (must be int8/int16/int32/int64/uint8/uint16/uint32/uint64/float32/float64/ptr/cstr)", fieldType))
 		}
 
 		fields = append(fields, CStructField{
@@ -1911,13 +1911,12 @@ func (p *Parser) parseCStructDecl() *CStructDecl {
 		p.nextToken() // skip field type
 		p.skipNewlines()
 
-		// Check for comma (more fields) or closing brace
+		// Comma is optional between fields (newlines separate them)
 		if p.current.Type == TOKEN_COMMA {
-			p.nextToken() // skip ','
+			p.nextToken() // skip ',' if present
 			p.skipNewlines()
-		} else if p.current.Type != TOKEN_RBRACE {
-			p.error("expected ',' or '}' after field definition")
 		}
+		// Just continue to next field or closing brace
 	}
 
 	// Expect '}'
@@ -3806,11 +3805,11 @@ func (p *Parser) parsePostfix() Expression {
 			if p.current.Type == TOKEN_IDENT {
 				// All type keywords are contextual - check if this identifier is a valid type name
 				validTypes := map[string]bool{
-					"i8": true, "i16": true, "i32": true, "i64": true,
-					"u8": true, "u16": true, "u32": true, "u64": true,
-					"f32": true, "f64": true, "cstr": true, "cstring": true,
+					"int8": true, "int16": true, "int32": true, "int64": true,
+					"uint8": true, "uint16": true, "uint32": true, "uint64": true,
+					"float32": true, "float64": true, "cstr": true, "cstring": true,
 					"ptr": true, "pointer": true,
-					"int": true, "uint": true, "uint32": true, "int32": true,
+					"int": true, "uint": true,
 					"number": true, "string": true, "list": true,
 				}
 				if validTypes[p.current.Value] {
@@ -9178,7 +9177,7 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 	// - number: no-op (already float64)
 
 	switch expr.Type {
-	case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64":
+	case "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64":
 		// Integer casts: convert float64 to integer and back
 		// This truncates fractional parts for FFI with C integer types
 		// cvttsd2si rax, xmm0  (convert with truncation)
@@ -9188,12 +9187,12 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 		// Note: Since Flap uses float64 internally, we don't mask bits
 		// The truncation is sufficient for C FFI purposes
 
-	case "f32":
-		// f32 cast: for C float arguments
+	case "float32":
+		// float32 cast: for C float arguments
 		// For now, keep as float64 (C will handle the conversion)
 		// TODO: Add explicit cvtsd2ss/cvtss2sd if needed for precision
 
-	case "f64":
+	case "float64":
 		// Already float64, nothing to do
 		// This is the native Flap type
 
@@ -14774,9 +14773,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			// Determine if this is an integer/pointer argument or float argument
 			isIntArg := false
 			switch argType {
-			case "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "ptr", "cstr":
+			case "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64", "ptr", "cstr":
 				isIntArg = true
-			case "f32", "f64":
+			case "float32", "float64":
 				isIntArg = false
 			default:
 				// Unknown type - assume float

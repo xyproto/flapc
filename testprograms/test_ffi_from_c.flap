@@ -25,7 +25,7 @@ home_ptr != 0 {
 
 // Call sqrt from libm (returns double)
 x = 16.0
-sqrt_result = call("sqrt", x as f64)
+sqrt_result = call("sqrt", x as float64)
 sqrt_flap = sqrt_result as number
 printf("sqrt(%.0f) = %f\n", x, sqrt_flap)
 

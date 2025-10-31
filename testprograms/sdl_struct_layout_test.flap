@@ -2,27 +2,27 @@
 
 // Define SDL3 structs
 cstruct SDL_FRect {
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32
+    x as float32
+    y as float32
+    w as float32
+    h as float32
 }
 
 cstruct SDL_Rect {
-    x: i32,
-    y: i32,
-    w: i32,
-    h: i32
+    x as int32
+    y as int32
+    w as int32
+    h as int32
 }
 
 cstruct SDL_Point {
-    x: i32,
-    y: i32
+    x as int32
+    y as int32
 }
 
 cstruct SDL_FPoint {
-    x: f32,
-    y: f32
+    x as float32
+    y as float32
 }
 
 // Display struct layouts

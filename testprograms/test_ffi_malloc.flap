@@ -2,8 +2,8 @@
 
 // Allocate memory for mixed data types
 size = 64
-ptr = call("malloc", size as u64)
-//printf("Allocated %d bytes at pointer: %f\n", size as i32, ptr)
+ptr = call("malloc", size as uint64)
+//printf("Allocated %d bytes at pointer: %f\n", size as int32, ptr)
 printf("Allocated memory at pointer: %f\n", ptr)
 
 // Write different types safely

@@ -1,406 +1,231 @@
-# Flapc v1.0 TODO - Production Ready for Steam Games
+# Flapc TODO
 
-## Goal
+Development roadmap and specific implementation tasks for Flap v1.4 and beyond.
 
-Create a **production-ready compiler** suitable for commercial game development on Steam. Focus on reliability, debuggability, and C interoperability rather than experimental features.
+## Priority 1: Register Allocator (Critical)
 
-## Key Design Decisions
+**Goal:** Replace ad-hoc register usage with proper linear-scan register allocation.
 
-1. **Remove parallel loops** - Complex, fragile, rarely needed for games
-2. **Add register allocator** - Reduce mov instructions, improve performance
-3. **Add struct types** - Essential for game entities and components
-4. **Focus on C FFI** - SDL3, OpenGL, Vulkan integration
-5. **DWARF debug info** - Full gdb/lldb support
-6. **No memory leaks** - Valgrind clean compiler and generated code
+**Why:** Currently each expression uses registers inefficiently, leading to excessive moves and poor performance.
 
-## Phase 1: Cleanup & Simplification (Week 1-2)
+**Tasks:**
+- [ ] Create `register_allocator.go` with live interval tracking
+- [ ] Implement linear scan algorithm (simpler than graph coloring)
+- [ ] Add liveness analysis pass (track variable lifetime)
+- [ ] Modify codegen to query allocator for register assignments
+- [ ] Emit function prologue/epilogue for callee-saved registers
+- [ ] Test: Compare instruction count before/after (expect 30-40% reduction in loops)
+- [ ] Benchmark: Ensure no performance regression
 
-### Remove Complex/Unfinished Features
-- [ ] Remove parallel loop code (`@@` syntax)
-  - parser.go:6573-6971 (compileParallelRangeLoop)
-  - Delete barrier synchronization code
-  - Remove futex syscalls
-  - Update tests to remove `@@` examples
+**Available Registers (x86-64):**
+- Caller-saved (for temporaries): rax, rcx, rdx, rsi, rdi, r8, r9, r10, r11
+- Callee-saved (for variables): rbx, r12, r13, r14, r15
+- Float: xmm0-xmm15
 
-- [ ] Remove parallel map operator (`||`)
-  - parser.go:9725-9854 (compileParallelExpr)
-  - Was sequential anyway, misleading name
-  - Update GRAMMAR.md
+## Priority 2: Arena Allocator Runtime
 
-- [ ] Remove loop expressions
-  - parser.go:8954-8967 (LoopExpr case)
-  - Remove from AST
-  - Update test expectations
+**Goal:** Complete the runtime implementation for arena blocks (parser already done).
 
-- [ ] Remove arena/defer/hot keywords
-  - These were never fully implemented
-  - Remove from lexer and parser
-  - Clean up AST types
+**Why:** Parser recognizes `arena {...}` but doesn't generate proper runtime calls.
 
-- [ ] Remove networking primitives
-  - Send/receive incomplete
-  - Port literals unused
-  - Games can use SDL_net via FFI
+**Tasks:**
+- [ ] Add arena runtime functions to runtime library:
+  - `_flap_arena_init(size)` - Create arena (4KB default)
+  - `_flap_arena_alloc(arena_ptr, size)` - Bump-pointer allocation
+  - `_flap_arena_free(arena_ptr)` - Free entire arena
+- [ ] Modify codegen to emit arena calls:
+  - arena_init() at block entry
+  - Replace alloc() with arena_alloc()
+  - arena_free() at block exit (even on early return)
+- [ ] Support nested arenas (arena stack in TLS)
+- [ ] Test: Verify no memory leaks with valgrind
+- [ ] Test: Per-frame allocations in game loop
 
-- [ ] Simplify expression precedence
-  - Remove `|||` (concurrent gather)
-  - Remove `||` (parallel)
-  - Remove `|` pipe in expression context (keep for match)
-  - Remove `or!` error handling
-  - Remove `<==` send operator
+**Example Usage:**
+```flap
+@ frame in 0..<1000 {
+    arena {
+        entities := alloc(1000 * entity_size)
+        // ... frame work ...
+    }  // Instant cleanup, zero fragmentation
+}
+```
 
-###  Update Grammar and Lexer
-- [ ] Update GRAMMAR.md → use GRAMMAR_V1.md
-- [ ] Remove unused tokens from lexer
-- [ ] Simplify keyword list
-- [ ] Update reserved words
+## Priority 3: DWARF Debug Info
 
-## Phase 2: Core Features (Week 2-3)
+**Goal:** Generate .debug_line, .debug_info, .debug_frame sections for gdb/lldb support.
 
-### Implement Register Allocator
-- [ ] Design register allocation strategy
-  - Use graph coloring algorithm
-  - Track register liveness
-  - Spill to stack when needed
-  - Prioritize frequently used variables
+**Why:** Currently debugging requires reading assembly. Need source-level debugging.
 
-- [ ] Create register allocator module
-  - `register_allocator.go`
-  - Liveness analysis pass
-  - Interference graph construction
-  - Allocation with spilling
-
-- [ ] Integrate with code generation
-  - Replace ad-hoc register usage
-  - Generate optimal mov instructions
-  - Reduce stack traffic
-
-- [ ] Test and validate
-  - Compare code size before/after
-  - Benchmark compilation speed
-  - Verify correctness with existing tests
-
-### Implement Struct Types
-- [ ] Add struct definition parsing
-  - `Player :: struct { x: f64, y: f64 }`
-  - Field types and layout
-  - Nested structs
-
-- [ ] Add struct literal parsing
-  - `Player { x: 10, y: 20 }`
-  - Field initialization
-  - Default values
-
-- [ ] Implement struct code generation
-  - Memory layout calculation
-  - Field offset computation
-  - Alignment handling
-
-- [ ] Add field access (dot notation)
-  - `player.x`, `player.y`
-  - Nested field access
-  - Assignment to fields
-
-- [ ] C struct interop
-  - Match C struct layout
-  - Pass structs to C functions
-  - Receive structs from C
-
-### Improve C FFI
-- [ ] String conversions
-  - Flap string → C char* (malloc + copy)
-  - C char* → Flap string (strlen + copy)
-  - Automatic cleanup tracking
-
-- [ ] Callback functions
-  - Generate C-compatible function pointers
-  - Handle closure environments
-  - Event handlers for SDL
-
-- [ ] Variadic function support
-  - Handle printf-style functions
-  - Type checking for format strings
-
-- [ ] Better type safety
-  - Detect type mismatches at compile time
-  - Warn on dangerous casts
-  - Prevent common segfaults
-
-## Phase 3: Code Quality & Debugging (Week 3-4)
-
-### Generate DWARF Debug Info
-- [ ] Add DWARF v4 generation
-  - Line number table (.debug_line)
-  - Variable info (.debug_info)
-  - Frame info (.debug_frame)
-
-- [ ] Source location tracking
-  - Map assembly to source lines
-  - Track variable scopes
+**Tasks:**
+- [ ] Create `dwarf.go` with DWARF v4 generation
+- [ ] Generate .debug_line section:
+  - Map assembly addresses to source lines
+  - Enable breakpoints by line number
+- [ ] Generate .debug_info section:
+  - Variable names and locations
   - Function boundaries
+  - Type information
+- [ ] Generate .debug_frame section:
+  - Stack unwinding info
+  - Call stack traces
+- [ ] Test with gdb: Set breakpoints, step through code, inspect variables
+- [ ] Test with lldb: Same capabilities
 
-- [ ] Test with gdb/lldb
-  - Breakpoints by line number
-  - Variable inspection
-  - Stack traces
-  - Step through code
+## Priority 4: Polish Parallel Loops
 
-### Improve Error Messages
-- [ ] Add source context to errors
-  - Show line with error
-  - Underline problematic code
-  - Suggest fixes
+**Goal:** Test edge cases and improve error handling for `@@` loops.
 
-- [ ] Better type error messages
-  - "Expected i32, got f64"
-  - Show where types come from
-  - Suggest conversions
+**Current Status:** Barrier synchronization and thread spawning work, but need more testing.
 
-- [ ] Parse error recovery
-  - Continue parsing after error
-  - Show multiple errors at once
-  - Don't cascade errors
+**Tasks:**
+- [ ] Test edge cases:
+  - Empty ranges: `@@ i in 0..<0`
+  - Single iteration: `@@ i in 0..<1`
+  - Very large ranges: `@@ i in 0..<1000000`
+- [ ] Improve error messages:
+  - When thread spawning fails
+  - When barrier times out
+  - Stack overflow in worker threads
+- [ ] Performance tuning:
+  - Benchmark overhead vs sequential
+  - Tune work distribution (currently even split)
+  - Cache-align barrier struct
+- [ ] Add tests for atomic operations with parallel loops
+- [ ] Document when to use `@@` vs `@`
 
-### Stack Management
-- [ ] Fix stack alignment issues
-  - Ensure 16-byte alignment
-  - Track stack depth properly
-  - Handle nested calls correctly
+## Priority 5: Optimization Passes
 
-- [ ] Add stack overflow detection (debug mode)
-  - Check stack pointer bounds
-  - Emit guard code
-  - Clear error messages
+**Goal:** Improve generated code quality beyond register allocation.
 
-- [ ] Optimize stack usage
-  - Reuse stack slots
-  - Minimize push/pop
-  - Better temporary management
+**Tasks:**
+- [ ] Constant folding: `2 + 3` → `5` at compile time
+- [ ] Dead code elimination: Remove unreachable code after `ret`
+- [ ] Common subexpression elimination: `x*x` used twice → compute once
+- [ ] Strength reduction: `x * 8` → `x << 3`
+- [ ] Loop invariant code motion: Move constant computations out of loops
+- [ ] Inline small functions (1-3 instructions)
 
-### Memory Safety
-- [ ] Add bounds checking (debug mode)
-  - Array index validation
-  - Pointer dereference checks
-  - Buffer overflow detection
+## Bug Fixes
 
-- [ ] Null pointer checks (debug mode)
-  - Check before dereference
-  - Clear error messages
-  - Stack trace on failure
+### High Priority
+- [ ] Fix cstruct_arena_test.flap - values are wrong (10.0 instead of 10.5)
+  - Likely issue with write_f64 offset calculation
+  - Check Vec3_SIZEOF and field offsets
 
-- [ ] Memory leak detection
-  - Track malloc/free pairs
-  - Warn on unfreed memory
-  - Integration with valgrind
+### Medium Priority
+- [ ] Race conditions in parallel test suite
+  - Tests `test_string_different` and `test_not` fail when run in parallel
+  - Need to identify shared state or codegen issue
 
-## Phase 4: Testing & Validation (Week 4-5)
+### Low Priority
+- [ ] ARM64 C import not yet implemented
+  - Skip C FFI tests on ARM64/macOS
+  - Need to implement DWARF debug info parsing for ARM64
 
-### Comprehensive Test Suite
-- [ ] Core language tests
-  - Variables and assignment
-  - Functions and lambdas
-  - Control flow
-  - Loops
-  - Structs
+## Feature Additions
 
-- [ ] Type system tests
-  - All primitive types
-  - Type conversions
-  - Struct types
-  - Arrays and maps
+### CStruct Enhancements
+- [ ] Array fields: `data as [10]int32`
+- [ ] Nested cstructs: `pos as Vec2` inside `Player`
+- [ ] Pointer fields: `next as ptr`
+- [ ] Function pointer fields: `callback as ptr`
+- [ ] Dot notation sugar: `player.x` instead of manual offset calculations
 
-- [ ] C FFI tests
-  - Function calls
-  - Struct passing
-  - String conversion
-  - Callbacks
+### Language Features
+- [ ] Defer statements: `defer file_close(f)`
+- [ ] Multiple return values: `x, y := get_position()`
+- [ ] String interpolation: `"x=${x}, y=${y}"`
+- [ ] Range with step: `@ i in 0..<100 step 2`
 
-- [ ] Edge cases
-  - Empty arrays/maps
-  - Deeply nested structures
-  - Large numbers
-  - Long strings
+## Testing
 
-- [ ] Error handling tests
-  - Invalid syntax
-  - Type errors
-  - Undefined variables
-  - Null pointers
+### Test Suite Improvements
+- [x] Add `-short` flag support (0.3s vs 6s) - DONE
+- [ ] Add benchmark suite for performance tracking
+- [ ] Add fuzzing tests for parser
+- [ ] Add integration tests with SDL3 window creation
+- [ ] Add stress tests for parallel loops (1M+ iterations)
 
-### Performance Testing
-- [ ] Benchmark compilation speed
-  - Small programs (< 100 lines)
-  - Medium programs (< 1000 lines)
-  - Large programs (< 10000 lines)
-  - Target: < 1s for typical game
+### Test Coverage
+- [ ] Increase coverage to 80%+ (currently ~60%)
+- [ ] Add tests for error conditions
+- [ ] Add tests for all builtin functions
+- [ ] Add tests for all atomic operations
 
-- [ ] Benchmark runtime performance
-  - Tight loops
-  - Function calls
-  - Array access
-  - Struct access
-  - Target: Within 10% of C
+## Documentation
 
-- [ ] Memory usage
-  - Compiler memory usage
-  - Generated code size
-  - Runtime memory overhead
-  - No memory leaks (valgrind)
+### Code Documentation
+- [x] README.md - User-facing overview - DONE
+- [x] LANGUAGE.md - Complete language spec - DONE
+- [ ] LEARNINGS.md - Design decisions and lessons learned - IN PROGRESS
+- [ ] Add inline comments to complex codegen functions
+- [ ] Document register allocation algorithm
+- [ ] Document ELF generation process
 
-### Example Games
-- [ ] Pong (simple)
-  - Basic SDL3 rendering
-  - Input handling
-  - Game state
-  - Collision detection
+### User Documentation
+- [ ] Tutorial: "Writing your first Flap game"
+- [ ] Guide: "Flap for C programmers"
+- [ ] Guide: "Parallel programming in Flap"
+- [ ] Reference: Complete builtin function list
+- [ ] Examples: More real-world programs in testprograms/
 
-- [ ] Platformer (medium)
-  - Sprite rendering
-  - Physics simulation
-  - Multiple entities
-  - Level loading
+## Infrastructure
 
-- [ ] Top-down shooter (complex)
-  - Entity component system
-  - Particle effects
-  - Audio integration
-  - Performance at 60 FPS
+### Build System
+- [ ] Add Makefile for easier building
+- [ ] Add install target: `make install`
+- [ ] Add uninstall target: `make uninstall`
+- [ ] Add test target: `make test`
 
-### Validation Checklist
-- [ ] Compiles cleanly (no warnings)
-- [ ] All tests pass
-- [ ] No memory leaks (valgrind)
-- [ ] No undefined behavior (ubsan)
-- [ ] Works with gdb/lldb
-- [ ] Runs at 60 FPS for typical game
-- [ ] Compiles in < 1s for typical game
-- [ ] Clear error messages
-- [ ] Example games work
+### CI/CD
+- [ ] Add ARM64 testing in GitHub Actions
+- [ ] Add RISC-V testing (via QEMU)
+- [ ] Add benchmark tracking over time
+- [ ] Add test coverage reporting
+- [ ] Add automatic release builds
 
-## Phase 5: Documentation & Polish (Week 5-6)
+### Platform Support
+- [ ] Complete ARM64 support (macOS/Linux)
+- [ ] Complete RISC-V support (Linux)
+- [ ] Add FreeBSD support
+- [ ] Test on more Linux distributions
 
-### Update Documentation
-- [ ] Replace GRAMMAR.md with GRAMMAR_V1.md
-- [ ] Update README.md
-  - Clear feature list
-  - Installation instructions
-  - Quick start guide
-  - Example programs
-  - C FFI tutorial
+## Performance
 
-- [ ] Create LEARNINGS.md
-  - Design decisions and rationale
-  - What worked well
-  - What didn't work
-  - Lessons for future versions
-  - Advice for similar projects
+### Compiler Performance
+- [ ] Profile compiler with pprof
+- [ ] Optimize hot paths in lexer/parser
+- [ ] Cache parsed files (incremental compilation)
+- [ ] Parallel compilation of multiple files
 
-- [ ] API documentation
-  - Standard library functions
-  - Built-in functions
-  - Memory operations
-  - Type conversions
+### Runtime Performance
+- [ ] Benchmark vs C equivalent programs
+- [ ] Optimize string operations (currently slow)
+- [ ] Optimize list operations (currently slow)
+- [ ] SIMD optimization for map lookups (AVX-512)
 
-- [ ] Tutorial series
-  - Hello World
-  - Basic game loop
-  - SDL3 integration
-  - Struct usage
-  - C FFI guide
+## Long-term (v2.0+)
 
-### Code Cleanup
-- [ ] Remove dead code
-  - Unused functions
-  - Commented-out sections
-  - Debug prints
+- [ ] Package manager (flap install/publish)
+- [ ] LSP server for editor support
+- [ ] Incremental compilation
+- [ ] Hot code reloading
+- [ ] Native struct types (not just cstruct)
+- [ ] Generics/parametric polymorphism
+- [ ] Effect system for IO/errors
+- [ ] Async/await for I/O
+- [ ] WebAssembly target
 
-- [ ] Consistent style
-  - gofmt all files
-  - Consistent naming
-  - Clear comments
-  - Function documentation
+## Recently Completed
 
-- [ ] Refactoring
-  - Extract common patterns
-  - Simplify complex functions
-  - Improve readability
-  - Better error handling
+- [x] Type name standardization (int32, uint64, float32) - v1.3.0
+- [x] CStruct constants generation (_SIZEOF, _OFFSET) - v1.3.0
+- [x] Atomic operations (add, cas, load, store) - v1.3.0
+- [x] Parallel loops with barrier synchronization (@@) - v1.3.0
+- [x] Test suite optimization (-short flag) - v1.3.0
+- [x] Updated documentation (README, LANGUAGE) - v1.3.0
 
-### Release Preparation
-- [ ] Version tagging
-  - Tag v1.0.0 release
-  - Create GitHub release
-  - Write release notes
+---
 
-- [ ] Binary releases
-  - Linux x86-64 binary
-  - Build instructions
-  - Dependencies list
-
-- [ ] Examples repository
-  - Separate repo for game examples
-  - Pong, platformer, shooter
-  - Documented and commented
-  - Build instructions
-
-## Success Criteria for v1.0
-
-A game built with Flapc v1.0 can be published on Steam if it:
-
-- ✅ Compiles to native ELF executable
-- ✅ Links with SDL3/OpenGL seamlessly
-- ✅ Runs at stable 60 FPS
-- ✅ Has no memory leaks (valgrind clean)
-- ✅ Has no segfaults with proper error handling
-- ✅ Compiles in < 1 second for iteration
-- ✅ Supports full debugging with gdb/lldb
-- ✅ Has clear, actionable error messages
-- ✅ Handles structs for game entities
-- ✅ Integrates with C libraries effortlessly
-
-## Beyond v1.0 (Future Versions)
-
-### v1.1 - Windows Support
-- PE executable generation
-- DirectX/Vulkan integration
-- Visual Studio debugging
-
-### v1.2 - ARM64 Support
-- ARM64 code generation
-- Raspberry Pi support
-- Mobile potential
-
-### v2.0 - Advanced Features
-- Loop expressions (if proven necessary)
-- Hot code reload (runtime implementation)
-- Arena allocators (runtime implementation)
-- Advanced optimization passes
-
-### v3.0 - Tooling
-- Language server protocol
-- Package manager
-- LLVM backend option
-- IDE integration
-
-## Current Status
-
-**In Progress:**
-- [x] Requirements analysis (STEAM_REQUIREMENTS.md)
-- [x] Grammar v1.0 design (GRAMMAR_V1.md)
-- [ ] TODO.md update (this file)
-
-**Next Steps:**
-1. Remove parallel loop code
-2. Implement register allocator
-3. Add struct types
-4. Generate DWARF debug info
-5. Comprehensive testing
-
-**Timeline:**
-- Week 1-2: Cleanup and simplification
-- Week 2-3: Core features (registers, structs, FFI)
-- Week 3-4: Quality and debugging
-- Week 4-5: Testing and validation
-- Week 5-6: Documentation and release
-
-**Target Release:** 6 weeks from now
+**Note:** This TODO is living documentation. Tasks marked `[ ]` are pending, `[x]` are completed. Priority numbers indicate importance: 1=critical, 5=nice-to-have.

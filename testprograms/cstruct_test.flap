@@ -2,23 +2,23 @@
 
 // Basic cstruct with different field types
 cstruct Vec3 {
-    x: f32,
-    y: f32,
-    z: f32
+    x as float32
+    y as float32
+    z as float32
 }
 
 // Packed cstruct (no padding)
 cstruct PackedStruct packed {
-    a: u8,
-    b: u64,
-    c: u8
+    a as uint8
+    b as uint64
+    c as uint8
 }
 
 // Regular struct (with padding for alignment)
 cstruct AlignedStruct {
-    a: u8,
-    b: u64,
-    c: u8
+    a as uint8
+    b as uint64
+    c as uint8
 }
 
 // Test accessing the generated constants

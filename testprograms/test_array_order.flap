@@ -1,0 +1,5 @@
+arr := [6, 4, 2]
+printf("Element 0: %.0f\n", arr[0])
+printf("Element 1: %.0f\n", arr[1])
+printf("Element 2: %.0f\n", arr[2])
+println(arr)

@@ -1,0 +1,32 @@
+// Test that all type names use full form (int8, uint64, float32, etc.)
+// Never abbreviated forms (i8, u64, f32, etc.)
+
+printf("Testing Flap type casting with full type names:\n\n")
+
+// Integer types
+x := 42.7
+printf("Original value: %.2f\n", x)
+printf("  as int8:   %.0f\n", x as int8)
+printf("  as int16:  %.0f\n", x as int16)
+printf("  as int32:  %.0f\n", x as int32)
+printf("  as int64:  %.0f\n", x as int64)
+
+printf("\n")
+
+// Unsigned integer types
+y := 255.9
+printf("Unsigned value: %.2f\n", y)
+printf("  as uint8:  %.0f\n", y as uint8)
+printf("  as uint16: %.0f\n", y as uint16)
+printf("  as uint32: %.0f\n", y as uint32)
+printf("  as uint64: %.0f\n", y as uint64)
+
+printf("\n")
+
+// Float types
+z := 3.14159265359
+printf("Float value: %.10f\n", z)
+printf("  as float32: %.6f\n", z as float32)
+printf("  as float64: %.10f\n", z as float64)
+
+printf("\n✓ All type names use full form (int32, uint64, float32, etc.)\n")

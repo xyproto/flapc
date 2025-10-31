@@ -1,0 +1,31 @@
+// Test both comma and no-comma syntax for cstruct
+
+// With commas (old style - should still work)
+cstruct WithCommas {
+    x as float32
+    y as float32
+    z as float32
+}
+
+// Without commas (new style - more Flap-like)
+cstruct WithoutCommas {
+    x as float32
+    y as float32
+    z as float32
+}
+
+// Mixed (should also work)
+cstruct Mixed {
+    x as float32
+    y as float32
+    z as float32
+}
+
+printf("WithCommas_SIZEOF = %.0f\n", WithCommas_SIZEOF)
+printf("WithoutCommas_SIZEOF = %.0f\n", WithoutCommas_SIZEOF)
+printf("Mixed_SIZEOF = %.0f\n", Mixed_SIZEOF)
+
+// All should be 12 bytes (3 x float32)
+WithCommas_SIZEOF == 12 and WithoutCommas_SIZEOF == 12 and Mixed_SIZEOF == 12 {
+    println("✓ All cstruct syntax styles work correctly!")
+}

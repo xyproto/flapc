@@ -1,9 +1,9 @@
 // Test cstruct with arena allocation and unsafe memory operations
 
 cstruct Vec3 {
-    x: f64,
-    y: f64,
-    z: f64
+    x as float64
+    y as float64
+    z as float64
 }
 
 printf("Vec3 cstruct:\n")

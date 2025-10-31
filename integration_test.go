@@ -72,6 +72,23 @@ func TestFlapPrograms(t *testing.T) {
 		t.Fatal("No .flap files found in testprograms/ directory")
 	}
 
+	// In short mode, test only a representative subset of programs
+	if testing.Short() {
+		// Sample programs covering key features
+		essential := []string{
+			"testprograms/add.flap",
+			"testprograms/first.flap",
+			"testprograms/printf_demo.flap",
+			"testprograms/cstruct_test.flap",
+			"testprograms/cstruct_arena_test.flap",
+			"testprograms/parallel_test_simple.flap",
+			"testprograms/atomic_counter.flap",
+			"testprograms/lambda_test.flap",
+			"testprograms/list_test.flap",
+		}
+		matches = essential
+	}
+
 	// Test each program
 	for _, srcPath := range matches {
 		base := strings.TrimSuffix(filepath.Base(srcPath), ".flap")
