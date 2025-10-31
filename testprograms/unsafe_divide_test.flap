@@ -1,7 +1,7 @@
 // Test divide operation in unsafe blocks
 
 // Test register / register
-result1 := unsafe {
+result1 := unsafe int64 {
     rax <- 100
     rbx <- 5
     rax <- rax / rbx
@@ -18,7 +18,7 @@ result1 := unsafe {
 printf("100 / 5 = %.0f\n", result1)
 
 // Test register / immediate
-result2 := unsafe {
+result2 := unsafe int64 {
     rax <- 84
     rax <- rax / 7
 } {

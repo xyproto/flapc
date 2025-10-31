@@ -1,7 +1,7 @@
 // Test multiply operation in unsafe blocks
 
 // Test register * register
-result1 := unsafe {
+result1 := unsafe int64 {
     rax <- 6
     rbx <- 7
     rax <- rax * rbx
@@ -18,7 +18,7 @@ result1 := unsafe {
 printf("6 * 7 = %.0f\n", result1)
 
 // Test register * immediate
-result2 := unsafe {
+result2 := unsafe int64 {
     rax <- 12
     rax <- rax * 5
 } {

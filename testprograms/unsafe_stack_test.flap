@@ -1,7 +1,7 @@
 // Test unsafe blocks with stack operations
 
 // Test push and pop
-result := unsafe {
+result := unsafe int64 {
     rax <- 100
     stack <- rax      // Push rax to stack
     rax <- 42         // Change rax
@@ -21,7 +21,7 @@ result := unsafe {
 printf("Result (should be 100): %.0f\n", result)
 
 // Test multiple pushes and pops (LIFO order)
-value := unsafe {
+value := unsafe int64 {
     rax <- 10
     stack <- rax      // Push 10
     rax <- 20

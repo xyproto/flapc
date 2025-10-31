@@ -20,7 +20,7 @@ arena {
 
     // Write Vec3 fields using unsafe block
     // f64 fields: x=0, y=8, z=16 (8 bytes each)
-    unsafe {
+    unsafe pointer {
         rax <- vec_ptr as pointer
 
         // Write x = 10.5 (offset 0)
@@ -53,7 +53,7 @@ arena {
     }
 
     // Read Vec3 fields back
-    x_val := unsafe {
+    x_val := unsafe float64 {
         rax <- vec_ptr as pointer
         rax <- [rax + 0]
     } {
@@ -64,7 +64,7 @@ arena {
         a0 <- [a0 + 0]
     }
 
-    y_val := unsafe {
+    y_val := unsafe float64 {
         rax <- vec_ptr as pointer
         rax <- [rax + 8]
     } {
@@ -75,7 +75,7 @@ arena {
         a0 <- [a0 + 8]
     }
 
-    z_val := unsafe {
+    z_val := unsafe float64 {
         rax <- vec_ptr as pointer
         rax <- [rax + 16]
     } {

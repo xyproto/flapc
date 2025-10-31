@@ -1,7 +1,7 @@
 // Simple syscall test - write "Hi!\n" to stdout using raw bytes
 
 // Write to stdout using syscall (x86-64: sys_write = 1)
-result := unsafe {
+result := unsafe int64 {
     rax <- 1                    // syscall number: write
     rdi <- 1                    // fd: stdout
     // We need a data address - use stack

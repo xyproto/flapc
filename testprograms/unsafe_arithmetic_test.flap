@@ -1,7 +1,7 @@
 // Test unsafe blocks with arithmetic operations
 
 // Test addition
-result1 := unsafe {
+result1 := unsafe int64 {
     rax <- 10
     rbx <- 20
     rax <- rax + rbx
@@ -18,7 +18,7 @@ result1 := unsafe {
 printf("10 + 20 = %.0f\n", result1)
 
 // Test subtraction
-result2 := unsafe {
+result2 := unsafe int64 {
     rax <- 100
     rbx <- 42
     rax <- rax - rbx
@@ -35,7 +35,7 @@ result2 := unsafe {
 printf("100 - 42 = %.0f\n", result2)
 
 // Test bitwise AND
-result3 := unsafe {
+result3 := unsafe int64 {
     rax <- 0xFF
     rbx <- 0x0F
     rax <- rax & rbx
@@ -52,7 +52,7 @@ result3 := unsafe {
 printf("0xFF & 0x0F = %.0f\n", result3)
 
 // Test bitwise OR
-result4 := unsafe {
+result4 := unsafe int64 {
     rax <- 0xF0
     rbx <- 0x0F
     rax <- rax | rbx
@@ -69,7 +69,7 @@ result4 := unsafe {
 printf("0xF0 | 0x0F = %.0f\n", result4)
 
 // Test NOT
-result5 := unsafe {
+result5 := unsafe int64 {
     rax <- 0
     rax <- ~b rax
 } {

@@ -5,7 +5,7 @@ arena {
     buffer := alloc(64)
 
     // Test register store using cast: [buffer] <- value
-    unsafe {
+    unsafe int64 {
         rax <- buffer as pointer
         rbx <- 42
         [rax] <- rbx             // Store 42 at buffer
@@ -20,7 +20,7 @@ arena {
     }
 
     // Read back the value
-    result1 := unsafe {
+    result1 := unsafe int64 {
         rax <- buffer as pointer
         rax <- [rax]
     } {
@@ -34,7 +34,7 @@ arena {
     printf("Stored and loaded register value: %.0f\n", result1)
 
     // Test immediate store: [buffer+8] <- 100
-    unsafe {
+    unsafe int64 {
         rax <- buffer as pointer
         rax <- rax + 8
         [rax] <- 100
@@ -49,7 +49,7 @@ arena {
     }
 
     // Read back the immediate value
-    result2 := unsafe {
+    result2 := unsafe int64 {
         rax <- buffer as pointer
         rax <- rax + 8
         rax <- [rax]

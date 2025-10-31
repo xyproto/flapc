@@ -1,29 +1,23 @@
 // Test unsafe blocks returning register as cstr/pointer
 
 // Test: Return a C string pointer
-str_ptr := unsafe {
+str_ptr := unsafe cstr {
     rax <- 0x48656C6C6F
-    rax as cstr
 } {
     x0 <- 0x48656C6C6F
-    x0 as cstr
 } {
     a0 <- 0x48656C6C6F
-    a0 as cstr
 }
 
 printf("String pointer value: %.0f\n", str_ptr)
 
 // Test 2: Return a pointer value
-ptr := unsafe {
-    rbx <- 12345678
-    rbx as pointer
+ptr := unsafe pointer {
+    rax <- 12345678
 } {
-    x1 <- 12345678
-    x1 as pointer
+    x0 <- 12345678
 } {
-    a1 <- 12345678
-    a1 as pointer
+    a0 <- 12345678
 }
 
 printf("Pointer value: %.0f\n", ptr)

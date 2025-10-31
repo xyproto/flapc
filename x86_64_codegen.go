@@ -174,20 +174,41 @@ func (x *X86_64CodeGen) MovImmToReg(dst, imm string) {
 		immVal = val
 	}
 
-	if dstReg.Size == 64 {
+	// Check if immediate fits in 32 bits (can be sign-extended)
+	if dstReg.Size == 64 && (int64(immVal) < -0x80000000 || int64(immVal) > 0x7FFFFFFF) {
+		// Need full 64-bit immediate: MOV r64, imm64 (0xB8+r encoding)
 		rex := uint8(0x48)
 		if dstReg.Encoding >= 8 {
 			rex |= 0x01
 		}
 		x.write(rex)
+		x.write(0xB8 | (dstReg.Encoding & 7))
+		// Write full 64-bit immediate
+		x.write(uint8(immVal))
+		x.write(uint8(immVal >> 8))
+		x.write(uint8(immVal >> 16))
+		x.write(uint8(immVal >> 24))
+		x.write(uint8(immVal >> 32))
+		x.write(uint8(immVal >> 40))
+		x.write(uint8(immVal >> 48))
+		x.write(uint8(immVal >> 56))
+	} else {
+		// 32-bit immediate (sign-extended for 64-bit): MOV r/m64, imm32
+		if dstReg.Size == 64 {
+			rex := uint8(0x48)
+			if dstReg.Encoding >= 8 {
+				rex |= 0x01
+			}
+			x.write(rex)
+		}
+
+		x.write(0xC7)
+
+		modrm := uint8(0xC0) | (dstReg.Encoding & 7)
+		x.write(modrm)
+
+		x.writeUnsigned(uint(immVal))
 	}
-
-	x.write(0xC7)
-
-	modrm := uint8(0xC0) | (dstReg.Encoding & 7)
-	x.write(modrm)
-
-	x.writeUnsigned(uint(immVal))
 }
 
 func (x *X86_64CodeGen) MovMemToReg(dst, symbol string, offset int32) {

@@ -1,7 +1,7 @@
 // Simple test of memory stores using stack pointer
 
 // Test storing and loading a value via RSP
-result := unsafe {
+result := unsafe int64 {
     rax <- rsp
     rax <- rax - 16    // Make space on stack
     rsp <- rax         // Update stack pointer

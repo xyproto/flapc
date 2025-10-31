@@ -1,7 +1,7 @@
 // Test unsafe blocks with various return scenarios
 
-// Test 1: Verify default behavior (no explicit return)
-result1 := unsafe {
+// Test 1: Verify default behavior (no explicit return type)
+result1 := unsafe int64 {
     rax <- 42
 } {
     x0 <- 42
@@ -11,39 +11,33 @@ result1 := unsafe {
 
 printf("Result (default): %.0f\n", result1)
 
-// Test 2: Explicit rax return (same as default)
-result2 := unsafe {
+// Test 2: Explicit type (int64)
+result2 := unsafe int64 {
     rbx <- 999
     rax <- 123
-    rax
 } {
     x1 <- 999
     x0 <- 123
-    x0
 } {
     a1 <- 999
     a0 <- 123
-    a0
 }
 
 printf("Result (explicit rax): %.0f\n", result2)
 
-// Test 3: Return from different register with computation
-result3 := unsafe {
+// Test 3: Return from computation
+result3 := unsafe int64 {
     rax <- 10
     rbx <- 20
-    rcx <- rax + rbx
-    rcx
+    rax <- rax + rbx
 } {
     x0 <- 10
     x1 <- 20
-    x2 <- x0 + x1
-    x2
+    x0 <- x0 + x1
 } {
     a0 <- 10
     a1 <- 20
-    a2 <- a0 + a1
-    a2
+    a0 <- a0 + a1
 }
 
 printf("Result (computed): %.0f\n", result3)

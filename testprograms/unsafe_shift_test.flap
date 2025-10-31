@@ -1,7 +1,7 @@
 // Test unsafe blocks with shift operations
 
 // Test shift left by immediate
-result1 := unsafe {
+result1 := unsafe int64 {
     rax <- 5
     rax <- rax << 2
 } {
@@ -15,7 +15,7 @@ result1 := unsafe {
 printf("5 << 2 = %.0f\n", result1)
 
 // Test shift right by immediate
-result2 := unsafe {
+result2 := unsafe int64 {
     rax <- 32
     rax <- rax >> 3
 } {
@@ -29,7 +29,7 @@ result2 := unsafe {
 printf("32 >> 3 = %.0f\n", result2)
 
 // Test shift left by register
-result3 := unsafe {
+result3 := unsafe int64 {
     rax <- 7
     rbx <- 4
     rax <- rax << rbx
@@ -46,7 +46,7 @@ result3 := unsafe {
 printf("7 << 4 = %.0f\n", result3)
 
 // Test shift right by register
-result4 := unsafe {
+result4 := unsafe int64 {
     rax <- 128
     rbx <- 2
     rax <- rax >> rbx

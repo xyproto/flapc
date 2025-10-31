@@ -85,6 +85,7 @@ statement       = use_statement
                 | arena_statement
                 | loop_statement
                 | jump_statement
+                | defer_statement
                 | spawn_statement
                 | assignment
                 | expression_statement ;
@@ -113,6 +114,8 @@ jump_statement  = "ret" [ expression ]
                 | "->" expression ;
 
 spawn_statement = "spawn" expression ;
+
+defer_statement = "defer" expression ;
 
 assignment      = identifier ("=" | ":=" | "<-") expression
                 | identifier ("+=" | "-=" | "*=" | "/=" | "%=" | "**=") expression ;
@@ -170,6 +173,7 @@ cast_type               = "int8" | "int16" | "int32" | "int64"
 
 primary_expr            = number
                         | string
+                        | fstring
                         | identifier
                         | "(" expression ")"
                         | lambda_expr
@@ -203,6 +207,8 @@ identifier              = letter { letter | digit | "_" } ;
 number                  = [ "-" ] digit { digit } [ "." digit { digit } ] ;
 
 string                  = '"' { character } '"' ;
+
+fstring                 = 'f"' { character | "{" expression "}" } '"' ;
 ```
 
 ## Keywords
@@ -210,7 +216,7 @@ string                  = '"' { character } '"' ;
 ### Reserved Keywords
 
 ```
-and as cstruct err in not or ret xor spawn arena unsafe import use alloc call
+and as cstruct defer err in not or ret xor spawn arena unsafe import use alloc call
 ```
 
 ### Contextual Keywords
@@ -366,6 +372,47 @@ fib := n => n {
     ~> fib(n-1) + fib(n-2)
 }
 ```
+
+### Defer Statements
+
+Defer statements postpone execution of an expression until the enclosing scope exits. Multiple deferred statements execute in LIFO (Last-In-First-Out) order.
+
+```flap
+// Basic defer for cleanup
+process_file := filename => {
+    file := open_file(filename)
+    defer close_file(file)  // Executes when scope exits
+
+    // ... work with file ...
+    -> result
+}
+
+// LIFO execution order
+demo ==> {
+    defer println("First")   // Executes third
+    defer println("Second")  // Executes second
+    defer println("Third")   // Executes first
+    println("Body")          // Executes immediately
+}
+// Output: Body\nThird\nSecond\nFirst
+
+// Resource cleanup pattern
+safe_alloc := size => {
+    ptr := malloc(size)
+    defer free(ptr)  // Guaranteed cleanup
+
+    // Use ptr safely...
+    write_i32(ptr, 0, 42)
+    value := read_i32(ptr, 0)
+    -> value
+}
+```
+
+**Key Properties:**
+- Executes at scope exit (function return, block end, early return)
+- LIFO order: Last defer executes first
+- Always runs even if errors occur before
+- Common use: Resource cleanup (files, memory, locks)
 
 ## Functions and Lambdas
 
@@ -685,6 +732,19 @@ printf("x=%d\n", x)      // C-style formatted print
 ```flap
 len := #str              // String length
 concat := str1 + str2    // Concatenation
+
+// F-strings (interpolated strings)
+name := "Alice"
+age := 30
+msg := f"Hello, {name}! You are {age} years old."
+
+// F-strings with expressions
+a := 5
+b := 7
+result := f"Sum: {a + b}, Product: {a * b}"
+
+// Escaping braces in f-strings
+text := f"Use {{ and }} for literal braces"
 ```
 
 ### List Operations

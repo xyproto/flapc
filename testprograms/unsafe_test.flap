@@ -1,7 +1,7 @@
 // Test unsafe blocks with direct register access
 
 // Simple test: load 42 into rax
-result := unsafe {
+result := unsafe int64 {
     rax <- 42
 } {
     x0 <- 42
@@ -12,7 +12,7 @@ result := unsafe {
 printf("Result: %.0f\n", result)
 
 // Test register-to-register moves
-value := unsafe {
+value := unsafe int64 {
     rbx <- 100
     rax <- rbx
 } {
@@ -26,7 +26,7 @@ value := unsafe {
 printf("Value: %.0f\n", value)
 
 // Test hex literals in unsafe blocks
-hex_val := unsafe {
+hex_val := unsafe int64 {
     rax <- 0xFF
 } {
     x0 <- 0xFF

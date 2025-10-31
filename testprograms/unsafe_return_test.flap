@@ -1,52 +1,46 @@
 // Test unsafe blocks with explicit return values
 
-// Test 1: Return from rbx instead of rax
-result1 := unsafe {
-    rax <- 100
+// Test 1: Return from rbx (move to rax for return)
+result1 := unsafe int64 {
     rbx <- 42
-    rbx
+    rax <- rbx
 } {
-    x0 <- 100
     x1 <- 42
-    x1
+    x0 <- x1
 } {
-    a0 <- 100
     a1 <- 42
-    a1
+    a0 <- a1
 }
 
 printf("Result from rbx: %.0f\n", result1)
 
-// Test 2: Return from rcx
-result2 := unsafe {
+// Test 2: Return from rcx (move to rax for return)
+result2 := unsafe int64 {
     rax <- 10
     rbx <- 20
     rcx <- 30
-    rcx
+    rax <- rcx
 } {
     x0 <- 10
     x1 <- 20
     x2 <- 30
-    x2
+    x0 <- x2
 } {
     a0 <- 10
     a1 <- 20
     a2 <- 30
-    a2
+    a0 <- a2
 }
 
 printf("Result from rcx: %.0f\n", result2)
 
-// Test 3: Explicit rax return (should work like before)
-result3 := unsafe {
+// Test 3: Direct rax return
+result3 := unsafe int64 {
     rax <- 99
-    rax
 } {
     x0 <- 99
-    x0
 } {
     a0 <- 99
-    a0
 }
 
 printf("Result from rax: %.0f\n", result3)

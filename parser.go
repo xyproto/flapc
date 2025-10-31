@@ -4538,27 +4538,49 @@ func (p *Parser) parseLoopExpr() Expression {
 	}
 }
 
-// parseUnsafeExpr parses: unsafe { x86_64 block } { arm64 block } { riscv64 block }
+// parseUnsafeExpr parses: unsafe [type] { x86_64 block } { arm64 block } { riscv64 block }
+// Example: unsafe int64 { rax <- 42 } { x0 <- 42 } { a0 <- 42 }
+// Default: unsafe { rax <- 42 } { x0 <- 42 } { a0 <- 42 } returns uint64
 func (p *Parser) parseUnsafeExpr() Expression {
 	p.nextToken() // skip 'unsafe'
+
+	// Parse return type (optional, defaults to uint64)
+	returnType := "uint64" // default
+	if p.current.Type == TOKEN_IDENT {
+		// Check if this is a type name or if it's a block
+		// Type names we support: int8, int16, int32, int64, uint8, uint16, uint32, uint64, float64, ptr, pointer, cstr
+		possibleType := p.current.Value
+		if possibleType == "int8" || possibleType == "int16" || possibleType == "int32" || possibleType == "int64" ||
+			possibleType == "uint8" || possibleType == "uint16" || possibleType == "uint32" || possibleType == "uint64" ||
+			possibleType == "float64" || possibleType == "float32" ||
+			possibleType == "ptr" || possibleType == "pointer" || possibleType == "cstr" {
+			returnType = possibleType
+			p.nextToken() // skip type
+		}
+	}
 
 	// Parse x86_64 block
 	if p.current.Type != TOKEN_LBRACE {
 		p.error("expected '{' for x86_64 block in unsafe expression")
 	}
-	x86_64Stmts, x86_64Ret := p.parseUnsafeBlock()
+	x86_64Stmts := p.parseUnsafeBlock()
 
 	// Parse arm64 block
 	if p.current.Type != TOKEN_LBRACE {
 		p.error("expected '{' for arm64 block in unsafe expression")
 	}
-	arm64Stmts, arm64Ret := p.parseUnsafeBlock()
+	arm64Stmts := p.parseUnsafeBlock()
 
 	// Parse riscv64 block
 	if p.current.Type != TOKEN_LBRACE {
 		p.error("expected '{' for riscv64 block in unsafe expression")
 	}
-	riscv64Stmts, riscv64Ret := p.parseUnsafeBlock()
+	riscv64Stmts := p.parseUnsafeBlock()
+
+	// Create return statements with the specified type
+	x86_64Ret := &UnsafeReturnStmt{Register: "rax", AsType: returnType}
+	arm64Ret := &UnsafeReturnStmt{Register: "x0", AsType: returnType}
+	riscv64Ret := &UnsafeReturnStmt{Register: "a0", AsType: returnType}
 
 	return &UnsafeExpr{
 		X86_64Block:   x86_64Stmts,
@@ -4571,8 +4593,8 @@ func (p *Parser) parseUnsafeExpr() Expression {
 }
 
 // parseUnsafeBlock parses a single architecture block with extended syntax
-// Returns: statements and optional return statement
-func (p *Parser) parseUnsafeBlock() ([]Statement, *UnsafeReturnStmt) {
+// Returns: statements
+func (p *Parser) parseUnsafeBlock() []Statement {
 	p.nextToken() // skip '{'
 	p.skipNewlines()
 
@@ -4653,7 +4675,7 @@ func (p *Parser) parseUnsafeBlock() ([]Statement, *UnsafeReturnStmt) {
 			continue
 		}
 
-		// Regular register assignment or return expression
+		// Regular register assignment
 		if p.current.Type != TOKEN_IDENT {
 			p.error("expected register name, memory address, or syscall in unsafe block")
 		}
@@ -4662,27 +4684,6 @@ func (p *Parser) parseUnsafeBlock() ([]Statement, *UnsafeReturnStmt) {
 		p.nextToken() // skip register name
 
 		if p.current.Type != TOKEN_LEFT_ARROW {
-			// Not a register assignment - check if this is a return expression
-			// Syntax: "register" or "register as type"
-			asType := ""
-			if p.current.Type == TOKEN_AS {
-				p.nextToken() // skip 'as'
-				if p.current.Type != TOKEN_IDENT {
-					p.error("expected type name after 'as' in return expression")
-				}
-				asType = p.current.Value
-				p.nextToken() // skip type name
-			}
-
-			p.skipNewlines()
-			if p.current.Type == TOKEN_RBRACE {
-				// This is a return expression
-				p.nextToken() // skip '}'
-				return statements, &UnsafeReturnStmt{
-					Register: regName,
-					AsType:   asType,
-				}
-			}
 			p.error(fmt.Sprintf("expected '<-' after register %s in unsafe block", regName))
 		}
 		p.nextToken() // skip '<-'
@@ -4703,7 +4704,7 @@ func (p *Parser) parseUnsafeBlock() ([]Statement, *UnsafeReturnStmt) {
 	}
 	p.nextToken() // skip '}'
 
-	return statements, nil
+	return statements
 }
 
 // parseUnsafeValue parses the RHS of a register assignment in unsafe blocks
@@ -4927,6 +4928,8 @@ type FlapCompiler struct {
 
 	metaArenaGrowthErrorJump      int
 	firstMetaArenaMallocErrorJump int
+
+	regAlloc *RegisterAllocator // Register allocator for optimized variable allocation
 }
 
 type LambdaFunc struct {
@@ -4981,6 +4984,7 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 		hotFunctionTable:    make(map[string]int),
 		debug:               debugEnabled,
 		currentArena:        -1,
+		regAlloc:            NewRegisterAllocator(platform.Arch),
 	}, nil
 }
 
@@ -9407,35 +9411,43 @@ func (fc *FlapCompiler) compileUnsafeExpr(expr *UnsafeExpr) {
 		asType := retStmt.AsType
 
 		if asType == "" {
-			// Return as Flap value (convert to float64 in xmm0)
-			if len(reg) >= 3 && reg[:3] == "xmm" {
-				// Already in a float register
+			compilerError("unsafe block return requires explicit type conversion (e.g., 'rax as int64', 'rax as float64', 'rax as pointer')")
+		}
+
+		// Handle different return types
+		if len(reg) >= 3 && reg[:3] == "xmm" {
+			// XMM register
+			if asType == "float64" {
+				// Already a float, just move to xmm0
 				if reg != "xmm0" {
 					fc.out.MovXmmToXmm("xmm0", reg)
 				}
 			} else {
-				// Integer register - convert to float64 in xmm0
-				if reg != "rax" {
-					fc.out.MovRegToReg("rax", reg)
-				}
-				fc.out.Cvtsi2sd("xmm0", "rax")
+				compilerError("cannot convert XMM register to type %s", asType)
 			}
 		} else {
-			// Return as C-like value (e.g., cstr, pointer)
-			// For C-like values, we treat them as opaque pointers and convert to float64
-			if len(reg) >= 3 && reg[:3] == "xmm" {
-				compilerError("cannot return xmm register as C type %s", asType)
-			}
-			// Move the register value to rax if needed, then convert to xmm0
+			// GPR (general purpose register)
 			if reg != "rax" {
 				fc.out.MovRegToReg("rax", reg)
 			}
-			// Convert pointer/cstr (integer) to float64 representation
-			fc.out.Cvtsi2sd("xmm0", "rax")
+
+			switch asType {
+			case "float64":
+				// Reinterpret bits as float64 (for reading float64 from memory)
+				fc.out.MovRegToXmm("xmm0", "rax")
+			case "int64", "int32", "int16", "int8", "uint64", "uint32", "uint16", "uint8":
+				// Convert integer to float64
+				fc.out.Cvtsi2sd("xmm0", "rax")
+			case "pointer", "ptr", "cstr":
+				// Convert pointer/cstr to float64 (treated as integer)
+				fc.out.Cvtsi2sd("xmm0", "rax")
+			default:
+				compilerError("unsupported return type in unsafe block: %s", asType)
+			}
 		}
 	} else {
-		// Default behavior: convert rax to xmm0
-		fc.out.Cvtsi2sd("xmm0", "rax")
+		// No return statement - default behavior
+		compilerError("unsafe block must end with explicit return (e.g., 'rax as int64')")
 	}
 }
 
@@ -9466,12 +9478,22 @@ func (fc *FlapCompiler) compileRegisterAssignment(stmt *RegisterAssignStmt) {
 	// Handle various value types
 	switch v := stmt.Value.(type) {
 	case *NumberExpr:
-		// Immediate value: register <- 42
+		// Immediate value: register <- 42 or register <- 10.5
 		if register == "stack" {
 			compilerError("cannot assign immediate value to stack; use 'stack <- register' to push")
 		}
-		val := int64(v.Value)
-		fc.out.MovImmToReg(register, strconv.FormatInt(val, 10))
+
+		// Check if this is a floating-point value (has decimal part)
+		if v.Value != float64(int64(v.Value)) {
+			// Floating-point value - need to use XMM register
+			// For unsafe blocks, interpret float bits as integer for GPR storage
+			floatBits := math.Float64bits(v.Value)
+			fc.out.MovImmToReg(register, strconv.FormatUint(floatBits, 10))
+		} else {
+			// Integer value
+			val := int64(v.Value)
+			fc.out.MovImmToReg(register, strconv.FormatInt(val, 10))
+		}
 
 	case string:
 		// Resolve source register alias
@@ -9641,8 +9663,17 @@ func (fc *FlapCompiler) compileSizedMemoryStore(store *MemoryStore) {
 	case *NumberExpr:
 		// Load immediate value into a temporary register (r11)
 		srcReg = "r11"
-		val := int64(v.Value)
-		fc.out.MovImmToReg(srcReg, strconv.FormatInt(val, 10))
+
+		// Check if this is a floating-point value (has decimal part)
+		if v.Value != float64(int64(v.Value)) {
+			// Floating-point value - interpret float bits as integer for GPR storage
+			floatBits := math.Float64bits(v.Value)
+			fc.out.MovImmToReg(srcReg, strconv.FormatUint(floatBits, 10))
+		} else {
+			// Integer value
+			val := int64(v.Value)
+			fc.out.MovImmToReg(srcReg, strconv.FormatInt(val, 10))
+		}
 	default:
 		compilerError("unsupported value type in memory store: %T", store.Value)
 	}

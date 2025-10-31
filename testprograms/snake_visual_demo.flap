@@ -63,7 +63,7 @@ arena {
                 sdl.SDL_SetRenderDrawColor(renderer, 0, green_val, 0, 255)
             }
 
-            unsafe {
+            unsafe int64 {
                 rax <- rect_ptr as pointer
                 rbx <- x_val
                 [rax + 0] <- rbx
@@ -104,7 +104,7 @@ arena {
 
         sdl.SDL_SetRenderDrawColor(renderer, 255, 50, 50, 255)
 
-        unsafe {
+        unsafe int64 {
             rax <- rect_ptr as pointer
             rbx <- 450
             [rax + 0] <- rbx
