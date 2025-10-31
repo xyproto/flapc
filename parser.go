@@ -46,6 +46,87 @@ func hashStringKey(s string) uint64 {
 	return uint64((h32.Sum32() & 0x3FFFFFFF) | 0x40000000)
 }
 
+// levenshteinDistance calculates the edit distance between two strings
+func levenshteinDistance(s1, s2 string) int {
+	if len(s1) == 0 {
+		return len(s2)
+	}
+	if len(s2) == 0 {
+		return len(s1)
+	}
+
+	// Create matrix
+	matrix := make([][]int, len(s1)+1)
+	for i := range matrix {
+		matrix[i] = make([]int, len(s2)+1)
+	}
+
+	// Initialize first row and column
+	for i := 0; i <= len(s1); i++ {
+		matrix[i][0] = i
+	}
+	for j := 0; j <= len(s2); j++ {
+		matrix[0][j] = j
+	}
+
+	// Fill matrix
+	for i := 1; i <= len(s1); i++ {
+		for j := 1; j <= len(s2); j++ {
+			cost := 1
+			if s1[i-1] == s2[j-1] {
+				cost = 0
+			}
+			matrix[i][j] = min(
+				matrix[i-1][j]+1,      // deletion
+				min(matrix[i][j-1]+1,  // insertion
+					matrix[i-1][j-1]+cost)) // substitution
+		}
+	}
+
+	return matrix[len(s1)][len(s2)]
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// findSimilarIdentifiers finds identifiers similar to the given name
+func findSimilarIdentifiers(name string, availableVars map[string]int, maxSuggestions int) []string {
+	type suggestion struct {
+		name     string
+		distance int
+	}
+
+	var suggestions []suggestion
+	threshold := 3 // Maximum edit distance for suggestions
+
+	for varName := range availableVars {
+		dist := levenshteinDistance(name, varName)
+		if dist <= threshold && dist > 0 {
+			suggestions = append(suggestions, suggestion{varName, dist})
+		}
+	}
+
+	// Sort by distance (closest first)
+	sort.Slice(suggestions, func(i, j int) bool {
+		if suggestions[i].distance == suggestions[j].distance {
+			return suggestions[i].name < suggestions[j].name
+		}
+		return suggestions[i].distance < suggestions[j].distance
+	})
+
+	// Return top suggestions
+	result := make([]string, 0, maxSuggestions)
+	for i := 0; i < len(suggestions) && i < maxSuggestions; i++ {
+		result = append(result, suggestions[i].name)
+	}
+	return result
+}
+
 // isUppercase checks if an identifier is all uppercase (constant naming convention)
 func isUppercase(s string) bool {
 	if len(s) == 0 {
@@ -6155,7 +6236,12 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 			// Get the variable's stack offset
 			offset, exists := fc.variables[identExpr.Name]
 			if !exists {
-				compilerError("undefined variable '%s'", identExpr.Name)
+				suggestions := findSimilarIdentifiers(identExpr.Name, fc.variables, 3)
+				if len(suggestions) > 0 {
+					compilerError("undefined variable '%s'. Did you mean: %s?", identExpr.Name, strings.Join(suggestions, ", "))
+				} else {
+					compilerError("undefined variable '%s'", identExpr.Name)
+				}
 			}
 
 			// Check if variable is mutable
@@ -7465,7 +7551,12 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fmt.Fprintf(os.Stderr, "DEBUG: Undefined variable '%s', available vars: %v\n", e.Name, fc.variables)
 				fmt.Fprintf(os.Stderr, "DEBUG: Current lambda: %v\n", fc.currentLambda)
 			}
-			compilerError("undefined variable '%s' at line %d", e.Name, 0)
+			suggestions := findSimilarIdentifiers(e.Name, fc.variables, 3)
+			if len(suggestions) > 0 {
+				compilerError("undefined variable '%s'. Did you mean: %s?", e.Name, strings.Join(suggestions, ", "))
+			} else {
+				compilerError("undefined variable '%s'", e.Name)
+			}
 		}
 		// Use r11 for parent variables in parallel loops, rbp for local variables
 		baseReg := "rbp"
@@ -9805,7 +9896,12 @@ func (fc *FlapCompiler) compileUnsafeCast(dest string, cast *CastExpr) {
 				fc.out.Cvttsd2si(dest, "xmm0")
 			}
 		} else {
-			compilerError("undefined variable in unsafe cast: %s", expr.Name)
+			suggestions := findSimilarIdentifiers(expr.Name, fc.variables, 3)
+			if len(suggestions) > 0 {
+				compilerError("undefined variable in unsafe cast: '%s'. Did you mean: %s?", expr.Name, strings.Join(suggestions, ", "))
+			} else {
+				compilerError("undefined variable in unsafe cast: '%s'", expr.Name)
+			}
 		}
 
 	default:
