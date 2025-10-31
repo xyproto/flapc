@@ -400,6 +400,16 @@ func (p *PostfixExpr) String() string {
 }
 func (p *PostfixExpr) expressionNode() {}
 
+// MoveExpr: expr! (move semantics - transfers ownership)
+type MoveExpr struct {
+	Expr Expression // The expression being moved (typically an IdentExpr)
+}
+
+func (m *MoveExpr) String() string {
+	return m.Expr.String() + "!"
+}
+func (m *MoveExpr) expressionNode() {}
+
 type InExpr struct {
 	Value     Expression // Value to search for
 	Container Expression // List or map to search in

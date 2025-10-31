@@ -226,6 +226,12 @@ func (cp *ConstantPropagation) propagateInExpr(expr Expression) (Expression, boo
 			}
 		}
 
+	case *MoveExpr:
+		// Don't propagate constants into move expressions
+		// The variable must exist at runtime for move semantics to work
+		// Return the move expression unchanged
+		return e, false
+
 	case *BinaryExpr:
 		changed := false
 		newLeft, leftChanged := cp.propagateInExpr(e.Left)
@@ -418,6 +424,10 @@ func (dce *DeadCodeElimination) markUsedInExpr(expr Expression, used map[string]
 	switch e := expr.(type) {
 	case *IdentExpr:
 		used[e.Name] = true
+
+	case *MoveExpr:
+		// Mark the moved expression as used
+		dce.markUsedInExpr(e.Expr, used)
 
 	case *BinaryExpr:
 		dce.markUsedInExpr(e.Left, used)
@@ -672,6 +682,14 @@ func (fi *FunctionInlining) inlineInExpr(expr Expression) (Expression, bool) {
 			changed = true
 		}
 		return e, changed
+
+	case *MoveExpr:
+		// Process the inner expression
+		if newExpr, changed := fi.inlineInExpr(e.Expr); changed {
+			e.Expr = newExpr
+			return e, true
+		}
+		return e, false
 	}
 
 	return expr, false
@@ -700,6 +718,11 @@ func (fi *FunctionInlining) substituteExpr(expr Expression, subst map[string]Exp
 			Left:     fi.substituteExpr(e.Left, subst),
 			Operator: e.Operator,
 			Right:    fi.substituteExpr(e.Right, subst),
+		}
+
+	case *MoveExpr:
+		return &MoveExpr{
+			Expr: fi.substituteExpr(e.Expr, subst),
 		}
 
 	case *CallExpr:

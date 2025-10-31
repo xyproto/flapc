@@ -562,6 +562,11 @@ func propagateConstantsExpr(expr Expression, constMap map[string]*NumberExpr) Ex
 		}
 		return e
 
+	case *MoveExpr:
+		// Don't propagate constants into move expressions
+		// The variable must exist at runtime for move semantics to work
+		return e
+
 	default:
 		return expr
 	}
@@ -3795,6 +3800,10 @@ func (p *Parser) parsePostfix() Expression {
 			p.nextToken() // skip current expr
 			op := p.current.Value
 			expr = &PostfixExpr{Operator: op, Operand: expr}
+		} else if p.peek.Type == TOKEN_BANG {
+			// Handle move operator: x! (transfers ownership)
+			p.nextToken() // skip to !
+			expr = &MoveExpr{Expr: expr}
 		} else if p.peek.Type == TOKEN_AS {
 			// Handle type cast: expr as type
 			p.nextToken() // skip current expr
@@ -4929,8 +4938,11 @@ type FlapCompiler struct {
 	metaArenaGrowthErrorJump      int
 	firstMetaArenaMallocErrorJump int
 
-	regAlloc   *RegisterAllocator // Register allocator for optimized variable allocation
-	wpoTimeout float64            // Whole-program optimization timeout (non-global, thread-safe)
+	regAlloc     *RegisterAllocator // Register allocator for optimized variable allocation
+	wpoTimeout   float64            // Whole-program optimization timeout (non-global, thread-safe)
+	movedVars    map[string]bool    // Track variables that have been moved (use-after-move detection)
+	scopeDepth   int                // Track scope depth for proper move tracking
+	scopedMoved  []map[string]bool  // Stack of moved variables per scope
 }
 
 type LambdaFunc struct {
@@ -4986,10 +4998,17 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 		debug:               debugEnabled,
 		currentArena:        -1,
 		regAlloc:            NewRegisterAllocator(platform.Arch),
+		movedVars:           make(map[string]bool),
+		scopeDepth:          0,
+		scopedMoved:         []map[string]bool{make(map[string]bool)},
 	}, nil
 }
 
 func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
+	// Clear moved variables tracking for this compilation
+	fc.movedVars = make(map[string]bool)
+	fc.scopedMoved = []map[string]bool{make(map[string]bool)}
+
 	if fc.debug {
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "DEBUG Compile: starting compilation with %d statements\n", len(program.Statements))
@@ -5560,6 +5579,8 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	fc.lambdaFuncs = nil // Clear lambda list to avoid duplicates
 	fc.lambdaCounter = 0
 	fc.labelCounter = 0 // Reset label counter for consistent loop labels
+	fc.movedVars = make(map[string]bool) // Reset moved variables tracking
+	fc.scopedMoved = []map[string]bool{make(map[string]bool)} // Reset scoped tracking
 
 	// Collect symbols again (two-pass compilation for second regeneration)
 	for _, stmt := range program.Statements {
@@ -7417,6 +7438,11 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		}
 
 	case *IdentExpr:
+		// Check if variable has been moved
+		if fc.movedVars != nil && fc.movedVars[e.Name] {
+			compilerError("use of moved variable '%s' - value was transferred with '!'", e.Name)
+		}
+
 		// Load variable from stack into xmm0
 		offset, exists := fc.variables[e.Name]
 		if !exists {
@@ -7432,6 +7458,25 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			baseReg = "r11"
 		}
 		fc.out.MovMemToXmm("xmm0", baseReg, -offset)
+
+	case *MoveExpr:
+		// Compile the expression being moved (loads into xmm0)
+		fc.compileExpression(e.Expr)
+
+		// Mark variable as moved if it's an identifier
+		if ident, ok := e.Expr.(*IdentExpr); ok {
+			if fc.movedVars != nil {
+				if fc.movedVars[ident.Name] {
+					compilerError("variable '%s' was already moved", ident.Name)
+				}
+				fc.movedVars[ident.Name] = true
+				// Track in current scope for proper cleanup
+				if len(fc.scopedMoved) > 0 {
+					fc.scopedMoved[len(fc.scopedMoved)-1][ident.Name] = true
+				}
+			}
+		}
+		// Value is already in xmm0 from compileExpression call
 
 	case *NamespacedIdentExpr:
 		// Handle namespaced identifiers like sdl.SDL_INIT_VIDEO or data.field

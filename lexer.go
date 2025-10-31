@@ -72,6 +72,7 @@ const (
 	TOKEN_INCREMENT        // ++
 	TOKEN_DECREMENT        // --
 	TOKEN_FMA              // *+ (fused multiply-add)
+	TOKEN_BANG             // ! (move operator - transfers ownership)
 	TOKEN_OR_BANG          // or! (error handling / railway-oriented programming)
 	TOKEN_AND_BANG         // and! (success handler)
 	TOKEN_ERR_QUESTION     // err? (check if expression is error)
@@ -594,9 +595,9 @@ func (l *Lexer) NextToken() Token {
 			l.pos += 2
 			return Token{Type: TOKEN_NE, Value: "!=", Line: l.line}
 		}
-		// Just ! is not supported, skip
+		// Standalone ! is move operator
 		l.pos++
-		return l.NextToken()
+		return Token{Type: TOKEN_BANG, Value: "!", Line: l.line}
 	case '~':
 		// Check for ~> first, then ~b
 		if l.peek() == '>' {

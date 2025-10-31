@@ -163,7 +163,8 @@ unary_expr              = ("not" | "-" | "#" | "~b") unary_expr
 
 postfix_expr            = primary_expr { "[" expression "]"
                                        | "(" [ argument_list ] ")"
-                                       | "as" cast_type } ;
+                                       | "as" cast_type
+                                       | "!" } ;
 
 cast_type               = "int8" | "int16" | "int32" | "int64"
                         | "uint8" | "uint16" | "uint32" | "uint64"
@@ -302,6 +303,7 @@ not   // Logical NOT
 ::    // Cons operator (prepend to list)
 ..<   // Range operator (0..<10 = 0 to 9)
 #     // Length operator
+!     // Move operator (postfix - transfers value)
 ```
 
 ## Variables and Assignment
@@ -330,6 +332,57 @@ list[0] <- 99          // Updates list to [99, 2, 3]
 obj := {x: 10, y: 20}
 obj.x <- 100           // Updates x to 100
 ```
+
+### Move Semantics
+
+Move semantics allow you to explicitly transfer values using the `!` postfix operator. This marks the variable as "moved" and enables compile-time use-after-move detection within the same expression.
+
+```flap
+// Basic move - transfers x into the expression
+x := 42
+y := x! + 100     // y = 142, x is marked as moved
+
+// Error: using moved variable in same expression
+a := 10
+b := a! + a!      // Compile error: a moved twice
+
+// Move with function calls
+process := data => data * 2
+value := 100
+result := process(value!)  // Transfers value to function
+```
+
+**Move Semantics Rules:**
+
+1. **Postfix operator**: `x!` moves the value of `x`
+2. **Compile-time detection**: Using a moved variable in the same expression causes an error
+3. **Soft semantics**: Unlike Rust, Flap's move semantics are "soft" - they only prevent reuse within the same expression/statement
+4. **Type preservation**: The moved expression retains its original type
+5. **Optimizer-aware**: The optimizer preserves move semantics throughout optimization passes
+
+**When to Use Moves:**
+
+- Explicit value transfers in complex expressions
+- Documenting ownership transfer in function calls
+- Preventing accidental reuse within an expression
+
+**Example - Complex Expression:**
+
+```flap
+compute := (a, b, c) => a * b + c
+
+x := 10
+y := 20
+z := 30
+
+// Move all values into the computation
+result := compute(x!, y!, z!)
+
+// This would error - x was already moved:
+// wrong := x! + result
+```
+
+**Note:** Flap's move semantics are lighter than Rust's ownership system. Variables can be used in subsequent statements after being moved - the move only prevents reuse within the same expression where the move occurred.
 
 ## Control Flow
 
