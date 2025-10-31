@@ -1,0 +1,4 @@
+✓ All cstruct syntax styles work correctly!
+WithCommas_SIZEOF = 12
+WithoutCommas_SIZEOF = 12
+Mixed_SIZEOF = 12

@@ -1,0 +1,28 @@
+SDL3 Struct Layouts:
+===================
+
+SDL_FRect (floating-point rectangle):
+  Size: 16 bytes (expected 16)
+  x offset: 0
+  y offset: 4
+  w offset: 8
+  h offset: 12
+
+SDL_Rect (integer rectangle):
+  Size: 16 bytes (expected 16)
+  x offset: 0
+  y offset: 4
+  w offset: 8
+  h offset: 12
+
+SDL_Point (integer point):
+  Size: 8 bytes (expected 8)
+  x offset: 0
+  y offset: 4
+
+SDL_FPoint (floating-point point):
+  Size: 8 bytes (expected 8)
+  x offset: 0
+  y offset: 4
+
+✓ All SDL3 struct layouts are correct!

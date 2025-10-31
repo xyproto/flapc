@@ -1,0 +1,20 @@
+Vec3_SIZEOF = 12
+Vec3_x_OFFSET = 0
+Vec3_y_OFFSET = 4
+Vec3_z_OFFSET = 8
+
+PackedStruct_SIZEOF = 10
+PackedStruct_a_OFFSET = 0
+PackedStruct_b_OFFSET = 1
+PackedStruct_c_OFFSET = 9
+
+AlignedStruct_SIZEOF = 24
+AlignedStruct_a_OFFSET = 0
+AlignedStruct_b_OFFSET = 8
+AlignedStruct_c_OFFSET = 16
+
+✓ Vec3 size correct (12 bytes)
+✓ PackedStruct has no padding (1+8+1 = 10 bytes)
+✓ AlignedStruct has padding (aligned to 8 bytes = 24 bytes total)
+
+CStruct test complete!

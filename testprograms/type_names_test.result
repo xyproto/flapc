@@ -1,0 +1,19 @@
+Testing Flap type casting with full type names:
+
+Original value: 42.70
+  as int8:   42
+  as int16:  42
+  as int32:  42
+  as int64:  42
+
+Unsigned value: 255.90
+  as uint8:  255
+  as uint16: 255
+  as uint32: 255
+  as uint64: 255
+
+Float value: 3.1415926536
+  as float32: 3.141593
+  as float64: 3.1415926536
+
+✓ All type names use full form (int32, uint64, float32, etc.)

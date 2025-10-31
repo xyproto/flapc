@@ -1,0 +1,32 @@
+Struct Layout Comparison:
+=========================
+
+Normal (default alignment):
+  Size: 24 bytes
+  a offset: 0
+  b offset: 8
+  c offset: 16
+
+Packed (no padding):
+  Size: 10 bytes
+  a offset: 0
+  b offset: 1
+  c offset: 9
+
+Aligned(16) (natural padding + 16-byte struct alignment):
+  Size: 32 bytes
+  a offset: 0
+  b offset: 8
+  c offset: 16
+
+Packed + Aligned(16) (no field padding, but 16-byte struct alignment):
+  Size: 16 bytes
+  a offset: 0
+  b offset: 1
+  c offset: 9
+
+Expected results:
+  Normal: 24 bytes (u8 + 7 pad + u64 + u8 + 7 pad)
+  Packed: 10 bytes (u8 + u64 + u8, no padding)
+  Aligned16: 32 bytes (naturally 24, rounded up to 16-byte boundary)
+  PackedAligned: 16 bytes (packed to 10, rounded up to 16-byte boundary)
