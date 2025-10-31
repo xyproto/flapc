@@ -6734,8 +6734,11 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 
 	totalItems := end - start
 	if totalItems <= 0 {
-		fmt.Fprintf(os.Stderr, "Error: Parallel loop has empty range [%d, %d)\n", start, end)
-		os.Exit(1)
+		// Empty range: skip parallel loop entirely (no error)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Skipping parallel loop with empty range [%d, %d)\n", start, end)
+		}
+		return // Skip code generation for empty loops
 	}
 
 	// Calculate work distribution
