@@ -2,9 +2,13 @@
 ptr := malloc(8)
 defer free(ptr)
 
-printf("Allocated: %p\n", ptr)
+// Verify allocation succeeded (ptr should be non-zero)
+ptr != 0 {
+    println("Allocation succeeded")
+}
+
 atomic_store(ptr, 42)
-printf("Stored: %.0f\n", atomic_load(ptr))
+println(f"Stored: {atomic_load(ptr)}")
 
 // ptr will be freed automatically via defer
 println("Done")
