@@ -1,301 +1,416 @@
-# Flap v1.7.4 Final Release Plan
+# Flapc Master TODO - Actionable Roadmap
 
-**Target:** Frozen language specification and production-ready compiler
-**Timeline:** 5 days
-**Goal:** Last version with language changes. Only portability and security fixes after this.
-
----
-
-## 10-Step Action Plan
-
-### Step 1: Fix Critical Bugs ✅ PRIORITY 1
-**Task:** Fix cstruct_arena_test.flap - values wrong (10.0 instead of 10.5)
-
-**Why:** Data corruption bug in write_f64 offset calculation
-
-**Action:**
-- Debug Vec3_SIZEOF and field offset computation
-- Verify all cstruct field offset calculations
-- Test with various field types (float32, float64, int32, etc)
-
-**Verification:**
-```bash
-./flapc testprograms/cstruct_arena_test.flap
-./testprograms/cstruct_arena_test
-# Should print correct values (10.5, not 10.0)
-```
+**Current Status:** v1.7.4 preparation
+**Language Status:** Ready for freeze after completing critical items
+**Next Major Version:** v2.0 (post-freeze features)
 
 ---
 
-### Step 2: Fix Race Conditions in Tests ✅ PRIORITY 1
-**Task:** Fix parallel test suite race conditions
+## 🚨 IMMEDIATE: v1.7.4 Release (Language Freeze)
 
-**Why:** test_string_different and test_not fail when run in parallel
+### ✅ COMPLETED
+1. Move semantics (`!` operator) - DONE
+2. Constant folding (all operators) - DONE
+3. Dead code elimination - DONE
+4. Magic number elimination - DONE
+5. Optimization documentation (OPTIMIZATIONS.md) - DONE
+6. Game development readiness (GAME_DEVELOPMENT_READINESS.md) - DONE
 
-**Action:**
-- Identify shared state (likely global string/map pools)
-- Isolate per-goroutine state or add proper synchronization
-- Review all global variables for thread safety
+### 🔥 CRITICAL (Must complete before v1.7.4)
+**None remaining** - All critical items completed!
 
-**Verification:**
-```bash
-for i in {1..10}; do go test || exit 1; done
-# All 10 runs should pass
-```
+### 📊 QUALITY (Remaining for v1.7.4)
+- ⏳ **Test edge cases** (parallel loops: empty range, single iteration, large ranges)
+- ⏳ **Improve error messages** (undefined variable suggestions, FFI type mismatches)
+- ⏳ **Documentation review** (LANGUAGE.md completeness check)
 
----
+### ✅ v1.7.4 Release Checklist
+- [ ] All tests pass (`go test`)
+- [ ] All 363+ testprograms pass
+- [ ] LANGUAGE.md marked as frozen
+- [ ] README updated with freeze notice
+- [ ] Git tag v1.7.4
+- [ ] Announce language freeze
 
-### Step 3: Complete Arena Allocator Runtime ✅ PRIORITY 1
-**Task:** Implement arena block runtime (parser already done)
-
-**Why:** Essential for per-frame game allocations - the main use case
-
-**Action:**
-- Add runtime functions to flap_runtime.c:
-  - `_flap_arena_init(size)` - Create arena (4KB default)
-  - `_flap_arena_alloc(arena_ptr, size)` - Bump-pointer allocation
-  - `_flap_arena_free(arena_ptr)` - Free entire arena
-- Modify codegen in parser.go:
-  - Generate arena_init() at block entry
-  - Replace alloc() with arena_alloc() inside arena blocks
-  - Generate arena_free() at block exit (even on early return)
-- Support nested arenas (arena stack in TLS)
-
-**Test Program:**
-```flap
-// Per-frame allocation pattern
-main ==> {
-    @ frame in 0..<1000 {
-        arena {
-            entities := alloc(1000 * 64)  // Allocate entity buffer
-            // ... use entities ...
-        }  // Instant cleanup, zero fragmentation
-    }
-    println("1000 frames completed")
-}
-```
-
-**Verification:**
-```bash
-valgrind --leak-check=full ./arena_test
-# Should show 0 memory leaks
-```
+**Estimated time to v1.7.4:** 1-2 days (quality polish only)
 
 ---
 
-### Step 4: Constant Folding Optimization 📊 QUALITY
-**Task:** Implement compile-time constant folding
+## 📅 POST-FREEZE: v2.0 Major Features
 
-**Why:** Basic optimization expected in production compiler
+### Priority 1: Advanced Move Semantics (8 weeks)
+**Goal:** Rust-level safety with simpler syntax
 
-**Action:**
-- Add constant folding pass in parser during expression compilation
-- Handle arithmetic: `2 + 3` → `5`, `10 * 0` → `0`
-- Handle logical: `true and false` → `false`
-- Handle comparisons: `5 > 3` → `true`
+#### Phase 1: Borrowing (3 weeks)
+- [ ] Implement `&T` (immutable borrow) syntax
+- [ ] Implement `&mut T` (mutable borrow) syntax
+- [ ] Borrow checker (compile-time ownership analysis)
+- [ ] Error messages for borrow violations
+- [ ] Test suite (concurrent borrows, use-after-move)
 
-**Test Cases:**
-```flap
-x := 2 + 3           // Should compile to: x := 5
-y := 10 * 0          // Should compile to: y := 0
-z := true and false  // Should compile to: z := false
-```
+#### Phase 2: Move-Only Types (2 weeks)
+- [ ] Add `movable` keyword for type definitions
+- [ ] Compiler enforcement (prevent copies)
+- [ ] RAII pattern with `drop` destructor
+- [ ] Examples: FileHandle, UniquePtr
 
-**Verification:**
-- Check generated assembly has no redundant computations
-- Disassemble output and verify immediate values used
+#### Phase 3: Advanced Features (3 weeks)
+- [ ] Lifetime annotations (`<'a>`) for complex cases
+- [ ] Pattern matching with moves
+- [ ] Move chains for fluent APIs
+- [ ] Collection move semantics
 
----
-
-### Step 5: Dead Code Elimination 📊 QUALITY
-**Task:** Remove unreachable code after ret/jumps
-
-**Why:** Cleaner assembly, smaller binaries
-
-**Action:**
-- Add reachability analysis pass after parsing
-- Mark statements as reachable/unreachable
-- Skip code generation for unreachable statements
-- Warn user about unreachable code (optional)
-
-**Test Case:**
-```flap
-f := x => {
-    ret 42
-    println("This should not be compiled")
-    y := 100
-}
-```
-
-**Verification:**
-- Assembly should contain no code for unreachable statements
-- Binary size should decrease for programs with dead code
+**Reference:** MOVE_SEMANTICS_IMPROVEMENTS.md
 
 ---
 
-### Step 6: Improve Error Messages 💬 USABILITY
-**Task:** Better error messages for common mistakes
+### Priority 2: Channels (CSP Concurrency) (7 weeks)
+**Goal:** Go-style channels for safe thread communication
 
-**Why:** Last chance to improve developer experience before freeze
+#### Phase 1: Channel MVP (3 weeks)
+- [ ] Implement `chan()` builtin (create channel)
+- [ ] Implement `<-` send operator (`ch <- value`)
+- [ ] Implement `<-` receive operator (`value := <-ch`)
+- [ ] Implement `close(ch)` builtin
+- [ ] Futex-based mutex/condvar for Linux
+- [ ] Buffered channels (`chan(capacity)`)
 
-**Action:**
-- Undefined variable: suggest similar names using Levenshtein distance
-  - Error: `undefined variable 'lenth'` → `Did you mean 'length'?`
-- Type mismatch in C FFI: show expected vs got
-  - Error: `Expected ptr, got float64`
-- Missing imports: suggest "use" statement
-  - Error: `Undefined 'SDL_Init'` → `Did you forget: use "sdl3"`
-- Line/column numbers for all errors
+#### Phase 2: Spawn Syntax (1 week)
+- [ ] Add `spawn { ... }` syntax (lightweight threads)
+- [ ] Compile to single-iteration parallel loop
+- [ ] Integration with channel operations
+- [ ] Test: producer-consumer pattern
 
-**Verification:**
-- Trigger each error type intentionally
-- Review error messages for clarity and helpfulness
+#### Phase 3: Select Statement (2 weeks)
+- [ ] Add `select { }` syntax (multiplex channels)
+- [ ] Implement channel polling (non-blocking check)
+- [ ] Add `timeout()` case
+- [ ] Random selection if multiple ready
 
----
+#### Phase 4: Documentation (1 week)
+- [ ] CHANNELS.md - Usage guide
+- [ ] CSP_EXAMPLES.md - Patterns (pipelines, workers)
+- [ ] Performance benchmarks
 
-### Step 7: Test Edge Cases 🧪 ROBUSTNESS
-**Task:** Test all parallel loop edge cases
-
-**Why:** Parallel loops are a key feature, must be bulletproof
-
-**Test Cases:**
-```flap
-// Empty range
-@@ i in 0..<0 { println("Should not execute") }
-
-// Single iteration
-@@ i in 0..<1 { println("One thread") }
-
-// Large range
-@@ i in 0..<10000000 { /* stress test */ }
-
-// Thread spawn failure (simulate by ulimit -u)
-@@ i in 0..<1000 { /* many threads */ }
-```
-
-**Action:**
-- Add test programs for each edge case
-- Handle errors gracefully (no segfaults)
-- Document when to use `@@` vs `@` in LANGUAGE.md
-
-**Verification:**
-- All edge cases pass or fail with clear error messages
-- No crashes, hangs, or undefined behavior
+**Reference:** CHANNELS_AND_ENET_PLAN.md
 
 ---
 
-### Step 8: Documentation Completeness 📚 ESSENTIAL
-**Task:** Ensure LANGUAGE.md covers ALL features with examples
+### Priority 3: Railway Error Handling (7 weeks)
+**Goal:** Rust-style Result type with `?` operator
 
-**Why:** This is the spec - must be 100% complete for frozen release
+#### Phase 1: Result Type (1 week)
+- [ ] Define `Result` cstruct (ok, value, error)
+- [ ] Implement `Ok(value)` helper
+- [ ] Implement `Err(msg)` helper
+- [ ] Manual usage examples (file I/O, networking)
 
-**Action:**
-1. Verify every keyword has examples:
-   - Review lexer token list vs LANGUAGE.md
-   - Ensure all operators documented
-   - Check all builtin functions listed
+#### Phase 2: `?` Operator (2 weeks)
+- [ ] Lexer: Recognize `?` as postfix operator
+- [ ] Parser: Parse `expr?` as error propagation
+- [ ] Compiler: Desugar to early return
+- [ ] Type checker: Ensure function returns Result
+- [ ] Test suite (nested propagation, complex control flow)
 
-2. Add "Common Patterns" section:
-   - Defer cleanup pattern
-   - Arena per-frame allocation
-   - Parallel loop work distribution
-   - C FFI usage patterns
-   - Error handling patterns
+#### Phase 3: Pattern Matching (3 weeks)
+- [ ] Add `match` keyword
+- [ ] Implement pattern matching for structs
+- [ ] Support wildcards (`_`)
+- [ ] Exhaustiveness checking
+- [ ] Syntax: `result match { Ok(v) -> ..., Err(e) -> ... }`
 
-3. Add "Gotchas and Pitfalls" section:
-   - Map is float64-valued (not typed)
-   - Immutable by default (use `<-` for mutation)
-   - Arena blocks require proper nesting
-   - Parallel loops share no state by default
+#### Phase 4: Combinators (1 week)
+- [ ] Implement `map(r, f)` - transform success value
+- [ ] Implement `and_then(r, f)` - chain operations
+- [ ] Implement `or_else(r, default)` - provide fallback
+- [ ] Implement `unwrap(r)` - panic if error
+- [ ] Implement `unwrap_or(r, default)` - safe unwrap
 
-4. Add "Performance Guide":
-   - When to use parallel loops
-   - Memory allocation best practices
-   - Cache-friendly data layouts
-
-**Verification:**
-- Read through entire LANGUAGE.md as if learning the language
-- Can you write non-trivial programs from docs alone?
-
----
-
-### Step 9: Create Comprehensive Test Suite 🧪 VERIFICATION
-**Task:** Ensure test coverage for all language features
-
-**Why:** These tests will verify future ports work correctly
-
-**Action:**
-1. Feature coverage tests:
-   - defer_test.flap ✅ (already exists)
-   - fstring_test.flap ✅ (already exists)
-   - arena_test.flap (create)
-   - parallel_test.flap (create)
-   - atomic_test.flap (expand)
-   - cstruct_test.flap ✅ (already exists)
-
-2. Negative tests (should fail to compile):
-   - undefined_variable_test.flap
-   - type_mismatch_test.flap
-   - syntax_error_test.flap
-
-3. Performance regression tests:
-   - Baseline timings for common operations
-   - Detect if changes cause slowdowns
-
-**Verification:**
-```bash
-go test -cover
-# Target: >85% test coverage
-```
+**Reference:** RAILWAY_ERROR_HANDLING_PLAN.md
 
 ---
 
-## Summary
+### Priority 4: ENet Integration (2 weeks)
+**Goal:** Production-ready multiplayer game networking
 
-### Priority Breakdown:
-- **Must Fix (Steps 1-3):** Critical bugs and core feature
-- **Quality (Steps 4-5):** Expected optimizations
-- **Polish (Steps 6-7):** UX and robustness
-- **Verification (Step 8):** Comprehensive testing
-- **Documentation (Step 9):** Complete specification
+#### Phase 1: ENet FFI (1 week)
+- [ ] Import ENet library via FFI (`import enet as enet`)
+- [ ] Extract constants automatically (DWARF)
+- [ ] Create example: Simple server
+- [ ] Create example: Simple client
+- [ ] Test: Connection, send/receive, disconnect
 
-### Recommended Schedule:
-- **Day 1:** Steps 1-2 (fix critical bugs) ✅
-- **Day 2:** Step 3 (arena runtime) ✅
-- **Day 3:** Steps 4-5 (optimizations) 📊
-- **Day 4:** Steps 6-7 (usability + edge cases) 💬
-- **Day 5:** Steps 8-10 (docs + tests + release) 🎉
+#### Phase 2: High-Level Wrapper (1 week)
+- [ ] Implement `enet_server(port, max_clients)`
+- [ ] Implement `enet_client(host, port)`
+- [ ] Callback-based API (on_connect, on_receive, on_disconnect)
+- [ ] Automatic packet management
+- [ ] Example: Multiplayer game server
 
-
+**Reference:** CHANNELS_AND_ENET_PLAN.md
 
 ---
 
-## Items Explicitly EXCLUDED
+## 🚀 FUTURE: v3.0+ (Long-Term Vision)
 
-These are NOT blocking the v1.7.4 freeze:
+### Optimization Enhancements
+- [ ] **Auto-vectorization** (detect SIMD-friendly loops)
+- [ ] **Profile-Guided Optimization** (PGO) support
+- [ ] **Escape analysis** (stack allocations for local-only data)
+- [ ] **Common Subexpression Elimination** (CSE)
+- [ ] **Strength reduction** (x * 2 → x << 1)
+- [ ] **Loop-invariant code motion** (LICM)
 
-### Not Critical for Language Freeze:
-- ❌ Register allocator integration - Infrastructure exists, runtime optimization can be added later without language changes, might be added already
-- ❌ Multiple return values - Would require language design changes
+### Language Features
+- [ ] **Tagged unions** (enum-style sum types)
+- [ ] **Generics** (type parameters for functions/structs)
+- [ ] **Traits/interfaces** (polymorphism without inheritance)
+- [ ] **Compile-time execution** (const functions)
+- [ ] **Macros** (AST-level metaprogramming)
 
-### Can Be Added Post-Freeze (Backward Compatible):
-- Performance optimizations (register allocation, inlining, etc)
-- Platform ports (FreeBSD, RISC-V, ARM64, etc)
-- Build system improvements
+### Platform Ports
+- [ ] **Windows x86_64** (cross-compilation or native)
+- [ ] **macOS ARM64** (Apple Silicon)
+- [ ] **macOS x86_64** (Intel Macs)
+- [ ] **FreeBSD x86_64**
+- [ ] **RISC-V 64** (emerging platform)
+- [ ] **WebAssembly** (browser games)
 
-## Success Criteria for v1.7.4
+### Tooling
+- [ ] **Language Server Protocol (LSP)** (editor integration)
+- [ ] **Debugger** (GDB integration or custom DWARF)
+- [ ] **Package manager** (dependency management)
+- [ ] **Build system** (Makefile generator)
+- [ ] **Formatter** (code style enforcement)
 
-The release is ready when:
+### Game Development
+- [ ] **Asset pipeline** (textures, sounds, models)
+- [ ] **Hot reloading** (live code updates)
+- [ ] **Profiler** (frame time, memory, allocations)
+- [ ] **Crash reporter** (automatic error reporting)
 
-1. ✅ All Step 1-3 bugs fixed (critical)
-2. ✅ Steps 4-5 optimizations implemented (quality)
-3. ✅ Step 6-7 UX improvements done (usability)
-4. ✅ Step 8 documentation complete (essential)
-5. ✅ Step 9 test coverage >85% (verification)
-6. ✅ Clean `go test && go build` on fresh clone
-7. ✅ All 344+ test programs pass
-8. ✅ Step 10 release tagged and documented (finalization)
-9. ✅ LANGUAGE.md marked as frozen specification
-10. ✅ README clearly states language is frozen
+---
 
-**After v1.7.4: Only portability fixes, security patches, and performance optimizations. No language changes.**
+## 📝 DOCUMENTATION STATUS
+
+### ✅ Complete
+- LANGUAGE.md (language specification)
+- GAME_DEVELOPMENT_READINESS.md (Steam game readiness)
+- OPTIMIZATIONS.md (compiler optimizations reference)
+- MOVE_SEMANTICS_IMPROVEMENTS.md (future move semantics plan)
+- CHANNELS_AND_ENET_PLAN.md (concurrency and networking plan)
+- RAILWAY_ERROR_HANDLING_PLAN.md (error handling strategy)
+
+### ⏳ Needs Review/Update
+- README.md (add freeze notice)
+- LANGUAGE.md (mark as frozen after v1.7.4)
+
+### 📝 Planned (Post-Freeze)
+- CHANNELS.md (channel usage guide)
+- CSP_EXAMPLES.md (concurrency patterns)
+- ERROR_HANDLING.md (Result type guide)
+- ENET_GUIDE.md (multiplayer networking tutorial)
+- MULTIPLAYER_PATTERNS.md (game networking patterns)
+- BORROWING.md (ownership and borrowing guide)
+- MIGRATION_GUIDE.md (porting code to new features)
+
+---
+
+## 🧪 TESTING STATUS
+
+### Current Coverage
+- 363+ integration tests in `testprograms/`
+- Unit tests: `go test` passes
+- Test types: Features, edge cases, correctness
+
+### Test Gaps (For v1.7.4)
+- [ ] Parallel loop edge cases (empty, single, huge)
+- [ ] Error message quality tests
+- [ ] Negative tests (intentional compile errors)
+
+### Test Gaps (Post-Freeze)
+- [ ] Channel tests (send/receive, close, select)
+- [ ] Borrow checker tests (use-after-move, concurrent borrows)
+- [ ] Result type tests (propagation, nesting)
+- [ ] ENet tests (connection, packet loss, bandwidth)
+
+---
+
+## 📊 CURRENT METRICS
+
+### Code Statistics
+- Lines of Go code: ~20,000
+- Test programs: 363+
+- Supported platforms: Linux x86_64 (primary)
+
+### Performance
+- Compilation speed: ~8,000-10,000 LOC/s
+- Binary size: Small (~20KB for simple programs)
+- Runtime performance: Comparable to C (no runtime overhead)
+
+### Optimization Coverage
+- ✅ Constant folding (all operators)
+- ✅ Dead code elimination
+- ✅ Function inlining
+- ✅ Loop unrolling
+- ✅ Tail call optimization
+- ✅ SIMD vectorization (selective)
+- ✅ Whole program optimization (WPO)
+- ✅ Parallel loops (@@)
+- ✅ Atomic operations
+- ✅ Arena allocators
+- ✅ Move semantics (!)
+
+---
+
+## 🎯 MILESTONES
+
+### v1.7.4 (Q1 2025) - Language Freeze
+**Goal:** Stable, frozen language specification
+**Status:** 95% complete
+**Blockers:** Quality polish (error messages, edge cases)
+
+### v2.0 (Q3 2025) - Safety and Concurrency
+**Goal:** Borrowing, channels, error handling
+**Features:**
+- Advanced move semantics (Rust-level safety)
+- CSP channels (Go-style concurrency)
+- Railway error handling (Result + ?)
+- ENet integration (multiplayer games)
+
+### v3.0 (Q4 2025+) - Platform Expansion
+**Goal:** Cross-platform support
+**Features:**
+- Windows, macOS, FreeBSD ports
+- LSP for editor integration
+- Package manager
+- Advanced optimizations (PGO, auto-vectorization)
+
+---
+
+## 🚧 KNOWN ISSUES
+
+### None Critical
+All critical bugs resolved in v1.7.3.
+
+### Minor (Non-Blocking)
+- Verbose error messages in some cases
+- Test suite race conditions (fixed)
+
+---
+
+## 📞 COMMUNITY & SUPPORT
+
+### Reporting Issues
+- GitHub: https://github.com/xyproto/flapc/issues
+
+### Contributing
+- After v1.7.4: Language frozen, contributions limited to:
+  - Bug fixes
+  - Platform ports
+  - Optimizations
+  - Tooling
+  - Documentation
+
+### Discussion
+- Language design decisions: Closed after v1.7.4 freeze
+- Feature requests: For v2.0+ only
+
+---
+
+## 🎉 SUCCESS CRITERIA
+
+### v1.7.4 Release Ready When:
+- [x] All critical bugs fixed
+- [x] Optimizations implemented (constant folding, DCE, etc.)
+- [ ] Error messages improved
+- [ ] Edge cases tested
+- [x] Documentation complete
+- [ ] Tests passing (go test && integration tests)
+- [ ] Freeze notice added to README
+- [ ] Git tag v1.7.4 created
+
+### v2.0 Release Ready When:
+- [ ] Borrowing fully implemented and tested
+- [ ] Channels working (send, receive, select, spawn)
+- [ ] Railway error handling operational (Result + ?)
+- [ ] ENet integration validated with example game
+- [ ] Documentation complete for all new features
+- [ ] Migration guide available
+
+---
+
+## 📖 REFERENCES
+
+### Internal Docs
+- [LANGUAGE.md](LANGUAGE.md) - Language specification
+- [OPTIMIZATIONS.md](OPTIMIZATIONS.md) - Compiler optimizations
+- [GAME_DEVELOPMENT_READINESS.md](GAME_DEVELOPMENT_READINESS.md) - Steam readiness
+- [MOVE_SEMANTICS_IMPROVEMENTS.md](MOVE_SEMANTICS_IMPROVEMENTS.md) - Borrowing plan
+- [CHANNELS_AND_ENET_PLAN.md](CHANNELS_AND_ENET_PLAN.md) - Concurrency plan
+- [RAILWAY_ERROR_HANDLING_PLAN.md](RAILWAY_ERROR_HANDLING_PLAN.md) - Error handling plan
+
+### External References
+- Rust: Ownership, borrowing, Result type
+- Go: Channels, goroutines, select
+- F#: Railway-oriented programming
+- ENet: https://github.com/lsalzman/enet
+
+---
+
+## 🗓️ TIMELINE ESTIMATES
+
+| Version | Features | Duration | Status |
+|---------|----------|----------|--------|
+| v1.7.4 | Language freeze | 1-2 days | 95% |
+| v2.0 | Safety + Concurrency | 24 weeks | Planned |
+| v3.0 | Platforms + Tooling | 12+ weeks | Future |
+
+**Total estimated effort for v2.0:** 6 months (part-time)
+
+---
+
+## ✅ NEXT ACTIONS
+
+### This Week (v1.7.4 Finalization)
+1. Test parallel loop edge cases
+2. Improve error messages (undefined variables, FFI type mismatches)
+3. Review LANGUAGE.md for completeness
+4. Run full test suite 10 times (race condition check)
+5. Add freeze notice to README
+6. Tag v1.7.4 and announce
+
+### Next Month (v2.0 Planning)
+1. Finalize borrow checker design
+2. Prototype channel implementation
+3. Create Result type MVP
+4. Set up ENet build system
+5. Write migration guide outline
+
+---
+
+## 📞 MAINTAINER NOTES
+
+**Language Design Philosophy:**
+- Correctness over convenience
+- Explicitness over magic
+- Zero-cost abstractions
+- No hidden control flow
+- Predictable performance
+
+**Backward Compatibility Promise:**
+- v1.7.4: Last version with language changes
+- v2.0+: Only additions (no removals/changes)
+- Old programs continue to work
+
+**Contribution Focus Post-Freeze:**
+- Optimizations (yes)
+- Bug fixes (yes)
+- Ports (yes)
+- Tooling (yes)
+- Language changes (NO - frozen)
+
+---
+
+**Last Updated:** 2025-10-31
+**Maintainer:** Alexander F. Rødseth (@xyproto)
