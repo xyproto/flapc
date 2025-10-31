@@ -2,18 +2,26 @@
 
 Development roadmap and specific implementation tasks for Flap v1.4 and beyond.
 
-## Priority 1: Register Allocator (Critical)
+## Priority 1: Register Allocator (Critical) ✅ IMPLEMENTED
 
 **Goal:** Replace ad-hoc register usage with proper linear-scan register allocation.
 
 **Why:** Currently each expression uses registers inefficiently, leading to excessive moves and poor performance.
 
-**Tasks:**
-- [ ] Create `register_allocator.go` with live interval tracking
-- [ ] Implement linear scan algorithm (simpler than graph coloring)
-- [ ] Add liveness analysis pass (track variable lifetime)
+**Status:** Core implementation COMPLETE. Integration with FlapCompiler pending.
+
+**Completed Tasks:**
+- [x] Create `register_allocator.go` with live interval tracking (420+ lines)
+- [x] Implement linear scan algorithm (simpler than graph coloring)
+- [x] Add liveness analysis pass (track variable lifetime)
+- [x] Emit function prologue/epilogue for callee-saved registers
+- [x] Multi-architecture support (x86-64, ARM64, RISC-V)
+- [x] Register spilling when registers run out
+- [x] Comprehensive test suite (8 tests, all passing)
+- [x] Documentation (REGISTER_ALLOCATOR.md with usage examples)
+
+**Remaining Integration Tasks:**
 - [ ] Modify codegen to query allocator for register assignments
-- [ ] Emit function prologue/epilogue for callee-saved registers
 - [ ] Test: Compare instruction count before/after (expect 30-40% reduction in loops)
 - [ ] Benchmark: Ensure no performance regression
 
