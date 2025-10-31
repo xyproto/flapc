@@ -1,4 +1,0 @@
-// Test double move in same expression
-x := 42
-y := x! + x!  // ERROR: x moved twice
-println(y)

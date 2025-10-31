@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"time"
 )
@@ -232,6 +233,21 @@ func (cp *ConstantPropagation) propagateInExpr(expr Expression) (Expression, boo
 		// Return the move expression unchanged
 		return e, false
 
+	case *UnaryExpr:
+		newOperand, changed := cp.propagateInExpr(e.Operand)
+		if changed {
+			e.Operand = newOperand
+		}
+
+		// Constant folding for unary operators
+		if num, ok := e.Operand.(*NumberExpr); ok {
+			if folded := cp.foldUnaryConstants(num, e.Operator); folded != nil {
+				return folded, true
+			}
+		}
+
+		return e, changed
+
 	case *BinaryExpr:
 		changed := false
 		newLeft, leftChanged := cp.propagateInExpr(e.Left)
@@ -327,8 +343,26 @@ func (cp *ConstantPropagation) isConstant(expr Expression) bool {
 	}
 }
 
+func (cp *ConstantPropagation) foldUnaryConstants(operand *NumberExpr, op string) *NumberExpr {
+	switch op {
+	case "-": // Unary minus
+		return &NumberExpr{Value: -operand.Value}
+	case "not": // Logical NOT
+		if operand.Value == 0 {
+			return &NumberExpr{Value: 1.0}
+		}
+		return &NumberExpr{Value: 0.0}
+	case "~b": // Bitwise NOT
+		return &NumberExpr{Value: float64(^int64(operand.Value))}
+	case "#": // Length operator - only works at runtime for strings/lists
+		return nil
+	}
+	return nil
+}
+
 func (cp *ConstantPropagation) foldConstants(left, right *NumberExpr, op string) *NumberExpr {
 	switch op {
+	// Arithmetic
 	case "+":
 		return &NumberExpr{Value: left.Value + right.Value}
 	case "-":
@@ -343,6 +377,83 @@ func (cp *ConstantPropagation) foldConstants(left, right *NumberExpr, op string)
 		if right.Value != 0 {
 			return &NumberExpr{Value: float64(int64(left.Value) % int64(right.Value))}
 		}
+	case "**":
+		return &NumberExpr{Value: math.Pow(left.Value, right.Value)}
+
+	// Comparison operators (return 1.0 for true, 0.0 for false)
+	case "<":
+		if left.Value < right.Value {
+			return &NumberExpr{Value: 1.0}
+		}
+		return &NumberExpr{Value: 0.0}
+	case "<=":
+		if left.Value <= right.Value {
+			return &NumberExpr{Value: 1.0}
+		}
+		return &NumberExpr{Value: 0.0}
+	case ">":
+		if left.Value > right.Value {
+			return &NumberExpr{Value: 1.0}
+		}
+		return &NumberExpr{Value: 0.0}
+	case ">=":
+		if left.Value >= right.Value {
+			return &NumberExpr{Value: 1.0}
+		}
+		return &NumberExpr{Value: 0.0}
+	case "==":
+		if left.Value == right.Value {
+			return &NumberExpr{Value: 1.0}
+		}
+		return &NumberExpr{Value: 0.0}
+	case "!=":
+		if left.Value != right.Value {
+			return &NumberExpr{Value: 1.0}
+		}
+		return &NumberExpr{Value: 0.0}
+
+	// Logical operators (treat 0 as false, non-zero as true)
+	case "and":
+		leftBool := left.Value != 0
+		rightBool := right.Value != 0
+		if leftBool && rightBool {
+			return &NumberExpr{Value: 1.0}
+		}
+		return &NumberExpr{Value: 0.0}
+	case "or":
+		leftBool := left.Value != 0
+		rightBool := right.Value != 0
+		if leftBool || rightBool {
+			return &NumberExpr{Value: 1.0}
+		}
+		return &NumberExpr{Value: 0.0}
+	case "xor":
+		leftBool := left.Value != 0
+		rightBool := right.Value != 0
+		if leftBool != rightBool {
+			return &NumberExpr{Value: 1.0}
+		}
+		return &NumberExpr{Value: 0.0}
+
+	// Bitwise operators
+	case "&b":
+		return &NumberExpr{Value: float64(int64(left.Value) & int64(right.Value))}
+	case "|b":
+		return &NumberExpr{Value: float64(int64(left.Value) | int64(right.Value))}
+	case "^b":
+		return &NumberExpr{Value: float64(int64(left.Value) ^ int64(right.Value))}
+	case "<b": // Logical shift left
+		return &NumberExpr{Value: float64(int64(left.Value) << uint(int64(right.Value)))}
+	case ">b": // Logical shift right
+		return &NumberExpr{Value: float64(uint64(left.Value) >> uint(int64(right.Value)))}
+	case "<<b": // Rotate left
+		val := uint64(left.Value)
+		shift := uint(int64(right.Value)) % 64
+		return &NumberExpr{Value: float64((val << shift) | (val >> (64 - shift)))}
+	case ">>b": // Rotate right
+		val := uint64(left.Value)
+		shift := uint(int64(right.Value)) % 64
+		return &NumberExpr{Value: float64((val >> shift) | (val << (64 - shift)))}
 	}
 	return nil
 }
