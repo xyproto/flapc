@@ -1,0 +1,10 @@
+// Test defer with resource cleanup
+ptr := malloc(8)
+defer free(ptr)
+
+printf("Allocated: %p\n", ptr)
+atomic_store(ptr, 42)
+printf("Stored: %.0f\n", atomic_load(ptr))
+
+// ptr will be freed automatically via defer
+println("Done")

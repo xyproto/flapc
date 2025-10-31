@@ -1,0 +1,14 @@
+=== Basic Defer Test ===
+
+=== LIFO Order Test ===
+
+=== Resource Cleanup Test ===
+Stored value: 123
+
+=== Program End ===
+All defers will execute now in LIFO order:
+✓ Resource cleanup scheduled
+  1st (executed third)
+  2nd (executed second)
+  3rd (executed first)
+✓ Basic defer works

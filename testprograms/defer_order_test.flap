@@ -1,0 +1,10 @@
+// Test defer execution order
+printf("1. Start\n")
+
+defer printf("4. Deferred first\n")
+
+printf("2. Middle\n")
+
+defer printf("3. Deferred last\n")
+
+printf("Program end (should not print)\n")
