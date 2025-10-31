@@ -1,1 +1,0 @@
-printf("i=%ld\n", 42 as number)

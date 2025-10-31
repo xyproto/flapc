@@ -1,3 +1,0 @@
-// Test that println works with simple arrays
-arr := [2, 4, 6]
-println(arr)

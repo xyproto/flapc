@@ -1,7 +1,0 @@
-n := 2
-result := n {
-    n == 1 -> "one"
-    n == 2 -> "two"
-    ~> "other"
-}
-printf("result = %s\n", result)

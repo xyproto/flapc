@@ -1,5 +1,0 @@
-// Test basic string assignment
-s1 := "hello"
-s2 := "world"
-println(#s1)
-println(#s2)

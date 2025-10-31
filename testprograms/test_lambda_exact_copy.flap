@@ -1,5 +1,0 @@
-// Exact copy of lambda_test.flap but with 42.0 and printf
-double := x => x * 2
-
-result := double(42.0)
-printf("Result: %.0f\n", result)

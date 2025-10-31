@@ -1,6 +1,0 @@
-printf("About to create string\n")
-result := "two"
-printf("Created string, address = %v\n", result)
-printf("About to print string\n")
-printf("result = %s\n", result)
-printf("Done\n")

@@ -1,3 +1,0 @@
-// Test println with 0
-x := 0
-println(x)

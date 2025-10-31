@@ -1,8 +1,0 @@
-// Test %v (smart value format)
-printf("%%v format:\n")
-printf("42.0 -> %v\n", 42.0)
-printf("3.14 -> %v\n", 3.14)
-printf("3.14159 -> %v\n", 3.14159)
-printf("0.001 -> %v\n", 0.001)
-printf("1000000.0 -> %v\n", 1000000.0)
-printf("Zero: %v\n", 0.0)

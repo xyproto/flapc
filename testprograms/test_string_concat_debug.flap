@@ -1,9 +1,0 @@
-// Debug test
-println("Starting")
-s1 := "A"
-println("Created s1")
-s2 := "B"
-println("Created s2")
-s3 := s1 + s2
-println("Concatenated")
-println(s3)

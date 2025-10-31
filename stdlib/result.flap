@@ -1,0 +1,83 @@
+// Result type for railway-oriented error handling
+// This is the standard library implementation
+
+// Result structure (manual, no cstruct needed yet):
+// Layout: [ok: int32, value: int64, error_ptr: ptr]
+//   Offset 0: ok (1 = success, 0 = failure)
+//   Offset 4: value (result value if ok)
+//   Offset 12: error_ptr (error message pointer if !ok)
+
+// Constants for Result struct
+Result_SIZEOF := 20
+Result_ok_OFFSET := 0
+Result_value_OFFSET := 4
+Result_error_OFFSET := 12
+
+// Ok: Create a success Result
+Ok := (value) => {
+    result := call("malloc", Result_SIZEOF as uint64)
+    write_i32(result, Result_ok_OFFSET as int32, 1)          // ok = 1
+    write_i64(result, Result_value_OFFSET as int32, value)   // store value
+    write_ptr(result, Result_error_OFFSET as int32, 0 as ptr) // no error
+    result
+}
+
+// Err: Create an error Result
+Err := (msg) => {
+    result := call("malloc", Result_SIZEOF as uint64)
+    write_i32(result, Result_ok_OFFSET as int32, 0)          // ok = 0
+    write_i64(result, Result_value_OFFSET as int32, 0)       // no value
+    write_ptr(result, Result_error_OFFSET as int32, msg as ptr) // store error
+    result
+}
+
+// is_ok: Check if Result is Ok
+is_ok := (result) => {
+    read_i32(result, Result_ok_OFFSET as int32)
+}
+
+// is_err: Check if Result is Err
+is_err := (result) => {
+    ok := read_i32(result, Result_ok_OFFSET as int32)
+    (ok == 0) as int32
+}
+
+// unwrap: Extract value or panic
+unwrap := (result) => {
+    ok := read_i32(result, Result_ok_OFFSET as int32)
+    ok == 0 {
+        error_ptr := read_ptr(result, Result_error_OFFSET as int32)
+        println("Error: unwrap called on Err Result")
+        error_ptr != 0 as ptr {
+            // Print error message
+            call("printf", "%s\n" as cstr, error_ptr as ptr)
+        }
+        exit(1)
+    }
+    read_i64(result, Result_value_OFFSET as int32)
+}
+
+// unwrap_or: Extract value or return default
+unwrap_or := (result, default) => {
+    ok := read_i32(result, Result_ok_OFFSET as int32)
+    ok {
+        -> read_i64(result, Result_value_OFFSET as int32)
+    }
+    default
+}
+
+// get_value: Extract value (unsafe, no check)
+get_value := (result) => {
+    read_i64(result, Result_value_OFFSET as int32)
+}
+
+// get_error: Extract error message (unsafe, no check)
+get_error := (result) => {
+    ptr := read_ptr(result, Result_error_OFFSET as int32)
+    ptr as cstr
+}
+
+// free_result: Free Result memory
+free_result := (result) => {
+    call("free", result as ptr)
+}

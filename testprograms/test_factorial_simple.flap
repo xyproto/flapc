@@ -1,7 +1,0 @@
-// Test recursive factorial
-factorial := (n) => n <= 1 {
-    -> 1
-    ~> n * factorial(n - 1) max 100
-}
-
-printf("factorial(5) = %v\n", factorial(5))

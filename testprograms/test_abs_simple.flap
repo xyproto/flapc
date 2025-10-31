@@ -1,5 +1,0 @@
-// Test abs function - simple version
-abs_pos = x => x
-
-result := abs_pos(5.0)
-println(result)

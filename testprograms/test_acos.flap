@@ -1,4 +1,0 @@
-// Test acos function
-// acos(1) should be 0
-result := acos(1.0)
-println(result)

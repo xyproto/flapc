@@ -1,0 +1,12 @@
+Testing Result type:
+
+Test 1: 10 / 2
+  Ok: 5
+Test 2: 10 / 0
+  Err (code 1)
+Test 3: unwrap_or with default
+  Result (or -1): -1
+Test 4: unwrap on Ok
+  Unwrapped: 42
+
+All Result tests passed!

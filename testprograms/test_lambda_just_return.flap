@@ -1,5 +1,0 @@
-// Lambda that just returns its parameter
-identity := x => x
-
-result := identity(42.0)
-printf("identity(42.0) = %ld\n", result as number)

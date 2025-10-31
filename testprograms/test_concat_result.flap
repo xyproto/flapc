@@ -1,7 +1,0 @@
-// Test what concatenation returns
-empty := ""
-s := "test"
-result := empty + s
-
-// Just try to print the string directly
-println(result)

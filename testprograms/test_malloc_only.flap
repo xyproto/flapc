@@ -1,6 +1,0 @@
-// Test that just tracks malloc usage
-println("Before tracking")
-// Force malloc to be tracked
-s1 := "A"
-s2 := "B"
-s3 := s1 + s2

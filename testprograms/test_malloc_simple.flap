@@ -1,2 +1,0 @@
-// Simple malloc test - just allocate and exit
-println("Before malloc")

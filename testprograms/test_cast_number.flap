@@ -1,8 +1,0 @@
-// Test "as number" cast
-x := 42.0
-printf("x = %.0f\n", x)
-printf("x as number = %ld\n", x as number)
-
-y := 120.5
-printf("y = %.2f\n", y)
-printf("y as number = %ld\n", y as number)

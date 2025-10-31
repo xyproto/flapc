@@ -1,4 +1,0 @@
-// Test cos function
-// cos(0) should be 1
-result := cos(0.0)
-println(result)

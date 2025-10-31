@@ -1,2 +1,0 @@
-// Test concat without using result
-x := [1, 2] + [3, 4]

@@ -1,4 +1,0 @@
-// Test just concatenation without println
-s1 := "A"
-s2 := "B"
-s3 := s1 + s2

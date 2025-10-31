@@ -1,6 +1,0 @@
-// Test printf argument order
-a = 1.0
-b = 2.0
-c = 3.0
-printf("a=%v, b=%v, c=%v\n", a, b, c)
-printf("First=%v, Second=%v, Third=%v\n", 10.0, 20.0, 30.0)

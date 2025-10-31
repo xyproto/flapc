@@ -1,3 +1,0 @@
-// Simplest possible concat test - direct list literals
-result := [1, 2] + [3, 4]
-println(#result)

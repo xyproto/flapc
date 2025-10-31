@@ -1,7 +1,0 @@
-// Test match with recursive call only (no multiplication)
-countdown := (n) => n <= 0 {
-    -> 0
-    ~> countdown(n - 1) max 100
-}
-
-printf("countdown(3) = %v (expected 0)\n", countdown(3))

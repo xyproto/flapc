@@ -1,3 +1,0 @@
-@ i in 0..<5  max 50 {
-    println(i)
-}

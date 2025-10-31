@@ -4172,17 +4172,13 @@ func (p *Parser) parsePrimary() Expression {
 
 		p.nextToken() // skip '('
 
-		// Check for empty parameter list: () =>
+		// Check for empty parameter list: () => or () ->
 		if p.current.Type == TOKEN_RPAREN {
-			if p.peek.Type == TOKEN_FAT_ARROW {
+			if p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_ARROW {
 				p.nextToken() // skip ')'
-				p.nextToken() // skip '=>'
+				p.nextToken() // skip '=>' or '->'
 				body := p.parseLambdaBody()
 				return &LambdaExpr{Params: []string{}, Body: body}
-			}
-			// Error if using -> instead of =>
-			if p.peek.Type == TOKEN_ARROW {
-				p.error("lambda definitions must use '=>' not '->' (e.g., () => expr)")
 			}
 			// Empty parens without arrow is an error, but skip for now
 			p.nextToken()
@@ -4190,63 +4186,78 @@ func (p *Parser) parsePrimary() Expression {
 		}
 
 		// Try to parse as parameter list (identifiers separated by commas)
-		// or as an expression
+		// or as an expression. Use backtracking to handle type annotations.
 		if p.current.Type == TOKEN_IDENT {
-			// Peek ahead to determine if it's a lambda or expression
-			// If we see: ident ) -> or ident , -> it's a lambda
-			firstIdent := p.current.Value
+			// Save state in case this is not a lambda
+			lambdaState := p.saveState()
 
-			if p.peek.Type == TOKEN_RPAREN {
-				// Could be (x) => expr or (x)
-				p.nextToken() // move to ')'
-				if p.peek.Type == TOKEN_FAT_ARROW {
-					// It's a lambda: (x) => expr
+			// Try to parse as lambda parameter list
+			params := []string{p.current.Value}
+			p.nextToken() // skip first ident
+
+			// Skip optional type annotation: as Type
+			if p.current.Type == TOKEN_AS {
+				p.nextToken() // skip 'as'
+				if p.current.Type != TOKEN_IDENT {
+					// Not a valid lambda, restore and parse as expression
+					p.restoreState(lambdaState)
+					expr := p.parseExpression()
 					p.nextToken() // skip ')'
-					p.nextToken() // skip '=>'
-					body := p.parseLambdaBody()
-					return &LambdaExpr{Params: []string{firstIdent}, Body: body}
+					return expr
 				}
-				// Error if using -> instead of =>
-				if p.peek.Type == TOKEN_ARROW {
-					p.error("lambda definitions must use '=>' not '->' (e.g., (x) => x * 2 or just x => x * 2)")
-				}
-				// It's (x) parenthesized identifier
-				p.nextToken() // skip ')'
-				return &IdentExpr{Name: firstIdent}
+				p.nextToken() // skip type name
 			}
 
-			if p.peek.Type == TOKEN_COMMA {
-				// Definitely a lambda with multiple params: (x, y, ...) => expr
-				params := []string{firstIdent}
-				p.nextToken() // skip first ident
+			// Check if we have more parameters
+			for p.current.Type == TOKEN_COMMA {
+				p.nextToken() // skip ','
+				if p.current.Type != TOKEN_IDENT {
+					// Not a valid lambda, restore and parse as expression
+					p.restoreState(lambdaState)
+					expr := p.parseExpression()
+					p.nextToken() // skip ')'
+					return expr
+				}
+				params = append(params, p.current.Value)
+				p.nextToken() // skip param
 
-				for p.current.Type == TOKEN_COMMA {
-					p.nextToken() // skip ','
+				// Skip optional type annotation
+				if p.current.Type == TOKEN_AS {
+					p.nextToken() // skip 'as'
 					if p.current.Type != TOKEN_IDENT {
-						p.error("expected parameter name in lambda")
+						// Not a valid lambda, restore and parse as expression
+						p.restoreState(lambdaState)
+						expr := p.parseExpression()
+						p.nextToken() // skip ')'
+						return expr
 					}
-					params = append(params, p.current.Value)
-					p.nextToken() // skip param
+					p.nextToken() // skip type name
 				}
+			}
 
-				// current should be ')'
-				if p.current.Type != TOKEN_RPAREN {
-					p.error("expected ')' after lambda parameters")
-				}
-
-				// peek should be '=>'
-				if p.peek.Type != TOKEN_FAT_ARROW {
-					if p.peek.Type == TOKEN_ARROW {
-						p.error("lambda definitions must use '=>' not '->' (e.g., (x, y) => x + y or just x, y => x + y)")
-					}
-					p.error("expected '=>' after lambda parameters")
-				}
-
+			// current should be ')'
+			if p.current.Type != TOKEN_RPAREN {
+				// Not a lambda, restore and parse as expression
+				p.restoreState(lambdaState)
+				expr := p.parseExpression()
 				p.nextToken() // skip ')'
-				p.nextToken() // skip '=>'
+				return expr
+			}
+
+			// peek should be '=>' or '->'
+			if p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_ARROW {
+				// It's a lambda!
+				p.nextToken() // skip ')'
+				p.nextToken() // skip '=>' or '->'
 				body := p.parseLambdaBody()
 				return &LambdaExpr{Params: params, Body: body}
 			}
+
+			// Not a lambda after all, restore and parse as expression
+			p.restoreState(lambdaState)
+			expr := p.parseExpression()
+			p.nextToken() // skip ')'
+			return expr
 		}
 
 		// Not a lambda, parse as parenthesized expression

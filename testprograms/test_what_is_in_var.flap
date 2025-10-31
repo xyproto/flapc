@@ -1,6 +1,0 @@
-result := "two"
-// Check if result is non-zero (valid pointer)
-(result == 0) {
-    -> printf("ERROR: result is zero!\n")
-    ~> printf("OK: result is not zero\n")
-}

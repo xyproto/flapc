@@ -1,3 +1,0 @@
-// Test str() with integer
-result := str(42)
-println(result)

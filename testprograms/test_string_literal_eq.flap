@@ -1,3 +1,0 @@
-// Test literal string equality (should be optimized at compile time?)
-result := "a" == "a"
-println(result)

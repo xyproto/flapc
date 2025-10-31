@@ -1,3 +1,0 @@
-// Test sqrt function
-result := sqrt(4.0)
-println(result)

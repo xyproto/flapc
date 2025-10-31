@@ -1,5 +1,0 @@
-// Test creating and using a map
-m := {5: 10, 10: 20}
-
-val1 := m[5]
-printf("m[5] = %v\n", val1)

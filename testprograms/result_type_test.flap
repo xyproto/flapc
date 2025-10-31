@@ -1,0 +1,117 @@
+// Test Result type for error handling (v2.0 feature preview)
+// This demonstrates manual Result type usage before the ? operator
+
+// Result structure layout (manual, 16 bytes total):
+//   Offset 0: ok (int32, 1 = success, 0 = failure)
+//   Offset 4: value (int64, result value if ok OR error code if !ok)
+
+// Ok: Create a success Result
+Ok := (value) => {
+    result := call("malloc", 16 as uint64)
+    write_i32(result, 0 as int32, 1)
+    write_i64(result, 4 as int32, value)
+    result
+}
+
+// Err: Create an error Result with error code
+Err := (code) => {
+    result := call("malloc", 16 as uint64)
+    write_i32(result, 0 as int32, 0)
+    write_i64(result, 4 as int32, code)
+    result
+}
+
+// is_ok: Check if Result is Ok
+is_ok := (result) => {
+    read_i32(result, 0 as int32)
+}
+
+// get_value: Extract value (unsafe - only call if is_ok)
+get_value := (result) => {
+    read_i64(result, 4 as int32)
+}
+
+// get_error_code: Extract error code (unsafe - only call if !is_ok)
+get_error_code := (result) => {
+    read_i64(result, 4 as int32)
+}
+
+// unwrap: Extract value or panic
+unwrap := (result) => {
+    ok := read_i32(result, 0 as int32)
+    ok == 0 {
+        println(f"Error: unwrap called on Err Result (code: {read_i64(result, 4 as int32)})")
+        exit(1)
+    }
+    read_i64(result, 4 as int32)
+}
+
+// unwrap_or: Extract value or return default
+unwrap_or := (result, default) => {
+    ok := read_i32(result, 0 as int32)
+    ok {
+        -> read_i64(result, 4 as int32)
+    }
+    default
+}
+
+// free_result: Free Result memory
+free_result := (result) => {
+    call("free", result as ptr)
+}
+
+// Example: safe_divide that can fail
+safe_divide := (a, b) => {
+    b == 0 {
+        -> Err(1)  // Error code 1 = division by zero
+        ~> Ok(a / b)
+    }
+}
+
+// Example: always succeeds
+always_ok := (x) => {
+    Ok(x * 2)
+}
+
+// Main test
+main := () => {
+    println("Testing Result type:")
+    println("")
+
+    // Test 1: Successful operation
+    println("Test 1: 10 / 2")
+    result1 := safe_divide(10, 2)
+    is_ok(result1) {
+        println(f"  Ok: {get_value(result1)}")
+        ~> println(f"  Err (code {get_error_code(result1)})")
+    }
+    free_result(result1)
+
+    // Test 2: Error operation
+    println("Test 2: 10 / 0")
+    result2 := safe_divide(10, 0)
+    is_ok(result2) {
+        println(f"  Ok: {get_value(result2)}")
+        ~> println(f"  Err (code {get_error_code(result2)})")
+    }
+    free_result(result2)
+
+    // Test 3: unwrap_or with default
+    println("Test 3: unwrap_or with default")
+    result3 := safe_divide(20, 0)
+    value3 := unwrap_or(result3, -1)
+    println(f"  Result (or -1): {value3}")
+    free_result(result3)
+
+    // Test 4: unwrap on Ok
+    println("Test 4: unwrap on Ok")
+    result4 := always_ok(21)
+    value4 := unwrap(result4)
+    println(f"  Unwrapped: {value4}")
+    free_result(result4)
+
+    println("")
+    println("All Result tests passed!")
+}
+
+main()

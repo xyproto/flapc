@@ -1,6 +1,0 @@
-// Test non-existent key
-prices = {100: 5.99, 200: 12.99, 300: 19.99}
-
-// This key doesn't exist - should return 0.0
-price4 := prices[999]
-printf("Price for item 999: %v\n", price4)

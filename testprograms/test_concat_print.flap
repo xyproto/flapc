@@ -1,3 +1,0 @@
-// Test with println of number
-result := [1, 2] + [3, 4]
-println(4)

@@ -1,3 +1,0 @@
-// Test negative number literals
-x := -5.0
-println(x)

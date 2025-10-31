@@ -1,9 +1,0 @@
-// Test match with single string result
-n := 2
-
-result := n == 2 {
-    -> "yes"
-    ~> "no"
-}
-
-printf("result = %s\n", result)

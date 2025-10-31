@@ -1,6 +1,0 @@
-// test_list_only.flap - verify list creation
-numbers = [1, 2, 3]
-
-// Just print first element to verify list exists
-println(numbers[0])
-

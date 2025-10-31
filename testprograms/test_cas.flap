@@ -1,7 +1,0 @@
-counter_ptr := malloc(8)
-atomic_store(counter_ptr, 8)
-printf("Before: %.0f\n", atomic_load(counter_ptr))
-cas_result := atomic_cas(counter_ptr, 8, 10)
-printf("Result: %.0f\n", cas_result)
-printf("After: %.0f\n", atomic_load(counter_ptr))
-free(counter_ptr)

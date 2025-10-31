@@ -1,4 +1,0 @@
-// Test forward string slicing
-s := "Hello"
-sliced := s[0:2]
-println(sliced)

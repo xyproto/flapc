@@ -1,4 +1,0 @@
-// Debug concatenation
-s := "test"
-len1 := #s
-println(len1)
