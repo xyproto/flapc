@@ -99,7 +99,7 @@ func TestFlapPrograms(t *testing.T) {
 		}
 
 		t.Run(base, func(t *testing.T) {
-			// t.Parallel() // DISABLED: compiler has race conditions with parallel execution
+			t.Parallel() // Enable parallel execution to detect race conditions
 
 			// Skip ARM64-incompatible testprograms on macOS
 			if runtime.GOARCH == "arm64" && skipOnARM64[base] {

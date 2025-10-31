@@ -4929,7 +4929,8 @@ type FlapCompiler struct {
 	metaArenaGrowthErrorJump      int
 	firstMetaArenaMallocErrorJump int
 
-	regAlloc *RegisterAllocator // Register allocator for optimized variable allocation
+	regAlloc   *RegisterAllocator // Register allocator for optimized variable allocation
+	wpoTimeout float64            // Whole-program optimization timeout (non-global, thread-safe)
 }
 
 type LambdaFunc struct {
@@ -5427,7 +5428,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	}
 
 	// Check if hot functions are used with WPO disabled
-	if len(fc.hotFunctions) > 0 && WPOTimeout == 0 {
+	if len(fc.hotFunctions) > 0 && fc.wpoTimeout == 0 {
 		return fmt.Errorf("hot functions require whole-program optimization (do not use --opt-timeout=0)")
 	}
 
@@ -16368,14 +16369,14 @@ func addNamespaceToFunctions(program *Program, namespace string) {
 }
 
 func CompileFlap(inputPath string, outputPath string, platform Platform) (err error) {
+	return CompileFlapWithOptions(inputPath, outputPath, platform, WPOTimeout)
+}
+
+func CompileFlapWithOptions(inputPath string, outputPath string, platform Platform, wpoTimeout float64) (err error) {
 	// Default to WPO if not explicitly set
-	originalWPOTimeout := WPOTimeout
-	if WPOTimeout == 0 {
-		WPOTimeout = 2.0
+	if wpoTimeout == 0 {
+		wpoTimeout = 2.0
 	}
-	defer func() {
-		WPOTimeout = originalWPOTimeout
-	}()
 
 	// Recover from parser panics and convert to errors
 	defer func() {
@@ -16558,7 +16559,7 @@ func CompileFlap(inputPath string, outputPath string, platform Platform) (err er
 	}
 
 	// Run whole program optimization
-	optimizer := NewOptimizer(WPOTimeout)
+	optimizer := NewOptimizer(wpoTimeout)
 	err = optimizer.Optimize(program)
 	if err != nil {
 		return fmt.Errorf("optimization failed: %v", err)
@@ -16570,6 +16571,7 @@ func CompileFlap(inputPath string, outputPath string, platform Platform) (err er
 		return fmt.Errorf("failed to create compiler: %v", err)
 	}
 	compiler.sourceCode = combinedSource
+	compiler.wpoTimeout = wpoTimeout
 
 	err = compiler.Compile(program, outputPath)
 	if err != nil {
