@@ -14,6 +14,23 @@ import (
 	"unsafe"
 )
 
+const (
+	// Buffer sizes for runtime operations
+	stringBufferSize  = 256 // Maximum string buffer size for conversions
+	socketBufferSize  = 256 // Network socket buffer size
+	socketStructSize  = 16  // sizeof(struct sockaddr_in)
+	sdlEventSize      = 56  // sizeof(SDL_Event) - used in examples and documentation
+
+	// Stack alignment
+	stackAlignment = 16 // x86_64 ABI requires 16-byte stack alignment
+
+	// Hash table sizes
+	defaultHashTableSize = 512 // Default size for internal hash tables
+
+	// Clone syscall
+	cloneSyscallNumber = 56 // Linux clone() syscall number on x86_64
+)
+
 // hashStringKey hashes a string identifier to a uint64 for use as a map key.
 // Uses FNV-1a hash algorithm for deterministic, collision-resistant hashing.
 // Currently limited to 30-bit hash due to compiler integer literal limitations.
@@ -6748,11 +6765,9 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 
 		// Step 2: Call clone() syscall
 		// clone(flags, child_stack, ptid, ctid, newtls)
-		// clone syscall number is 56
-
 		// CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM
 		// = 0x100 | 0x200 | 0x400 | 0x800 | 0x10000 | 0x40000 = 0x50F00
-		fc.out.MovImmToReg("rax", "56")     // sys_clone
+		fc.out.MovImmToReg("rax", fmt.Sprintf("%d", cloneSyscallNumber)) // sys_clone
 		fc.out.MovImmToReg("rdi", "331520") // flags = 0x50F00
 		fc.out.MovRegToReg("rsi", "r13")    // child_stack = stack top
 		fc.out.MovImmToReg("rdx", "0")      // ptid (not used)
@@ -10344,8 +10359,8 @@ func (fc *FlapCompiler) generateCacheInsert() {
 	alreadyInitJump := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpNotEqual, 0)
 
-	// Allocate hash table: malloc(512)
-	fc.out.MovImmToReg("rax", "512")
+	// Allocate hash table: malloc(defaultHashTableSize)
+	fc.out.MovImmToReg("rax", fmt.Sprintf("%d", defaultHashTableSize))
 	fc.callMallocAligned("rax", 5) // 5 pushes after prologue
 	fc.out.MovRegToMem("rax", "r12", 0)
 	fc.out.MovImmToReg("rax", "32")
@@ -15855,7 +15870,7 @@ func (fc *FlapCompiler) compileSendExpr(expr *SendExpr) {
 	fc.out.MovRegToReg("rdx", "rcx")     // length (copy rcx to rdx)
 	fc.out.MovImmToReg("r10", "0")       // flags
 	fc.out.LeaMemToReg("r8", "rsp", 16)  // sockaddr_in
-	fc.out.MovImmToReg("r9", "16")       // addrlen
+	fc.out.MovImmToReg("r9", fmt.Sprintf("%d", socketStructSize)) // addrlen
 	fc.out.MovImmToReg("rax", "44")      // sendto syscall
 	fc.out.Syscall()
 
@@ -15992,7 +16007,7 @@ func (fc *FlapCompiler) compileReceiveLoopStmt(stmt *ReceiveLoopStmt) {
 	// Try to bind socket to current port
 	fc.out.MovMemToReg("rdi", "rbp", -(baseOffset + 24)) // socket fd
 	fc.out.LeaMemToReg("rsi", "rbp", -(baseOffset + 40)) // sockaddr_in structure
-	fc.out.MovImmToReg("rdx", "16")                      // addrlen
+	fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", socketStructSize)) // addrlen
 	fc.out.MovImmToReg("rax", "49")                      // bind syscall
 	fc.out.Syscall()
 
@@ -16033,14 +16048,14 @@ func (fc *FlapCompiler) compileReceiveLoopStmt(stmt *ReceiveLoopStmt) {
 	fc.eb.MarkLabel(loopLabel)
 
 	// Initialize addrlen for recvfrom
-	fc.out.MovImmToReg("rax", "16")
+	fc.out.MovImmToReg("rax", fmt.Sprintf("%d", socketStructSize))
 	fc.out.MovRegToMem("rax", "rbp", -(baseOffset + 320))
 
 	// Call recvfrom (syscall 45: recvfrom)
 	// recvfrom(sockfd, buf, len, flags, src_addr, addrlen)
 	fc.out.MovMemToReg("rdi", "rbp", -(baseOffset + 24)) // socket fd
 	fc.out.LeaMemToReg("rsi", "rbp", -(baseOffset + 56)) // buffer (starts after sockaddr)
-	fc.out.MovImmToReg("rdx", "256")                     // buffer size
+	fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", socketBufferSize)) // buffer size
 	fc.out.MovImmToReg("r10", "0")                       // flags
 	fc.out.LeaMemToReg("r8", "rbp", -(baseOffset + 40))  // src_addr (sockaddr_in start)
 	fc.out.LeaMemToReg("r9", "rbp", -(baseOffset + 320)) // addrlen pointer

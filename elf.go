@@ -6,8 +6,22 @@ import (
 )
 
 const (
-	baseAddr   = 0x400000 // virtual base address
-	headerSize = 64 + 56  // ELF + header size
+	// ELF structure sizes
+	elfHeaderSize     = 64   // ELF64 header size
+	progHeaderSize    = 56   // Program header entry size (ELF64)
+	sectionHeaderSize = 64   // Section header entry size (ELF64)
+
+	// Memory layout
+	baseAddr   = 0x400000              // Virtual base address
+	pageSize   = 0x1000                // 4KB page alignment
+	headerSize = elfHeaderSize + progHeaderSize // Total header size for simple executable
+
+	// Program header offset (immediately after ELF header)
+	progHeaderOffset = 0x40 // elfHeaderSize
+
+	// Section header offsets
+	sectionHeaderEntrySize = 0x40 // Size of section header entry
+	sectionTableAddr       = progHeaderOffset + 0x38 // Section table address
 )
 
 func (eb *ExecutableBuilder) WriteELFHeader() error {
@@ -40,15 +54,14 @@ func (eb *ExecutableBuilder) WriteELFHeader() error {
 	entry := uint64(baseAddr + headerSize + rodataSize)
 
 	w.Write8u(entry)
-	w.Write8(0x40)
-	const sectionAddr = 0x40 + 0x38
-	w.Write8u(sectionAddr)
+	w.Write8(progHeaderOffset)
+	w.Write8u(sectionTableAddr)
 	w.Write4(0)
-	w.Write2(64)
-	w.Write2(0x38)
+	w.Write2(elfHeaderSize)
+	w.Write2(progHeaderSize)
 	const programHeaderTableEntries = 1
 	w.Write2(programHeaderTableEntries)
-	w.Write2(0x40)
+	w.Write2(sectionHeaderEntrySize)
 	const sectionHeaderTableEntries = 0
 	w.Write2(sectionHeaderTableEntries)
 	const sectionHeaderTableEntryIndex = 0
@@ -66,7 +79,7 @@ func (eb *ExecutableBuilder) WriteELFHeader() error {
 	fileSize := uint64(headerSize + rodataSize + codeSize)
 	w.Write8u(fileSize)
 	w.Write8u(fileSize)
-	w.Write8u(0x1000)
+	w.Write8u(pageSize)
 
 	if VerboseMode {
 		fmt.Fprintln(os.Stderr)

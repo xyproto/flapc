@@ -39,13 +39,9 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	ds.GenerateGOT(functions, 0, 0)
 
 	// Calculate memory layout
-	const pageSize = 0x1000
-	const elfHeader = 64
-	const progHeaderSize = 56
-
 	// We need: PHDR, INTERP, LOAD(ro), LOAD(rx), LOAD(rw), DYNAMIC
 	numProgHeaders := 6
-	headersSize := uint64(elfHeader + progHeaderSize*numProgHeaders)
+	headersSize := uint64(elfHeaderSize + progHeaderSize*numProgHeaders)
 
 	// Align to page boundary
 	alignedHeaders := (headersSize + pageSize - 1) & ^uint64(pageSize-1)
@@ -334,10 +330,10 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	w.Write4(1)
 
 	w.Write8u(entryPoint)
-	w.Write8u(elfHeader)
+	w.Write8u(elfHeaderSize)
 	w.Write8u(0) // no section headers
 	w.Write4(0)
-	w.Write2(byte(elfHeader))
+	w.Write2(byte(elfHeaderSize))
 	w.Write2(byte(progHeaderSize))
 	w.Write2(byte(numProgHeaders))
 	w.Write2(0)
@@ -349,9 +345,9 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	// PT_PHDR (must be first, but covered by a LOAD)
 	w.Write4(6) // PT_PHDR
 	w.Write4(4) // PF_R
-	w.Write8u(elfHeader)
-	w.Write8u(baseAddr + elfHeader)
-	w.Write8u(baseAddr + elfHeader)
+	w.Write8u(elfHeaderSize)
+	w.Write8u(baseAddr + elfHeaderSize)
+	w.Write8u(baseAddr + elfHeaderSize)
 	w.Write8u(uint64(progHeaderSize * numProgHeaders))
 	w.Write8u(uint64(progHeaderSize * numProgHeaders))
 	w.Write8u(8)
