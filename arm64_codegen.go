@@ -10,18 +10,19 @@ import (
 type ARM64CodeGen struct {
 	out            *ARM64Out
 	eb             *ExecutableBuilder
-	stackVars      map[string]int    // variable name -> stack offset from fp
-	mutableVars    map[string]bool   // variable name -> is mutable
-	varTypes       map[string]string // variable name -> type (for type tracking)
-	stackSize      int               // current stack size
-	stackFrameSize uint64            // total stack frame size allocated in prologue
-	stringCounter  int               // counter for string labels
-	stringInterns  map[string]string // string value -> label (for string interning)
-	labelCounter   int               // counter for jump labels
-	activeLoops    []ARM64LoopInfo   // stack of active loops for break/continue
-	lambdaFuncs    []ARM64LambdaFunc // list of lambda functions to generate
-	lambdaCounter  int               // counter for lambda names
-	currentLambda  *ARM64LambdaFunc  // current lambda being compiled (for recursion)
+	stackVars      map[string]int                    // variable name -> stack offset from fp
+	mutableVars    map[string]bool                   // variable name -> is mutable
+	varTypes       map[string]string                 // variable name -> type (for type tracking)
+	stackSize      int                               // current stack size
+	stackFrameSize uint64                            // total stack frame size allocated in prologue
+	stringCounter  int                               // counter for string labels
+	stringInterns  map[string]string                 // string value -> label (for string interning)
+	labelCounter   int                               // counter for jump labels
+	activeLoops    []ARM64LoopInfo                   // stack of active loops for break/continue
+	lambdaFuncs    []ARM64LambdaFunc                 // list of lambda functions to generate
+	lambdaCounter  int                               // counter for lambda names
+	currentLambda  *ARM64LambdaFunc                  // current lambda being compiled (for recursion)
+	cConstants     map[string]*CHeaderConstants      // C constants from imports
 }
 
 // ARM64LambdaFunc represents a lambda function for ARM64
@@ -47,7 +48,7 @@ type ARM64LoopInfo struct {
 }
 
 // NewARM64CodeGen creates a new ARM64 code generator
-func NewARM64CodeGen(eb *ExecutableBuilder) *ARM64CodeGen {
+func NewARM64CodeGen(eb *ExecutableBuilder, cConstants map[string]*CHeaderConstants) *ARM64CodeGen {
 	target := NewTarget(ArchARM64, OSDarwin)
 	return &ARM64CodeGen{
 		out:           &ARM64Out{out: NewOut(target, eb.TextWriter(), eb)},
@@ -59,6 +60,7 @@ func NewARM64CodeGen(eb *ExecutableBuilder) *ARM64CodeGen {
 		stringCounter: 0,
 		stringInterns: make(map[string]string),
 		labelCounter:  0,
+		cConstants:    cConstants,
 	}
 }
 
@@ -965,6 +967,34 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 
 	case *ParallelExpr:
 		return acg.compileParallelExpr(e)
+
+	case *NamespacedIdentExpr:
+		// Handle namespaced identifiers like sdl.SDL_INIT_VIDEO or data.field
+		// Check if this is a C constant
+		if constants, ok := acg.cConstants[e.Namespace]; ok {
+			if value, found := constants.Constants[e.Name]; found {
+				// Found a C constant - load it as a number
+				if err := acg.out.MovImm64("x0", uint64(value)); err != nil {
+					return err
+				}
+				// Convert to float64: scvtf d0, x0
+				acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Resolved C constant %s.%s = %d\n", e.Namespace, e.Name, value)
+				}
+			} else {
+				return fmt.Errorf("undefined constant '%s.%s'", e.Namespace, e.Name)
+			}
+		} else {
+			// Not a C import - treat as field access (obj.field)
+			// Convert to IndexExpr and compile it
+			hashValue := hashStringKey(e.Name)
+			indexExpr := &IndexExpr{
+				List:  &IdentExpr{Name: e.Namespace},
+				Index: &NumberExpr{Value: float64(hashValue)},
+			}
+			return acg.compileExpression(indexExpr)
+		}
 
 	default:
 		return fmt.Errorf("unsupported expression type for ARM64: %T", expr)

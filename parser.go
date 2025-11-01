@@ -16768,7 +16768,7 @@ func CompileFlapWithOptions(inputPath string, outputPath string, platform Platfo
 // compileARM64 compiles a program for ARM64 architecture (macOS)
 func (fc *FlapCompiler) compileARM64(program *Program, outputPath string) error {
 	// Create ARM64 code generator
-	acg := NewARM64CodeGen(fc.eb)
+	acg := NewARM64CodeGen(fc.eb, fc.cConstants)
 
 	// Generate code
 	if err := acg.CompileProgram(program); err != nil {
