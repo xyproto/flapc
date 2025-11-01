@@ -16795,6 +16795,35 @@ func (fc *FlapCompiler) compileRiscv64(program *Program, outputPath string) erro
 
 // writeMachOARM64 writes an ARM64 Mach-O executable for macOS
 func (fc *FlapCompiler) writeMachOARM64(outputPath string) error {
+	// Build neededFunctions list from call patches (actual function calls made)
+	// Extract unique function names from callPatches
+	neededSet := make(map[string]bool)
+	for _, patch := range fc.eb.callPatches {
+		// patch.targetName is like "malloc$stub" or "printf$stub"
+		// Strip the "$stub" suffix to get the function name
+		funcName := patch.targetName
+		if strings.HasSuffix(funcName, "$stub") {
+			funcName = funcName[:len(funcName)-5] // Remove "$stub"
+		}
+		neededSet[funcName] = true
+	}
+
+	// Convert set to slice
+	neededFuncs := make([]string, 0, len(neededSet))
+	for funcName := range neededSet {
+		neededFuncs = append(neededFuncs, funcName)
+	}
+
+	// Assign to executable builder for Mach-O generation
+	fc.eb.neededFunctions = neededFuncs
+	if len(neededFuncs) > 0 {
+		fc.eb.useDynamicLinking = true
+	}
+
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "-> ARM64 neededFunctions: %v\n", neededFuncs)
+	}
+
 	// First, write all rodata symbols to the rodata buffer and assign addresses
 	pageSize := uint64(0x4000) // 16KB page size for ARM64
 	textSize := uint64(fc.eb.text.Len())
