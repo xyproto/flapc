@@ -17,6 +17,8 @@
 6. Game development readiness (GAME_DEVELOPMENT_READINESS.md) - DONE
 7. Platform-specific build tags (Linux vs non-Linux) - DONE
 8. ARM64 RangeExpr support for range loops - DONE
+9. Removed obsolete range() function - DONE
+10. ARM64 expression support (NamespacedIdentExpr, MoveExpr, FStringExpr, JumpExpr, BlockExpr, CastExpr, PipeExpr) - DONE
 
 ### 🔥 CRITICAL (Must complete before v1.7.4)
 **None remaining** - All critical items completed!
@@ -29,8 +31,10 @@
 ### ✅ v1.7.4 Release Checklist
 - [x] Fix platform-specific compilation issues (Linux syscalls on macOS)
 - [x] Add ARM64 support for range expressions
-- [ ] All tests pass (`go test`) - in progress
+- [x] Add ARM64 support for common expression types
+- [ ] All tests pass (`go test`) - in progress (compilation fixed, runtime improvements ongoing)
 - [ ] All 363+ testprograms pass - in progress
+- [ ] Complete ARM64 codegen (UnsafeExpr, DeferStmt, CImportStmt, ArenaStmt, etc.)
 - [ ] LANGUAGE.md marked as frozen
 - [ ] README updated with freeze notice
 - [ ] Git tag v1.7.4
