@@ -19,6 +19,8 @@
 8. ARM64 RangeExpr support for range loops - DONE
 9. Removed obsolete range() function - DONE
 10. ARM64 expression support (NamespacedIdentExpr, MoveExpr, FStringExpr, JumpExpr, BlockExpr, CastExpr, PipeExpr) - DONE
+11. ARM64 statement support (RegisterAssignStmt, CImportStmt, ArenaStmt) - DONE
+12. ARM64 stub implementations (DeferStmt, SpawnStmt, UnsafeExpr, PatternLambdaExpr) - DONE
 
 ### 🔥 CRITICAL (Must complete before v1.7.4)
 **None remaining** - All critical items completed!
@@ -32,9 +34,12 @@
 - [x] Fix platform-specific compilation issues (Linux syscalls on macOS)
 - [x] Add ARM64 support for range expressions
 - [x] Add ARM64 support for common expression types
-- [ ] All tests pass (`go test`) - in progress (compilation fixed, runtime improvements ongoing)
-- [ ] All 363+ testprograms pass - in progress
-- [ ] Complete ARM64 codegen (UnsafeExpr, DeferStmt, CImportStmt, ArenaStmt, etc.)
+- [x] Add ARM64 support for RegisterAssignStmt (unsafe blocks)
+- [x] Add ARM64 stub support for statement/expression types
+- [ ] All tests pass (`go test`) - in progress (94% compile, some runtime issues remain)
+- [ ] All 363+ testprograms pass - in progress (basic programs work, parallel/unsafe need fixes)
+- [ ] Fix ARM64 runtime crashes in parallel programs
+- [ ] Add missing ARM64 builtins (alloc, SDL support, LoopExpr)
 - [ ] LANGUAGE.md marked as frozen
 - [ ] README updated with freeze notice
 - [ ] Git tag v1.7.4
