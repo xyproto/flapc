@@ -996,6 +996,130 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 			return acg.compileExpression(indexExpr)
 		}
 
+	case *MoveExpr:
+		// Compile the expression being moved (loads into d0)
+		// The move operator (!) just compiles the inner expression
+		// Tracking of moved variables would be done at a higher level
+		return acg.compileExpression(e.Expr)
+
+	case *FStringExpr:
+		// F-string: concatenate all parts
+		if len(e.Parts) == 0 {
+			// Empty f-string, return empty string
+			return acg.compileExpression(&StringExpr{Value: ""})
+		}
+
+		// Compile first part
+		firstPart := e.Parts[0]
+		// Convert to string if needed
+		if acg.getExprType(firstPart) == "string" {
+			if err := acg.compileExpression(firstPart); err != nil {
+				return err
+			}
+		} else {
+			// Not a string - wrap with str() for conversion
+			if err := acg.compileExpression(&CallExpr{
+				Function: "str",
+				Args:     []Expression{firstPart},
+			}); err != nil {
+				return err
+			}
+		}
+
+		// Concatenate remaining parts
+		for i := 1; i < len(e.Parts); i++ {
+			// Save left pointer (current result) to stack
+			acg.stackSize += 8
+			leftOffset := acg.stackSize
+			offset := int32(16 + leftOffset - 8)
+			if err := acg.out.StrImm64Double("d0", "x29", offset); err != nil {
+				return err
+			}
+
+			// Evaluate right string (next part)
+			part := e.Parts[i]
+			if acg.getExprType(part) == "string" {
+				if err := acg.compileExpression(part); err != nil {
+					return err
+				}
+			} else {
+				// Not a string - wrap with str() for conversion
+				if err := acg.compileExpression(&CallExpr{
+					Function: "str",
+					Args:     []Expression{part},
+				}); err != nil {
+					return err
+				}
+			}
+
+			// Save right pointer to stack
+			acg.stackSize += 8
+			rightOffset := acg.stackSize
+			offset = int32(16 + rightOffset - 8)
+			if err := acg.out.StrImm64Double("d0", "x29", offset); err != nil {
+				return err
+			}
+
+			// Load arguments: x0 = left ptr, x1 = right ptr
+			// Convert float64 pointers to integers
+			offset = int32(16 + leftOffset - 8)
+			if err := acg.out.LdrImm64Double("d0", "x29", offset); err != nil {
+				return err
+			}
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x78, 0x9e}) // fcvtzs x0, d0
+
+			offset = int32(16 + rightOffset - 8)
+			if err := acg.out.LdrImm64Double("d0", "x29", offset); err != nil {
+				return err
+			}
+			acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x78, 0x9e}) // fcvtzs x1, d0
+
+			// Call string_concat(left, right)
+			if err := acg.compileCall(&CallExpr{
+				Function: "string_concat",
+				Args:     []Expression{}, // Args already in registers
+			}); err != nil {
+				return err
+			}
+
+			// Clean up stack (2 slots)
+			acg.stackSize -= 16
+		}
+
+	case *JumpExpr:
+		// Compile the value expression of return/jump statements
+		// The value will be left in d0
+		if e.Value != nil {
+			return acg.compileExpression(e.Value)
+		}
+		// No value - leave 0.0 in d0
+		if err := acg.out.MovImm64("x0", 0); err != nil {
+			return err
+		}
+		// Convert to float64: scvtf d0, x0
+		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
+
+	case *BlockExpr:
+		// Compile each statement in the block
+		// The last statement should leave its value in d0
+		for i, stmt := range e.Statements {
+			if err := acg.compileStatement(stmt); err != nil {
+				return err
+			}
+			// If it's the last statement and it's an assignment,
+			// load the assigned value
+			if i == len(e.Statements)-1 {
+				if assignStmt, ok := stmt.(*AssignStmt); ok {
+					return acg.compileExpression(&IdentExpr{Name: assignStmt.Name})
+				}
+			}
+		}
+
+	case *CastExpr:
+		// For now, just compile the expression being cast
+		// Actual type casting would be more complex
+		return acg.compileExpression(e.Expr)
+
 	default:
 		return fmt.Errorf("unsupported expression type for ARM64: %T", expr)
 	}
