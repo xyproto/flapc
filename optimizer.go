@@ -513,6 +513,16 @@ func (dce *DeadCodeElimination) markUsedInStmt(stmt Statement, used map[string]b
 		if s.IsUpdate {
 			used[s.Name] = true
 		}
+
+		// Special case: if this is a lambda that might be recursive,
+		// check if it references its own name in the body
+		if lambda, ok := s.Value.(*LambdaExpr); ok {
+			if dce.expressionReferencesName(lambda.Body, s.Name) {
+				// This is a recursive function - mark it as used
+				used[s.Name] = true
+			}
+		}
+
 		dce.markUsedInExpr(s.Value, used)
 
 	case *ExpressionStmt:
@@ -671,6 +681,241 @@ func (dce *DeadCodeElimination) markUsedInExpr(expr Expression, used map[string]
 		for _, lambda := range e.Lambdas {
 			dce.markUsedInExpr(lambda.Body, used)
 		}
+	}
+}
+
+// expressionReferencesName checks if an expression references a given variable name
+func (dce *DeadCodeElimination) expressionReferencesName(expr Expression, name string) bool {
+	switch e := expr.(type) {
+	case *IdentExpr:
+		return e.Name == name
+
+	case *MoveExpr:
+		return dce.expressionReferencesName(e.Expr, name)
+
+	case *BinaryExpr:
+		return dce.expressionReferencesName(e.Left, name) || dce.expressionReferencesName(e.Right, name)
+
+	case *CallExpr:
+		if e.Function == name {
+			return true
+		}
+		for _, arg := range e.Args {
+			if dce.expressionReferencesName(arg, name) {
+				return true
+			}
+		}
+		return false
+
+	case *LambdaExpr:
+		return dce.expressionReferencesName(e.Body, name)
+
+	case *MatchExpr:
+		if dce.expressionReferencesName(e.Condition, name) {
+			return true
+		}
+		for _, c := range e.Clauses {
+			if c.Guard != nil && dce.expressionReferencesName(c.Guard, name) {
+				return true
+			}
+			if dce.expressionReferencesName(c.Result, name) {
+				return true
+			}
+		}
+		if e.DefaultExpr != nil {
+			return dce.expressionReferencesName(e.DefaultExpr, name)
+		}
+		return false
+
+	case *MapExpr:
+		for _, key := range e.Keys {
+			if dce.expressionReferencesName(key, name) {
+				return true
+			}
+		}
+		for _, val := range e.Values {
+			if dce.expressionReferencesName(val, name) {
+				return true
+			}
+		}
+		return false
+
+	case *PipeExpr:
+		if dce.expressionReferencesName(e.Left, name) {
+			return true
+		}
+		return dce.expressionReferencesName(e.Right, name)
+
+	case *LengthExpr:
+		return dce.expressionReferencesName(e.Operand, name)
+
+	case *ListExpr:
+		for _, elem := range e.Elements {
+			if dce.expressionReferencesName(elem, name) {
+				return true
+			}
+		}
+		return false
+
+	case *IndexExpr:
+		return dce.expressionReferencesName(e.List, name) || dce.expressionReferencesName(e.Index, name)
+
+	case *SliceExpr:
+		if dce.expressionReferencesName(e.List, name) {
+			return true
+		}
+		if e.Start != nil && dce.expressionReferencesName(e.Start, name) {
+			return true
+		}
+		if e.End != nil && dce.expressionReferencesName(e.End, name) {
+			return true
+		}
+		return false
+
+	case *UnaryExpr:
+		return dce.expressionReferencesName(e.Operand, name)
+
+	case *BlockExpr:
+		for _, stmt := range e.Statements {
+			if dce.statementReferencesName(stmt, name) {
+				return true
+			}
+		}
+		return false
+
+	case *RangeExpr:
+		if dce.expressionReferencesName(e.Start, name) {
+			return true
+		}
+		return dce.expressionReferencesName(e.End, name)
+
+	case *InExpr:
+		return dce.expressionReferencesName(e.Value, name) || dce.expressionReferencesName(e.Container, name)
+
+	case *CastExpr:
+		return dce.expressionReferencesName(e.Expr, name)
+
+	case *UnsafeExpr:
+		// Check all architecture-specific blocks
+		for _, stmt := range e.X86_64Block {
+			if dce.statementReferencesName(stmt, name) {
+				return true
+			}
+		}
+		for _, stmt := range e.ARM64Block {
+			if dce.statementReferencesName(stmt, name) {
+				return true
+			}
+		}
+		for _, stmt := range e.RISCV64Block {
+			if dce.statementReferencesName(stmt, name) {
+				return true
+			}
+		}
+		return false
+
+	case *ArenaExpr:
+		for _, stmt := range e.Body {
+			if dce.statementReferencesName(stmt, name) {
+				return true
+			}
+		}
+		return false
+
+	case *ParallelExpr:
+		if dce.expressionReferencesName(e.List, name) {
+			return true
+		}
+		return dce.expressionReferencesName(e.Operation, name)
+
+	case *FStringExpr:
+		for _, part := range e.Parts {
+			if dce.expressionReferencesName(part, name) {
+				return true
+			}
+		}
+		return false
+
+	case *DirectCallExpr:
+		if dce.expressionReferencesName(e.Callee, name) {
+			return true
+		}
+		for _, arg := range e.Args {
+			if dce.expressionReferencesName(arg, name) {
+				return true
+			}
+		}
+		return false
+
+	case *NamespacedIdentExpr:
+		return e.Namespace == name
+
+	case *PostfixExpr:
+		return dce.expressionReferencesName(e.Operand, name)
+
+	case *VectorExpr:
+		for _, comp := range e.Components {
+			if dce.expressionReferencesName(comp, name) {
+				return true
+			}
+		}
+		return false
+
+	case *LoopExpr:
+		for _, stmt := range e.Body {
+			if dce.statementReferencesName(stmt, name) {
+				return true
+			}
+		}
+		return false
+
+	case *MultiLambdaExpr:
+		for _, lambda := range e.Lambdas {
+			if dce.expressionReferencesName(lambda.Body, name) {
+				return true
+			}
+		}
+		return false
+
+	default:
+		return false
+	}
+}
+
+// statementReferencesName checks if a statement references a given variable name
+func (dce *DeadCodeElimination) statementReferencesName(stmt Statement, name string) bool {
+	switch s := stmt.(type) {
+	case *AssignStmt:
+		return dce.expressionReferencesName(s.Value, name)
+
+	case *ExpressionStmt:
+		return dce.expressionReferencesName(s.Expr, name)
+
+	case *LoopStmt:
+		if dce.expressionReferencesName(s.Iterable, name) {
+			return true
+		}
+		for _, bodyStmt := range s.Body {
+			if dce.statementReferencesName(bodyStmt, name) {
+				return true
+			}
+		}
+		return false
+
+	case *JumpStmt:
+		if s.Value != nil {
+			return dce.expressionReferencesName(s.Value, name)
+		}
+		return false
+
+	case *RegisterAssignStmt:
+		if expr, ok := s.Value.(Expression); ok {
+			return dce.expressionReferencesName(expr, name)
+		}
+		return false
+
+	default:
+		return false
 	}
 }
 

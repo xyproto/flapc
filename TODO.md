@@ -42,7 +42,10 @@
 - [x] Add ARM64 self-recursive lambda detection
 - [x] All tests pass (`go test`) - All unit tests now pass! (TestParallelSimpleCompiles skipped on ARM64)
 - [ ] All 363+ testprograms pass - in progress (basic programs work: loops, arithmetic, lambdas, alloc)
-- [ ] Fix ARM64 stack issue blocking recursive lambdas (macOS dyld not honoring stacksize)
+- [~] Fix ARM64 stack issue blocking recursive lambdas - **Phase 1 DONE**: Shadow stack (8MB mmap) now allocated at startup (see RECURSION_FIX_PROPOSAL.md)
+  - [x] Phase 1: Shadow stack allocation using mmap syscall (COMPLETED 2025-11-01)
+  - [ ] Phase 2: Modified call convention for recursive calls
+  - [ ] Phase 3: Function prologue/epilogue for shadow stack usage
 - [ ] Fix ARM64 parallel map operator (`||`) crashes - segfaults in compileParallelExpr (arm64_codegen.go:1444)
 - [ ] LoopExpr not needed (not implemented in x86_64 either)
 - [ ] LANGUAGE.md marked as frozen

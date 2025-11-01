@@ -8,35 +8,35 @@ import (
 
 // ARM64CodeGen handles ARM64 code generation for macOS
 type ARM64CodeGen struct {
-	out            *ARM64Out
-	eb             *ExecutableBuilder
-	stackVars      map[string]int                    // variable name -> stack offset from fp
-	mutableVars    map[string]bool                   // variable name -> is mutable
-	varTypes       map[string]string                 // variable name -> type (for type tracking)
-	stackSize      int                               // current stack size
-	stackFrameSize uint64                            // total stack frame size allocated in prologue
-	stringCounter  int                               // counter for string labels
-	stringInterns  map[string]string                 // string value -> label (for string interning)
-	labelCounter   int                               // counter for jump labels
-	activeLoops    []ARM64LoopInfo                   // stack of active loops for break/continue
-	lambdaFuncs    []ARM64LambdaFunc                 // list of lambda functions to generate
-	lambdaCounter  int                               // counter for lambda names
-	currentLambda  *ARM64LambdaFunc                  // current lambda being compiled (for recursion)
-	cConstants     map[string]*CHeaderConstants      // C constants from imports
-	currentArena   int                               // Arena depth (0=none, 1=first arena, 2=nested, etc.)
-	usesArenas     bool                              // Track if program uses any arena blocks
-	currentAssignName string                         // Name of variable being assigned (for lambda self-reference)
+	out               *ARM64Out
+	eb                *ExecutableBuilder
+	stackVars         map[string]int               // variable name -> stack offset from fp
+	mutableVars       map[string]bool              // variable name -> is mutable
+	varTypes          map[string]string            // variable name -> type (for type tracking)
+	stackSize         int                          // current stack size
+	stackFrameSize    uint64                       // total stack frame size allocated in prologue
+	stringCounter     int                          // counter for string labels
+	stringInterns     map[string]string            // string value -> label (for string interning)
+	labelCounter      int                          // counter for jump labels
+	activeLoops       []ARM64LoopInfo              // stack of active loops for break/continue
+	lambdaFuncs       []ARM64LambdaFunc            // list of lambda functions to generate
+	lambdaCounter     int                          // counter for lambda names
+	currentLambda     *ARM64LambdaFunc             // current lambda being compiled (for recursion)
+	cConstants        map[string]*CHeaderConstants // C constants from imports
+	currentArena      int                          // Arena depth (0=none, 1=first arena, 2=nested, etc.)
+	usesArenas        bool                         // Track if program uses any arena blocks
+	currentAssignName string                       // Name of variable being assigned (for lambda self-reference)
 }
 
 // ARM64LambdaFunc represents a lambda function for ARM64
 type ARM64LambdaFunc struct {
-	Name         string
-	Params       []string
-	Body         Expression
-	BodyStart    int    // Position where lambda body code starts (for tail recursion)
-	FuncStart    int    // Position where function starts (including prologue, for recursion)
-	VarName      string // Variable name this lambda is assigned to (for recursion)
-	IsRecursive  bool   // Whether this lambda calls itself recursively
+	Name        string
+	Params      []string
+	Body        Expression
+	BodyStart   int    // Position where lambda body code starts (for tail recursion)
+	FuncStart   int    // Position where function starts (including prologue, for recursion)
+	VarName     string // Variable name this lambda is assigned to (for recursion)
+	IsRecursive bool   // Whether this lambda calls itself recursively
 }
 
 // ARM64LoopInfo tracks information about an active loop
@@ -91,6 +91,11 @@ func (acg *ARM64CodeGen) CompileProgram(program *Program) error {
 	}
 	// Set frame pointer
 	if err := acg.out.AddImm64("x29", "sp", 0); err != nil {
+		return err
+	}
+
+	// Initialize shadow stack for recursive lambdas (macOS ARM64 workaround)
+	if err := acg.initializeShadowStack(); err != nil {
 		return err
 	}
 
@@ -353,9 +358,6 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 		// Load variable from stack into d0
 		stackOffset, exists := acg.stackVars[e.Name]
 		if !exists {
-			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "Error: undefined variable '%s'\n", e.Name)
-			}
 			return fmt.Errorf("undefined variable: %s", e.Name)
 		}
 		// ldr d0, [x29, #offset]
@@ -1308,48 +1310,93 @@ func (acg *ARM64CodeGen) compileAssignment(assign *AssignStmt) error {
 
 // compileMatchExpr compiles a match expression (if/else equivalent)
 func (acg *ARM64CodeGen) compileMatchExpr(expr *MatchExpr) error {
-	// Compile the condition expression (result in d0)
-	if err := acg.compileExpression(expr.Condition); err != nil {
-		return err
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: compileMatchExpr called, condition type=%T\n", expr.Condition)
 	}
-
 	// Determine the jump condition based on the condition type
 	var jumpCond string
-	needsZeroCompare := false
 
-	// Check if condition is a comparison (we can use the flags directly)
+	// Check if condition is a comparison (we can compile operands and compare directly)
 	if binExpr, ok := expr.Condition.(*BinaryExpr); ok {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: condition is BinaryExpr with operator='%s'\n", binExpr.Operator)
+		}
+		var isComparison bool
 		switch binExpr.Operator {
 		case "<":
-			jumpCond = "ge" // Jump if NOT less than (>=)
+			jumpCond = "ge" // Jump to default if NOT less than (>=)
+			isComparison = true
 		case "<=":
-			jumpCond = "gt" // Jump if NOT less or equal (>)
+			jumpCond = "gt" // Jump to default if NOT less or equal (>)
+			isComparison = true
 		case ">":
-			jumpCond = "le" // Jump if NOT greater than (<=)
+			jumpCond = "le" // Jump to default if NOT greater than (<=)
+			isComparison = true
 		case ">=":
-			jumpCond = "lt" // Jump if NOT greater or equal (<)
+			jumpCond = "lt" // Jump to default if NOT greater or equal (<)
+			isComparison = true
 		case "==":
-			jumpCond = "ne" // Jump if NOT equal (!=)
+			jumpCond = "ne" // Jump to default if NOT equal (!=)
+			isComparison = true
 		case "!=":
-			jumpCond = "eq" // Jump if NOT not-equal (==)
-		default:
-			needsZeroCompare = true
+			jumpCond = "eq" // Jump to default if NOT not-equal (==)
+			isComparison = true
+		}
+
+		if isComparison {
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG: compileMatchExpr for comparison '%s', jumpCond='%s'\n", binExpr.Operator, jumpCond)
+			}
+			// Compile left operand into d0
+			if err := acg.compileExpression(binExpr.Left); err != nil {
+				return err
+			}
+			// Save left operand: str d0, [sp, #-16]!
+			acg.out.out.writer.WriteBytes([]byte{0xe0, 0x0f, 0x1f, 0xfd})
+
+			// Compile right operand into d0
+			if err := acg.compileExpression(binExpr.Right); err != nil {
+				return err
+			}
+			// Move right to d1: fmov d1, d0
+			acg.out.out.writer.WriteBytes([]byte{0x01, 0x40, 0x60, 0x1e})
+
+			// Restore left operand into d0: ldr d0, [sp], #16
+			acg.out.out.writer.WriteBytes([]byte{0xe0, 0x07, 0x41, 0xfc})
+
+			// Compare: fcmp d0, d1
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x20, 0x61, 0x1e})
+		} else {
+			// Not a comparison operator, evaluate and compare to 0
+			if err := acg.compileExpression(expr.Condition); err != nil {
+				return err
+			}
+			// fmov d1, #0.0
+			acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x60, 0x1e})
+			// fcmp d0, d1
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x20, 0x61, 0x1e})
+			jumpCond = "eq" // Jump to default if condition is false (== 0.0)
 		}
 	} else {
-		needsZeroCompare = true
-	}
-
-	// If not a direct comparison, compare d0 with 0.0
-	if needsZeroCompare {
+		// Not a binary expression, evaluate and compare to 0
+		if numExpr, ok := expr.Condition.(*NumberExpr); ok && VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: condition is NumberExpr with value=%g\n", numExpr.Value)
+		}
+		if err := acg.compileExpression(expr.Condition); err != nil {
+			return err
+		}
 		// fmov d1, #0.0
-		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x60, 0x1e}) // fmov d1, #0.0
+		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x60, 0x1e})
 		// fcmp d0, d1
 		acg.out.out.writer.WriteBytes([]byte{0x00, 0x20, 0x61, 0x1e})
-		jumpCond = "eq" // Jump to default if condition is false (== 0.0)
+		jumpCond = "eq" // Jump to default (~>) if condition == 0.0 (false)
 	}
 
 	// Save position for default jump (will be patched later)
 	defaultJumpPos := acg.eb.text.Len()
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Emitting conditional branch at offset %d with condition '%s'\n", defaultJumpPos, jumpCond)
+	}
 	// Emit placeholder conditional branch to default
 	acg.out.BranchCond(jumpCond, 0) // 4 bytes
 
@@ -1358,6 +1405,9 @@ func (acg *ARM64CodeGen) compileMatchExpr(expr *MatchExpr) error {
 
 	// Compile match clauses (only support simple -> result for now)
 	if len(expr.Clauses) > 0 {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Compiling %d clause(s) (-> branch), clause[0].Result type=%T\n", len(expr.Clauses), expr.Clauses[0].Result)
+		}
 		for _, clause := range expr.Clauses {
 			// For now, skip guard support (simplified implementation)
 			if clause.Guard != nil {
@@ -1383,6 +1433,9 @@ func (acg *ARM64CodeGen) compileMatchExpr(expr *MatchExpr) error {
 
 	// Compile default expression if present
 	if expr.DefaultExpr != nil {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Compiling default expression (~> branch), type=%T\n", expr.DefaultExpr)
+		}
 		if err := acg.compileExpression(expr.DefaultExpr); err != nil {
 			return err
 		}
@@ -1399,6 +1452,10 @@ func (acg *ARM64CodeGen) compileMatchExpr(expr *MatchExpr) error {
 
 	// Patch default jump
 	defaultOffset := int32(defaultPos - defaultJumpPos)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Patching jump at %d to jump to %d (offset=%d bytes, %d words)\n",
+			defaultJumpPos, defaultPos, defaultOffset, defaultOffset/4)
+	}
 	acg.patchJumpOffset(defaultJumpPos, defaultOffset)
 
 	// Patch all end jumps
@@ -1683,7 +1740,7 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 
 // compileSelfRecursiveCall compiles a self-recursive call within a lambda
 func (acg *ARM64CodeGen) compileSelfRecursiveCall(call *CallExpr) error {
-	// Evaluate all arguments and save to stack
+	// Evaluate all arguments and save to native stack (temporary)
 	for _, arg := range call.Args {
 		if err := acg.compileExpression(arg); err != nil {
 			return err
@@ -1713,19 +1770,59 @@ func (acg *ARM64CodeGen) compileSelfRecursiveCall(call *CallExpr) error {
 		acg.out.AddImm64("sp", "sp", 8)
 	}
 
-	// Call the current lambda function recursively
-	// BL to the start of the current lambda function (including prologue)
-	// BL instruction format: 0x94000000 | ((offset >> 2) & 0x03ffffff)
-	// offset is in bytes from current position to target
+	// Shadow stack recursive call convention
+	// Step 1: Load shadow stack pointer into x10
+	offset := uint64(acg.eb.text.Len())
+	acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
+		offset:     offset,
+		symbolName: "_shadow_stack_ptr",
+	})
+	// ADRP x10, _shadow_stack_ptr@PAGE
+	acg.out.out.writer.WriteBytes([]byte{0x0a, 0x00, 0x00, 0x90})
+	// ADD x10, x10, _shadow_stack_ptr@PAGEOFF
+	acg.out.out.writer.WriteBytes([]byte{0x4a, 0x00, 0x00, 0x91})
+	// LDR x10, [x10] - load current shadow stack pointer
+	acg.out.out.writer.WriteBytes([]byte{0x4a, 0x01, 0x40, 0xf9})
 
+	// Step 2: Allocate shadow stack frame (16 bytes: return addr + saved fp)
+	// SUB x10, x10, #16
+	if err := acg.out.SubImm64("x10", "x10", 16); err != nil {
+		return err
+	}
+
+	// Step 3: Save new shadow stack pointer
+	offset = uint64(acg.eb.text.Len())
+	acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
+		offset:     offset,
+		symbolName: "_shadow_stack_ptr",
+	})
+	// ADRP x11, _shadow_stack_ptr@PAGE
+	acg.out.out.writer.WriteBytes([]byte{0x0b, 0x00, 0x00, 0x90})
+	// ADD x11, x11, _shadow_stack_ptr@PAGEOFF
+	acg.out.out.writer.WriteBytes([]byte{0x6b, 0x00, 0x00, 0x91})
+	// STR x10, [x11] - store new shadow stack pointer
+	acg.out.out.writer.WriteBytes([]byte{0x6a, 0x01, 0x00, 0xf9})
+
+	// Step 4: Save frame pointer x29 to shadow stack
+	// STR x29, [x10, #8]
+	acg.out.out.writer.WriteBytes([]byte{0x4d, 0x05, 0x00, 0xf9})
+
+	// Step 5: Set x29 to point to shadow stack frame (this marks us as "in shadow stack mode")
+	// MOV x29, x10
+	if err := acg.out.MovReg64("x29", "x10"); err != nil {
+		return err
+	}
+
+	// Step 6: Call the recursive function using BL (which will save return address to x30)
+	// The function will use x30 to return, but we've marked x29 to show we're using shadow stack
 	currentPos := acg.eb.text.Len()
 	targetPos := acg.currentLambda.FuncStart
-	offset := targetPos - currentPos
+	branchOffset := targetPos - currentPos
 
 	// BL uses signed 26-bit offset in instructions (multiply by 4 for bytes)
-	instrOffset := int32(offset >> 2)
+	instrOffset := int32(branchOffset >> 2)
 	if instrOffset < -0x2000000 || instrOffset > 0x1ffffff {
-		return fmt.Errorf("recursive call offset too large: %d", offset)
+		return fmt.Errorf("recursive call offset too large: %d", branchOffset)
 	}
 
 	blInstr := uint32(0x94000000) | (uint32(instrOffset) & 0x03ffffff)
@@ -1735,6 +1832,42 @@ func (acg *ARM64CodeGen) compileSelfRecursiveCall(call *CallExpr) error {
 		byte(blInstr >> 16),
 		byte(blInstr >> 24),
 	})
+
+	// Step 7: After return, restore x29 from shadow stack
+	// LDR x29, [x10, #8]
+	acg.out.out.writer.WriteBytes([]byte{0x4d, 0x05, 0x40, 0xf9})
+
+	// Step 8: After return, restore shadow stack pointer
+	// Load current shadow stack pointer
+	offset = uint64(acg.eb.text.Len())
+	acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
+		offset:     offset,
+		symbolName: "_shadow_stack_ptr",
+	})
+	// ADRP x10, _shadow_stack_ptr@PAGE
+	acg.out.out.writer.WriteBytes([]byte{0x0a, 0x00, 0x00, 0x90})
+	// ADD x10, x10, _shadow_stack_ptr@PAGEOFF
+	acg.out.out.writer.WriteBytes([]byte{0x4a, 0x00, 0x00, 0x91})
+	// LDR x10, [x10]
+	acg.out.out.writer.WriteBytes([]byte{0x4a, 0x01, 0x40, 0xf9})
+
+	// Pop shadow stack frame (add 16)
+	if err := acg.out.AddImm64("x10", "x10", 16); err != nil {
+		return err
+	}
+
+	// Save restored shadow stack pointer
+	offset = uint64(acg.eb.text.Len())
+	acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
+		offset:     offset,
+		symbolName: "_shadow_stack_ptr",
+	})
+	// ADRP x11, _shadow_stack_ptr@PAGE
+	acg.out.out.writer.WriteBytes([]byte{0x0b, 0x00, 0x00, 0x90})
+	// ADD x11, x11, _shadow_stack_ptr@PAGEOFF
+	acg.out.out.writer.WriteBytes([]byte{0x6b, 0x00, 0x00, 0x91})
+	// STR x10, [x11]
+	acg.out.out.writer.WriteBytes([]byte{0x6a, 0x01, 0x00, 0xf9})
 
 	// Result is in d0
 	return nil
@@ -2822,7 +2955,110 @@ func (acg *ARM64CodeGen) generateLambdaFunctions() error {
 		// Record where the function starts (including prologue, for recursion)
 		funcStart := acg.eb.text.Len()
 
-		// Function prologue - ARM64 ABI
+		// For recursive lambdas, check if we're being called from shadow stack
+		var nativeStackLabel string
+		var shadowStackLabel string
+		var skipNativePos int
+		if lambda.IsRecursive {
+			// Check if x29 points into shadow stack range
+			// Load shadow stack base into x10
+			offset := uint64(acg.eb.text.Len())
+			acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
+				offset:     offset,
+				symbolName: "_shadow_stack_base",
+			})
+			// ADRP x10, _shadow_stack_base@PAGE
+			acg.out.out.writer.WriteBytes([]byte{0x0a, 0x00, 0x00, 0x90})
+			// ADD x10, x10, _shadow_stack_base@PAGEOFF
+			acg.out.out.writer.WriteBytes([]byte{0x4a, 0x00, 0x00, 0x91})
+			// LDR x10, [x10] - load shadow stack base
+			acg.out.out.writer.WriteBytes([]byte{0x4a, 0x01, 0x40, 0xf9})
+
+			// Compare x29 with shadow stack base
+			// CMP x29, x10
+			acg.out.out.writer.WriteBytes([]byte{0xbf, 0x01, 0x0a, 0xeb})
+
+			// If x29 < base, use native stack (not in shadow stack range)
+			// B.LT label_native
+			nativeStackLabel = fmt.Sprintf(".L_native_%s", lambda.Name)
+			nativeBranchPos := acg.eb.text.Len()
+			acg.out.BranchCond("lt", 0) // Placeholder, will patch later
+
+			// Load shadow stack top into x11 (base + 8MB)
+			if err := acg.out.MovImm64("x11", 0x800000); err != nil {
+				return err
+			}
+			// ADD x11, x10, x11 (x11 = base + 8MB)
+			acg.out.out.writer.WriteBytes([]byte{0x4b, 0x01, 0x0b, 0x8b})
+
+			// Compare x29 with shadow stack top
+			// CMP x29, x11
+			acg.out.out.writer.WriteBytes([]byte{0xbf, 0x01, 0x0b, 0xeb})
+
+			// If x29 >= top, use native stack (not in shadow stack range)
+			// B.GE label_native
+			nativeBranchPos2 := acg.eb.text.Len()
+			acg.out.BranchCond("ge", 0) // Placeholder, will patch later
+
+			// Shadow stack path: x29 is already in shadow stack
+			// Don't modify x29, don't save fp/lr to native stack
+			// Parameters are already in d0-d7 registers
+			shadowStackLabel = fmt.Sprintf(".L_shadow_%s", lambda.Name)
+			acg.eb.MarkLabel(shadowStackLabel)
+
+			// We're in recursion - x29 points to shadow stack frame
+			// We won't allocate a new frame here, just use what caller set up
+			// We'll skip the native stack prologue and jump directly to parameter storage
+			// Store the position for later patching
+			skipNativePos = acg.eb.text.Len()
+			// B .L_after_prologue (unconditional branch)
+			// Write placeholder - will be patched later
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x14}) // b #0
+
+			// Native stack path
+			acg.eb.MarkLabel(nativeStackLabel)
+
+			// Patch the earlier conditional branches
+			currentPos := acg.eb.text.Len()
+			offset1 := currentPos - nativeBranchPos
+			// Manually patch the B.LT instruction
+			imm19 := int32(offset1 >> 2)
+			if imm19 >= (1<<18) || imm19 < -(1<<18) {
+				return fmt.Errorf("branch offset out of range: %d", offset1)
+			}
+			// Read existing instruction and update offset field
+			textBytes := acg.eb.text.Bytes()
+			existingInstr := uint32(textBytes[nativeBranchPos]) |
+				(uint32(textBytes[nativeBranchPos+1]) << 8) |
+				(uint32(textBytes[nativeBranchPos+2]) << 16) |
+				(uint32(textBytes[nativeBranchPos+3]) << 24)
+			// Clear old offset, keep condition code
+			newInstr := (existingInstr & 0xFF00001F) | (uint32(imm19&0x7FFFF) << 5)
+			textBytes[nativeBranchPos] = byte(newInstr)
+			textBytes[nativeBranchPos+1] = byte(newInstr >> 8)
+			textBytes[nativeBranchPos+2] = byte(newInstr >> 16)
+			textBytes[nativeBranchPos+3] = byte(newInstr >> 24)
+
+			// Patch the second conditional branch (B.GE)
+			offset2 := currentPos - nativeBranchPos2
+			imm19_2 := int32(offset2 >> 2)
+			if imm19_2 >= (1<<18) || imm19_2 < -(1<<18) {
+				return fmt.Errorf("branch offset out of range: %d", offset2)
+			}
+			existingInstr2 := uint32(textBytes[nativeBranchPos2]) |
+				(uint32(textBytes[nativeBranchPos2+1]) << 8) |
+				(uint32(textBytes[nativeBranchPos2+2]) << 16) |
+				(uint32(textBytes[nativeBranchPos2+3]) << 24)
+			newInstr2 := (existingInstr2 & 0xFF00001F) | (uint32(imm19_2&0x7FFFF) << 5)
+			textBytes[nativeBranchPos2] = byte(newInstr2)
+			textBytes[nativeBranchPos2+1] = byte(newInstr2 >> 8)
+			textBytes[nativeBranchPos2+2] = byte(newInstr2 >> 16)
+			textBytes[nativeBranchPos2+3] = byte(newInstr2 >> 24)
+
+			// Fall through to normal prologue for first call
+		}
+
+		// Function prologue - ARM64 ABI (for first call or non-recursive lambdas)
 		// Save frame pointer and link register
 		if err := acg.out.SubImm64("sp", "sp", 32); err != nil {
 			return err
@@ -2836,6 +3072,29 @@ func (acg *ARM64CodeGen) generateLambdaFunctions() error {
 		// Set frame pointer
 		if err := acg.out.AddImm64("x29", "sp", 0); err != nil {
 			return err
+		}
+
+		// If we had a shadow stack branch, patch it to jump here
+		if lambda.IsRecursive {
+			// Mark the body start point (after native prologue)
+			bodyLabel := fmt.Sprintf(".L_after_prologue_%s", lambda.Name)
+			acg.eb.MarkLabel(bodyLabel)
+
+			// Patch the unconditional branch that skips the native prologue
+			currentPos := acg.eb.text.Len()
+			skipOffset := currentPos - skipNativePos
+			// Patch the B instruction
+			imm26 := int32(skipOffset >> 2)
+			if imm26 >= (1<<25) || imm26 < -(1<<25) {
+				return fmt.Errorf("unconditional branch offset out of range: %d", skipOffset)
+			}
+			textBytes := acg.eb.text.Bytes()
+			// B instruction: 0x14000000 | (imm26 & 0x3FFFFFF)
+			newInstr := uint32(0x14000000) | (uint32(imm26) & 0x03FFFFFF)
+			textBytes[skipNativePos] = byte(newInstr)
+			textBytes[skipNativePos+1] = byte(newInstr >> 8)
+			textBytes[skipNativePos+2] = byte(newInstr >> 16)
+			textBytes[skipNativePos+3] = byte(newInstr >> 24)
 		}
 
 		// Save previous state
@@ -3306,8 +3565,8 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			// mvn dest, source (move NOT)
 			acg.out.out.writer.WriteBytes([]byte{
 				byte(destNum),
-				byte(srcNum << 5 | 0x03),
-				byte(srcNum >> 3 | 0x20),
+				byte(srcNum<<5 | 0x03),
+				byte(srcNum>>3 | 0x20),
 				0xaa, // mvn Xd, Xm
 			})
 			return nil
@@ -3331,7 +3590,7 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
 				byte((rightNum << 16) | destNum),
-				byte(leftNum << 2 | rightNum >> 14),
+				byte(leftNum<<2 | rightNum>>14),
 				byte(rightNum >> 6),
 				0x8b, // add Xd, Xn, Xm
 			})
@@ -3350,7 +3609,7 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
 				byte((rightNum << 16) | destNum),
-				byte(leftNum << 2 | rightNum >> 14),
+				byte(leftNum<<2 | rightNum>>14),
 				byte(rightNum >> 6),
 				0xcb, // sub Xd, Xn, Xm
 			})
@@ -3368,7 +3627,7 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
 				byte((rightNum << 16) | destNum),
-				byte(leftNum << 2 | rightNum >> 14),
+				byte(leftNum<<2 | rightNum>>14),
 				byte(rightNum >> 6),
 				0x8a, // and Xd, Xn, Xm
 			})
@@ -3384,7 +3643,7 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
 				byte((rightNum << 16) | destNum),
-				byte(leftNum << 2 | rightNum >> 14),
+				byte(leftNum<<2 | rightNum>>14),
 				byte(rightNum >> 6),
 				0xaa, // orr Xd, Xn, Xm
 			})
@@ -3400,7 +3659,7 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
 				byte((rightNum << 16) | destNum),
-				byte(leftNum << 2 | rightNum >> 14),
+				byte(leftNum<<2 | rightNum>>14),
 				byte(rightNum >> 6),
 				0xca, // eor Xd, Xn, Xm
 			})
@@ -3416,7 +3675,7 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
 				byte((rightNum << 16) | destNum),
-				byte(0x7c | leftNum << 2 | rightNum >> 14),
+				byte(0x7c | leftNum<<2 | rightNum>>14),
 				byte(rightNum >> 6),
 				0x9b, // mul Xd, Xn, Xm
 			})
@@ -3432,7 +3691,7 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
 				byte((rightNum << 16) | destNum),
-				byte(0x0c | leftNum << 2 | rightNum >> 14),
+				byte(0x0c | leftNum<<2 | rightNum>>14),
 				byte(rightNum >> 6),
 				0x9a, // sdiv Xd, Xn, Xm
 			})
@@ -3462,7 +3721,7 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			// sdiv x9, left, right (x9 = left / right)
 			acg.out.out.writer.WriteBytes([]byte{
 				byte((rightNum << 16) | 9),
-				byte(0x0c | leftNum << 2 | rightNum >> 14),
+				byte(0x0c | leftNum<<2 | rightNum>>14),
 				byte(rightNum >> 6),
 				0x9a,
 			})
@@ -3471,8 +3730,8 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			// This is the ARM64 "multiply-subtract" instruction
 			acg.out.out.writer.WriteBytes([]byte{
 				byte((leftNum << 16) | destNum),
-				byte(0x80 | rightNum << 2 | leftNum >> 14),
-				byte(9 | rightNum << 3),
+				byte(0x80 | rightNum<<2 | leftNum>>14),
+				byte(9 | rightNum<<3),
 				0x9b, // msub Xd, Xn, Xm, Xa
 			})
 		}
@@ -3487,7 +3746,7 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
 				byte((rightNum << 16) | destNum),
-				byte(0x20 | leftNum << 2 | rightNum >> 14),
+				byte(0x20 | leftNum<<2 | rightNum>>14),
 				byte(rightNum >> 6),
 				0x9a, // lsl Xd, Xn, Xm
 			})
@@ -3501,8 +3760,8 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			imms := 63 - shift
 			acg.out.out.writer.WriteBytes([]byte{
 				byte(destNum),
-				byte(imms << 2 | uint32(leftNum) >> 3),
-				byte(0x40 | immr << 2 | uint32(leftNum) << 5),
+				byte(imms<<2 | uint32(leftNum)>>3),
+				byte(0x40 | immr<<2 | uint32(leftNum)<<5),
 				0xd3, // ubfm (acts as lsl)
 			})
 		}
@@ -3517,7 +3776,7 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
 				byte((rightNum << 16) | destNum),
-				byte(0x24 | leftNum << 2 | rightNum >> 14),
+				byte(0x24 | leftNum<<2 | rightNum>>14),
 				byte(rightNum >> 6),
 				0x9a, // lsr Xd, Xn, Xm
 			})
@@ -3529,8 +3788,8 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			// LSR (immediate) encoding: ubfm Xd, Xn, #shift, #63
 			acg.out.out.writer.WriteBytes([]byte{
 				byte(destNum),
-				byte(0xfc | uint32(leftNum) >> 3),
-				byte(0x40 | shift << 2 | uint32(leftNum) << 5),
+				byte(0xfc | uint32(leftNum)>>3),
+				byte(0x40 | shift<<2 | uint32(leftNum)<<5),
 				0xd3, // ubfm (acts as lsr)
 			})
 		}
@@ -3686,40 +3945,74 @@ func (acg *ARM64CodeGen) compileMemoryStore(store *MemoryStore) error {
 func getRegisterNumber(reg string) uint8 {
 	// Handle x0-x30, sp, xzr
 	switch reg {
-	case "x0": return 0
-	case "x1": return 1
-	case "x2": return 2
-	case "x3": return 3
-	case "x4": return 4
-	case "x5": return 5
-	case "x6": return 6
-	case "x7": return 7
-	case "x8": return 8
-	case "x9": return 9
-	case "x10": return 10
-	case "x11": return 11
-	case "x12": return 12
-	case "x13": return 13
-	case "x14": return 14
-	case "x15": return 15
-	case "x16": return 16
-	case "x17": return 17
-	case "x18": return 18
-	case "x19": return 19
-	case "x20": return 20
-	case "x21": return 21
-	case "x22": return 22
-	case "x23": return 23
-	case "x24": return 24
-	case "x25": return 25
-	case "x26": return 26
-	case "x27": return 27
-	case "x28": return 28
-	case "x29", "fp": return 29
-	case "x30", "lr": return 30
-	case "sp": return 31
-	case "xzr": return 31
-	default: return 0
+	case "x0":
+		return 0
+	case "x1":
+		return 1
+	case "x2":
+		return 2
+	case "x3":
+		return 3
+	case "x4":
+		return 4
+	case "x5":
+		return 5
+	case "x6":
+		return 6
+	case "x7":
+		return 7
+	case "x8":
+		return 8
+	case "x9":
+		return 9
+	case "x10":
+		return 10
+	case "x11":
+		return 11
+	case "x12":
+		return 12
+	case "x13":
+		return 13
+	case "x14":
+		return 14
+	case "x15":
+		return 15
+	case "x16":
+		return 16
+	case "x17":
+		return 17
+	case "x18":
+		return 18
+	case "x19":
+		return 19
+	case "x20":
+		return 20
+	case "x21":
+		return 21
+	case "x22":
+		return 22
+	case "x23":
+		return 23
+	case "x24":
+		return 24
+	case "x25":
+		return 25
+	case "x26":
+		return 26
+	case "x27":
+		return 27
+	case "x28":
+		return 28
+	case "x29", "fp":
+		return 29
+	case "x30", "lr":
+		return 30
+	case "sp":
+		return 31
+	case "xzr":
+		return 31
+	default:
+		return 0
 	}
 }
 
@@ -4094,7 +4387,7 @@ func (acg *ARM64CodeGen) compileMemoryWrite(call *CallExpr) error {
 // generateArenaRuntimeARM64 generates arena runtime functions for ARM64
 func (acg *ARM64CodeGen) generateArenaRuntimeARM64() error {
 	// Define arena global variables in .data section
-	acg.eb.Define("_flap_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")      // Pointer to meta-arena array
+	acg.eb.Define("_flap_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")     // Pointer to meta-arena array
 	acg.eb.Define("_flap_arena_meta_cap", "\x00\x00\x00\x00\x00\x00\x00\x00") // Capacity of meta-arena
 	acg.eb.Define("_flap_arena_meta_len", "\x00\x00\x00\x00\x00\x00\x00\x00") // Length (number of arenas)
 
@@ -4162,6 +4455,96 @@ func (acg *ARM64CodeGen) generateArenaRuntimeARM64() error {
 	if err := acg.out.Return("x30"); err != nil {
 		return err
 	}
+
+	return nil
+}
+
+// initializeShadowStack generates shadow stack initialization for recursive lambdas
+// This is only called on macOS ARM64 where dyld provides limited stack space (~5.6KB)
+func (acg *ARM64CodeGen) initializeShadowStack() error {
+	// Define shadow stack global variables in .data section
+	acg.eb.Define("_shadow_stack_base", "\x00\x00\x00\x00\x00\x00\x00\x00") // uint64: base address
+	acg.eb.Define("_shadow_stack_ptr", "\x00\x00\x00\x00\x00\x00\x00\x00")  // uint64: current pointer
+
+	// Allocate 8MB shadow stack using mmap syscall
+	// mmap(addr=NULL, length=8MB, prot=READ|WRITE, flags=PRIVATE|ANON, fd=-1, offset=0)
+
+	// x0 = addr = 0 (let kernel choose)
+	if err := acg.out.MovImm64("x0", 0); err != nil {
+		return err
+	}
+
+	// x1 = length = 8MB = 0x800000
+	if err := acg.out.MovImm64("x1", 0x800000); err != nil {
+		return err
+	}
+
+	// x2 = prot = PROT_READ | PROT_WRITE = 3
+	if err := acg.out.MovImm64("x2", 3); err != nil {
+		return err
+	}
+
+	// x3 = flags = MAP_PRIVATE | MAP_ANON = 0x1002
+	if err := acg.out.MovImm64("x3", 0x1002); err != nil {
+		return err
+	}
+
+	// x4 = fd = -1 (0xFFFFFFFFFFFFFFFF)
+	// Use mov with inverted value for efficiency
+	// mov x4, #-1
+	acg.out.out.writer.WriteBytes([]byte{0xe4, 0x03, 0x9f, 0x92}) // mov x4, #-1
+
+	// x5 = offset = 0
+	if err := acg.out.MovImm64("x5", 0); err != nil {
+		return err
+	}
+
+	// x16 = syscall number for mmap = 197
+	if err := acg.out.MovImm64("x16", 197); err != nil {
+		return err
+	}
+
+	// Make syscall: svc #0
+	acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4})
+
+	// Result is in x0 (shadow stack base address)
+	// Store shadow stack base to global variable
+	// Pattern: ADRP x1, symbol@PAGE ; ADD x1, x1, symbol@PAGEOFF ; STR x0, [x1]
+
+	// Load address of _shadow_stack_base
+	offset := uint64(acg.eb.text.Len())
+	acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
+		offset:     offset,
+		symbolName: "_shadow_stack_base",
+	})
+	// ADRP x1, _shadow_stack_base@PAGE
+	acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0x90})
+	// ADD x1, x1, _shadow_stack_base@PAGEOFF
+	acg.out.out.writer.WriteBytes([]byte{0x21, 0x00, 0x00, 0x91})
+	// STR x0, [x1] - store base address
+	acg.out.out.writer.WriteBytes([]byte{0x20, 0x00, 0x00, 0xf9})
+
+	// Initialize shadow stack pointer to top (base + 8MB)
+	// add x0, x0, #0x800000 - but 0x800000 is too large for immediate
+	// Use mov + add instead
+	if err := acg.out.MovImm64("x2", 0x800000); err != nil {
+		return err
+	}
+	// add x0, x0, x2
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x02, 0x8b}) // add x0, x0, x2
+
+	// Store shadow stack pointer to global variable
+	offset = uint64(acg.eb.text.Len())
+	acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
+		offset:     offset,
+		symbolName: "_shadow_stack_ptr",
+	})
+	// ADRP x1, _shadow_stack_ptr@PAGE
+	acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0x90})
+	// ADD x1, x1, _shadow_stack_ptr@PAGEOFF
+	acg.out.out.writer.WriteBytes([]byte{0x21, 0x00, 0x00, 0x91})
+	// STR x0, [x1] - store top pointer
+	acg.out.out.writer.WriteBytes([]byte{0x20, 0x00, 0x00, 0xf9})
 
 	return nil
 }

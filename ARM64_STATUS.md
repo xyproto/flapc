@@ -4,6 +4,15 @@
 **Platform:** macOS ARM64 (Apple Silicon)
 **Compiler Status:** Functional with limitations
 
+## Recent Changes
+
+**2025-11-01**: Shadow Stack Implementation (Phase 1)
+- ✅ Implemented shadow stack allocation using mmap syscall
+- ✅ Added 8MB heap-allocated shadow stack for recursive lambda support
+- ✅ Created global variables `_shadow_stack_base` and `_shadow_stack_ptr`
+- ✅ All existing programs still work with shadow stack initialization
+- ⏳ Next: Implement modified call convention for recursive calls
+
 ## Test Results Summary
 
 ### Unit Tests: ✅ **ALL PASSING**
@@ -96,11 +105,15 @@ All unit tests pass on ARM64/macOS:
 
 ### ❌ Not Working
 
-1. **Recursive Lambdas**
+1. **Recursive Lambdas** (⚠️ IN PROGRESS)
    - **Issue:** macOS dyld provides only ~5.6KB stack despite 8MB LC_MAIN request
    - **Impact:** Stack overflow on entry to _main
-   - **Workaround:** None currently
-   - **Code:** Self-recursive lambda detection works, but crashes at runtime
+   - **Workaround:** Shadow stack implementation in progress (see RECURSION_FIX_PROPOSAL.md)
+   - **Status:**
+     - ✅ Phase 1 complete: Shadow stack allocation using mmap (8MB)
+     - ✅ Self-recursive lambda detection works
+     - ⏳ Phase 2 needed: Modified call convention for recursive calls
+     - ⏳ Phase 3 needed: Function prologue/epilogue for shadow stack usage
 
 2. **Parallel Map Operator (`||`)**
    - **Issue:** Segfault in compileParallelExpr (arm64_codegen.go:1444)

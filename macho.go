@@ -918,7 +918,7 @@ func (eb *ExecutableBuilder) WriteMachO() error {
 		entry := EntryPointCommand{
 			Cmd:       LC_MAIN,
 			CmdSize:   uint32(binary.Size(EntryPointCommand{})),
-			EntryOff:  textFileOffset, // Entry is at start of __text section (file offset)
+			EntryOff:  textFileOffset,  // Entry is at start of __text section (file offset)
 			StackSize: 8 * 1024 * 1024, // Request 8MB stack
 		}
 		binary.Write(&loadCmdsBuf, binary.LittleEndian, &entry)
