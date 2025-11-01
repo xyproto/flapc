@@ -1612,6 +1612,13 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 		return acg.compilePowFunction(call)
 	case "call":
 		return acg.compileFFICall(call)
+	case "string_concat":
+		// Internal string concatenation function
+		// Arguments should already be in x0 and x1
+		return acg.eb.GenerateCallInstruction("_flap_string_concat")
+	case "write_i8", "write_i16", "write_i32", "write_i64",
+		"write_u8", "write_u16", "write_u32", "write_u64", "write_f64":
+		return acg.compileMemoryWrite(call)
 	default:
 		// Check if it's a variable holding a function pointer
 		if _, exists := acg.stackVars[call.Function]; exists {
@@ -3830,6 +3837,103 @@ func (acg *ARM64CodeGen) compileFFICall(call *CallExpr) error {
 		// Convert to float64: scvtf d0, x0
 		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
 	}
+
+	return nil
+}
+
+// compileMemoryWrite compiles memory write helper functions (write_i32, write_f64, etc.)
+func (acg *ARM64CodeGen) compileMemoryWrite(call *CallExpr) error {
+	// write_TYPE(ptr, index, value)
+	if len(call.Args) != 3 {
+		return fmt.Errorf("%s() requires exactly 3 arguments (ptr, index, value)", call.Function)
+	}
+
+	// Determine type size
+	var typeSize int
+	switch call.Function {
+	case "write_i8", "write_u8":
+		typeSize = 1
+	case "write_i16", "write_u16":
+		typeSize = 2
+	case "write_i32", "write_u32":
+		typeSize = 4
+	case "write_i64", "write_u64", "write_f64":
+		typeSize = 8
+	}
+
+	// Compile pointer (arg 0) - result in d0
+	if err := acg.compileExpression(call.Args[0]); err != nil {
+		return err
+	}
+	// Convert pointer from float64 to int: fmov x9, d0
+	acg.out.out.writer.WriteBytes([]byte{0x09, 0x00, 0x67, 0x9e})
+
+	// Save pointer to stack
+	if err := acg.out.SubImm64("sp", "sp", 8); err != nil {
+		return err
+	}
+	// str x9, [sp]
+	acg.out.out.writer.WriteBytes([]byte{0xe9, 0x03, 0x00, 0xf9})
+
+	// Compile index (arg 1) - result in d0
+	if err := acg.compileExpression(call.Args[1]); err != nil {
+		return err
+	}
+	// Convert index to integer: fcvtzs x10, d0
+	acg.out.out.writer.WriteBytes([]byte{0x0a, 0x00, 0x78, 0x9e})
+
+	// Multiply index by type size: x10 = x10 * typeSize
+	if typeSize > 1 {
+		if err := acg.out.MovImm64("x11", uint64(typeSize)); err != nil {
+			return err
+		}
+		// mul x10, x10, x11
+		acg.out.out.writer.WriteBytes([]byte{0x4a, 0x7d, 0x0b, 0x9b})
+	}
+
+	// Load pointer from stack: ldr x9, [sp]
+	acg.out.out.writer.WriteBytes([]byte{0xe9, 0x03, 0x40, 0xf9})
+	// Add offset to pointer: add x9, x9, x10
+	acg.out.out.writer.WriteBytes([]byte{0x29, 0x01, 0x0a, 0x8b})
+
+	// Compile value (arg 2) - result in d0
+	if err := acg.compileExpression(call.Args[2]); err != nil {
+		return err
+	}
+
+	// Write value to memory
+	if call.Function == "write_f64" {
+		// Write float64 directly: str d0, [x9]
+		acg.out.out.writer.WriteBytes([]byte{0x20, 0x01, 0x00, 0xfd})
+	} else {
+		// Convert to integer: fcvtzs x10, d0
+		acg.out.out.writer.WriteBytes([]byte{0x0a, 0x00, 0x78, 0x9e})
+
+		// Store based on size
+		switch typeSize {
+		case 1:
+			// strb w10, [x9]
+			acg.out.out.writer.WriteBytes([]byte{0x2a, 0x01, 0x00, 0x39})
+		case 2:
+			// strh w10, [x9]
+			acg.out.out.writer.WriteBytes([]byte{0x2a, 0x01, 0x00, 0x79})
+		case 4:
+			// str w10, [x9]
+			acg.out.out.writer.WriteBytes([]byte{0x2a, 0x01, 0x00, 0xb9})
+		case 8:
+			// str x10, [x9]
+			acg.out.out.writer.WriteBytes([]byte{0x2a, 0x01, 0x00, 0xf9})
+		}
+	}
+
+	// Clean up stack
+	if err := acg.out.AddImm64("sp", "sp", 8); err != nil {
+		return err
+	}
+
+	// Return 0.0 (these functions don't return meaningful values)
+	// fmov d0, xzr
+	acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x67, 0x9e})
 
 	return nil
 }
