@@ -8,35 +8,35 @@ import (
 
 // ARM64CodeGen handles ARM64 code generation for macOS
 type ARM64CodeGen struct {
-	out            *ARM64Out
-	eb             *ExecutableBuilder
-	stackVars      map[string]int                    // variable name -> stack offset from fp
-	mutableVars    map[string]bool                   // variable name -> is mutable
-	varTypes       map[string]string                 // variable name -> type (for type tracking)
-	stackSize      int                               // current stack size
-	stackFrameSize uint64                            // total stack frame size allocated in prologue
-	stringCounter  int                               // counter for string labels
-	stringInterns  map[string]string                 // string value -> label (for string interning)
-	labelCounter   int                               // counter for jump labels
-	activeLoops    []ARM64LoopInfo                   // stack of active loops for break/continue
-	lambdaFuncs    []ARM64LambdaFunc                 // list of lambda functions to generate
-	lambdaCounter  int                               // counter for lambda names
-	currentLambda  *ARM64LambdaFunc                  // current lambda being compiled (for recursion)
-	cConstants     map[string]*CHeaderConstants      // C constants from imports
-	currentArena   int                               // Arena depth (0=none, 1=first arena, 2=nested, etc.)
-	usesArenas     bool                              // Track if program uses any arena blocks
-	currentAssignName string                         // Name of variable being assigned (for lambda self-reference)
+	out               *ARM64Out
+	eb                *ExecutableBuilder
+	stackVars         map[string]int               // variable name -> stack offset from fp
+	mutableVars       map[string]bool              // variable name -> is mutable
+	varTypes          map[string]string            // variable name -> type (for type tracking)
+	stackSize         int                          // current stack size
+	stackFrameSize    uint64                       // total stack frame size allocated in prologue
+	stringCounter     int                          // counter for string labels
+	stringInterns     map[string]string            // string value -> label (for string interning)
+	labelCounter      int                          // counter for jump labels
+	activeLoops       []ARM64LoopInfo              // stack of active loops for break/continue
+	lambdaFuncs       []ARM64LambdaFunc            // list of lambda functions to generate
+	lambdaCounter     int                          // counter for lambda names
+	currentLambda     *ARM64LambdaFunc             // current lambda being compiled (for recursion)
+	cConstants        map[string]*CHeaderConstants // C constants from imports
+	currentArena      int                          // Arena depth (0=none, 1=first arena, 2=nested, etc.)
+	usesArenas        bool                         // Track if program uses any arena blocks
+	currentAssignName string                       // Name of variable being assigned (for lambda self-reference)
 }
 
 // ARM64LambdaFunc represents a lambda function for ARM64
 type ARM64LambdaFunc struct {
-	Name         string
-	Params       []string
-	Body         Expression
-	BodyStart    int    // Position where lambda body code starts (for tail recursion)
-	FuncStart    int    // Position where function starts (including prologue, for recursion)
-	VarName      string // Variable name this lambda is assigned to (for recursion)
-	IsRecursive  bool   // Whether this lambda calls itself recursively
+	Name        string
+	Params      []string
+	Body        Expression
+	BodyStart   int    // Position where lambda body code starts (for tail recursion)
+	FuncStart   int    // Position where function starts (including prologue, for recursion)
+	VarName     string // Variable name this lambda is assigned to (for recursion)
+	IsRecursive bool   // Whether this lambda calls itself recursively
 }
 
 // ARM64LoopInfo tracks information about an active loop
@@ -3306,8 +3306,8 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			// mvn dest, source (move NOT)
 			acg.out.out.writer.WriteBytes([]byte{
 				byte(destNum),
-				byte(srcNum << 5 | 0x03),
-				byte(srcNum >> 3 | 0x20),
+				byte(srcNum<<5 | 0x03),
+				byte(srcNum>>3 | 0x20),
 				0xaa, // mvn Xd, Xm
 			})
 			return nil
@@ -3331,7 +3331,7 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
 				byte((rightNum << 16) | destNum),
-				byte(leftNum << 2 | rightNum >> 14),
+				byte(leftNum<<2 | rightNum>>14),
 				byte(rightNum >> 6),
 				0x8b, // add Xd, Xn, Xm
 			})
@@ -3350,7 +3350,7 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
 				byte((rightNum << 16) | destNum),
-				byte(leftNum << 2 | rightNum >> 14),
+				byte(leftNum<<2 | rightNum>>14),
 				byte(rightNum >> 6),
 				0xcb, // sub Xd, Xn, Xm
 			})
@@ -3368,7 +3368,7 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
 				byte((rightNum << 16) | destNum),
-				byte(leftNum << 2 | rightNum >> 14),
+				byte(leftNum<<2 | rightNum>>14),
 				byte(rightNum >> 6),
 				0x8a, // and Xd, Xn, Xm
 			})
@@ -3384,7 +3384,7 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
 				byte((rightNum << 16) | destNum),
-				byte(leftNum << 2 | rightNum >> 14),
+				byte(leftNum<<2 | rightNum>>14),
 				byte(rightNum >> 6),
 				0xaa, // orr Xd, Xn, Xm
 			})
@@ -3400,7 +3400,7 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
 				byte((rightNum << 16) | destNum),
-				byte(leftNum << 2 | rightNum >> 14),
+				byte(leftNum<<2 | rightNum>>14),
 				byte(rightNum >> 6),
 				0xca, // eor Xd, Xn, Xm
 			})
@@ -3416,7 +3416,7 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
 				byte((rightNum << 16) | destNum),
-				byte(0x7c | leftNum << 2 | rightNum >> 14),
+				byte(0x7c | leftNum<<2 | rightNum>>14),
 				byte(rightNum >> 6),
 				0x9b, // mul Xd, Xn, Xm
 			})
@@ -3432,7 +3432,7 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
 				byte((rightNum << 16) | destNum),
-				byte(0x0c | leftNum << 2 | rightNum >> 14),
+				byte(0x0c | leftNum<<2 | rightNum>>14),
 				byte(rightNum >> 6),
 				0x9a, // sdiv Xd, Xn, Xm
 			})
@@ -3462,7 +3462,7 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			// sdiv x9, left, right (x9 = left / right)
 			acg.out.out.writer.WriteBytes([]byte{
 				byte((rightNum << 16) | 9),
-				byte(0x0c | leftNum << 2 | rightNum >> 14),
+				byte(0x0c | leftNum<<2 | rightNum>>14),
 				byte(rightNum >> 6),
 				0x9a,
 			})
@@ -3471,8 +3471,8 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			// This is the ARM64 "multiply-subtract" instruction
 			acg.out.out.writer.WriteBytes([]byte{
 				byte((leftNum << 16) | destNum),
-				byte(0x80 | rightNum << 2 | leftNum >> 14),
-				byte(9 | rightNum << 3),
+				byte(0x80 | rightNum<<2 | leftNum>>14),
+				byte(9 | rightNum<<3),
 				0x9b, // msub Xd, Xn, Xm, Xa
 			})
 		}
@@ -3487,7 +3487,7 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
 				byte((rightNum << 16) | destNum),
-				byte(0x20 | leftNum << 2 | rightNum >> 14),
+				byte(0x20 | leftNum<<2 | rightNum>>14),
 				byte(rightNum >> 6),
 				0x9a, // lsl Xd, Xn, Xm
 			})
@@ -3501,8 +3501,8 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			imms := 63 - shift
 			acg.out.out.writer.WriteBytes([]byte{
 				byte(destNum),
-				byte(imms << 2 | uint32(leftNum) >> 3),
-				byte(0x40 | immr << 2 | uint32(leftNum) << 5),
+				byte(imms<<2 | uint32(leftNum)>>3),
+				byte(0x40 | immr<<2 | uint32(leftNum)<<5),
 				0xd3, // ubfm (acts as lsl)
 			})
 		}
@@ -3517,7 +3517,7 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
 				byte((rightNum << 16) | destNum),
-				byte(0x24 | leftNum << 2 | rightNum >> 14),
+				byte(0x24 | leftNum<<2 | rightNum>>14),
 				byte(rightNum >> 6),
 				0x9a, // lsr Xd, Xn, Xm
 			})
@@ -3529,8 +3529,8 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			// LSR (immediate) encoding: ubfm Xd, Xn, #shift, #63
 			acg.out.out.writer.WriteBytes([]byte{
 				byte(destNum),
-				byte(0xfc | uint32(leftNum) >> 3),
-				byte(0x40 | shift << 2 | uint32(leftNum) << 5),
+				byte(0xfc | uint32(leftNum)>>3),
+				byte(0x40 | shift<<2 | uint32(leftNum)<<5),
 				0xd3, // ubfm (acts as lsr)
 			})
 		}
@@ -3686,40 +3686,74 @@ func (acg *ARM64CodeGen) compileMemoryStore(store *MemoryStore) error {
 func getRegisterNumber(reg string) uint8 {
 	// Handle x0-x30, sp, xzr
 	switch reg {
-	case "x0": return 0
-	case "x1": return 1
-	case "x2": return 2
-	case "x3": return 3
-	case "x4": return 4
-	case "x5": return 5
-	case "x6": return 6
-	case "x7": return 7
-	case "x8": return 8
-	case "x9": return 9
-	case "x10": return 10
-	case "x11": return 11
-	case "x12": return 12
-	case "x13": return 13
-	case "x14": return 14
-	case "x15": return 15
-	case "x16": return 16
-	case "x17": return 17
-	case "x18": return 18
-	case "x19": return 19
-	case "x20": return 20
-	case "x21": return 21
-	case "x22": return 22
-	case "x23": return 23
-	case "x24": return 24
-	case "x25": return 25
-	case "x26": return 26
-	case "x27": return 27
-	case "x28": return 28
-	case "x29", "fp": return 29
-	case "x30", "lr": return 30
-	case "sp": return 31
-	case "xzr": return 31
-	default: return 0
+	case "x0":
+		return 0
+	case "x1":
+		return 1
+	case "x2":
+		return 2
+	case "x3":
+		return 3
+	case "x4":
+		return 4
+	case "x5":
+		return 5
+	case "x6":
+		return 6
+	case "x7":
+		return 7
+	case "x8":
+		return 8
+	case "x9":
+		return 9
+	case "x10":
+		return 10
+	case "x11":
+		return 11
+	case "x12":
+		return 12
+	case "x13":
+		return 13
+	case "x14":
+		return 14
+	case "x15":
+		return 15
+	case "x16":
+		return 16
+	case "x17":
+		return 17
+	case "x18":
+		return 18
+	case "x19":
+		return 19
+	case "x20":
+		return 20
+	case "x21":
+		return 21
+	case "x22":
+		return 22
+	case "x23":
+		return 23
+	case "x24":
+		return 24
+	case "x25":
+		return 25
+	case "x26":
+		return 26
+	case "x27":
+		return 27
+	case "x28":
+		return 28
+	case "x29", "fp":
+		return 29
+	case "x30", "lr":
+		return 30
+	case "sp":
+		return 31
+	case "xzr":
+		return 31
+	default:
+		return 0
 	}
 }
 
@@ -4094,7 +4128,7 @@ func (acg *ARM64CodeGen) compileMemoryWrite(call *CallExpr) error {
 // generateArenaRuntimeARM64 generates arena runtime functions for ARM64
 func (acg *ARM64CodeGen) generateArenaRuntimeARM64() error {
 	// Define arena global variables in .data section
-	acg.eb.Define("_flap_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")      // Pointer to meta-arena array
+	acg.eb.Define("_flap_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")     // Pointer to meta-arena array
 	acg.eb.Define("_flap_arena_meta_cap", "\x00\x00\x00\x00\x00\x00\x00\x00") // Capacity of meta-arena
 	acg.eb.Define("_flap_arena_meta_len", "\x00\x00\x00\x00\x00\x00\x00\x00") // Length (number of arenas)
 

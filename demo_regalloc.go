@@ -1,3 +1,4 @@
+//go:build demo
 // +build demo
 
 package main

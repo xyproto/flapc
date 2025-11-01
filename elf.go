@@ -7,20 +7,20 @@ import (
 
 const (
 	// ELF structure sizes
-	elfHeaderSize     = 64   // ELF64 header size
-	progHeaderSize    = 56   // Program header entry size (ELF64)
-	sectionHeaderSize = 64   // Section header entry size (ELF64)
+	elfHeaderSize     = 64 // ELF64 header size
+	progHeaderSize    = 56 // Program header entry size (ELF64)
+	sectionHeaderSize = 64 // Section header entry size (ELF64)
 
 	// Memory layout
-	baseAddr   = 0x400000              // Virtual base address
-	pageSize   = 0x1000                // 4KB page alignment
+	baseAddr   = 0x400000                       // Virtual base address
+	pageSize   = 0x1000                         // 4KB page alignment
 	headerSize = elfHeaderSize + progHeaderSize // Total header size for simple executable
 
 	// Program header offset (immediately after ELF header)
 	progHeaderOffset = 0x40 // elfHeaderSize
 
 	// Section header offsets
-	sectionHeaderEntrySize = 0x40 // Size of section header entry
+	sectionHeaderEntrySize = 0x40                    // Size of section header entry
 	sectionTableAddr       = progHeaderOffset + 0x38 // Section table address
 )
 
