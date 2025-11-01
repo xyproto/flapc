@@ -1120,6 +1120,25 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 		// Actual type casting would be more complex
 		return acg.compileExpression(e.Expr)
 
+	case *PipeExpr:
+		// Pipe operator: left | right
+		// For now, implement basic scalar pipe (full list mapping would need ParallelExpr)
+		leftType := acg.getExprType(e.Left)
+
+		if leftType == "list" {
+			// List mapping: would need ParallelExpr support
+			return fmt.Errorf("pipe operator on lists not yet supported in ARM64 (requires ParallelExpr)")
+		}
+
+		// Scalar pipe: evaluate left, then apply right
+		if err := acg.compileExpression(e.Left); err != nil {
+			return err
+		}
+
+		// For now, just evaluate right (which should use the value in d0)
+		// Full implementation would handle lambda calls
+		return acg.compileExpression(e.Right)
+
 	default:
 		return fmt.Errorf("unsupported expression type for ARM64: %T", expr)
 	}
