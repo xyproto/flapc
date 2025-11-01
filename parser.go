@@ -16850,11 +16850,22 @@ func (fc *FlapCompiler) writeMachOARM64(outputPath string) error {
 
 	rodataSize := fc.eb.rodata.Len()
 
+	// Set lambda function addresses from labels
+	textAddr := pageSize
+	for labelName, offset := range fc.eb.labels {
+		if strings.HasPrefix(labelName, "lambda_") {
+			lambdaAddr := textAddr + uint64(offset)
+			fc.eb.DefineAddr(labelName, lambdaAddr)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG: Setting %s address to 0x%x (offset %d)\n", labelName, lambdaAddr, offset)
+			}
+		}
+	}
+
 	// Now patch PC-relative relocations in the text
 	if VerboseMode && len(fc.eb.pcRelocations) > 0 {
 		fmt.Fprintf(os.Stderr, "-> Patching %d PC-relative relocations\n", len(fc.eb.pcRelocations))
 	}
-	textAddr := pageSize
 	fc.eb.PatchPCRelocations(textAddr, rodataAddr, rodataSize)
 
 	// Use the existing Mach-O writer infrastructure

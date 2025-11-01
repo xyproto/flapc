@@ -25,14 +25,17 @@ type ARM64CodeGen struct {
 	cConstants     map[string]*CHeaderConstants      // C constants from imports
 	currentArena   int                               // Arena depth (0=none, 1=first arena, 2=nested, etc.)
 	usesArenas     bool                              // Track if program uses any arena blocks
+	currentAssignName string                         // Name of variable being assigned (for lambda self-reference)
 }
 
 // ARM64LambdaFunc represents a lambda function for ARM64
 type ARM64LambdaFunc struct {
-	Name      string
-	Params    []string
-	Body      Expression
-	BodyStart int // Position where lambda body code starts (for tail recursion)
+	Name         string
+	Params       []string
+	Body         Expression
+	BodyStart    int    // Position where lambda body code starts (for tail recursion)
+	FuncStart    int    // Position where function starts (including prologue, for recursion)
+	VarName      string // Variable name this lambda is assigned to (for recursion)
 }
 
 // ARM64LoopInfo tracks information about an active loop
@@ -805,9 +808,10 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 
 		// Store lambda for later code generation
 		acg.lambdaFuncs = append(acg.lambdaFuncs, ARM64LambdaFunc{
-			Name:   funcName,
-			Params: e.Params,
-			Body:   e.Body,
+			Name:    funcName,
+			Params:  e.Params,
+			Body:    e.Body,
+			VarName: acg.currentAssignName, // Store variable name for self-recursion
 		})
 
 		// Return function pointer as float64 in d0
@@ -1263,10 +1267,17 @@ func (acg *ARM64CodeGen) compileAssignment(assign *AssignStmt) error {
 		}
 	}
 
+	// Set the assignment name context for lambda self-reference
+	oldAssignName := acg.currentAssignName
+	acg.currentAssignName = assign.Name
+
 	// Compile the value
 	if err := acg.compileExpression(assign.Value); err != nil {
 		return err
 	}
+
+	// Restore previous assignment context
+	acg.currentAssignName = oldAssignName
 
 	var offset int32
 	if assign.IsUpdate {
@@ -1648,6 +1659,12 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 		"write_u8", "write_u16", "write_u32", "write_u64", "write_f64":
 		return acg.compileMemoryWrite(call)
 	default:
+		// Check if this is a self-recursive call within a lambda
+		if acg.currentLambda != nil && call.Function == acg.currentLambda.VarName {
+			// This is a recursive call - compile arguments and call current function
+			return acg.compileSelfRecursiveCall(call)
+		}
+
 		// Check if it's a variable holding a function pointer
 		if _, exists := acg.stackVars[call.Function]; exists {
 			// Convert to DirectCallExpr and compile
@@ -1659,6 +1676,65 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 		}
 		return fmt.Errorf("unsupported function for ARM64: %s", call.Function)
 	}
+}
+
+// compileSelfRecursiveCall compiles a self-recursive call within a lambda
+func (acg *ARM64CodeGen) compileSelfRecursiveCall(call *CallExpr) error {
+	// Evaluate all arguments and save to stack
+	for _, arg := range call.Args {
+		if err := acg.compileExpression(arg); err != nil {
+			return err
+		}
+		// Result in d0, save to stack
+		acg.out.SubImm64("sp", "sp", 8)
+		// str d0, [sp]
+		acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x00, 0xfd})
+	}
+
+	// Load arguments from stack into d0-d7 registers (in reverse order)
+	// ARM64 AAPCS64 passes float args in d0-d7
+	if len(call.Args) > 8 {
+		return fmt.Errorf("too many arguments to recursive call (max 8)")
+	}
+
+	for i := len(call.Args) - 1; i >= 0; i-- {
+		// ldr dN, [sp]
+		regNum := uint32(i)
+		instr := uint32(0xfd400000) | (regNum) | (31 << 5) // ldr dN, [sp, #0]
+		acg.out.out.writer.WriteBytes([]byte{
+			byte(instr),
+			byte(instr >> 8),
+			byte(instr >> 16),
+			byte(instr >> 24),
+		})
+		acg.out.AddImm64("sp", "sp", 8)
+	}
+
+	// Call the current lambda function recursively
+	// BL to the start of the current lambda function (including prologue)
+	// BL instruction format: 0x94000000 | ((offset >> 2) & 0x03ffffff)
+	// offset is in bytes from current position to target
+
+	currentPos := acg.eb.text.Len()
+	targetPos := acg.currentLambda.FuncStart
+	offset := targetPos - currentPos
+
+	// BL uses signed 26-bit offset in instructions (multiply by 4 for bytes)
+	instrOffset := int32(offset >> 2)
+	if instrOffset < -0x2000000 || instrOffset > 0x1ffffff {
+		return fmt.Errorf("recursive call offset too large: %d", offset)
+	}
+
+	blInstr := uint32(0x94000000) | (uint32(instrOffset) & 0x03ffffff)
+	acg.out.out.writer.WriteBytes([]byte{
+		byte(blInstr),
+		byte(blInstr >> 8),
+		byte(blInstr >> 16),
+		byte(blInstr >> 24),
+	})
+
+	// Result is in d0
+	return nil
 }
 
 // compilePrint compiles a print call (without newline)
@@ -2740,6 +2816,9 @@ func (acg *ARM64CodeGen) generateLambdaFunctions() error {
 		// Mark the start of the lambda function with a label
 		acg.eb.MarkLabel(lambda.Name)
 
+		// Record where the function starts (including prologue, for recursion)
+		funcStart := acg.eb.text.Len()
+
 		// Function prologue - ARM64 ABI
 		// Save frame pointer and link register
 		if err := acg.out.SubImm64("sp", "sp", 32); err != nil {
@@ -2765,6 +2844,12 @@ func (acg *ARM64CodeGen) generateLambdaFunctions() error {
 		acg.stackVars = make(map[string]int)
 		acg.stackSize = 0
 		acg.currentLambda = &lambda
+
+		// Add the lambda's own variable name to scope for self-recursion
+		// Mark it with a special offset so we know it's a function pointer
+		if lambda.VarName != "" {
+			acg.stackVars[lambda.VarName] = -1 // Special marker for self-reference
+		}
 
 		// Store parameters from d0-d7 registers to stack
 		// Parameters come in d0, d1, d2, d3, d4, d5, d6, d7 (AAPCS64)
@@ -2792,6 +2877,7 @@ func (acg *ARM64CodeGen) generateLambdaFunctions() error {
 		// Record where the lambda body starts (for tail recursion with "me")
 		bodyStart := acg.eb.text.Len()
 		acg.currentLambda.BodyStart = bodyStart
+		acg.currentLambda.FuncStart = funcStart
 
 		// Compile lambda body (result in d0)
 		if err := acg.compileExpression(lambda.Body); err != nil {
