@@ -36,6 +36,7 @@ type ARM64LambdaFunc struct {
 	BodyStart    int    // Position where lambda body code starts (for tail recursion)
 	FuncStart    int    // Position where function starts (including prologue, for recursion)
 	VarName      string // Variable name this lambda is assigned to (for recursion)
+	IsRecursive  bool   // Whether this lambda calls itself recursively
 }
 
 // ARM64LoopInfo tracks information about an active loop
@@ -1661,6 +1662,8 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 	default:
 		// Check if this is a self-recursive call within a lambda
 		if acg.currentLambda != nil && call.Function == acg.currentLambda.VarName {
+			// Mark lambda as recursive
+			acg.currentLambda.IsRecursive = true
 			// This is a recursive call - compile arguments and call current function
 			return acg.compileSelfRecursiveCall(call)
 		}
