@@ -2353,7 +2353,7 @@ func (acg *ARM64CodeGen) compilePrintf(call *CallExpr) error {
 			byte(subInstr >> 24),
 		})
 
-		// Compile each argument and store on stack (in reverse order to match x86-64 behavior)
+		// Compile each argument and store on stack (in reverse order)
 		for i := numArgs - 1; i >= 0; i-- {
 			arg := call.Args[i+1]
 
@@ -2379,8 +2379,7 @@ func (acg *ARM64CodeGen) compilePrintf(call *CallExpr) error {
 
 				// Store x9 (pointer) at [sp, #offset]
 				// STR x9, [sp, #offset] - encoding: 0xf9000000 | (offset/8 << 10) | (9 << 0) | (31 << 5)
-				// Use (numArgs-1-i) to reverse the order: first evaluated (last arg) goes to highest offset
-				stackOffset := uint32((numArgs - 1 - i) * 8)
+				stackOffset := uint32(i * 8)
 				strInstr := uint32(0xf90003e9) | ((stackOffset / 8) << 10)
 				acg.out.out.writer.WriteBytes([]byte{
 					byte(strInstr),
@@ -2452,8 +2451,7 @@ func (acg *ARM64CodeGen) compilePrintf(call *CallExpr) error {
 				} else {
 					// Regular float argument - store d0 at [sp, #(i*8)]
 					// STR d0, [sp, #offset] - encoding: 0xfd000000 | (offset/8 << 10) | 0x3e0
-					// Use (numArgs-1-i) to reverse the order: first evaluated (last arg) goes to highest offset
-					stackOffset := uint32((numArgs - 1 - i) * 8)
+					stackOffset := uint32(i * 8)
 					strInstr := uint32(0xfd0003e0) | ((stackOffset / 8) << 10)
 					acg.out.out.writer.WriteBytes([]byte{
 						byte(strInstr),
@@ -2476,6 +2474,24 @@ func (acg *ARM64CodeGen) compilePrintf(call *CallExpr) error {
 	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x90})
 	// ADD x0, x0, label@PAGEOFF
 	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x91})
+
+	// Load arguments from stack into d0-d7 registers (ARM64 calling convention)
+	if numArgs > 0 {
+		for i := 0; i < numArgs && i < 8; i++ {
+			// LDR d(i), [sp, #(i*8)]
+			// Encoding: 1111 1101 01 imm[11:10] imm[9:2] 11111 Rt[4:0]
+			//          FD       4x              xx       E0+reg
+			stackOffset := uint32(i * 8)
+			immField := (stackOffset / 8) << 10 // bits [21:10]
+			ldrInstr := uint32(0xfd4003e0) | uint32(i) | immField
+			acg.out.out.writer.WriteBytes([]byte{
+				byte(ldrInstr),
+				byte(ldrInstr >> 8),
+				byte(ldrInstr >> 16),
+				byte(ldrInstr >> 24),
+			})
+		}
+	}
 
 	// Generate call to printf stub
 	stubLabel := funcName + "$stub"
