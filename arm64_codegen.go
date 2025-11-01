@@ -159,6 +159,10 @@ func (acg *ARM64CodeGen) CompileProgram(program *Program) error {
 func (acg *ARM64CodeGen) compileStatement(stmt Statement) error {
 	switch s := stmt.(type) {
 	case *ExpressionStmt:
+		// Handle PostfixExpr as a statement (x++, x--)
+		if postfix, ok := s.Expr.(*PostfixExpr); ok {
+			return acg.compilePostfixStmt(postfix)
+		}
 		return acg.compileExpression(s.Expr)
 	case *AssignStmt:
 		return acg.compileAssignment(s)
@@ -194,6 +198,9 @@ func (acg *ARM64CodeGen) compileStatement(stmt Statement) error {
 	case *RegisterAssignStmt:
 		// Register assignment in unsafe blocks
 		return acg.compileRegisterAssignment(s)
+	case *MemoryStore:
+		// Memory store operation in unsafe blocks
+		return acg.compileMemoryStore(s)
 	default:
 		return fmt.Errorf("unsupported statement type for ARM64: %T", stmt)
 	}
@@ -3152,6 +3159,27 @@ func (acg *ARM64CodeGen) compileRegisterAssignment(stmt *RegisterAssignStmt) err
 
 // compileRegisterOp compiles register arithmetic/bitwise operations for ARM64
 func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
+	// Unary operations
+	if op.Left == "" {
+		switch op.Operator {
+		case "~b":
+			// Bitwise NOT: dest <- ~right
+			sourceReg := resolveRegisterAlias(op.Right.(string), ArchARM64)
+			destNum := getRegisterNumber(dest)
+			srcNum := getRegisterNumber(sourceReg)
+			// mvn dest, source (move NOT)
+			acg.out.out.writer.WriteBytes([]byte{
+				byte(destNum),
+				byte(srcNum << 5 | 0x03),
+				byte(srcNum >> 3 | 0x20),
+				0xaa, // mvn Xd, Xm
+			})
+			return nil
+		default:
+			return fmt.Errorf("unsupported unary operator in ARM64 register operation: %s", op.Operator)
+		}
+	}
+
 	// Binary operations: dest <- left OP right
 	leftReg := resolveRegisterAlias(op.Left, ArchARM64)
 
@@ -3242,6 +3270,135 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			})
 		}
 
+	case "*":
+		// mul dest, left, right
+		switch r := op.Right.(type) {
+		case string:
+			rightReg := resolveRegisterAlias(r, ArchARM64)
+			destNum := getRegisterNumber(dest)
+			leftNum := getRegisterNumber(leftReg)
+			rightNum := getRegisterNumber(rightReg)
+			acg.out.out.writer.WriteBytes([]byte{
+				byte((rightNum << 16) | destNum),
+				byte(0x7c | leftNum << 2 | rightNum >> 14),
+				byte(rightNum >> 6),
+				0x9b, // mul Xd, Xn, Xm
+			})
+		}
+
+	case "/":
+		// sdiv dest, left, right (signed division)
+		switch r := op.Right.(type) {
+		case string:
+			rightReg := resolveRegisterAlias(r, ArchARM64)
+			destNum := getRegisterNumber(dest)
+			leftNum := getRegisterNumber(leftReg)
+			rightNum := getRegisterNumber(rightReg)
+			acg.out.out.writer.WriteBytes([]byte{
+				byte((rightNum << 16) | destNum),
+				byte(0x0c | leftNum << 2 | rightNum >> 14),
+				byte(rightNum >> 6),
+				0x9a, // sdiv Xd, Xn, Xm
+			})
+		}
+
+	case "%":
+		// ARM64 doesn't have a modulo instruction, need to use: a % b = a - (a/b)*b
+		// This requires multiple steps
+		switch r := op.Right.(type) {
+		case string:
+			rightReg := resolveRegisterAlias(r, ArchARM64)
+			destNum := getRegisterNumber(dest)
+			leftNum := getRegisterNumber(leftReg)
+			rightNum := getRegisterNumber(rightReg)
+
+			// First move left to dest if needed
+			if dest != leftReg {
+				// mov dest, left
+				acg.out.out.writer.WriteBytes([]byte{
+					byte(leftNum),
+					0x03,
+					byte(leftNum >> 3),
+					0xaa,
+				})
+			}
+
+			// sdiv x9, left, right (x9 = left / right)
+			acg.out.out.writer.WriteBytes([]byte{
+				byte((rightNum << 16) | 9),
+				byte(0x0c | leftNum << 2 | rightNum >> 14),
+				byte(rightNum >> 6),
+				0x9a,
+			})
+
+			// msub dest, x9, right, left (dest = left - x9*right)
+			// This is the ARM64 "multiply-subtract" instruction
+			acg.out.out.writer.WriteBytes([]byte{
+				byte((leftNum << 16) | destNum),
+				byte(0x80 | rightNum << 2 | leftNum >> 14),
+				byte(9 | rightNum << 3),
+				0x9b, // msub Xd, Xn, Xm, Xa
+			})
+		}
+
+	case "<<b":
+		// lsl dest, left, right (logical shift left)
+		switch r := op.Right.(type) {
+		case string:
+			rightReg := resolveRegisterAlias(r, ArchARM64)
+			destNum := getRegisterNumber(dest)
+			leftNum := getRegisterNumber(leftReg)
+			rightNum := getRegisterNumber(rightReg)
+			acg.out.out.writer.WriteBytes([]byte{
+				byte((rightNum << 16) | destNum),
+				byte(0x20 | leftNum << 2 | rightNum >> 14),
+				byte(rightNum >> 6),
+				0x9a, // lsl Xd, Xn, Xm
+			})
+		case *NumberExpr:
+			// lsl with immediate
+			destNum := getRegisterNumber(dest)
+			leftNum := getRegisterNumber(leftReg)
+			shift := uint32(r.Value) & 63 // Limit to 6 bits
+			// LSL (immediate) encoding: ubfm Xd, Xn, #(-shift MOD 64), #(63-shift)
+			immr := (64 - shift) & 63
+			imms := 63 - shift
+			acg.out.out.writer.WriteBytes([]byte{
+				byte(destNum),
+				byte(imms << 2 | uint32(leftNum) >> 3),
+				byte(0x40 | immr << 2 | uint32(leftNum) << 5),
+				0xd3, // ubfm (acts as lsl)
+			})
+		}
+
+	case ">>b":
+		// lsr dest, left, right (logical shift right)
+		switch r := op.Right.(type) {
+		case string:
+			rightReg := resolveRegisterAlias(r, ArchARM64)
+			destNum := getRegisterNumber(dest)
+			leftNum := getRegisterNumber(leftReg)
+			rightNum := getRegisterNumber(rightReg)
+			acg.out.out.writer.WriteBytes([]byte{
+				byte((rightNum << 16) | destNum),
+				byte(0x24 | leftNum << 2 | rightNum >> 14),
+				byte(rightNum >> 6),
+				0x9a, // lsr Xd, Xn, Xm
+			})
+		case *NumberExpr:
+			// lsr with immediate
+			destNum := getRegisterNumber(dest)
+			leftNum := getRegisterNumber(leftReg)
+			shift := uint32(r.Value) & 63
+			// LSR (immediate) encoding: ubfm Xd, Xn, #shift, #63
+			acg.out.out.writer.WriteBytes([]byte{
+				byte(destNum),
+				byte(0xfc | uint32(leftNum) >> 3),
+				byte(0x40 | shift << 2 | uint32(leftNum) << 5),
+				0xd3, // ubfm (acts as lsr)
+			})
+		}
+
 	default:
 		return fmt.Errorf("unsupported operator in ARM64 register operation: %s", op.Operator)
 	}
@@ -3268,6 +3425,122 @@ func (acg *ARM64CodeGen) compileMemoryLoad(dest string, load *MemoryLoad) error 
 	} else {
 		// ldr with offset
 		return acg.out.LdrImm64(dest, addrReg, int32(offset))
+	}
+
+	return nil
+}
+
+// compileMemoryStore compiles memory store operations for ARM64
+func (acg *ARM64CodeGen) compileMemoryStore(store *MemoryStore) error {
+	addrReg := resolveRegisterAlias(store.Address, ArchARM64)
+	offset := store.Offset
+
+	// Determine what value to store
+	var sourceReg string
+	switch v := store.Value.(type) {
+	case string:
+		// Register name
+		sourceReg = resolveRegisterAlias(v, ArchARM64)
+	case *NumberExpr:
+		// Immediate value - load into x9 first
+		val := int64(v.Value)
+		if err := acg.out.MovImm64("x9", uint64(val)); err != nil {
+			return err
+		}
+		sourceReg = "x9"
+	default:
+		return fmt.Errorf("unsupported value type in memory store: %T", v)
+	}
+
+	// Determine store size
+	addrNum := getRegisterNumber(addrReg)
+	srcNum := getRegisterNumber(sourceReg)
+
+	switch store.Size {
+	case "", "uint64", "u64":
+		// 64-bit store: str xN, [addr, #offset]
+		if offset == 0 {
+			// str sourceReg, [addrReg]
+			acg.out.out.writer.WriteBytes([]byte{
+				byte(srcNum),
+				byte(addrNum << 5),
+				0x00,
+				0xf9, // str Xn, [Xm]
+			})
+		} else {
+			// str with offset
+			immField := (uint32(offset) / 8) << 10
+			strInstr := uint32(0xf9000000) | uint32(srcNum) | (uint32(addrNum) << 5) | immField
+			acg.out.out.writer.WriteBytes([]byte{
+				byte(strInstr),
+				byte(strInstr >> 8),
+				byte(strInstr >> 16),
+				byte(strInstr >> 24),
+			})
+		}
+
+	case "uint32", "u32":
+		// 32-bit store: str wN, [addr, #offset]
+		if offset == 0 {
+			acg.out.out.writer.WriteBytes([]byte{
+				byte(srcNum),
+				byte(addrNum << 5),
+				0x00,
+				0xb9, // str Wn, [Xm]
+			})
+		} else {
+			immField := (uint32(offset) / 4) << 10
+			strInstr := uint32(0xb9000000) | uint32(srcNum) | (uint32(addrNum) << 5) | immField
+			acg.out.out.writer.WriteBytes([]byte{
+				byte(strInstr),
+				byte(strInstr >> 8),
+				byte(strInstr >> 16),
+				byte(strInstr >> 24),
+			})
+		}
+
+	case "uint16", "u16":
+		// 16-bit store: strh wN, [addr, #offset]
+		if offset == 0 {
+			acg.out.out.writer.WriteBytes([]byte{
+				byte(srcNum),
+				byte(addrNum << 5),
+				0x00,
+				0x79, // strh Wn, [Xm]
+			})
+		} else {
+			immField := (uint32(offset) / 2) << 10
+			strInstr := uint32(0x79000000) | uint32(srcNum) | (uint32(addrNum) << 5) | immField
+			acg.out.out.writer.WriteBytes([]byte{
+				byte(strInstr),
+				byte(strInstr >> 8),
+				byte(strInstr >> 16),
+				byte(strInstr >> 24),
+			})
+		}
+
+	case "uint8", "u8":
+		// 8-bit store: strb wN, [addr, #offset]
+		if offset == 0 {
+			acg.out.out.writer.WriteBytes([]byte{
+				byte(srcNum),
+				byte(addrNum << 5),
+				0x00,
+				0x39, // strb Wn, [Xm]
+			})
+		} else {
+			immField := uint32(offset) << 10
+			strInstr := uint32(0x39000000) | uint32(srcNum) | (uint32(addrNum) << 5) | immField
+			acg.out.out.writer.WriteBytes([]byte{
+				byte(strInstr),
+				byte(strInstr >> 8),
+				byte(strInstr >> 16),
+				byte(strInstr >> 24),
+			})
+		}
+
+	default:
+		return fmt.Errorf("unsupported memory store size: %s", store.Size)
 	}
 
 	return nil
@@ -3312,4 +3585,57 @@ func getRegisterNumber(reg string) uint8 {
 	case "xzr": return 31
 	default: return 0
 	}
+}
+
+// compilePostfixStmt compiles postfix increment/decrement statements (x++, x--)
+func (acg *ARM64CodeGen) compilePostfixStmt(postfix *PostfixExpr) error {
+	// x++ and x-- are statements only, not expressions
+	identExpr, ok := postfix.Operand.(*IdentExpr)
+	if !ok {
+		return fmt.Errorf("postfix operator %s requires a variable operand", postfix.Operator)
+	}
+
+	// Get the variable's stack offset
+	offset, exists := acg.stackVars[identExpr.Name]
+	if !exists {
+		return fmt.Errorf("undefined variable '%s'", identExpr.Name)
+	}
+
+	// Check if variable is mutable
+	if !acg.mutableVars[identExpr.Name] {
+		return fmt.Errorf("cannot modify immutable variable '%s'", identExpr.Name)
+	}
+
+	// Load current value into d0: ldr d0, [x29, #offset]
+	stackOffset := int32(16 + offset - 8)
+	if err := acg.out.LdrImm64Double("d0", "x29", stackOffset); err != nil {
+		return err
+	}
+
+	// Create 1.0 constant and load it into d1
+	// Load 1 as integer, then convert to float
+	if err := acg.out.MovImm64("x0", 1); err != nil {
+		return err
+	}
+	// scvtf d1, x0 (convert int64 to float64)
+	acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x62, 0x9e})
+
+	// Apply the operation
+	switch postfix.Operator {
+	case "++":
+		// fadd d0, d0, d1 (d0 = d0 + 1.0)
+		acg.out.out.writer.WriteBytes([]byte{0x00, 0x28, 0x61, 0x1e})
+	case "--":
+		// fsub d0, d0, d1 (d0 = d0 - 1.0)
+		acg.out.out.writer.WriteBytes([]byte{0x00, 0x38, 0x61, 0x1e})
+	default:
+		return fmt.Errorf("unknown postfix operator '%s'", postfix.Operator)
+	}
+
+	// Store result back: str d0, [x29, #offset]
+	if err := acg.out.StrImm64Double("d0", "x29", stackOffset); err != nil {
+		return err
+	}
+
+	return nil
 }
