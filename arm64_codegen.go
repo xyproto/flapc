@@ -201,6 +201,13 @@ func (acg *ARM64CodeGen) compileStatement(stmt Statement) error {
 	case *MemoryStore:
 		// Memory store operation in unsafe blocks
 		return acg.compileMemoryStore(s)
+	case *SyscallStmt:
+		// System call instruction
+		// Registers must be set up before calling syscall:
+		// ARM64: x8=syscall#, x0-x6=args
+		// svc #0 instruction
+		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4}) // svc #0
+		return nil
 	default:
 		return fmt.Errorf("unsupported statement type for ARM64: %T", stmt)
 	}
@@ -1603,6 +1610,8 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 		return acg.compileMathFunction(call)
 	case "pow", "atan2":
 		return acg.compilePowFunction(call)
+	case "call":
+		return acg.compileFFICall(call)
 	default:
 		// Check if it's a variable holding a function pointer
 		if _, exists := acg.stackVars[call.Function]; exists {
@@ -3341,7 +3350,7 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			})
 		}
 
-	case "<<b":
+	case "<<", "<<b":
 		// lsl dest, left, right (logical shift left)
 		switch r := op.Right.(type) {
 		case string:
@@ -3371,7 +3380,7 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			})
 		}
 
-	case ">>b":
+	case ">>", ">>b":
 		// lsr dest, left, right (logical shift right)
 		switch r := op.Right.(type) {
 		case string:
@@ -3635,6 +3644,191 @@ func (acg *ARM64CodeGen) compilePostfixStmt(postfix *PostfixExpr) error {
 	// Store result back: str d0, [x29, #offset]
 	if err := acg.out.StrImm64Double("d0", "x29", stackOffset); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+// compileFFICall compiles FFI call() function for ARM64+macOS
+func (acg *ARM64CodeGen) compileFFICall(call *CallExpr) error {
+	// FFI: call(function_name, args...)
+	// First argument must be a string literal (function name)
+	if len(call.Args) < 1 {
+		return fmt.Errorf("call() requires at least a function name")
+	}
+
+	fnNameExpr, ok := call.Args[0].(*StringExpr)
+	if !ok {
+		return fmt.Errorf("call() first argument must be a string literal (function name)")
+	}
+	fnName := fnNameExpr.Value
+
+	// ARM64 calling convention (macOS):
+	// Integer/pointer args: x0-x7
+	// Float args: d0-d7
+	intRegs := []string{"x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"}
+	floatRegs := []string{"d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7"}
+
+	intArgCount := 0
+	floatArgCount := 0
+	numArgs := len(call.Args) - 1 // Exclude function name
+
+	if numArgs > 8 {
+		return fmt.Errorf("call() supports max 8 arguments (got %d)", numArgs)
+	}
+
+	// Determine argument types by checking for cast expressions
+	argTypes := make([]string, numArgs)
+	for i := 0; i < numArgs; i++ {
+		arg := call.Args[i+1]
+		if castExpr, ok := arg.(*CastExpr); ok {
+			argTypes[i] = castExpr.Type
+		} else {
+			// No cast - assume float64
+			argTypes[i] = "f64"
+		}
+	}
+
+	// Evaluate all arguments and save to stack
+	stackSize := numArgs * 8
+	if stackSize > 0 {
+		// Allocate stack space
+		if err := acg.out.SubImm64("sp", "sp", uint32(stackSize)); err != nil {
+			return err
+		}
+
+		for i := 0; i < numArgs; i++ {
+			if err := acg.compileExpression(call.Args[i+1]); err != nil {
+				return err
+			}
+			// Store d0 at [sp, #(i*8)]
+			offset := int32(i * 8)
+			if err := acg.out.StrImm64Double("d0", "sp", offset); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Load arguments into registers (in forward order from stack)
+	for i := 0; i < numArgs; i++ {
+		argType := argTypes[i]
+
+		// Determine if this is an integer/pointer argument or float argument
+		isIntArg := false
+		switch argType {
+		case "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64", "ptr", "cstr":
+			isIntArg = true
+		case "float32", "float64", "f64":
+			isIntArg = false
+		default:
+			// Unknown type - assume float
+			isIntArg = false
+		}
+
+		// Load from stack into d0
+		offset := int32(i * 8)
+		if err := acg.out.LdrImm64Double("d0", "sp", offset); err != nil {
+			return err
+		}
+
+		if isIntArg {
+			// Integer/pointer argument
+			if intArgCount < len(intRegs) {
+				if argType == "cstr" || argType == "ptr" {
+					// cstr/ptr is already a pointer - transfer bits from d0 to integer register
+					// fmov xN, d0 (transfer bits)
+					regNum := getRegisterNumber(intRegs[intArgCount])
+					acg.out.out.writer.WriteBytes([]byte{
+						byte(regNum),
+						0x00,
+						0x67,
+						0x9e, // fmov xN, d0
+					})
+				} else {
+					// Convert float64 to integer: fcvtzs xN, d0
+					regNum := getRegisterNumber(intRegs[intArgCount])
+					acg.out.out.writer.WriteBytes([]byte{
+						byte(regNum),
+						0x00,
+						0x78,
+						0x9e, // fcvtzs xN, d0
+					})
+				}
+				intArgCount++
+			} else {
+				return fmt.Errorf("call() supports max 8 integer/pointer arguments")
+			}
+		} else {
+			// Float argument
+			if floatArgCount < len(floatRegs) {
+				if floatArgCount != 0 {
+					// Move to appropriate float register (d0 already has value for first arg)
+					// fmov dN, d0
+					destRegNum := floatArgCount // d0=0, d1=1, etc.
+					acg.out.out.writer.WriteBytes([]byte{
+						byte(destRegNum),
+						0x40,
+						0x60,
+						0x1e, // fmov dN, d0
+					})
+				}
+				// else: already in d0
+				floatArgCount++
+			} else {
+				return fmt.Errorf("call() supports max 8 float arguments")
+			}
+		}
+	}
+
+	// Clean up stack if we allocated space
+	if stackSize > 0 {
+		if err := acg.out.AddImm64("sp", "sp", uint32(stackSize)); err != nil {
+			return err
+		}
+	}
+
+	// Mark that we need dynamic linking
+	acg.eb.useDynamicLinking = true
+
+	// Add function to needed functions list if not already there
+	found := false
+	for _, f := range acg.eb.neededFunctions {
+		if f == fnName {
+			found = true
+			break
+		}
+	}
+	if !found {
+		acg.eb.neededFunctions = append(acg.eb.neededFunctions, fnName)
+	}
+
+	// Generate call to the function
+	stubLabel := fnName + "$stub"
+	position := acg.eb.text.Len()
+	acg.eb.callPatches = append(acg.eb.callPatches, CallPatch{
+		position:   position,
+		targetName: stubLabel,
+	})
+
+	// Emit placeholder bl instruction (will be patched)
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x94}) // bl #0
+
+	// Result is in x0 (for integer/pointer returns) or d0 (for float returns)
+	// Check if this is a known floating-point function
+	floatFunctions := map[string]bool{
+		"sqrt": true, "sin": true, "cos": true, "tan": true,
+		"asin": true, "acos": true, "atan": true, "atan2": true,
+		"log": true, "log10": true, "exp": true, "pow": true,
+		"fabs": true, "fmod": true, "ceil": true, "floor": true,
+	}
+
+	if floatFunctions[fnName] {
+		// Float return - result already in d0
+		// Nothing to do
+	} else {
+		// Integer/pointer return - result in x0
+		// Convert to float64: scvtf d0, x0
+		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
 	}
 
 	return nil
