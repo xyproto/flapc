@@ -15,6 +15,8 @@
 4. Magic number elimination - DONE
 5. Optimization documentation (OPTIMIZATIONS.md) - DONE
 6. Game development readiness (GAME_DEVELOPMENT_READINESS.md) - DONE
+7. Platform-specific build tags (Linux vs non-Linux) - DONE
+8. ARM64 RangeExpr support for range loops - DONE
 
 ### 🔥 CRITICAL (Must complete before v1.7.4)
 **None remaining** - All critical items completed!
@@ -25,8 +27,10 @@
 - ⏳ **Documentation review** (LANGUAGE.md completeness check)
 
 ### ✅ v1.7.4 Release Checklist
-- [ ] All tests pass (`go test`)
-- [ ] All 363+ testprograms pass
+- [x] Fix platform-specific compilation issues (Linux syscalls on macOS)
+- [x] Add ARM64 support for range expressions
+- [ ] All tests pass (`go test`) - in progress
+- [ ] All 363+ testprograms pass - in progress
 - [ ] LANGUAGE.md marked as frozen
 - [ ] README updated with freeze notice
 - [ ] Git tag v1.7.4
