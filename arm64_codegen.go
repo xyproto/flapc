@@ -168,6 +168,32 @@ func (acg *ARM64CodeGen) compileStatement(stmt Statement) error {
 		// Cstruct declarations generate no runtime code
 		// Constants are already available via Name_SIZEOF and Name_field_OFFSET
 		return nil
+	case *CImportStmt:
+		// C imports are handled at compile-time to populate cConstants
+		// No runtime code generation needed
+		return nil
+	case *ArenaStmt:
+		// Arena allocator: execute body statements
+		// Full implementation would need arena setup/cleanup
+		// For now, just compile the body statements
+		for _, bodyStmt := range s.Body {
+			if err := acg.compileStatement(bodyStmt); err != nil {
+				return err
+			}
+		}
+		return nil
+	case *DeferStmt:
+		// Defer statement: execute at scope exit
+		// Full implementation needs defer stack management
+		// For now, return error with guidance
+		return fmt.Errorf("defer statements not yet implemented in ARM64 (requires defer stack)")
+	case *SpawnStmt:
+		// Process spawning with fork()
+		// Full implementation needs process management
+		return fmt.Errorf("spawn statements not yet implemented in ARM64 (requires fork/exec support)")
+	case *RegisterAssignStmt:
+		// Register assignment in unsafe blocks
+		return acg.compileRegisterAssignment(s)
 	default:
 		return fmt.Errorf("unsupported statement type for ARM64: %T", stmt)
 	}
@@ -1138,6 +1164,31 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 		// For now, just evaluate right (which should use the value in d0)
 		// Full implementation would handle lambda calls
 		return acg.compileExpression(e.Right)
+
+	case *UnsafeExpr:
+		// Inline assembly: execute ARM64-specific block
+		if len(e.ARM64Block) > 0 {
+			// Compile ARM64 block statements
+			for _, stmt := range e.ARM64Block {
+				if err := acg.compileStatement(stmt); err != nil {
+					return err
+				}
+			}
+			// Handle return value if specified
+			if e.ARM64Return != nil {
+				// Return value is already in the appropriate register
+				// Just need to ensure it's in d0 if it's a float
+				return nil
+			}
+		} else {
+			// No ARM64 block - this is expected for x86_64-only unsafe code
+			return fmt.Errorf("unsafe block has no ARM64 implementation")
+		}
+
+	case *PatternLambdaExpr:
+		// Pattern matching lambda with multiple clauses
+		// Full implementation would need pattern matching codegen
+		return fmt.Errorf("pattern lambdas not yet implemented in ARM64 (requires pattern matching)")
 
 	default:
 		return fmt.Errorf("unsupported expression type for ARM64: %T", expr)
@@ -3041,4 +3092,208 @@ func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
 	acg.out.Return("x30")
 
 	return nil
+}
+
+// compileRegisterAssignment compiles register assignment statements for ARM64 unsafe blocks
+func (acg *ARM64CodeGen) compileRegisterAssignment(stmt *RegisterAssignStmt) error {
+	// Resolve register aliases (a->x0, b->x1, etc.)
+	register := resolveRegisterAlias(stmt.Register, ArchARM64)
+
+	// Handle different value types
+	switch v := stmt.Value.(type) {
+	case *NumberExpr:
+		// Immediate value: register <- 42
+		val := int64(v.Value)
+		if err := acg.out.MovImm64(register, uint64(val)); err != nil {
+			return err
+		}
+
+	case string:
+		// Register-to-register move: x0 <- x1
+		sourceReg := resolveRegisterAlias(v, ArchARM64)
+		// mov dest, source
+		acg.out.out.writer.WriteBytes([]byte{
+			byte((getRegisterNumber(sourceReg) << 16) | getRegisterNumber(register)),
+			0x03,
+			byte(getRegisterNumber(sourceReg)),
+			0xaa,
+		}) // mov register, sourceReg
+
+	case *RegisterOp:
+		// Arithmetic or bitwise operation
+		return acg.compileRegisterOp(register, v)
+
+	case *MemoryLoad:
+		// Memory load: x0 <- [x1] or x0 <- u8 [x1 + 16]
+		return acg.compileMemoryLoad(register, v)
+
+	default:
+		return fmt.Errorf("unsupported value type in ARM64 register assignment: %T", v)
+	}
+
+	return nil
+}
+
+// compileRegisterOp compiles register arithmetic/bitwise operations for ARM64
+func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
+	// Binary operations: dest <- left OP right
+	leftReg := resolveRegisterAlias(op.Left, ArchARM64)
+
+	switch op.Operator {
+	case "+":
+		// add dest, left, right
+		switch r := op.Right.(type) {
+		case string:
+			rightReg := resolveRegisterAlias(r, ArchARM64)
+			// add dest, left, right
+			destNum := getRegisterNumber(dest)
+			leftNum := getRegisterNumber(leftReg)
+			rightNum := getRegisterNumber(rightReg)
+			acg.out.out.writer.WriteBytes([]byte{
+				byte((rightNum << 16) | destNum),
+				byte(leftNum << 2 | rightNum >> 14),
+				byte(rightNum >> 6),
+				0x8b, // add Xd, Xn, Xm
+			})
+		case *NumberExpr:
+			// add dest, left, #imm
+			return acg.out.AddImm64(dest, leftReg, uint32(r.Value))
+		}
+
+	case "-":
+		// sub dest, left, right
+		switch r := op.Right.(type) {
+		case string:
+			rightReg := resolveRegisterAlias(r, ArchARM64)
+			destNum := getRegisterNumber(dest)
+			leftNum := getRegisterNumber(leftReg)
+			rightNum := getRegisterNumber(rightReg)
+			acg.out.out.writer.WriteBytes([]byte{
+				byte((rightNum << 16) | destNum),
+				byte(leftNum << 2 | rightNum >> 14),
+				byte(rightNum >> 6),
+				0xcb, // sub Xd, Xn, Xm
+			})
+		case *NumberExpr:
+			return acg.out.SubImm64(dest, leftReg, uint32(r.Value))
+		}
+
+	case "&":
+		// and dest, left, right
+		switch r := op.Right.(type) {
+		case string:
+			rightReg := resolveRegisterAlias(r, ArchARM64)
+			destNum := getRegisterNumber(dest)
+			leftNum := getRegisterNumber(leftReg)
+			rightNum := getRegisterNumber(rightReg)
+			acg.out.out.writer.WriteBytes([]byte{
+				byte((rightNum << 16) | destNum),
+				byte(leftNum << 2 | rightNum >> 14),
+				byte(rightNum >> 6),
+				0x8a, // and Xd, Xn, Xm
+			})
+		}
+
+	case "|":
+		// orr dest, left, right
+		switch r := op.Right.(type) {
+		case string:
+			rightReg := resolveRegisterAlias(r, ArchARM64)
+			destNum := getRegisterNumber(dest)
+			leftNum := getRegisterNumber(leftReg)
+			rightNum := getRegisterNumber(rightReg)
+			acg.out.out.writer.WriteBytes([]byte{
+				byte((rightNum << 16) | destNum),
+				byte(leftNum << 2 | rightNum >> 14),
+				byte(rightNum >> 6),
+				0xaa, // orr Xd, Xn, Xm
+			})
+		}
+
+	case "^b":
+		// eor dest, left, right
+		switch r := op.Right.(type) {
+		case string:
+			rightReg := resolveRegisterAlias(r, ArchARM64)
+			destNum := getRegisterNumber(dest)
+			leftNum := getRegisterNumber(leftReg)
+			rightNum := getRegisterNumber(rightReg)
+			acg.out.out.writer.WriteBytes([]byte{
+				byte((rightNum << 16) | destNum),
+				byte(leftNum << 2 | rightNum >> 14),
+				byte(rightNum >> 6),
+				0xca, // eor Xd, Xn, Xm
+			})
+		}
+
+	default:
+		return fmt.Errorf("unsupported operator in ARM64 register operation: %s", op.Operator)
+	}
+
+	return nil
+}
+
+// compileMemoryLoad compiles memory load operations for ARM64
+func (acg *ARM64CodeGen) compileMemoryLoad(dest string, load *MemoryLoad) error {
+	addrReg := resolveRegisterAlias(load.Address, ArchARM64)
+	offset := load.Offset
+
+	// Simplified version: load 64-bit value
+	// ldr dest, [addrReg, #offset]
+	if offset == 0 {
+		destNum := getRegisterNumber(dest)
+		addrNum := getRegisterNumber(addrReg)
+		acg.out.out.writer.WriteBytes([]byte{
+			byte(destNum),
+			byte(addrNum << 5),
+			0x40,
+			0xf9, // ldr Xd, [Xn]
+		})
+	} else {
+		// ldr with offset
+		return acg.out.LdrImm64(dest, addrReg, int32(offset))
+	}
+
+	return nil
+}
+
+// getRegisterNumber returns the numeric encoding for ARM64 registers
+func getRegisterNumber(reg string) uint8 {
+	// Handle x0-x30, sp, xzr
+	switch reg {
+	case "x0": return 0
+	case "x1": return 1
+	case "x2": return 2
+	case "x3": return 3
+	case "x4": return 4
+	case "x5": return 5
+	case "x6": return 6
+	case "x7": return 7
+	case "x8": return 8
+	case "x9": return 9
+	case "x10": return 10
+	case "x11": return 11
+	case "x12": return 12
+	case "x13": return 13
+	case "x14": return 14
+	case "x15": return 15
+	case "x16": return 16
+	case "x17": return 17
+	case "x18": return 18
+	case "x19": return 19
+	case "x20": return 20
+	case "x21": return 21
+	case "x22": return 22
+	case "x23": return 23
+	case "x24": return 24
+	case "x25": return 25
+	case "x26": return 26
+	case "x27": return 27
+	case "x28": return 28
+	case "x29", "fp": return 29
+	case "x30", "lr": return 30
+	case "sp": return 31
+	case "xzr": return 31
+	default: return 0
+	}
 }
