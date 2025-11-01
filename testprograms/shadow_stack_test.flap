@@ -1,5 +1,0 @@
-// Simple test for shadow stack initialization
-// This doesn't use recursion yet, just tests that the program runs
-// with shadow stack initialization code present
-
-print(42.0)

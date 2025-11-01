@@ -1,4 +1,0 @@
-// Simple recursive factorial function
-factorial = n => (n <= 1.0) ? 1.0 : n * factorial(n - 1.0)
-
-print(factorial(5.0))

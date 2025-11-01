@@ -26,26 +26,26 @@ import (
 
 // LiveInterval represents the lifetime of a variable
 type LiveInterval struct {
-	VarName   string // Variable name
-	Start     int    // First use (program position)
-	End       int    // Last use (program position)
-	Reg       string // Allocated register (empty if spilled)
-	Spilled   bool   // True if spilled to stack
-	SpillSlot int    // Stack offset if spilled
+	VarName string // Variable name
+	Start   int    // First use (program position)
+	End     int    // Last use (program position)
+	Reg     string // Allocated register (empty if spilled)
+	Spilled bool   // True if spilled to stack
+	SpillSlot int  // Stack offset if spilled
 }
 
 // RegisterAllocator manages register allocation for a function
 type RegisterAllocator struct {
-	arch            Arch                     // Target architecture
-	intervals       []*LiveInterval          // All live intervals
-	active          []*LiveInterval          // Currently active intervals
-	freeRegs        []string                 // Available registers
-	callerSaved     []string                 // Caller-saved registers (for temporaries)
-	calleeSaved     []string                 // Callee-saved registers (for variables)
-	usedCalleeSaved map[string]bool          // Track which callee-saved regs we use
-	varToInterval   map[string]*LiveInterval // Variable name -> interval
-	position        int                      // Current program position
-	spillSlots      int                      // Number of spill slots allocated
+	arch          Arch                   // Target architecture
+	intervals     []*LiveInterval        // All live intervals
+	active        []*LiveInterval        // Currently active intervals
+	freeRegs      []string               // Available registers
+	callerSaved   []string               // Caller-saved registers (for temporaries)
+	calleeSaved   []string               // Callee-saved registers (for variables)
+	usedCalleeSaved map[string]bool      // Track which callee-saved regs we use
+	varToInterval map[string]*LiveInterval // Variable name -> interval
+	position      int                    // Current program position
+	spillSlots    int                    // Number of spill slots allocated
 }
 
 // NewRegisterAllocator creates a register allocator for the target architecture

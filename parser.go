@@ -16,10 +16,10 @@ import (
 
 const (
 	// Buffer sizes for runtime operations
-	stringBufferSize = 256 // Maximum string buffer size for conversions
-	socketBufferSize = 256 // Network socket buffer size
-	socketStructSize = 16  // sizeof(struct sockaddr_in)
-	sdlEventSize     = 56  // sizeof(SDL_Event) - used in examples and documentation
+	stringBufferSize  = 256 // Maximum string buffer size for conversions
+	socketBufferSize  = 256 // Network socket buffer size
+	socketStructSize  = 16  // sizeof(struct sockaddr_in)
+	sdlEventSize      = 56  // sizeof(SDL_Event) - used in examples and documentation
 
 	// Stack alignment
 	stackAlignment = 16 // x86_64 ABI requires 16-byte stack alignment
@@ -77,8 +77,8 @@ func levenshteinDistance(s1, s2 string) int {
 				cost = 0
 			}
 			matrix[i][j] = min(
-				matrix[i-1][j]+1, // deletion
-				min(matrix[i][j-1]+1, // insertion
+				matrix[i-1][j]+1,      // deletion
+				min(matrix[i][j-1]+1,  // insertion
 					matrix[i-1][j-1]+cost)) // substitution
 		}
 	}
@@ -5047,11 +5047,11 @@ type FlapCompiler struct {
 	metaArenaGrowthErrorJump      int
 	firstMetaArenaMallocErrorJump int
 
-	regAlloc    *RegisterAllocator // Register allocator for optimized variable allocation
-	wpoTimeout  float64            // Whole-program optimization timeout (non-global, thread-safe)
-	movedVars   map[string]bool    // Track variables that have been moved (use-after-move detection)
-	scopeDepth  int                // Track scope depth for proper move tracking
-	scopedMoved []map[string]bool  // Stack of moved variables per scope
+	regAlloc     *RegisterAllocator // Register allocator for optimized variable allocation
+	wpoTimeout   float64            // Whole-program optimization timeout (non-global, thread-safe)
+	movedVars    map[string]bool    // Track variables that have been moved (use-after-move detection)
+	scopeDepth   int                // Track scope depth for proper move tracking
+	scopedMoved  []map[string]bool  // Stack of moved variables per scope
 }
 
 type LambdaFunc struct {
@@ -5382,9 +5382,9 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 		fc.eb.GenerateCallInstruction("exit")
 	} else {
 		// Use direct syscall for minimal programs without libc dependencies
-		fc.out.MovImmToReg("rax", "60")    // syscall number for exit
+		fc.out.MovImmToReg("rax", "60") // syscall number for exit
 		fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
-		fc.eb.Emit("syscall")              // invoke syscall directly
+		fc.eb.Emit("syscall") // invoke syscall directly
 	}
 
 	// Generate lambda functions
@@ -5687,8 +5687,8 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	fc.stackOffset = 0
 	fc.lambdaFuncs = nil // Clear lambda list to avoid duplicates
 	fc.lambdaCounter = 0
-	fc.labelCounter = 0                                       // Reset label counter for consistent loop labels
-	fc.movedVars = make(map[string]bool)                      // Reset moved variables tracking
+	fc.labelCounter = 0 // Reset label counter for consistent loop labels
+	fc.movedVars = make(map[string]bool) // Reset moved variables tracking
 	fc.scopedMoved = []map[string]bool{make(map[string]bool)} // Reset scoped tracking
 
 	// Collect symbols again (two-pass compilation for second regeneration)
@@ -5727,9 +5727,9 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 		fc.eb.GenerateCallInstruction("exit")
 	} else {
 		// Use direct syscall for minimal programs without libc dependencies
-		fc.out.MovImmToReg("rax", "60")    // syscall number for exit
+		fc.out.MovImmToReg("rax", "60") // syscall number for exit
 		fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
-		fc.eb.Emit("syscall")              // invoke syscall directly
+		fc.eb.Emit("syscall") // invoke syscall directly
 	}
 
 	// Generate lambda functions
@@ -6868,11 +6868,11 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 		// CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM
 		// = 0x100 | 0x200 | 0x400 | 0x800 | 0x10000 | 0x40000 = 0x50F00
 		fc.out.MovImmToReg("rax", fmt.Sprintf("%d", cloneSyscallNumber)) // sys_clone
-		fc.out.MovImmToReg("rdi", "331520")                              // flags = 0x50F00
-		fc.out.MovRegToReg("rsi", "r13")                                 // child_stack = stack top
-		fc.out.MovImmToReg("rdx", "0")                                   // ptid (not used)
-		fc.out.MovImmToReg("r10", "0")                                   // ctid (not used)
-		fc.out.MovImmToReg("r8", "0")                                    // newtls (not used)
+		fc.out.MovImmToReg("rdi", "331520") // flags = 0x50F00
+		fc.out.MovRegToReg("rsi", "r13")    // child_stack = stack top
+		fc.out.MovImmToReg("rdx", "0")      // ptid (not used)
+		fc.out.MovImmToReg("r10", "0")      // ctid (not used)
+		fc.out.MovImmToReg("r8", "0")       // newtls (not used)
 		fc.out.Syscall()
 
 		// rax now contains: 0 if child, TID if parent
@@ -13686,95 +13686,95 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 			// Clean up stack
 			fc.out.AddImmToReg("rsp", 260)
-		} else if argType == "list" || argType == "map" {
-			// Print list/map - iterate through all elements and print each on a line
-			// This is the complete, final implementation for array/map printing
+	} else if argType == "list" || argType == "map" {
+		// Print list/map - iterate through all elements and print each on a line
+		// This is the complete, final implementation for array/map printing
+		
+		// Compile the expression to get map pointer
+		fc.compileExpression(arg)
+		// xmm0 now contains the map pointer as float64
+		
+		// Convert map pointer from xmm0 to rax (integer pointer)
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovMemToReg("rax", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+		
+		// Save map pointer to r15 for later use
+		fc.out.MovRegToReg("r15", "rax")
+		
+		// Get the length of the map (stored at offset 0 as float64)
+		fc.out.MovMemToXmm("xmm0", "r15", 0)
+		fc.out.Cvttsd2si("r12", "xmm0") // r12 = length (as integer)
 
-			// Compile the expression to get map pointer
-			fc.compileExpression(arg)
-			// xmm0 now contains the map pointer as float64
+		// Initialize index to 0 (iterate forward from 0 to length-1)
+		fc.out.XorRegWithReg("r13", "r13") // r13 = 0 (current index)
 
-			// Convert map pointer from xmm0 to rax (integer pointer)
-			fc.out.SubImmFromReg("rsp", StackSlotSize)
-			fc.out.MovXmmToMem("xmm0", "rsp", 0)
-			fc.out.MovMemToReg("rax", "rsp", 0)
-			fc.out.AddImmToReg("rsp", StackSlotSize)
+		// Get current position for loop start
+		loopStartPos := fc.eb.text.Len()
 
-			// Save map pointer to r15 for later use
-			fc.out.MovRegToReg("r15", "rax")
-
-			// Get the length of the map (stored at offset 0 as float64)
-			fc.out.MovMemToXmm("xmm0", "r15", 0)
-			fc.out.Cvttsd2si("r12", "xmm0") // r12 = length (as integer)
-
-			// Initialize index to 0 (iterate forward from 0 to length-1)
-			fc.out.XorRegWithReg("r13", "r13") // r13 = 0 (current index)
-
-			// Get current position for loop start
-			loopStartPos := fc.eb.text.Len()
-
-			// Check if index >= length (loop exit condition)
-			fc.out.CmpRegToReg("r13", "r12") // Compare index with length
-			// Jump to end if index >= length
-			loopEndJumpPos := fc.eb.text.Len()
-			fc.out.JumpConditional(JumpGreaterOrEqual, 0) // Placeholder, will be patched
-
-			// Calculate element address: map_base + 8 + (index * 8)
-			// The map structure is: [length (8 bytes)] [element0] [element1] ...
-			fc.out.MovRegToReg("rbx", "r15") // rbx = map base
-			fc.out.AddImmToReg("rbx", 8)     // rbx = map base + 8 (skip length)
-			fc.out.MovRegToReg("rax", "r13") // rax = index
-			fc.out.ShlImmReg("rax", 3)       // rax = index * 8
-			fc.out.AddRegToReg("rbx", "rax") // rbx = element address
-
-			// Load the element value into xmm0
-			fc.out.MovMemToXmm("xmm0", "rbx", 0)
-
-			// Print the element value
-			// Allocate 32 bytes on stack for number-to-string conversion
-			fc.out.SubImmFromReg("rsp", 32)
-
-			// Convert float64 in xmm0 to string at rsp
-			// compileFloatToString returns: rsi = string pointer, rdx = length
-			fc.compileFloatToString("xmm0", "rsp")
-
-			// Write the string using syscall write(1, rsi, rdx)
-			fc.eb.SysWrite("rsi", "rdx")
-
-			// Clean up stack space for number string
-			fc.out.AddImmToReg("rsp", 32)
-
-			// Increment index
-			fc.out.AddImmToReg("r13", 1)
-
-			// Jump back to loop start
-			loopBackJumpPos := fc.eb.text.Len()
-			backOffset := int32(loopStartPos - (loopBackJumpPos + 5)) // 5 bytes for unconditional jump
-			fc.out.JumpUnconditional(backOffset)
-
-			// Patch the loop end jump to point here
-			loopEndPos := fc.eb.text.Len()
-			endOffset := int32(loopEndPos - (loopEndJumpPos + 6)) // 6 bytes for conditional jump
-			fc.patchJumpImmediate(loopEndJumpPos+2, endOffset)
-
-		} else {
-			// Print number - convert to string and use syscall
-			fc.compileExpression(arg)
-			// xmm0 contains float64 value
-
-			// Allocate 32 bytes on stack for number string
-			fc.out.SubImmFromReg("rsp", 32)
-
-			// Convert float64 in xmm0 to string at rsp
-			// Result: rsi = string pointer, rdx = length
-			fc.compileFloatToString("xmm0", "rsp")
-
-			// Write using syscall
-			fc.eb.SysWrite("rsi", "rdx")
-
-			// Clean up stack
-			fc.out.AddImmToReg("rsp", 32)
-		}
+		// Check if index >= length (loop exit condition)
+		fc.out.CmpRegToReg("r13", "r12") // Compare index with length
+		// Jump to end if index >= length
+		loopEndJumpPos := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpGreaterOrEqual, 0) // Placeholder, will be patched
+		
+		// Calculate element address: map_base + 8 + (index * 8)
+		// The map structure is: [length (8 bytes)] [element0] [element1] ...
+		fc.out.MovRegToReg("rbx", "r15")     // rbx = map base
+		fc.out.AddImmToReg("rbx", 8)         // rbx = map base + 8 (skip length)
+		fc.out.MovRegToReg("rax", "r13")     // rax = index
+		fc.out.ShlImmReg("rax", 3)           // rax = index * 8
+		fc.out.AddRegToReg("rbx", "rax")     // rbx = element address
+		
+		// Load the element value into xmm0
+		fc.out.MovMemToXmm("xmm0", "rbx", 0)
+		
+		// Print the element value
+		// Allocate 32 bytes on stack for number-to-string conversion
+		fc.out.SubImmFromReg("rsp", 32)
+		
+		// Convert float64 in xmm0 to string at rsp
+		// compileFloatToString returns: rsi = string pointer, rdx = length
+		fc.compileFloatToString("xmm0", "rsp")
+		
+		// Write the string using syscall write(1, rsi, rdx)
+		fc.eb.SysWrite("rsi", "rdx")
+		
+		// Clean up stack space for number string
+		fc.out.AddImmToReg("rsp", 32)
+		
+		// Increment index
+		fc.out.AddImmToReg("r13", 1)
+		
+		// Jump back to loop start
+		loopBackJumpPos := fc.eb.text.Len()
+		backOffset := int32(loopStartPos - (loopBackJumpPos + 5)) // 5 bytes for unconditional jump
+		fc.out.JumpUnconditional(backOffset)
+		
+		// Patch the loop end jump to point here
+		loopEndPos := fc.eb.text.Len()
+		endOffset := int32(loopEndPos - (loopEndJumpPos + 6)) // 6 bytes for conditional jump
+		fc.patchJumpImmediate(loopEndJumpPos+2, endOffset)
+		
+	} else {
+		// Print number - convert to string and use syscall
+		fc.compileExpression(arg)
+		// xmm0 contains float64 value
+		
+		// Allocate 32 bytes on stack for number string
+		fc.out.SubImmFromReg("rsp", 32)
+		
+		// Convert float64 in xmm0 to string at rsp
+		// Result: rsi = string pointer, rdx = length
+		fc.compileFloatToString("xmm0", "rsp")
+		
+		// Write using syscall
+		fc.eb.SysWrite("rsi", "rdx")
+		
+		// Clean up stack
+		fc.out.AddImmToReg("rsp", 32)
+	}
 
 	case "printf":
 		if len(call.Args) == 0 {
@@ -15975,13 +15975,13 @@ func (fc *FlapCompiler) compileSendExpr(expr *SendExpr) {
 
 	// Step 5: Send packet (syscall 44: sendto)
 	// sendto(sockfd, buf, len, flags, dest_addr, addrlen)
-	fc.out.MovMemToReg("rdi", "rsp", 8)                           // socket fd
-	fc.out.LeaMemToReg("rsi", "rsp", 32)                          // buffer
-	fc.out.MovRegToReg("rdx", "rcx")                              // length (copy rcx to rdx)
-	fc.out.MovImmToReg("r10", "0")                                // flags
-	fc.out.LeaMemToReg("r8", "rsp", 16)                           // sockaddr_in
+	fc.out.MovMemToReg("rdi", "rsp", 8)  // socket fd
+	fc.out.LeaMemToReg("rsi", "rsp", 32) // buffer
+	fc.out.MovRegToReg("rdx", "rcx")     // length (copy rcx to rdx)
+	fc.out.MovImmToReg("r10", "0")       // flags
+	fc.out.LeaMemToReg("r8", "rsp", 16)  // sockaddr_in
 	fc.out.MovImmToReg("r9", fmt.Sprintf("%d", socketStructSize)) // addrlen
-	fc.out.MovImmToReg("rax", "44")                               // sendto syscall
+	fc.out.MovImmToReg("rax", "44")      // sendto syscall
 	fc.out.Syscall()
 
 	// Save result
@@ -16115,10 +16115,10 @@ func (fc *FlapCompiler) compileReceiveLoopStmt(stmt *ReceiveLoopStmt) {
 	fc.out.MovU16RegToMem("ax", "rbp", -(baseOffset + 38))
 
 	// Try to bind socket to current port
-	fc.out.MovMemToReg("rdi", "rbp", -(baseOffset + 24))           // socket fd
-	fc.out.LeaMemToReg("rsi", "rbp", -(baseOffset + 40))           // sockaddr_in structure
+	fc.out.MovMemToReg("rdi", "rbp", -(baseOffset + 24)) // socket fd
+	fc.out.LeaMemToReg("rsi", "rbp", -(baseOffset + 40)) // sockaddr_in structure
 	fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", socketStructSize)) // addrlen
-	fc.out.MovImmToReg("rax", "49")                                // bind syscall
+	fc.out.MovImmToReg("rax", "49")                      // bind syscall
 	fc.out.Syscall()
 
 	// Check bind result: rax == 0 means success
@@ -16163,13 +16163,13 @@ func (fc *FlapCompiler) compileReceiveLoopStmt(stmt *ReceiveLoopStmt) {
 
 	// Call recvfrom (syscall 45: recvfrom)
 	// recvfrom(sockfd, buf, len, flags, src_addr, addrlen)
-	fc.out.MovMemToReg("rdi", "rbp", -(baseOffset + 24))           // socket fd
-	fc.out.LeaMemToReg("rsi", "rbp", -(baseOffset + 56))           // buffer (starts after sockaddr)
+	fc.out.MovMemToReg("rdi", "rbp", -(baseOffset + 24)) // socket fd
+	fc.out.LeaMemToReg("rsi", "rbp", -(baseOffset + 56)) // buffer (starts after sockaddr)
 	fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", socketBufferSize)) // buffer size
-	fc.out.MovImmToReg("r10", "0")                                 // flags
-	fc.out.LeaMemToReg("r8", "rbp", -(baseOffset + 40))            // src_addr (sockaddr_in start)
-	fc.out.LeaMemToReg("r9", "rbp", -(baseOffset + 320))           // addrlen pointer
-	fc.out.MovImmToReg("rax", "45")                                // recvfrom syscall
+	fc.out.MovImmToReg("r10", "0")                       // flags
+	fc.out.LeaMemToReg("r8", "rbp", -(baseOffset + 40))  // src_addr (sockaddr_in start)
+	fc.out.LeaMemToReg("r9", "rbp", -(baseOffset + 320)) // addrlen pointer
+	fc.out.MovImmToReg("rax", "45")                      // recvfrom syscall
 	fc.out.Syscall()
 
 	// rax now contains bytes received (or -1 on error)
