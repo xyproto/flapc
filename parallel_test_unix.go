@@ -1,3 +1,6 @@
+//go:build linux
+// +build linux
+
 package main
 
 import (
@@ -9,23 +12,14 @@ import (
 	"time"
 )
 
-// Test that we can spawn a basic thread
 func TestBasicThreadSpawn(t *testing.T) {
 	t.Skip("Skipping: manual thread spawning interferes with Go runtime")
 	fmt.Println("Testing basic thread spawn...")
 
-	// Create a counter to verify thread executed
 	var counter int32
 
-	// Allocate stack for thread
-	stack := AllocateThreadStack(1024 * 1024) // 1MB stack
+	stack := AllocateThreadStack(1024 * 1024)
 
-	// For this test, we'll use a simpler approach:
-	// Just verify that clone() returns successfully
-	// (Full function execution will be tested in integration tests)
-
-	// Attempt to spawn a thread
-	// Note: We're passing dummy values since executeThreadFunction is a placeholder
 	tid, err := CloneThread(0, 0, stack)
 
 	if err != nil {
@@ -38,17 +32,11 @@ func TestBasicThreadSpawn(t *testing.T) {
 
 	fmt.Printf("Successfully spawned thread with TID: %d\n", tid)
 
-	// Give thread time to execute and exit
 	time.Sleep(100 * time.Millisecond)
 
-	// Thread should have exited by now
-	// We can't easily check if it completed without proper synchronization
-	// (which we'll add in Phase 7), but the fact that clone() succeeded is good
-
-	_ = counter // Avoid unused variable warning
+	_ = counter
 }
 
-// Test GetTID function
 func TestGetTID(t *testing.T) {
 	tid := GetTID()
 	if tid <= 0 {
@@ -57,7 +45,6 @@ func TestGetTID(t *testing.T) {
 	fmt.Printf("Current thread TID: %d\n", tid)
 }
 
-// Test CPU core detection
 func TestGetNumCPUCores(t *testing.T) {
 	cores := GetNumCPUCores()
 	if cores <= 0 {
@@ -69,7 +56,6 @@ func TestGetNumCPUCores(t *testing.T) {
 	fmt.Printf("Detected CPU cores: %d\n", cores)
 }
 
-// Test work distribution calculation
 func TestWorkDistribution(t *testing.T) {
 	tests := []struct {
 		totalItems int
@@ -77,10 +63,10 @@ func TestWorkDistribution(t *testing.T) {
 		wantChunk  int
 		wantRem    int
 	}{
-		{100, 4, 25, 0},   // Even split
-		{100, 3, 33, 1},   // With remainder
-		{10, 4, 2, 2},     // Small total
-		{1000, 8, 125, 0}, // Larger numbers
+		{100, 4, 25, 0},
+		{100, 3, 33, 1},
+		{10, 4, 2, 2},
+		{1000, 8, 125, 0},
 	}
 
 	for _, tt := range tests {
@@ -92,17 +78,15 @@ func TestWorkDistribution(t *testing.T) {
 	}
 }
 
-// Test thread work range calculation
 func TestThreadWorkRange(t *testing.T) {
-	// Test with 100 items, 4 threads
 	totalItems := 100
 	numThreads := 4
 
 	expected := []struct{ start, end int }{
-		{0, 25},   // Thread 0
-		{25, 50},  // Thread 1
-		{50, 75},  // Thread 2
-		{75, 100}, // Thread 3
+		{0, 25},
+		{25, 50},
+		{50, 75},
+		{75, 100},
 	}
 
 	for i := 0; i < numThreads; i++ {
@@ -113,14 +97,12 @@ func TestThreadWorkRange(t *testing.T) {
 		}
 	}
 
-	// Test with remainder: 101 items, 4 threads
-	// Threads 0-2 get 25 items, thread 3 gets 26 items
 	totalItems = 101
 	expected = []struct{ start, end int }{
-		{0, 25},   // Thread 0
-		{25, 50},  // Thread 1
-		{50, 75},  // Thread 2
-		{75, 101}, // Thread 3 (gets +1)
+		{0, 25},
+		{25, 50},
+		{50, 75},
+		{75, 101},
 	}
 
 	for i := 0; i < numThreads; i++ {
@@ -132,7 +114,6 @@ func TestThreadWorkRange(t *testing.T) {
 	}
 }
 
-// Test spawning multiple threads
 func TestMultipleThreadSpawn(t *testing.T) {
 	t.Skip("Skipping: manual thread spawning interferes with Go runtime")
 	fmt.Println("Testing multiple thread spawn...")
@@ -156,7 +137,6 @@ func TestMultipleThreadSpawn(t *testing.T) {
 		fmt.Printf("Spawned thread %d with TID: %d\n", i, tid)
 	}
 
-	// Verify all TIDs are unique
 	seen := make(map[int]bool)
 	for i, tid := range tids {
 		if seen[tid] {
@@ -165,13 +145,11 @@ func TestMultipleThreadSpawn(t *testing.T) {
 		seen[tid] = true
 	}
 
-	// Wait for threads to complete
 	time.Sleep(200 * time.Millisecond)
 
 	fmt.Printf("Successfully spawned and tracked %d threads\n", numThreads)
 }
 
-// Test barrier synchronization with goroutines (simulates threads)
 func TestBarrierSync(t *testing.T) {
 	fmt.Println("Testing barrier synchronization...")
 
@@ -179,26 +157,21 @@ func TestBarrierSync(t *testing.T) {
 	barrier := NewBarrier(numThreads)
 	counter := atomic.Int32{}
 
-	// Track completion order
 	completionOrder := make([]int, 0, numThreads)
 	var mu sync.Mutex
 
-	// Spawn goroutines (simulating threads)
 	var wg sync.WaitGroup
 	for i := 0; i < numThreads; i++ {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
 
-			// Do some "work"
 			counter.Add(1)
 			time.Sleep(time.Duration(id*10) * time.Millisecond)
 
-			// Reach barrier
 			fmt.Printf("Thread %d reached barrier\n", id)
 			barrier.Wait()
 
-			// After barrier, all threads should have incremented counter
 			mu.Lock()
 			completionOrder = append(completionOrder, id)
 			mu.Unlock()
@@ -207,15 +180,12 @@ func TestBarrierSync(t *testing.T) {
 		}(i)
 	}
 
-	// Wait for all goroutines to finish
 	wg.Wait()
 
-	// Verify all threads completed
 	if len(completionOrder) != numThreads {
 		t.Errorf("Expected %d threads to complete, got %d", numThreads, len(completionOrder))
 	}
 
-	// Verify counter was incremented by all threads
 	finalCount := counter.Load()
 	if finalCount != int32(numThreads) {
 		t.Errorf("Expected counter=%d, got %d", numThreads, finalCount)
@@ -224,16 +194,12 @@ func TestBarrierSync(t *testing.T) {
 	fmt.Printf("Success! All %d threads synchronized at barrier\n", numThreads)
 }
 
-// Test manual thread function execution (bypassing CloneThread)
-// This tests the actual thread execution path
 func TestManualThreadExecution(t *testing.T) {
 	t.Skip("Skipping: manual thread execution interferes with Go runtime")
 	fmt.Println("Testing manual thread execution with shared memory...")
 
-	// Shared counter (atomic for thread safety)
 	var counter atomic.Int32
 
-	// Thread function that increments counter
 	threadFunc := func() {
 		tid := GetTID()
 		fmt.Printf("Thread %d executing\n", tid)
@@ -241,11 +207,9 @@ func TestManualThreadExecution(t *testing.T) {
 		syscall.Exit(0)
 	}
 
-	// Spawn thread manually using raw clone
 	stack := AllocateThreadStack(1024 * 1024)
 	stackTop := stack.StackTop()
 
-	// Call clone directly
 	tid, _, errno := syscall.RawSyscall6(
 		syscall.SYS_CLONE,
 		uintptr(CLONE_VM|CLONE_FILES|CLONE_FS),
@@ -257,20 +221,14 @@ func TestManualThreadExecution(t *testing.T) {
 		t.Fatalf("clone() failed: %v", errno)
 	}
 
-	// Check if we're in the child thread
 	if tid == 0 {
-		// Child thread - execute the function
 		threadFunc()
-		// threadFunc calls syscall.Exit, so we never return here
 	}
 
-	// Parent process
 	fmt.Printf("Parent: spawned thread with TID %d\n", tid)
 
-	// Wait for thread to execute
 	time.Sleep(100 * time.Millisecond)
 
-	// Check that counter was incremented
 	finalCount := counter.Load()
 	if finalCount != 1 {
 		t.Errorf("Expected counter=1, got %d (thread may not have executed)", finalCount)
