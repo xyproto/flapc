@@ -1,10 +1,10 @@
 # Technical Debt - Flapc Compiler
 
 **Last Updated:** 2025-11-03
-**Total Items:** 47 fixable items
-**Estimated Effort:** 8-12 weeks
+**Total Items:** 45 fixable items (platform-specific issues moved to PLATFORMS.md)
+**Estimated Effort:** 7-11 weeks
 
-This document tracks technical debt that can be addressed without major architectural changes. For complex design issues requiring significant refactoring or architectural decisions, see COMPLEX.md.
+This document tracks technical debt that can be addressed without major architectural changes. For complex design issues requiring significant refactoring or architectural decisions, see COMPLEX.md. For platform-specific issues (ARM64, RISC-V64, macOS), see PLATFORMS.md.
 
 ---
 
@@ -319,31 +319,11 @@ main.go: Multiple debug lines
 
 ---
 
-## 4. SMALL FIXES (12 items)
+## 4. SMALL FIXES (10 items)
 
-### 4.1 Fix String Literal Address Loading (RISC-V64)
-**Priority:** High
-**Effort:** 2-4 hours
+**Note:** Platform-specific fixes (ARM64, RISC-V64) have been moved to PLATFORMS.md
 
-**File:** riscv64_codegen.go:88
-**Issue:** `return rcg.out.LoadImm("a0", 0) // TODO: Load actual address`
-**Action:**
-- [ ] Implement proper PC-relative addressing for RISC-V64
-- [ ] Load string literal addresses correctly
-- [ ] Add test to verify string operations work
-
-### 4.2 Implement PC-Relative Load for Rodata (RISC-V64)
-**Priority:** High
-**Effort:** 3-4 hours
-
-**File:** riscv64_codegen.go:158
-**Issue:** `// TODO: Implement PC-relative load for rodata symbols`
-**Action:**
-- [ ] Implement AUIPC + ADDI for PC-relative loads
-- [ ] Test with floating-point constants
-- [ ] Verify rodata section is properly referenced
-
-### 4.3 Standardize Placeholder Patching
+### 4.1 Standardize Placeholder Patching
 **Priority:** Medium
 **Effort:** 3-4 hours
 
@@ -359,7 +339,7 @@ main.go: Multiple debug lines
 - riscv64_backend.go:397
 - main.go:755-784
 
-### 4.4 Fix Unused Variable Warnings
+### 4.2 Fix Unused Variable Warnings
 **Priority:** Low
 **Effort:** 1 hour
 
@@ -368,7 +348,7 @@ main.go: Multiple debug lines
 - [ ] Remove unused variables
 - [ ] Use `_` for intentionally unused values
 
-### 4.5 Improve Error Recovery
+### 4.3 Improve Error Recovery
 **Priority:** Medium
 **Effort:** 4-6 hours
 
@@ -379,7 +359,7 @@ main.go: Multiple debug lines
 - [ ] Continue parsing after recoverable errors
 - [ ] Improve error context information
 
-### 4.6 Add Input Validation
+### 4.4 Add Input Validation
 **Priority:** Medium
 **Effort:** 2-3 hours
 
@@ -389,7 +369,7 @@ main.go: Multiple debug lines
 - [ ] Verify platform compatibility
 - [ ] Add helpful error messages for invalid input
 
-### 4.7 Improve Test Timeouts
+### 4.5 Improve Test Timeouts
 **Priority:** Low
 **Effort:** 1 hour
 
@@ -399,7 +379,7 @@ main.go: Multiple debug lines
 - [ ] Use context.WithTimeout
 - [ ] Make timeouts configurable
 
-### 4.8 Fix Race Conditions in Tests
+### 4.6 Fix Race Conditions in Tests
 **Priority:** Medium
 **Effort:** 2-3 hours
 
@@ -408,7 +388,7 @@ main.go: Multiple debug lines
 - [ ] Fix any detected race conditions
 - [ ] Add race detector to CI
 
-### 4.9 Improve Error Message for Undefined Functions
+### 4.7 Improve Error Message for Undefined Functions
 **Priority:** Medium
 **Effort:** 3-4 hours
 
@@ -418,7 +398,7 @@ main.go: Multiple debug lines
 - [ ] Suggest similar function names (did you mean...?)
 - [ ] Improve error message formatting
 
-### 4.10 Add Version Information to Binaries
+### 4.8 Add Version Information to Binaries
 **Priority:** Low
 **Effort:** 1-2 hours
 
@@ -427,7 +407,7 @@ main.go: Multiple debug lines
 - [ ] Add build timestamp
 - [ ] Include in --version output
 
-### 4.11 Improve Binary Size
+### 4.9 Improve Binary Size
 **Priority:** Low
 **Effort:** 2-3 hours
 
@@ -437,7 +417,7 @@ main.go: Multiple debug lines
 - [ ] Strip debug info by default
 - [ ] Add --strip flag
 
-### 4.12 Add Compiler Flags
+### 4.10 Add Compiler Flags
 **Priority:** Low
 **Effort:** 2-3 hours
 
@@ -452,7 +432,7 @@ main.go: Multiple debug lines
 ## Progress Tracking
 
 ### By Priority
-- **High Priority:** 6 items (2-3 days)
+- **High Priority:** 4 items (1-2 days)
 - **Medium Priority:** 22 items (3-4 weeks)
 - **Low Priority:** 19 items (2-3 weeks)
 
@@ -460,33 +440,37 @@ main.go: Multiple debug lines
 - **Cleanup:** 15 items
 - **Tests:** 8 items
 - **Documentation:** 12 items
-- **Fixes:** 12 items
+- **Fixes:** 10 items
 
 ### Completion Status
 - [ ] Cleanup & Code Quality: 0/15 (0%)
 - [ ] Test Improvements: 0/8 (0%)
 - [ ] Documentation: 0/12 (0%)
-- [ ] Small Fixes: 0/12 (0%)
+- [ ] Small Fixes: 0/10 (0%)
 
-**Overall Progress: 0/47 (0%)**
+**Overall Progress: 0/45 (0%)**
+
+**Note:** 2 RISC-V64 items moved to PLATFORMS.md
 
 ---
 
 ## Next Actions
 
 ### This Week
-1. Fix RISC-V64 string literal loading (4.1)
-2. Fix RISC-V64 PC-relative addressing (4.2)
-3. Add Architecture Support Matrix (3.1)
-4. Document Known Limitations (3.4)
-5. Add Missing Test Result Files (2.1)
+1. Add Architecture Support Matrix (3.1)
+2. Document Known Limitations (3.4)
+3. Add Missing Test Result Files (2.1)
+4. Remove excessive debug output (1.1)
+5. Standardize error messages (1.3)
+
+**Note:** RISC-V64 items moved to PLATFORMS.md
 
 ### Next Week
-1. Remove excessive debug output (1.1)
-2. Add negative test suite (2.3)
-3. Improve debugging guide (3.3)
-4. Fix undefined function errors (4.9)
-5. Add input validation (4.6)
+1. Add negative test suite (2.3)
+2. Improve debugging guide (3.3)
+3. Fix undefined function errors (4.7)
+4. Add input validation (4.4)
+5. Improve error recovery (4.3)
 
 ### This Month
 1. Complete all High Priority items
