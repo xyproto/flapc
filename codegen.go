@@ -1820,22 +1820,9 @@ func hasAtomicInExpr(expr Expression) bool {
 }
 
 func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
-	// IMPORTANT: Check for atomic operations in parallel loops
-	// This is a known limitation that causes crashes (segfault)
-	// See COMPLEX.md section 1.2 for details
-	if hasAtomicOperations(stmt.Body) {
-		fmt.Fprintf(os.Stderr, "Error: Atomic operations inside parallel loops (@@ or N @) are not currently supported\n")
-		fmt.Fprintf(os.Stderr, "       This causes a segfault due to register conflicts in the current implementation.\n")
-		fmt.Fprintf(os.Stderr, "\n")
-		fmt.Fprintf(os.Stderr, "Workarounds:\n")
-		fmt.Fprintf(os.Stderr, "  1. Use a sequential loop (@ instead of @@) with atomic operations\n")
-		fmt.Fprintf(os.Stderr, "  2. Use manual thread spawning with spawn expressions\n")
-		fmt.Fprintf(os.Stderr, "  3. Restructure code to avoid atomic ops inside parallel loop\n")
-		fmt.Fprintf(os.Stderr, "\n")
-		fmt.Fprintf(os.Stderr, "This limitation will be fixed in a future version (v2.0+).\n")
-		fmt.Fprintf(os.Stderr, "See COMPLEX.md for technical details.\n")
-		os.Exit(1)
-	}
+	// Fixed: atomic operations now work in parallel loops!
+	// We changed atomic_cas to use r12 instead of r11, avoiding register conflicts.
+	// r11 is reserved for parent rbp in parallel loops.
 
 	// Determine actual thread count
 	actualThreads := stmt.NumThreads
@@ -10830,15 +10817,15 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.compileExpression(call.Args[1])
 		fc.out.Cvttsd2si("rax", "xmm0") // rax = expected old value
 
-		// Save rax to r11 before compiling third argument
-		fc.out.MovRegToReg("r11", "rax")
+		// Save rax to r12 before compiling third argument (not r11 which is used by parallel loops)
+		fc.out.MovRegToReg("r12", "rax")
 
 		// Compile new value argument
 		fc.compileExpression(call.Args[2])
 		fc.out.Cvttsd2si("rcx", "xmm0") // rcx = new value
 
-		// Restore rax from r11
-		fc.out.MovRegToReg("rax", "r11")
+		// Restore rax from r12
+		fc.out.MovRegToReg("rax", "r12")
 
 		// LOCK CMPXCHG [r10], rcx
 		// If [r10] == rax, then [r10] := rcx and ZF := 1
