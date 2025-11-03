@@ -379,9 +379,11 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 
 	// REGISTER ALLOCATOR: Save callee-saved registers used for loop optimization
 	// rbx = loop counter
-	// Also push r12 for stack alignment (16-byte boundary required by ABI)
 	fc.out.PushReg("rbx")
-	fc.out.PushReg("r12") // Dummy push for alignment
+	// Maintain 16-byte stack alignment required by x86_64 ABI
+	// (call pushed 8 bytes, rbp pushed 8 bytes, rbx pushed 8 bytes = 24 bytes total)
+	// Subtract 8 more bytes to reach 32 bytes (16-byte aligned)
+	fc.out.SubImmFromReg("rsp", 8)
 
 	if fc.maxStackOffset > 0 {
 		alignedSize := int64((fc.maxStackOffset + 15) & ^15)
@@ -2388,7 +2390,7 @@ func (fc *FlapCompiler) compileJumpStatement(stmt *JumpStmt) {
 
 		// REGISTER ALLOCATOR: Restore callee-saved registers (for lambda functions)
 		if fc.currentLambda != nil {
-			fc.out.PopReg("r12") // Dummy pop for alignment
+			fc.out.AddImmToReg("rsp", 8) // Remove alignment padding
 			fc.out.PopReg("rbx")
 		}
 
@@ -4415,7 +4417,7 @@ func (fc *FlapCompiler) compileMatchJump(jumpExpr *JumpExpr) {
 
 		// REGISTER ALLOCATOR: Restore callee-saved registers (for lambda functions)
 		if fc.currentLambda != nil {
-			fc.out.PopReg("r12") // Dummy pop for alignment
+			fc.out.AddImmToReg("rsp", 8) // Remove alignment padding
 			fc.out.PopReg("rbx")
 		}
 
@@ -5221,11 +5223,11 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 
 		// REGISTER ALLOCATOR: Save callee-saved registers used for loop optimization
 		// rbx = loop counter
-		// Also push r12 for stack alignment (16-byte boundary required by ABI)
 		fc.out.PushReg("rbx")
-		fc.out.PushReg("r12") // Dummy push for alignment
+		// Maintain 16-byte stack alignment
+		fc.out.SubImmFromReg("rsp", 8)
 
-		// Stack is now 16-byte aligned (after call+push rbp+push rbx+push r12)
+		// Stack is now 16-byte aligned (call+rbp+rbx+padding = 32 bytes)
 		// All allocations are multiples of 16 bytes to maintain alignment
 
 		// Save previous state
@@ -5300,7 +5302,7 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 		fc.out.MovRegToReg("rsp", "rbp")
 
 		// REGISTER ALLOCATOR: Restore callee-saved registers
-		fc.out.PopReg("r12") // Dummy pop for alignment
+		fc.out.AddImmToReg("rsp", 8) // Remove alignment padding
 		fc.out.PopReg("rbx")
 
 		fc.out.PopReg("rbp")
@@ -5415,7 +5417,7 @@ func (fc *FlapCompiler) generatePatternLambdaFunctions() {
 			fc.out.MovRegToReg("rsp", "rbp")
 
 			// REGISTER ALLOCATOR: Restore callee-saved registers (always in pattern lambda)
-			fc.out.PopReg("r12") // Dummy pop for alignment
+			fc.out.AddImmToReg("rsp", 8) // Remove alignment padding
 			fc.out.PopReg("rbx")
 
 			fc.out.PopReg("rbp")
