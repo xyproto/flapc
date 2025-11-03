@@ -1,8 +1,117 @@
-# Spawn with Pipe-Based Result Waiting Design
+# Spawn with Result Waiting Design
 
 ## Overview
 
-Currently, `spawn` only supports fire-and-forget process spawning. This design adds pipe-based communication to enable fork/join patterns where the parent waits for and uses the child's result.
+Currently, `spawn` only supports fire-and-forget process spawning. This design adds communication to enable fork/join patterns where the parent waits for and uses the child's result.
+
+## Implementation Strategy
+
+**Recommendation: Use Channels instead of raw pipes**
+
+After reviewing the existing plans, implementing channels (as described in CHANNELS_AND_ENET_PLAN.md) would provide a better foundation:
+
+1. **Channels are higher-level** - Easier to use than raw pipe syscalls
+2. **Thread-safe by design** - Built-in synchronization
+3. **More flexible** - Can handle multiple spawns, select statements, timeouts
+4. **Consistent with language** - Same primitives for threads and processes
+5. **ENet compatibility** - Channels can eventually work over ENet for distributed computing
+
+**Migration Path:**
+1. First implement channels (CHANNELS_AND_ENET_PLAN.md Part 1)
+2. Use channels for spawn communication
+3. Later add ENet backend for distributed spawns
+
+## Proposed Channel-Based Design
+
+### Syntax with Channels
+
+```flap
+// Create channel for result
+result_ch := chan()
+
+// Spawn with channel communication
+spawn {
+    result := expensive_computation()
+    result_ch <- result  // Send result to channel
+}
+
+// Wait for result
+value := <-result_ch  // Receive from channel
+println("Got result:", value)
+```
+
+Or with the pipe syntax sugar:
+
+```flap
+// Syntactic sugar: automatically creates channel and waits
+result = spawn expensive_computation() | value | {
+    println("Computation returned:", value)
+    value * 2
+}
+```
+
+**Desugaring:**
+```flap
+// The above desugars to:
+__spawn_ch_1 := chan()
+spawn {
+    __spawn_result_1 := expensive_computation()
+    __spawn_ch_1 <- __spawn_result_1
+}
+value := <-__spawn_ch_1
+result = {
+    println("Computation returned:", value)
+    value * 2
+}
+```
+
+### Benefits Over Raw Pipes
+
+1. **Type-safe** - Channels can be typed (future enhancement)
+2. **Buffered** - Can create buffered channels for non-blocking sends
+3. **Select support** - Can wait on multiple spawns with `select`
+4. **Timeout support** - Built into select statement
+5. **Multiple consumers** - Channels support fan-out patterns
+6. **Clean semantics** - Send/receive operators are clear
+
+### Example: Multiple Spawns with Select
+
+```flap
+ch1 := chan()
+ch2 := chan()
+
+spawn { ch1 <- compute_task1() }
+spawn { ch2 <- compute_task2() }
+
+// Wait for first to complete
+select {
+    result := <-ch1 -> {
+        println("Task 1 finished first:", result)
+    }
+    result := <-ch2 -> {
+        println("Task 2 finished first:", result)
+    }
+}
+```
+
+### Implementation Requirements
+
+**Prerequisites:**
+1. Implement channels (CHANNELS_AND_ENET_PLAN.md Part 1)
+   - `chan()` creation
+   - `<-` send operator
+   - `<-` receive operator
+   - `close()` function
+   - `select` statement
+
+**Spawn Integration:**
+1. Parse pipe syntax: `spawn expr | params | block`
+2. Desugar to channel creation + spawn + receive + block
+3. Handle multiple parameters (multiple channel sends/receives)
+
+## Original Pipe-Based Design (Deferred)
+
+The original design used raw Unix pipes. This is kept for reference but **deferred** in favor of channels.
 
 ## Current Implementation
 

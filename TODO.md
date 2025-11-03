@@ -12,7 +12,13 @@
   - ⏳ Convert remaining codegen errors to use ErrorCollector
   - ⏳ Add more negative test cases (type mismatches, immutable updates)
   - ⏳ Enhance error messages with column tracking
-- Implement pipe-based result waiting for spawn expressions to enable fork/join patterns
+- **Implement channels for inter-process/thread communication** (Next Priority)
+  - See CHANNELS_AND_ENET_PLAN.md Part 1
+  - Prerequisite for spawn result waiting
+  - Enables CSP-style concurrency patterns
+- Implement spawn with channel-based result waiting (after channels)
+  - Fork/join patterns using channels
+  - See updated SPAWN_DESIGN.md
 
 ## Future Enhancements
 - Register allocator Phase 2/3 (local variables) - deferred pending profiling data
