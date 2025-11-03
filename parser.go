@@ -70,6 +70,7 @@ type Parser struct {
 	constants   map[string]Expression // Compile-time constants (immutable literals)
 	aliases     map[string]TokenType  // Keyword aliases (e.g., "for" -> TOKEN_AT)
 	speculative bool                  // True when in speculative parsing mode (suppress errors)
+	errors      *ErrorCollector       // Railway-oriented error collector
 }
 
 type parserState struct {
@@ -102,7 +103,9 @@ func NewParser(input string) *Parser {
 		source:    input,
 		constants: make(map[string]Expression),
 		aliases:   make(map[string]TokenType),
+		errors:    NewErrorCollector(10),
 	}
+	p.errors.SetSourceCode(input)
 	p.nextToken()
 	p.nextToken()
 	return p
@@ -115,7 +118,9 @@ func NewParserWithFilename(input, filename string) *Parser {
 		source:    input,
 		constants: make(map[string]Expression),
 		aliases:   make(map[string]TokenType),
+		errors:    NewErrorCollector(10),
 	}
+	p.errors.SetSourceCode(input)
 	p.nextToken()
 	p.nextToken()
 	return p
@@ -136,18 +141,72 @@ func (p *Parser) formatError(line int, msg string) string {
 		p.filename, line, msg, lineNum, sourceLine, marker)
 }
 
-// error prints a formatted error and panics (to be recovered by CompileFlap)
+// error collects a parsing error in the ErrorCollector (railway-oriented approach)
 // In speculative mode, errors are suppressed and parsing fails silently
 func (p *Parser) error(msg string) {
 	if p.speculative {
 		// In speculative mode, don't panic - let the caller handle failure
 		panic(speculativeError{})
 	}
-	errMsg := p.formatError(p.current.Line, msg)
-	if VerboseMode {
-		fmt.Fprintln(os.Stderr, errMsg)
+
+	// Railway-oriented: collect error and continue if possible
+	err := SyntaxError(msg, SourceLocation{
+		File:   p.filename,
+		Line:   p.current.Line,
+		Column: 0, // TODO: track column positions in lexer
+		Length: len(p.current.Value),
+	})
+	p.errors.AddError(err)
+
+	// For backwards compatibility during transition: if we hit max errors, panic
+	// This will be removed once all error handling is converted
+	if p.errors.ShouldStop() {
+		panic(fmt.Errorf("too many errors"))
 	}
-	panic(fmt.Errorf("%s", errMsg))
+}
+
+// parseError creates and collects a syntax error with custom location
+func (p *Parser) parseError(msg string, loc SourceLocation) {
+	if p.speculative {
+		panic(speculativeError{})
+	}
+	err := SyntaxError(msg, loc)
+	p.errors.AddError(err)
+	if p.errors.ShouldStop() {
+		panic(fmt.Errorf("too many errors"))
+	}
+}
+
+// synchronize skips tokens until we reach a safe recovery point
+// This allows the parser to continue after an error and find more errors
+func (p *Parser) synchronize() {
+	p.nextToken()
+
+	for p.current.Type != TOKEN_EOF {
+		// Synchronization points: statement boundaries
+		switch p.current.Type {
+		case TOKEN_NEWLINE:
+			p.nextToken()
+			return
+		case TOKEN_SEMICOLON:
+			p.nextToken()
+			return
+		case TOKEN_RBRACE: // End of block
+			return
+		case TOKEN_AT: // Loop statement
+			return
+		}
+
+		// Keywords that start new statements (stored as identifiers)
+		if p.peek.Type == TOKEN_IDENT {
+			switch p.peek.Value {
+			case "fn", "return", "break", "continue", "import", "from", "use", "defer":
+				return
+			}
+		}
+
+		p.nextToken()
+	}
 }
 
 // speculativeError is used to signal parse failure during speculative parsing
@@ -204,6 +263,13 @@ func (p *Parser) ParseProgram() *Program {
 		}
 		p.nextToken()
 		p.skipNewlines()
+	}
+
+	// Check for parse errors
+	if p.errors.HasErrors() {
+		// Print all collected errors
+		fmt.Fprintln(os.Stderr, p.errors.Report(true))
+		panic(fmt.Errorf("compilation failed with %d error(s)", p.errors.ErrorCount()))
 	}
 
 	// Don't add automatic exit(0) statement - the compiler will emit exit code

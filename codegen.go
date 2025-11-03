@@ -93,6 +93,7 @@ type FlapCompiler struct {
 	movedVars   map[string]bool    // Track variables that have been moved (use-after-move detection)
 	scopeDepth  int                // Track scope depth for proper move tracking
 	scopedMoved []map[string]bool  // Stack of moved variables per scope
+	errors      *ErrorCollector    // Railway-oriented error collector
 }
 
 type LambdaFunc struct {
@@ -151,6 +152,7 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 		movedVars:           make(map[string]bool),
 		scopeDepth:          0,
 		scopedMoved:         []map[string]bool{make(map[string]bool)},
+		errors:              NewErrorCollector(10),
 	}, nil
 }
 
