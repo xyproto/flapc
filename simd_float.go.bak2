@@ -14,11 +14,7 @@ func (o *Out) Cvtsi2sd(dst, src string) {
 	o.backend.Cvtsi2sd(dst, src)
 		return
 	}
-	// Fallback for x86_64
-	switch o.target.Arch() {
-	case ArchX86_64:
-		o.cvtsi2sdX86(dst, src)
-	}
+	// Fallback for x86_64 - not yet implemented
 }
 
 func (o *Out) cvtsi2sdX86(dst, src string) {
@@ -126,11 +122,7 @@ func (o *Out) AddpdXmm(dst, src string) {
 	o.backend.AddpdXmm(dst, src)
 		return
 	}
-	// Fallback for x86_64
-	switch o.target.Arch() {
-	case ArchX86_64:
-		o.addpdX86(dst, src)
-	}
+	// Fallback for x86_64 - not yet implemented
 }
 
 func (o *Out) addpdX86(dst, src string) {
@@ -176,11 +168,7 @@ func (o *Out) SubpdXmm(dst, src string) {
 	o.backend.SubpdXmm(dst, src)
 		return
 	}
-	// Fallback for x86_64
-	switch o.target.Arch() {
-	case ArchX86_64:
-		o.subpdX86(dst, src)
-	}
+	// Fallback for x86_64 - not yet implemented
 }
 
 func (o *Out) subpdX86(dst, src string) {
@@ -210,11 +198,7 @@ func (o *Out) MulpdXmm(dst, src string) {
 	o.backend.MulpdXmm(dst, src)
 		return
 	}
-	// Fallback for x86_64
-	switch o.target.Arch() {
-	case ArchX86_64:
-		o.mulpdX86(dst, src)
-	}
+	// Fallback for x86_64 - not yet implemented
 }
 
 func (o *Out) mulpdX86(dst, src string) {
@@ -244,11 +228,7 @@ func (o *Out) DivpdXmm(dst, src string) {
 	o.backend.DivpdXmm(dst, src)
 		return
 	}
-	// Fallback for x86_64
-	switch o.target.Arch() {
-	case ArchX86_64:
-		o.divpdX86(dst, src)
-	}
+	// Fallback for x86_64 - not yet implemented
 }
 
 func (o *Out) divpdX86(dst, src string) {
@@ -469,11 +449,7 @@ func (o *Out) Ucomisd(xmm1, xmm2 string) {
 	o.backend.Ucomisd(xmm1, xmm2)
 		return
 	}
-	// Fallback for x86_64
-	switch o.target.Arch() {
-	case ArchX86_64:
-		o.ucomisdX86(xmm1, xmm2)
-	}
+	// Fallback for x86_64 - not yet implemented
 }
 
 func (o *Out) ucomisdX86(xmm1, xmm2 string) {

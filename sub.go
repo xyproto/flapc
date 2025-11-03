@@ -15,12 +15,28 @@ import (
 
 // SubRegFromReg generates SUB dst, src (dst = dst - src)
 func (o *Out) SubRegFromReg(dst, src string) {
-	o.backend.SubRegToReg(dst, src)
+	if o.backend != nil {
+		o.backend.SubRegToReg(dst, src)
+		return
+	}
+	// Fallback for x86_64
+	switch o.target.Arch() {
+	case ArchX86_64:
+		o.subX86RegFromReg(dst, src)
+	}
 }
 
 // SubImmFromReg generates SUB dst, imm (dst = dst - imm)
 func (o *Out) SubImmFromReg(dst string, imm int64) {
-	o.backend.SubImmFromReg(dst, imm)
+	if o.backend != nil {
+		o.backend.SubImmFromReg(dst, imm)
+		return
+	}
+	// Fallback for x86_64
+	switch o.target.Arch() {
+	case ArchX86_64:
+		o.subX86ImmFromReg(dst, imm)
+	}
 }
 
 // SubRegFromRegToReg generates SUB dst, src1, src2 (dst = src1 - src2)

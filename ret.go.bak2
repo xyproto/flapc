@@ -19,11 +19,7 @@ func (o *Out) Ret() {
 	o.backend.Ret()
 		return
 	}
-	// Fallback for x86_64 (uses methods in this file)
-	switch o.target.Arch() {
-	case ArchX86_64:
-		o.retX86()
-	}
+	// Fallback for x86_64 - not yet implemented
 }
 
 // RetImm generates a return with immediate pop (x86-64 only)

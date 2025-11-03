@@ -33,27 +33,19 @@ const (
 // offset is the relative offset to jump to (signed, from the end of the instruction)
 func (o *Out) JumpConditional(condition JumpCondition, offset int32) {
 	if o.backend != nil {
-		o.backend.JumpConditional(condition, offset)
+	o.backend.JumpConditional(condition, offset)
 		return
 	}
-	// Fallback for x86_64
-	switch o.target.Arch() {
-	case ArchX86_64:
-		o.jmpX86Conditional(condition, offset)
-	}
+	// Fallback for x86_64 - not yet implemented
 }
 
 // JumpUnconditional generates an unconditional jump
 func (o *Out) JumpUnconditional(offset int32) {
 	if o.backend != nil {
-		o.backend.JumpUnconditional(offset)
+	o.backend.JumpUnconditional(offset)
 		return
 	}
-	// Fallback for x86_64
-	switch o.target.Arch() {
-	case ArchX86_64:
-		o.jmpX86Unconditional(offset)
-	}
+	// Fallback for x86_64 - not yet implemented
 }
 
 // x86-64 conditional jump implementation

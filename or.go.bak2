@@ -17,11 +17,7 @@ func (o *Out) OrRegWithReg(dst, src string) {
 	o.backend.OrRegWithReg(dst, src)
 		return
 	}
-	// Fallback for x86_64
-	switch o.target.Arch() {
-	case ArchX86_64:
-		o.orX86RegWithReg(dst, src)
-	}
+	// Fallback for x86_64 - not yet implemented
 }
 
 // OrRegWithImm generates OR dst, imm (dst = dst | imm)

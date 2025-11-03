@@ -14,7 +14,15 @@ import (
 
 // AndRegWithReg generates AND dst, src (dst = dst & src)
 func (o *Out) AndRegWithReg(dst, src string) {
-	o.backend.AndRegWithReg(dst, src)
+	if o.backend != nil {
+		o.backend.AndRegWithReg(dst, src)
+		return
+	}
+	// Fallback for x86_64
+	switch o.target.Arch() {
+	case ArchX86_64:
+		o.andX86RegWithReg(dst, src)
+	}
 }
 
 // AndRegWithImm generates AND dst, imm (dst = dst & imm)

@@ -21,7 +21,7 @@ func NewOut(target Target, writer Writer, eb *ExecutableBuilder) *Out {
 		target:  target,
 		writer:  writer,
 		eb:      eb,
-		backend: backend,
+		backend: backend, // nil for x86_64, actual backend for ARM64/RISC-V
 	}
 }
 
@@ -39,12 +39,36 @@ func (o *Out) Lookup(name string) string {
 
 // MovRegToReg generates a register-to-register move instruction
 func (o *Out) MovRegToReg(dst, src string) {
-	o.backend.MovRegToReg(dst, src)
+	if o.backend != nil {
+		o.backend.MovRegToReg(dst, src)
+		return
+	}
+	// Fallback to architecture-specific methods for x86_64
+	switch o.target.Arch() {
+	case ArchX86_64:
+		o.movX86RegToReg(dst, src)
+	case ArchARM64:
+		o.movARM64RegToReg(dst, src)
+	case ArchRiscv64:
+		o.movRISCVRegToReg(dst, src)
+	}
 }
 
 // MovImmToReg generates an immediate-to-register move instruction
 func (o *Out) MovImmToReg(dst, imm string) {
-	o.backend.MovImmToReg(dst, imm)
+	if o.backend != nil {
+		o.backend.MovImmToReg(dst, imm)
+		return
+	}
+	// Fallback to architecture-specific methods for x86_64
+	switch o.target.Arch() {
+	case ArchX86_64:
+		o.movX86ImmToReg(dst, imm)
+	case ArchARM64:
+		o.movARM64ImmToReg(dst, imm)
+	case ArchRiscv64:
+		o.movRISCVImmToReg(dst, imm)
+	}
 }
 
 // x86_64 register-to-register move
@@ -371,7 +395,19 @@ func (o *Out) MovInstruction(dst, src string) {
 
 // MovRegToXmm moves a general purpose register to an XMM register
 func (o *Out) MovRegToXmm(dst, src string) {
-	o.backend.MovRegToXmm(dst, src)
+	if o.backend != nil {
+		o.backend.MovRegToXmm(dst, src)
+		return
+	}
+	// Fallback to architecture-specific methods for x86_64
+	switch o.target.Arch() {
+	case ArchX86_64:
+		o.movX86RegToXmm(dst, src)
+	case ArchARM64:
+		o.movARM64RegToFP(dst, src)
+	case ArchRiscv64:
+		o.movRISCVRegToFP(dst, src)
+	}
 }
 
 // x86-64 MOVQ GP register to XMM register

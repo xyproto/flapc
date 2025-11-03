@@ -11,11 +11,7 @@ func (o *Out) Syscall() {
 	o.backend.Syscall()
 		return
 	}
-	// Fallback for x86_64 (uses methods in this file)
-	switch o.target.Arch() {
-	case ArchX86_64:
-		o.syscallX86()
-	}
+	// Fallback for x86_64 - not yet implemented
 }
 
 // x86-64: syscall instruction

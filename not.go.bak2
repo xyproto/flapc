@@ -16,11 +16,7 @@ func (o *Out) NotReg(dst string) {
 	o.backend.NotReg(dst)
 		return
 	}
-	// Fallback for x86_64 (uses methods in this file)
-	switch o.target.Arch() {
-	case ArchX86_64:
-		o.notX86Reg(dst)
-	}
+	// Fallback for x86_64 - not yet implemented
 }
 
 // ============================================================================
