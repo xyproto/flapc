@@ -1,0 +1,4 @@
+// Test syntax error - unterminated string
+x = "hello world
+y = 10
+println(y)

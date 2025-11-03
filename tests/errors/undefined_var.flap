@@ -1,0 +1,11 @@
+// Test undefined variable error (semantic, not syntax, but demonstrates error reporting)
+x = 5
+y = 10
+println(x + y)
+
+// Reference undefined variable
+println(undefined_variable)
+
+// This should still execute if we had better recovery
+z = 15
+println(z)
