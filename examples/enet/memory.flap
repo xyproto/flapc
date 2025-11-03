@@ -1,0 +1,32 @@
+// Memory utility functions for C FFI
+// These help with reading/writing C struct fields
+
+// Allocate memory (wrapper around malloc)
+fn alloc(size) {
+    malloc(size)
+}
+
+// Write 32-bit unsigned integer at offset
+fn write_u32(ptr, offset, value) {
+    unsafe { *((ptr + offset) as int32*) = value }
+}
+
+// Write 16-bit unsigned integer at offset
+fn write_u16(ptr, offset, value) {
+    unsafe { *((ptr + offset) as int16*) = value }
+}
+
+// Read 32-bit unsigned integer from offset
+fn read_u32(ptr, offset) {
+    unsafe { *((ptr + offset) as int32*) }
+}
+
+// Read 64-bit unsigned integer from offset
+fn read_u64(ptr, offset) {
+    unsafe { *((ptr + offset) as int64*) }
+}
+
+// Read pointer from offset
+fn read_ptr(ptr, offset) {
+    unsafe { *((ptr + offset) as ptr*) }
+}

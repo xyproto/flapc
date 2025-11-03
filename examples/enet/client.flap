@@ -1,0 +1,141 @@
+// ENet Client Example
+// This demonstrates connecting to an ENet server
+//
+// Build: flapc client.flap -o client
+// Run: ./client
+//
+// Requires: libenet-dev or enet library installed
+// Link flags: -lenet
+
+import enet as enet
+
+fn main() {
+    // Initialize ENet
+    result := enet.enet_initialize()
+    if result != 0 {
+        println("Failed to initialize ENet")
+        exit(1)
+    }
+    defer enet.enet_deinitialize()
+
+    println("ENet initialized successfully")
+
+    // Create client (no address = client mode)
+    // 1 peer (server), 2 channels
+    client := enet.enet_host_create(
+        0,     // no address (client)
+        1,     // 1 outgoing connection
+        2,     // 2 channels
+        0,     // unlimited bandwidth
+        0      // unlimited bandwidth
+    )
+
+    if client == 0 {
+        println("Failed to create ENet client")
+        exit(1)
+    }
+    defer enet.enet_host_destroy(client)
+
+    // Server address
+    server_addr := alloc(8)
+    write_u32(server_addr, 0, 0x0100007f)  // 127.0.0.1 in network byte order
+    write_u16(server_addr, 4, 7777)        // port 7777
+
+    // Connect to server
+    // ENetPeer* enet_host_connect(
+    //     ENetHost* host,
+    //     const ENetAddress* address,
+    //     size_t channelCount,
+    //     uint32_t data
+    // )
+    peer := enet.enet_host_connect(client, server_addr, 2, 0)
+
+    if peer == 0 {
+        println("No available peers for connection")
+        exit(1)
+    }
+
+    println("Connecting to 127.0.0.1:7777...")
+
+    // Event structure
+    event := alloc(64)
+
+    // Wait for connection (5 second timeout)
+    service_result := enet.enet_host_service(client, event, 5000)
+
+    if service_result > 0 {
+        event_type := read_u32(event, 0)
+        if event_type == 1 {  // ENET_EVENT_TYPE_CONNECT
+            println("Connected to server!")
+
+            // Send a test message
+            message := "Hello from Flapc!"
+            message_cstr := message as cstr
+
+            // Create packet
+            // ENetPacket* enet_packet_create(
+            //     const void* data,
+            //     size_t dataLength,
+            //     uint32_t flags
+            // )
+            // ENET_PACKET_FLAG_RELIABLE = 1
+            packet := enet.enet_packet_create(
+                message_cstr,
+                17,  // length of "Hello from Flapc!"
+                1    // reliable flag
+            )
+
+            // Send packet
+            // int enet_peer_send(
+            //     ENetPeer* peer,
+            //     uint8_t channelID,
+            //     ENetPacket* packet
+            // )
+            enet.enet_peer_send(peer, 0, packet)
+
+            // Flush
+            enet.enet_host_flush(client)
+
+            println("Sent message to server")
+
+            // Wait a bit for response
+            @ i in 0..<10 {
+                result2 := enet.enet_host_service(client, event, 1000)
+                if result2 > 0 {
+                    event_type2 := read_u32(event, 0)
+                    if event_type2 == 2 {  // RECEIVE
+                        println("Received response from server")
+                        packet2 := read_ptr(event, 16)
+                        enet.enet_packet_destroy(packet2)
+                    }
+                }
+            }
+
+            // Disconnect
+            enet.enet_peer_disconnect(peer, 0)
+
+            // Wait for disconnect event
+            @ i in 0..<10 {
+                result3 := enet.enet_host_service(client, event, 1000)
+                if result3 > 0 {
+                    event_type3 := read_u32(event, 0)
+                    if event_type3 == 3 {  // DISCONNECT
+                        println("Disconnected from server")
+                        break
+                    }
+                }
+            }
+        } else {
+            println("Connection failed")
+            exit(1)
+        }
+    } else {
+        println("Connection timeout")
+        enet.enet_peer_reset(peer)
+        exit(1)
+    }
+
+    println("Client shutting down...")
+}
+
+main()
