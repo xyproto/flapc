@@ -156,6 +156,31 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 	}, nil
 }
 
+// addSemanticError adds a semantic error to the error collector
+// For codegen-time errors, we don't have exact line/column info,
+// so we use line 0 as a placeholder
+func (fc *FlapCompiler) addSemanticError(message string, suggestions ...string) {
+	suggestion := ""
+	if len(suggestions) > 0 {
+		suggestion = strings.Join(suggestions, ", ")
+	}
+
+	err := CompilerError{
+		Level:    LevelError,
+		Category: CategorySemantic,
+		Message:  message,
+		Location: SourceLocation{
+			File:   "<compilation>",
+			Line:   0,
+			Column: 0,
+		},
+		Context: ErrorContext{
+			Suggestion: suggestion,
+		},
+	}
+	fc.errors.AddError(err)
+}
+
 func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	// Clear moved variables tracking for this compilation
 	fc.movedVars = make(map[string]bool)
@@ -2698,9 +2723,15 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fmt.Fprintf(os.Stderr, "DEBUG: Current lambda: %v\n", fc.currentLambda)
 			}
 			suggestions := findSimilarIdentifiers(e.Name, fc.variables, 3)
+			// Add to error collector (railway-oriented)
 			if len(suggestions) > 0 {
+				fc.addSemanticError(
+					fmt.Sprintf("undefined variable '%s'", e.Name),
+					fmt.Sprintf("Did you mean: %s?", strings.Join(suggestions, ", ")),
+				)
 				compilerError("undefined variable '%s'. Did you mean: %s?", e.Name, strings.Join(suggestions, ", "))
 			} else {
+				fc.addSemanticError(fmt.Sprintf("undefined variable '%s'", e.Name))
 				compilerError("undefined variable '%s'", e.Name)
 			}
 		}
@@ -11903,6 +11934,7 @@ func CompileFlapWithOptions(inputPath string, outputPath string, platform Platfo
 	}
 	compiler.sourceCode = combinedSource
 	compiler.wpoTimeout = wpoTimeout
+	compiler.errors.SetSourceCode(combinedSource)
 
 	err = compiler.Compile(program, outputPath)
 	if err != nil {
