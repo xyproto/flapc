@@ -11927,6 +11927,20 @@ func CompileFlapWithOptions(inputPath string, outputPath string, platform Platfo
 	// 	return fmt.Errorf("optimization failed: %v", err)
 	// }
 
+	// Final check: verify all functions are defined (after all dependency resolution)
+	finalUnknownFuncs := getUnknownFunctions(program)
+	if len(finalUnknownFuncs) > 0 {
+		// Sort for consistent error messages
+		sort.Strings(finalUnknownFuncs)
+
+		// Report all undefined functions
+		if len(finalUnknownFuncs) == 1 {
+			return fmt.Errorf("undefined function: %s\nNote: Function must be defined before use or imported from a dependency", finalUnknownFuncs[0])
+		} else {
+			return fmt.Errorf("undefined functions: %s\nNote: Functions must be defined before use or imported from dependencies", strings.Join(finalUnknownFuncs, ", "))
+		}
+	}
+
 	// Compile
 	compiler, err := NewFlapCompiler(platform)
 	if err != nil {

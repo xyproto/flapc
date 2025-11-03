@@ -14,6 +14,8 @@ These files are intentionally designed to trigger compilation errors. They test:
 
 - `undefined_var.flap` - Tests undefined variable detection (semantic error)
 - `syntax_error.flap` - Tests syntax error handling
+- `undefined_function.flap` - Tests undefined function detection at compile-time (not link-time)
+- `multiple_undefined_functions.flap` - Tests reporting multiple undefined functions
 
 ## Running Tests
 

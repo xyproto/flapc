@@ -1,0 +1,10 @@
+// Test multiple undefined functions
+x = 5
+y = 10
+
+// Multiple undefined functions
+a = func_one(x)
+b = func_two(y)
+c = func_three(x, y)
+
+println(a + b + c)

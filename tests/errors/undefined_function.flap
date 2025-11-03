@@ -1,0 +1,8 @@
+// Test undefined function detection at compile-time
+x = 5
+y = 10
+println(x + y)
+
+// Call undefined function - should fail at compile time, not link time
+result = nonexistent_function(x, y)
+println(result)
