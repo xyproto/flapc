@@ -1,0 +1,26 @@
+// Test parallel loop with large range
+println("Testing large range parallel loop")
+
+// Allocate memory for sum (like atomic_counter.flap)
+sum_ptr := malloc(8)
+atomic_store(sum_ptr, 0)
+
+// Large range: sum numbers from 0 to 9
+@@ i in 0..<10 {
+    atomic_add(sum_ptr, i)
+}
+
+// Expected: sum of 0..9 = 9 * 10 / 2 = 45
+sum := atomic_load(sum_ptr)
+println(f"Sum of 0..9: {sum}")
+
+// Verify the result
+expected := 45
+println(f"Expected: {expected}")
+sum == expected {
+    -> println("Large range test PASSED")
+    ~> println("Large range test FAILED")
+}
+
+// Free memory
+free(sum_ptr)
