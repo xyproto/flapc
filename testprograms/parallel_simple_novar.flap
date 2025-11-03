@@ -1,0 +1,9 @@
+// Test parallel loop with no variable access at all
+println("Testing simplest parallel loop")
+
+// Use parallel loop - empty body
+@@ i in 0..<4 {
+    // Empty body
+}
+
+println("PASSED")

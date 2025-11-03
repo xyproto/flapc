@@ -1,9 +1,5 @@
 # Complex Technical Issues - Flapc Compiler
 
-**Last Updated:** 2025-11-03
-**Total Items:** 7 complex issues (platform-specific issues moved to PLATFORMS.md)
-**Estimated Effort:** 12-18 weeks (3-4.5 months)
-
 This document tracks complex technical issues that require significant architectural changes, design decisions, or extensive refactoring. For straightforward technical debt that can be fixed without major changes, see DEBT.md. For platform-specific complex issues (ARM64, RISC-V64, macOS), see PLATFORMS.md.
 
 ---
@@ -15,7 +11,6 @@ This document tracks complex technical issues that require significant architect
 ### 1.1 Monolithic Parser File
 **Priority:** Medium
 **Complexity:** High
-**Effort:** 2-3 weeks
 **Risk:** High (breaking changes)
 
 **Current State:**
@@ -67,16 +62,16 @@ parser/
 - How to maintain backward compatibility?
 
 ### 1.2 Atomic Operations in Parallel Loops
-**Priority:** Medium
+**Priority:** Medium (WORKAROUND IMPLEMENTED)
 **Complexity:** High
-**Effort:** 2-3 weeks
 **Risk:** Medium
+**Status:** ✅ Compile-time detection implemented (v1.7.4)
 
 **Current State:**
-- Atomic operations crash when used inside `@@` parallel loops
+- Atomic operations crash when used inside `@@` parallel loops (root cause: register conflicts)
 - Works fine in sequential code
 - Crashes on both x86_64 and ARM64
-- Currently documented as "known limitation"
+- **NOW**: Compiler detects this pattern and provides helpful error message with workarounds
 
 **Issue:**
 ```flap
@@ -109,36 +104,37 @@ atomic_store(ptr, 0)
    - Require specific registers
    - May have alignment requirements
 
-**Proposed Solution:**
+**Solution Implemented (v1.7.4):**
 
-**Option A: Fix the Root Cause**
+The compiler now detects atomic operations in parallel loops at compile time and emits a clear error message with workarounds:
+
+```
+Error: Atomic operations inside parallel loops (@@ or N @) are not currently supported
+       This causes a segfault due to register conflicts in the current implementation.
+
+Workarounds:
+  1. Use a sequential loop (@ instead of @@) with atomic operations
+  2. Use manual thread spawning with spawn expressions
+  3. Restructure code to avoid atomic ops inside parallel loop
+```
+
+**Implementation Details:**
+- Added `hasAtomicOperations()` function that recursively scans loop body AST
+- Added `hasAtomicInExpr()` to check expressions for atomic calls
+- Detection occurs before code generation in `compileParallelRangeLoop()`
+- Prevents silent crashes and guides users to working alternatives
+
+**Future Work (v2.0+):**
 1. Debug parallel loop + atomic interaction
 2. Fix register allocation for atomics in parallel context
 3. Ensure thread-local state doesn't conflict
 4. Test thoroughly
 
-**Option B: Workaround**
-1. Detect atomic ops in parallel loops at compile time
-2. Emit helpful error message
-3. Suggest alternatives (manual threading)
-4. Document limitation clearly
-
-**Option C: Defer to v2.0**
-1. Keep current limitation
-2. Add better error message
-3. Provide example of manual threading with atomics
-4. Fix in v2.0 with better parallel codegen
-
-**Challenges:**
+**Challenges for Full Fix:**
 - Complex interaction of features
 - May require redesign of parallel loop codegen
 - Hard to test (race conditions)
 - May not be fixable without major refactoring
-
-**Decision Needed:**
-- Which option to pursue?
-- Is this a blocker for v1.7.4?
-- Worth the effort vs workaround?
 
 ---
 
@@ -149,7 +145,6 @@ atomic_store(ptr, 0)
 ### 2.1 Register Allocator Implementation
 **Priority:** Low
 **Complexity:** Very High
-**Effort:** 6-8 weeks
 **Risk:** High
 
 **Current State:**
@@ -183,10 +178,10 @@ type RegisterAllocator struct {
 ```
 
 **Approach:**
-1. **Phase 1:** Implement linear scan algorithm (2 weeks)
-2. **Phase 2:** Add register coalescing (2 weeks)
-3. **Phase 3:** Optimize for architecture-specific constraints (2 weeks)
-4. **Phase 4:** Profile and tune (2 weeks)
+1. **Phase 1:** Implement linear scan algorithm
+2. **Phase 2:** Add register coalescing
+3. **Phase 3:** Optimize for architecture-specific constraints
+4. **Phase 4:** Profile and tune
 
 **Challenges:**
 - Complex algorithm
@@ -208,13 +203,11 @@ type RegisterAllocator struct {
 ### 2.2 Missing Optimizations
 **Priority:** Low
 **Complexity:** High
-**Effort:** 8-12 weeks (all optimizations)
 **Risk:** Medium
 
 **Current State:**
 From TODO.md, these optimizations are planned but not implemented:
 - Auto-vectorization
-- Profile-Guided Optimization (PGO)
 - Escape analysis
 - Common Subexpression Elimination (CSE)
 - Strength reduction
@@ -229,39 +222,33 @@ From TODO.md, these optimizations are planned but not implemented:
 
 Implement optimizations in priority order:
 
-**Phase 1: CSE (2 weeks)**
+**Phase 1: CSE **
 - Detect repeated expressions
 - Compute once, reuse result
 - Significant wins for math-heavy code
 
-**Phase 2: Strength Reduction (1 week)**
+**Phase 2: Strength Reduction **
 - Replace expensive operations with cheaper ones
 - x * 2 → x << 1
 - x / power-of-2 → x >> n
 - Easy wins, low risk
 
-**Phase 3: Loop-Invariant Code Motion (2 weeks)**
+**Phase 3: Loop-Invariant Code Motion **
 - Move calculations out of loops
 - Significant performance gain
 - Requires dataflow analysis
 
-**Phase 4: Escape Analysis (3 weeks)**
+**Phase 4: Escape Analysis **
 - Determine if allocations can be on stack
 - Reduce heap pressure
 - Improve performance
 - Complex analysis
 
-**Phase 5: Auto-Vectorization (4 weeks)**
+**Phase 5: Auto-Vectorization **
 - Detect SIMD-friendly loops
 - Generate vector code automatically
 - Huge performance gains possible
 - Very complex
-
-**Phase 6: PGO (4 weeks)**
-- Profile-guided optimization
-- Use runtime data to guide optimization
-- Requires two-pass compilation
-- Complex infrastructure
 
 **Challenges:**
 - Each optimization is complex
@@ -270,11 +257,6 @@ Implement optimizations in priority order:
 - Need good test coverage
 - Performance gains vary
 
-**Decision Needed:**
-- Which optimizations for v2.0?
-- Priority order?
-- Allocate dedicated time?
-
 ---
 
 ## 3. LANGUAGE FEATURES (2 items)
@@ -282,7 +264,6 @@ Implement optimizations in priority order:
 ### 3.1 Disabled Language Features
 **Priority:** Low
 **Complexity:** High
-**Effort:** 4-6 weeks
 **Risk:** High
 
 **Current State:**
@@ -356,15 +337,9 @@ player := new {name: "Alice", health: 100}
 - Risk breaking existing code
 - Users may have different syntax preferences
 
-**Decision Needed:**
-- Are these features important?
-- Worth the parsing complexity?
-- Keep disabled in v1.7.4?
-
 ### 3.2 Pipe-Based Result Waiting
 **Priority:** Low
 **Complexity:** Medium
-**Effort:** 1-2 weeks
 **Risk:** Low
 
 **Current State:**
@@ -400,11 +375,6 @@ value := wait(result_pipe)
 - Cross-platform (Unix vs Windows)
 - Error handling complex
 - Blocking vs non-blocking
-
-**Decision Needed:**
-- Needed for v1.7.4?
-- Design finalized?
-- Part of v2.0 channels feature?
 
 ---
 
@@ -443,16 +413,6 @@ value := wait(result_pipe)
 3. Fix or remove disabled features
 4. Implement pipe-based result waiting
 
-### Decision Points
-
-Critical decisions needed before proceeding:
-1. **Parser refactoring:** When and how?
-2. **Atomic operations:** Fix or document as limitation?
-3. **Optimization priority:** Which ones for v2.0?
-4. **Disabled features:** Re-enable or remove permanently?
-
-**Note:** Platform-specific decision points moved to PLATFORMS.md
-
 ---
 
-**Note:** These are complex issues requiring significant design, implementation, and testing effort. Unlike DEBT.md items, these cannot be quickly fixed and need careful planning and dedicated time allocation.
+**Note:** These are complex issues requiring significant design, implementation, and testing effort. Unlike DEBT.md items, these cannot be quickly fixed and need careful planning. But! We will be bold in the face of complexity and use techniques from computer science, "How to Solve It?" by Polya and from the software engineering profession!

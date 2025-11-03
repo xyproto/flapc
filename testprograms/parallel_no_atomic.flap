@@ -1,0 +1,13 @@
+// Test parallel loop WITHOUT atomic operations - should work
+println("Testing parallel loop without atomic operations")
+
+// Simple counter (not atomic - race condition OK for this test)
+counter := 0
+
+// Use parallel loop
+@@ i in 0..<4 {
+    // Don't modify counter - just print
+    println(f"Thread iteration: {i}")
+}
+
+println("PASSED - parallel loop completed without crash")

@@ -1,0 +1,14 @@
+// Test accessing malloc'd memory in parallel loop (no atomics)
+println("Testing malloc access in parallel loop")
+
+// Allocate memory
+ptr := malloc(8)
+store(ptr, 0, 42)
+
+// Access from parallel loop
+@@ i in 0..<4 {
+    // Just read the value (no atomics)
+    val := load(ptr, 0)
+}
+
+println("PASSED")

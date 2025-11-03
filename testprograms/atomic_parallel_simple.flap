@@ -1,0 +1,26 @@
+// Test atomic operations in parallel loop - simplified version
+println("Testing atomic operations in parallel loop (simplified)")
+
+// Allocate counter
+counter := malloc(8)
+atomic_store(counter, 0)
+
+// Use parallel loop to increment counter
+// Each iteration should atomically add 1
+@@ i in 0..<4 {
+    old_val := atomic_add(counter, 1)
+}
+
+// Read final value
+final_val := atomic_load(counter)
+println(f"Final counter value: {final_val}")
+println(f"Expected: 4.0")
+
+// Check if it matches expected
+is_correct := final_val == 4.0
+is_correct {
+    println("PASSED")
+}
+!is_correct {
+    println("FAILED")
+}

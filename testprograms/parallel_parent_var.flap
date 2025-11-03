@@ -1,0 +1,11 @@
+// Test accessing parent variable in parallel loop
+println("Testing parent variable access")
+
+x := 42
+
+@@ i in 0..<2 {
+    // Access parent variable
+    y := x
+}
+
+println("PASSED")

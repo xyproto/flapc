@@ -6709,7 +6709,93 @@ func collectLoopLocalVars(body []Statement) map[string]bool {
 	return localVars
 }
 
+// hasAtomicOperations recursively checks if any atomic operations are used in statements
+func hasAtomicOperations(stmts []Statement) bool {
+	for _, stmt := range stmts {
+		switch s := stmt.(type) {
+		case *ExpressionStmt:
+			if hasAtomicInExpr(s.Expr) {
+				return true
+			}
+		case *AssignStmt:
+			if hasAtomicInExpr(s.Value) {
+				return true
+			}
+		case *LoopStmt:
+			if hasAtomicOperations(s.Body) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hasAtomicInExpr checks if an expression contains atomic operation calls
+func hasAtomicInExpr(expr Expression) bool {
+	if expr == nil {
+		return false
+	}
+
+	switch e := expr.(type) {
+	case *CallExpr:
+		// Check if this is an atomic operation
+		atomicOps := []string{"atomic_add", "atomic_load", "atomic_store", "atomic_cas"}
+		for _, op := range atomicOps {
+			if e.Function == op {
+				return true
+			}
+		}
+		// Check arguments recursively
+		for _, arg := range e.Args {
+			if hasAtomicInExpr(arg) {
+				return true
+			}
+		}
+	case *BinaryExpr:
+		return hasAtomicInExpr(e.Left) || hasAtomicInExpr(e.Right)
+	case *UnaryExpr:
+		return hasAtomicInExpr(e.Operand)
+	case *MatchExpr:
+		// Check condition and all clauses
+		if hasAtomicInExpr(e.Condition) {
+			return true
+		}
+		for _, clause := range e.Clauses {
+			if hasAtomicInExpr(clause.Guard) || hasAtomicInExpr(clause.Result) {
+				return true
+			}
+		}
+		if hasAtomicInExpr(e.DefaultExpr) {
+			return true
+		}
+	case *BlockExpr:
+		// Check all statements in the block
+		return hasAtomicOperations(e.Statements)
+	case *LoopExpr:
+		// Check loop body
+		return hasAtomicOperations(e.Body)
+	}
+	return false
+}
+
 func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
+	// IMPORTANT: Check for atomic operations in parallel loops
+	// This is a known limitation that causes crashes (segfault)
+	// See COMPLEX.md section 1.2 for details
+	if hasAtomicOperations(stmt.Body) {
+		fmt.Fprintf(os.Stderr, "Error: Atomic operations inside parallel loops (@@ or N @) are not currently supported\n")
+		fmt.Fprintf(os.Stderr, "       This causes a segfault due to register conflicts in the current implementation.\n")
+		fmt.Fprintf(os.Stderr, "\n")
+		fmt.Fprintf(os.Stderr, "Workarounds:\n")
+		fmt.Fprintf(os.Stderr, "  1. Use a sequential loop (@ instead of @@) with atomic operations\n")
+		fmt.Fprintf(os.Stderr, "  2. Use manual thread spawning with spawn expressions\n")
+		fmt.Fprintf(os.Stderr, "  3. Restructure code to avoid atomic ops inside parallel loop\n")
+		fmt.Fprintf(os.Stderr, "\n")
+		fmt.Fprintf(os.Stderr, "This limitation will be fixed in a future version (v2.0+).\n")
+		fmt.Fprintf(os.Stderr, "See COMPLEX.md for technical details.\n")
+		os.Exit(1)
+	}
+
 	// Determine actual thread count
 	actualThreads := stmt.NumThreads
 	if actualThreads == -1 {
