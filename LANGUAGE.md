@@ -1030,4 +1030,62 @@ result := x as int32  // OK - type cast
 
 ---
 
+## Error Handling and Diagnostics
+
+### Railway-Oriented Error System
+
+The Flap compiler uses a railway-oriented error handling system that collects and reports multiple errors instead of stopping at the first one.
+
+**Error Categories:**
+1. **Syntax Errors**: Invalid language syntax
+2. **Semantic Errors**: Type mismatches, undefined variables
+3. **Code Generation Errors**: Register allocation failures, etc.
+
+**Example Error Output:**
+
+```
+error: undefined variable 'sum'
+  --> example.flap:5:9
+   |
+ 5 |     total <- sum + i
+   |              ^^^
+   |
+help: did you mean 'total'?
+
+error: cannot update immutable variable 'x'
+  --> example.flap:8:5
+   |
+ 8 |     x <- x + 1
+   |     ^
+   |
+help: declare 'x' as mutable with ':='
+```
+
+### Error Recovery
+
+The compiler attempts to recover from errors and continue parsing to find additional issues:
+
+- **Syntax errors**: Skips to next statement boundary
+- **Undefined variables**: Creates placeholder, continues analysis
+- **Type errors**: Reports mismatch, continues with expected type
+
+**Maximum Errors**: By default, the compiler stops after collecting 10 errors to avoid overwhelming output.
+
+### Compile-Time vs Runtime Errors
+
+**Compile-time errors** (caught by the compiler):
+- Undefined variables
+- Type mismatches in known contexts
+- Syntax errors
+- Immutable variable updates
+
+**Runtime errors** (not caught, will crash):
+- Division by zero
+- Array index out of bounds
+- Null pointer dereference (in unsafe blocks)
+
+Use assertions and defensive programming for runtime safety.
+
+---
+
 **For more examples, see the `testprograms/` directory with 344+ working Flap programs.**
