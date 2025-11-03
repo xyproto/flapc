@@ -1,0 +1,24 @@
+// Test strength reduction with compile-time constants
+println("Testing strength reduction with constants")
+
+// These should all be folded at compile time
+a := 100 * 8
+b := 64 / 4
+c := 17 % 8
+d := 42 * 1
+e := 99 + 0
+f := 1000 * 0
+
+println(f"100 * 8 = {a}")
+println(f"64 / 4 = {b}")
+println(f"17 % 8 = {c}")
+println(f"42 * 1 = {d}")
+println(f"99 + 0 = {e}")
+println(f"1000 * 0 = {f}")
+
+a == 800 { println("Test a PASSED") }
+b == 16 { println("Test b PASSED") }
+c == 1 { println("Test c PASSED") }
+d == 42 { println("Test d PASSED") }
+e == 99 { println("Test e PASSED") }
+f == 0 { println("Test f PASSED") }

@@ -514,6 +514,311 @@ func foldConstantExpr(expr Expression) Expression {
 	}
 }
 
+// isPowerOfTwo checks if a float64 value is a power of 2
+func isPowerOfTwo(x float64) bool {
+	if x <= 0 {
+		return false
+	}
+	// Check if x is an integer
+	if x != math.Floor(x) {
+		return false
+	}
+	// Check if it's a power of 2: x & (x-1) == 0
+	ix := int64(x)
+	return (ix & (ix - 1)) == 0
+}
+
+// strengthReduceExpr performs strength reduction optimization on expressions
+// Replaces expensive operations with cheaper equivalent ones:
+// - x * 2^n → x << n (multiply by power of 2 → left shift)
+// - x / 2^n → x >> n (divide by power of 2 → right shift)
+// - x * 0 → 0, x * 1 → x (identity elimination)
+// - x + 0, x - 0 → x (identity elimination)
+// - x % 2^n → x & (2^n - 1) (modulo by power of 2 → bitwise AND)
+func strengthReduceExpr(expr Expression) Expression {
+	if expr == nil {
+		return nil
+	}
+
+	switch e := expr.(type) {
+	case *BinaryExpr:
+		// Recursively apply strength reduction to operands first
+		e.Left = strengthReduceExpr(e.Left)
+		e.Right = strengthReduceExpr(e.Right)
+
+		// Check for patterns we can optimize
+		leftNum, leftIsNum := e.Left.(*NumberExpr)
+		rightNum, rightIsNum := e.Right.(*NumberExpr)
+
+		switch e.Operator {
+		case "*":
+			// x * 0 → 0
+			if (leftIsNum && leftNum.Value == 0) || (rightIsNum && rightNum.Value == 0) {
+				return &NumberExpr{Value: 0}
+			}
+
+			// x * 1 → x
+			if rightIsNum && rightNum.Value == 1 {
+				return e.Left
+			}
+			if leftIsNum && leftNum.Value == 1 {
+				return e.Right
+			}
+
+			// x * -1 → -x
+			if rightIsNum && rightNum.Value == -1 {
+				return &UnaryExpr{Operator: "-", Operand: e.Left}
+			}
+			if leftIsNum && leftNum.Value == -1 {
+				return &UnaryExpr{Operator: "-", Operand: e.Right}
+			}
+
+			// x * 2^n → x << n (only for positive integer powers of 2)
+			if rightIsNum && rightNum.Value > 0 && isPowerOfTwo(rightNum.Value) {
+				shift := math.Log2(rightNum.Value)
+				return &BinaryExpr{
+					Left:     e.Left,
+					Operator: "<<",
+					Right:    &NumberExpr{Value: shift},
+				}
+			}
+			if leftIsNum && leftNum.Value > 0 && isPowerOfTwo(leftNum.Value) {
+				shift := math.Log2(leftNum.Value)
+				return &BinaryExpr{
+					Left:     e.Right,
+					Operator: "<<",
+					Right:    &NumberExpr{Value: shift},
+				}
+			}
+
+		case "/":
+			// x / 1 → x
+			if rightIsNum && rightNum.Value == 1 {
+				return e.Left
+			}
+
+			// x / -1 → -x
+			if rightIsNum && rightNum.Value == -1 {
+				return &UnaryExpr{Operator: "-", Operand: e.Left}
+			}
+
+			// x / 2^n → x >> n (only for positive powers of 2)
+			if rightIsNum && rightNum.Value > 0 && isPowerOfTwo(rightNum.Value) {
+				shift := math.Log2(rightNum.Value)
+				return &BinaryExpr{
+					Left:     e.Left,
+					Operator: ">>",
+					Right:    &NumberExpr{Value: shift},
+				}
+			}
+
+		case "+":
+			// x + 0 → x
+			if rightIsNum && rightNum.Value == 0 {
+				return e.Left
+			}
+			if leftIsNum && leftNum.Value == 0 {
+				return e.Right
+			}
+
+		case "-":
+			// x - 0 → x
+			if rightIsNum && rightNum.Value == 0 {
+				return e.Left
+			}
+
+			// 0 - x → -x
+			if leftIsNum && leftNum.Value == 0 {
+				return &UnaryExpr{Operator: "-", Operand: e.Right}
+			}
+
+		case "&":
+			// x & 0 → 0
+			if (leftIsNum && leftNum.Value == 0) || (rightIsNum && rightNum.Value == 0) {
+				return &NumberExpr{Value: 0}
+			}
+
+		case "|":
+			// x | 0 → x
+			if rightIsNum && rightNum.Value == 0 {
+				return e.Left
+			}
+			if leftIsNum && leftNum.Value == 0 {
+				return e.Right
+			}
+
+		case "^":
+			// x ^ 0 → x
+			if rightIsNum && rightNum.Value == 0 {
+				return e.Left
+			}
+			if leftIsNum && leftNum.Value == 0 {
+				return e.Right
+			}
+
+		case "<<", ">>":
+			// x << 0 → x, x >> 0 → x
+			if rightIsNum && rightNum.Value == 0 {
+				return e.Left
+			}
+
+			// 0 << x → 0, 0 >> x → 0
+			if leftIsNum && leftNum.Value == 0 {
+				return &NumberExpr{Value: 0}
+			}
+
+		case "mod", "%":
+			// x % 1 → 0
+			if rightIsNum && rightNum.Value == 1 {
+				return &NumberExpr{Value: 0}
+			}
+
+			// 0 % x → 0
+			if leftIsNum && leftNum.Value == 0 {
+				return &NumberExpr{Value: 0}
+			}
+
+			// x % 2^n → x & (2^n - 1) for positive powers of 2
+			if rightIsNum && rightNum.Value > 0 && isPowerOfTwo(rightNum.Value) {
+				mask := rightNum.Value - 1
+				return &BinaryExpr{
+					Left:     e.Left,
+					Operator: "&",
+					Right:    &NumberExpr{Value: mask},
+				}
+			}
+		}
+
+		return e
+
+	case *UnaryExpr:
+		e.Operand = strengthReduceExpr(e.Operand)
+
+		// Double negation: -(-x) → x
+		if e.Operator == "-" {
+			if inner, ok := e.Operand.(*UnaryExpr); ok && inner.Operator == "-" {
+				return inner.Operand
+			}
+		}
+
+		return e
+
+	case *CallExpr:
+		for i, arg := range e.Args {
+			e.Args[i] = strengthReduceExpr(arg)
+		}
+		return e
+
+	case *ListExpr:
+		for i, elem := range e.Elements {
+			e.Elements[i] = strengthReduceExpr(elem)
+		}
+		return e
+
+	case *MapExpr:
+		for i := range e.Keys {
+			e.Keys[i] = strengthReduceExpr(e.Keys[i])
+			e.Values[i] = strengthReduceExpr(e.Values[i])
+		}
+		return e
+
+	case *IndexExpr:
+		e.List = strengthReduceExpr(e.List)
+		e.Index = strengthReduceExpr(e.Index)
+		return e
+
+	case *LambdaExpr:
+		e.Body = strengthReduceExpr(e.Body)
+		return e
+
+	case *RangeExpr:
+		e.Start = strengthReduceExpr(e.Start)
+		e.End = strengthReduceExpr(e.End)
+		return e
+
+	case *MatchExpr:
+		e.Condition = strengthReduceExpr(e.Condition)
+		for _, clause := range e.Clauses {
+			if clause.Guard != nil {
+				clause.Guard = strengthReduceExpr(clause.Guard)
+			}
+			clause.Result = strengthReduceExpr(clause.Result)
+		}
+		if e.DefaultExpr != nil {
+			e.DefaultExpr = strengthReduceExpr(e.DefaultExpr)
+		}
+		return e
+
+	case *BlockExpr:
+		for i, stmt := range e.Statements {
+			e.Statements[i] = strengthReduceStmt(stmt)
+		}
+		return e
+
+	case *LoopExpr:
+		e.Iterable = strengthReduceExpr(e.Iterable)
+		for i, stmt := range e.Body {
+			e.Body[i] = strengthReduceStmt(stmt)
+		}
+		return e
+
+	case *PipeExpr:
+		e.Left = strengthReduceExpr(e.Left)
+		e.Right = strengthReduceExpr(e.Right)
+		return e
+
+	case *ParallelExpr:
+		e.List = strengthReduceExpr(e.List)
+		e.Operation = strengthReduceExpr(e.Operation)
+		return e
+
+	case *InExpr:
+		e.Value = strengthReduceExpr(e.Value)
+		e.Container = strengthReduceExpr(e.Container)
+		return e
+
+	case *LengthExpr:
+		e.Operand = strengthReduceExpr(e.Operand)
+		return e
+
+	default:
+		return expr
+	}
+}
+
+// strengthReduceStmt applies strength reduction to statements
+func strengthReduceStmt(stmt Statement) Statement {
+	if stmt == nil {
+		return nil
+	}
+
+	switch s := stmt.(type) {
+	case *AssignStmt:
+		s.Value = strengthReduceExpr(s.Value)
+		return s
+
+	case *ExpressionStmt:
+		s.Expr = strengthReduceExpr(s.Expr)
+		return s
+
+	case *LoopStmt:
+		s.Iterable = strengthReduceExpr(s.Iterable)
+		for i, bodyStmt := range s.Body {
+			s.Body[i] = strengthReduceStmt(bodyStmt)
+		}
+		return s
+
+	case *JumpStmt:
+		if s.Value != nil {
+			s.Value = strengthReduceExpr(s.Value)
+		}
+		return s
+
+	default:
+		return stmt
+	}
+}
+
 // propagateConstants performs constant propagation on statements
 // Tracks immutable variables assigned constant values and substitutes them
 func propagateConstants(stmt Statement, constMap map[string]*NumberExpr) Statement {
@@ -524,6 +829,9 @@ func propagateConstants(stmt Statement, constMap map[string]*NumberExpr) Stateme
 
 		// Then fold constants in case propagation enabled new folding opportunities
 		s.Value = foldConstantExpr(s.Value)
+
+		// Apply strength reduction after constant folding
+		s.Value = strengthReduceExpr(s.Value)
 
 		// If this is an immutable assignment to a number literal, track it
 		if !s.Mutable && !s.IsUpdate {
@@ -543,11 +851,13 @@ func propagateConstants(stmt Statement, constMap map[string]*NumberExpr) Stateme
 	case *ExpressionStmt:
 		s.Expr = propagateConstantsExpr(s.Expr, constMap)
 		s.Expr = foldConstantExpr(s.Expr)
+		s.Expr = strengthReduceExpr(s.Expr)
 		return s
 
 	case *LoopStmt:
 		s.Iterable = propagateConstantsExpr(s.Iterable, constMap)
 		s.Iterable = foldConstantExpr(s.Iterable)
+		s.Iterable = strengthReduceExpr(s.Iterable)
 
 		// Loop body creates a new scope - clone const map
 		bodyConstMap := make(map[string]*NumberExpr)
