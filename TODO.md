@@ -4,18 +4,14 @@
 - ✅ Refactor parser.go into 4 Go source files (parser, codegen, optimizer, utils)
 - ✅ Implement register allocator Phase 1 (loop iterator optimization - 20-30% speedup)
 - ✅ Fix atomic operations register conflicts (changed from r11 to r12)
+- ✅ Implement railway-oriented error handling system (error collection, recovery, pretty formatting)
+- ✅ Improve undefined function errors to fail at compile-time rather than link-time
 
 ## In Progress / Next Steps
-- **Implement proper error recovery** (In Progress)
-  - ✅ Designed railway-oriented error system (ERROR_HANDLING_DESIGN.md)
-  - ✅ Created error infrastructure (errors.go with ErrorCollector)
-  - ✅ Integrated ErrorCollector into Parser and FlapCompiler
-  - ✅ Added parser recovery points (synchronize() method)
-  - ✅ Created error test suite (tests/errors/)
-  - ⏳ Converting codegen to use ErrorCollector for semantic errors
-  - ⏳ Enhancing error messages with better source context
-- Add negative test suite for compilation errors (type mismatches, undefined variables, invalid syntax)
-- Improve undefined function errors to fail at compile-time rather than link-time
+- **Expand error handling and test coverage** (In Progress)
+  - ⏳ Convert remaining codegen errors to use ErrorCollector
+  - ⏳ Add more negative test cases (type mismatches, immutable updates)
+  - ⏳ Enhance error messages with column tracking
 - Implement pipe-based result waiting for spawn expressions to enable fork/join patterns
 
 ## Future Enhancements
