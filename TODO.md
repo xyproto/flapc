@@ -6,7 +6,14 @@
 - ✅ Fix atomic operations register conflicts (changed from r11 to r12)
 
 ## In Progress / Next Steps
-- **Implement proper error recovery** - Use railway-oriented error handling for better diagnostics
+- **Implement proper error recovery** (In Progress)
+  - ✅ Designed railway-oriented error system (ERROR_HANDLING_DESIGN.md)
+  - ✅ Created error infrastructure (errors.go with ErrorCollector)
+  - ✅ Integrated ErrorCollector into Parser and FlapCompiler
+  - ✅ Added parser recovery points (synchronize() method)
+  - ✅ Created error test suite (tests/errors/)
+  - ⏳ Converting codegen to use ErrorCollector for semantic errors
+  - ⏳ Enhancing error messages with better source context
 - Add negative test suite for compilation errors (type mismatches, undefined variables, invalid syntax)
 - Improve undefined function errors to fail at compile-time rather than link-time
 - Implement pipe-based result waiting for spawn expressions to enable fork/join patterns
