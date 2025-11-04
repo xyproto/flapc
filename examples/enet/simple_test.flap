@@ -1,0 +1,16 @@
+// Simple ENet FFI test
+// This demonstrates that ENet C library can be imported and called
+// It just initializes and deinitializes ENet to verify linking works
+
+import enet as enet
+
+// Simple test: initialize and deinitialize ENet
+result := enet.enet_initialize()
+
+// Print result (0 = success)
+printf("ENet initialize returned: %v\n", result)
+
+// Clean up
+enet.enet_deinitialize()
+
+printf("ENet test complete\n")

@@ -8,8 +8,13 @@
 // Link flags: -lenet
 
 import enet as enet
+import c as libc
 
-fn main() {
+// Note: Memory helper functions (write_u32, write_u16, read_u32, etc.)
+// are implemented in memory_helpers.c and linked during compilation.
+// They allow manipulation of C struct fields from Flap code.
+
+main := () => {
     // Initialize ENet
     result := enet.enet_initialize()
     if result != 0 {
@@ -23,7 +28,7 @@ fn main() {
     // Create server address
     // ENetAddress is: { uint32_t host; uint16_t port; }
     // Total size: 8 bytes (4 for host, 2 for port, 2 padding)
-    addr := alloc(8)
+    addr := libc.malloc(8)
 
     // Set address to INADDR_ANY (0.0.0.0)
     write_u32(addr, 0, 0)  // host = 0 (INADDR_ANY)
@@ -56,7 +61,7 @@ fn main() {
 
     // Event structure
     // ENetEvent is approximately 56 bytes
-    event := alloc(64)
+    event := libc.malloc(64)
 
     // Main loop
     @ i in 0..<100 {  // Run for 100 iterations

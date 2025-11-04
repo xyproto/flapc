@@ -16,7 +16,7 @@ import (
 // NegReg generates NEG dst (dst = -dst)
 func (o *Out) NegReg(dst string) {
 	if o.backend != nil {
-	o.backend.NegReg(dst)
+		o.backend.NegReg(dst)
 		return
 	}
 	// Fallback for x86_64 (uses methods in this file)

@@ -13,7 +13,7 @@ import (
 // NotReg generates NOT dst (dst = ~dst) - one's complement
 func (o *Out) NotReg(dst string) {
 	if o.backend != nil {
-	o.backend.NotReg(dst)
+		o.backend.NotReg(dst)
 		return
 	}
 	// Fallback for x86_64 (uses methods in this file)

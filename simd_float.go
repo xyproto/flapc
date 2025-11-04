@@ -11,7 +11,7 @@ import (
 // cvtsi2sd xmm, r64
 func (o *Out) Cvtsi2sd(dst, src string) {
 	if o.backend != nil {
-	o.backend.Cvtsi2sd(dst, src)
+		o.backend.Cvtsi2sd(dst, src)
 		return
 	}
 	// Fallback for x86_64
@@ -123,7 +123,7 @@ func (o *Out) fcvtRISCV(dst, src string) {
 // AddpdXmm - Add Packed Double (SIMD addition)
 func (o *Out) AddpdXmm(dst, src string) {
 	if o.backend != nil {
-	o.backend.AddpdXmm(dst, src)
+		o.backend.AddpdXmm(dst, src)
 		return
 	}
 	// Fallback for x86_64
@@ -173,7 +173,7 @@ func (o *Out) addpdX86(dst, src string) {
 // SubpdXmm - Subtract Packed Double
 func (o *Out) SubpdXmm(dst, src string) {
 	if o.backend != nil {
-	o.backend.SubpdXmm(dst, src)
+		o.backend.SubpdXmm(dst, src)
 		return
 	}
 	// Fallback for x86_64
@@ -207,7 +207,7 @@ func (o *Out) subpdX86(dst, src string) {
 // MulpdXmm - Multiply Packed Double
 func (o *Out) MulpdXmm(dst, src string) {
 	if o.backend != nil {
-	o.backend.MulpdXmm(dst, src)
+		o.backend.MulpdXmm(dst, src)
 		return
 	}
 	// Fallback for x86_64
@@ -241,7 +241,7 @@ func (o *Out) mulpdX86(dst, src string) {
 // DivpdXmm - Divide Packed Double
 func (o *Out) DivpdXmm(dst, src string) {
 	if o.backend != nil {
-	o.backend.DivpdXmm(dst, src)
+		o.backend.DivpdXmm(dst, src)
 		return
 	}
 	// Fallback for x86_64
@@ -466,7 +466,7 @@ func (o *Out) cvttsd2siX86(dst, src string) {
 // ucomisd xmm1, xmm2
 func (o *Out) Ucomisd(xmm1, xmm2 string) {
 	if o.backend != nil {
-	o.backend.Ucomisd(xmm1, xmm2)
+		o.backend.Ucomisd(xmm1, xmm2)
 		return
 	}
 	// Fallback for x86_64

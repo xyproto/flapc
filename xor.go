@@ -14,7 +14,7 @@ import (
 // XorRegWithReg generates XOR dst, src (dst = dst ^ src)
 func (o *Out) XorRegWithReg(dst, src string) {
 	if o.backend != nil {
-	o.backend.XorRegWithReg(dst, src)
+		o.backend.XorRegWithReg(dst, src)
 		return
 	}
 	// Fallback for x86_64
@@ -27,7 +27,7 @@ func (o *Out) XorRegWithReg(dst, src string) {
 // XorRegWithImm generates XOR dst, imm (dst = dst ^ imm)
 func (o *Out) XorRegWithImm(dst string, imm int32) {
 	if o.backend != nil {
-	o.backend.XorRegWithImm(dst, int64(imm))
+		o.backend.XorRegWithImm(dst, int64(imm))
 		return
 	}
 	// Fallback for x86_64

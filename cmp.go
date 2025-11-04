@@ -18,7 +18,7 @@ import (
 // Essential for implementing Flap's comparison operators: >=, <=, >, <, ==, !=
 func (o *Out) CmpRegToReg(src1, src2 string) {
 	if o.backend != nil {
-	o.backend.CmpRegToReg(src1, src2)
+		o.backend.CmpRegToReg(src1, src2)
 		return
 	}
 	// Fallback for x86_64 (uses methods in this file)
@@ -32,7 +32,7 @@ func (o *Out) CmpRegToReg(src1, src2 string) {
 // Used for constant comparisons like: x > 0, x <= 1, etc.
 func (o *Out) CmpRegToImm(reg string, imm int64) {
 	if o.backend != nil {
-	o.backend.CmpRegToImm(reg, imm)
+		o.backend.CmpRegToImm(reg, imm)
 		return
 	}
 	// Fallback for x86_64 (uses methods in this file)

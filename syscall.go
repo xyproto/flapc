@@ -8,7 +8,7 @@ import (
 // Syscall generates a raw syscall instruction for unsafe blocks
 func (o *Out) Syscall() {
 	if o.backend != nil {
-	o.backend.Syscall()
+		o.backend.Syscall()
 		return
 	}
 	// Fallback for x86_64 (uses methods in this file)

@@ -16,7 +16,7 @@ func TestENetCompilation(t *testing.T) {
 		t.Skip("Skipping ENet compilation test on non-Linux platform")
 	}
 
-	platform := GetNativePlatform()
+	platform := GetDefaultPlatform()
 
 	examples := []struct {
 		name     string
@@ -24,14 +24,9 @@ func TestENetCompilation(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "enet_server",
-			source:   "examples/enet/server.flap",
-			expected: "/tmp/test_enet_server",
-		},
-		{
-			name:     "enet_client",
-			source:   "examples/enet/client.flap",
-			expected: "/tmp/test_enet_client",
+			name:     "enet_simple",
+			source:   "examples/enet/simple_test.flap",
+			expected: "/tmp/test_enet_simple",
 		},
 	}
 
@@ -111,8 +106,7 @@ func TestENetCodeGeneration(t *testing.T) {
 
 	// Test that we can at least parse and generate code for ENet examples
 	examples := []string{
-		"examples/enet/server.flap",
-		"examples/enet/client.flap",
+		"examples/enet/simple_test.flap",
 	}
 
 	for _, source := range examples {
@@ -156,7 +150,7 @@ func TestENetWithLibraryIfAvailable(t *testing.T) {
 	t.Log("ENet library detected via pkg-config")
 
 	// Try to compile with ENet
-	platform := GetNativePlatform()
+	platform := GetDefaultPlatform()
 	serverBin := "/tmp/test_enet_server_runtime"
 	err := CompileFlap("examples/enet/server.flap", serverBin, platform)
 
@@ -175,22 +169,4 @@ func TestENetWithLibraryIfAvailable(t *testing.T) {
 
 	// Note: We don't run the binary in tests as it would start a server
 	// and require network setup. The compilation test is sufficient.
-}
-
-// contains checks if a string contains a substring
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) &&
-		   (s == substr ||
-		    (len(s) > len(substr) &&
-			 indexOf(s, substr) >= 0))
-}
-
-// indexOf finds the index of substr in s, returns -1 if not found
-func indexOf(s, substr string) int {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
 }

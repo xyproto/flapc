@@ -161,6 +161,11 @@ func (p *Parser) error(msg string) {
 	// For backwards compatibility during transition: if we hit max errors, panic
 	// This will be removed once all error handling is converted
 	if p.errors.ShouldStop() {
+		// Print all collected errors before panicking
+		report := p.errors.Report(true) // Use color
+		if report != "" {
+			fmt.Fprintln(os.Stderr, report)
+		}
 		panic(fmt.Errorf("too many errors"))
 	}
 }
@@ -173,6 +178,11 @@ func (p *Parser) parseError(msg string, loc SourceLocation) {
 	err := SyntaxError(msg, loc)
 	p.errors.AddError(err)
 	if p.errors.ShouldStop() {
+		// Print all collected errors before panicking
+		report := p.errors.Report(true) // Use color
+		if report != "" {
+			fmt.Fprintln(os.Stderr, report)
+		}
 		panic(fmt.Errorf("too many errors"))
 	}
 }
@@ -3576,4 +3586,3 @@ func (p *Parser) parseUnsafeValue() interface{} {
 	}
 	return left
 }
-

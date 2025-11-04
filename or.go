@@ -14,7 +14,7 @@ import (
 // OrRegWithReg generates OR dst, src (dst = dst | src)
 func (o *Out) OrRegWithReg(dst, src string) {
 	if o.backend != nil {
-	o.backend.OrRegWithReg(dst, src)
+		o.backend.OrRegWithReg(dst, src)
 		return
 	}
 	// Fallback for x86_64

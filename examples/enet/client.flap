@@ -8,8 +8,13 @@
 // Link flags: -lenet
 
 import enet as enet
+import c as libc
 
-fn main() {
+// Note: Memory helper functions (write_u32, write_u16, read_u32, etc.)
+// are implemented in memory_helpers.c and linked during compilation.
+// They allow manipulation of C struct fields from Flap code.
+
+main := () => {
     // Initialize ENet
     result := enet.enet_initialize()
     if result != 0 {
@@ -37,7 +42,7 @@ fn main() {
     defer enet.enet_host_destroy(client)
 
     // Server address
-    server_addr := alloc(8)
+    server_addr := libc.malloc(8)
     write_u32(server_addr, 0, 0x0100007f)  // 127.0.0.1 in network byte order
     write_u16(server_addr, 4, 7777)        // port 7777
 
@@ -58,7 +63,7 @@ fn main() {
     println("Connecting to 127.0.0.1:7777...")
 
     // Event structure
-    event := alloc(64)
+    event := libc.malloc(64)
 
     // Wait for connection (5 second timeout)
     service_result := enet.enet_host_service(client, event, 5000)

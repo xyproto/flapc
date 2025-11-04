@@ -16,7 +16,7 @@ import (
 // Ret generates a return instruction
 func (o *Out) Ret() {
 	if o.backend != nil {
-	o.backend.Ret()
+		o.backend.Ret()
 		return
 	}
 	// Fallback for x86_64 (uses methods in this file)
