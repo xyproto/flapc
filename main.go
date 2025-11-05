@@ -219,6 +219,7 @@ type ExecutableBuilder struct {
 	callPatches             []CallPatch
 	elf, rodata, data, text bytes.Buffer
 	rodataOffsetInELF       uint64
+	dataOffsetInELF         uint64
 }
 
 func (eb *ExecutableBuilder) ELFWriter() Writer {
@@ -932,6 +933,22 @@ func (eb *ExecutableBuilder) patchTextInELF() {
 	elfBuf := eb.elf.Bytes()
 	newText := eb.text.Bytes()
 
+	fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: elfBuf size=%d, newText size=%d\n", len(elfBuf), len(newText))
+	fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: newText first 50 bytes: %x\n", newText[:min(50, len(newText))])
+
+	// Search for 49 ff d3 (call r11) in newText
+	callFound := false
+	for i := 0; i <= len(newText)-3; i++ {
+		if newText[i] == 0x49 && newText[i+1] == 0xFF && newText[i+2] == 0xD3 {
+			fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: Found 49 FF D3 at offset %d (0x%x) in newText\n", i, i)
+			callFound = true
+			break
+		}
+	}
+	if !callFound {
+		fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: WARNING - 49 FF D3 (call r11) NOT FOUND in newText buffer!\n")
+	}
+
 	// Find the text section in the ELF buffer
 	// PLT is at offset 0x2000
 	// PLT size = 16 bytes (PLT[0]) + 16 bytes per function
@@ -942,8 +959,14 @@ func (eb *ExecutableBuilder) patchTextInELF() {
 	textOffset := 0x2000 + pltSize + startSizeAligned
 	textSize := len(newText)
 
+	fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: pltSize=%d, textOffset=0x%x, textSize=%d\n", pltSize, textOffset, textSize)
+	fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: about to copy newText to elfBuf[0x%x:0x%x]\n", textOffset, textOffset+textSize)
+
 	// Replace the text section
 	copy(elfBuf[textOffset:textOffset+textSize], newText)
+
+	fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: after copy, elfBuf[0x%x:0x%x] = %x\n",
+		textOffset, textOffset+min(50, textSize), elfBuf[textOffset:textOffset+min(50, textSize)])
 
 	// No need to rebuild - elfBuf is a slice of eb.elf's internal buffer,
 	// so modifications to elfBuf are already reflected in eb.elf
@@ -958,6 +981,26 @@ func (eb *ExecutableBuilder) patchRodataInELF() {
 
 	if rodataOffset > 0 && rodataOffset+rodataSize <= len(elfBuf) {
 		copy(elfBuf[rodataOffset:rodataOffset+rodataSize], newRodata)
+	}
+}
+
+func (eb *ExecutableBuilder) patchDataInELF() {
+	elfBuf := eb.elf.Bytes()
+	newData := eb.data.Bytes()
+
+	dataOffset := int(eb.dataOffsetInELF)
+	dataSize := len(newData)
+
+	fmt.Fprintf(os.Stderr, "DEBUG patchDataInELF: elfBuf size=%d, newData size=%d\n", len(elfBuf), len(newData))
+	fmt.Fprintf(os.Stderr, "DEBUG patchDataInELF: dataOffset=0x%x, dataSize=%d\n", dataOffset, dataSize)
+
+	if dataOffset > 0 && dataOffset+dataSize <= len(elfBuf) {
+		fmt.Fprintf(os.Stderr, "DEBUG patchDataInELF: copying newData to elfBuf[0x%x:0x%x]\n", dataOffset, dataOffset+dataSize)
+		copy(elfBuf[dataOffset:dataOffset+dataSize], newData)
+		fmt.Fprintf(os.Stderr, "DEBUG patchDataInELF: first 32 bytes of .data = %x\n", newData[:min(32, len(newData))])
+	} else {
+		fmt.Fprintf(os.Stderr, "DEBUG patchDataInELF: WARNING - invalid offset or size (offset=%d, size=%d, elfBuf=%d)\n",
+			dataOffset, dataSize, len(elfBuf))
 	}
 }
 

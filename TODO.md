@@ -6,6 +6,8 @@
 - ✅ Fix atomic operations register conflicts (changed from r11 to r12)
 - ✅ Implement railway-oriented error handling system (error collection, recovery, pretty formatting)
 - ✅ Improve undefined function errors to fail at compile-time rather than link-time
+- ✅ Fix lambda function epilogue stack corruption (return address was being destroyed)
+- ✅ Fix optimizer strength reduction breaking float operations (disabled `* 2^n → <<`, `/ 2^n → >>`, `% 2^n → &` for float-by-default language)
 
 ## In Progress / Next Steps
 - **Expand error handling and test coverage** (In Progress)
@@ -23,5 +25,13 @@
 ## Future Enhancements
 - Register allocator Phase 2/3 (local variables) - deferred pending profiling data
 - Fix atomic operations to work inside parallel loops (requires parallel-aware register allocation)
+- **Fix parallel execution bugs** (2 skipped tests)
+  - Parallel map operator `||` causes segfaults (TestParallelMapCompiles)
+  - Parallel simple test crashes on some platforms (TestParallelSimpleCompiles)
+  - Root cause: Stack/register corruption in parallel thread spawning
+- **Re-enable strength reduction optimizations for integer contexts**
+  - Currently disabled: `x * 2^n → x << n`, `x / 2^n → x >> n`, `x % 2^n → x & (2^n - 1)`
+  - Should only apply in `unsafe` blocks or explicit integer type contexts
+  - Requires type information in AST to make context-aware optimization decisions
 
 **Be bold in the face of complexity!** These challenges seem daunting, but with techniques from computer science, "How to Solve It?" by Polya, and decades of compiler expertise, each one is tractable. Break problems into smaller pieces, solve incrementally, test thoroughly. The journey of a thousand commits begins with a single keystroke. Stay focused on capabilities and robustness, and the Flapc compiler will become a masterpiece of systems programming.

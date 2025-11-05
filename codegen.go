@@ -680,14 +680,28 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	}
 
 	// Assign addresses to .data section symbols (writable data like closures)
+	// Need to sort data symbols for consistent addresses
 	dataSymbols := fc.eb.DataSection()
 	if len(dataSymbols) > 0 {
+		// Clear data buffer before writing sorted symbols
+		fc.eb.data.Reset()
+
 		dataBaseAddr := currentAddr // Follows .rodata
-		for symbol, value := range dataSymbols {
+		dataSymbolNames := make([]string, 0, len(dataSymbols))
+		for symbol := range dataSymbols {
+			dataSymbolNames = append(dataSymbolNames, symbol)
+		}
+		sort.Strings(dataSymbolNames)
+
+		for _, symbol := range dataSymbolNames {
+			value := dataSymbols[symbol]
+			// Write data to buffer first
+			fc.eb.WriteData([]byte(value))
+			// Then assign address
 			fc.eb.DefineAddr(symbol, dataBaseAddr)
 			dataBaseAddr += uint64(len(value))
 			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "Assigned .data symbol %s to 0x%x\n", symbol, fc.eb.consts[symbol].addr)
+				fmt.Fprintf(os.Stderr, "Wrote and assigned .data symbol %s to 0x%x (%d bytes)\n", symbol, fc.eb.consts[symbol].addr, len(value))
 			}
 		}
 		currentAddr = dataBaseAddr
@@ -879,29 +893,40 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 
 	// Handle new .data symbols similarly
 	dataSymbols = fc.eb.DataSection()
+	fmt.Fprintf(os.Stderr, "DEBUG: dataSymbols count = %d\n", len(dataSymbols))
+	for symbol, value := range dataSymbols {
+		fmt.Fprintf(os.Stderr, "DEBUG: dataSymbol '%s' = %d bytes\n", symbol, len(value))
+	}
 	newDataSymbols := []string{}
 	for symbol := range dataSymbols {
 		// Check if already assigned
 		if _, ok := fc.eb.consts[symbol]; ok && fc.eb.consts[symbol].addr != 0 {
+			fmt.Fprintf(os.Stderr, "DEBUG: symbol '%s' already assigned to 0x%x, skipping\n", symbol, fc.eb.consts[symbol].addr)
 			continue
 		}
 		newDataSymbols = append(newDataSymbols, symbol)
 	}
+	fmt.Fprintf(os.Stderr, "DEBUG: newDataSymbols count = %d\n", len(newDataSymbols))
 	if len(newDataSymbols) > 0 {
 		sort.Strings(newDataSymbols)
 		for _, symbol := range newDataSymbols {
 			value := dataSymbols[symbol]
 			fc.eb.DefineAddr(symbol, currentAddr)
+			// Write the actual data to the .data buffer
+			fc.eb.WriteData([]byte(value))
 			currentAddr += uint64(len(value))
 			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "Assigned new .data symbol %s to 0x%x\n", symbol, fc.eb.consts[symbol].addr)
+				fmt.Fprintf(os.Stderr, "Assigned new .data symbol %s to 0x%x, wrote %d bytes\n", symbol, fc.eb.consts[symbol].addr, len(value))
 			}
 		}
 	}
 
 	// Set lambda function addresses
+	fmt.Fprintf(os.Stderr, "DEBUG: Setting lambda addresses, textAddr = 0x%x\n", textAddr)
 	for lambdaName, offset := range fc.lambdaOffsets {
 		lambdaAddr := textAddr + uint64(offset)
+		fmt.Fprintf(os.Stderr, "DEBUG: Lambda '%s': offset=0x%x, textAddr=0x%x, lambdaAddr=0x%x\n",
+			lambdaName, offset, textAddr, lambdaAddr)
 		fc.eb.DefineAddr(lambdaName, lambdaAddr)
 	}
 
@@ -933,6 +958,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	// Update ELF with regenerated code
 	fc.eb.patchTextInELF()
 	fc.eb.patchRodataInELF()
+	fc.eb.patchDataInELF()
 
 	// Output the executable file
 	elfBytes := fc.eb.Bytes()
@@ -5300,23 +5326,30 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 			fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: generating lambda '%s' with body type %T\n", lambda.Name, lambda.Body)
 		}
 		// Record the offset of this lambda function in .text
-		fc.lambdaOffsets[lambda.Name] = fc.eb.text.Len()
+		offsetBefore := fc.eb.text.Len()
+		fc.lambdaOffsets[lambda.Name] = offsetBefore
+		fmt.Fprintf(os.Stderr, "DEBUG: Lambda '%s' offset recorded as %d (0x%x)\n", lambda.Name, offsetBefore, offsetBefore)
 
 		// Mark the start of the lambda function with a label (again, to update offset)
 		fc.eb.MarkLabel(lambda.Name)
 
 		// Function prologue
+		prologueStart := fc.eb.text.Len()
+		fmt.Fprintf(os.Stderr, "DEBUG: Lambda '%s' prologue starts at %d (0x%x)\n", lambda.Name, prologueStart, prologueStart)
 		fc.out.PushReg("rbp")
 		fc.out.MovRegToReg("rbp", "rsp")
+		prologueEnd := fc.eb.text.Len()
+		fmt.Fprintf(os.Stderr, "DEBUG: Lambda '%s' prologue ends at %d (0x%x), prologue size = %d bytes\n",
+			lambda.Name, prologueEnd, prologueEnd, prologueEnd-prologueStart)
 
 		// REGISTER ALLOCATOR: Save callee-saved registers used for loop optimization
 		// rbx = loop counter
 		fc.out.PushReg("rbx")
-		// Maintain 16-byte stack alignment
-		fc.out.SubImmFromReg("rsp", 8)
 
-		// Stack is now 16-byte aligned (call+rbp+rbx+padding = 32 bytes)
-		// All allocations are multiples of 16 bytes to maintain alignment
+		// Stack layout after prologue:
+		// [rbp] = saved rbp
+		// [rbp-8] = saved rbx
+		// [rbp-16...] = local variables (allocated in 16-byte chunks)
 
 		// Save previous state
 		oldVariables := fc.variables
@@ -5386,14 +5419,17 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 		fc.currentLambda = nil
 
 		// Function epilogue
-		// Clean up stack
+		// Clean up stack - restore rsp to frame base
 		fc.out.MovRegToReg("rsp", "rbp")
 
-		// REGISTER ALLOCATOR: Restore callee-saved registers
-		fc.out.AddImmToReg("rsp", 8) // Remove alignment padding
-		fc.out.PopReg("rbx")
+		// REGISTER ALLOCATOR: Restore callee-saved registers in reverse order
+		// After mov rsp, rbp: rsp points to saved rbp
+		// We need to pop rbx first (which is at rbp-8), then pop rbp
+		// But since rsp = rbp now, we need to step back to rbx first
+		fc.out.SubImmFromReg("rsp", 8) // Point to saved rbx
+		fc.out.PopReg("rbx")            // Restore rbx, rsp now points to saved rbp
 
-		fc.out.PopReg("rbp")
+		fc.out.PopReg("rbp") // Restore rbp, rsp now points to return address
 		fc.out.Ret()
 
 		// Restore previous state
@@ -7309,6 +7345,7 @@ func (fc *FlapCompiler) generateArenaEnsureCapacity() {
 }
 
 func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
+	fmt.Fprintf(os.Stderr, "DEBUG compileStoredFunctionCall: called for '%s', text position=%d\n", call.Function, fc.eb.text.Len())
 	// Load closure object pointer from variable
 	offset, _ := fc.variables[call.Function]
 	if fc.debug {
@@ -7359,12 +7396,14 @@ func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
 
 	// Call the function pointer in r11
 	// r15 contains the environment pointer (accessible within the lambda)
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG compileStoredFunctionCall: about to call r11\n")
-	}
+	posBefore := fc.eb.text.Len()
+	fmt.Fprintf(os.Stderr, "DEBUG compileStoredFunctionCall: about to call r11, text position=%d\n", posBefore)
 	fc.out.CallRegister("r11")
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG compileStoredFunctionCall: called r11\n")
+	posAfter := fc.eb.text.Len()
+	fmt.Fprintf(os.Stderr, "DEBUG compileStoredFunctionCall: after call r11, text position=%d\n", posAfter)
+	if posAfter > posBefore {
+		callBytes := fc.eb.text.Bytes()[posBefore:posAfter]
+		fmt.Fprintf(os.Stderr, "DEBUG compileStoredFunctionCall: call instruction bytes = %x\n", callBytes)
 	}
 
 	// Result is in xmm0

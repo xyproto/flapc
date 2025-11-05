@@ -390,9 +390,9 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	w.Write8u(exSize)
 	w.Write8u(pageSize)
 
-	// PT_LOAD #2 (writable: dynamic, got, rodata)
+	// PT_LOAD #2 (writable: dynamic, got, rodata, data)
 	rwStart := layout["dynamic"].offset
-	rwFileSize := layout["rodata"].offset + uint64(layout["rodata"].size) - rwStart
+	rwFileSize := layout["rodata"].offset + uint64(layout["rodata"].size) + uint64(eb.data.Len()) - rwStart
 	rwMemSize := rwFileSize
 
 	if VerboseMode {
@@ -406,6 +406,9 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	}
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "Rodata offset: 0x%x, size: %d\n", layout["rodata"].offset, layout["rodata"].size)
+	}
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Data size: %d\n", eb.data.Len())
 	}
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "Calculated rwFileSize: 0x%x\n", rwFileSize)
@@ -571,6 +574,27 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 		}
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "DEBUG [after writing rodata to ELF]: rodata buffer first %d bytes: %q\n", previewLen, eb.rodata.Bytes()[:previewLen])
+		}
+	}
+
+	// Record data offset for patching later
+	eb.dataOffsetInELF = uint64(eb.elf.Len())
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG [before writing data to ELF]: data offset in ELF = 0x%x\n", eb.dataOffsetInELF)
+	}
+
+	// Write .data section
+	w.WriteBytes(eb.data.Bytes())
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG [after writing data to ELF]: data buffer size: %d bytes\n", eb.data.Len())
+	}
+	if eb.data.Len() > 0 {
+		previewLen := 32
+		if eb.data.Len() < previewLen {
+			previewLen = eb.data.Len()
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG [after writing data to ELF]: data buffer first %d bytes: %x\n", previewLen, eb.data.Bytes()[:previewLen])
 		}
 	}
 

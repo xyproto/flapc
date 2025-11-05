@@ -270,6 +270,10 @@ func strengthReduceExpr(expr Expression) Expression {
 			}
 
 			// x * 2^n → x << n (only for positive integer powers of 2)
+			// DISABLED: This optimization is only valid for integers, but Flap uses float64 by default.
+			// Applying this to floating-point operations breaks codegen because << is an integer operation.
+			// TODO: Re-enable this optimization only in integer contexts (unsafe blocks, explicit int types).
+			/*
 			if rightIsNum && rightNum.Value > 0 && isPowerOfTwo(rightNum.Value) {
 				shift := math.Log2(rightNum.Value)
 				return &BinaryExpr{
@@ -286,6 +290,7 @@ func strengthReduceExpr(expr Expression) Expression {
 					Right:    &NumberExpr{Value: shift},
 				}
 			}
+			*/
 
 		case "/":
 			// x / 1 → x
@@ -299,6 +304,10 @@ func strengthReduceExpr(expr Expression) Expression {
 			}
 
 			// x / 2^n → x >> n (only for positive powers of 2)
+			// DISABLED: This optimization is only valid for integers, but Flap uses float64 by default.
+			// Applying this to floating-point operations breaks codegen because >> is an integer operation.
+			// TODO: Re-enable this optimization only in integer contexts (unsafe blocks, explicit int types).
+			/*
 			if rightIsNum && rightNum.Value > 0 && isPowerOfTwo(rightNum.Value) {
 				shift := math.Log2(rightNum.Value)
 				return &BinaryExpr{
@@ -307,6 +316,7 @@ func strengthReduceExpr(expr Expression) Expression {
 					Right:    &NumberExpr{Value: shift},
 				}
 			}
+			*/
 
 		case "+":
 			// x + 0 → x
@@ -375,6 +385,10 @@ func strengthReduceExpr(expr Expression) Expression {
 			}
 
 			// x % 2^n → x & (2^n - 1) for positive powers of 2
+			// DISABLED: This optimization is only valid for integers, but Flap uses float64 by default.
+			// Applying this to floating-point operations breaks codegen because & is an integer operation.
+			// TODO: Re-enable this optimization only in integer contexts (unsafe blocks, explicit int types).
+			/*
 			if rightIsNum && rightNum.Value > 0 && isPowerOfTwo(rightNum.Value) {
 				mask := rightNum.Value - 1
 				return &BinaryExpr{
@@ -383,6 +397,7 @@ func strengthReduceExpr(expr Expression) Expression {
 					Right:    &NumberExpr{Value: mask},
 				}
 			}
+			*/
 		}
 
 		return e
