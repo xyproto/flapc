@@ -9,9 +9,18 @@
 - ✅ Fix lambda function epilogue stack corruption (return address was being destroyed)
 - ✅ Fix optimizer strength reduction breaking float operations (disabled `* 2^n → <<`, `/ 2^n → >>`, `% 2^n → &` for float-by-default language)
 - ✅ Fix parallel map operator (`||`) segfaults (fixed by lambda epilogue correction)
+- ✅ Design hybrid error handling system (NaN propagation + Result types)
+- ✅ Implement NaN propagation helpers (`is_nan`, `is_finite` - fully working)
 
 ## In Progress / Next Steps
-- **Expand error handling and test coverage** (In Progress)
+- **Runtime error handling** (In Progress)
+  - ✅ Design Result/Option type system (see ERROR_HANDLING_DESIGN.md)
+  - ✅ Implement `is_nan(x)` - working perfectly
+  - ✅ Implement `is_finite(x)` - working perfectly
+  - ⚠️ Fix `is_inf(x)` edge case bug (false positive on 0.0)
+  - ⏳ Implement safe arithmetic operations (`safe_divide`, `safe_sqrt`)
+  - ⏳ Implement Result type and helper methods
+- **Compile-time error handling** (In Progress)
   - ⏳ Convert remaining codegen errors to use ErrorCollector
   - ⏳ Add more negative test cases (type mismatches, immutable updates)
   - ⏳ Enhance error messages with column tracking
