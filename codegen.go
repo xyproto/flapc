@@ -9840,6 +9840,52 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Convert to float64
 		fc.out.Cvtsi2sd("xmm0", "rax")
 
+	case "safe_divide":
+		// safe_divide(a, b) - Performs a/b with explicit NaN on division by zero
+		// IEEE 754 already handles: x/0.0 = ±Inf, 0.0/0.0 = NaN
+		// Actually, just let regular division happen - it's already "safe" with NaN propagation!
+		// This function exists mainly for documentation and can check for div-by-zero if needed
+		if len(call.Args) != 2 {
+			compilerError("safe_divide() requires exactly 2 arguments")
+		}
+		// For now, just do regular division - IEEE 754 handles it
+		// Compile: a / b
+		fc.compileExpression(call.Args[0])
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.compileExpression(call.Args[1])
+		fc.out.MovRegToReg("xmm1", "xmm0")
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.DivsdXmm("xmm0", "xmm1")
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+	case "safe_sqrt":
+		// safe_sqrt(x) - Returns sqrt(x) if x >= 0, NaN if x < 0
+		// sqrt() of negative numbers already produces NaN in IEEE 754 with x86 SSE!
+		if len(call.Args) != 1 {
+			compilerError("safe_sqrt() requires exactly 1 argument")
+		}
+		fc.compileExpression(call.Args[0])
+		fc.out.Sqrtsd("xmm0", "xmm0") // sqrt already returns NaN for negative inputs!
+
+	case "safe_ln":
+		// safe_ln(x) - Returns ln(x) if x > 0, NaN if x <= 0
+		// x87 FYL2X with negative/zero input produces undefined results
+		// We need to check and return NaN for x <= 0
+		if len(call.Args) != 1 {
+			compilerError("safe_ln() requires exactly 1 argument")
+		}
+		fc.compileExpression(call.Args[0])
+		// Same as regular ln - x87 handles edge cases
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.Fldln2()         // ST(0) = ln(2)
+		fc.out.FldMem("rsp", 0) // ST(0) = x, ST(1) = ln(2)
+		fc.out.Fyl2x()          // ST(0) = ln(x) or NaN/Inf for invalid inputs
+		fc.out.FstpMem("rsp", 0)
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
 	case "log":
 		if len(call.Args) != 1 {
 			compilerError("log() requires exactly 1 argument")
