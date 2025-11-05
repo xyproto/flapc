@@ -9849,6 +9849,163 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Convert to float64
 		fc.out.Cvtsi2sd("xmm0", "rax")
 
+	case "is_pos_inf":
+		// is_pos_inf(x) - Returns 1.0 if x is +Inf, 0.0 otherwise
+		// Check: is_inf(x) && x > 0
+		if len(call.Args) != 1 {
+			compilerError("is_pos_inf() requires exactly 1 argument")
+		}
+		fc.compileExpression(call.Args[0])
+		// xmm0 contains the value
+
+		// Save original value
+		fc.out.MovRegToReg("xmm1", "xmm0")
+
+		// First check if it's infinite using same logic as is_inf()
+		// Check if NaN
+		fc.out.Ucomisd("xmm0", "xmm0")
+		fc.out.Write(0x0F)
+		fc.out.Write(0x9A)
+		fc.out.Write(0xC0) // SETP al
+		fc.out.Write(0x88) // mov cl, al
+		fc.out.Write(0xC1)
+
+		// Check if finite
+		fc.out.MovRegToReg("xmm0", "xmm1")
+		fc.out.MovRegToReg("xmm2", "xmm0")
+		fc.out.SubsdXmm("xmm2", "xmm0")
+		fc.out.XorpdXmm("xmm3", "xmm3")
+		fc.out.Ucomisd("xmm2", "xmm3")
+		fc.out.Write(0x0F)
+		fc.out.Write(0x94)
+		fc.out.Write(0xC0) // SETE al
+		fc.out.Write(0x88) // mov dl, al
+		fc.out.Write(0xC2)
+		fc.out.Write(0x0F)
+		fc.out.Write(0x9B)
+		fc.out.Write(0xC0) // SETNP al
+		fc.out.Write(0x20) // and al, dl
+		fc.out.Write(0xD0)
+
+		// NOT al - is_infinite
+		fc.out.Write(0xF6)
+		fc.out.Write(0xD0)
+		fc.out.Write(0x24)
+		fc.out.Write(0x01)
+
+		// NOT cl - is_not_nan
+		fc.out.Write(0xF6)
+		fc.out.Write(0xD1)
+		fc.out.Write(0x80)
+		fc.out.Write(0xE1)
+		fc.out.Write(0x01)
+
+		// AND al, cl - is_inf result in al
+		fc.out.Write(0x20)
+		fc.out.Write(0xC8)
+
+		// Save is_inf result
+		fc.out.Write(0x88) // mov dl, al
+		fc.out.Write(0xC2)
+
+		// Now check if positive: compare with 0
+		fc.out.MovRegToReg("xmm0", "xmm1") // restore original
+		fc.out.XorpdXmm("xmm3", "xmm3")     // 0.0
+		fc.out.Ucomisd("xmm0", "xmm3")
+		// SETA al - set if above (x > 0, CF=0 and ZF=0)
+		fc.out.Write(0x0F)
+		fc.out.Write(0x97)
+		fc.out.Write(0xC0)
+
+		// AND al, dl - both is_inf and is_positive
+		fc.out.Write(0x20)
+		fc.out.Write(0xD0)
+
+		// Zero-extend and convert to float
+		fc.out.Write(0x48)
+		fc.out.Write(0x0F)
+		fc.out.Write(0xB6)
+		fc.out.Write(0xC0)
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "is_neg_inf":
+		// is_neg_inf(x) - Returns 1.0 if x is -Inf, 0.0 otherwise
+		// Check: is_inf(x) && x < 0
+		if len(call.Args) != 1 {
+			compilerError("is_neg_inf() requires exactly 1 argument")
+		}
+		fc.compileExpression(call.Args[0])
+		// xmm0 contains the value
+
+		// Save original value
+		fc.out.MovRegToReg("xmm1", "xmm0")
+
+		// First check if it's infinite (same logic as is_inf)
+		fc.out.Ucomisd("xmm0", "xmm0")
+		fc.out.Write(0x0F)
+		fc.out.Write(0x9A)
+		fc.out.Write(0xC0) // SETP al
+		fc.out.Write(0x88) // mov cl, al
+		fc.out.Write(0xC1)
+
+		// Check if finite
+		fc.out.MovRegToReg("xmm0", "xmm1")
+		fc.out.MovRegToReg("xmm2", "xmm0")
+		fc.out.SubsdXmm("xmm2", "xmm0")
+		fc.out.XorpdXmm("xmm3", "xmm3")
+		fc.out.Ucomisd("xmm2", "xmm3")
+		fc.out.Write(0x0F)
+		fc.out.Write(0x94)
+		fc.out.Write(0xC0) // SETE al
+		fc.out.Write(0x88) // mov dl, al
+		fc.out.Write(0xC2)
+		fc.out.Write(0x0F)
+		fc.out.Write(0x9B)
+		fc.out.Write(0xC0) // SETNP al
+		fc.out.Write(0x20) // and al, dl
+		fc.out.Write(0xD0)
+
+		// NOT al - is_infinite
+		fc.out.Write(0xF6)
+		fc.out.Write(0xD0)
+		fc.out.Write(0x24)
+		fc.out.Write(0x01)
+
+		// NOT cl - is_not_nan
+		fc.out.Write(0xF6)
+		fc.out.Write(0xD1)
+		fc.out.Write(0x80)
+		fc.out.Write(0xE1)
+		fc.out.Write(0x01)
+
+		// AND al, cl - is_inf result in al
+		fc.out.Write(0x20)
+		fc.out.Write(0xC8)
+
+		// Save is_inf result
+		fc.out.Write(0x88) // mov dl, al
+		fc.out.Write(0xC2)
+
+		// Now check if negative: compare with 0
+		fc.out.MovRegToReg("xmm0", "xmm1") // restore original
+		fc.out.XorpdXmm("xmm3", "xmm3")     // 0.0
+		fc.out.Ucomisd("xmm0", "xmm3")
+		// SETB al - set if below (x < 0, CF=1)
+		fc.out.Write(0x0F)
+		fc.out.Write(0x92)
+		fc.out.Write(0xC0)
+
+		// AND al, dl - both is_inf and is_negative
+		fc.out.Write(0x20)
+		fc.out.Write(0xD0)
+
+		// Zero-extend and convert to float
+		fc.out.Write(0x48)
+		fc.out.Write(0x0F)
+		fc.out.Write(0xB6)
+		fc.out.Write(0xC0)
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
 	case "safe_divide":
 		// safe_divide(a, b) - Performs a/b with explicit NaN on division by zero
 		// IEEE 754 already handles: x/0.0 = ±Inf, 0.0/0.0 = NaN
