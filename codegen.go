@@ -9765,36 +9765,73 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 	case "is_inf":
 		// is_inf(x) - Returns 1.0 if x is +Inf or -Inf, 0.0 otherwise
-		// IEEE 754 double: Inf has exponent=0x7FF (all 1s) and mantissa=0
-		// NaN has exponent=0x7FF and mantissa!=0
-		// We check: (|x| & 0x7FFFFFFFFFFFFFFF) == 0x7FF0000000000000
+		// Use a simpler approach: is_inf(x) = !is_finite(x) && !is_nan(x)
 		if len(call.Args) != 1 {
 			compilerError("is_inf() requires exactly 1 argument")
 		}
 		fc.compileExpression(call.Args[0])
 		// xmm0 contains the value to check
 
-		// Move xmm0 to integer register for bit manipulation
-		fc.out.SubImmFromReg("rsp", StackSlotSize)
-		fc.out.MovXmmToMem("xmm0", "rsp", 0)
-		fc.out.MovMemToReg("rax", "rsp", 0)
-		fc.out.AddImmToReg("rsp", StackSlotSize)
+		// Save the original value in xmm1
+		fc.out.MovRegToReg("xmm1", "xmm0")
 
-		// Clear sign bit: rax &= 0x7FFFFFFFFFFFFFFF
-		fc.out.MovImmToReg("rcx", "0x7FFFFFFFFFFFFFFF")
-		fc.out.AndRegWithReg("rax", "rcx")
+		// Check if NaN: xmm0 != xmm0
+		fc.out.Ucomisd("xmm0", "xmm0")
+		// SETP al - set if parity (NaN)
+		fc.out.Write(0x0F)
+		fc.out.Write(0x9A)
+		fc.out.Write(0xC0)
+		// Save NaN result in cl
+		fc.out.Write(0x88) // mov cl, al
+		fc.out.Write(0xC1)
 
-		// Compare with infinity bit pattern: 0x7FF0000000000000
-		fc.out.MovImmToReg("rcx", "0x7FF0000000000000")
-		fc.out.CmpRegToReg("rax", "rcx")
+		// Restore original value from xmm1
+		fc.out.MovRegToReg("xmm0", "xmm1")
 
-		// Set al to 1 if equal
-		// SETE al
+		// Check if finite: (x - x) == 0
+		fc.out.MovRegToReg("xmm2", "xmm0")
+		fc.out.SubsdXmm("xmm2", "xmm0")
+		fc.out.XorpdXmm("xmm3", "xmm3") // xmm3 = 0.0
+		fc.out.Ucomisd("xmm2", "xmm3")
+
+		// SETE al - set if equal (ZF=1)
 		fc.out.Write(0x0F)
 		fc.out.Write(0x94)
 		fc.out.Write(0xC0)
 
-		// Zero-extend al to rax: movzx rax, al (48 0F B6 C0)
+		// Move al to dl temporarily
+		fc.out.Write(0x88) // mov dl, al
+		fc.out.Write(0xC2)
+
+		// SETNP al - set if not parity (PF=0)
+		fc.out.Write(0x0F)
+		fc.out.Write(0x9B)
+		fc.out.Write(0xC0)
+
+		// AND al, dl - both conditions must be true (is_finite)
+		fc.out.Write(0x20) // and al, dl
+		fc.out.Write(0xD0)
+
+		// Now al = 1 if finite, 0 if not finite
+		// We want: (!is_finite) && (!is_nan)
+		// NOT al - flip finite result
+		fc.out.Write(0xF6) // not al
+		fc.out.Write(0xD0)
+		fc.out.Write(0x24) // and al, 1 (keep only lowest bit)
+		fc.out.Write(0x01)
+
+		// NOT cl - flip NaN result
+		fc.out.Write(0xF6) // not cl
+		fc.out.Write(0xD1)
+		fc.out.Write(0x80) // and cl, 1 (keep only lowest bit)
+		fc.out.Write(0xE1)
+		fc.out.Write(0x01)
+
+		// AND al, cl - both !finite and !NaN must be true
+		fc.out.Write(0x20) // and al, cl
+		fc.out.Write(0xC8)
+
+		// Zero-extend al to rax
 		fc.out.Write(0x48)
 		fc.out.Write(0x0F)
 		fc.out.Write(0xB6)
