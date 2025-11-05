@@ -789,7 +789,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	fc.mutableVars = make(map[string]bool)
 	fc.varTypes = make(map[string]string)
 	fc.stackOffset = 0
-	fc.lambdaFuncs = nil // Clear lambda list to avoid duplicates
+	fc.lambdaFuncs = nil // Clear lambda list so collectSymbols can repopulate it
 	fc.lambdaCounter = 0
 	fc.labelCounter = 0                                       // Reset label counter for consistent loop labels
 	fc.movedVars = make(map[string]bool)                      // Reset moved variables tracking
@@ -837,6 +837,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	}
 
 	// Generate lambda functions
+	fmt.Fprintf(os.Stderr, "DEBUG: About to generate lambdas (second pass), have %d lambdas\n", len(fc.lambdaFuncs))
 	fc.generateLambdaFunctions()
 
 	// Generate pattern lambda functions
@@ -5285,6 +5286,7 @@ func (fc *FlapCompiler) predeclareLambdaSymbols() {
 }
 
 func (fc *FlapCompiler) generateLambdaFunctions() {
+	fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: called with %d lambdas\n", len(fc.lambdaFuncs))
 	if fc.debug {
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: generating %d lambdas\n", len(fc.lambdaFuncs))
@@ -5293,6 +5295,7 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 	// Use index-based loop to handle lambdas added during iteration (nested lambdas)
 	for i := 0; i < len(fc.lambdaFuncs); i++ {
 		lambda := fc.lambdaFuncs[i]
+		fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: generating lambda %d: '%s'\n", i+1, lambda.Name)
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: generating lambda '%s' with body type %T\n", lambda.Name, lambda.Body)
 		}
