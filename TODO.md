@@ -18,8 +18,9 @@
   - ✅ Implement `is_nan(x)` - working perfectly
   - ✅ Implement `is_finite(x)` - working perfectly
   - ✅ Fix `is_inf(x)` edge case bug - now fully working (reimplemented as `!is_finite && !is_nan`)
-  - ⏳ Implement safe arithmetic operations (`safe_divide`, `safe_sqrt`)
-  - ⏳ Implement Result type and helper methods
+  - ✅ Implement safe arithmetic operations (`safe_divide`, `safe_sqrt`, `safe_ln`) - leveraging IEEE 754 NaN/Inf propagation
+  - ⏳ Implement Result type with runtime map creation (requires dynamic map allocation)
+  - ⏳ Implement Result helper methods (`then`, `map`, `unwrap_or`)
 - **Compile-time error handling** (In Progress)
   - ⏳ Convert remaining codegen errors to use ErrorCollector
   - ⏳ Add more negative test cases (type mismatches, immutable updates)
