@@ -25,21 +25,31 @@ Prioritized from foundational to enhancement. Focus on fixing bugs and completin
 
 ---
 
-### 2. Fix println not displaying float values from variables
+### 2. Refactor printf as robust runtime function, make println use it
 **Priority:** MEDIUM
-**Status:** Broken
+**Status:** Not started
 
 **Problem:**
-- `println(variable)` where variable is float shows nothing
-- Works: `println(42.0)` (literal)
-- Broken: `x := 42.0; println(x)` (shows empty)
-- Affects debugging and user experience
+- Current printf/println implementations are complex inline codegen
+- Prone to register clobbering and edge cases
+- Difficult to maintain and debug
+- Would benefit from single robust implementation
+
+**Proposed Solution:**
+- Implement printf as assembly/machine code runtime function
+- Emit as part of executable (like flap_arena_alloc)
+- Handle all formatting robustly with proper register preservation
+- Make println() call printf() internally
+- Simplify compiler codegen significantly
 
 **Action Items:**
-- [ ] Investigate println codegen for variable vs literal handling
-- [ ] Check if XMM register state is preserved
-- [ ] Verify float-to-string conversion in runtime
-- [ ] Add test cases for println with all variable types
+- [ ] Design printf runtime function signature
+- [ ] Implement printf in x86-64 assembly (x86_64_codegen.go)
+- [ ] Handle format specifiers: %v, %s, %d, %f, %g, etc.
+- [ ] Ensure robust register preservation (save/restore all clobbered regs)
+- [ ] Refactor println() to call printf() with "%v\n" format
+- [ ] Test with all value types (floats, strings, maps, lists)
+- [ ] Verify no register clobbering in complex expressions
 
 ---
 
