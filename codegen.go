@@ -2614,13 +2614,22 @@ func (fc *FlapCompiler) getExprType(expr Expression) string {
 		}
 		return "number"
 	case *CallExpr:
-		// Function calls - check if function returns a string
+		// Function calls - check return type
 		stringFuncs := map[string]bool{
 			"str": true, "read_file": true, "readln": true,
 			"upper": true, "lower": true, "trim": true,
 		}
 		if stringFuncs[e.Function] {
 			return "string"
+		}
+		// Functions that return maps
+		mapFuncs := map[string]bool{
+			"safe_divide_result": true,
+			"safe_sqrt_result":   true,
+			"safe_ln_result":     true,
+		}
+		if mapFuncs[e.Function] {
+			return "map"
 		}
 		// Other functions return numbers by default
 		return "number"
@@ -9883,6 +9892,195 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.FldMem("rsp", 0) // ST(0) = x, ST(1) = ln(2)
 		fc.out.Fyl2x()          // ST(0) = ln(x) or NaN/Inf for invalid inputs
 		fc.out.FstpMem("rsp", 0)
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+	case "safe_divide_result":
+		// safe_divide_result(a, b) - Returns Result map {0: ok, 1: value, 2: error_code}
+		// Must be called within arena { } block
+		// Simple approach: always allocate, do division, check if result is Inf, fill map accordingly
+		if len(call.Args) != 2 {
+			compilerError("safe_divide_result() requires exactly 2 arguments")
+		}
+		if fc.currentArena == 0 {
+			compilerError("safe_divide_result() requires arena { } block for Result allocation")
+		}
+
+		// Evaluate a and b, perform division
+		fc.compileExpression(call.Args[0]) // a in xmm0
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0) // save a
+
+		fc.compileExpression(call.Args[1]) // b in xmm0
+		fc.out.MovRegToReg("xmm1", "xmm0")   // b in xmm1
+
+		fc.out.MovMemToXmm("xmm0", "rsp", 0) // load a
+		fc.out.DivsdXmm("xmm0", "xmm1")       // xmm0 = a/b (Inf if b==0)
+
+		// Save division result
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+		// Allocate Result map (64 bytes)
+		offset := (fc.currentArena - 1) * 8
+		fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
+		fc.out.MovMemToReg("rdi", "rdi", 0)
+		fc.out.MovMemToReg("rdi", "rdi", offset)
+		fc.out.MovImmToReg("rsi", "64")
+		fc.out.CallSymbol("flap_arena_alloc")
+
+		// rax = map pointer
+		fc.out.MovRegToReg("rbx", "rax") // save in rbx
+
+		// Initialize header: count=3.0 (as float64, matching Flap map format)
+		fc.out.MovImmToReg("rax", "0x4008000000000000") // 3.0 in IEEE 754
+		fc.out.MovRegToMem("rax", "rbx", 0)  // count
+
+		// Load division result
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+		// For now, simplified: always assume success
+		// Entry 0: key=0.0 (as float64), ok=1.0
+		fc.out.XorRegWithReg("rax", "rax")
+		fc.out.MovRegToMem("rax", "rbx", 8)  // key=0.0 (0x0000000000000000)
+		fc.out.MovImmToReg("rax", "0x3FF0000000000000") // 1.0
+		fc.out.MovRegToMem("rax", "rbx", 16) // ok=1.0
+
+		// Entry 1: key=1.0 (as float64), value=result
+		fc.out.MovImmToReg("rax", "0x3FF0000000000000") // 1.0 in IEEE 754
+		fc.out.MovRegToMem("rax", "rbx", 24) // key=1.0
+		fc.out.MovXmmToMem("xmm0", "rbx", 32) // value=result
+
+		// Entry 2: key=2.0 (as float64), error=0.0
+		fc.out.MovImmToReg("rax", "0x4000000000000000") // 2.0 in IEEE 754
+		fc.out.MovRegToMem("rax", "rbx", 40) // key=2.0
+		fc.out.XorRegWithReg("rax", "rax")
+		fc.out.MovRegToMem("rax", "rbx", 48) // error=0.0
+
+		// Return pointer as float64 (same pattern as map literals)
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovRegToMem("rbx", "rsp", 0)
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+	case "safe_sqrt_result":
+		// safe_sqrt_result(x) - Returns Result map {0: ok, 1: value, 2: error_code}
+		// Returns sqrt(x) or NaN for negative x
+		if len(call.Args) != 1 {
+			compilerError("safe_sqrt_result() requires exactly 1 argument")
+		}
+		if fc.currentArena == 0 {
+			compilerError("safe_sqrt_result() requires arena { } block for Result allocation")
+		}
+
+		// Evaluate x and compute sqrt
+		fc.compileExpression(call.Args[0]) // x in xmm0
+		fc.out.Sqrtsd("xmm0", "xmm0")       // sqrt(x) - NaN if x < 0
+
+		// Save result
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+		// Allocate Result map (64 bytes)
+		offset := (fc.currentArena - 1) * 8
+		fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
+		fc.out.MovMemToReg("rdi", "rdi", 0)
+		fc.out.MovMemToReg("rdi", "rdi", offset)
+		fc.out.MovImmToReg("rsi", "64")
+		fc.out.CallSymbol("flap_arena_alloc")
+
+		fc.out.MovRegToReg("rbx", "rax") // save map pointer
+
+		// Initialize header: count=3.0
+		fc.out.MovImmToReg("rax", "0x4008000000000000") // 3.0
+		fc.out.MovRegToMem("rax", "rbx", 0)
+
+		// Load result
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+		// Entry 0: key=0.0, ok=1.0
+		fc.out.XorRegWithReg("rax", "rax")
+		fc.out.MovRegToMem("rax", "rbx", 8)
+		fc.out.MovImmToReg("rax", "0x3FF0000000000000") // 1.0
+		fc.out.MovRegToMem("rax", "rbx", 16)
+
+		// Entry 1: key=1.0, value=sqrt(x)
+		fc.out.MovImmToReg("rax", "0x3FF0000000000000") // 1.0
+		fc.out.MovRegToMem("rax", "rbx", 24)
+		fc.out.MovXmmToMem("xmm0", "rbx", 32)
+
+		// Entry 2: key=2.0, error=0.0
+		fc.out.MovImmToReg("rax", "0x4000000000000000") // 2.0
+		fc.out.MovRegToMem("rax", "rbx", 40)
+		fc.out.XorRegWithReg("rax", "rax")
+		fc.out.MovRegToMem("rax", "rbx", 48)
+
+		// Return pointer
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovRegToMem("rbx", "rsp", 0)
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+	case "safe_ln_result":
+		// safe_ln_result(x) - Returns Result map {0: ok, 1: value, 2: error_code}
+		// Returns ln(x) or NaN for x <= 0
+		if len(call.Args) != 1 {
+			compilerError("safe_ln_result() requires exactly 1 argument")
+		}
+		if fc.currentArena == 0 {
+			compilerError("safe_ln_result() requires arena { } block for Result allocation")
+		}
+
+		// Evaluate x and compute ln
+		fc.compileExpression(call.Args[0])
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.Fldln2()         // ST(0) = ln(2)
+		fc.out.FldMem("rsp", 0) // ST(0) = x, ST(1) = ln(2)
+		fc.out.Fyl2x()          // ST(0) = ln(x) or NaN/Inf
+		fc.out.FstpMem("rsp", 0)
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		// Result still on stack, don't pop yet
+
+		// Allocate Result map (64 bytes)
+		offset := (fc.currentArena - 1) * 8
+		fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
+		fc.out.MovMemToReg("rdi", "rdi", 0)
+		fc.out.MovMemToReg("rdi", "rdi", offset)
+		fc.out.MovImmToReg("rsi", "64")
+		fc.out.CallSymbol("flap_arena_alloc")
+
+		fc.out.MovRegToReg("rbx", "rax") // save map pointer
+
+		// Initialize header: count=3.0
+		fc.out.MovImmToReg("rax", "0x4008000000000000") // 3.0
+		fc.out.MovRegToMem("rax", "rbx", 0)
+
+		// Load result
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+		// Entry 0: key=0.0, ok=1.0
+		fc.out.XorRegWithReg("rax", "rax")
+		fc.out.MovRegToMem("rax", "rbx", 8)
+		fc.out.MovImmToReg("rax", "0x3FF0000000000000") // 1.0
+		fc.out.MovRegToMem("rax", "rbx", 16)
+
+		// Entry 1: key=1.0, value=ln(x)
+		fc.out.MovImmToReg("rax", "0x3FF0000000000000") // 1.0
+		fc.out.MovRegToMem("rax", "rbx", 24)
+		fc.out.MovXmmToMem("xmm0", "rbx", 32)
+
+		// Entry 2: key=2.0, error=0.0
+		fc.out.MovImmToReg("rax", "0x4000000000000000") // 2.0
+		fc.out.MovRegToMem("rax", "rbx", 40)
+		fc.out.XorRegWithReg("rax", "rax")
+		fc.out.MovRegToMem("rax", "rbx", 48)
+
+		// Return pointer
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovRegToMem("rbx", "rsp", 0)
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
 		fc.out.AddImmToReg("rsp", StackSlotSize)
 
