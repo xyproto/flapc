@@ -9677,6 +9677,132 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.MovMemToXmm("xmm0", "rsp", StackSlotSize)
 		fc.out.AddImmToReg("rsp", 16)
 
+	case "is_nan":
+		// is_nan(x) - Returns 1.0 if x is NaN, 0.0 otherwise
+		// NaN is the only value where x != x
+		if len(call.Args) != 1 {
+			compilerError("is_nan() requires exactly 1 argument")
+		}
+		fc.compileExpression(call.Args[0])
+		// xmm0 contains the value to check
+		// Compare xmm0 with itself using UCOMISD
+		// If NaN, ZF=1, PF=1, CF=1
+		fc.out.Ucomisd("xmm0", "xmm0") // Compare xmm0 with itself
+
+		// Set al to 1 if parity flag is set (indicates NaN)
+		// SETP sets byte to 1 if PF=1 (parity), 0 otherwise
+		// Emit: setp al (0F 9A C0)
+		fc.out.Write(0x0F)
+		fc.out.Write(0x9A)
+		fc.out.Write(0xC0)
+
+		// Zero-extend al to rax: movzx rax, al (48 0F B6 C0)
+		fc.out.Write(0x48)
+		fc.out.Write(0x0F)
+		fc.out.Write(0xB6)
+		fc.out.Write(0xC0)
+
+		// Convert rax (0 or 1) to float64 in xmm0
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "is_finite":
+		// is_finite(x) - Returns 1.0 if x is finite (not NaN, not Inf), 0.0 otherwise
+		// A value is finite if (x - x) == 0.0
+		// For finite values: x - x = 0.0
+		// For NaN: NaN - NaN = NaN (not equal to 0)
+		// For Inf: Inf - Inf = NaN (not equal to 0)
+		// UCOMISD sets PF=1 when either operand is NaN
+		if len(call.Args) != 1 {
+			compilerError("is_finite() requires exactly 1 argument")
+		}
+		fc.compileExpression(call.Args[0])
+		// xmm0 contains the value to check
+
+		// Copy xmm0 to xmm1
+		fc.out.MovRegToReg("xmm1", "xmm0")
+
+		// Subtract: xmm1 = xmm0 - xmm0
+		fc.out.SubsdXmm("xmm1", "xmm0")
+
+		// Load 0.0 into xmm2
+		fc.out.XorpdXmm("xmm2", "xmm2") // xmm2 = 0.0
+
+		// Compare xmm1 with 0.0
+		// UCOMISD sets ZF=1 and PF=0 if equal and neither is NaN
+		// If result is NaN, PF=1
+		fc.out.Ucomisd("xmm1", "xmm2")
+
+		// Set al to 1 if equal AND PF=0 (SETE checks ZF, but we also need to check PF)
+		// We need ZF=1 and PF=0 for finite numbers
+		// Use SETE (set if ZF=1) then AND with SETNP (set if PF=0)
+
+		// SETE al - set if equal (ZF=1)
+		fc.out.Write(0x0F)
+		fc.out.Write(0x94)
+		fc.out.Write(0xC0)
+
+		// Move al to cl temporarily
+		fc.out.Write(0x88) // mov cl, al
+		fc.out.Write(0xC1)
+
+		// SETNP al - set if not parity (PF=0)
+		fc.out.Write(0x0F)
+		fc.out.Write(0x9B)
+		fc.out.Write(0xC0)
+
+		// AND al, cl - both conditions must be true
+		fc.out.Write(0x20) // and al, cl
+		fc.out.Write(0xC8)
+
+		// Zero-extend al to rax: movzx rax, al (48 0F B6 C0)
+		fc.out.Write(0x48)
+		fc.out.Write(0x0F)
+		fc.out.Write(0xB6)
+		fc.out.Write(0xC0)
+
+		// Convert to float64
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "is_inf":
+		// is_inf(x) - Returns 1.0 if x is +Inf or -Inf, 0.0 otherwise
+		// IEEE 754 double: Inf has exponent=0x7FF (all 1s) and mantissa=0
+		// NaN has exponent=0x7FF and mantissa!=0
+		// We check: (|x| & 0x7FFFFFFFFFFFFFFF) == 0x7FF0000000000000
+		if len(call.Args) != 1 {
+			compilerError("is_inf() requires exactly 1 argument")
+		}
+		fc.compileExpression(call.Args[0])
+		// xmm0 contains the value to check
+
+		// Move xmm0 to integer register for bit manipulation
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+		fc.out.MovMemToReg("rax", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
+
+		// Clear sign bit: rax &= 0x7FFFFFFFFFFFFFFF
+		fc.out.MovImmToReg("rcx", "0x7FFFFFFFFFFFFFFF")
+		fc.out.AndRegWithReg("rax", "rcx")
+
+		// Compare with infinity bit pattern: 0x7FF0000000000000
+		fc.out.MovImmToReg("rcx", "0x7FF0000000000000")
+		fc.out.CmpRegToReg("rax", "rcx")
+
+		// Set al to 1 if equal
+		// SETE al
+		fc.out.Write(0x0F)
+		fc.out.Write(0x94)
+		fc.out.Write(0xC0)
+
+		// Zero-extend al to rax: movzx rax, al (48 0F B6 C0)
+		fc.out.Write(0x48)
+		fc.out.Write(0x0F)
+		fc.out.Write(0xB6)
+		fc.out.Write(0xC0)
+
+		// Convert to float64
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
 	case "log":
 		if len(call.Args) != 1 {
 			compilerError("log() requires exactly 1 argument")

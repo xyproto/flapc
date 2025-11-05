@@ -1,8 +1,152 @@
-# Railway-Oriented Error Handling Design
+# Hybrid Error Handling Design for Flap
 
 ## Overview
 
-This document describes the railway-oriented error handling system for the flapc compiler. The goal is to collect and report multiple errors instead of stopping at the first one, providing better developer experience.
+This document describes two complementary error handling systems:
+
+1. **Compiler Error Handling** (Railway-Oriented): Collects multiple compilation errors for better developer experience
+2. **Runtime Error Handling** (Hybrid NaN + Result): Zero-cost NaN propagation combined with explicit Result types
+
+---
+
+# Part 1: Runtime Error Handling (Hybrid Approach)
+
+Flap implements a hybrid runtime error handling system optimized for float64-by-default operations and SIMD performance:
+
+1. **NaN Propagation**: IEEE 754 NaN for arithmetic errors (zero-cost, SIMD-friendly)
+2. **Result Types**: Rust/Swift/Haskell-style for explicit error handling
+3. **Panic**: Unrecoverable programming errors
+
+## 1. NaN Propagation (Zero-Cost Arithmetic Errors)
+
+### Design Principle
+Since Flap uses float64 by default, IEEE 754 NaN propagation provides natural error handling for arithmetic operations at zero runtime cost.
+
+### Behavior
+```flap
+x := 1.0 / 0.0       // x = +Inf (IEEE 754)
+y := 0.0 / 0.0       // y = NaN (IEEE 754)
+z := sqrt(-1.0)      // z = NaN
+result := y + 10     // result = NaN (automatic propagation)
+```
+
+### Built-in NaN Helpers
+```flap
+// NaN/Inf checking (to be added to stdlib)
+is_nan(x)            // Returns 1.0 if x is NaN, 0.0 otherwise
+is_finite(x)         // Returns 1.0 if x is finite (not NaN, not Inf), 0.0 otherwise
+is_inf(x)            // Returns 1.0 if x is +Inf or -Inf, 0.0 otherwise
+
+// Safe operations that return Result instead of NaN
+safe_divide(a, b)    // Returns Result{ok: 1.0, value: a/b} or Result{ok: 0.0, error: "division by zero"}
+safe_sqrt(x)         // Returns Result with error for negative inputs
+```
+
+### SIMD Optimization
+NaN propagation works seamlessly with SIMD operations:
+- No branching required
+- Hardware handles NaN automatically
+- Parallel operations maintain correctness
+
+## 2. Result Type (Explicit Error Handling)
+
+### Type Definition
+Result type is a built-in struct with three fields (24-byte aligned struct):
+
+```flap
+// Internal layout:
+// Offset 0:  ok (float64, treated as bool: 1.0 or 0.0)
+// Offset 8:  value (float64)
+// Offset 16: error (pointer to string data, 8 bytes)
+```
+
+### Creating Results
+```flap
+// Success
+ok_result := {ok: 1.0, value: 42.0, error: ""}
+
+// Failure
+err_result := {ok: 0.0, value: 0.0, error: "something went wrong"}
+
+// Helper functions (to be added to stdlib)
+Ok(value)           // Returns {ok: 1.0, value: value, error: ""}
+Err(message)        // Returns {ok: 0.0, value: 0.0, error: message}
+```
+
+### Pattern Matching on Results
+```flap
+result := safe_divide(10, 0)
+
+// Match expression (idiomatic)
+output := result.ok {
+    1.0 -> f"Success: {result.value}"
+    0.0 -> f"Error: {result.error}"
+}
+
+// Traditional if/else
+result.ok {
+    1.0 -> println(result.value)
+    ~> println(result.error)
+}
+```
+
+### Result Methods (Railway-Oriented Chaining)
+```flap
+// Chain operations - continues only if previous succeeded
+safe_divide(10, 2)
+    .then(x => safe_sqrt(x))
+    .then(x => safe_divide(100, x))
+    .unwrap_or(0.0)
+
+// Transform value if ok
+safe_divide(10, 2)
+    .map(x => x * 2)
+    .unwrap_or(0.0)
+
+// Extract value or return default
+value := result.unwrap_or(default_value)
+
+// Extract value or panic
+value := result.unwrap()  // Runtime panic if ok == 0.0
+```
+
+## 3. Panic (Unrecoverable Errors)
+
+### Use Cases
+- Array bounds violations
+- Assertion failures
+- `unwrap()` called on error Result
+- Out of memory
+- Stack overflow
+
+### Implementation
+```flap
+panic(message)  // Prints message to stderr and exits with code 1
+assert(condition, message)  // Panics if condition is false
+```
+
+## 4. Performance
+
+### Zero-Cost Happy Path
+- NaN propagation: Zero overhead, hardware-supported
+- Result type: Stack-allocated struct (24 bytes)
+- No heap allocation required
+- Pattern matching compiles to simple branches
+- Method chaining inlines completely
+
+### When to Use Each Approach
+
+| Approach | Use Case | Performance |
+|----------|----------|-------------|
+| NaN Propagation | Pure arithmetic, SIMD | Zero cost |
+| Result Type | Explicit error handling, I/O | Minimal cost |
+| Panic | Programming errors, assertions | N/A (terminates) |
+
+---
+
+# Part 2: Compiler Error Handling (Railway-Oriented)
+
+This section describes the railway-oriented error handling system for the flapc compiler. The goal is to collect and report multiple errors instead of stopping at the first one, providing better developer experience.
 
 ## Railway-Oriented Programming Concepts
 
