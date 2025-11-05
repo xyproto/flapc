@@ -60,15 +60,10 @@ func (o *Out) callX86Relative(offset int32) {
 
 // x86-64 CALL register (indirect)
 func (o *Out) callX86Register(reg string) {
-	fmt.Fprintf(os.Stderr, "DEBUG callX86Register: called with reg=%s\n", reg)
-
 	regInfo, regOk := GetRegister(o.target.Arch(), reg)
 	if !regOk {
-		fmt.Fprintf(os.Stderr, "DEBUG callX86Register: register not found!\n")
 		return
 	}
-
-	fmt.Fprintf(os.Stderr, "DEBUG callX86Register: regInfo.Encoding=%d\n", regInfo.Encoding)
 
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "call %s:", reg)
@@ -80,15 +75,12 @@ func (o *Out) callX86Register(reg string) {
 	if regInfo.Encoding >= 8 {
 		rex |= 0x01 // REX.B
 	}
-	fmt.Fprintf(os.Stderr, "DEBUG callX86Register: writing REX=0x%02X\n", rex)
 	o.Write(rex)
 
-	fmt.Fprintf(os.Stderr, "DEBUG callX86Register: writing opcode 0xFF\n")
 	o.Write(0xFF)
 
 	// ModR/M: 11 010 reg (register indirect, opcode extension /2)
 	modrm := uint8(0xD0) | (regInfo.Encoding & 7)
-	fmt.Fprintf(os.Stderr, "DEBUG callX86Register: writing ModR/M=0x%02X\n", modrm)
 	o.Write(modrm)
 
 	if VerboseMode {
