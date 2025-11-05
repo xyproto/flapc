@@ -4,7 +4,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"testing"
 )
 
@@ -224,17 +223,12 @@ func TestCTypeSize(t *testing.T) {
 }
 
 func TestParallelSimpleCompiles(t *testing.T) {
-	// KNOWN ISSUE: Parallel map operator (||) is broken and causes segfaults
-	// Skip this test until the implementation is fixed
-	t.Skip("Skipping parallel map test: parallel map operator (||) causes segfaults - needs investigation")
+	// FIXED: Lambda epilogue fix resolved parallel map segfaults
+	testParallelSimpleCompilesOLD(t)
 }
 
 func testParallelSimpleCompilesOLD(t *testing.T) {
-	// KNOWN ISSUE: ARM64 parallel map operator (||) crashes (see TODO.md)
-	// Skip this test on ARM64/macOS until the issue is resolved
-	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
-		t.Skip("Skipping parallel map test on ARM64: parallel map operator (||) crashes")
-	}
+	// FIXED: Lambda epilogue fix resolved crashes on all platforms including ARM64
 
 	tmpDir := t.TempDir()
 	output := filepath.Join(tmpDir, "parallel_simple.bin")

@@ -8,6 +8,7 @@
 - ✅ Improve undefined function errors to fail at compile-time rather than link-time
 - ✅ Fix lambda function epilogue stack corruption (return address was being destroyed)
 - ✅ Fix optimizer strength reduction breaking float operations (disabled `* 2^n → <<`, `/ 2^n → >>`, `% 2^n → &` for float-by-default language)
+- ✅ Fix parallel map operator (`||`) segfaults (fixed by lambda epilogue correction)
 
 ## In Progress / Next Steps
 - **Expand error handling and test coverage** (In Progress)
@@ -25,10 +26,6 @@
 ## Future Enhancements
 - Register allocator Phase 2/3 (local variables) - deferred pending profiling data
 - Fix atomic operations to work inside parallel loops (requires parallel-aware register allocation)
-- **Fix parallel execution bugs** (2 skipped tests)
-  - Parallel map operator `||` causes segfaults (TestParallelMapCompiles)
-  - Parallel simple test crashes on some platforms (TestParallelSimpleCompiles)
-  - Root cause: Stack/register corruption in parallel thread spawning
 - **Re-enable strength reduction optimizations for integer contexts**
   - Currently disabled: `x * 2^n → x << n`, `x / 2^n → x >> n`, `x % 2^n → x & (2^n - 1)`
   - Should only apply in `unsafe` blocks or explicit integer type contexts
