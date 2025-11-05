@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 )
 
@@ -62,8 +63,18 @@ func (x *X86_64CodeGen) CallRegister(reg string) {
 	if !ok {
 		compilerError("Unknown register: %s", reg)
 	}
+
+	fmt.Fprintf(os.Stderr, "DEBUG CallRegister: reg=%s encoding=%d\n", reg, r.Encoding)
+
+	// For registers r8-r15, we need a REX prefix with the B bit set
+	if r.Encoding >= 8 {
+		x.write(0x41) // REX.B prefix
+		fmt.Fprintf(os.Stderr, "DEBUG CallRegister: writing REX prefix 0x41\n")
+	}
+
 	x.write(0xFF)
-	x.write(0xD0 + r.Encoding)
+	x.write(0xD0 + (r.Encoding & 7)) // Use only low 3 bits
+	fmt.Fprintf(os.Stderr, "DEBUG CallRegister: wrote 0xFF 0x%02X\n", 0xD0+(r.Encoding&7))
 }
 
 func (x *X86_64CodeGen) JumpUnconditional(offset int32) {
@@ -217,6 +228,41 @@ func (x *X86_64CodeGen) MovMemToReg(dst, symbol string, offset int32) {
 		return
 	}
 
+	// Check if symbol is actually a register name
+	srcReg, isRegister := x86_64Registers[symbol]
+	if isRegister {
+		// Generate: mov dst, [src+offset]
+		rex := uint8(0x48)
+		if dstReg.Encoding >= 8 {
+			rex |= 0x04 // REX.R
+		}
+		if srcReg.Encoding >= 8 {
+			rex |= 0x01 // REX.B
+		}
+		x.write(rex)
+
+		x.write(0x8B) // mov opcode
+
+		// ModR/M byte for [src+disp32] addressing
+		var modrm uint8
+		if offset == 0 && (srcReg.Encoding&7) != 5 { // rbp/r13 require displacement
+			modrm = 0x00 | ((dstReg.Encoding & 7) << 3) | (srcReg.Encoding & 7)
+		} else if offset >= -128 && offset <= 127 {
+			modrm = 0x40 | ((dstReg.Encoding & 7) << 3) | (srcReg.Encoding & 7) // disp8
+			x.write(modrm)
+			x.write(uint8(offset))
+			return
+		} else {
+			modrm = 0x80 | ((dstReg.Encoding & 7) << 3) | (srcReg.Encoding & 7) // disp32
+			x.write(modrm)
+			x.writeUnsigned(uint(offset))
+			return
+		}
+		x.write(modrm)
+		return
+	}
+
+	// Symbol-based addressing (PC-relative)
 	rex := uint8(0x48)
 	if dstReg.Encoding >= 8 {
 		rex |= 0x04
@@ -243,6 +289,41 @@ func (x *X86_64CodeGen) MovRegToMem(src, symbol string, offset int32) {
 		return
 	}
 
+	// Check if symbol is actually a register name
+	dstReg, isRegister := x86_64Registers[symbol]
+	if isRegister {
+		// Generate: mov [dst+offset], src
+		rex := uint8(0x48)
+		if srcReg.Encoding >= 8 {
+			rex |= 0x04 // REX.R
+		}
+		if dstReg.Encoding >= 8 {
+			rex |= 0x01 // REX.B
+		}
+		x.write(rex)
+
+		x.write(0x89) // mov opcode
+
+		// ModR/M byte for [dst+disp] addressing
+		var modrm uint8
+		if offset == 0 && (dstReg.Encoding&7) != 5 { // rbp/r13 require displacement
+			modrm = 0x00 | ((srcReg.Encoding & 7) << 3) | (dstReg.Encoding & 7)
+		} else if offset >= -128 && offset <= 127 {
+			modrm = 0x40 | ((srcReg.Encoding & 7) << 3) | (dstReg.Encoding & 7) // disp8
+			x.write(modrm)
+			x.write(uint8(offset))
+			return
+		} else {
+			modrm = 0x80 | ((srcReg.Encoding & 7) << 3) | (dstReg.Encoding & 7) // disp32
+			x.write(modrm)
+			x.writeUnsigned(uint(offset))
+			return
+		}
+		x.write(modrm)
+		return
+	}
+
+	// Symbol-based addressing (PC-relative)
 	rex := uint8(0x48)
 	if srcReg.Encoding >= 8 {
 		rex |= 0x04

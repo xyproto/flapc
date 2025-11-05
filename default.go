@@ -101,6 +101,22 @@ func (eb *ExecutableBuilder) CompileDefaultProgram(outputFile string) error {
 				fmt.Fprintf(os.Stderr, "%s = %q\n", symbol, value)
 			}
 		}
+		// Handle .data section (writable data like closure objects)
+		dataSymbols := eb.DataSection()
+		if len(dataSymbols) > 0 {
+			if VerboseMode {
+				fmt.Fprintln(os.Stderr, "-> .data")
+			}
+			dataAddr := currentAddr // Comes right after .rodata
+			for symbol, value := range dataSymbols {
+				eb.DefineAddr(symbol, dataAddr)
+				dataAddr += uint64(len(value))
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "%s = %q at 0x%x\n", symbol, value, dataAddr-uint64(len(value)))
+				}
+			}
+			currentAddr = dataAddr // Update for next section
+		}
 		if VerboseMode {
 			fmt.Fprintln(os.Stderr, "-> .text")
 		}

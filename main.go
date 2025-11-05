@@ -189,8 +189,9 @@ type Writer interface {
 }
 
 type Const struct {
-	value string
-	addr  uint64
+	value    string
+	addr     uint64
+	writable bool // If true, place in .data instead of .rodata
 }
 
 type PCRelocation struct {
@@ -610,6 +611,16 @@ func (eb *ExecutableBuilder) Define(symbol, value string) {
 	}
 }
 
+func (eb *ExecutableBuilder) DefineWritable(symbol, value string) {
+	// Define in writable data section (for things that need runtime initialization)
+	if c, ok := eb.consts[symbol]; ok {
+		c.value = value
+		c.writable = true
+	} else {
+		eb.consts[symbol] = &Const{value: value, writable: true}
+	}
+}
+
 func (eb *ExecutableBuilder) DefineAddr(symbol string, addr uint64) {
 	if c, ok := eb.consts[symbol]; ok {
 		if strings.HasPrefix(symbol, "str_") || strings.HasPrefix(symbol, "lambda_") {
@@ -655,7 +666,8 @@ func (eb *ExecutableBuilder) RodataSection() map[string]string {
 	rodataSymbols := make(map[string]string)
 	for name, c := range eb.consts {
 		// Skip code labels (they have empty values)
-		if c.value != "" {
+		// Skip writable consts (they go in .data)
+		if c.value != "" && !c.writable {
 			rodataSymbols[name] = c.value
 		}
 	}
@@ -676,11 +688,22 @@ func (eb *ExecutableBuilder) WriteRodata(data []byte) uint64 {
 }
 
 func (eb *ExecutableBuilder) DataSection() map[string]string {
-	return make(map[string]string)
+	dataSymbols := make(map[string]string)
+	for name, c := range eb.consts {
+		// Include writable consts in .data section
+		if c.value != "" && c.writable {
+			dataSymbols[name] = c.value
+		}
+	}
+	return dataSymbols
 }
 
 func (eb *ExecutableBuilder) DataSize() int {
-	return 0
+	size := 0
+	for _, data := range eb.DataSection() {
+		size += len(data)
+	}
+	return size
 }
 
 func (eb *ExecutableBuilder) WriteData(data []byte) uint64 {

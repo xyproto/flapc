@@ -679,6 +679,20 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 		}
 	}
 
+	// Assign addresses to .data section symbols (writable data like closures)
+	dataSymbols := fc.eb.DataSection()
+	if len(dataSymbols) > 0 {
+		dataBaseAddr := currentAddr // Follows .rodata
+		for symbol, value := range dataSymbols {
+			fc.eb.DefineAddr(symbol, dataBaseAddr)
+			dataBaseAddr += uint64(len(value))
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Assigned .data symbol %s to 0x%x\n", symbol, fc.eb.consts[symbol].addr)
+			}
+		}
+		currentAddr = dataBaseAddr
+	}
+
 	// Write complete dynamic ELF with unique PLT functions
 	// Note: We pass pltFunctions (unique) for building PLT/GOT structure
 	// We'll use fc.callOrder (with duplicates) later for patching actual call sites
@@ -709,6 +723,20 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 
 		fc.eb.DefineAddr(symbol, currentAddr)
 		currentAddr += uint64(len(value))
+	}
+
+	// Update .data addresses similarly
+	dataSymbols = fc.eb.DataSection()
+	if len(dataSymbols) > 0 {
+		dataBaseAddr := currentAddr // Follows .rodata
+		for symbol, value := range dataSymbols {
+			fc.eb.DefineAddr(symbol, dataBaseAddr)
+			dataBaseAddr += uint64(len(value))
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Updated .data symbol %s to 0x%x\n", symbol, fc.eb.consts[symbol].addr)
+			}
+		}
+		currentAddr = dataBaseAddr
 	}
 
 	// Regenerate code with correct addresses
@@ -845,6 +873,28 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 			fc.eb.DefineAddr(symbol, currentAddr)
 			currentAddr += uint64(len(value))
 			symbolNames = append(symbolNames, symbol)
+		}
+	}
+
+	// Handle new .data symbols similarly
+	dataSymbols = fc.eb.DataSection()
+	newDataSymbols := []string{}
+	for symbol := range dataSymbols {
+		// Check if already assigned
+		if _, ok := fc.eb.consts[symbol]; ok && fc.eb.consts[symbol].addr != 0 {
+			continue
+		}
+		newDataSymbols = append(newDataSymbols, symbol)
+	}
+	if len(newDataSymbols) > 0 {
+		sort.Strings(newDataSymbols)
+		for _, symbol := range newDataSymbols {
+			value := dataSymbols[symbol]
+			fc.eb.DefineAddr(symbol, currentAddr)
+			currentAddr += uint64(len(value))
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Assigned new .data symbol %s to 0x%x\n", symbol, fc.eb.consts[symbol].addr)
+			}
 		}
 	}
 
@@ -4142,8 +4192,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			closureLabel := fmt.Sprintf("closure_%s", funcName)
 
 			// We can't statically encode a function pointer, so we'll do it at runtime
-			// Create a placeholder in .rodata for the closure object
-			fc.eb.Define(closureLabel, strings.Repeat("\x00", 16))
+			// Create a placeholder in .data (writable!) for the closure object
+			// We need writable memory because we initialize it at runtime
+			fc.eb.DefineWritable(closureLabel, strings.Repeat("\x00", 16))
 
 			// At runtime, initialize the closure object with function pointer
 			fc.out.LeaSymbolToReg("r12", closureLabel) // r12 = closure object address
@@ -4181,7 +4232,8 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 		// Create static closure object (pattern lambdas don't capture vars)
 		closureLabel := fmt.Sprintf("closure_%s", funcName)
-		fc.eb.Define(closureLabel, strings.Repeat("\x00", 16))
+		// Use DefineWritable since we initialize at runtime
+		fc.eb.DefineWritable(closureLabel, strings.Repeat("\x00", 16))
 
 		// Initialize closure at runtime
 		fc.out.LeaSymbolToReg("r12", closureLabel)
@@ -7304,7 +7356,13 @@ func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
 
 	// Call the function pointer in r11
 	// r15 contains the environment pointer (accessible within the lambda)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG compileStoredFunctionCall: about to call r11\n")
+	}
 	fc.out.CallRegister("r11")
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG compileStoredFunctionCall: called r11\n")
+	}
 
 	// Result is in xmm0
 }
@@ -8760,6 +8818,11 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 }
 
 func (fc *FlapCompiler) compileCall(call *CallExpr) {
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG compileCall: function='%s'\n", call.Function)
+		fmt.Fprintf(os.Stderr, "DEBUG compileCall: variables=%v\n", fc.variables)
+	}
+
 	// Check if this is a recursive call (function name matches current lambda)
 	isRecursive := fc.currentLambda != nil && call.Function == fc.currentLambda.Name
 
@@ -8793,6 +8856,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 	// This check must come BEFORE the known lambda check, because closures
 	// with captured variables must be called through the closure object (to set up r15)
 	if _, isVariable := fc.variables[call.Function]; isVariable {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG compileCall: taking compileStoredFunctionCall path\n")
+		}
 		fc.compileStoredFunctionCall(call)
 		return
 	}
@@ -8804,6 +8870,10 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			isKnownLambda = true
 			break
 		}
+	}
+
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG compileCall: isKnownLambda=%v\n", isKnownLambda)
 	}
 
 	// Also check pattern lambdas
