@@ -2,7 +2,7 @@
 
 [![Go CI](https://github.com/xyproto/flapc/actions/workflows/ci.yml/badge.svg)](https://github.com/xyproto/flapc/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause) [![Go Report Card](https://goreportcard.com/badge/github.com/xyproto/flapc)](https://goreportcard.com/report/github.com/xyproto/flapc)
 
-**Flap** is a compiled systems programming language designed for game development, real-time applications, and high-performance computing.
+**Flap** (**fl**oats and m**ap**s) is a compiled systems programming language designed for game development, real-time applications, and high-performance computing.
 
 **Version:** 1.3.0
 **Platform:** Linux x86-64 (Arch/Debian tested), with ARM64 and RISC-V support in development
