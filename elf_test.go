@@ -167,15 +167,15 @@ func TestDynamicELFExecutable(t *testing.T) {
 
 	// Execute and check exit code
 	cmd := exec.Command(tmpfile)
-	err = cmd.Run()
+	output, err := cmd.CombinedOutput()
 
 	// Should exit with code 42
 	if exitErr, ok := err.(*exec.ExitError); ok {
 		if exitErr.ExitCode() != 42 {
-			t.Errorf("Expected exit code 42, got %d", exitErr.ExitCode())
+			t.Errorf("Expected exit code 42, got %d\nOutput: %s", exitErr.ExitCode(), string(output))
 		}
 	} else if err != nil {
-		t.Fatalf("Failed to execute: %v", err)
+		t.Fatalf("Failed to execute: %v\nOutput: %s", err, string(output))
 	} else {
 		t.Error("Expected exit code 42, but command succeeded (exit 0)")
 	}

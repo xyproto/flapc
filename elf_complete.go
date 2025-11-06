@@ -522,6 +522,17 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 		fmt.Fprintf(os.Stderr, "Finished writing _start (%d bytes padded to %d), about to write text\n", startActualSize, ((startSize + 7) & ^7))
 	}
 
+	// Pad to text section offset (page-aligned)
+	currentPos = eb.elf.Len()
+	targetTextOffset := int(layout["text"].offset)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Padding from current position 0x%x to text offset 0x%x (%d padding bytes)\n",
+			currentPos, targetTextOffset, targetTextOffset-currentPos)
+	}
+	for i := currentPos; i < targetTextOffset; i++ {
+		w.Write(0)
+	}
+
 	// Patch PC-relative relocations before writing text section
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "\n=== Patching PC-relative relocations ===\n")
