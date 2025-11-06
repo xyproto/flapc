@@ -1,13 +1,15 @@
 # Flap Language Specification
 
-**Version:** 1.3.0
-**Date:** 2025-10-31
+**Version:** 2.0.0
+**Date:** 2025-11-06
+**Status:** Final - This is the complete, authoritative language specification
 
-This document describes the complete Flap programming language: syntax, semantics, grammar, and behavior.
+This document describes the complete Flap programming language: syntax, semantics, grammar, and behavior. This specification is intended to be stable and serve as the definitive reference for Flap language implementation.
 
 ## Table of Contents
 
 - [Overview](#overview)
+- [Design Philosophy](#design-philosophy)
 - [Type System](#type-system)
 - [Grammar](#grammar)
 - [Keywords](#keywords)
@@ -34,6 +36,39 @@ Flap is a compiled systems programming language with:
 - C FFI for interfacing with existing libraries
 - Arena allocators for scope-based memory management
 - Parallel loops with barrier synchronization
+
+## Design Philosophy
+
+Flap follows these core principles:
+
+### Explicit Over Implicit
+- **Type casts use `as` keyword**: `x as uint32` not `uint32(x)`
+- **No implicit conversions**: Every type change must be explicit
+- **Named operators**: `and`, `or`, `not` instead of `&&`, `||`, `!`
+
+### Minimal Keywords
+- **No `range` keyword**: Use `0..<10` directly instead of `range(0, 10)`
+- **No `function` keyword**: Functions are just lambdas assigned to variables
+- **Contextual keywords**: Type names (`int32`, `uint64`) are only keywords after `as`
+
+### Calculated, Not Hardcoded
+The Flap compiler (`flapc`) minimizes hardcoded "magic numbers":
+- **Sizes calculated**: Use `sizeof(Type)` not hardcoded `12`
+- **Offsets calculated**: Use `offsetof(Type, field)` not hardcoded `8`
+- **Global constants**: Define constants at the top of files when needed
+- **Derived values**: Calculate from other constants when possible
+
+### Consistency
+- **Assignment operators**: `=` (immutable), `:=` (mutable), `<-` (update)
+- **Lambda syntax**: Always `=>` never `->`
+- **Match arms**: `->` for explicit jumps/returns, `~>` for default case
+- **Loop prefix**: `@` for serial, `@@` for parallel
+
+### Simplicity
+- **One way to do things**: Prefer a single, clear approach over multiple alternatives
+- **Minimal syntax**: Newlines separate statements, no semicolons
+- **Unified type**: Everything is `map[uint64]float64` internally
+- **Direct assembly**: No intermediate representations, straight to machine code
 
 ## Type System
 
@@ -110,7 +145,7 @@ loop_statement  = "@" block
                 | "@" identifier "in" expression block
                 | "@@" identifier "in" expression block ;
 
-jump_statement  = "ret" [ expression ]
+jump_statement  = "ret" [ "@" [ number ] ] [ expression ]
                 | "->" expression ;
 
 spawn_statement = "spawn" expression ;
@@ -118,7 +153,10 @@ spawn_statement = "spawn" expression ;
 defer_statement = "defer" expression ;
 
 assignment      = identifier ("=" | ":=" | "<-") expression
-                | identifier ("+=" | "-=" | "*=" | "/=" | "%=" | "**=") expression ;
+                | identifier ("+=" | "-=" | "*=" | "/=" | "%=" | "**=") expression
+                | indexed_expr "<-" expression ;
+
+indexed_expr    = identifier "[" expression "]" ;
 
 expression_statement = expression [ match_block ] ;
 
@@ -131,7 +169,7 @@ default_arm     = "~>" match_target ;
 
 match_target    = jump_target | expression ;
 
-jump_target     = "ret" [ expression ]
+jump_target     = "ret" [ "@" [ number ] ] [ expression ]
                 | "->" expression ;
 
 block           = "{" { statement { newline } } "}" ;
@@ -217,8 +255,15 @@ fstring                 = 'f"' { character | "{" expression "}" } '"' ;
 ### Reserved Keywords
 
 ```
-and as cstruct defer err in not or ret xor spawn arena unsafe import use alloc call
+alias and arena as cstruct defer err has hot import in not or ret spawn unsafe use xor
 ```
+
+**Special keywords:**
+- `ret` - Return from function/loop
+- `err` - Return error value (NaN-based Result types)
+- `has` - Check if key exists in map
+- `hot` - Mark function for hot-reloading (development feature)
+- `alias` - Create type or function aliases
 
 ### Contextual Keywords
 
@@ -407,6 +452,46 @@ x {
     x == 0 -> "zero"
     x > 0 -> "positive"
 }
+
+// Optional arrows - arrows can be omitted when intent is clear
+result := x > 0 {
+    "positive"      // No arrow needed for single positive case
+    ~> "not positive"
+}
+
+// Mixed syntax - explicit arrow for one branch
+x == 0 {
+    println("zero")  // No arrow - just execute code
+    ~> println("not zero")
+}
+```
+
+**Match Expression Arrow Rules:**
+
+Match expressions support flexible arrow syntax:
+
+1. **Arrows optional for clarity**: When the intent is unambiguous, arrows (`->`) can be omitted
+2. **Single positive case**: Just write the expression without an arrow
+3. **Default case**: Always uses `~>` arrow to distinguish it
+4. **Explicit jumps/returns**: Use `->` when explicitly returning or jumping
+5. **Consistent style recommended**: Pick one style per match block for readability
+
+```flap
+// All these are valid:
+result := x > 0 {
+    "positive"           // Implicit - no arrow needed
+    ~> "not positive"    // Default always has ~>
+}
+
+result := x {
+    0 -> "zero"          // Explicit arrows
+    1 -> "one"
+    ~> "other"
+}
+
+x < 0 {
+    println("negative")  // No arrow, no default
+}
 ```
 
 ### Tail Calls
@@ -455,8 +540,8 @@ safe_alloc := size => {
     defer free(ptr)  // Guaranteed cleanup
 
     // Use ptr safely...
-    write_i32(ptr, 0, 42)
-    value := read_i32(ptr, 0)
+    ptr[0] <- 42 as int32
+    value = ptr[0] as int32
     -> value
 }
 ```
@@ -529,19 +614,64 @@ items := [1, 2, 3, 4, 5]
 }
 ```
 
-### Loop Control
+### Loop Control with Labels
+
+Flap uses loop labels instead of `break`/`continue` keywords:
 
 ```flap
+// Simple loop - exit current loop with ret @
 @ i in 0..<100 {
-    i % 2 == 0 {
-        continue  // Skip even numbers
-    }
     i > 50 {
-        break     // Stop at 50
+        ret @  // Exit current loop (shorthand for ret @1)
+    }
+    i == 42 {
+        ret @ 42  // Exit current loop with value 42
     }
     println(i)
 }
+
+// Nested loops - @1 is outer, @2 is inner
+@ i in 0..<10 {        // This is loop @1
+    @ j in 0..<10 {    // This is loop @2
+        j == 5 {
+            ret @  // Exit current loop (inner loop, same as ret @2)
+        }
+        j == 7 {
+            ret @ j  // Exit current loop with value j
+        }
+        i == 5 and j == 3 {
+            ret @1  // Exit outer loop (loop 1) specifically
+        }
+        println(f"i={i}, j={j}")
+    }
+}
+
+// ret without @ always returns from function
+compute := () => {
+    @ i in 0..<100 {
+        i == 50 {
+            ret i  // Return from function with value i
+        }
+        i == 30 {
+            ret @  // Exit loop only, continue function
+        }
+    }
+    ret 0  // Return from function
+}
 ```
+
+**Loop Control:**
+- `@N` - Jump to next iteration of loop N (continue)
+- `ret` - Return from current function (never exits just a loop)
+- `ret value` - Return value from function
+- `ret @` - Exit current loop (break)
+- `ret @ value` - Exit current loop with a return value
+- `ret @N` - Exit loop N specifically (for nested loops)
+- `ret @N value` - Exit loop N with a return value
+
+**Important:** `ret` without `@` **always** returns from the function, not from a loop. To exit just a loop, use `ret @` (current loop) or `ret @N` (specific loop).
+
+**Note:** There are no `break` or `continue` keywords. Use `@N` to continue to next iteration of loop N, or `ret @` to exit current loop.
 
 ## Parallel Programming
 
@@ -667,20 +797,20 @@ cstruct CacheAligned aligned(64) {
 
 ```flap
 // Allocate
-ptr := call("malloc", Vec3_SIZEOF as uint64)
+ptr = c.malloc(sizeof(Vec3))
 
 // Write fields
-write_f32(ptr, Vec3_x_OFFSET as int32, 1.0)
-write_f32(ptr, Vec3_y_OFFSET as int32, 2.0)
-write_f32(ptr, Vec3_z_OFFSET as int32, 3.0)
+ptr[offsetof(Vec3, x)] <- 1.0 as float32
+ptr[offsetof(Vec3, y)] <- 2.0 as float32
+ptr[offsetof(Vec3, z)] <- 3.0 as float32
 
 // Read fields
-x := read_f32(ptr, Vec3_x_OFFSET as int32)
-y := read_f32(ptr, Vec3_y_OFFSET as int32)
-z := read_f32(ptr, Vec3_z_OFFSET as int32)
+x = ptr[offsetof(Vec3, x)] as float32
+y = ptr[offsetof(Vec3, y)] as float32
+z = ptr[offsetof(Vec3, z)] as float32
 
 // Free
-call("free", ptr as ptr)
+c.free(ptr)
 ```
 
 ## Memory Management
@@ -689,14 +819,14 @@ call("free", ptr as ptr)
 
 ```flap
 // Allocate
-ptr := call("malloc", 1024 as uint64)
+ptr = c.malloc(1024.0)
 
 // Use memory
-write_i32(ptr, 0, 42)
-value := read_i32(ptr, 0)
+ptr[0] <- 42 as int32
+value = ptr[0] as int32
 
 // Free
-call("free", ptr as ptr)
+c.free(ptr)
 ```
 
 ### Arena Allocation
@@ -710,7 +840,7 @@ arena {
     entities := alloc(count * size)
 
     // Use memory...
-    write_i32(buffer, 0, 100)
+    buffer[0] <- 100 as int32
 }  // Everything freed here
 ```
 
@@ -810,29 +940,33 @@ append := list :: item   // Prepend item
 ### Memory Access
 
 ```flap
-// Write operations
-write_i8(ptr, offset, value)
-write_i16(ptr, offset, value)
-write_i32(ptr, offset, value)
-write_i64(ptr, offset, value)
-write_u8(ptr, offset, value)
-write_u16(ptr, offset, value)
-write_u32(ptr, offset, value)
-write_u64(ptr, offset, value)
-write_f32(ptr, offset, value)
-write_f64(ptr, offset, value)
+// Write operations (array syntax with type cast)
+ptr[offset] <- value as int8
+ptr[offset] <- value as int16
+ptr[offset] <- value as int32
+ptr[offset] <- value as int64
+ptr[offset] <- value as uint8
+ptr[offset] <- value as uint16
+ptr[offset] <- value as uint32
+ptr[offset] <- value as uint64
+ptr[offset] <- value as float32
+ptr[offset] <- value as float64
 
-// Read operations
-value := read_i8(ptr, offset)
-value := read_i16(ptr, offset)
-value := read_i32(ptr, offset)
-value := read_i64(ptr, offset)
-value := read_u8(ptr, offset)
-value := read_u16(ptr, offset)
-value := read_u32(ptr, offset)
-value := read_u64(ptr, offset)
-value := read_f32(ptr, offset)
-value := read_f64(ptr, offset)
+// Read operations (array syntax with type cast)
+value = ptr[offset] as int8
+value = ptr[offset] as int16
+value = ptr[offset] as int32
+value = ptr[offset] as int64
+value = ptr[offset] as uint8
+value = ptr[offset] as uint16
+value = ptr[offset] as uint32
+value = ptr[offset] as uint64
+value = ptr[offset] as float32
+value = ptr[offset] as float64
+
+// Legacy function syntax (still supported)
+write_i32(ptr, offset, value)  // equivalent to: ptr[offset] <- value as int32
+value = read_i32(ptr, offset)  // equivalent to: value = ptr[offset] as int32
 ```
 
 ### Math Functions
@@ -933,28 +1067,28 @@ cstruct Particle {
     vy as float64
 }
 
-particle_count := 10000
-particles := call("malloc", particle_count * Particle_SIZEOF as uint64)
+particle_count = 10000
+particles = c.malloc(particle_count * sizeof(Particle))
 
 // Initialize particles
 @ i in 0..<particle_count {
-    offset := i * Particle_SIZEOF
-    write_f64(particles, offset + Particle_x_OFFSET as int32, rand())
-    write_f64(particles, offset + Particle_y_OFFSET as int32, rand())
-    write_f64(particles, offset + Particle_vx_OFFSET as int32, 0)
-    write_f64(particles, offset + Particle_vy_OFFSET as int32, 0)
+    offset = i * sizeof(Particle)
+    particles[offset + offsetof(Particle, x)] <- rand() as float64
+    particles[offset + offsetof(Particle, y)] <- rand() as float64
+    particles[offset + offsetof(Particle, vx)] <- 0.0 as float64
+    particles[offset + offsetof(Particle, vy)] <- 0.0 as float64
 }
 
 // Update loop
 @ frame in 0..<1000 {
     @@ i in 0..<particle_count {
-        offset := i * Particle_SIZEOF
+        offset = i * sizeof(Particle)
 
         // Read position and velocity
-        x := read_f64(particles, offset + Particle_x_OFFSET as int32)
-        y := read_f64(particles, offset + Particle_y_OFFSET as int32)
-        vx := read_f64(particles, offset + Particle_vx_OFFSET as int32)
-        vy := read_f64(particles, offset + Particle_vy_OFFSET as int32)
+        x = particles[offset + offsetof(Particle, x)] as float64
+        y = particles[offset + offsetof(Particle, y)] as float64
+        vx = particles[offset + offsetof(Particle, vx)] as float64
+        vy = particles[offset + offsetof(Particle, vy)] as float64
 
         // Apply gravity
         vy = vy + 0.01
@@ -970,10 +1104,10 @@ particles := call("malloc", particle_count * Particle_SIZEOF as uint64)
         }
 
         // Write back
-        write_f64(particles, offset + Particle_x_OFFSET as int32, x)
-        write_f64(particles, offset + Particle_y_OFFSET as int32, y)
-        write_f64(particles, offset + Particle_vx_OFFSET as int32, vx)
-        write_f64(particles, offset + Particle_vy_OFFSET as int32, vy)
+        particles[offset + offsetof(Particle, x)] <- x as float64
+        particles[offset + offsetof(Particle, y)] <- y as float64
+        particles[offset + offsetof(Particle, vx)] <- vx as float64
+        particles[offset + offsetof(Particle, vy)] <- vy as float64
     }
 }
 ```

@@ -523,11 +523,18 @@ func (o *Out) CallSymbol(symbol string) {
 
 func (o *Out) callSymbolX86(symbol string) {
 	// Emit CALL rel32 instruction (E8)
+	posBeforeE8 := o.eb.text.Len()
 	o.Write(0xE8)
+	posAfterE8 := o.eb.text.Len()
 
 	// Reserve 4 bytes for the relative offset (will be patched later)
 	callPos := o.eb.text.Len()
-	o.WriteUnsigned(0x00000000)
+	o.WriteUnsigned(0x12345678) // Match placeholder used in x86_64_codegen.go
+
+	if symbol == "_flap_arena_ensure_capacity" || symbol == "malloc$stub" {
+		fmt.Fprintf(os.Stderr, "DEBUG mov.go: CallSymbol(%s): posBeforeE8=%d, posAfterE8=%d, callPos=%d (recorded)\n",
+			symbol, posBeforeE8, posAfterE8, callPos)
+	}
 
 	// Register this call site for patching
 	o.eb.callPatches = append(o.eb.callPatches, CallPatch{

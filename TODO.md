@@ -26,8 +26,8 @@ Prioritized from foundational to enhancement. Focus on fixing bugs and completin
 ---
 
 ### 2. Refactor printf as robust runtime function, make println use it
-**Priority:** MEDIUM
-**Status:** Not started
+**Priority:** LOW (infrastructure exists, needs implementation decision)
+**Status:** Framework created, helper functions ready
 
 **Problem:**
 - Current printf/println implementations are complex inline codegen
@@ -35,21 +35,31 @@ Prioritized from foundational to enhancement. Focus on fixing bugs and completin
 - Difficult to maintain and debug
 - Would benefit from single robust implementation
 
-**Proposed Solution:**
-- Implement printf as assembly/machine code runtime function
-- Emit as part of executable (like flap_arena_alloc)
-- Handle all formatting robustly with proper register preservation
-- Make println() call printf() internally
-- Simplify compiler codegen significantly
+**Solution Realized:**
+- Format specifiers encode type information (%v=float, %d=int, %s=string, %x=hex)
+- Runtime printf CAN work by interpreting arguments based on format string
+- All arguments passed as float64 in xmm0-xmm7, format string provides interpretation
 
-**Action Items:**
-- [ ] Design printf runtime function signature
-- [ ] Implement printf in x86-64 assembly (x86_64_codegen.go)
-- [ ] Handle format specifiers: %v, %s, %d, %f, %g, etc.
-- [ ] Ensure robust register preservation (save/restore all clobbered regs)
-- [ ] Refactor println() to call printf() with "%v\n" format
-- [ ] Test with all value types (floats, strings, maps, lists)
-- [ ] Verify no register clobbering in complex expressions
+**Infrastructure Created:**
+- ✅ printf.go: Framework for runtime printf in x86-64, ARM64, RISC-V
+- ✅ printf_helper.go: Helper functions for jump patching and float-to-string conversion
+- ✅ EmitFloatToStringRuntime: Runtime function that converts float64 to ASCII string
+- ✅ PrintfCodeGen: Wrapper with utilities for printf code generation
+
+**Current Status:**
+- Existing inline codegen works and all tests pass
+- Runtime framework exists but is not integrated into compilation
+- Helper functions compile successfully
+
+**Action Items (Deferred):**
+- [ ] Complete x86-64 runtime printf implementation (format string parsing, argument handling)
+- [ ] Integrate _flap_printf into compilation process (emit at startup like flap_arena_create)
+- [ ] Refactor println() to call _flap_printf("%v\n", arg)
+- [ ] Implement ARM64 and RISC-V printf (currently stubs)
+- [ ] Test with all value types and edge cases
+- [ ] Measure performance vs current inline approach
+
+**Note:** This is a large refactoring. Current code works. Prioritize bug fixes and critical features first.
 
 ---
 

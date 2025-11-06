@@ -196,7 +196,21 @@ type Lexer struct {
 }
 
 func NewLexer(input string) *Lexer {
-	return &Lexer{input: input, pos: 0, line: 1}
+	l := &Lexer{input: input, pos: 0, line: 1}
+
+	// Skip shebang line if present (#!/usr/bin/flapc)
+	if len(input) >= 2 && input[0] == '#' && input[1] == '!' {
+		// Skip until newline
+		for l.pos < len(l.input) && l.input[l.pos] != '\n' {
+			l.pos++
+		}
+		if l.pos < len(l.input) && l.input[l.pos] == '\n' {
+			l.pos++ // Skip the newline too
+			l.line++
+		}
+	}
+
+	return l
 }
 
 func (l *Lexer) peek() byte {
@@ -218,6 +232,23 @@ func (l *Lexer) advance() {
 	if l.pos < len(l.input) {
 		l.pos++
 	}
+}
+
+// LexerState represents a saved lexer state for lookahead
+type LexerState struct {
+	pos  int
+	line int
+}
+
+// save returns the current lexer state
+func (l *Lexer) save() LexerState {
+	return LexerState{pos: l.pos, line: l.line}
+}
+
+// restore restores a previously saved lexer state
+func (l *Lexer) restore(state LexerState) {
+	l.pos = state.pos
+	l.line = state.line
 }
 
 func (l *Lexer) NextToken() Token {

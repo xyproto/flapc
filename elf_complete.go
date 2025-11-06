@@ -142,6 +142,12 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	currentOffset += uint64((startSize + 7) & ^7)
 	currentAddr += uint64((startSize + 7) & ^7)
 
+	// Align to new page for .text to prevent overflow into writable segment
+	// PLT + _start are small (~100 bytes), so they fit on page 0x2000
+	// .text gets its own page (0x3000) to allow up to 4KB of code
+	currentOffset = (currentOffset + pageSize - 1) & ^uint64(pageSize-1)
+	currentAddr = (currentAddr + pageSize - 1) & ^uint64(pageSize-1)
+
 	// .text (our code)
 	layout["text"] = struct {
 		offset uint64
@@ -212,15 +218,10 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 		size   int
 	}{layout["plt"].offset, layout["plt"].addr, ds.plt.Len()}
 
-	// Recalculate .text offset now that PLT size is known (including _start)
-	startSizeAligned := ((startSize + 7) & ^7)
-	textOffset := layout["plt"].offset + uint64(ds.plt.Len()) + uint64(startSizeAligned)
-	textAddr = layout["plt"].addr + uint64(ds.plt.Len()) + uint64(startSizeAligned)
-	layout["text"] = struct {
-		offset uint64
-		addr   uint64
-		size   int
-	}{textOffset, textAddr, layout["text"].size}
+	// Note: .text is now on its own page (page-aligned after PLT + _start)
+	// The offset and address were already calculated correctly during initial layout
+	// No need to recalculate - just keep the existing layout["text"] values
+	textAddr = layout["text"].addr
 
 	// Note: We don't patch PLT calls here because the code will be regenerated
 	// and patched later by the caller (see parser.go:1448 and default.go:59)
@@ -653,12 +654,17 @@ func (eb *ExecutableBuilder) patchPLTCalls(ds *DynamicSections, textAddr uint64,
 	// Write the patched bytes back
 	eb.text.Reset()
 	eb.text.Write(textBytes)
+	if len(textBytes) > 70 {
+		fmt.Fprintf(os.Stderr, "DEBUG patchPLTCalls: Bytes at 63-68 in eb.text: %x\n", textBytes[63:68])
+	}
 }
 
 func (eb *ExecutableBuilder) patchX86PLTCalls(textBytes []byte, ds *DynamicSections, textAddr, pltBase uint64, functions []string) {
 	// Use callPatches which has both position and function name
 	// This correctly handles calls from runtime helpers that aren't in fc.callOrder
+	fmt.Fprintf(os.Stderr, "DEBUG patchX86PLTCalls: have %d callPatches, textBytes len=%d\n", len(eb.callPatches), len(textBytes))
 	for _, patch := range eb.callPatches {
+		fmt.Fprintf(os.Stderr, "DEBUG patchX86PLTCalls: patch at pos=%d, target=%s\n", patch.position, patch.targetName)
 		// Extract function name from targetName (strip "$stub" suffix if present)
 		funcName := patch.targetName
 		if strings.HasSuffix(funcName, "$stub") {
@@ -666,27 +672,63 @@ func (eb *ExecutableBuilder) patchX86PLTCalls(textBytes []byte, ds *DynamicSecti
 		}
 
 		// Get the CALL instruction position
-		// patch.position points to where the 0xE8 byte is written
-		// The placeholder is at position+1 (4 bytes after 0xE8)
-		callPos := patch.position
-		placeholderPos := callPos + 1
+		// patch.position was recorded as o.eb.text.Len() AFTER writing 0xE8
+		// So it points to where the placeholder STARTS (after the 0xE8 byte)
+		// The 0xE8 byte is at position-1
+		placeholderPos := patch.position
+		callPos := placeholderPos - 1
+
+		// Check bounds
+		if callPos < 0 {
+			fmt.Fprintf(os.Stderr, "DEBUG: callPos %d < 0, skipping\n", callPos)
+			continue
+		}
+		if callPos >= len(textBytes) {
+			fmt.Fprintf(os.Stderr, "DEBUG: callPos %d >= len(textBytes) %d, skipping\n", callPos, len(textBytes))
+			continue
+		}
+		if placeholderPos+3 >= len(textBytes) {
+			fmt.Fprintf(os.Stderr, "DEBUG: placeholderPos+3 %d >= len(textBytes) %d, skipping\n", placeholderPos+3, len(textBytes))
+			continue
+		}
+		if textBytes[callPos] != 0xE8 {
+			fmt.Fprintf(os.Stderr, "DEBUG: textBytes[%d] = 0x%x, not 0xE8, skipping\n", callPos, textBytes[callPos])
+			continue
+		}
 
 		// Verify we're at a CALL instruction with placeholder
-		if callPos < len(textBytes) && placeholderPos+3 < len(textBytes) && textBytes[callPos] == 0xE8 {
+		if true {
 			placeholder := []byte{0x78, 0x56, 0x34, 0x12}
+			actualPlaceholder := textBytes[placeholderPos:placeholderPos+4]
+			fmt.Fprintf(os.Stderr, "DEBUG: At pos %d, found 0xE8, checking placeholder: expected %x, got %x\n", callPos, placeholder, actualPlaceholder)
 			if bytes.Equal(textBytes[placeholderPos:placeholderPos+4], placeholder) {
 				pltOffset := ds.GetPLTOffset(funcName)
+				var targetAddr uint64
+				var isInternal bool
+
 				if pltOffset >= 0 {
-					targetAddr := pltBase + uint64(pltOffset)
+					// External function via PLT
+					targetAddr = pltBase + uint64(pltOffset)
+					fmt.Fprintf(os.Stderr, "DEBUG: Patching PLT call to %s: plt=%d, targetAddr=%x\n", funcName, pltOffset, targetAddr)
+				} else if labelOffset, ok := eb.labels[funcName]; ok {
+					// Internal label (e.g., flap_arena_alloc, _flap_arena_ensure_capacity)
+					targetAddr = textAddr + uint64(labelOffset)
+					isInternal = true
+					fmt.Fprintf(os.Stderr, "DEBUG: Patching internal call to %s: labelOffset=%d, targetAddr=%x\n", funcName, labelOffset, targetAddr)
+				} else {
+					fmt.Fprintf(os.Stderr, "Warning: No PLT entry or label for %s\n", funcName)
+				}
+
+				if pltOffset >= 0 || isInternal {
 					currentAddr := textAddr + uint64(placeholderPos)
 					relOffset := int32(targetAddr - (currentAddr + 4))
+
+					fmt.Fprintf(os.Stderr, "DEBUG: Call at %x, target %x, relOffset=%d (0x%x)\n", currentAddr, targetAddr, relOffset, uint32(relOffset))
 
 					textBytes[placeholderPos] = byte(relOffset & 0xFF)
 					textBytes[placeholderPos+1] = byte((relOffset >> 8) & 0xFF)
 					textBytes[placeholderPos+2] = byte((relOffset >> 16) & 0xFF)
 					textBytes[placeholderPos+3] = byte((relOffset >> 24) & 0xFF)
-				} else if VerboseMode {
-					fmt.Fprintf(os.Stderr, "Warning: No PLT entry for %s\n", funcName)
 				}
 			} else if VerboseMode {
 				fmt.Fprintf(os.Stderr, "Warning: No placeholder at position %d for %s\n", placeholderPos, funcName)

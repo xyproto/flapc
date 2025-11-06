@@ -57,7 +57,7 @@ Everything is `map[uint64]float64` internally. Numbers, strings, lists, objectsâ
 x := 42              // {0: 42.0}
 name := "Flap"       // {0: 70.0, 1: 108.0, 2: 97.0, 3: 112.0}
 list := [1, 2, 3]    // {0: 1.0, 1: 2.0, 2: 3.0}
-obj := {x: 10}       // {x: 10.0}
+obj := {x: 10}       // {"x" hashed to uint64: 10.0}
 ```
 
 ### Tail-Call Optimization
@@ -78,7 +78,8 @@ loop(0)
 ```flap
 x = 42        // Immutable (can't be reassigned)
 y := 100      // Mutable (can be reassigned)
-y = y + 1     // OK
+y++           // OK (increment operator)
+y <- y + 1    // OK (assignment operator)
 x = x + 1     // Compile error
 ```
 
@@ -107,11 +108,16 @@ x = x + 1     // Compile error
 Direct calls to C libraries with automatic type handling:
 
 ```flap
+// Call C standard library functions directly
+ptr = c.malloc(1024.0)
+c.free(ptr)
+
+// Or import libraries with namespaces
 import sdl3 as sdl
 
-init_result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
-window := sdl.SDL_CreateWindow("Game", 800, 600, 0)
-renderer := sdl.SDL_CreateRenderer(window, 0)
+init_result = sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
+window = sdl.SDL_CreateWindow("Game", 800, 600, 0)
+renderer = sdl.SDL_CreateRenderer(window, 0)
 
 @ {
     sdl.SDL_RenderClear(renderer)
@@ -131,16 +137,17 @@ cstruct Vec3 {
 }
 
 // Use the generated constants
-println(Vec3_SIZEOF)      // 12
-println(Vec3_x_OFFSET)    // 0
-println(Vec3_y_OFFSET)    // 4
-println(Vec3_z_OFFSET)    // 8
+println(sizeof(Vec3))        // 12
+println(offsetof(Vec3, x))   // 0
+println(offsetof(Vec3, y))   // 4
+println(offsetof(Vec3, z))   // 8
 
 // Allocate and access
-ptr := call("malloc", Vec3_SIZEOF as uint64)
-write_f32(ptr, Vec3_x_OFFSET as int32, 1.0)
-write_f32(ptr, Vec3_y_OFFSET as int32, 2.0)
-write_f32(ptr, Vec3_z_OFFSET as int32, 3.0)
+ptr = c.malloc(sizeof(Vec3))
+write_f32(ptr, offsetof(Vec3, x), 1.0)
+write_f32(ptr, offsetof(Vec3, y), 2.0)
+write_f32(ptr, offsetof(Vec3, z), 3.0)
+c.free(ptr)
 ```
 
 ### Arena Allocation
@@ -183,15 +190,16 @@ value := unsafe {
 Lock-free primitives for parallel programming:
 
 ```flap
-counter_ptr := call("malloc", 8 as uint64)
+counter_ptr = c.malloc(8.0)
 atomic_store(counter_ptr, 0)
 
 @@ i in 0..<1000 {
     atomic_add(counter_ptr, 1)
 }
 
-result := atomic_load(counter_ptr)
+result = atomic_load(counter_ptr)
 println(result)  // 1000
+c.free(counter_ptr)
 ```
 
 ### Match Expressions
@@ -199,7 +207,7 @@ println(result)  // 1000
 Pattern matching with default case:
 
 ```flap
-result := x {
+result = x {
     0 -> "zero"
     1 -> "one"
     2 -> "two"

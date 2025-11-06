@@ -791,9 +791,10 @@ func (eb *ExecutableBuilder) GenerateCallInstruction(funcName string) error {
 	}
 
 	// Register the call patch for later resolution
+	// position should point to placeholder start (after 0xE8), so we record position+1
 	position := eb.text.Len()
 	eb.callPatches = append(eb.callPatches, CallPatch{
-		position:   position,
+		position:   position + 1,
 		targetName: targetName + "$stub",
 	})
 
@@ -951,15 +952,12 @@ func (eb *ExecutableBuilder) patchTextInELF() {
 
 	// Find the text section in the ELF buffer
 	// PLT is at offset 0x2000
-	// PLT size = 16 bytes (PLT[0]) + 16 bytes per function
-	// _start is after PLT (16 bytes aligned)
-	// text starts after _start
-	pltSize := 16 + (len(eb.neededFunctions) * 16) // Dynamic PLT size based on number of functions
-	startSizeAligned := 16                         // _start is 14 bytes, aligned to 16
-	textOffset := 0x2000 + pltSize + startSizeAligned
+	// _start is after PLT
+	// text is on its own page at 0x3000 (to prevent overflow into writable segment)
+	textOffset := 0x3000 // text is now on page 0x3000 (separate from PLT/_start)
 	textSize := len(newText)
 
-	fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: pltSize=%d, textOffset=0x%x, textSize=%d\n", pltSize, textOffset, textSize)
+	fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: textOffset=0x%x, textSize=%d\n", textOffset, textSize)
 	fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: about to copy newText to elfBuf[0x%x:0x%x]\n", textOffset, textOffset+textSize)
 
 	// Replace the text section
@@ -968,6 +966,8 @@ func (eb *ExecutableBuilder) patchTextInELF() {
 	fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: after copy, elfBuf[0x%x:0x%x] = %x\n",
 		textOffset, textOffset+min(50, textSize), elfBuf[textOffset:textOffset+min(50, textSize)])
 
+	// No need to update Program Headers - they were generated correctly in elf_complete.go
+	// with the new multi-page layout (PLT/_start at 0x2000, text at 0x3000)
 	// No need to rebuild - elfBuf is a slice of eb.elf's internal buffer,
 	// so modifications to elfBuf are already reflected in eb.elf
 }
@@ -1060,6 +1060,10 @@ func main() {
 	VerboseMode = *verbose || *verboseLong
 	QuietMode = *quiet || *quietLong
 
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG main: VerboseMode enabled\n")
+	}
+
 	// Set global WPO timeout
 	WPOTimeout = *optTimeout
 
@@ -1133,16 +1137,38 @@ func main() {
 		fmt.Fprintf(os.Stderr, "----=[ %s ]=----\n", versionString)
 	}
 
-	// If no input files provided and no -c flag, try to find *.flap in current directory
+	// NEW CLI MODE: If arguments look like subcommands (build, run, etc.), use new CLI
+	// This provides a Go-like experience while maintaining backward compatibility
+	if len(inputFiles) > 0 {
+		firstArg := inputFiles[0]
+		// Check if it's a subcommand or looks like the new CLI style
+		if firstArg == "build" || firstArg == "run" || firstArg == "help" ||
+			(strings.HasSuffix(firstArg, ".flap") && *codeFlag == "") {
+			// Use new CLI system
+			err := RunCLI(inputFiles, targetPlatform, VerboseMode, QuietMode, *optTimeout, UpdateDepsFlag, SingleFlag, outputFilename)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		}
+	}
+
+	// FALLBACK: No arguments and no -c flag - check for .flap files or show help
 	if len(inputFiles) == 0 && *codeFlag == "" {
 		matches, err := filepath.Glob("*.flap")
 		if err == nil && len(matches) > 0 {
-			inputFiles = matches
-			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "No input files specified, found: %v\n", inputFiles)
+			// Use new CLI system to build directory
+			err := RunCLI([]string{"."}, targetPlatform, VerboseMode, QuietMode, *optTimeout, UpdateDepsFlag, SingleFlag, outputFilename)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
 			}
+			return
 		} else {
-			fmt.Fprintln(os.Stderr, "flapc: warning: no input files")
+			// No .flap files - show help
+			RunCLI([]string{"help"}, targetPlatform, VerboseMode, QuietMode, *optTimeout, UpdateDepsFlag, SingleFlag, "")
+			return
 		}
 	}
 
