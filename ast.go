@@ -189,6 +189,19 @@ func (c *CStructDecl) CalculateStructLayout() {
 	c.Size = currentOffset
 }
 
+// ClassDecl represents a class definition (to be desugared to maps and closures)
+type ClassDecl struct {
+	Name         string                 // Class name
+	ClassVars    map[string]Expression  // Class-level variables (ClassName.var)
+	Methods      map[string]*LambdaExpr // Methods (instance functions)
+	Compositions []string               // Names of behavior maps to compose with <>
+}
+
+func (c *ClassDecl) String() string {
+	return fmt.Sprintf("class %s { ... }", c.Name)
+}
+func (c *ClassDecl) statementNode() {}
+
 type ExpressionStmt struct {
 	Expr Expression
 }

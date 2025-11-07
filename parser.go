@@ -87,12 +87,12 @@ type Parser struct {
 	peek        Token
 	filename    string
 	source      string
-	loopDepth   int                   // Current loop nesting level (0 = not in loop, 1 = outer loop, etc.)
-	constants   map[string]Expression // Compile-time constants (immutable literals)
-	aliases     map[string]TokenType  // Keyword aliases (e.g., "for" -> TOKEN_AT)
+	loopDepth   int                     // Current loop nesting level (0 = not in loop, 1 = outer loop, etc.)
+	constants   map[string]Expression   // Compile-time constants (immutable literals)
+	aliases     map[string]TokenType    // Keyword aliases (e.g., "for" -> TOKEN_AT)
 	cstructs    map[string]*CStructDecl // CStruct declarations for metadata access
-	speculative bool                  // True when in speculative parsing mode (suppress errors)
-	errors      *ErrorCollector       // Railway-oriented error collector
+	speculative bool                    // True when in speculative parsing mode (suppress errors)
+	errors      *ErrorCollector         // Railway-oriented error collector
 }
 
 type parserState struct {
@@ -678,6 +678,126 @@ func (p *Parser) parseCStructDecl() *CStructDecl {
 	return decl
 }
 
+func (p *Parser) parseClassDecl() *ClassDecl {
+	p.nextToken() // skip 'class'
+
+	// Parse class name
+	if p.current.Type != TOKEN_IDENT {
+		p.error("expected class name after 'class'")
+	}
+	name := p.current.Value
+	p.nextToken() // skip class name
+
+	// Expect '{'
+	if p.current.Type != TOKEN_LBRACE {
+		p.error("expected '{' after class name")
+	}
+	p.nextToken() // skip '{'
+	p.skipNewlines()
+
+	// Parse class body
+	classVars := make(map[string]Expression)
+	methods := make(map[string]*LambdaExpr)
+	compositions := []string{}
+
+	for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+		// Check for composition: <> identifier
+		if p.current.Type == TOKEN_LTGT {
+			p.nextToken() // skip '<>'
+			if p.current.Type != TOKEN_IDENT {
+				p.error("expected identifier after '<>' in class")
+			}
+			compositions = append(compositions, p.current.Value)
+			p.nextToken() // skip identifier
+			p.skipNewlines()
+			continue
+		}
+
+		// Parse identifier (for class var or method)
+		if p.current.Type != TOKEN_IDENT {
+			p.error("expected identifier in class body")
+		}
+		ident := p.current.Value
+		p.nextToken() // skip identifier
+
+		// Check for dot (class variable: ClassName.var = value)
+		if p.current.Type == TOKEN_DOT {
+			p.nextToken() // skip '.'
+			if p.current.Type != TOKEN_IDENT {
+				p.error("expected identifier after '.' in class variable")
+			}
+			varName := p.current.Value
+			p.nextToken() // skip var name
+
+			if p.current.Type != TOKEN_EQUALS {
+				p.error("expected '=' after class variable name")
+			}
+			p.nextToken() // skip '='
+
+			// Parse the value expression
+			value := p.parseExpression()
+			classVars[ident+"."+varName] = value
+			p.nextToken() // move past expression
+			p.skipNewlines()
+			continue
+		}
+
+		// Check for method definition: identifier := lambda
+		if p.current.Type == TOKEN_COLON_EQUALS {
+			p.nextToken() // skip ':='
+
+			// Parse lambda expression - need to handle different lambda forms
+			var lambda *LambdaExpr
+
+			if p.current.Type == TOKEN_EQUALS_FAT_ARROW {
+				// No-argument lambda: ==> body
+				p.nextToken() // skip '==>'
+				body := p.parseLambdaBody()
+				lambda = &LambdaExpr{Params: []string{}, Body: body}
+			} else if p.current.Type == TOKEN_LPAREN {
+				// Parenthesized lambda: (x, y) => body
+				expr := p.parseExpression()
+				var ok bool
+				lambda, ok = expr.(*LambdaExpr)
+				if !ok {
+					p.error("expected lambda expression after ':=' in method definition")
+				}
+			} else if p.current.Type == TOKEN_IDENT {
+				// Non-parenthesized lambda: x => body or x, y => body
+				expr := p.tryParseNonParenLambda()
+				if expr == nil {
+					p.error("expected lambda expression after ':=' in method definition")
+				}
+				var ok bool
+				lambda, ok = expr.(*LambdaExpr)
+				if !ok {
+					p.error("expected lambda expression after ':=' in method definition")
+				}
+			} else {
+				p.error("expected lambda expression after ':=' in method definition")
+			}
+
+			methods[ident] = lambda
+			p.skipNewlines()
+			continue
+		}
+
+		p.error("expected ':=' for method or '.' for class variable in class body")
+	}
+
+	// Expect '}'
+	if p.current.Type != TOKEN_RBRACE {
+		p.error("expected '}' at end of class definition")
+	}
+
+	return &ClassDecl{
+		Name:         name,
+		ClassVars:    classVars,
+		Methods:      methods,
+		Compositions: compositions,
+	}
+}
+
 func (p *Parser) parseStructLiteral(structName string) *StructLiteralExpr {
 	p.nextToken() // skip identifier (now on '{')
 	p.nextToken() // skip '{'
@@ -746,6 +866,11 @@ func (p *Parser) parseStatement() Statement {
 	// Check for cstruct keyword (C-compatible struct definition)
 	if p.current.Type == TOKEN_CSTRUCT {
 		return p.parseCStructDecl()
+	}
+
+	// Check for class keyword (class definition)
+	if p.current.Type == TOKEN_CLASS {
+		return p.parseClassDecl()
 	}
 
 	// Check for arena keyword
@@ -2809,6 +2934,12 @@ func (p *Parser) parsePrimary() Expression {
 		expr := p.parsePrimary()
 		return &LengthExpr{Operand: expr}
 
+	case TOKEN_EQUALS_FAT_ARROW:
+		// No-argument lambda: ==> body
+		p.nextToken() // skip '==>'
+		body := p.parseLambdaBody()
+		return &LambdaExpr{Params: []string{}, Body: body}
+
 	case TOKEN_NUMBER:
 		val := p.parseNumberLiteral(p.current.Value)
 		return &NumberExpr{Value: val}
@@ -2985,11 +3116,11 @@ func (p *Parser) parsePrimary() Expression {
 
 		p.nextToken() // skip '('
 
-		// Check for empty parameter list: () => or () ->
+		// Check for empty parameter list: () =>, () ==>, or () ->
 		if p.current.Type == TOKEN_RPAREN {
-			if p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_ARROW {
+			if p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_EQUALS_FAT_ARROW || p.peek.Type == TOKEN_ARROW {
 				p.nextToken() // skip ')'
-				p.nextToken() // skip '=>' or '->'
+				p.nextToken() // skip '=>', '==>', or '->'
 				body := p.parseLambdaBody()
 				return &LambdaExpr{Params: []string{}, Body: body}
 			}
@@ -3057,11 +3188,11 @@ func (p *Parser) parsePrimary() Expression {
 				return expr
 			}
 
-			// peek should be '=>' or '->'
-			if p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_ARROW {
+			// peek should be '=>', '==>', or '->'
+			if p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_EQUALS_FAT_ARROW || p.peek.Type == TOKEN_ARROW {
 				// It's a lambda!
 				p.nextToken() // skip ')'
-				p.nextToken() // skip '=>' or '->'
+				p.nextToken() // skip '=>', '==>', or '->'
 				body := p.parseLambdaBody()
 				return &LambdaExpr{Params: params, Body: body}
 			}

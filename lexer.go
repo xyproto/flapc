@@ -131,6 +131,8 @@ const (
 	TOKEN_HOT         // hot (mark function as hot-reloadable)
 	TOKEN_SPAWN       // spawn (spawn background process)
 	TOKEN_HAS         // has (type/class definitions)
+	TOKEN_CLASS       // class (class definition)
+	TOKEN_LTGT        // <> (composition operator)
 )
 
 // Code generation constants
@@ -191,11 +193,11 @@ func processEscapeSequences(s string) string {
 
 // Lexer for Flap language
 type Lexer struct {
-	input      string
-	pos        int
-	line       int
-	column     int // Current column (1-indexed)
-	lineStart  int // Position where current line starts
+	input     string
+	pos       int
+	line      int
+	column    int // Current column (1-indexed)
+	lineStart int // Position where current line starts
 }
 
 func NewLexer(input string) *Lexer {
@@ -459,6 +461,8 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_SPAWN, Value: value, Line: l.line, Column: tokenColumn}
 		case "has":
 			return Token{Type: TOKEN_HAS, Value: value, Line: l.line, Column: tokenColumn}
+		case "class":
+			return Token{Type: TOKEN_CLASS, Value: value, Line: l.line, Column: tokenColumn}
 		case "xor":
 			return Token{Type: TOKEN_XOR, Value: value, Line: l.line, Column: tokenColumn}
 		case "shl":
@@ -589,7 +593,11 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_EQUALS, Value: "=", Line: l.line, Column: tokenColumn}
 	case '<':
-		// Check for <-?, then <-, then <<b (rotate left), then <b (shift left), then <=, then <
+		// Check for <>, then <-?, then <-, then <<b (rotate left), then <b (shift left), then <=, then <
+		if l.peek() == '>' {
+			l.pos += 2
+			return Token{Type: TOKEN_LTGT, Value: "<>", Line: l.line, Column: tokenColumn}
+		}
 		if l.peek() == '-' {
 			// Check for <-?
 			if l.pos+2 < len(l.input) && l.input[l.pos+2] == '?' {

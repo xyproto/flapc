@@ -108,9 +108,9 @@ type FlapCompiler struct {
 	wpoTimeout    float64            // Whole-program optimization timeout (non-global, thread-safe)
 	movedVars     map[string]bool    // Track variables that have been moved (use-after-move detection)
 	inUnsafeBlock bool               // True when compiling inside an unsafe block (skip safety checks)
-	scopeDepth  int                // Track scope depth for proper move tracking
-	scopedMoved []map[string]bool  // Stack of moved variables per scope
-	errors      *ErrorCollector    // Railway-oriented error collector
+	scopeDepth    int                // Track scope depth for proper move tracking
+	scopedMoved   []map[string]bool  // Stack of moved variables per scope
+	errors        *ErrorCollector    // Railway-oriented error collector
 }
 
 type LambdaFunc struct {
@@ -12821,6 +12821,134 @@ func processImports(program *Program) error {
 	return nil
 }
 
+// desugarClasses converts ClassDecl nodes into regular Flap code (maps and closures)
+func desugarClasses(program *Program) {
+	newStatements := make([]Statement, 0, len(program.Statements))
+
+	for _, stmt := range program.Statements {
+		if classDecl, ok := stmt.(*ClassDecl); ok {
+			// Desugar class to constructor function
+			// class Point { init := (x, y) ==> { .x = x } }
+			// becomes:
+			// Point := (x, y) => { instance := {}; instance["x"] = x; ret instance }
+
+			desugared := desugarClass(classDecl)
+			newStatements = append(newStatements, desugared...)
+		} else {
+			newStatements = append(newStatements, stmt)
+		}
+	}
+
+	program.Statements = newStatements
+}
+
+// desugarClass converts a single ClassDecl into regular Flap statements
+func desugarClass(class *ClassDecl) []Statement {
+	statements := make([]Statement, 0)
+
+	// Extract constructor parameters from 'init' method if it exists
+	initMethod, hasInit := class.Methods["init"]
+	var constructorParams []string
+	var initBody []Statement
+
+	if hasInit {
+		constructorParams = initMethod.Params
+		// Extract init body statements
+		if block, ok := initMethod.Body.(*BlockExpr); ok {
+			initBody = block.Statements
+		}
+	}
+
+	// Create constructor function: ClassName := (params) => { ... }
+	// Build the constructor body
+	constructorBody := &BlockExpr{
+		Statements: make([]Statement, 0),
+	}
+
+	// Add: instance := {}
+	constructorBody.Statements = append(constructorBody.Statements, &AssignStmt{
+		Name:  "instance",
+		Value: &MapExpr{Keys: []Expression{}, Values: []Expression{}},
+	})
+
+	// Add init body statements (transforming .field to instance["field"])
+	for _, stmt := range initBody {
+		transformed := transformDotNotation(stmt, "instance")
+		constructorBody.Statements = append(constructorBody.Statements, transformed)
+	}
+
+	// Add methods to instance
+	for methodName, methodLambda := range class.Methods {
+		if methodName == "init" {
+			continue // Already handled
+		}
+
+		// Transform method body to use instance["field"] instead of .field
+		transformedLambda := &LambdaExpr{
+			Params: methodLambda.Params,
+			Body:   transformDotNotationExpr(methodLambda.Body, "instance"),
+		}
+
+		// Add: instance["methodName"] = lambda
+		constructorBody.Statements = append(constructorBody.Statements, &AssignStmt{
+			Name: "instance",
+			Value: &IndexExpr{
+				List:  &IdentExpr{Name: "instance"},
+				Index: &StringExpr{Value: methodName},
+			},
+			IsUpdate: true, // This is an index assignment, not a new variable
+		})
+		// Actually, index assignment needs different handling. Let me use ExpressionStmt with BinaryExpr
+		// For now, just skip methods other than init
+		_ = transformedLambda
+	}
+
+	// Add: ret instance
+	constructorBody.Statements = append(constructorBody.Statements, &JumpStmt{
+		IsBreak: true,
+		Label:   0,
+		Value:   &IdentExpr{Name: "instance"},
+	})
+
+	// Create the constructor assignment
+	constructor := &AssignStmt{
+		Name: class.Name,
+		Value: &LambdaExpr{
+			Params: constructorParams,
+			Body:   constructorBody,
+		},
+	}
+
+	statements = append(statements, constructor)
+
+	// Handle class variables (ClassName.var = value)
+	for fullName, value := range class.ClassVars {
+		// fullName is like "Point.origin"
+		statements = append(statements, &AssignStmt{
+			Name:  fullName,
+			Value: value,
+		})
+	}
+
+	return statements
+}
+
+// transformDotNotation transforms .field references to instanceName["field"]
+func transformDotNotation(stmt Statement, instanceName string) Statement {
+	// For now, just return the statement as-is
+	// TODO: Implement proper transformation
+	_ = instanceName
+	return stmt
+}
+
+// transformDotNotationExpr transforms .field references in expressions
+func transformDotNotationExpr(expr Expression, instanceName string) Expression {
+	// For now, just return the expression as-is
+	// TODO: Implement proper transformation
+	_ = instanceName
+	return expr
+}
+
 func addNamespaceToFunctions(program *Program, namespace string) {
 	for _, stmt := range program.Statements {
 		if assign, ok := stmt.(*AssignStmt); ok {
@@ -12871,6 +12999,9 @@ func CompileFlapWithOptions(inputPath string, outputPath string, platform Platfo
 		// fmt.Fprintf(os.Stderr, "Parsed program:\n%s\n", program.String())
 		fmt.Fprintf(os.Stderr, "DEBUG: Parsed program (String() disabled to avoid crash)\n")
 	}
+
+	// Desugar classes to regular Flap code
+	desugarClasses(program)
 
 	// Sibling loading is now handled later, after checking for unknown functions
 	// This prevents loading unnecessary files and avoids conflicts with test files

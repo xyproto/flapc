@@ -263,7 +263,7 @@ alias and arena as cstruct defer err has hot import in not or ret spawn unsafe u
 - `ret` - Return from function/loop
 - `err` - Return error value (NaN-based Result types)
 - `has` - Check if key exists in map
-- `hot` - Mark function for hot-reloading (development feature)
+- `hot` - Mark function for hot-reloading
 - `alias` - Create type or function aliases
 
 ### Contextual Keywords

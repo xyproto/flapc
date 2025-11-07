@@ -965,7 +965,7 @@ func (eb *ExecutableBuilder) patchTextInELF() {
 	// Dynamic section starts at 0x7000
 	// Check if text exceeds the reserved space
 	textEndAligned := (textOffset + textSize + 7) & ^7
-	textReservedEnd := 0x7000  // End of 16KB text reservation
+	textReservedEnd := 0x7000 // End of 16KB text reservation
 
 	// Check if we would overflow past the reserved text space
 	if textEndAligned > textReservedEnd {
