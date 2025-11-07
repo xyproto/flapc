@@ -25,6 +25,7 @@ This document describes the complete Flap programming language: syntax, semantic
 - [Unsafe Blocks](#unsafe-blocks)
 - [Built-in Functions](#built-in-functions)
 - [Examples](#examples)
+- [Classes and Objects (Proposed)](#classes-and-objects-proposed)
 
 ## Overview
 
@@ -1126,6 +1127,386 @@ particles = c.malloc(particle_count * sizeof(Particle))
     }
 }
 ```
+
+## Classes and Objects (Proposed)
+
+**Status:** Design proposal - Not yet implemented
+
+This section describes a potential Ruby-inspired object system that fits Flap's design philosophy while maintaining compatibility with the existing unified type system.
+
+### Design Philosophy
+
+The class system builds on Flap's existing features:
+- **Maps as objects**: Objects are just `map[uint64]float64` with convention
+- **Closures as methods**: Methods are lambdas that close over instance data
+- **No inheritance**: Composition over inheritance (Ruby modules > classes)
+- **Explicit state**: Instance variables use `@` prefix (Ruby-inspired)
+- **No `new` keyword**: Classes are just constructor functions
+
+### Class Declaration
+
+Classes are syntactic sugar over maps and closures:
+
+```flap
+class Point {
+    // Constructor parameters (implicit)
+    init := (x, y) => {
+        @x = x  // Instance variable (stored in map)
+        @y = y
+    }
+
+    // Instance method (closure over @x, @y)
+    distance := other => {
+        dx := other.x - @x
+        dy := other.y - @y
+        sqrt(dx * dx + dy * dy)
+    }
+
+    // Method with update
+    move := (dx, dy) => {
+        @x <- @x + dx  // Update instance variable
+        @y <- @y + dy
+    }
+
+    // Getter (just a lambda)
+    magnitude := () => {
+        sqrt(@x * @x + @y * @y)
+    }
+}
+
+// Usage
+p1 := Point(10, 20)           // Call constructor
+p2 := Point(30, 40)           // Create another instance
+dist := p1.distance(p2)       // Call method
+p1.move(5, 5)                 // Update state
+mag := p1.magnitude()         // Call getter
+```
+
+### Desugaring
+
+The `class` keyword desugars to regular Flap code:
+
+```flap
+// Class declaration desugars to:
+Point := (x, y) => {
+    // Create instance map
+    instance := {}
+
+    // Store instance variables
+    instance["x"] = x
+    instance["y"] = y
+
+    // Attach methods (closures over instance)
+    instance["distance"] = other => {
+        dx := other["x"] - instance["x"]
+        dy := other["y"] - instance["y"]
+        sqrt(dx * dx + dy * dy)
+    }
+
+    instance["move"] = (dx, dy) => {
+        instance["x"] <- instance["x"] + dx
+        instance["y"] <- instance["y"] + dy
+    }
+
+    instance["magnitude"] = () => {
+        sqrt(instance["x"] * instance["x"] + instance["y"] * instance["y"])
+    }
+
+    ret instance
+}
+```
+
+### Instance Variables
+
+Instance variables use `@` prefix (Ruby-inspired):
+
+```flap
+class Counter {
+    init := start => {
+        @count = start      // Instance variable
+        @history = []       // Can be any type
+    }
+
+    increment := () => {
+        @count <- @count + 1
+        @history <- @history :: @count  // Cons to history
+    }
+
+    get := () => @count     // Read instance variable
+
+    reset := () => {
+        @count <- 0
+        @history <- []
+    }
+}
+
+c := Counter(0)
+c.increment()
+c.increment()
+println(c.get())  // 2
+```
+
+### Class Variables and Methods
+
+Class-level state uses `@@` prefix (Ruby convention):
+
+```flap
+class Entity {
+    // Class variable (shared across all instances)
+    @@count = 0
+    @@all = []
+
+    init := name => {
+        @name = name
+        @id = @@count
+        @@count <- @@count + 1
+        @@all <- @@all :: this
+    }
+
+    // Class method (no instance access)
+    all := () => @@all
+    count := () => @@count
+}
+
+e1 := Entity("Alice")
+e2 := Entity("Bob")
+println(Entity.count())  // 2
+```
+
+### Mixins (Ruby Modules)
+
+Mixins provide composition without inheritance:
+
+```flap
+mixin Printable {
+    to_s := () => {
+        fields := []
+        @ key in keys(this) {
+            key != "to_s" {  // Skip methods
+                fields <- fields :: f"{key}={this[key]}"
+            }
+        }
+        join(fields, ", ")
+    }
+}
+
+class Person {
+    include Printable  // Mix in module
+
+    init := (name, age) => {
+        @name = name
+        @age = age
+    }
+}
+
+p := Person("Alice", 30)
+println(p.to_s())  // "name=Alice, age=30"
+```
+
+### Method Visibility
+
+Use naming conventions (Ruby-style):
+
+```flap
+class BankAccount {
+    init := balance => {
+        @balance = balance
+    }
+
+    // Public method (normal name)
+    deposit := amount => {
+        amount > 0 {
+            @balance <- @balance + amount
+        }
+    }
+
+    // Private method (underscore prefix)
+    _validate := amount => {
+        amount > 0 and amount <= @balance
+    }
+
+    // Public method using private method
+    withdraw := amount => {
+        _validate(amount) {
+            @balance <- @balance - amount
+            ret amount
+        }
+        ret 0
+    }
+
+    balance := () => @balance
+}
+```
+
+### Operator Overloading
+
+Define special methods (Ruby convention):
+
+```flap
+class Vector {
+    init := (x, y) => {
+        @x = x
+        @y = y
+    }
+
+    // Operator methods
+    add := other => Vector(@x + other.x, @y + other.y)
+    sub := other => Vector(@x - other.x, @y - other.y)
+    mul := scalar => Vector(@x * scalar, @y * scalar)
+
+    // Comparison
+    eq := other => @x == other.x and @y == other.y
+
+    // String representation
+    to_s := () => f"Vector({@x}, {@y})"
+}
+
+v1 := Vector(1, 2)
+v2 := Vector(3, 4)
+v3 := v1.add(v2)      // Or could be: v1 + v2 (syntax sugar)
+println(v3.to_s())    // "Vector(4, 6)"
+```
+
+### Integration with CStruct
+
+Classes can wrap CStruct for performance:
+
+```flap
+cstruct ParticleData {
+    x as float64
+    y as float64
+    vx as float64
+    vy as float64
+}
+
+class Particle {
+    init := (x, y) => {
+        // Allocate native memory
+        @data = call("malloc", ParticleData.size as uint64)
+
+        // Initialize using unsafe block
+        unsafe pointer {
+            rax <- @data as pointer
+            rbx <- x
+            [rax + ParticleData.x.offset] <- rbx
+            rbx <- y
+            [rax + ParticleData.y.offset] <- rbx
+        } {
+            x0 <- @data as pointer
+            x1 <- x
+            [x0 + ParticleData.x.offset] <- x1
+            x1 <- y
+            [x0 + ParticleData.y.offset] <- x1
+        } {
+            a0 <- @data as pointer
+            a1 <- x
+            [a0 + ParticleData.x.offset] <- a1
+            a1 <- y
+            [a0 + ParticleData.y.offset] <- a1
+        }
+
+        @vx = 0.0
+        @vy = 0.0
+    }
+
+    update := dt => {
+        // Read from native memory, update, write back
+        unsafe float64 {
+            rax <- @data as pointer
+            rax <- [rax + ParticleData.x.offset]
+        } {
+            x0 <- @data as pointer
+            x0 <- [x0 + ParticleData.x.offset]
+        } {
+            a0 <- @data as pointer
+            a0 <- [a0 + ParticleData.x.offset]
+        } |> x => {
+            @vx <- @vx + 0.01 * dt  // Gravity
+            new_x := x + @vx * dt
+
+            unsafe pointer {
+                rax <- @data as pointer
+                rbx <- new_x
+                [rax + ParticleData.x.offset] <- rbx
+            } {
+                x0 <- @data as pointer
+                x1 <- new_x
+                [x0 + ParticleData.x.offset] <- x1
+            } {
+                a0 <- @data as pointer
+                a1 <- new_x
+                [a0 + ParticleData.x.offset] <- a1
+            }
+        }
+    }
+
+    destroy := () => {
+        call("free", @data as ptr)
+    }
+}
+```
+
+### Grammar Extension
+
+The class system would extend Flap's grammar:
+
+```ebnf
+statement = ...
+          | class_decl
+          | mixin_decl ;
+
+class_decl = "class" identifier [ class_super ] "{" { class_member } "}" ;
+
+class_super = "<" identifier ;  // Optional inheritance (simple case)
+
+class_member = instance_var_decl
+             | class_var_decl
+             | method_decl
+             | mixin_include ;
+
+instance_var_decl = "@" identifier "=" expression ;
+
+class_var_decl = "@@" identifier "=" expression ;
+
+method_decl = identifier ":=" lambda_expr ;
+
+mixin_include = "include" identifier ;
+
+mixin_decl = "mixin" identifier "{" { method_decl } "}" ;
+```
+
+### New Keywords
+
+Required keywords (all compatible with existing parser):
+- `class` - Define a class
+- `mixin` - Define a mixin module
+- `include` - Include a mixin in a class
+- `this` - Reference to current instance (optional, can use `@` everywhere)
+
+### Compatibility Notes
+
+1. **No parser conflicts**: `class`, `mixin`, `include` are new keywords
+2. **`@` already used**: For loops (`@ i in 0..<10`), but context distinguishes:
+   - In loops: `@ identifier in expression`
+   - In classes: `@ identifier = expression` or `@identifier` (in expressions)
+3. **Maps remain fundamental**: Classes compile to maps, so no type system changes
+4. **Backward compatible**: All existing code works unchanged
+
+### Implementation Strategy
+
+1. **Phase 1**: Desugar classes to regular Flap code (preprocessor)
+2. **Phase 2**: Add runtime support for method lookup
+3. **Phase 3**: Optimize with direct field access
+4. **Phase 4**: Add reflection/introspection capabilities
+
+### Benefits
+
+- **Ruby's elegance**: Clean `@variable` syntax, mixins, conventions
+- **Flap's simplicity**: Maps underneath, no hidden complexity
+- **Performance**: Can optimize to direct memory access
+- **Interop**: Works seamlessly with CStruct and C FFI
+- **Familiar**: Ruby developers feel at home
+- **Minimal**: No heavyweight OOP features (no metaclasses, no method_missing)
 
 ## Special Notes
 
