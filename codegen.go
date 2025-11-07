@@ -104,9 +104,10 @@ type FlapCompiler struct {
 	metaArenaGrowthErrorJump      int
 	firstMetaArenaMallocErrorJump int
 
-	regAlloc    *RegisterAllocator // Register allocator for optimized variable allocation
-	wpoTimeout  float64            // Whole-program optimization timeout (non-global, thread-safe)
-	movedVars   map[string]bool    // Track variables that have been moved (use-after-move detection)
+	regAlloc      *RegisterAllocator // Register allocator for optimized variable allocation
+	wpoTimeout    float64            // Whole-program optimization timeout (non-global, thread-safe)
+	movedVars     map[string]bool    // Track variables that have been moved (use-after-move detection)
+	inUnsafeBlock bool               // True when compiling inside an unsafe block (skip safety checks)
 	scopeDepth  int                // Track scope depth for proper move tracking
 	scopedMoved []map[string]bool  // Stack of moved variables per scope
 	errors      *ErrorCollector    // Railway-oriented error collector
@@ -228,6 +229,10 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.eb.Define("fmt_float", "%.0f\n\x00") // Print float without decimal places
 	fc.eb.Define("_loop_max_exceeded_msg", "Error: loop exceeded maximum iterations\n\x00")
 	fc.eb.Define("_recursion_max_exceeded_msg", "Error: recursion exceeded maximum depth\n\x00")
+	fc.eb.Define("_null_ptr_msg", "ERROR: Null pointer dereference detected\n\x00")
+	fc.eb.Define("_bounds_negative_msg", "ERROR: Array index out of bounds (index < 0)\n\x00")
+	fc.eb.Define("_bounds_too_large_msg", "ERROR: Array index out of bounds (index >= length)\n\x00")
+	fc.eb.Define("_malloc_failed_msg", "ERROR: Memory allocation failed (out of memory)\n\x00")
 
 	// Generate code
 	// Set up stack frame
@@ -4138,10 +4143,22 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 		} else {
 			// LIST INDEXING: Position-based indexing
+
+			// SAFETY: Check if list pointer is null
+			fc.emitNullPointerCheck("rbx")
+
 			// Load index from stack
 			fc.out.MovMemToXmm("xmm0", "rsp", StackSlotSize)
 			// Convert index from float64 to integer in rax
 			fc.out.Cvttsd2si("rax", "xmm0")
+
+			// SAFETY: Load list length from [rbx] for bounds check
+			// List format: [length (float64)][element0][element1]...
+			fc.out.MovMemToXmm("xmm1", "rbx", 0)
+			fc.out.Cvttsd2si("rcx", "xmm1") // rcx = list length as integer
+
+			// SAFETY: Check bounds - index must be in [0, length)
+			fc.emitBoundsCheck("rax", "rcx")
 
 			// Skip the length prefix (first 8 bytes)
 			fc.out.AddImmToReg("rbx", 8)
@@ -4867,6 +4884,10 @@ func (fc *FlapCompiler) compileUnsafeExpr(expr *UnsafeExpr) {
 		compilerError("unsupported architecture: %s", fc.platform.Arch.String())
 	}
 
+	// Mark that we're in an unsafe block (skip safety checks)
+	fc.inUnsafeBlock = true
+	defer func() { fc.inUnsafeBlock = false }()
+
 	// Compile each statement in the unsafe block
 	for _, stmt := range block {
 		switch s := stmt.(type) {
@@ -5101,6 +5122,12 @@ func (fc *FlapCompiler) compileRegisterOp(dest string, op *RegisterOp) {
 func (fc *FlapCompiler) compileMemoryLoad(dest string, load *MemoryLoad) {
 	// Memory load: dest <- [addr + offset]
 	// Support sized loads: uint8, int8, uint16, int16, uint32, int32, uint64, int64
+
+	// SAFETY: Add null pointer check for the address register (skip in unsafe blocks)
+	if !fc.inUnsafeBlock {
+		fc.emitNullPointerCheck(load.Address)
+	}
+
 	switch load.Size {
 	case "", "uint64", "int64":
 		// Default 64-bit load (unsigned and signed are the same for full width)
@@ -5130,6 +5157,12 @@ func (fc *FlapCompiler) compileMemoryLoad(dest string, load *MemoryLoad) {
 
 func (fc *FlapCompiler) compileSizedMemoryStore(store *MemoryStore) {
 	// Memory store: [addr + offset] <- value as size
+
+	// SAFETY: Add null pointer check for the address register (skip in unsafe blocks)
+	if !fc.inUnsafeBlock {
+		fc.emitNullPointerCheck(store.Address)
+	}
+
 	// Get the value into a register first
 	var srcReg string
 
@@ -5174,8 +5207,91 @@ func (fc *FlapCompiler) compileSizedMemoryStore(store *MemoryStore) {
 	}
 }
 
+// emitNullPointerCheck generates code to check if a register contains a null pointer (0)
+// and aborts the program with an error message if so.
+// This prevents segfaults from null pointer dereferences.
+func (fc *FlapCompiler) emitNullPointerCheck(reg string) {
+	// Test if register is zero (null)
+	// test reg, reg sets ZF if reg == 0
+	fc.out.TestRegReg(reg, reg)
+
+	// Jump if not zero (pointer is valid)
+	okJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpNotEqual, 0) // Placeholder, will patch
+
+	// Null pointer detected - print error and exit
+	fc.out.LeaSymbolToReg("rdi", "_null_ptr_msg")
+	fc.trackFunctionCall("printf")
+	fc.eb.GenerateCallInstruction("printf")
+
+	// exit(1)
+	fc.out.MovImmToReg("rdi", "1")
+	fc.trackFunctionCall("exit")
+	fc.eb.GenerateCallInstruction("exit")
+
+	// Patch the jump to skip error handling
+	okPos := fc.eb.text.Len()
+	okOffset := int32(okPos - (okJumpPos + 6))
+	fc.patchJumpImmediate(okJumpPos+2, okOffset)
+}
+
+// emitBoundsCheck generates code to check if an index is within valid bounds [0, length)
+// and aborts the program with an error message if out of bounds.
+// indexReg: register containing the index (as signed 64-bit integer)
+// lengthReg: register containing the list/array length (as signed 64-bit integer)
+func (fc *FlapCompiler) emitBoundsCheck(indexReg, lengthReg string) {
+	// Check if index < 0
+	fc.out.CmpRegToImm(indexReg, 0)
+	negativeJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpLess, 0) // Jump to error if index < 0
+
+	// Check if index >= length
+	fc.out.CmpRegToReg(indexReg, lengthReg)
+	tooLargeJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreaterOrEqual, 0) // Jump to error if index >= length
+
+	// Index is valid - jump to ok
+	okJumpPos := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0) // Will patch to skip error handlers
+
+	// Index < 0 error handler
+	negativePos := fc.eb.text.Len()
+	fc.out.LeaSymbolToReg("rdi", "_bounds_negative_msg")
+	fc.trackFunctionCall("printf")
+	fc.eb.GenerateCallInstruction("printf")
+	fc.out.MovImmToReg("rdi", "1")
+	fc.trackFunctionCall("exit")
+	fc.eb.GenerateCallInstruction("exit")
+
+	// Index >= length error handler
+	tooLargePos := fc.eb.text.Len()
+	fc.out.LeaSymbolToReg("rdi", "_bounds_too_large_msg")
+	fc.trackFunctionCall("printf")
+	fc.eb.GenerateCallInstruction("printf")
+	fc.out.MovImmToReg("rdi", "1")
+	fc.trackFunctionCall("exit")
+	fc.eb.GenerateCallInstruction("exit")
+
+	// Continue here if index is valid
+	okPos := fc.eb.text.Len()
+
+	// Patch jumps
+	negativeOffset := int32(negativePos - (negativeJumpPos + 6))
+	fc.patchJumpImmediate(negativeJumpPos+2, negativeOffset)
+
+	tooLargeOffset := int32(tooLargePos - (tooLargeJumpPos + 6))
+	fc.patchJumpImmediate(tooLargeJumpPos+2, tooLargeOffset)
+
+	okOffset := int32(okPos - (okJumpPos + 5)) // Unconditional jump is 5 bytes
+	fc.patchJumpImmediate(okJumpPos+1, okOffset)
+}
+
 func (fc *FlapCompiler) compileMemoryStore(addr string, value interface{}) {
 	// Memory store: [addr] <- value
+
+	// SAFETY: Add null pointer check for the address register
+	fc.emitNullPointerCheck(addr)
+
 	switch v := value.(type) {
 	case string:
 		// Store register: [rax] <- rbx
@@ -12405,6 +12521,24 @@ func (fc *FlapCompiler) callMallocAligned(sizeReg string, pushCount int) {
 	if alignmentOffset > 0 {
 		fc.out.AddImmToReg("rsp", int64(alignmentOffset))
 	}
+
+	// SAFETY: Check if malloc returned NULL (out of memory)
+	fc.out.TestRegReg("rax", "rax")
+	okJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpNotEqual, 0) // Placeholder, will patch
+
+	// malloc returned NULL - print error and exit
+	fc.out.LeaSymbolToReg("rdi", "_malloc_failed_msg")
+	fc.trackFunctionCall("printf")
+	fc.eb.GenerateCallInstruction("printf")
+	fc.out.MovImmToReg("rdi", "1")
+	fc.trackFunctionCall("exit")
+	fc.eb.GenerateCallInstruction("exit")
+
+	// Patch the jump to skip error handling
+	okPos := fc.eb.text.Len()
+	okOffset := int32(okPos - (okJumpPos + 6))
+	fc.patchJumpImmediate(okJumpPos+2, okOffset)
 
 	// Result is in rax
 }

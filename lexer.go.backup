@@ -274,12 +274,12 @@ func (l *Lexer) NextToken() Token {
 		return l.NextToken()
 	}
 
+	if l.pos >= len(l.input) {
+		return Token{Type: TOKEN_EOF, Line: l.line, Column: l.column}
+	}
+
 	// Record token start column
 	tokenColumn := l.pos - l.lineStart + 1
-
-	if l.pos >= len(l.input) {
-		return Token{Type: TOKEN_EOF, Line: l.line, Column: tokenColumn}
-	}
 	ch := l.input[l.pos]
 
 	// Newline
@@ -308,7 +308,7 @@ func (l *Lexer) NextToken() Token {
 		l.pos++ // skip closing "
 		// Process escape sequences like \n, \t, etc.
 		value = processEscapeSequences(value)
-		return Token{Type: TOKEN_STRING, Value: value, Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_STRING, Value: value, Line: l.line}
 	}
 
 	// Number (including hex 0x... and binary 0b...)
@@ -323,23 +323,23 @@ func (l *Lexer) NextToken() Token {
 				l.pos += 2 // skip '0x'
 				if l.pos >= len(l.input) || !isHexDigit(l.input[l.pos]) {
 					// Invalid hex literal
-					return Token{Type: TOKEN_NUMBER, Value: "0", Line: l.line, Column: tokenColumn}
+					return Token{Type: TOKEN_NUMBER, Value: "0", Line: l.line}
 				}
 				for l.pos < len(l.input) && isHexDigit(l.input[l.pos]) {
 					l.pos++
 				}
-				return Token{Type: TOKEN_NUMBER, Value: l.input[start:l.pos], Line: l.line, Column: tokenColumn}
+				return Token{Type: TOKEN_NUMBER, Value: l.input[start:l.pos], Line: l.line}
 			} else if next == 'b' || next == 'B' {
 				// Binary: 0b[01]+
 				l.pos += 2 // skip '0b'
 				if l.pos >= len(l.input) || (l.input[l.pos] != '0' && l.input[l.pos] != '1') {
 					// Invalid binary literal
-					return Token{Type: TOKEN_NUMBER, Value: "0", Line: l.line, Column: tokenColumn}
+					return Token{Type: TOKEN_NUMBER, Value: "0", Line: l.line}
 				}
 				for l.pos < len(l.input) && (l.input[l.pos] == '0' || l.input[l.pos] == '1') {
 					l.pos++
 				}
-				return Token{Type: TOKEN_NUMBER, Value: l.input[start:l.pos], Line: l.line, Column: tokenColumn}
+				return Token{Type: TOKEN_NUMBER, Value: l.input[start:l.pos], Line: l.line}
 			}
 		}
 
@@ -360,7 +360,7 @@ func (l *Lexer) NextToken() Token {
 				break
 			}
 		}
-		return Token{Type: TOKEN_NUMBER, Value: l.input[start:l.pos], Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_NUMBER, Value: l.input[start:l.pos], Line: l.line}
 	}
 
 	// Identifier or keyword
@@ -385,97 +385,97 @@ func (l *Lexer) NextToken() Token {
 			}
 			fstringValue := l.input[fstringStart:l.pos]
 			l.pos++ // skip closing "
-			return Token{Type: TOKEN_FSTRING, Value: fstringValue, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_FSTRING, Value: fstringValue, Line: l.line}
 		}
 
 		// Check for keywords
 		switch value {
 		case "in":
-			return Token{Type: TOKEN_IN, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_IN, Value: value, Line: l.line}
 		case "and":
 			// Check for and!
 			if l.pos < len(l.input) && l.input[l.pos] == '!' {
 				l.pos++ // consume the !
-				return Token{Type: TOKEN_AND_BANG, Value: "and!", Line: l.line, Column: tokenColumn}
+				return Token{Type: TOKEN_AND_BANG, Value: "and!", Line: l.line}
 			}
-			return Token{Type: TOKEN_AND, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_AND, Value: value, Line: l.line}
 		case "or":
 			// Check for or!
 			if l.pos < len(l.input) && l.input[l.pos] == '!' {
 				l.pos++ // consume the !
-				return Token{Type: TOKEN_OR_BANG, Value: "or!", Line: l.line, Column: tokenColumn}
+				return Token{Type: TOKEN_OR_BANG, Value: "or!", Line: l.line}
 			}
-			return Token{Type: TOKEN_OR, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_OR, Value: value, Line: l.line}
 		case "not":
-			return Token{Type: TOKEN_NOT, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_NOT, Value: value, Line: l.line}
 		// "me" and "cme" removed - recursive calls now use function name with mandatory max
 		case "ret":
-			return Token{Type: TOKEN_RET, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_RET, Value: value, Line: l.line}
 		case "err":
 			// Check for err?
 			if l.pos < len(l.input) && l.input[l.pos] == '?' {
 				l.pos++ // consume the ?
-				return Token{Type: TOKEN_ERR_QUESTION, Value: "err?", Line: l.line, Column: tokenColumn}
+				return Token{Type: TOKEN_ERR_QUESTION, Value: "err?", Line: l.line}
 			}
-			return Token{Type: TOKEN_ERR, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_ERR, Value: value, Line: l.line}
 		case "val":
 			// Check for val?
 			if l.pos < len(l.input) && l.input[l.pos] == '?' {
 				l.pos++ // consume the ?
-				return Token{Type: TOKEN_VAL_QUESTION, Value: "val?", Line: l.line, Column: tokenColumn}
+				return Token{Type: TOKEN_VAL_QUESTION, Value: "val?", Line: l.line}
 			}
-			return Token{Type: TOKEN_IDENT, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_IDENT, Value: value, Line: l.line}
 		case "use":
-			return Token{Type: TOKEN_USE, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_USE, Value: value, Line: l.line}
 		case "import":
-			return Token{Type: TOKEN_IMPORT, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_IMPORT, Value: value, Line: l.line}
 		case "from":
-			return Token{Type: TOKEN_FROM, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_FROM, Value: value, Line: l.line}
 		case "as":
-			return Token{Type: TOKEN_AS, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_AS, Value: value, Line: l.line}
 		case "unsafe":
-			return Token{Type: TOKEN_UNSAFE, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_UNSAFE, Value: value, Line: l.line}
 		case "syscall":
-			return Token{Type: TOKEN_SYSCALL, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_SYSCALL, Value: value, Line: l.line}
 		case "arena":
-			return Token{Type: TOKEN_ARENA, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_ARENA, Value: value, Line: l.line}
 		case "defer":
-			return Token{Type: TOKEN_DEFER, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_DEFER, Value: value, Line: l.line}
 		case "max":
-			return Token{Type: TOKEN_MAX, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_MAX, Value: value, Line: l.line}
 		case "inf":
-			return Token{Type: TOKEN_INF, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_INF, Value: value, Line: l.line}
 		case "cstruct":
-			return Token{Type: TOKEN_CSTRUCT, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_CSTRUCT, Value: value, Line: l.line}
 		case "packed":
-			return Token{Type: TOKEN_PACKED, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_PACKED, Value: value, Line: l.line}
 		case "aligned":
-			return Token{Type: TOKEN_ALIGNED, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_ALIGNED, Value: value, Line: l.line}
 		case "alias":
-			return Token{Type: TOKEN_ALIAS, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_ALIAS, Value: value, Line: l.line}
 		case "hot":
-			return Token{Type: TOKEN_HOT, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_HOT, Value: value, Line: l.line}
 		case "spawn":
-			return Token{Type: TOKEN_SPAWN, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_SPAWN, Value: value, Line: l.line}
 		case "has":
-			return Token{Type: TOKEN_HAS, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_HAS, Value: value, Line: l.line}
 		case "xor":
-			return Token{Type: TOKEN_XOR, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_XOR, Value: value, Line: l.line}
 		case "shl":
-			return Token{Type: TOKEN_SHL, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_SHL, Value: value, Line: l.line}
 		case "shr":
-			return Token{Type: TOKEN_SHR, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_SHR, Value: value, Line: l.line}
 		case "rol":
-			return Token{Type: TOKEN_ROL, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_ROL, Value: value, Line: l.line}
 		case "ror":
-			return Token{Type: TOKEN_ROR, Value: value, Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_ROR, Value: value, Line: l.line}
 			// Note: All type keywords (i8, i16, i32, i64, u8, u16, u32, u64, f32, f64,
 			// cstr, ptr, number, string, list) are contextual keywords.
 			// They are only treated as type keywords after "as" in cast expressions.
 			// Otherwise they can be used as identifiers.
 		}
 
-		return Token{Type: TOKEN_IDENT, Value: value, Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_IDENT, Value: value, Line: l.line}
 	}
 
 	// Operators and punctuation
@@ -485,39 +485,39 @@ func (l *Lexer) NextToken() Token {
 		// Check for ++
 		if l.pos < len(l.input) && l.input[l.pos] == '+' {
 			l.pos++
-			return Token{Type: TOKEN_INCREMENT, Value: "++", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_INCREMENT, Value: "++", Line: l.line}
 		}
 		// Check for +=
 		if l.pos < len(l.input) && l.input[l.pos] == '=' {
 			l.pos++
-			return Token{Type: TOKEN_PLUS_EQUALS, Value: "+=", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_PLUS_EQUALS, Value: "+=", Line: l.line}
 		}
-		return Token{Type: TOKEN_PLUS, Value: "+", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_PLUS, Value: "+", Line: l.line}
 	case '-':
 		// Check for ->
 		if l.peek() == '>' {
 			l.pos += 2
-			return Token{Type: TOKEN_ARROW, Value: "->", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_ARROW, Value: "->", Line: l.line}
 		}
 		// Check for --
 		if l.peek() == '-' {
 			l.pos += 2
-			return Token{Type: TOKEN_DECREMENT, Value: "--", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_DECREMENT, Value: "--", Line: l.line}
 		}
 		// Check for -=
 		if l.peek() == '=' {
 			l.pos += 2
-			return Token{Type: TOKEN_MINUS_EQUALS, Value: "-=", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_MINUS_EQUALS, Value: "-=", Line: l.line}
 		}
 		// Always emit MINUS as separate token - let parser handle unary negation
 		l.pos++
-		return Token{Type: TOKEN_MINUS, Value: "-", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_MINUS, Value: "-", Line: l.line}
 	case '*':
 		l.pos++
 		// Check for *+ (fused multiply-add)
 		if l.pos < len(l.input) && l.input[l.pos] == '+' {
 			l.pos++
-			return Token{Type: TOKEN_FMA, Value: "*+", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_FMA, Value: "*+", Line: l.line}
 		}
 		// Check for ** (power) and **= (power assignment)
 		if l.pos < len(l.input) && l.input[l.pos] == '*' {
@@ -525,147 +525,147 @@ func (l *Lexer) NextToken() Token {
 			// Check for **=
 			if l.pos < len(l.input) && l.input[l.pos] == '=' {
 				l.pos++
-				return Token{Type: TOKEN_POWER_EQUALS, Value: "**=", Line: l.line, Column: tokenColumn}
+				return Token{Type: TOKEN_POWER_EQUALS, Value: "**=", Line: l.line}
 			}
-			return Token{Type: TOKEN_POWER, Value: "**", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_POWER, Value: "**", Line: l.line}
 		}
 		// Check for *=
 		if l.pos < len(l.input) && l.input[l.pos] == '=' {
 			l.pos++
-			return Token{Type: TOKEN_STAR_EQUALS, Value: "*=", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_STAR_EQUALS, Value: "*=", Line: l.line}
 		}
-		return Token{Type: TOKEN_STAR, Value: "*", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_STAR, Value: "*", Line: l.line}
 	case '/':
 		l.pos++
 		// Check for /=
 		if l.pos < len(l.input) && l.input[l.pos] == '=' {
 			l.pos++
-			return Token{Type: TOKEN_SLASH_EQUALS, Value: "/=", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_SLASH_EQUALS, Value: "/=", Line: l.line}
 		}
-		return Token{Type: TOKEN_SLASH, Value: "/", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_SLASH, Value: "/", Line: l.line}
 	case '%':
 		l.pos++
 		// Check for %=
 		if l.pos < len(l.input) && l.input[l.pos] == '=' {
 			l.pos++
-			return Token{Type: TOKEN_MOD_EQUALS, Value: "%=", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_MOD_EQUALS, Value: "%=", Line: l.line}
 		}
-		return Token{Type: TOKEN_MOD, Value: "%", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_MOD, Value: "%", Line: l.line}
 	case ':':
 		// Check for := and :: before advancing
 		if l.peek() == '=' {
 			l.pos += 2 // skip both ':' and '='
-			return Token{Type: TOKEN_COLON_EQUALS, Value: ":=", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_COLON_EQUALS, Value: ":=", Line: l.line}
 		}
 		if l.peek() == ':' {
 			l.pos += 2 // skip both ':' and ':'
-			return Token{Type: TOKEN_CONS, Value: "::", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_CONS, Value: "::", Line: l.line}
 		}
 		// Check for port literal: :5000 or :worker
 		// Colon for map literals and slice syntax
 		l.pos++
-		return Token{Type: TOKEN_COLON, Value: ":", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_COLON, Value: ":", Line: l.line}
 	case '=':
 		// Check for ==> (must check before =>)
 		if l.peek() == '=' && l.peekAhead(1) == '>' {
 			l.pos += 3
-			return Token{Type: TOKEN_EQUALS_FAT_ARROW, Value: "==>", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_EQUALS_FAT_ARROW, Value: "==>", Line: l.line}
 		}
 		// Check for =>
 		if l.peek() == '>' {
 			l.pos += 2
-			return Token{Type: TOKEN_FAT_ARROW, Value: "=>", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_FAT_ARROW, Value: "=>", Line: l.line}
 		}
 		// Check for ==
 		if l.peek() == '=' {
 			l.pos += 2
-			return Token{Type: TOKEN_EQ, Value: "==", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_EQ, Value: "==", Line: l.line}
 		}
 		// Check for =?
 		if l.peek() == '?' {
 			l.pos += 2
-			return Token{Type: TOKEN_EQUALS_QUESTION, Value: "=?", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_EQUALS_QUESTION, Value: "=?", Line: l.line}
 		}
 		l.pos++
-		return Token{Type: TOKEN_EQUALS, Value: "=", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_EQUALS, Value: "=", Line: l.line}
 	case '<':
 		// Check for <-?, then <-, then <<b (rotate left), then <b (shift left), then <=, then <
 		if l.peek() == '-' {
 			// Check for <-?
 			if l.pos+2 < len(l.input) && l.input[l.pos+2] == '?' {
 				l.pos += 3
-				return Token{Type: TOKEN_LEFT_ARROW_QUESTION, Value: "<-?", Line: l.line, Column: tokenColumn}
+				return Token{Type: TOKEN_LEFT_ARROW_QUESTION, Value: "<-?", Line: l.line}
 			}
 			l.pos += 2
-			return Token{Type: TOKEN_LEFT_ARROW, Value: "<-", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_LEFT_ARROW, Value: "<-", Line: l.line}
 		}
 		if l.peek() == '<' && l.pos+2 < len(l.input) && l.input[l.pos+2] == 'b' {
 			l.pos += 3
-			return Token{Type: TOKEN_LTLT_B, Value: "<<b", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_LTLT_B, Value: "<<b", Line: l.line}
 		}
 		if l.peek() == 'b' {
 			l.pos += 2
-			return Token{Type: TOKEN_LT_B, Value: "<b", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_LT_B, Value: "<b", Line: l.line}
 		}
 		if l.peek() == '=' {
 			if l.pos+2 < len(l.input) && l.input[l.pos+2] == '=' {
 				l.pos += 3
-				return Token{Type: TOKEN_SEND, Value: "<==", Line: l.line, Column: tokenColumn}
+				return Token{Type: TOKEN_SEND, Value: "<==", Line: l.line}
 			}
 			l.pos += 2
-			return Token{Type: TOKEN_LE, Value: "<=", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_LE, Value: "<=", Line: l.line}
 		}
 		l.pos++
-		return Token{Type: TOKEN_LT, Value: "<", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_LT, Value: "<", Line: l.line}
 	case '>':
 		// Check for >>b (rotate right), then >b (shift right), then >=, then >
 		if l.peek() == '>' && l.pos+2 < len(l.input) && l.input[l.pos+2] == 'b' {
 			l.pos += 3
-			return Token{Type: TOKEN_GTGT_B, Value: ">>b", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_GTGT_B, Value: ">>b", Line: l.line}
 		}
 		if l.peek() == 'b' {
 			l.pos += 2
-			return Token{Type: TOKEN_GT_B, Value: ">b", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_GT_B, Value: ">b", Line: l.line}
 		}
 		if l.peek() == '=' {
 			l.pos += 2
-			return Token{Type: TOKEN_GE, Value: ">=", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_GE, Value: ">=", Line: l.line}
 		}
 		l.pos++
-		return Token{Type: TOKEN_GT, Value: ">", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_GT, Value: ">", Line: l.line}
 	case '!':
 		// Check for !=
 		if l.peek() == '=' {
 			l.pos += 2
-			return Token{Type: TOKEN_NE, Value: "!=", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_NE, Value: "!=", Line: l.line}
 		}
 		// Standalone ! is move operator
 		l.pos++
-		return Token{Type: TOKEN_BANG, Value: "!", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_BANG, Value: "!", Line: l.line}
 	case '~':
 		// Check for ~> first, then ~b
 		if l.peek() == '>' {
 			l.pos += 2
-			return Token{Type: TOKEN_DEFAULT_ARROW, Value: "~>", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_DEFAULT_ARROW, Value: "~>", Line: l.line}
 		}
 		if l.peek() == 'b' {
 			l.pos += 2
-			return Token{Type: TOKEN_TILDE_B, Value: "~b", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_TILDE_B, Value: "~b", Line: l.line}
 		}
 		l.pos++
-		return Token{Type: TOKEN_TILDE, Value: "~", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_TILDE, Value: "~", Line: l.line}
 	case '(':
 		l.pos++
-		return Token{Type: TOKEN_LPAREN, Value: "(", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_LPAREN, Value: "(", Line: l.line}
 	case ')':
 		l.pos++
-		return Token{Type: TOKEN_RPAREN, Value: ")", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_RPAREN, Value: ")", Line: l.line}
 	case ',':
 		l.pos++
-		return Token{Type: TOKEN_COMMA, Value: ",", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_COMMA, Value: ",", Line: l.line}
 	case ';':
 		l.pos++
-		return Token{Type: TOKEN_SEMICOLON, Value: ";", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_SEMICOLON, Value: ";", Line: l.line}
 	case '.':
 		// Check for ..< or ..=
 		if l.pos+1 < len(l.input) && l.input[l.pos+1] == '.' {
@@ -673,11 +673,11 @@ func (l *Lexer) NextToken() Token {
 				if l.input[l.pos+2] == '<' {
 					// ..<
 					l.pos += 3
-					return Token{Type: TOKEN_DOTDOTLT, Value: "..<", Line: l.line, Column: tokenColumn}
+					return Token{Type: TOKEN_DOTDOTLT, Value: "..<", Line: l.line}
 				} else if l.input[l.pos+2] == '=' {
 					// ..=
 					l.pos += 3
-					return Token{Type: TOKEN_DOTDOTEQ, Value: "..=", Line: l.line, Column: tokenColumn}
+					return Token{Type: TOKEN_DOTDOTEQ, Value: "..=", Line: l.line}
 				}
 			}
 			// Just .. is an error - must be ..< or ..=
@@ -685,18 +685,18 @@ func (l *Lexer) NextToken() Token {
 		}
 		// Single .
 		l.pos++
-		return Token{Type: TOKEN_DOT, Value: ".", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_DOT, Value: ".", Line: l.line}
 	case '@':
 		// Check for @@, @++, @first, @last, @counter, @i
 		// Check for @@ first (parallel loop with all cores)
 		if l.peek() == '@' {
 			l.pos += 2
-			return Token{Type: TOKEN_AT_AT, Value: "@@", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_AT_AT, Value: "@@", Line: l.line}
 		}
 		// Check for @++
 		if l.peek() == '+' && l.pos+2 < len(l.input) && l.input[l.pos+2] == '+' {
 			l.pos += 3
-			return Token{Type: TOKEN_AT_PLUSPLUS, Value: "@++", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_AT_PLUSPLUS, Value: "@++", Line: l.line}
 		}
 		if l.peek() >= 'a' && l.peek() <= 'z' {
 			start := l.pos
@@ -706,13 +706,13 @@ func (l *Lexer) NextToken() Token {
 			}
 			value := l.input[start:l.pos]
 			if value == "@first" {
-				return Token{Type: TOKEN_AT_FIRST, Value: value, Line: l.line, Column: tokenColumn}
+				return Token{Type: TOKEN_AT_FIRST, Value: value, Line: l.line}
 			}
 			if value == "@last" {
-				return Token{Type: TOKEN_AT_LAST, Value: value, Line: l.line, Column: tokenColumn}
+				return Token{Type: TOKEN_AT_LAST, Value: value, Line: l.line}
 			}
 			if value == "@counter" {
-				return Token{Type: TOKEN_AT_COUNTER, Value: value, Line: l.line, Column: tokenColumn}
+				return Token{Type: TOKEN_AT_COUNTER, Value: value, Line: l.line}
 			}
 			if value == "@i" {
 				// Check if followed by a number (e.g., @i1, @i2)
@@ -723,60 +723,60 @@ func (l *Lexer) NextToken() Token {
 						l.pos++
 					}
 					fullValue := value + string(l.input[numStart:l.pos])
-					return Token{Type: TOKEN_AT_I, Value: fullValue, Line: l.line, Column: tokenColumn}
+					return Token{Type: TOKEN_AT_I, Value: fullValue, Line: l.line}
 				}
-				return Token{Type: TOKEN_AT_I, Value: value, Line: l.line, Column: tokenColumn}
+				return Token{Type: TOKEN_AT_I, Value: value, Line: l.line}
 			}
 			// Unknown @identifier, treat as error or identifier
 			l.pos = start + 1
-			return Token{Type: TOKEN_AT, Value: "@", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_AT, Value: "@", Line: l.line}
 		}
 		l.pos++
-		return Token{Type: TOKEN_AT, Value: "@", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_AT, Value: "@", Line: l.line}
 	case '{':
 		l.pos++
-		return Token{Type: TOKEN_LBRACE, Value: "{", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_LBRACE, Value: "{", Line: l.line}
 	case '}':
 		l.pos++
-		return Token{Type: TOKEN_RBRACE, Value: "}", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_RBRACE, Value: "}", Line: l.line}
 	case '[':
 		l.pos++
-		return Token{Type: TOKEN_LBRACKET, Value: "[", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_LBRACKET, Value: "[", Line: l.line}
 	case ']':
 		l.pos++
-		return Token{Type: TOKEN_RBRACKET, Value: "]", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_RBRACKET, Value: "]", Line: l.line}
 	case '|':
 		// Check for ||, then |b, then |
 		if l.peek() == '|' {
 			l.pos += 2
-			return Token{Type: TOKEN_PIPEPIPE, Value: "||", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_PIPEPIPE, Value: "||", Line: l.line}
 		}
 		if l.peek() == 'b' {
 			l.pos += 2
-			return Token{Type: TOKEN_PIPE_B, Value: "|b", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_PIPE_B, Value: "|b", Line: l.line}
 		}
 		l.pos++
-		return Token{Type: TOKEN_PIPE, Value: "|", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_PIPE, Value: "|", Line: l.line}
 	case '&':
 		// Check for &b
 		if l.peek() == 'b' {
 			l.pos += 2
-			return Token{Type: TOKEN_AMP_B, Value: "&b", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_AMP_B, Value: "&b", Line: l.line}
 		}
 		l.pos++
-		return Token{Type: TOKEN_AMP, Value: "&", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_AMP, Value: "&", Line: l.line}
 	case '^':
 		// Check for ^b
 		if l.peek() == 'b' {
 			l.pos += 2
-			return Token{Type: TOKEN_CARET_B, Value: "^b", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_CARET_B, Value: "^b", Line: l.line}
 		}
 		l.pos++
-		return Token{Type: TOKEN_CARET, Value: "^", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_CARET, Value: "^", Line: l.line}
 	case '#':
 		l.pos++
-		return Token{Type: TOKEN_HASH, Value: "#", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_HASH, Value: "#", Line: l.line}
 	}
 
-	return Token{Type: TOKEN_EOF, Line: l.line, Column: tokenColumn}
+	return Token{Type: TOKEN_EOF, Line: l.line}
 }

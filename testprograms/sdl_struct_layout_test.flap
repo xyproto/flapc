@@ -30,36 +30,36 @@ printf("SDL3 Struct Layouts:\n")
 printf("===================\n\n")
 
 printf("SDL_FRect (floating-point rectangle):\n")
-printf("  Size: %.0f bytes (expected 16)\n", SDL_FRect_SIZEOF)
-printf("  x offset: %.0f\n", SDL_FRect_x_OFFSET)
-printf("  y offset: %.0f\n", SDL_FRect_y_OFFSET)
-printf("  w offset: %.0f\n", SDL_FRect_w_OFFSET)
-printf("  h offset: %.0f\n", SDL_FRect_h_OFFSET)
+printf("  Size: %.0f bytes (expected 16)\n", SDL_FRect.size)
+printf("  x offset: %.0f\n", SDL_FRect.x.offset)
+printf("  y offset: %.0f\n", SDL_FRect.y.offset)
+printf("  w offset: %.0f\n", SDL_FRect.w.offset)
+printf("  h offset: %.0f\n", SDL_FRect.h.offset)
 
 printf("\nSDL_Rect (integer rectangle):\n")
-printf("  Size: %.0f bytes (expected 16)\n", SDL_Rect_SIZEOF)
-printf("  x offset: %.0f\n", SDL_Rect_x_OFFSET)
-printf("  y offset: %.0f\n", SDL_Rect_y_OFFSET)
-printf("  w offset: %.0f\n", SDL_Rect_w_OFFSET)
-printf("  h offset: %.0f\n", SDL_Rect_h_OFFSET)
+printf("  Size: %.0f bytes (expected 16)\n", SDL_Rect.size)
+printf("  x offset: %.0f\n", SDL_Rect.x.offset)
+printf("  y offset: %.0f\n", SDL_Rect.y.offset)
+printf("  w offset: %.0f\n", SDL_Rect.w.offset)
+printf("  h offset: %.0f\n", SDL_Rect.h.offset)
 
 printf("\nSDL_Point (integer point):\n")
-printf("  Size: %.0f bytes (expected 8)\n", SDL_Point_SIZEOF)
-printf("  x offset: %.0f\n", SDL_Point_x_OFFSET)
-printf("  y offset: %.0f\n", SDL_Point_y_OFFSET)
+printf("  Size: %.0f bytes (expected 8)\n", SDL_Point.size)
+printf("  x offset: %.0f\n", SDL_Point.x.offset)
+printf("  y offset: %.0f\n", SDL_Point.y.offset)
 
 printf("\nSDL_FPoint (floating-point point):\n")
-printf("  Size: %.0f bytes (expected 8)\n", SDL_FPoint_SIZEOF)
-printf("  x offset: %.0f\n", SDL_FPoint_x_OFFSET)
-printf("  y offset: %.0f\n", SDL_FPoint_y_OFFSET)
+printf("  Size: %.0f bytes (expected 8)\n", SDL_FPoint.size)
+printf("  x offset: %.0f\n", SDL_FPoint.x.offset)
+printf("  y offset: %.0f\n", SDL_FPoint.y.offset)
 
 // Verify all layouts
 all_correct := 1
 
-SDL_FRect_SIZEOF != 16 { all_correct = 0 }
-SDL_Rect_SIZEOF != 16 { all_correct = 0 }
-SDL_Point_SIZEOF != 8 { all_correct = 0 }
-SDL_FPoint_SIZEOF != 8 { all_correct = 0 }
+SDL_FRect.size != 16 { all_correct = 0 }
+SDL_Rect.size != 16 { all_correct = 0 }
+SDL_Point.size != 8 { all_correct = 0 }
+SDL_FPoint.size != 8 { all_correct = 0 }
 
 printf("\n")
 all_correct == 1 {

@@ -53,8 +53,8 @@ Flap follows these core principles:
 
 ### Calculated, Not Hardcoded
 The Flap compiler (`flapc`) minimizes hardcoded "magic numbers":
-- **Sizes calculated**: Use `sizeof(Type)` not hardcoded `12`
-- **Offsets calculated**: Use `offsetof(Type, field)` not hardcoded `8`
+- **Sizes calculated**: Use `Type.size` not hardcoded `12`
+- **Offsets calculated**: Use `Type.field.offset` not hardcoded `8`
 - **Global constants**: Define constants at the top of files when needed
 - **Derived values**: Calculate from other constants when possible
 
@@ -766,11 +766,11 @@ cstruct Vec3 {
     z as float32
 }
 
-// Generated constants:
-// Vec3_SIZEOF = 12
-// Vec3_x_OFFSET = 0
-// Vec3_y_OFFSET = 4
-// Vec3_z_OFFSET = 8
+// Metadata available via dot notation:
+// Vec3.size = 12
+// Vec3.x.offset = 0
+// Vec3.y.offset = 4
+// Vec3.z.offset = 8
 ```
 
 ### Packed Structures
@@ -797,17 +797,32 @@ cstruct CacheAligned aligned(64) {
 
 ```flap
 // Allocate
-ptr = c.malloc(sizeof(Vec3))
+ptr = c.malloc(Vec3.size)
 
-// Write fields
-ptr[offsetof(Vec3, x)] <- 1.0 as float32
-ptr[offsetof(Vec3, y)] <- 2.0 as float32
-ptr[offsetof(Vec3, z)] <- 3.0 as float32
+// Write fields using unsafe blocks
+unsafe pointer {
+    rax <- ptr as pointer
+    rbx <- 1.0
+    [rax + Vec3.x.offset] <- rbx
+    rbx <- 2.0
+    [rax + Vec3.y.offset] <- rbx
+    rbx <- 3.0
+    [rax + Vec3.z.offset] <- rbx
+}
 
-// Read fields
-x = ptr[offsetof(Vec3, x)] as float32
-y = ptr[offsetof(Vec3, y)] as float32
-z = ptr[offsetof(Vec3, z)] as float32
+// Read fields using unsafe blocks
+x := unsafe float64 {
+    rax <- ptr as pointer
+    rax <- [rax + Vec3.x.offset]
+}
+y := unsafe float64 {
+    rax <- ptr as pointer
+    rax <- [rax + Vec3.y.offset]
+}
+z := unsafe float64 {
+    rax <- ptr as pointer
+    rax <- [rax + Vec3.z.offset]
+}
 
 // Free
 c.free(ptr)

@@ -9,30 +9,30 @@ cstruct Player {
 }
 
 printf("Player struct layout:\n")
-printf("  Size: %.0f bytes\n", Player_SIZEOF)
-printf("  x offset: %.0f\n", Player_x_OFFSET)
-printf("  y offset: %.0f\n", Player_y_OFFSET)
-printf("  health offset: %.0f\n", Player_health_OFFSET)
-printf("  score offset: %.0f\n", Player_score_OFFSET)
+printf("  Size: %.0f bytes\n", Player.size)
+printf("  x offset: %.0f\n", Player.x.offset)
+printf("  y offset: %.0f\n", Player.y.offset)
+printf("  health offset: %.0f\n", Player.health.offset)
+printf("  score offset: %.0f\n", Player.score.offset)
 
 // Allocate a Player struct
-player_ptr := call("malloc", Player_SIZEOF as uint64)
+player_ptr := call("malloc", Player.size as uint64)
 printf("\nAllocated Player at pointer: %.0f\n", player_ptr)
 
 // Write Player fields using helper functions
-write_f64(player_ptr, Player_x_OFFSET as int32, 100.5)
-write_f64(player_ptr, Player_y_OFFSET as int32, 200.75)
-write_i32(player_ptr, Player_health_OFFSET as int32, 100)
-write_i64(player_ptr, Player_score_OFFSET as int32, 9999)
+write_f64(player_ptr, Player.x.offset as int32, 100.5)
+write_f64(player_ptr, Player.y.offset as int32, 200.75)
+write_i32(player_ptr, Player.health.offset as int32, 100)
+write_i64(player_ptr, Player.score.offset as int32, 9999)
 
 printf("\nWrote player data:\n")
 printf("  x=100.5, y=200.75, health=100, score=9999\n")
 
 // Read Player fields back
-x_val := read_f64(player_ptr, Player_x_OFFSET as int32)
-y_val := read_f64(player_ptr, Player_y_OFFSET as int32)
-health_val := read_i32(player_ptr, Player_health_OFFSET as int32)
-score_val := read_i64(player_ptr, Player_score_OFFSET as int32)
+x_val := read_f64(player_ptr, Player.x.offset as int32)
+y_val := read_f64(player_ptr, Player.y.offset as int32)
+health_val := read_i32(player_ptr, Player.health.offset as int32)
+score_val := read_i64(player_ptr, Player.score.offset as int32)
 
 printf("\nRead player data:\n")
 printf("  x=%.2f (expected 100.50)\n", x_val)

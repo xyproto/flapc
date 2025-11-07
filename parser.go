@@ -90,6 +90,7 @@ type Parser struct {
 	loopDepth   int                   // Current loop nesting level (0 = not in loop, 1 = outer loop, etc.)
 	constants   map[string]Expression // Compile-time constants (immutable literals)
 	aliases     map[string]TokenType  // Keyword aliases (e.g., "for" -> TOKEN_AT)
+	cstructs    map[string]*CStructDecl // CStruct declarations for metadata access
 	speculative bool                  // True when in speculative parsing mode (suppress errors)
 	errors      *ErrorCollector       // Railway-oriented error collector
 }
@@ -124,6 +125,7 @@ func NewParser(input string) *Parser {
 		source:    input,
 		constants: make(map[string]Expression),
 		aliases:   make(map[string]TokenType),
+		cstructs:  make(map[string]*CStructDecl),
 		errors:    NewErrorCollector(10),
 	}
 	p.errors.SetSourceCode(input)
@@ -139,6 +141,7 @@ func NewParserWithFilename(input, filename string) *Parser {
 		source:    input,
 		constants: make(map[string]Expression),
 		aliases:   make(map[string]TokenType),
+		cstructs:  make(map[string]*CStructDecl),
 		errors:    NewErrorCollector(10),
 	}
 	p.errors.SetSourceCode(input)
@@ -660,6 +663,9 @@ func (p *Parser) parseCStructDecl() *CStructDecl {
 		Align:  align,
 	}
 	decl.CalculateStructLayout()
+
+	// Store the cstruct declaration for metadata access (Type.size, Type.field.offset)
+	p.cstructs[name] = decl
 
 	// Register constants for struct size and field offsets
 	// These can be used in expressions like: SDL_Rect_SIZEOF, SDL_Rect_x_OFFSET
@@ -2699,7 +2705,7 @@ func (p *Parser) parsePostfix() Expression {
 
 			expr = &CastExpr{Expr: expr, Type: castType}
 		} else if p.peek.Type == TOKEN_DOT {
-			// Handle dot notation: obj.field, namespace.func(), or namespace.CONSTANT
+			// Handle dot notation: obj.field, namespace.func(), namespace.CONSTANT, Type.size, Type.field.offset
 			p.nextToken() // skip current expr
 			p.nextToken() // skip '.'
 
@@ -2712,7 +2718,38 @@ func (p *Parser) parsePostfix() Expression {
 			// Check if this is a namespaced function call or constant: namespace.func() or namespace.CONSTANT
 			// This requires expr to be an IdentExpr
 			if ident, ok := expr.(*IdentExpr); ok {
-				if p.peek.Type == TOKEN_LPAREN {
+				// Check if this is metadata access: Type.size or Type.field.offset
+				if cstruct, exists := p.cstructs[ident.Name]; exists {
+					if fieldName == "size" {
+						// Type.size - return struct size as constant
+						expr = &NumberExpr{Value: float64(cstruct.Size)}
+					} else {
+						// Check if this is Type.field.offset
+						fieldFound := false
+						for _, field := range cstruct.Fields {
+							if field.Name == fieldName {
+								fieldFound = true
+								// Check if next token is .offset
+								if p.peek.Type == TOKEN_DOT {
+									p.nextToken() // skip field name
+									p.nextToken() // skip '.'
+									if p.current.Type == TOKEN_IDENT && p.current.Value == "offset" {
+										// Type.field.offset - return field offset as constant
+										expr = &NumberExpr{Value: float64(field.Offset)}
+									} else {
+										p.error("expected 'offset' after '" + cstruct.Name + "." + fieldName + ".'")
+									}
+								} else {
+									p.error("expected '.offset' after '" + cstruct.Name + "." + fieldName + "'")
+								}
+								break
+							}
+						}
+						if !fieldFound {
+							p.error("cstruct '" + cstruct.Name + "' has no field '" + fieldName + "'")
+						}
+					}
+				} else if p.peek.Type == TOKEN_LPAREN {
 					// Namespaced function call - combine identifiers
 					namespacedName := ident.Name + "." + fieldName
 					p.nextToken() // skip second identifier

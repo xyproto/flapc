@@ -18,25 +18,25 @@ cstruct SDL_Rect {
 
 // Verify struct layouts match SDL3 expectations
 printf("SDL_FRect layout:\n")
-printf("  SIZEOF = %.0f (expected 16)\n", SDL_FRect_SIZEOF)
-printf("  x_OFFSET = %.0f\n", SDL_FRect_x_OFFSET)
-printf("  y_OFFSET = %.0f\n", SDL_FRect_y_OFFSET)
-printf("  w_OFFSET = %.0f\n", SDL_FRect_w_OFFSET)
-printf("  h_OFFSET = %.0f\n", SDL_FRect_h_OFFSET)
+printf("  SIZEOF = %.0f (expected 16)\n", SDL_FRect.size)
+printf("  x_OFFSET = %.0f\n", SDL_FRect.x.offset)
+printf("  y_OFFSET = %.0f\n", SDL_FRect.y.offset)
+printf("  w_OFFSET = %.0f\n", SDL_FRect.w.offset)
+printf("  h_OFFSET = %.0f\n", SDL_FRect.h.offset)
 
 printf("\nSDL_Rect layout:\n")
-printf("  SIZEOF = %.0f (expected 16)\n", SDL_Rect_SIZEOF)
-printf("  x_OFFSET = %.0f\n", SDL_Rect_x_OFFSET)
-printf("  y_OFFSET = %.0f\n", SDL_Rect_y_OFFSET)
-printf("  w_OFFSET = %.0f\n", SDL_Rect_w_OFFSET)
-printf("  h_OFFSET = %.0f\n", SDL_Rect_h_OFFSET)
+printf("  SIZEOF = %.0f (expected 16)\n", SDL_Rect.size)
+printf("  x_OFFSET = %.0f\n", SDL_Rect.x.offset)
+printf("  y_OFFSET = %.0f\n", SDL_Rect.y.offset)
+printf("  w_OFFSET = %.0f\n", SDL_Rect.w.offset)
+printf("  h_OFFSET = %.0f\n", SDL_Rect.h.offset)
 
 // Verify correctness
-SDL_FRect_SIZEOF == 16 {
+SDL_FRect.size == 16 {
     printf("\n✓ SDL_FRect size correct (16 bytes)\n")
 }
 
-SDL_Rect_SIZEOF == 16 {
+SDL_Rect.size == 16 {
     printf("✓ SDL_Rect size correct (16 bytes)\n")
 }
 

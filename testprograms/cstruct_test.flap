@@ -21,34 +21,34 @@ cstruct AlignedStruct {
     c as uint8
 }
 
-// Test accessing the generated constants
-printf("Vec3_SIZEOF = %.0f\n", Vec3_SIZEOF)
-printf("Vec3_x_OFFSET = %.0f\n", Vec3_x_OFFSET)
-printf("Vec3_y_OFFSET = %.0f\n", Vec3_y_OFFSET)
-printf("Vec3_z_OFFSET = %.0f\n", Vec3_z_OFFSET)
+// Test accessing metadata via dot notation
+printf("Vec3.size = %.0f\n", Vec3.size)
+printf("Vec3.x.offset = %.0f\n", Vec3.x.offset)
+printf("Vec3.y.offset = %.0f\n", Vec3.y.offset)
+printf("Vec3.z.offset = %.0f\n", Vec3.z.offset)
 
-printf("\nPackedStruct_SIZEOF = %.0f\n", PackedStruct_SIZEOF)
-printf("PackedStruct_a_OFFSET = %.0f\n", PackedStruct_a_OFFSET)
-printf("PackedStruct_b_OFFSET = %.0f\n", PackedStruct_b_OFFSET)
-printf("PackedStruct_c_OFFSET = %.0f\n", PackedStruct_c_OFFSET)
+printf("\nPackedStruct.size = %.0f\n", PackedStruct.size)
+printf("PackedStruct.a.offset = %.0f\n", PackedStruct.a.offset)
+printf("PackedStruct.b.offset = %.0f\n", PackedStruct.b.offset)
+printf("PackedStruct.c.offset = %.0f\n", PackedStruct.c.offset)
 
-printf("\nAlignedStruct_SIZEOF = %.0f\n", AlignedStruct_SIZEOF)
-printf("AlignedStruct_a_OFFSET = %.0f\n", AlignedStruct_a_OFFSET)
-printf("AlignedStruct_b_OFFSET = %.0f\n", AlignedStruct_b_OFFSET)
-printf("AlignedStruct_c_OFFSET = %.0f\n", AlignedStruct_c_OFFSET)
+printf("\nAlignedStruct.size = %.0f\n", AlignedStruct.size)
+printf("AlignedStruct.a.offset = %.0f\n", AlignedStruct.a.offset)
+printf("AlignedStruct.b.offset = %.0f\n", AlignedStruct.b.offset)
+printf("AlignedStruct.c.offset = %.0f\n", AlignedStruct.c.offset)
 
 // Verify Vec3 layout: 3 x f32 (4 bytes each) = 12 bytes
-Vec3_SIZEOF == 12 {
+Vec3.size == 12 {
     printf("\n✓ Vec3 size correct (12 bytes)\n")
 }
 
 // Verify packed struct has no padding
-PackedStruct_SIZEOF == 10 {
+PackedStruct.size == 10 {
     printf("✓ PackedStruct has no padding (1+8+1 = 10 bytes)\n")
 }
 
 // Verify aligned struct has padding
-AlignedStruct_SIZEOF == 24 {
+AlignedStruct.size == 24 {
     printf("✓ AlignedStruct has padding (aligned to 8 bytes = 24 bytes total)\n")
 }
 

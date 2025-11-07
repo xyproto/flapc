@@ -960,98 +960,24 @@ func (eb *ExecutableBuilder) patchTextInELF() {
 	fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: textOffset=0x%x, textSize=%d\n", textOffset, textSize)
 	fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: about to copy newText to elfBuf[0x%x:0x%x]\n", textOffset, textOffset+textSize)
 
-	// CRITICAL: The dynamic section starts at the next page boundary after text
-	// We must not let the text section overflow into it
-	// Text section must be padded to 8-byte alignment, then to page boundary
+	// CRITICAL: The dynamic section starts 4 pages after text section
+	// Text section is pre-allocated 4 pages (16KB) at offset 0x3000
+	// Dynamic section starts at 0x7000
+	// Check if text exceeds the reserved space
 	textEndAligned := (textOffset + textSize + 7) & ^7
-	nextPageBoundary := (textEndAligned + 0xfff) & ^0xfff
+	textReservedEnd := 0x7000  // End of 16KB text reservation
 
-	// Check if we would overflow past the dynamic section
-	// Dynamic section should start at 0x4000 in the original layout for small text
-	// but will be at 0x5000 if text is large (crosses 0x4000 boundary)
-	originalDynamicOffset := 0x4000
-
-	if textEndAligned > originalDynamicOffset {
-		// Text section has grown too large and would overwrite the dynamic section!
-		// We need to grow the elfBuf and move everything after the text section
-		requiredSize := nextPageBoundary + (len(elfBuf) - originalDynamicOffset)
-		fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: Text section overflow detected!\n")
+	// Check if we would overflow past the reserved text space
+	if textEndAligned > textReservedEnd {
+		// Text section exceeds the reserved 16KB space!
+		fmt.Fprintf(os.Stderr, "ERROR: Text section too large!\n")
+		fmt.Fprintf(os.Stderr, "  Text size: %d bytes (0x%x)\n", textSize, textSize)
 		fmt.Fprintf(os.Stderr, "  Text end (aligned): 0x%x\n", textEndAligned)
-		fmt.Fprintf(os.Stderr, "  Next page boundary: 0x%x\n", nextPageBoundary)
-		fmt.Fprintf(os.Stderr, "  Original dynamic offset: 0x%x\n", originalDynamicOffset)
-		fmt.Fprintf(os.Stderr, "  Current elfBuf size: %d\n", len(elfBuf))
-		fmt.Fprintf(os.Stderr, "  Required size: %d\n", requiredSize)
+		fmt.Fprintf(os.Stderr, "  Reserved space ends at: 0x%x\n", textReservedEnd)
+		fmt.Fprintf(os.Stderr, "  Exceeds by: %d bytes\n", textEndAligned-textReservedEnd)
+		fmt.Fprintf(os.Stderr, "\nPlease increase textReservedSize in elf_complete.go or reduce code size.\n")
+		os.Exit(1)
 
-		// Create new larger buffer
-		newElfBuf := make([]byte, requiredSize)
-
-		// Copy everything before the dynamic section (including new text)
-		copy(newElfBuf[0:originalDynamicOffset], elfBuf[0:originalDynamicOffset])
-
-		// Copy new text at its location
-		copy(newElfBuf[textOffset:textOffset+textSize], newText)
-
-		// Pad from end of text to next page boundary with zeros
-		for i := textOffset + textSize; i < nextPageBoundary; i++ {
-			newElfBuf[i] = 0
-		}
-
-		// Copy everything from the original dynamic section onwards to the new page boundary
-		copy(newElfBuf[nextPageBoundary:], elfBuf[originalDynamicOffset:])
-
-		// Replace the entire elf buffer
-		eb.elf.Reset()
-		eb.elf.Write(newElfBuf)
-
-		fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: Grew elfBuf from %d to %d bytes\n", len(elfBuf), len(newElfBuf))
-		fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: Moved dynamic section from 0x%x to 0x%x\n", originalDynamicOffset, nextPageBoundary)
-
-		// CRITICAL: Update program headers to reflect the new dynamic section location
-		// Program headers start at offset 0x40 (64 bytes)
-		// Each program header is 56 bytes (0x38)
-		// We have 6 headers: PHDR(0), INTERP(1), LOAD(2), LOAD(3), LOAD(4), DYNAMIC(5)
-		// The RW LOAD segment (header 4) and DYNAMIC segment (header 5) need updating
-
-		// Get fresh buffer reference
-		elfBuf = eb.elf.Bytes()
-
-		// Calculate offsets for headers 4 and 5
-		phOffset := 0x40
-		phSize := 56
-		rwLoadHeaderOffset := phOffset + (4 * phSize)  // 5th header (index 4)
-		dynamicHeaderOffset := phOffset + (5 * phSize) // 6th header (index 5)
-
-		// Update RW LOAD segment (offset=0x4000 -> 0x5000)
-		// p_offset at +8, p_vaddr at +16, p_paddr at +24
-		newOffset := uint64(nextPageBoundary)
-		newVaddr := uint64(0x400000 + nextPageBoundary)
-
-		// Write new p_offset (8 bytes at offset +8)
-		for i := 0; i < 8; i++ {
-			elfBuf[rwLoadHeaderOffset+8+i] = byte(newOffset >> (i * 8))
-		}
-		// Write new p_vaddr (8 bytes at offset +16)
-		for i := 0; i < 8; i++ {
-			elfBuf[rwLoadHeaderOffset+16+i] = byte(newVaddr >> (i * 8))
-		}
-		// Write new p_paddr (8 bytes at offset +24)
-		for i := 0; i < 8; i++ {
-			elfBuf[rwLoadHeaderOffset+24+i] = byte(newVaddr >> (i * 8))
-		}
-
-		// Update DYNAMIC segment (offset=0x4000 -> 0x5000)
-		// Same structure: p_offset at +8, p_vaddr at +16, p_paddr at +24
-		for i := 0; i < 8; i++ {
-			elfBuf[dynamicHeaderOffset+8+i] = byte(newOffset >> (i * 8))
-		}
-		for i := 0; i < 8; i++ {
-			elfBuf[dynamicHeaderOffset+16+i] = byte(newVaddr >> (i * 8))
-		}
-		for i := 0; i < 8; i++ {
-			elfBuf[dynamicHeaderOffset+24+i] = byte(newVaddr >> (i * 8))
-		}
-
-		fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: Updated program headers for new segment locations\n")
 	} else {
 		// Text fits in the original space - simple copy
 		copy(elfBuf[textOffset:textOffset+textSize], newText)

@@ -144,7 +144,8 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 
 	// Align to new page for .text to prevent overflow into writable segment
 	// PLT + _start are small (~100 bytes), so they fit on page 0x2000
-	// .text gets its own page (0x3000) to allow up to 4KB of code
+	// .text gets TWO pages (0x3000-0x4FFF = 8KB) to allow code growth
+	// This prevents RIP-relative addressing issues when code size increases
 	currentOffset = (currentOffset + pageSize - 1) & ^uint64(pageSize-1)
 	currentAddr = (currentAddr + pageSize - 1) & ^uint64(pageSize-1)
 
@@ -154,12 +155,14 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 		addr   uint64
 		size   int
 	}{currentOffset, currentAddr, codeSize}
-	currentOffset += uint64((codeSize + 7) & ^7)
-	currentAddr += uint64((codeSize + 7) & ^7)
 
-	// Align to page for writable segment
-	currentOffset = (currentOffset + pageSize - 1) & ^uint64(pageSize-1)
-	currentAddr = (currentAddr + pageSize - 1) & ^uint64(pageSize-1)
+	// Reserve 4 pages (16KB) for text section regardless of current size
+	// This ensures RIP-relative addresses remain valid when code grows
+	textReservedSize := uint64(pageSize * 4) // 16KB reserved
+	currentOffset += textReservedSize
+	currentAddr += textReservedSize
+
+	// writable segment will now start at page 0x7000
 
 	// .dynamic
 	dynamicAddr := currentAddr

@@ -38,7 +38,7 @@ printf("✓ SDL3 ready\n")
 printf("Rendering animated snake for 60 frames...\n")
 
 arena {
-    rect_ptr := alloc(SDL_Rect_SIZEOF)
+    rect_ptr := alloc(SDL_Rect.size)
 
     @ frame in 0..<60 max 80 {
         sdl.SDL_Delay(50)  // 20 FPS
