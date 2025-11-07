@@ -12052,6 +12052,100 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.XorRegWithReg("rax", "rax")
 		fc.out.Cvtsi2sd("xmm0", "rax")
 
+	case "__flap_map_update":
+		// __flap_map_update(list, index, value) - Update a list element (functional update)
+		// List format: [length][element0][element1]...
+		// Returns a new list with one element changed
+		if len(call.Args) != 3 {
+			compilerError("__flap_map_update() requires exactly 3 arguments (list, index, value)")
+		}
+
+		// Save index and value to stack (will need them later)
+		fc.compileExpression(call.Args[1]) // index
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0) // Stack: [index]
+
+		fc.compileExpression(call.Args[2]) // value
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0) // Stack: [index][value]
+
+		// Compile list argument
+		fc.compileExpression(call.Args[0])
+		fc.out.MovqXmmToReg("rbx", "xmm0") // rbx = old list pointer
+
+		// Load length from list
+		fc.out.MovMemToXmm("xmm0", "rbx", 0)
+		fc.out.Cvttsd2si("rax", "xmm0") // rax = length as integer
+
+		// Calculate total size: 8 + length * 8
+		fc.out.MovRegToReg("rdi", "rax")
+		fc.out.ShlRegByImm("rdi", 3) // rdi = length * 8
+		fc.out.AddImmToReg("rdi", 8) // rdi = 8 + length * 8
+
+		// Allocate new list
+		fc.trackFunctionCall("malloc")
+		fc.eb.GenerateCallInstruction("malloc")
+		fc.out.MovRegToReg("r12", "rax") // r12 = new list pointer
+
+		// Copy length to new list
+		fc.out.MovMemToXmm("xmm0", "rbx", 0)
+		fc.out.MovXmmToMem("xmm0", "r12", 0)
+
+		// Load target index and new value from stack
+		fc.out.MovMemToXmm("xmm2", "rsp", 8) // xmm2 = target index
+		fc.out.Cvttsd2si("r8", "xmm2")       // r8 = target index as integer
+		fc.out.MovMemToXmm("xmm3", "rsp", 0) // xmm3 = new value
+
+		// Load length for loop counter
+		fc.out.MovMemToXmm("xmm0", "rbx", 0)
+		fc.out.Cvttsd2si("rcx", "xmm0") // rcx = length
+
+		// Setup loop: rsi = old list + 8, rdi = new list + 8, rdx = current index
+		fc.out.LeaImmToReg("rsi", "rbx", 8) // rsi = old list elements
+		fc.out.LeaImmToReg("rdi", "r12", 8) // rdi = new list elements
+		fc.out.XorRegWithReg("rdx", "rdx")  // rdx = 0 (current index)
+
+		// Copy loop
+		copyLoopStart := fc.eb.text.Len()
+		fc.out.CmpRegToReg("rdx", "rcx")
+		copyLoopEnd := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpGreaterOrEqual, 0)
+		copyLoopEndJump := fc.eb.text.Len()
+
+		// Check if current index == target index
+		fc.out.CmpRegToReg("rdx", "r8")
+		notTargetJump := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpNotEqual, 0)
+		notTargetJumpEnd := fc.eb.text.Len()
+
+		// Target index: store new value
+		fc.out.MovXmmToMem("xmm3", "rdi", 0)
+		skipCopyJump := fc.eb.text.Len()
+		fc.out.JumpUnconditional(0)
+		skipCopyJumpEnd := fc.eb.text.Len()
+
+		// Not target index: copy old value
+		notTargetPos := fc.eb.text.Len()
+		fc.patchJumpImmediate(notTargetJump+2, int32(notTargetPos-notTargetJumpEnd))
+		fc.out.MovMemToXmm("xmm4", "rsi", 0)
+		fc.out.MovXmmToMem("xmm4", "rdi", 0)
+
+		// Continue: advance pointers and index
+		skipCopyPos := fc.eb.text.Len()
+		fc.patchJumpImmediate(skipCopyJump+1, int32(skipCopyPos-skipCopyJumpEnd))
+		fc.out.AddImmToReg("rsi", 8)
+		fc.out.AddImmToReg("rdi", 8)
+		fc.out.AddImmToReg("rdx", 1)
+		fc.out.JumpUnconditional(int32(copyLoopStart - (fc.eb.text.Len() + 5)))
+
+		// Loop end
+		copyLoopEndPos := fc.eb.text.Len()
+		fc.patchJumpImmediate(copyLoopEnd+2, int32(copyLoopEndPos-copyLoopEndJump))
+
+		// Clean up stack and return new list pointer
+		fc.out.AddImmToReg("rsp", 16)
+		fc.out.MovqRegToXmm("xmm0", "r12")
+
 	default:
 		// Unknown function - track it for dependency resolution
 		fc.unknownFunctions[call.Function] = true

@@ -84,6 +84,26 @@ Everything in Flap is internally `map[uint64]float64`:
 {x: 10, y: 20}  // {x: 10.0, y: 20.0}
 ```
 
+### Internal Memory Layout
+
+While conceptually everything is `map[uint64]float64`, the compiler uses two distinct memory layouts for efficiency:
+
+**Lists (Position-Indexed)**
+- Syntax: `[1.0, 2.0, 3.0]`
+- Memory: `[length: float64][element0: float64][element1: float64]...`
+- Size: `8 + (length × 8)` bytes
+- Indexing: Position-based offset calculation
+- Access: `arr[1]` loads from `base_ptr + 8 + (1 × 8)`
+
+**Maps (Key-Indexed)**
+- Syntax: `{0: 10.0, 5: 20.0}` (explicit keys)
+- Memory: `[count: float64][key0: float64][val0: float64][key1: float64][val1: float64]...`
+- Size: `8 + (count × 16)` bytes
+- Indexing: Linear search comparing keys
+- Access: `map[5]` scans pairs until key matches
+
+Lists use contiguous position-based storage, while maps use sparse key-value pairs. The distinction allows dense arrays to avoid storing redundant position keys, while true maps can have arbitrary sparse keys like `{100: 1.0, 500: 2.0}`.
+
 ### Type Casting
 
 For C FFI, explicit type casts are supported:

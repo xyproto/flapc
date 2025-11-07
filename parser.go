@@ -1356,58 +1356,81 @@ func (p *Parser) parseIndexedAssignment() Statement {
 	}
 	p.nextToken() // skip '<-'
 
-	// Parse the value expression (should end with 'as TYPE')
+	// Parse the value expression
 	valueExpr := p.parseExpression()
 
 	// Move to the last token of the expression
 	p.nextToken()
 
-	// Extract type from CastExpr
-	castExpr, ok := valueExpr.(*CastExpr)
-	if !ok {
-		p.error("indexed assignment requires type cast: ptr[offset] <- value as TYPE")
+	// Check if this is an unsafe memory write (with cast) or array update (without cast)
+	castExpr, hasCast := valueExpr.(*CastExpr)
+
+	if hasCast {
+		// UNSAFE MEMORY WRITE: ptr[offset] <- value as TYPE
+		// Transform into: write_TYPE(ptr, offset as int32, value)
+
+		// Map cast type to write function name
+		typeMap := map[string]string{
+			"int8":    "i8",
+			"int16":   "i16",
+			"int32":   "i32",
+			"int64":   "i64",
+			"uint8":   "u8",
+			"uint16":  "u16",
+			"uint32":  "u32",
+			"uint64":  "u64",
+			"float32": "f32",
+			"float64": "f64",
+		}
+
+		shortType, ok := typeMap[castExpr.Type]
+		if !ok {
+			p.error(fmt.Sprintf("unsupported type for indexed write: %s", castExpr.Type))
+		}
+
+		// Create a CallExpr to write_TYPE(ptr, offset as int32, value)
+		funcName := "write_" + shortType
+
+		// Cast offset to int32 for write functions
+		offsetCast := &CastExpr{
+			Expr: indexExpr,
+			Type: "int32",
+		}
+
+		args := []Expression{
+			&IdentExpr{Name: ptrName},
+			offsetCast,
+			castExpr.Expr,
+		}
+
+		writeCall := &CallExpr{
+			Function: funcName,
+			Args:     args,
+		}
+
+		return &ExpressionStmt{Expr: writeCall}
+	} else {
+		// ARRAY UPDATE: arr[idx] <- value
+		// Transform into: arr <- __flap_map_update(arr, idx, value)
+
+		args := []Expression{
+			&IdentExpr{Name: ptrName},
+			indexExpr,
+			valueExpr,
+		}
+
+		updateCall := &CallExpr{
+			Function: "__flap_map_update",
+			Args:     args,
+		}
+
+		return &AssignStmt{
+			Name:     ptrName,
+			Value:    updateCall,
+			Mutable:  true,
+			IsUpdate: true,
+		}
 	}
-
-	// Map cast type to write function name
-	typeMap := map[string]string{
-		"int8":    "i8",
-		"int16":   "i16",
-		"int32":   "i32",
-		"int64":   "i64",
-		"uint8":   "u8",
-		"uint16":  "u16",
-		"uint32":  "u32",
-		"uint64":  "u64",
-		"float32": "f32",
-		"float64": "f64",
-	}
-
-	shortType, ok := typeMap[castExpr.Type]
-	if !ok {
-		p.error(fmt.Sprintf("unsupported type for indexed write: %s", castExpr.Type))
-	}
-
-	// Create a CallExpr to write_TYPE(ptr, offset as int32, value)
-	funcName := "write_" + shortType
-
-	// Cast offset to int32 for write functions
-	offsetCast := &CastExpr{
-		Expr: indexExpr,
-		Type: "int32",
-	}
-
-	args := []Expression{
-		&IdentExpr{Name: ptrName},
-		offsetCast,
-		castExpr.Expr,
-	}
-
-	writeCall := &CallExpr{
-		Function: funcName,
-		Args:     args,
-	}
-
-	return &ExpressionStmt{Expr: writeCall}
 }
 
 func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
