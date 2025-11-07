@@ -80,8 +80,8 @@ func EmitFloatToStringRuntime(eb *ExecutableBuilder, out *Out) error {
 
 	// Simple integer to string conversion
 	// Store starting position
-	out.MovRegToReg("rbx", "rdi")  // rbx = buffer start
-	out.MovRegToReg("rsi", "rdi")  // rsi = write position
+	out.MovRegToReg("rbx", "rdi") // rbx = buffer start
+	out.MovRegToReg("rsi", "rdi") // rsi = write position
 
 	// Handle zero specially
 	out.CmpRegToImm("rax", 0)
@@ -109,19 +109,19 @@ func EmitFloatToStringRuntime(eb *ExecutableBuilder, out *Out) error {
 	p.PatchJump(negJumpPos, negSkipPos, 2)
 
 	// Convert digits to temp buffer (reverse order)
-	out.LeaMemToReg("rdi", "rsi", 20)  // temp storage
+	out.LeaMemToReg("rdi", "rsi", 20) // temp storage
 	out.MovImmToReg("rcx", "10")
 
 	digitLoopStart := p.GetTextPos()
 	out.XorRegWithReg("rdx", "rdx")
-	out.DivRegByReg("rax", "rcx")  // rax = quotient, rdx = remainder
-	out.AddImmToReg("rdx", 48)  // to ASCII
+	out.DivRegByReg("rax", "rcx") // rax = quotient, rdx = remainder
+	out.AddImmToReg("rdx", 48)    // to ASCII
 	out.MovByteRegToMem("rdx", "rdi", 0)
 	out.AddImmToReg("rdi", 1)
 	out.CmpRegToImm("rax", 0)
 	digitLoopJumpPos := p.GetTextPos()
-	out.Write(0x7F) // JG
-	out.Write(byte((digitLoopStart - (digitLoopJumpPos + 2)) & 0xFF))  // short backwards jump
+	out.Write(0x7F)                                                   // JG
+	out.Write(byte((digitLoopStart - (digitLoopJumpPos + 2)) & 0xFF)) // short backwards jump
 
 	// Copy digits back in reverse
 	out.SubImmFromReg("rdi", 1)
@@ -160,7 +160,7 @@ func EmitFloatToStringRuntime(eb *ExecutableBuilder, out *Out) error {
 	// rdx = length
 	out.MovRegToReg("rdx", "rsi")
 	out.SubRegFromReg("rdx", "rbx")
-	out.MovRegToReg("rsi", "rbx")  // return start pointer
+	out.MovRegToReg("rsi", "rbx") // return start pointer
 
 	// Epilogue
 	out.PopReg("rbx")

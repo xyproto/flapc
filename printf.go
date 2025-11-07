@@ -98,8 +98,8 @@ func EmitPrintfRuntimeX86_64(eb *ExecutableBuilder, out *Out) error {
 	out.MovRegToReg("r12", "rdi") // r12 = format string map
 
 	// Get string length from map
-	out.MovMemToXmm("xmm0", "r12", 0)  // Load count
-	out.Cvttsd2si("r13", "xmm0")       // r13 = string length
+	out.MovMemToXmm("xmm0", "r12", 0) // Load count
+	out.Cvttsd2si("r13", "xmm0")      // r13 = string length
 
 	// r14 = current argument index (0-7)
 	out.XorRegWithReg("r14", "r14")
@@ -132,8 +132,8 @@ func EmitPrintfRuntimeX86_64(eb *ExecutableBuilder, out *Out) error {
 	// Load current character from format string
 	// Character is at: map_base + 8 + (index * 16) + 8 (value offset)
 	out.MovRegToReg("rax", "rbx")
-	out.ShlImmReg("rax", 4)      // rax = index * 16
-	out.AddImmToReg("rax", 16)   // Skip count + key
+	out.ShlImmReg("rax", 4)       // rax = index * 16
+	out.AddImmToReg("rax", 16)    // Skip count + key
 	out.AddRegToReg("rax", "r12") // Add base
 	out.MovMemToXmm("xmm0", "rax", 0)
 	out.Cvttsd2si("rcx", "xmm0") // rcx = character code
@@ -206,8 +206,8 @@ func EmitPrintfRuntimeX86_64(eb *ExecutableBuilder, out *Out) error {
 	out.SubRegFromReg("rdx", "rax")
 
 	// Write output using syscall write(1, buf, len)
-	out.MovImmToReg("rax", "1")  // sys_write
-	out.MovImmToReg("rdi", "1")  // fd = stdout
+	out.MovImmToReg("rax", "1")       // sys_write
+	out.MovImmToReg("rdi", "1")       // fd = stdout
 	out.LeaMemToReg("rsi", "rsp", 64) // buf
 	// rdx already has length
 	out.Syscall()

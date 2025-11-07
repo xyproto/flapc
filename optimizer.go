@@ -274,22 +274,22 @@ func strengthReduceExpr(expr Expression) Expression {
 			// Applying this to floating-point operations breaks codegen because << is an integer operation.
 			// TODO: Re-enable this optimization only in integer contexts (unsafe blocks, explicit int types).
 			/*
-			if rightIsNum && rightNum.Value > 0 && isPowerOfTwo(rightNum.Value) {
-				shift := math.Log2(rightNum.Value)
-				return &BinaryExpr{
-					Left:     e.Left,
-					Operator: "<<",
-					Right:    &NumberExpr{Value: shift},
+				if rightIsNum && rightNum.Value > 0 && isPowerOfTwo(rightNum.Value) {
+					shift := math.Log2(rightNum.Value)
+					return &BinaryExpr{
+						Left:     e.Left,
+						Operator: "<<",
+						Right:    &NumberExpr{Value: shift},
+					}
 				}
-			}
-			if leftIsNum && leftNum.Value > 0 && isPowerOfTwo(leftNum.Value) {
-				shift := math.Log2(leftNum.Value)
-				return &BinaryExpr{
-					Left:     e.Right,
-					Operator: "<<",
-					Right:    &NumberExpr{Value: shift},
+				if leftIsNum && leftNum.Value > 0 && isPowerOfTwo(leftNum.Value) {
+					shift := math.Log2(leftNum.Value)
+					return &BinaryExpr{
+						Left:     e.Right,
+						Operator: "<<",
+						Right:    &NumberExpr{Value: shift},
+					}
 				}
-			}
 			*/
 
 		case "/":
@@ -308,14 +308,14 @@ func strengthReduceExpr(expr Expression) Expression {
 			// Applying this to floating-point operations breaks codegen because >> is an integer operation.
 			// TODO: Re-enable this optimization only in integer contexts (unsafe blocks, explicit int types).
 			/*
-			if rightIsNum && rightNum.Value > 0 && isPowerOfTwo(rightNum.Value) {
-				shift := math.Log2(rightNum.Value)
-				return &BinaryExpr{
-					Left:     e.Left,
-					Operator: ">>",
-					Right:    &NumberExpr{Value: shift},
+				if rightIsNum && rightNum.Value > 0 && isPowerOfTwo(rightNum.Value) {
+					shift := math.Log2(rightNum.Value)
+					return &BinaryExpr{
+						Left:     e.Left,
+						Operator: ">>",
+						Right:    &NumberExpr{Value: shift},
+					}
 				}
-			}
 			*/
 
 		case "+":
@@ -389,14 +389,14 @@ func strengthReduceExpr(expr Expression) Expression {
 			// Applying this to floating-point operations breaks codegen because & is an integer operation.
 			// TODO: Re-enable this optimization only in integer contexts (unsafe blocks, explicit int types).
 			/*
-			if rightIsNum && rightNum.Value > 0 && isPowerOfTwo(rightNum.Value) {
-				mask := rightNum.Value - 1
-				return &BinaryExpr{
-					Left:     e.Left,
-					Operator: "&",
-					Right:    &NumberExpr{Value: mask},
+				if rightIsNum && rightNum.Value > 0 && isPowerOfTwo(rightNum.Value) {
+					mask := rightNum.Value - 1
+					return &BinaryExpr{
+						Left:     e.Left,
+						Operator: "&",
+						Right:    &NumberExpr{Value: mask},
+					}
 				}
-			}
 			*/
 		}
 

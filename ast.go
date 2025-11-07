@@ -474,7 +474,7 @@ type CallExpr struct {
 	Args                []Expression
 	MaxRecursionDepth   int64 // Maximum recursion depth (math.MaxInt64 for infinite)
 	NeedsRecursionCheck bool  // Whether to emit runtime recursion depth checking
-	IsCFFI              bool   // Whether this is a C FFI call (c.malloc, c.free, etc.)
+	IsCFFI              bool  // Whether this is a C FFI call (c.malloc, c.free, etc.)
 }
 
 func (c *CallExpr) String() string {

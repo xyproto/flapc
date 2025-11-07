@@ -771,8 +771,8 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	fc.callOrder = []string{}              // Clear call order for recompilation
 	fc.stringCounter = 0                   // Reset string counter for recompilation
 	fmt.Fprintf(os.Stderr, "DEBUG: After reset, callPatches = %d\n", len(fc.eb.callPatches))
-	fc.labelCounter = 0                    // Reset label counter for recompilation
-	fc.lambdaCounter = 0                   // Reset lambda counter for recompilation
+	fc.labelCounter = 0  // Reset label counter for recompilation
+	fc.lambdaCounter = 0 // Reset lambda counter for recompilation
 	// DON'T clear lambdaFuncs - we need them for second pass lambda generation
 	fc.lambdaOffsets = make(map[string]int) // Reset lambda offsets
 	fc.variables = make(map[string]int)     // Reset variables map
@@ -5489,7 +5489,7 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 		// We need to pop rbx first (which is at rbp-8), then pop rbp
 		// But since rsp = rbp now, we need to step back to rbx first
 		fc.out.SubImmFromReg("rsp", 8) // Point to saved rbx
-		fc.out.PopReg("rbx")            // Restore rbx, rsp now points to saved rbp
+		fc.out.PopReg("rbx")           // Restore rbx, rsp now points to saved rbp
 
 		fc.out.PopReg("rbp") // Restore rbp, rsp now points to return address
 		fc.out.Ret()
@@ -8071,10 +8071,9 @@ func (fc *FlapCompiler) compilePrintMapAsString(mapPtr, bufPtr string) {
 // Input: xmmReg = XMM register with float64, bufPtr = buffer pointer (register)
 // Output: rsi = string start, rdx = length (including newline)
 func (fc *FlapCompiler) compileFloatToString(xmmReg, bufPtr string) {
-	// Allocate stack space: 16 bytes for float + 32 bytes for output buffer
-	fc.out.SubImmFromReg("rsp", 32)
-	// Save the float value at rsp+16 (above the output buffer)
-	fc.out.MovXmmToMem(xmmReg, "rsp", 16)
+	// Caller has already allocated buffer at bufPtr
+	// Save the float value in a temporary location (we'll use the end of the buffer)
+	fc.out.MovXmmToMem(xmmReg, bufPtr, 24)
 
 	// Check if negative by testing sign bit
 	// We'll load 0.0 by converting integer 0
@@ -8098,10 +8097,10 @@ func (fc *FlapCompiler) compileFloatToString(xmmReg, bufPtr string) {
 	fc.out.LeaMemToReg("rsi", bufPtr, 1)
 
 	// Negate the float: multiply by -1
-	fc.out.MovMemToXmm("xmm0", "rsp", 16)
+	fc.out.MovMemToXmm("xmm0", bufPtr, 24)
 	fc.loadFloatConstant("xmm3", -1.0)
 	fc.out.MulsdXmm("xmm0", "xmm3")
-	fc.out.MovXmmToMem("xmm0", "rsp", 16)
+	fc.out.MovXmmToMem("xmm0", bufPtr, 24)
 
 	negativeSkipJump := fc.eb.text.Len()
 	fc.out.JumpUnconditional(0)
@@ -8117,7 +8116,7 @@ func (fc *FlapCompiler) compileFloatToString(xmmReg, bufPtr string) {
 	fc.patchJumpImmediate(negativeSkipJump+1, int32(negativeSkip-negativeSkipEnd))
 
 	// Now rsi points to where we write, load the (now positive) float
-	fc.out.MovMemToXmm("xmm0", "rsp", 16)
+	fc.out.MovMemToXmm("xmm0", bufPtr, 24)
 
 	// Check if it's a whole number
 	fc.out.Cvttsd2si("rax", "xmm0")
@@ -8154,7 +8153,7 @@ func (fc *FlapCompiler) compileFloatToString(xmmReg, bufPtr string) {
 	noMinusPos := fc.eb.text.Len()
 	fc.patchJumpImmediate(noMinusJump+2, int32(noMinusPos-noMinusEnd))
 
-	fc.out.AddImmToReg("rsp", 32) // cleanup
+	// No cleanup needed - caller manages the buffer
 
 	wholeEndJump := fc.eb.text.Len()
 	fc.out.JumpUnconditional(0)
@@ -8180,7 +8179,7 @@ func (fc *FlapCompiler) compileFloatToString(xmmReg, bufPtr string) {
 	fc.out.AddImmToReg("rsi", 1)
 
 	// Get fractional part: frac = num - int_part
-	fc.out.MovMemToXmm("xmm0", "rsp", 16)
+	fc.out.MovMemToXmm("xmm0", bufPtr, 24)
 	// xmm1 already has int part as float from above
 	fc.out.SubsdXmm("xmm0", "xmm1") // xmm0 = fractional part
 
@@ -8262,7 +8261,7 @@ func (fc *FlapCompiler) compileFloatToString(xmmReg, bufPtr string) {
 	fc.out.SubRegFromReg("rdx", bufPtr)
 	fc.out.MovRegToReg("rsi", bufPtr)
 
-	fc.out.AddImmToReg("rsp", 32) // cleanup
+	// No cleanup needed - caller manages the buffer
 
 	// End
 	wholeEnd := fc.eb.text.Len()
@@ -10109,7 +10108,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Now check if positive: compare with 0
 		fc.out.MovRegToReg("xmm0", "xmm1") // restore original
-		fc.out.XorpdXmm("xmm3", "xmm3")     // 0.0
+		fc.out.XorpdXmm("xmm3", "xmm3")    // 0.0
 		fc.out.Ucomisd("xmm0", "xmm3")
 		// SETA al - set if above (x > 0, CF=0 and ZF=0)
 		fc.out.Write(0x0F)
@@ -10187,7 +10186,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Now check if negative: compare with 0
 		fc.out.MovRegToReg("xmm0", "xmm1") // restore original
-		fc.out.XorpdXmm("xmm3", "xmm3")     // 0.0
+		fc.out.XorpdXmm("xmm3", "xmm3")    // 0.0
 		fc.out.Ucomisd("xmm0", "xmm3")
 		// SETB al - set if below (x < 0, CF=1)
 		fc.out.Write(0x0F)
@@ -10269,17 +10268,17 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.MovXmmToMem("xmm0", "rsp", 0) // save b
 
 		// Check if b == 0.0
-		fc.out.XorpdXmm("xmm1", "xmm1") // xmm1 = 0.0
+		fc.out.XorpdXmm("xmm1", "xmm1")                   // xmm1 = 0.0
 		fc.out.Emit([]byte{0x66, 0x0F, 0x2E, 0x04, 0x24}) // ucomisd xmm0, [rsp]
 
 		divByZeroJump := fc.eb.text.Len()
 		fc.out.JumpConditional(JumpEqual, 0) // je div_by_zero
 
 		// b != 0, proceed with division
-		fc.compileExpression(call.Args[0]) // a in xmm0
-		fc.out.MovMemToXmm("xmm1", "rsp", 0) // b in xmm1
+		fc.compileExpression(call.Args[0])       // a in xmm0
+		fc.out.MovMemToXmm("xmm1", "rsp", 0)     // b in xmm1
 		fc.out.AddImmToReg("rsp", StackSlotSize) // clean stack
-		fc.out.DivsdXmm("xmm0", "xmm1") // xmm0 = a/b
+		fc.out.DivsdXmm("xmm0", "xmm1")          // xmm0 = a/b
 
 		// Allocate 8 bytes in arena for result
 		offset := (fc.currentArena - 1) * 8
@@ -10371,7 +10370,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Evaluate x and compute sqrt
 		fc.compileExpression(call.Args[0]) // x in xmm0
-		fc.out.Sqrtsd("xmm0", "xmm0")       // sqrt(x) - NaN if x < 0
+		fc.out.Sqrtsd("xmm0", "xmm0")      // sqrt(x) - NaN if x < 0
 
 		// Save result
 		fc.out.SubImmFromReg("rsp", StackSlotSize)

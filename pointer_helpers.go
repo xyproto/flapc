@@ -16,7 +16,8 @@ package main
 //   - srcGpr: Source general-purpose register containing the pointer (e.g., "rax", "rbx")
 //
 // Example:
-//   EmitPointerToFloat64(fc.out, "xmm0", "rax")  // Converts pointer in rax to float64 in xmm0
+//
+//	EmitPointerToFloat64(fc.out, "xmm0", "rax")  // Converts pointer in rax to float64 in xmm0
 //
 // Implementation: Uses MOVQ instruction to move 64 bits without conversion
 func EmitPointerToFloat64(out *Out, destXmm string, srcGpr string) {
@@ -32,7 +33,8 @@ func EmitPointerToFloat64(out *Out, destXmm string, srcGpr string) {
 //   - srcXmm: Source XMM register containing the pointer bits as float64 (e.g., "xmm0")
 //
 // Example:
-//   EmitFloat64ToPointer(fc.out, "rbx", "xmm1")  // Extracts pointer bits from xmm1 to rbx
+//
+//	EmitFloat64ToPointer(fc.out, "rbx", "xmm1")  // Extracts pointer bits from xmm1 to rbx
 //
 // Implementation: Uses MOVQ instruction to move 64 bits without conversion
 func EmitFloat64ToPointer(out *Out, destGpr string, srcXmm string) {
@@ -49,7 +51,8 @@ func EmitFloat64ToPointer(out *Out, destGpr string, srcXmm string) {
 //   - offset: Offset from base register (in bytes)
 //
 // Example:
-//   EmitLoadPointerFromStack(fc.out, "rbx", "rbp", -16)  // Load pointer from [rbp-16]
+//
+//	EmitLoadPointerFromStack(fc.out, "rbx", "rbp", -16)  // Load pointer from [rbp-16]
 //
 // Implementation: Load to XMM first, then convert to GPR
 func EmitLoadPointerFromStack(out *Out, destGpr string, baseReg string, offset int) {
@@ -68,7 +71,8 @@ func EmitLoadPointerFromStack(out *Out, destGpr string, baseReg string, offset i
 //   - offset: Offset from base register (in bytes)
 //
 // Example:
-//   EmitStorePointerToStack(fc.out, "rax", "rbp", -16)  // Store pointer to [rbp-16]
+//
+//	EmitStorePointerToStack(fc.out, "rax", "rbp", -16)  // Store pointer to [rbp-16]
 //
 // Implementation: Convert to XMM first, then store
 func EmitStorePointerToStack(out *Out, srcGpr string, baseReg string, offset int) {

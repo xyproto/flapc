@@ -710,7 +710,7 @@ func (eb *ExecutableBuilder) patchX86PLTCalls(textBytes []byte, ds *DynamicSecti
 		// Verify we're at a CALL instruction with placeholder
 		if true {
 			placeholder := []byte{0x78, 0x56, 0x34, 0x12}
-			actualPlaceholder := textBytes[placeholderPos:placeholderPos+4]
+			actualPlaceholder := textBytes[placeholderPos : placeholderPos+4]
 			fmt.Fprintf(os.Stderr, "DEBUG: At pos %d, found 0xE8, checking placeholder: expected %x, got %x\n", callPos, placeholder, actualPlaceholder)
 			if bytes.Equal(textBytes[placeholderPos:placeholderPos+4], placeholder) {
 				pltOffset := ds.GetPLTOffset(funcName)

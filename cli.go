@@ -20,14 +20,14 @@ import (
 
 // CommandContext holds the execution context for a CLI command
 type CommandContext struct {
-	Args        []string
-	Platform    Platform
-	Verbose     bool
-	Quiet       bool
-	OptTimeout  float64
-	UpdateDeps  bool
-	SingleFile  bool
-	OutputPath  string
+	Args       []string
+	Platform   Platform
+	Verbose    bool
+	Quiet      bool
+	OptTimeout float64
+	UpdateDeps bool
+	SingleFile bool
+	OutputPath string
 }
 
 // RunCLI is the main entry point for the user-friendly CLI
