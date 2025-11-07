@@ -1132,16 +1132,17 @@ particles = c.malloc(particle_count * sizeof(Particle))
 
 **Status:** Design proposal - Not yet implemented
 
-This section describes a potential Ruby-inspired object system that fits Flap's design philosophy while maintaining compatibility with the existing unified type system.
+This section describes a potential object system that fits Flap's design philosophy while maintaining compatibility with the existing unified type system.
 
 ### Design Philosophy
 
 The class system builds on Flap's existing features:
 - **Maps as objects**: Objects are just `map[uint64]float64` with convention
 - **Closures as methods**: Methods are lambdas that close over instance data
-- **No inheritance**: Composition over inheritance (Ruby modules > classes)
-- **Explicit state**: Instance variables use `@` prefix (Ruby-inspired)
+- **Composition over inheritance**: Use `<>` to extend behavior maps
+- **Dot notation for instance fields**: `.field` inside methods, `instance.field` outside
 - **No `new` keyword**: Classes are just constructor functions
+- **Minimal syntax**: Only one new keyword (`class`)
 
 ### Class Declaration
 
@@ -1149,37 +1150,33 @@ Classes are syntactic sugar over maps and closures:
 
 ```flap
 class Point {
-    // Constructor parameters (implicit)
-    init := (x, y) => {
-        @x = x  // Instance variable (stored in map)
-        @y = y
+    init := (x, y) ==> {
+        .x = x  // Dot prefix = instance field
+        .y = y
     }
 
-    // Instance method (closure over @x, @y)
     distance := other => {
-        dx := other.x - @x
-        dy := other.y - @y
+        dx := other.x - .x
+        dy := other.y - .y
         sqrt(dx * dx + dy * dy)
     }
 
-    // Method with update
-    move := (dx, dy) => {
-        @x <- @x + dx  // Update instance variable
-        @y <- @y + dy
+    move := (dx, dy) ==> {
+        .x <- .x + dx
+        .y <- .y + dy
     }
 
-    // Getter (just a lambda)
-    magnitude := () => {
-        sqrt(@x * @x + @y * @y)
+    magnitude := ==> {
+        sqrt(.x * .x + .y * .y)
     }
 }
 
 // Usage
-p1 := Point(10, 20)           // Call constructor
-p2 := Point(30, 40)           // Create another instance
-dist := p1.distance(p2)       // Call method
-p1.move(5, 5)                 // Update state
-mag := p1.magnitude()         // Call getter
+p1 := Point(10, 20)
+p2 := Point(30, 40)
+dist := p1.distance(p2)
+p1.move(5, 5)
+mag := p1.magnitude()
 ```
 
 ### Desugaring
@@ -1189,14 +1186,10 @@ The `class` keyword desugars to regular Flap code:
 ```flap
 // Class declaration desugars to:
 Point := (x, y) => {
-    // Create instance map
     instance := {}
-
-    // Store instance variables
     instance["x"] = x
     instance["y"] = y
 
-    // Attach methods (closures over instance)
     instance["distance"] = other => {
         dx := other["x"] - instance["x"]
         dy := other["y"] - instance["y"]
@@ -1218,25 +1211,25 @@ Point := (x, y) => {
 
 ### Instance Variables
 
-Instance variables use `@` prefix (Ruby-inspired):
+Instance variables use dot prefix inside class methods:
 
 ```flap
 class Counter {
-    init := start => {
-        @count = start      // Instance variable
-        @history = []       // Can be any type
+    init := start ==> {
+        .count = start
+        .history = []
     }
 
-    increment := () => {
-        @count <- @count + 1
-        @history <- @history :: @count  // Cons to history
+    increment := ==> {
+        .count <- .count + 1
+        .history <- .history :: .count
     }
 
-    get := () => @count     // Read instance variable
+    get := ==> .count
 
-    reset := () => {
-        @count <- 0
-        @history <- []
+    reset := ==> {
+        .count <- 0
+        .history <- []
     }
 }
 
@@ -1246,43 +1239,40 @@ c.increment()
 println(c.get())  // 2
 ```
 
-### Class Variables and Methods
+### Class Variables
 
-Class-level state uses `@@` prefix (Ruby convention):
+Class-level state accessed via class name:
 
 ```flap
 class Entity {
-    // Class variable (shared across all instances)
-    @@count = 0
-    @@all = []
+    Entity.count = 0
+    Entity.all = []
 
-    init := name => {
-        @name = name
-        @id = @@count
-        @@count <- @@count + 1
-        @@all <- @@all :: this
+    init := name ==> {
+        .name = name
+        .id = Entity.count
+        Entity.count <- Entity.count + 1
+        Entity.all <- Entity.all :: this
     }
-
-    // Class method (no instance access)
-    all := () => @@all
-    count := () => @@count
 }
 
 e1 := Entity("Alice")
 e2 := Entity("Bob")
-println(Entity.count())  // 2
+println(Entity.count)  // 2
+println(Entity.all)    // [e1, e2]
 ```
 
-### Mixins (Ruby Modules)
+### Composition with `<>`
 
-Mixins provide composition without inheritance:
+Extend classes with behavior maps using `<>`:
 
 ```flap
-mixin Printable {
-    to_s := () => {
+// Reusable behaviors as plain maps
+Printable := {
+    to_s: ==> {
         fields := []
-        @ key in keys(this) {
-            key != "to_s" {  // Skip methods
+        keys(this) | @ key in _ {
+            key[0] != '_' {  // Skip private fields
                 fields <- fields :: f"{key}={this[key]}"
             }
         }
@@ -1290,81 +1280,61 @@ mixin Printable {
     }
 }
 
-class Person {
-    include Printable  // Mix in module
+Comparable := {
+    eq: other => .x == other.x and .y == other.y,
+    lt: other => .x < other.x or (.x == other.x and .y < other.y)
+}
 
-    init := (name, age) => {
-        @name = name
-        @age = age
+class Point {
+    <> Printable
+    <> Comparable
+
+    init := (x, y) ==> {
+        .x = x
+        .y = y
+    }
+
+    move := (dx, dy) ==> {
+        .x <- .x + dx
+        .y <- .y + dy
     }
 }
 
-p := Person("Alice", 30)
-println(p.to_s())  // "name=Alice, age=30"
+p := Point(10, 20)
+println(p.to_s())  // "x=10, y=20"
+println(p.eq(Point(10, 20)))  // true
 ```
 
 ### Method Visibility
 
-Use naming conventions (Ruby-style):
+Use naming conventions (underscore for private):
 
 ```flap
 class BankAccount {
-    init := balance => {
-        @balance = balance
+    init := balance ==> {
+        .balance = balance
     }
 
-    // Public method (normal name)
     deposit := amount => {
         amount > 0 {
-            @balance <- @balance + amount
+            .balance <- .balance + amount
         }
     }
 
-    // Private method (underscore prefix)
     _validate := amount => {
-        amount > 0 and amount <= @balance
+        amount > 0 and amount <= .balance
     }
 
-    // Public method using private method
     withdraw := amount => {
         _validate(amount) {
-            @balance <- @balance - amount
+            .balance <- .balance - amount
             ret amount
         }
         ret 0
     }
 
-    balance := () => @balance
+    balance := ==> .balance
 }
-```
-
-### Operator Overloading
-
-Define special methods (Ruby convention):
-
-```flap
-class Vector {
-    init := (x, y) => {
-        @x = x
-        @y = y
-    }
-
-    // Operator methods
-    add := other => Vector(@x + other.x, @y + other.y)
-    sub := other => Vector(@x - other.x, @y - other.y)
-    mul := scalar => Vector(@x * scalar, @y * scalar)
-
-    // Comparison
-    eq := other => @x == other.x and @y == other.y
-
-    // String representation
-    to_s := () => f"Vector({@x}, {@y})"
-}
-
-v1 := Vector(1, 2)
-v2 := Vector(3, 4)
-v3 := v1.add(v2)      // Or could be: v1 + v2 (syntax sugar)
-println(v3.to_s())    // "Vector(4, 6)"
 ```
 
 ### Integration with CStruct
@@ -1380,133 +1350,190 @@ cstruct ParticleData {
 }
 
 class Particle {
-    init := (x, y) => {
-        // Allocate native memory
-        @data = call("malloc", ParticleData.size as uint64)
+    init := (x, y) ==> {
+        .data = call("malloc", ParticleData.size as uint64)
 
-        // Initialize using unsafe block
         unsafe pointer {
-            rax <- @data as pointer
+            rax <- .data as pointer
             rbx <- x
             [rax + ParticleData.x.offset] <- rbx
             rbx <- y
             [rax + ParticleData.y.offset] <- rbx
         } {
-            x0 <- @data as pointer
+            x0 <- .data as pointer
             x1 <- x
             [x0 + ParticleData.x.offset] <- x1
             x1 <- y
             [x0 + ParticleData.y.offset] <- x1
         } {
-            a0 <- @data as pointer
+            a0 <- .data as pointer
             a1 <- x
             [a0 + ParticleData.x.offset] <- a1
             a1 <- y
             [a0 + ParticleData.y.offset] <- a1
         }
 
-        @vx = 0.0
-        @vy = 0.0
+        .vx = 0.0
+        .vy = 0.0
     }
 
     update := dt => {
-        // Read from native memory, update, write back
         unsafe float64 {
-            rax <- @data as pointer
+            rax <- .data as pointer
             rax <- [rax + ParticleData.x.offset]
         } {
-            x0 <- @data as pointer
+            x0 <- .data as pointer
             x0 <- [x0 + ParticleData.x.offset]
         } {
-            a0 <- @data as pointer
+            a0 <- .data as pointer
             a0 <- [a0 + ParticleData.x.offset]
-        } |> x => {
-            @vx <- @vx + 0.01 * dt  // Gravity
-            new_x := x + @vx * dt
+        } | x => {
+            .vx <- .vx + 0.01 * dt
+            new_x := x + .vx * dt
 
             unsafe pointer {
-                rax <- @data as pointer
+                rax <- .data as pointer
                 rbx <- new_x
                 [rax + ParticleData.x.offset] <- rbx
             } {
-                x0 <- @data as pointer
+                x0 <- .data as pointer
                 x1 <- new_x
                 [x0 + ParticleData.x.offset] <- x1
             } {
-                a0 <- @data as pointer
+                a0 <- .data as pointer
                 a1 <- new_x
                 [a0 + ParticleData.x.offset] <- a1
             }
         }
     }
 
-    destroy := () => {
-        call("free", @data as ptr)
+    destroy := ==> {
+        call("free", .data as ptr)
     }
+}
+```
+
+### Complete Example
+
+```flap
+Serializable := {
+    to_json: ==> {
+        parts := []
+        keys(this) | @ key in _ {
+            key[0] != '_' {
+                parts <- parts :: f'"{key}": {this[key]}'
+            }
+        }
+        "{" + join(parts, ", ") + "}"
+    }
+}
+
+Validatable := {
+    valid: ==> {
+        .x >= 0 and .y >= 0
+    }
+}
+
+class Point {
+    <> Serializable
+    <> Validatable
+
+    Point.origin = nil
+
+    init := (x, y) ==> {
+        .x = x
+        .y = y
+    }
+
+    move := (dx, dy) ==> {
+        .x <- .x + dx
+        .y <- .y + dy
+    }
+
+    distance_to := other => {
+        dx := other.x - .x
+        dy := other.y - .y
+        sqrt(dx * dx + dy * dy)
+    }
+}
+
+Point.origin = Point(0, 0)
+
+p := Point(10, 20)
+p.valid() {
+    println(p.to_json())  // {"x": 10, "y": 20}
+    println(p.distance_to(Point.origin))  // 22.36...
 }
 ```
 
 ### Grammar Extension
 
-The class system would extend Flap's grammar:
+The class system extends Flap's grammar:
 
 ```ebnf
 statement = ...
-          | class_decl
-          | mixin_decl ;
+          | class_decl ;
 
-class_decl = "class" identifier [ class_super ] "{" { class_member } "}" ;
+class_decl = "class" identifier "{" { class_member } "}" ;
 
-class_super = "<" identifier ;  // Optional inheritance (simple case)
+class_member = class_var_decl
+             | extend_decl
+             | method_decl ;
 
-class_member = instance_var_decl
-             | class_var_decl
-             | method_decl
-             | mixin_include ;
+class_var_decl = identifier "." identifier "=" expression ;
 
-instance_var_decl = "@" identifier "=" expression ;
-
-class_var_decl = "@@" identifier "=" expression ;
+extend_decl = "<>" identifier ;
 
 method_decl = identifier ":=" lambda_expr ;
 
-mixin_include = "include" identifier ;
+lambda_expr = "(" [ param_list ] ")" "=>" expression
+            | "==>" expression ;  // No-argument lambda
 
-mixin_decl = "mixin" identifier "{" { method_decl } "}" ;
+primary_expr = ...
+             | "." identifier ;  // Instance field access (inside class)
+
+// Pipe operator (replacing |>)
+pipe_expr = postfix_expr { "|" postfix_expr } ;
 ```
 
-### New Keywords
+### New Keywords and Operators
 
-Required keywords (all compatible with existing parser):
+Only one new keyword:
 - `class` - Define a class
-- `mixin` - Define a mixin module
-- `include` - Include a mixin in a class
-- `this` - Reference to current instance (optional, can use `@` everywhere)
+
+New operator usage:
+- `<>` - Extend with behavior map (composition)
+- `==>` - Lambda with no arguments (already proposed elsewhere)
+- `|` - Pipe operator (replaces `|>`)
+
+Note: All binary bitwise operators use `b` suffix: `|b`, `&b`, `^b`, `<b`, `>b`, `<<b`, `>>b`, `~b`
 
 ### Compatibility Notes
 
-1. **No parser conflicts**: `class`, `mixin`, `include` are new keywords
-2. **`@` already used**: For loops (`@ i in 0..<10`), but context distinguishes:
-   - In loops: `@ identifier in expression`
-   - In classes: `@ identifier = expression` or `@identifier` (in expressions)
-3. **Maps remain fundamental**: Classes compile to maps, so no type system changes
+1. **No parser conflicts**: `class` is a new keyword, `<>` repurposes unused operator
+2. **Dot prefix context-sensitive**:
+   - Outside classes: `obj.field` (field access)
+   - Inside classes: `.field` (instance field reference)
+3. **Maps remain fundamental**: Classes compile to maps, no type system changes
 4. **Backward compatible**: All existing code works unchanged
+5. **Pipe operator change**: `|>` removed, use `|` instead (no conflict with `|b`)
 
 ### Implementation Strategy
 
-1. **Phase 1**: Desugar classes to regular Flap code (preprocessor)
-2. **Phase 2**: Add runtime support for method lookup
-3. **Phase 3**: Optimize with direct field access
+1. **Phase 1**: Desugar classes to regular Flap code (preprocessor approach)
+2. **Phase 2**: Add runtime support for method lookup optimization
+3. **Phase 3**: Optimize with direct field access (eliminate map lookups)
 4. **Phase 4**: Add reflection/introspection capabilities
 
 ### Benefits
 
-- **Ruby's elegance**: Clean `@variable` syntax, mixins, conventions
+- **Minimal**: Only one new keyword, reuses existing concepts
 - **Flap's simplicity**: Maps underneath, no hidden complexity
+- **Composition**: `<>` makes behavior reuse explicit and simple
 - **Performance**: Can optimize to direct memory access
 - **Interop**: Works seamlessly with CStruct and C FFI
-- **Familiar**: Ruby developers feel at home
-- **Minimal**: No heavyweight OOP features (no metaclasses, no method_missing)
+- **Familiar**: Dot notation is universal across languages
+- **Clean**: No `self`, `this`, `@`, or `@@` - just `.field` and `ClassName.field`
 
 ## Special Notes
 
