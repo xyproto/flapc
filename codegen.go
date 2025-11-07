@@ -246,7 +246,7 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	// ===== AVX-512 CPU DETECTION =====
 	// Check CPUID for AVX-512 support and store result
 	// Required for safe use of AVX-512 instructions in map lookups
-	fc.eb.Define("cpu_has_avx512", "\x00") // 1 byte: 0=no, 1=yes
+	fc.eb.DefineWritable("cpu_has_avx512", "\x00") // 1 byte: 0=no, 1=yes (must be writable!)
 
 	// Check CPUID leaf 7, subleaf 0, EBX bit 16 (AVX512F)
 	fc.out.MovImmToReg("rax", "7")     // CPUID leaf 7
