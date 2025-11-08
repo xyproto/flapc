@@ -47,39 +47,20 @@ var skipPrograms = map[string]bool{
 	"parallel_test_reverse":     true,
 	"parallel_test_single":      true,
 	"parallel_simple_test":      true,
-	// Lambda issues
-	"lambda_test":           true,
-	"lambda_calculator":     true,
-	"lambda_comprehensive":  true,
-	"lambda_direct_test":    true,
-	"lambda_loop":           true,
-	"lambda_multi_arg_test": true,
-	"lambda_multiple_test":  true,
-	"lambda_store_test":     true,
-	"lambda_syntax_test":    true,
-	// Other failures
-	"alias_simple_test":        true,
-	"match_unicode":            true,
-	"ascii_art":                true,
-	"atomic_parallel_simple":   true,
-	"atomic_sequential":        true,
-	"compound_assignment_test": true,
-	"constant_folding_test":    true,
-	"ex2_list_operations":      true,
-	"ex3_collatz_conjecture":   true,
-	"factorial":                true,
-	"feature_test":             true,
-	"hot_keyword_test":         true,
-	"logical_operators_test":   true,
-	"loop_mult":                true,
-	"manual_map":               true,
-	"mutable":                  true,
-	"pipe_test":                true,
-	"result_type_test":         true,
-	"showcase":                 true,
-	"unsafe_ret_cstr_test":     true,
-	"wpo_test":                 true,
-	"lambda_bad_syntax_test":   true, // Error message format changed with railway-oriented errors
+	// Lambda issues - ALL FIXED!
+	// Other failures that WORK NOW:
+	// factorial, feature_test, loop_mult, mutable, showcase
+	// ex2_list_operations, ex3_collatz_conjecture - ALL WORK!
+
+	// More tests that WORK NOW:
+	// alias_simple_test, match_unicode, ascii_art, compound_assignment_test
+	// hot_keyword_test, manual_map, pipe_test, result_type_test
+	// constant_folding_test, wpo_test, logical_operators_test
+	// atomic_sequential, unsafe_ret_cstr_test - ALL WORK!
+
+	// Still need investigation:
+	"atomic_parallel_simple": true, // Segfaults - parallel not fully implemented
+	"lambda_bad_syntax_test": true, // Error message format changed with railway-oriented errors
 }
 
 // Programs to compile but not run (require external libraries beyond libc/libm)
