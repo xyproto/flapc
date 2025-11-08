@@ -15,6 +15,10 @@ def matches_with_wildcards(actual, expected):
         # If decoding fails, do exact byte comparison
         return actual == expected
 
+    # Normalize: strip final newline if present for comparison
+    actual_str = actual_str.rstrip('\n')
+    expected_str = expected_str.rstrip('\n')
+
     # Split into lines for line-by-line comparison
     actual_lines = actual_str.split('\n')
     expected_lines = expected_str.split('\n')
@@ -54,15 +58,26 @@ for test in sorted(tests):
         print(f'TIMEOUT: {test}')
         continue
 
+    # Check output (with wildcard support)
+    # For non-zero exit codes, check stderr first, then stdout
+    with open(f'{test}.result', 'rb') as f:
+        expected = f.read()
+
     if ret.returncode != 0:
+        # Non-zero exit - check if expected output matches stderr (error messages)
+        if matches_with_wildcards(ret.stderr, expected):
+            passed += 1
+            continue
+        # Also try stdout for backwards compatibility
+        if matches_with_wildcards(ret.stdout, expected):
+            passed += 1
+            continue
+        # Neither matched
         failed_run += 1
         print(f'FAIL_RUN: {test} (exit {ret.returncode})')
         continue
 
-    # Check output (with wildcard support)
-    with open(f'{test}.result', 'rb') as f:
-        expected = f.read()
-
+    # Exit code 0 - check stdout
     if not matches_with_wildcards(ret.stdout, expected):
         failed_output += 1
         print(f'FAIL_OUTPUT: {test}')

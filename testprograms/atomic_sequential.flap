@@ -16,6 +16,6 @@ final_val == 4.0 {
     println("PASSED - sequential loop with atomics works")
 }
 
-!final_val == 4.0 {
+final_val != 4.0 {
     println("FAILED")
 }
