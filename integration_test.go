@@ -74,7 +74,6 @@ var skipPrograms = map[string]bool{
 	"loop_mult":                true,
 	"manual_map":               true,
 	"mutable":                  true,
-	"pattern_match_test":       true,
 	"pipe_test":                true,
 	"result_type_test":         true,
 	"showcase":                 true,

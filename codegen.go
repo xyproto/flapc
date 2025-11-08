@@ -104,13 +104,14 @@ type FlapCompiler struct {
 	metaArenaGrowthErrorJump      int
 	firstMetaArenaMallocErrorJump int
 
-	regAlloc      *RegisterAllocator // Register allocator for optimized variable allocation
-	wpoTimeout    float64            // Whole-program optimization timeout (non-global, thread-safe)
-	movedVars     map[string]bool    // Track variables that have been moved (use-after-move detection)
-	inUnsafeBlock bool               // True when compiling inside an unsafe block (skip safety checks)
-	scopeDepth    int                // Track scope depth for proper move tracking
-	scopedMoved   []map[string]bool  // Stack of moved variables per scope
-	errors        *ErrorCollector    // Railway-oriented error collector
+	regAlloc       *RegisterAllocator // Register allocator for optimized variable allocation
+	wpoTimeout     float64            // Whole-program optimization timeout (non-global, thread-safe)
+	movedVars      map[string]bool    // Track variables that have been moved (use-after-move detection)
+	inUnsafeBlock  bool               // True when compiling inside an unsafe block (skip safety checks)
+	scopeDepth     int                // Track scope depth for proper move tracking
+	scopedMoved    []map[string]bool  // Stack of moved variables per scope
+	errors         *ErrorCollector    // Railway-oriented error collector
+	dynamicSymbols *DynamicSections   // Dynamic symbol table (for updating lambda symbols post-generation)
 }
 
 type LambdaFunc struct {
@@ -523,7 +524,18 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	for _, f := range pltFunctions {
 		pltSet[f] = true
 	}
+
+	// Build set of lambda function names to exclude from PLT
+	lambdaSet := make(map[string]bool)
+	for _, lambda := range fc.lambdaFuncs {
+		lambdaSet[lambda.Name] = true
+	}
+
 	for funcName := range fc.usedFunctions {
+		// Skip lambda functions - they are internal, not external PLT functions
+		if lambdaSet[funcName] {
+			continue
+		}
 		if !pltSet[funcName] {
 			pltFunctions = append(pltFunctions, funcName)
 			pltSet[funcName] = true
@@ -538,6 +550,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 
 	// Set up dynamic sections
 	ds := NewDynamicSections()
+	fc.dynamicSymbols = ds // Store for later symbol updates
 
 	// Only add NEEDED libraries if their functions are actually used
 	// libc.so.6 is always needed for basic functionality
@@ -647,6 +660,17 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	// Add symbols for PLT functions
 	for _, funcName := range pltFunctions {
 		ds.AddSymbol(funcName, STB_GLOBAL, STT_FUNC)
+	}
+
+	// Add symbols for lambda functions so they can be resolved at runtime
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Adding %d lambda function symbols to dynsym\n", len(fc.lambdaFuncs))
+	}
+	for _, lambda := range fc.lambdaFuncs {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Adding lambda symbol '%s' to dynsym\n", lambda.Name)
+		}
+		ds.AddSymbol(lambda.Name, STB_GLOBAL, STT_FUNC)
 	}
 
 	// Add cache pointer storage to rodata (8 bytes of zeros for each cache)
@@ -939,9 +963,31 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	}
 
 	// Set lambda function addresses
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Setting lambda function addresses, have %d lambdas\n", len(fc.lambdaOffsets))
+	}
 	for lambdaName, offset := range fc.lambdaOffsets {
 		lambdaAddr := textAddr + uint64(offset)
 		fc.eb.DefineAddr(lambdaName, lambdaAddr)
+
+		// Update the symbol value in the dynamic symbol table
+		if fc.dynamicSymbols != nil {
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG: Calling UpdateSymbolValue for lambda '%s' at address 0x%x\n", lambdaName, lambdaAddr)
+			}
+			success := fc.dynamicSymbols.UpdateSymbolValue(lambdaName, lambdaAddr)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG: UpdateSymbolValue returned %v\n", success)
+			}
+		} else if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: fc.dynamicSymbols is nil, cannot update symbol\n")
+		}
+	}
+
+	// Rebuild and repatch the symbol table with updated lambda addresses
+	if fc.dynamicSymbols != nil {
+		fc.dynamicSymbols.buildSymbolTable()
+		fc.eb.patchDynsymInELF(fc.dynamicSymbols)
 	}
 
 	// Patch PLT calls using callOrder (actual sequence of calls)
@@ -5702,6 +5748,10 @@ func (fc *FlapCompiler) generatePatternLambdaFunctions() {
 		fc.mutableVars = make(map[string]bool)
 		fc.stackOffset = 0
 
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG generatePatternLambdaFunctions: reset variables map for '%s', fc.variables=%v\n", patternLambda.Name, fc.variables)
+		}
+
 		// Determine number of parameters from first clause
 		numParams := len(patternLambda.Clauses[0].Patterns)
 
@@ -5778,10 +5828,6 @@ func (fc *FlapCompiler) generatePatternLambdaFunctions() {
 			// After executing body, return (don't fall through to next clause)
 			fc.out.MovRegToReg("rsp", "rbp")
 
-			// REGISTER ALLOCATOR: Restore callee-saved registers (always in pattern lambda)
-			fc.out.AddImmToReg("rsp", 8) // Remove alignment padding
-			fc.out.PopReg("rbx")
-
 			fc.out.PopReg("rbp")
 			fc.out.Ret()
 		}
@@ -5810,9 +5856,6 @@ func (fc *FlapCompiler) generatePatternLambdaFunctions() {
 
 		// Function epilogue
 		fc.out.MovRegToReg("rsp", "rbp")
-
-		// REGISTER ALLOCATOR: Restore callee-saved registers (always in pattern lambda)
-		fc.out.PopReg("rbx")
 
 		fc.out.PopReg("rbp")
 		fc.out.Ret()
