@@ -34,7 +34,7 @@ main ==> {
     cached_or_computed := cache or 123
     printf("  cache (0) or 123 = %v\n", cached_or_computed)
 
-    cache := 99
+    cache <- 99
     cached_or_computed2 := cache or 123
     printf("  cache (99) or 123 = %v\n", cached_or_computed2)
 

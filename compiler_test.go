@@ -252,3 +252,95 @@ func testParallelSimpleCompilesOLD(t *testing.T) {
 		t.Fatalf("parallel_simple executable failed: %v\n%s", err, string(runOutput))
 	}
 }
+
+// TestCompilationErrors tests that the compiler correctly rejects invalid code
+func TestCompilationErrors(t *testing.T) {
+	tests := []struct {
+		name          string
+		code          string
+		errorContains string
+	}{
+		{
+			name: "const_immutability",
+			code: `// Test immutable variables (should fail)
+x = 10
+x <- x + 5
+println(x)
+`,
+			errorContains: "cannot update immutable variable 'x'",
+		},
+		{
+			name: "lambda_bad_syntax",
+			code: `// This should fail - using -> instead of =>
+double = x -> x * 2
+println(double(5))
+`,
+			errorContains: "compilation failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create temp file with test code
+			tmpFile, err := os.CreateTemp("", "flapc_error_test_*.flap")
+			if err != nil {
+				t.Fatalf("Failed to create temp file: %v", err)
+			}
+			tmpFilePath := tmpFile.Name()
+			defer os.Remove(tmpFilePath)
+
+			if _, err := tmpFile.WriteString(tt.code); err != nil {
+				tmpFile.Close()
+				t.Fatalf("Failed to write test code: %v", err)
+			}
+			tmpFile.Close()
+
+			// Create temp output file
+			tmpOutput, err := os.CreateTemp("", "flapc_error_output_*")
+			if err != nil {
+				t.Fatalf("Failed to create temp output file: %v", err)
+			}
+			tmpOutputPath := tmpOutput.Name()
+			tmpOutput.Close()
+			defer os.Remove(tmpOutputPath)
+
+			// Try to compile - should fail
+			platform := GetDefaultPlatform()
+			err = CompileFlap(tmpFilePath, tmpOutputPath, platform)
+
+			// Verify it failed
+			if err == nil {
+				t.Errorf("Expected compilation to fail, but it succeeded")
+				return
+			}
+
+			// Verify error message contains expected text
+			errorMsg := err.Error()
+			if errorMsg == "" {
+				t.Errorf("Expected error message, got empty string")
+				return
+			}
+
+			// Check for expected error substring
+			if tt.errorContains != "" {
+				if !containsSubstring(errorMsg, tt.errorContains) {
+					t.Errorf("Expected error to contain %q, got: %s", tt.errorContains, errorMsg)
+				}
+			}
+		})
+	}
+}
+
+// Helper function to check if a string contains a substring (case-insensitive check not needed)
+func containsSubstring(s, substr string) bool {
+	return len(substr) == 0 || len(s) >= len(substr) && (s == substr || len(s) > len(substr) && stringContains(s, substr))
+}
+
+func stringContains(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

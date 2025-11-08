@@ -86,7 +86,7 @@ type FlapCompiler struct {
 	currentLambda        *LambdaFunc                  // Currently compiling lambda (for "me" self-reference)
 	lambdaBodyStart      int                          // Offset where lambda body starts (for tail recursion)
 	hasExplicitExit      bool                         // Track if program contains explicit exit() call
-	debug                bool                         // Enable debug output (set via DEBUG_FLAP env var)
+	debug                bool                         // Enable debug output (set via DEBUG env var)
 	cContext             bool                         // When true, compile expressions for C FFI (affects strings, pointers, ints)
 	currentArena         int                          // Arena depth (0=none, 1=first arena, 2=nested, etc.)
 	usesArenas           bool                         // Track if program uses any arena blocks
@@ -143,7 +143,7 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 	out := NewOut(eb.target, eb.TextWriter(), eb)
 
 	// Check if debug mode is enabled
-	debugEnabled := os.Getenv("DEBUG_FLAP") != ""
+	debugEnabled := os.Getenv("DEBUG") != ""
 
 	return &FlapCompiler{
 		eb:                  eb,
@@ -446,6 +446,19 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	// Predeclare lambda symbols so closure initialization can reference them
 	fc.predeclareLambdaSymbols()
 
+	// Predeclare arena symbols if arenas are used
+	if fc.usesArenas {
+		fc.eb.Define("_flap_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")
+		fc.eb.Define("_flap_arena_meta_cap", "\x00\x00\x00\x00\x00\x00\x00\x00")
+		fc.eb.Define("_flap_arena_meta_len", "\x00\x00\x00\x00\x00\x00\x00\x00")
+		fc.eb.Define("_arena_null_error", "ERROR: Arena alloc returned NULL\n")
+		fc.eb.Define("_count_mismatch_error", "ERROR: Count write/read mismatch!\n")
+		fc.eb.Define("_str_debug_arena_ptr", "DEBUG: Arena pointer from create: %p\n")
+		fc.eb.Define("_str_debug_arena_store", "DEBUG: Stored arena at index %ld, address %p\n")
+		fc.eb.Define("_str_debug_meta_ptr", "DEBUG: Meta-arena pointer: %p\n")
+		fc.eb.Define("_str_debug_arena_load", "DEBUG: Loaded arena pointer: %p\n")
+	}
+
 	// Second pass: Generate actual code with all symbols known
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG: Compiling %d statements\n", len(program.Statements))
@@ -503,7 +516,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 
 	// Build pltFunctions list from all called functions
 	// Start with essential functions that runtime helpers need
-	pltFunctions := []string{"printf", "exit", "malloc", "free", "realloc", "strlen"}
+	pltFunctions := []string{"printf", "exit", "malloc", "free", "realloc", "strlen", "pow"}
 
 	// Add all functions from usedFunctions (includes call() dynamic calls)
 	pltSet := make(map[string]bool)
@@ -766,7 +779,6 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	}
 
 	// Regenerate code with correct addresses
-	fmt.Fprintf(os.Stderr, "DEBUG: Before reset, callPatches = %d\n", len(fc.eb.callPatches))
 	fc.eb.text.Reset()
 	// DON'T reset rodata - it already has correct addresses from first pass
 	// Resetting rodata causes all symbols to move, breaking PC-relative addressing
@@ -775,8 +787,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	fc.eb.labels = make(map[string]int)    // Reset labels for recompilation
 	fc.callOrder = []string{}              // Clear call order for recompilation
 	fc.stringCounter = 0                   // Reset string counter for recompilation
-	fmt.Fprintf(os.Stderr, "DEBUG: After reset, callPatches = %d\n", len(fc.eb.callPatches))
-	fc.labelCounter = 0  // Reset label counter for recompilation
+	fc.labelCounter = 0                    // Reset label counter for recompilation
 	fc.lambdaCounter = 0 // Reset lambda counter for recompilation
 	// DON'T clear lambdaFuncs - we need them for second pass lambda generation
 	fc.lambdaOffsets = make(map[string]int) // Reset lambda offsets
@@ -863,7 +874,6 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	}
 
 	// Generate lambda functions
-	fmt.Fprintf(os.Stderr, "DEBUG: About to generate lambdas (second pass), have %d lambdas\n", len(fc.lambdaFuncs))
 	fc.generateLambdaFunctions()
 
 	// Generate pattern lambda functions
@@ -906,20 +916,14 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 
 	// Handle new .data symbols similarly
 	dataSymbols = fc.eb.DataSection()
-	fmt.Fprintf(os.Stderr, "DEBUG: dataSymbols count = %d\n", len(dataSymbols))
-	for symbol, value := range dataSymbols {
-		fmt.Fprintf(os.Stderr, "DEBUG: dataSymbol '%s' = %d bytes\n", symbol, len(value))
-	}
 	newDataSymbols := []string{}
 	for symbol := range dataSymbols {
 		// Check if already assigned
 		if _, ok := fc.eb.consts[symbol]; ok && fc.eb.consts[symbol].addr != 0 {
-			fmt.Fprintf(os.Stderr, "DEBUG: symbol '%s' already assigned to 0x%x, skipping\n", symbol, fc.eb.consts[symbol].addr)
 			continue
 		}
 		newDataSymbols = append(newDataSymbols, symbol)
 	}
-	fmt.Fprintf(os.Stderr, "DEBUG: newDataSymbols count = %d\n", len(newDataSymbols))
 	if len(newDataSymbols) > 0 {
 		sort.Strings(newDataSymbols)
 		for _, symbol := range newDataSymbols {
@@ -935,11 +939,8 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	}
 
 	// Set lambda function addresses
-	fmt.Fprintf(os.Stderr, "DEBUG: Setting lambda addresses, textAddr = 0x%x\n", textAddr)
 	for lambdaName, offset := range fc.lambdaOffsets {
 		lambdaAddr := textAddr + uint64(offset)
-		fmt.Fprintf(os.Stderr, "DEBUG: Lambda '%s': offset=0x%x, textAddr=0x%x, lambdaAddr=0x%x\n",
-			lambdaName, offset, textAddr, lambdaAddr)
 		fc.eb.DefineAddr(lambdaName, lambdaAddr)
 	}
 
@@ -1119,6 +1120,7 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 	case *ArenaStmt:
 		// Track arena depth during symbol collection
 		// This ensures alloc() calls are validated correctly
+		fc.usesArenas = true // Mark that this program uses arenas (for runtime helper generation)
 		previousArena := fc.currentArena
 		fc.currentArena++
 
@@ -3631,6 +3633,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		case "**":
 			// Power: call pow(base, exponent) from libm
 			// xmm0 = base, xmm1 = exponent -> result in xmm0
+			fc.trackFunctionCall("pow")
 			fc.eb.GenerateCallInstruction("pow")
 		case "::":
 			// Cons: prepend element to list
@@ -5326,15 +5329,20 @@ func (fc *FlapCompiler) compileUnsafeCast(dest string, cast *CastExpr) {
 			if cast.Type == "cstr" || cast.Type == "cstring" {
 				// Convert Flap string to C null-terminated string
 				// xmm0 contains pointer to Flap string map
-				fc.trackFunctionCall("flap_string_to_cstr")
+				// flap_string_to_cstr is an internal runtime function, not external
 				fc.out.CallSymbol("flap_string_to_cstr")
 				// Result is C string pointer in rax
 				if dest != "rax" {
 					fc.out.MovRegToReg(dest, "rax")
 				}
 			} else {
-				// For other types (pointer, integer types), convert to int
-				fc.out.Cvttsd2si(dest, "xmm0")
+				// For other types (pointer, integer types), extract raw bits
+				// The float64 in xmm0 contains raw pointer/integer bits, not a numeric value
+				// We need to preserve the bits, not convert the number
+				fc.out.SubImmFromReg("rsp", 8)
+				fc.out.MovXmmToMem("xmm0", "rsp", 0)
+				fc.out.MovMemToReg(dest, "rsp", 0)
+				fc.out.AddImmToReg("rsp", 8)
 			}
 		} else {
 			suggestions := findSimilarIdentifiers(expr.Name, fc.variables, 3)
@@ -5490,7 +5498,6 @@ func (fc *FlapCompiler) predeclareLambdaSymbols() {
 }
 
 func (fc *FlapCompiler) generateLambdaFunctions() {
-	fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: called with %d lambdas\n", len(fc.lambdaFuncs))
 	if fc.debug {
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: generating %d lambdas\n", len(fc.lambdaFuncs))
@@ -5499,26 +5506,19 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 	// Use index-based loop to handle lambdas added during iteration (nested lambdas)
 	for i := 0; i < len(fc.lambdaFuncs); i++ {
 		lambda := fc.lambdaFuncs[i]
-		fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: generating lambda %d: '%s'\n", i+1, lambda.Name)
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: generating lambda '%s' with body type %T\n", lambda.Name, lambda.Body)
 		}
 		// Record the offset of this lambda function in .text
 		offsetBefore := fc.eb.text.Len()
 		fc.lambdaOffsets[lambda.Name] = offsetBefore
-		fmt.Fprintf(os.Stderr, "DEBUG: Lambda '%s' offset recorded as %d (0x%x)\n", lambda.Name, offsetBefore, offsetBefore)
 
 		// Mark the start of the lambda function with a label (again, to update offset)
 		fc.eb.MarkLabel(lambda.Name)
 
 		// Function prologue
-		prologueStart := fc.eb.text.Len()
-		fmt.Fprintf(os.Stderr, "DEBUG: Lambda '%s' prologue starts at %d (0x%x)\n", lambda.Name, prologueStart, prologueStart)
 		fc.out.PushReg("rbp")
 		fc.out.MovRegToReg("rbp", "rsp")
-		prologueEnd := fc.eb.text.Len()
-		fmt.Fprintf(os.Stderr, "DEBUG: Lambda '%s' prologue ends at %d (0x%x), prologue size = %d bytes\n",
-			lambda.Name, prologueEnd, prologueEnd, prologueEnd-prologueStart)
 
 		// REGISTER ALLOCATOR: Save callee-saved registers used for loop optimization
 		// rbx = loop counter
@@ -5960,14 +5960,7 @@ func (fc *FlapCompiler) generateCacheInsert() {
 func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// Arena runtime functions are generated inline below (flap_arena_create, alloc, etc)
 	// Don't call fc.eb.EmitArenaRuntimeCode() as it's the old stub from main.go
-
-	if fc.usesArenas {
-		fc.eb.Define("_flap_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")
-		fc.eb.Define("_flap_arena_meta_cap", "\x00\x00\x00\x00\x00\x00\x00\x00")
-		fc.eb.Define("_flap_arena_meta_len", "\x00\x00\x00\x00\x00\x00\x00\x00")
-		fc.eb.Define("_arena_null_error", "ERROR: Arena alloc returned NULL\n")
-		fc.eb.Define("_count_mismatch_error", "ERROR: Count write/read mismatch!\n")
-	}
+	// Arena symbols are predeclared earlier in writeELF() to ensure they're available during code generation
 
 	fc.generateCacheLookup()
 	fc.generateCacheInsert()
@@ -7220,12 +7213,23 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovImmToReg("rdi", "32")
 	fc.trackFunctionCall("malloc")
 	fc.eb.GenerateCallInstruction("malloc")
+
+	// Check if malloc failed
+	fc.out.TestRegReg("rax", "rax")
+	structMallocFailedJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0) // je to error
+
 	fc.out.MovRegToReg("rbx", "rax") // rbx = arena struct pointer
 
 	// Allocate arena buffer
 	fc.out.MovRegToReg("rdi", "r12") // rdi = capacity
 	fc.trackFunctionCall("malloc")
 	fc.eb.GenerateCallInstruction("malloc")
+
+	// Check if malloc failed
+	fc.out.TestRegReg("rax", "rax")
+	bufferMallocFailedJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0) // je to error
 
 	// Fill arena structure
 	fc.out.MovRegToMem("rax", "rbx", 0) // [rbx+0] = buffer_ptr
@@ -7240,6 +7244,19 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbx")
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
+
+	// Error path: malloc failed
+	createErrorLabel := fc.eb.text.Len()
+	fc.patchJumpImmediate(structMallocFailedJump+2, int32(createErrorLabel-(structMallocFailedJump+6)))
+	fc.patchJumpImmediate(bufferMallocFailedJump+2, int32(createErrorLabel-(bufferMallocFailedJump+6)))
+
+	// Print error message and exit
+	fc.out.LeaSymbolToReg("rdi", "_flap_str_arena_alloc_error")
+	fc.trackFunctionCall("printf")
+	fc.eb.GenerateCallInstruction("printf")
+	fc.out.MovImmToReg("rdi", "1")
+	fc.trackFunctionCall("exit")
+	fc.eb.GenerateCallInstruction("exit")
 
 	// Generate flap_arena_alloc(arena_ptr, size) -> allocation_ptr
 	// Allocates memory from the arena using bump allocation with auto-growing
@@ -7404,9 +7421,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.Ret()
 
 	// Generate _flap_arena_ensure_capacity if arenas are used
-	fmt.Fprintf(os.Stderr, "DEBUG: usesArenas = %v\n", fc.usesArenas)
 	if fc.usesArenas {
-		fmt.Fprintf(os.Stderr, "DEBUG: Generating _flap_arena_ensure_capacity\n")
 		fc.generateArenaEnsureCapacity()
 	}
 }
@@ -7528,7 +7543,6 @@ func (fc *FlapCompiler) generateArenaEnsureCapacity() {
 }
 
 func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
-	fmt.Fprintf(os.Stderr, "DEBUG compileStoredFunctionCall: called for '%s', text position=%d\n", call.Function, fc.eb.text.Len())
 	// Load closure object pointer from variable
 	offset, _ := fc.variables[call.Function]
 	if fc.debug {
@@ -7579,15 +7593,7 @@ func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
 
 	// Call the function pointer in r11
 	// r15 contains the environment pointer (accessible within the lambda)
-	posBefore := fc.eb.text.Len()
-	fmt.Fprintf(os.Stderr, "DEBUG compileStoredFunctionCall: about to call r11, text position=%d\n", posBefore)
 	fc.out.CallRegister("r11")
-	posAfter := fc.eb.text.Len()
-	fmt.Fprintf(os.Stderr, "DEBUG compileStoredFunctionCall: after call r11, text position=%d\n", posAfter)
-	if posAfter > posBefore {
-		callBytes := fc.eb.text.Bytes()[posBefore:posAfter]
-		fmt.Fprintf(os.Stderr, "DEBUG compileStoredFunctionCall: call instruction bytes = %x\n", callBytes)
-	}
 
 	// Result is in xmm0
 }
@@ -8967,7 +8973,6 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 						fc.out.MovRegToMem("rax", "rsp", 0)
 						fc.out.MovMemToReg("rdi", "rsp", 0)
 						fc.out.AddImmToReg("rsp", StackSlotSize)
-						fc.trackFunctionCall("flap_string_to_cstr")
 						fc.out.CallSymbol("flap_string_to_cstr")
 						// Result in rax (C string pointer)
 					}
@@ -12901,7 +12906,7 @@ func processImports(program *Program) error {
 	program.Statements = filteredStmts
 
 	// Debug: print final program
-	if os.Getenv("DEBUG_FLAP") != "" {
+	if os.Getenv("DEBUG") != "" {
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "DEBUG processImports: final program after import processing:\n")
 		}
@@ -13077,6 +13082,13 @@ func CompileFlapWithOptions(inputPath string, outputPath string, platform Platfo
 			}
 		}
 	}()
+
+	// Convert to absolute path to ensure correct directory resolution
+	absInputPath, absErr := filepath.Abs(inputPath)
+	if absErr != nil {
+		return fmt.Errorf("failed to get absolute path for %s: %v", inputPath, absErr)
+	}
+	inputPath = absInputPath
 
 	// Read input file
 	content, readErr := os.ReadFile(inputPath)

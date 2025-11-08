@@ -1,4 +1,0 @@
-// const.flap - test immutable variables (should fail)
-x = 10
-x <- x + 5
-println(x)

@@ -1,3 +1,0 @@
-// This should fail - using -> instead of =>
-double = x -> x * 2
-println(double(5))
