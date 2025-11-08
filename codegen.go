@@ -1710,6 +1710,15 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 		fc.out.MovRegToMem("rax", "rbp", -iterationCountOffset)
 	}
 
+	// Save rbx if we're in a nested loop (to preserve outer loop counter)
+	isNestedLoop := len(fc.activeLoops) > 0
+	var savedRbxOffset int
+	if isNestedLoop {
+		// Save rbx on the stack manually (not using push, to avoid alignment issues)
+		savedRbxOffset = loopStateOffset + 8
+		fc.out.MovRegToMem("rbx", "rbp", -savedRbxOffset)
+	}
+
 	// REGISTER ALLOCATED: Evaluate range start directly into rbx (counter register)
 	fc.compileExpression(rangeExpr.Start)
 	fc.out.Cvttsd2si("rbx", "xmm0") // rbx = loop counter
@@ -1840,6 +1849,11 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 
 	// Loop end cleanup - this is where all loop exit jumps target
 	loopEndPos := fc.eb.text.Len()
+
+	// Restore rbx if this was a nested loop (before stack cleanup)
+	if isNestedLoop {
+		fc.out.MovMemToReg("rbx", "rbp", -savedRbxOffset)
+	}
 
 	// Clean up stack space
 	fc.out.AddImmToReg("rsp", stackSize)
