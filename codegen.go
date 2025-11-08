@@ -1710,18 +1710,47 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 		fc.out.MovRegToMem("rax", "rbp", -iterationCountOffset)
 	}
 
-	// Save rbx if we're in a nested loop (to preserve outer loop counter)
-	isNestedLoop := len(fc.activeLoops) > 0
-	var savedRbxOffset int
-	if isNestedLoop {
-		// Save rbx on the stack manually (not using push, to avoid alignment issues)
-		savedRbxOffset = loopStateOffset + 8
-		fc.out.MovRegToMem("rbx", "rbp", -savedRbxOffset)
+	// Allocate a loop counter register based on nesting depth
+	// Level 0: rbx, Level 1: r12, Level 2: r13, Level 3: r14
+	// Deeper nesting uses stack (stored at counterOffset)
+	loopDepth := len(fc.activeLoops)
+	var counterReg string
+	var useRegister bool
+	var counterOffset int
+
+	switch loopDepth {
+	case 0:
+		counterReg = "rbx"
+		useRegister = true
+	case 1:
+		counterReg = "r12"
+		useRegister = true
+	case 2:
+		counterReg = "r13"
+		useRegister = true
+	case 3:
+		counterReg = "r14"
+		useRegister = true
+	default:
+		// Too deep - use stack
+		useRegister = false
+		counterOffset = loopStateOffset + 8
 	}
 
-	// REGISTER ALLOCATED: Evaluate range start directly into rbx (counter register)
+	// Save the counter register if using one (callee-saved registers)
+	if useRegister && loopDepth > 0 {
+		fc.out.PushReg(counterReg)
+		fc.runtimeStack += 8
+	}
+
+	// Evaluate range start and store in counter (register or stack)
 	fc.compileExpression(rangeExpr.Start)
-	fc.out.Cvttsd2si("rbx", "xmm0") // rbx = loop counter
+	if useRegister {
+		fc.out.Cvttsd2si(counterReg, "xmm0") // counter = start
+	} else {
+		fc.out.Cvttsd2si("rax", "xmm0")
+		fc.out.MovRegToMem("rax", "rbp", -counterOffset)
+	}
 
 	// Evaluate range end and store on stack (limit)
 	fc.compileExpression(rangeExpr.End)
@@ -1794,10 +1823,15 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 		fc.out.MovRegToMem("rax", "rbp", -iterationCountOffset)
 	}
 
-	// REGISTER ALLOCATED: Compare counter (rbx) with limit (from stack)
-	// Load limit into rax for comparison
-	fc.out.MovMemToReg("rax", "rbp", -limitOffset)
-	fc.out.CmpRegToReg("rbx", "rax")
+	// Compare counter with limit
+	fc.out.MovMemToReg("rax", "rbp", -limitOffset) // Load limit
+
+	if useRegister {
+		fc.out.CmpRegToReg(counterReg, "rax")
+	} else {
+		fc.out.MovMemToReg("rcx", "rbp", -counterOffset) // Load counter from stack
+		fc.out.CmpRegToReg("rcx", "rax")
+	}
 
 	// Jump to loop end if counter >= limit
 	loopEndJumpPos := fc.eb.text.Len()
@@ -1810,7 +1844,12 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	)
 
 	// Store current counter value as iterator (convert to float64)
-	fc.out.Cvtsi2sd("xmm0", "rbx") // Use rbx instead of rax
+	if useRegister {
+		fc.out.Cvtsi2sd("xmm0", counterReg)
+	} else {
+		fc.out.MovMemToReg("rcx", "rbp", -counterOffset)
+		fc.out.Cvtsi2sd("xmm0", "rcx")
+	}
 	fc.out.MovXmmToMem("xmm0", "rbp", -iterOffset)
 
 	// Save runtime stack before loop body (to clean up loop-local variables)
@@ -1839,8 +1878,14 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 		fc.runtimeStack = runtimeStackBeforeBody
 	}
 
-	// REGISTER ALLOCATED: Increment loop counter (rbx)
-	fc.out.IncReg("rbx") // Single instruction instead of load-inc-store!
+	// Increment loop counter
+	if useRegister {
+		fc.out.IncReg(counterReg) // Single instruction!
+	} else {
+		fc.out.MovMemToReg("rax", "rbp", -counterOffset)
+		fc.out.IncReg("rax")
+		fc.out.MovRegToMem("rax", "rbp", -counterOffset)
+	}
 
 	// Jump back to loop start
 	loopBackJumpPos := fc.eb.text.Len()
@@ -1850,14 +1895,15 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	// Loop end cleanup - this is where all loop exit jumps target
 	loopEndPos := fc.eb.text.Len()
 
-	// Restore rbx if this was a nested loop (before stack cleanup)
-	if isNestedLoop {
-		fc.out.MovMemToReg("rbx", "rbp", -savedRbxOffset)
-	}
-
 	// Clean up stack space
 	fc.out.AddImmToReg("rsp", stackSize)
 	fc.runtimeStack -= int(stackSize)
+
+	// Restore the counter register if we saved it
+	if useRegister && loopDepth > 0 {
+		fc.out.PopReg(counterReg)
+		fc.runtimeStack -= 8
+	}
 
 	// Unregister iterator variable
 	delete(fc.variables, stmt.Iterator)
