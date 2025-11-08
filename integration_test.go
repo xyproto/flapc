@@ -23,30 +23,6 @@ var compileExpectations = map[string]string{
 
 // Programs to skip entirely (pre-existing failures, need investigation)
 var skipPrograms = map[string]bool{
-	// Parallel issues
-	"parallel_simple":           true,
-	"parallel_no_atomic":        true,
-	"parallel_test_simple":      true,
-	"parallel_atomic_minimal":   true,
-	"parallel_malloc_access":    true,
-	"parallel_map_test":         true,
-	"parallel_noop":             true,
-	"parallel_parent_var":       true,
-	"parallel_parse_test":       true,
-	"parallel_single":           true,
-	"parallel_test":             true,
-	"parallel_test_const":       true,
-	"parallel_test_const_delay": true,
-	"parallel_test_debug":       true,
-	"parallel_test_delay":       true,
-	"parallel_test_direct":      true,
-	"parallel_test_elements":    true,
-	"parallel_test_four":        true,
-	"parallel_test_length":      true,
-	"parallel_test_print":       true,
-	"parallel_test_reverse":     true,
-	"parallel_test_single":      true,
-	"parallel_simple_test":      true,
 	// Lambda issues - ALL FIXED!
 	// Other failures that WORK NOW:
 	// factorial, feature_test, loop_mult, mutable, showcase
@@ -58,9 +34,12 @@ var skipPrograms = map[string]bool{
 	// constant_folding_test, wpo_test, logical_operators_test
 	// atomic_sequential, unsafe_ret_cstr_test - ALL WORK!
 
+	// Parallel tests - ALL WORK NOW! (|| operator fully implemented)
+	// parallel_simple, parallel_noop, parallel_single, parallel_test, parallel_test_simple
+	// parallel_test_single, parallel_test_direct, parallel_test_print, etc. - ALL WORK!
+
 	// Still need investigation:
-	"atomic_parallel_simple": true, // Segfaults - parallel not fully implemented
-	"lambda_bad_syntax_test": true, // Error message format changed with railway-oriented errors
+	"atomic_parallel_simple": true, // Segfaults - @@ parallel loop syntax not fully implemented (uses atomic operations in parallel loop body)
 }
 
 // Programs to compile but not run (require external libraries beyond libc/libm)
