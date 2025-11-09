@@ -2134,9 +2134,10 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	fc.runtimeStack += 16
 
 	// Step 2: Initialize barrier
-	// V6: actualThreads child threads + 1 parent = (actualThreads + 1) total participants
-	// barrier.count = actualThreads + 1 at [rsp+0]
-	// barrier.total = actualThreads + 1 at [rsp+8]
+	// V6: actualThreads worker threads + 1 parent thread = actualThreads+1 total
+	// All participants (including parent) use barrier synchronization
+	// barrier.count = actualThreads+1 at [rsp+0]
+	// barrier.total = actualThreads+1 at [rsp+8]
 	totalParticipants := actualThreads + 1
 	fc.out.MovImmToMem(int64(totalParticipants), "rsp", 0) // count at offset 0
 	fc.out.MovImmToMem(int64(totalParticipants), "rsp", 8) // total at offset 8
@@ -2211,14 +2212,15 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 		// Call pthread_create(&thread_id, NULL, thread_func, arg)
 		// pthread_create(pthread_t *thread, const pthread_attr_t *attr,
 		//                void *(*start_routine)(void*), void *arg)
+		// System V AMD64 ABI: rdi, rsi, rdx, rcx, r8, r9
 
 		// Calculate pthread_t pointer: r12 + (threadIdx * 8)
 		pthreadOffset := int64(threadIdx * 8)
-		fc.out.MovRegToReg("rdi", "r12")                                    // rdi = pthread array base
+		fc.out.MovRegToReg("rdi", "r12")                                    // rdi = pthread array base (arg 1)
 		fc.out.AddImmToReg("rdi", pthreadOffset)                            // rdi = &thread_id
-		fc.out.MovImmToReg("rsi", "0")                                      // attr = NULL
-		fc.out.LeaSymbolToReg("rdx", "_parallel_thread_entry")              // start_routine
-		fc.out.MovRegToReg("rcx", "r13")                                    // arg = thread args
+		fc.out.MovImmToReg("rsi", "0")                                      // attr = NULL (arg 2)
+		fc.out.LeaSymbolToReg("rdx", "_parallel_thread_entry")              // start_routine (arg 3)
+		fc.out.MovRegToReg("rcx", "r13")                                    // arg = thread args (arg 4)
 		fc.trackFunctionCall("pthread_create")
 		fc.eb.GenerateCallInstruction("pthread_create")
 
@@ -2237,16 +2239,31 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 		fc.patchJumpImmediate(createSuccessJump+2, int32(createSuccessPos-(createSuccessJump+ConditionalJumpSize)))
 	}
 
-	// Now parent waits for all threads to complete using pthread_join
-	// Loop through all threads and join them
-	for threadIdx := 0; threadIdx < actualThreads; threadIdx++ {
-		pthreadOffset := int64(threadIdx * 8)
-		fc.out.MovRegToReg("rdi", "r12")        // rdi = pthread array base
-		fc.out.AddImmToReg("rdi", pthreadOffset) // rdi = &thread_id
-		fc.out.MovImmToReg("rsi", "0")          // retval = NULL (we don't need return value)
-		fc.trackFunctionCall("pthread_join")
-		fc.eb.GenerateCallInstruction("pthread_join")
-	}
+	// Now parent waits for all threads to complete
+	// Using barrier-based synchronization instead of pthread_join for now
+	// TODO: Debug pthread_join hang issue
+
+	// Parent also participates in barrier
+	// Load barrier address (still in r15)
+	// Atomically decrement and check
+	fc.out.MovImmToReg("rax", "-1")
+	fc.out.LockXaddMemReg("r15", 0, "eax") // Atomically add -1, eax gets old value
+	fc.out.DecReg("eax") // eax = new value after our decrement
+
+	// Spin-wait until barrier becomes 0
+	parentWaitLoopStart := fc.eb.text.Len()
+	fc.out.MovMemToReg("rax", "r15", 0) // Load current barrier value
+	fc.out.TestRegReg("rax", "rax")
+	parentWaitExit := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0) // if 0, all done
+	// Loop back
+	parentWaitBackOffset := int32(parentWaitLoopStart - (fc.eb.text.Len() + UnconditionalJumpSize))
+	fc.out.JumpUnconditional(parentWaitBackOffset)
+
+	// Patch exit jump
+	parentWaitExitPos := fc.eb.text.Len()
+	parentWaitExitOffset := int32(parentWaitExitPos - (parentWaitExit + ConditionalJumpSize))
+	fc.patchJumpImmediate(parentWaitExit+2, parentWaitExitOffset)
 
 	// Clean up pthread_t array from stack
 	fc.out.AddImmToReg("rsp", pthreadArraySize)
@@ -2409,25 +2426,35 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	wakeExitJumpPos := fc.eb.text.Len()
 	fc.out.JumpUnconditional(0) // Placeholder, will patch
 
-	// Not last thread: Wait on futex
+	// Not last thread: Spin-wait until barrier reaches 0
+	// This is less efficient than futex but simpler and avoids potential futex issues
 	waitStartPos := fc.eb.text.Len()
 
 	// Patch the wait jump to point here
 	waitOffset := int32(waitStartPos - (waitJumpPos + ConditionalJumpSize))
 	fc.patchJumpImmediate(waitJumpPos+2, waitOffset)
 
-	// futex(barrier_addr, FUTEX_WAIT_PRIVATE, expected_value)
-	// Use eax which contains the value we saw after our decrement
-	// This prevents a race where the last thread wakes before we wait
-	fc.out.MovRegToReg("rdx", "rax")   // rdx = expected value (from earlier eax)
-	fc.out.MovImmToReg("rax", "202")   // sys_futex
-	fc.out.MovRegToReg("rdi", "r15")   // addr = barrier address
-	fc.out.MovImmToReg("rsi", "128")   // op = FUTEX_WAIT_PRIVATE (0 | 128)
-	// rdx already set above
-	fc.out.Syscall()
+	// Spin-wait loop: Keep checking barrier value until it's 0
+	waitLoopStart := fc.eb.text.Len()
+
+	// Load current barrier value
+	fc.out.MovMemToReg("rax", "r15", 0) // rax = current barrier count
+
+	// Check if barrier is now 0 (all threads done)
+	fc.out.TestRegReg("rax", "rax")
+	waitLoopExit := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0) // if barrier == 0, exit loop
+
+	// Loop back to check again (spin-wait)
+	waitLoopBackOffset := int32(waitLoopStart - (fc.eb.text.Len() + UnconditionalJumpSize))
+	fc.out.JumpUnconditional(waitLoopBackOffset)
 
 	// Exit point for all threads
 	threadExitPos := fc.eb.text.Len()
+
+	// Patch the wait loop exit jump
+	waitLoopExitOffset := int32(threadExitPos - (waitLoopExit + ConditionalJumpSize))
+	fc.patchJumpImmediate(waitLoopExit+2, waitLoopExitOffset)
 
 	// Patch the wake exit jump
 	wakeExitOffset := int32(threadExitPos - (wakeExitJumpPos + UnconditionalJumpSize))
@@ -2436,8 +2463,8 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	// Restore stack pointer (matches the sub rsp, 64 in prologue)
 	fc.out.AddImmToReg("rsp", 64)
 
-	// TODO: Free the argument structure
-	// Temporarily disabled to debug crash
+	// TODO: Free the argument structure that was malloc'd in the parent
+	// Currently disabled - memory leak but avoids potential corruption
 	// fc.out.MovRegToReg("rdi", "rbx") // rdi = arg pointer (saved in rbx)
 	// fc.trackFunctionCall("free")
 	// fc.eb.GenerateCallInstruction("free")
