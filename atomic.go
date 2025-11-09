@@ -30,18 +30,16 @@ func (o *Out) lockXaddMemRegX86(base string, offset int, reg string) {
 	// LOCK prefix
 	o.Write(0xF0)
 
-	// REX prefix for 32-bit operation (we're using eax, not rax)
-	// No REX.W, so this is a 32-bit operation
-	rex := uint8(0x40) // Base REX
+	// REX prefix for 64-bit operation
+	// REX.W = 1 for 64-bit operand size
+	rex := uint8(0x48) // Base REX with REX.W set
 	if baseReg.Encoding >= 8 {
 		rex |= 0x01 // REX.B for base register
 	}
 	if srcReg.Encoding >= 8 {
 		rex |= 0x04 // REX.R for source register
 	}
-	if rex != 0x40 {
-		o.Write(rex)
-	}
+	o.Write(rex)
 
 	// XADD opcode: 0x0F 0xC1
 	o.Write(0x0F)
