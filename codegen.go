@@ -817,7 +817,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	fc.callOrder = []string{}              // Clear call order for recompilation
 	fc.stringCounter = 0                   // Reset string counter for recompilation
 	fc.labelCounter = 0                    // Reset label counter for recompilation
-	fc.lambdaCounter = 0 // Reset lambda counter for recompilation
+	fc.lambdaCounter = 0                   // Reset lambda counter for recompilation
 	// DON'T clear lambdaFuncs - we need them for second pass lambda generation
 	fc.lambdaOffsets = make(map[string]int) // Reset lambda offsets
 	fc.variables = make(map[string]int)     // Reset variables map
@@ -2216,11 +2216,11 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 
 		// Calculate pthread_t pointer: r12 + (threadIdx * 8)
 		pthreadOffset := int64(threadIdx * 8)
-		fc.out.MovRegToReg("rdi", "r12")                                    // rdi = pthread array base (arg 1)
-		fc.out.AddImmToReg("rdi", pthreadOffset)                            // rdi = &thread_id
-		fc.out.MovImmToReg("rsi", "0")                                      // attr = NULL (arg 2)
-		fc.out.LeaSymbolToReg("rdx", "_parallel_thread_entry")              // start_routine (arg 3)
-		fc.out.MovRegToReg("rcx", "r13")                                    // arg = thread args (arg 4)
+		fc.out.MovRegToReg("rdi", "r12")                       // rdi = pthread array base (arg 1)
+		fc.out.AddImmToReg("rdi", pthreadOffset)               // rdi = &thread_id
+		fc.out.MovImmToReg("rsi", "0")                         // attr = NULL (arg 2)
+		fc.out.LeaSymbolToReg("rdx", "_parallel_thread_entry") // start_routine (arg 3)
+		fc.out.MovRegToReg("rcx", "r13")                       // arg = thread args (arg 4)
 		fc.trackFunctionCall("pthread_create")
 		fc.eb.GenerateCallInstruction("pthread_create")
 
@@ -2248,7 +2248,7 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	// Atomically decrement and check
 	fc.out.MovImmToReg("rax", "-1")
 	fc.out.LockXaddMemReg("r15", 0, "eax") // Atomically add -1, eax gets old value
-	fc.out.DecReg("eax") // eax = new value after our decrement
+	fc.out.DecReg("eax")                   // eax = new value after our decrement
 
 	// Spin-wait until barrier becomes 0
 	parentWaitLoopStart := fc.eb.text.Len()
@@ -2280,7 +2280,7 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	fc.out.MovRegToReg("rbp", "rsp")
 
 	// arg is in rdi (first parameter), save it in rbx (callee-saved)
-	fc.out.PushReg("rbx") // Save original rbx
+	fc.out.PushReg("rbx")            // Save original rbx
 	fc.out.MovRegToReg("rbx", "rdi") // rbx = arg pointer for later free
 
 	// Extract parameters from structure at [rdi] and save to stack using rbp-relative addressing
@@ -2337,8 +2337,8 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	// This makes the iterator accessible as a proper float64 variable
 	// Note: Using rbp-56 to avoid conflict with loop variables at rbp-16 through rbp-48
 	iteratorOffset := 56
-	fc.out.MovMemToReg("rax", "rbp", -32)          // rax = counter
-	fc.out.Cvtsi2sd("xmm0", "rax")                 // xmm0 = (float64)counter
+	fc.out.MovMemToReg("rax", "rbp", -32)              // rax = counter
+	fc.out.Cvtsi2sd("xmm0", "rax")                     // xmm0 = (float64)counter
 	fc.out.MovXmmToMem("xmm0", "rbp", -iteratorOffset) // Store at rbp-56
 
 	// V5 Step 3 & 4: Compile loop body with existing variable context
@@ -2472,7 +2472,7 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	// fc.eb.GenerateCallInstruction("free")
 
 	// Restore rbx and return
-	fc.out.PopReg("rbx") // Restore original rbx
+	fc.out.PopReg("rbx")               // Restore original rbx
 	fc.out.XorRegWithReg("rax", "rax") // Return NULL
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
@@ -2798,6 +2798,9 @@ func (fc *FlapCompiler) getExprType(expr Expression) string {
 }
 
 func (fc *FlapCompiler) compileExpression(expr Expression) {
+	if expr == nil {
+		compilerError("INTERNAL ERROR: compileExpression received nil expression")
+	}
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG compileExpression: expr type = %T\n", expr)
 	}
@@ -12147,6 +12150,59 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Return 0
 		fc.out.XorRegWithReg("rax", "rax")
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "store":
+		// store(ptr, offset, value) - Store value to memory at ptr + offset*8
+		if len(call.Args) != 3 {
+			compilerError("store() requires exactly 3 arguments (ptr, offset, value)")
+		}
+
+		// Compile pointer argument
+		fc.compileExpression(call.Args[0])
+		fc.out.Cvttsd2si("r10", "xmm0") // r10 = base pointer
+
+		// Compile offset argument
+		fc.compileExpression(call.Args[1])
+		fc.out.Cvttsd2si("r11", "xmm0") // r11 = offset (in 8-byte units)
+
+		// Calculate memory address: r10 = r10 + r11*8
+		fc.out.ShlImmReg("r11", 3)       // r11 *= 8 (shift left by 3)
+		fc.out.AddRegToReg("r10", "r11") // r10 = base + offset*8
+
+		// Compile value argument
+		fc.compileExpression(call.Args[2])
+		fc.out.Cvttsd2si("rax", "xmm0") // rax = value (as integer)
+
+		// Store value to memory
+		fc.out.MovRegToMem("rax", "r10", 0)
+
+		// Return 0
+		fc.out.XorRegWithReg("rax", "rax")
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "load":
+		// load(ptr, offset) - Load value from memory at ptr + offset*8
+		if len(call.Args) != 2 {
+			compilerError("load() requires exactly 2 arguments (ptr, offset)")
+		}
+
+		// Compile pointer argument
+		fc.compileExpression(call.Args[0])
+		fc.out.Cvttsd2si("r10", "xmm0") // r10 = base pointer
+
+		// Compile offset argument
+		fc.compileExpression(call.Args[1])
+		fc.out.Cvttsd2si("r11", "xmm0") // r11 = offset (in 8-byte units)
+
+		// Calculate memory address: r10 = r10 + r11*8
+		fc.out.ShlImmReg("r11", 3)       // r11 *= 8 (shift left by 3)
+		fc.out.AddRegToReg("r10", "r11") // r10 = base + offset*8
+
+		// Load value from memory
+		fc.out.MovMemToReg("rax", "r10", 0)
+
+		// Convert to float64 and return
 		fc.out.Cvtsi2sd("xmm0", "rax")
 
 	case "chan":

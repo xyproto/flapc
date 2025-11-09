@@ -3354,6 +3354,8 @@ func (p *Parser) parsePrimary() Expression {
 		return p.parseArenaExpr()
 	}
 
+	// Unrecognized token in expression position - this is a syntax error
+	p.error(fmt.Sprintf("unexpected '%s' in expression", p.current.Value))
 	return nil
 }
 
