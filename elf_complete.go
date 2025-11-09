@@ -467,6 +467,8 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 		w.Write(0)
 	}
 
+	// Record dynsym offset for patching later
+	eb.dynsymOffsetInELF = uint64(eb.elf.Len())
 	writePadded(&ds.dynsym, (ds.dynsym.Len()+7)&^7)
 	writePadded(&ds.dynstr, (ds.dynstr.Len()+7)&^7)
 	writePadded(&ds.hash, (ds.hash.Len()+7)&^7)

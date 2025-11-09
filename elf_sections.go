@@ -144,6 +144,23 @@ func (ds *DynamicSections) AddSymbol(name string, binding byte, symtype byte) ui
 	return uint32(len(ds.dynsymSyms) - 1)
 }
 
+// AddDefinedSymbol adds a symbol with a defined value (address)
+func (ds *DynamicSections) AddDefinedSymbol(name string, binding byte, symtype byte, value uint64) uint32 {
+	nameOffset := ds.addString(name)
+
+	sym := Symbol{
+		name:  nameOffset,
+		info:  (binding << 4) | (symtype & 0xf),
+		other: 0,
+		shndx: 1, // SHN_ABS (absolute symbol) - no section
+		value: value,
+		size:  0,
+	}
+
+	ds.dynsymSyms = append(ds.dynsymSyms, sym)
+	return uint32(len(ds.dynsymSyms) - 1)
+}
+
 // buildSymbolTable writes the symbol table
 func (ds *DynamicSections) buildSymbolTable() {
 	ds.dynsym.Reset()
@@ -156,6 +173,40 @@ func (ds *DynamicSections) buildSymbolTable() {
 		binary.Write(&ds.dynsym, binary.LittleEndian, sym.value)
 		binary.Write(&ds.dynsym, binary.LittleEndian, sym.size)
 	}
+}
+
+// UpdateSymbolValue updates a symbol's value (address) by name
+// Returns true if symbol was found and updated
+func (ds *DynamicSections) UpdateSymbolValue(name string, value uint64) bool {
+	// Find the symbol by name - lookup existing string offset
+	targetName, exists := ds.dynstrMap[name]
+	if !exists {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG UpdateSymbolValue: string '%s' not found in dynstrMap\n", name)
+		}
+		return false
+	}
+
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG UpdateSymbolValue: looking for symbol '%s' with string offset %d, value=0x%x\n", name, targetName, value)
+	}
+
+	for i := range ds.dynsymSyms {
+		if ds.dynsymSyms[i].name == targetName {
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG UpdateSymbolValue: found symbol at index %d, updating value from 0x%x to 0x%x, shndx from %d to 1\n",
+					i, ds.dynsymSyms[i].value, value, ds.dynsymSyms[i].shndx)
+			}
+			ds.dynsymSyms[i].value = value
+			ds.dynsymSyms[i].shndx = 1 // Mark as defined (SHN_ABS)
+			return true
+		}
+	}
+
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG UpdateSymbolValue: symbol '%s' not found in symbol table\n", name)
+	}
+	return false
 }
 
 // AddNeeded adds a required shared library

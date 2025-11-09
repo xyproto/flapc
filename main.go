@@ -220,6 +220,7 @@ type ExecutableBuilder struct {
 	elf, rodata, data, text bytes.Buffer
 	rodataOffsetInELF       uint64
 	dataOffsetInELF         uint64
+	dynsymOffsetInELF       uint64
 }
 
 func (eb *ExecutableBuilder) ELFWriter() Writer {
@@ -240,19 +241,46 @@ func (eb *ExecutableBuilder) TextWriter() Writer {
 
 // PatchPCRelocations patches all PC-relative address loads with actual offsets
 func (eb *ExecutableBuilder) PatchPCRelocations(textAddr, rodataAddr uint64, rodataSize int) {
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG PatchPCRelocations called: %d relocations, textAddr=0x%x\n", len(eb.pcRelocations), textAddr)
+	}
 	textBytes := eb.text.Bytes()
 
 	for _, reloc := range eb.pcRelocations {
 		// Find the symbol address
 		var targetAddr uint64
-		if c, ok := eb.consts[reloc.symbolName]; ok {
-			targetAddr = c.addr
-			if strings.HasPrefix(reloc.symbolName, "str_") {
-				if VerboseMode {
-					fmt.Fprintf(os.Stderr, "DEBUG PatchPCRelocations: %s using address 0x%x\n", reloc.symbolName, targetAddr)
-				}
+		var found bool
+
+		// First try function labels (pattern lambdas, regular functions)
+		// These are in .text section
+		if labelOffset, ok := eb.labels[reloc.symbolName]; ok {
+			targetAddr = textAddr + uint64(labelOffset)
+			found = true
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG PatchPCRelocations: function %s using address 0x%x (textAddr=0x%x, offset=%d)\n",
+					reloc.symbolName, targetAddr, textAddr, labelOffset)
 			}
-		} else {
+		}
+
+		// Try data symbols (strings, constants) if not a function label
+		// These are in .rodata section
+		if !found {
+			if c, ok := eb.consts[reloc.symbolName]; ok {
+				targetAddr = c.addr
+				found = true
+				if strings.HasPrefix(reloc.symbolName, "str_") {
+					if VerboseMode {
+						fmt.Fprintf(os.Stderr, "DEBUG PatchPCRelocations: %s using address 0x%x\n", reloc.symbolName, targetAddr)
+					}
+				} else if strings.Contains(reloc.symbolName, "parallel") && VerboseMode {
+					fmt.Fprintf(os.Stderr, "DEBUG PatchPCRelocations: %s found in consts with address 0x%x\n", reloc.symbolName, targetAddr)
+				}
+			} else if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG PatchPCRelocations: label '%s' not found in labels or consts (have %d labels)\n", reloc.symbolName, len(eb.labels))
+			}
+		}
+
+		if !found {
 			if VerboseMode {
 				fmt.Fprintf(os.Stderr, "Warning: Symbol %s not found for PC relocation\n", reloc.symbolName)
 			}
@@ -652,7 +680,11 @@ func (eb *ExecutableBuilder) MarkLabel(label string) {
 	if eb.labels == nil {
 		eb.labels = make(map[string]int)
 	}
-	eb.labels[label] = eb.text.Len()
+	offset := eb.text.Len()
+	eb.labels[label] = offset
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG MarkLabel: %s at offset %d\n", label, offset)
+	}
 }
 
 func (eb *ExecutableBuilder) LabelOffset(label string) int {
@@ -1023,6 +1055,32 @@ func (eb *ExecutableBuilder) patchDataInELF() {
 	} else {
 		fmt.Fprintf(os.Stderr, "DEBUG patchDataInELF: WARNING - invalid offset or size (offset=%d, size=%d, elfBuf=%d)\n",
 			dataOffset, dataSize, len(elfBuf))
+	}
+}
+
+func (eb *ExecutableBuilder) patchDynsymInELF(ds *DynamicSections) {
+	elfBuf := eb.elf.Bytes()
+	newDynsym := ds.dynsym.Bytes()
+
+	dynsymOffset := int(eb.dynsymOffsetInELF)
+	dynsymSize := len(newDynsym)
+
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG patchDynsymInELF: elfBuf size=%d, newDynsym size=%d\n", len(elfBuf), len(newDynsym))
+		fmt.Fprintf(os.Stderr, "DEBUG patchDynsymInELF: dynsymOffset=0x%x, dynsymSize=%d\n", dynsymOffset, dynsymSize)
+	}
+
+	if dynsymOffset > 0 && dynsymOffset+dynsymSize <= len(elfBuf) {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG patchDynsymInELF: copying newDynsym to elfBuf[0x%x:0x%x]\n", dynsymOffset, dynsymOffset+dynsymSize)
+		}
+		copy(elfBuf[dynsymOffset:dynsymOffset+dynsymSize], newDynsym)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG patchDynsymInELF: patched symbol table successfully\n")
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "DEBUG patchDynsymInELF: WARNING - invalid offset or size (offset=%d, size=%d, elfBuf=%d)\n",
+			dynsymOffset, dynsymSize, len(elfBuf))
 	}
 }
 

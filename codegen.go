@@ -556,6 +556,11 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	// libc.so.6 is always needed for basic functionality
 	ds.AddNeeded("libc.so.6")
 
+	// Check if pthread functions are used (parallel loops with @@)
+	if fc.usedFunctions["pthread_create"] || fc.usedFunctions["pthread_join"] {
+		ds.AddNeeded("libpthread.so.0")
+	}
+
 	// Check if any libm functions are called (via call() FFI)
 	// Note: builtin math functions like sqrt(), sin(), cos() use hardware instructions, not libm
 	// But call("sqrt", ...) calls libm's sqrt
@@ -2166,129 +2171,163 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 
 	fmt.Fprintf(os.Stderr, "      Note: V6 spawning %d threads with barrier synchronization\n", actualThreads)
 
-	// Collect child jump positions - all children jump to the same child code
-	childJumpPositions := make([]int, 0, actualThreads)
+	// Allocate pthread_t array on stack to store thread IDs
+	// Each pthread_t is 8 bytes, allocate space for all threads
+	pthreadArraySize := int64(actualThreads * 8)
+	fc.out.SubImmFromReg("rsp", pthreadArraySize)
+	fc.out.MovRegToReg("r12", "rsp") // r12 = pthread_t array base
 
-	// Store parent's rbp in r11 so child threads can access parent variables
-	fc.out.MovRegToReg("r11", "rbp")
-
-	// Spawn actualThreads child threads
+	// Spawn actualThreads child threads using pthread_create
 	for threadIdx := 0; threadIdx < actualThreads; threadIdx++ {
 		fmt.Fprintf(os.Stderr, "      Spawning thread %d with range [%d, %d)\n",
 			threadIdx, threadRanges[threadIdx][0], threadRanges[threadIdx][1])
 
-		// Step 1: Allocate 1MB stack for child thread using mmap
-		// mmap(addr=NULL, length=1MB, prot=PROT_READ|PROT_WRITE,
-		//      flags=MAP_PRIVATE|MAP_ANONYMOUS, fd=-1, offset=0)
-		// mmap syscall number is 9
-		fc.out.MovImmToReg("rax", "9")       // sys_mmap
-		fc.out.MovImmToReg("rdi", "0")       // addr = NULL
-		fc.out.MovImmToReg("rsi", "1048576") // length = 1MB
-		fc.out.MovImmToReg("rdx", "3")       // prot = PROT_READ|PROT_WRITE
-		fc.out.MovImmToReg("r10", "34")      // flags = MAP_PRIVATE|MAP_ANONYMOUS
-		fc.out.MovImmToReg("r8", "-1")       // fd = -1
-		fc.out.MovImmToReg("r9", "0")        // offset = 0
-		fc.out.Syscall()
+		// Allocate thread argument structure on heap (32 bytes)
+		// Structure: [start: int64][end: int64][barrier_ptr: int64][parent_rbp: int64]
+		fc.out.MovImmToReg("rdi", "32") // size = 32 bytes
+		fc.trackFunctionCall("malloc")
+		fc.eb.GenerateCallInstruction("malloc")
+		fc.out.MovRegToReg("r13", "rax") // r13 = thread args
 
-		// rax now contains the stack base address
-		// Stack grows downward, so stack top = base + size - 16 (for alignment)
-		fc.out.AddImmToReg("rax", 1048576-16) // Stack top
-		fc.out.MovRegToReg("r13", "rax")      // Save stack top in r13
-
-		// V6: Store work range + barrier address on child stack
-		// Stack layout: [start: int64][end: int64][barrier_ptr: int64] = 24 bytes
+		// Store thread parameters in the allocated structure
 		threadStart := int64(threadRanges[threadIdx][0])
 		threadEnd := int64(threadRanges[threadIdx][1])
 
-		// Store start at [r13-24]
+		// Store start at [r13+0]
 		fc.out.MovImmToReg("rax", fmt.Sprintf("%d", threadStart))
-		fc.out.MovRegToMem("rax", "r13", -24)
+		fc.out.MovRegToMem("rax", "r13", 0)
 
-		// Store end at [r13-16]
+		// Store end at [r13+8]
 		fc.out.MovImmToReg("rax", fmt.Sprintf("%d", threadEnd))
-		fc.out.MovRegToMem("rax", "r13", -16)
+		fc.out.MovRegToMem("rax", "r13", 8)
 
-		// Store barrier address at [r13-8]
-		// Barrier is at r15 (saved earlier from rsp after barrier allocation)
-		fc.out.MovRegToMem("r15", "r13", -8)
+		// Store barrier address at [r13+16]
+		fc.out.MovRegToMem("r15", "r13", 16)
 
-		// Adjust stack pointer to account for work range + barrier pointer
-		fc.out.SubImmFromReg("r13", 24)
+		// Store parent rbp at [r13+24] for accessing parent variables
+		// Note: Must save rbp AFTER malloc() since malloc clobbers caller-saved regs
+		fc.out.MovRegToMem("rbp", "r13", 24)
 
-		// Step 2: Call clone() syscall
-		// clone(flags, child_stack, ptid, ctid, newtls)
-		// CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM
-		// = 0x100 | 0x200 | 0x400 | 0x800 | 0x10000 | 0x40000 = 0x50F00
-		fc.out.MovImmToReg("rax", fmt.Sprintf("%d", cloneSyscallNumber)) // sys_clone
-		fc.out.MovImmToReg("rdi", "331520")                              // flags = 0x50F00
-		fc.out.MovRegToReg("rsi", "r13")                                 // child_stack = stack top
-		fc.out.MovImmToReg("rdx", "0")                                   // ptid (not used)
-		fc.out.MovImmToReg("r10", "0")                                   // ctid (not used)
-		fc.out.MovImmToReg("r8", "0")                                    // newtls (not used)
-		fc.out.Syscall()
+		// Call pthread_create(&thread_id, NULL, thread_func, arg)
+		// pthread_create(pthread_t *thread, const pthread_attr_t *attr,
+		//                void *(*start_routine)(void*), void *arg)
 
-		// rax now contains: 0 if child, TID if parent
+		// Calculate pthread_t pointer: r12 + (threadIdx * 8)
+		pthreadOffset := int64(threadIdx * 8)
+		fc.out.MovRegToReg("rdi", "r12")                                    // rdi = pthread array base
+		fc.out.AddImmToReg("rdi", pthreadOffset)                            // rdi = &thread_id
+		fc.out.MovImmToReg("rsi", "0")                                      // attr = NULL
+		fc.out.LeaSymbolToReg("rdx", "_parallel_thread_entry")              // start_routine
+		fc.out.MovRegToReg("rcx", "r13")                                    // arg = thread args
+		fc.trackFunctionCall("pthread_create")
+		fc.eb.GenerateCallInstruction("pthread_create")
+
+		// Check if pthread_create succeeded (returns 0 on success)
 		fc.out.TestRegReg("rax", "rax")
+		createSuccessJump := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpEqual, 0) // je success
 
-		// Jump to child code if rax == 0
-		childJumpPos := fc.eb.text.Len()
-		fc.out.JumpConditional(JumpEqual, 0) // Will patch offset later
-		childJumpPositions = append(childJumpPositions, childJumpPos)
+		// pthread_create failed - print error and exit
+		fc.out.MovImmToReg("rdi", "1")
+		fc.trackFunctionCall("exit")
+		fc.eb.GenerateCallInstruction("exit")
 
-		// Parent path: continue to next thread spawn (or fall through if last)
+		// Success - continue to next thread
+		createSuccessPos := fc.eb.text.Len()
+		fc.patchJumpImmediate(createSuccessJump+2, int32(createSuccessPos-(createSuccessJump+ConditionalJumpSize)))
 	}
 
-	// Parent jumps over child code after spawning all threads
+	// Now parent waits for all threads to complete using pthread_join
+	// Loop through all threads and join them
+	for threadIdx := 0; threadIdx < actualThreads; threadIdx++ {
+		pthreadOffset := int64(threadIdx * 8)
+		fc.out.MovRegToReg("rdi", "r12")        // rdi = pthread array base
+		fc.out.AddImmToReg("rdi", pthreadOffset) // rdi = &thread_id
+		fc.out.MovImmToReg("rsi", "0")          // retval = NULL (we don't need return value)
+		fc.trackFunctionCall("pthread_join")
+		fc.eb.GenerateCallInstruction("pthread_join")
+	}
+
+	// Clean up pthread_t array from stack
+	fc.out.AddImmToReg("rsp", pthreadArraySize)
+
+	// Jump over thread entry function
 	parentJumpPos := fc.eb.text.Len()
-	fc.out.JumpUnconditional(0) // Will patch to skip child code
+	fc.out.JumpUnconditional(0) // Will patch to skip thread function
 
-	// Child path: all children execute this code with their own work ranges
-	childStartPos := fc.eb.text.Len()
+	// Thread entry function: void* _parallel_thread_entry(void* arg)
+	fc.eb.MarkLabel("_parallel_thread_entry")
 
-	// Patch all child jump positions to point here
-	for _, childJumpPos := range childJumpPositions {
-		childOffset := int32(childStartPos - (childJumpPos + ConditionalJumpSize))
-		fc.patchJumpImmediate(childJumpPos+2, childOffset)
-	}
-
-	// V4: Child thread reads work range + barrier and executes loop
-	// Stack layout when thread starts: [start][end][barrier_ptr] at rsp+0, rsp+8, rsp+16
-
-	// Set up new stack frame
+	// Function prologue
+	fc.out.PushReg("rbp")
 	fc.out.MovRegToReg("rbp", "rsp")
 
-	// Load work range and barrier from stack
-	// start is at [rbp+0], end is at [rbp+8], barrier_ptr is at [rbp+16]
-	fc.out.MovMemToReg("r12", "rbp", 0)  // r12 = start
-	fc.out.MovMemToReg("r13", "rbp", 8)  // r13 = end
-	fc.out.MovMemToReg("r15", "rbp", 16) // r15 = barrier address
+	// arg is in rdi (first parameter), save it in rbx (callee-saved)
+	fc.out.PushReg("rbx") // Save original rbx
+	fc.out.MovRegToReg("rbx", "rdi") // rbx = arg pointer for later free
 
-	// Allocate stack space for loop and message
-	fc.out.SubImmFromReg("rsp", 32) // 32 bytes for loop counter + message buffer
+	// Extract parameters from structure at [rdi] and save to stack using rbp-relative addressing
+	// Structure: [start: int64][end: int64][barrier_ptr: int64][parent_rbp: int64]
+	// Using rbp-relative addressing ensures stability across function calls (which modify rsp)
 
-	// Initialize loop counter to start
-	fc.out.MovRegToReg("r14", "r12") // r14 = current iteration (start with r12=start)
+	// Allocate stack space for loop variables and alignment
+	// After push rbp (8) + push rbx (8) = 16 bytes
+	// Stack layout (rbp-relative):
+	//   [rbp-8]:  saved rbx
+	//   [rbp-16]: start
+	//   [rbp-24]: end
+	//   [rbp-32]: counter
+	//   [rbp-40]: barrier_ptr
+	//   [rbp-48]: parent_rbp
+	//   [rbp-56]: iterator value (float64)
+	// Need 64 bytes total for 16-byte alignment (8 slots * 8 bytes)
+	fc.out.SubImmFromReg("rsp", 64)
+
+	// Load parameters from argument structure and store to stack slots (rbp-relative)
+	// Note: Using rbx since we saved rdi to rbx above
+	fc.out.MovMemToReg("rax", "rbx", 0)   // rax = start
+	fc.out.MovRegToMem("rax", "rbp", -16) // [rbp-16] = start
+
+	fc.out.MovMemToReg("rax", "rbx", 8)   // rax = end
+	fc.out.MovRegToMem("rax", "rbp", -24) // [rbp-24] = end
+
+	fc.out.MovMemToReg("rax", "rbx", 16)  // rax = barrier_ptr
+	fc.out.MovRegToMem("rax", "rbp", -40) // [rbp-40] = barrier_ptr
+
+	fc.out.MovMemToReg("rax", "rbx", 24)  // rax = parent_rbp
+	fc.out.MovRegToMem("rax", "rbp", -48) // [rbp-48] = parent_rbp
+
+	// Initialize loop counter to start value
+	fc.out.MovMemToReg("rax", "rbp", -16) // rax = start
+	fc.out.MovRegToMem("rax", "rbp", -32) // [rbp-32] = counter (initialized to start)
 
 	// Loop start
 	loopStartPos := fc.eb.text.Len()
 
-	// Compare r14 (current) with r13 (end)
-	fc.out.CmpRegToReg("r14", "r13")
+	// Load counter and end from stack and compare (rbp-relative)
+	fc.out.MovMemToReg("rax", "rbp", -32) // rax = counter
+	fc.out.MovMemToReg("rcx", "rbp", -24) // rcx = end
+	fc.out.CmpRegToReg("rax", "rcx")
 
-	// If r14 >= r13, exit loop
+	// If counter >= end, exit loop
 	loopEndJumpPos := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpGreaterOrEqual, 0) // Placeholder, will patch
 
 	// V5 Step 2: Set up iterator variable
-	// Convert r14 (int counter) to float64 and store at rbp-16
+	// Convert counter (int) to float64 and store at rbp-56
 	// This makes the iterator accessible as a proper float64 variable
-	iteratorOffset := 16
-	fc.out.Cvtsi2sd("xmm0", "r14")                     // xmm0 = (float64)r14
-	fc.out.MovXmmToMem("xmm0", "rbp", -iteratorOffset) // Store at rbp-16
+	// Note: Using rbp-56 to avoid conflict with loop variables at rbp-16 through rbp-48
+	iteratorOffset := 56
+	fc.out.MovMemToReg("rax", "rbp", -32)          // rax = counter
+	fc.out.Cvtsi2sd("xmm0", "rax")                 // xmm0 = (float64)counter
+	fc.out.MovXmmToMem("xmm0", "rbp", -iteratorOffset) // Store at rbp-56
 
 	// V5 Step 3 & 4: Compile loop body with existing variable context
 	// The variables are already registered in fc.variables from collectSymbols phase
 	// We just need to ensure the iterator is set correctly for this context
+
+	// Save parent_rbp to r11 for parent variable access (rbp-relative)
+	fc.out.MovMemToReg("r11", "rbp", -48) // r11 = parent_rbp
 
 	// Capture parent variables: exclude iterator and loop-local vars
 	loopLocalVars := collectLoopLocalVars(stmt.Body)
@@ -2316,8 +2355,10 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	fc.variables[stmt.Iterator] = savedIteratorOffset
 	fc.parentVariables = savedParentVariables
 
-	// Increment loop counter
-	fc.out.IncReg("r14")
+	// Increment loop counter in memory (rbp-relative)
+	fc.out.MovMemToReg("rax", "rbp", -32) // rax = counter
+	fc.out.IncReg("rax")                  // rax++
+	fc.out.MovRegToMem("rax", "rbp", -32) // store back to [rbp-32]
 
 	// Jump back to loop start
 	loopBackJumpPos := fc.eb.text.Len()
@@ -2333,6 +2374,9 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 
 	// V4: Barrier synchronization after loop completes
 	// Atomically decrement barrier counter and synchronize
+
+	// Load barrier pointer from stack into r15 for barrier operations (rbp-relative)
+	fc.out.MovMemToReg("r15", "rbp", -40) // r15 = barrier_ptr from [rbp-40]
 
 	// Load -1 into eax for atomic decrement
 	fc.out.MovImmToReg("rax", "-1")
@@ -2372,12 +2416,14 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	waitOffset := int32(waitStartPos - (waitJumpPos + ConditionalJumpSize))
 	fc.patchJumpImmediate(waitJumpPos+2, waitOffset)
 
-	// futex(barrier_addr, FUTEX_WAIT_PRIVATE, 0)
-	// This waits until barrier.count changes from current value
-	fc.out.MovImmToReg("rax", "202")    // sys_futex
-	fc.out.MovRegToReg("rdi", "r15")    // addr = barrier address
-	fc.out.MovImmToReg("rsi", "128")    // op = FUTEX_WAIT_PRIVATE (0 | 128)
-	fc.out.MovMemToReg("rdx", "r15", 0) // val = current barrier.count
+	// futex(barrier_addr, FUTEX_WAIT_PRIVATE, expected_value)
+	// Use eax which contains the value we saw after our decrement
+	// This prevents a race where the last thread wakes before we wait
+	fc.out.MovRegToReg("rdx", "rax")   // rdx = expected value (from earlier eax)
+	fc.out.MovImmToReg("rax", "202")   // sys_futex
+	fc.out.MovRegToReg("rdi", "r15")   // addr = barrier address
+	fc.out.MovImmToReg("rsi", "128")   // op = FUTEX_WAIT_PRIVATE (0 | 128)
+	// rdx already set above
 	fc.out.Syscall()
 
 	// Exit point for all threads
@@ -2387,79 +2433,32 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	wakeExitOffset := int32(threadExitPos - (wakeExitJumpPos + UnconditionalJumpSize))
 	fc.patchJumpImmediate(wakeExitJumpPos+1, wakeExitOffset)
 
-	// Exit thread with status 0
-	fc.out.MovImmToReg("rax", "60") // sys_exit
-	fc.out.MovImmToReg("rdi", "0")  // status = 0
-	fc.out.Syscall()
+	// Restore stack pointer (matches the sub rsp, 64 in prologue)
+	fc.out.AddImmToReg("rsp", 64)
 
-	// Parent continues here
+	// TODO: Free the argument structure
+	// Temporarily disabled to debug crash
+	// fc.out.MovRegToReg("rdi", "rbx") // rdi = arg pointer (saved in rbx)
+	// fc.trackFunctionCall("free")
+	// fc.eb.GenerateCallInstruction("free")
+
+	// Restore rbx and return
+	fc.out.PopReg("rbx") // Restore original rbx
+	fc.out.XorRegWithReg("rax", "rax") // Return NULL
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
+
+	// Parent continues here after all pthread_join calls complete
 	parentContinuePos := fc.eb.text.Len()
 
-	// Patch the unconditional jump to point here
+	// Patch the jump over thread function to point here
 	parentOffset := int32(parentContinuePos - (parentJumpPos + UnconditionalJumpSize))
 	fc.patchJumpImmediate(parentJumpPos+1, parentOffset)
 
-	// V5 Fix: Parent participates in barrier like any other thread
-	// Parent decrements and either wakes or waits
-
-	// Load -1 into eax for atomic decrement
-	fc.out.MovImmToReg("rax", "-1")
-
-	// LOCK XADD [r15], eax - Atomically add -1 to barrier.count
-	fc.out.LockXaddMemReg("r15", 0, "eax")
-
-	// After LOCK XADD, eax contains the OLD value
-	// Decrement to get NEW value
-	fc.out.DecReg("eax")
-
-	// Check if we're the last to arrive (new value == 0)
-	fc.out.TestRegReg("eax", "eax")
-
-	// Jump if NOT last (need to wait)
-	parentWaitJumpPos := fc.eb.text.Len()
-	fc.out.JumpConditional(JumpNotEqual, 0) // Placeholder
-
-	// Last to arrive: Wake all waiting threads
-	fc.out.MovImmToReg("rax", "202")    // sys_futex
-	fc.out.MovRegToReg("rdi", "r15")    // addr = barrier address
-	fc.out.MovImmToReg("rsi", "129")    // op = FUTEX_WAKE_PRIVATE
-	fc.out.MovMemToReg("rdx", "r15", 8) // val = barrier.total (wake all)
-	fc.out.Syscall()
-
-	// Jump to cleanup
-	parentWakeExitJumpPos := fc.eb.text.Len()
-	fc.out.JumpUnconditional(0) // Placeholder
-
-	// Not last: Wait on futex
-	parentWaitStartPos := fc.eb.text.Len()
-
-	// Patch the wait jump
-	parentWaitOffset := int32(parentWaitStartPos - (parentWaitJumpPos + ConditionalJumpSize))
-	fc.patchJumpImmediate(parentWaitJumpPos+2, parentWaitOffset)
-
-	// futex(barrier_addr, FUTEX_WAIT_PRIVATE, current_value)
-	fc.out.MovImmToReg("rax", "202")    // sys_futex
-	fc.out.MovRegToReg("rdi", "r15")    // addr = barrier address
-	fc.out.MovImmToReg("rsi", "128")    // op = FUTEX_WAIT_PRIVATE
-	fc.out.MovMemToReg("rdx", "r15", 0) // val = current barrier.count
-	fc.out.Syscall()
-
-	// Parent cleanup point
-	parentCleanupPos := fc.eb.text.Len()
-
-	// Patch the wake exit jump
-	parentWakeExitOffset := int32(parentCleanupPos - (parentWakeExitJumpPos + UnconditionalJumpSize))
-	fc.patchJumpImmediate(parentWakeExitJumpPos+1, parentWakeExitOffset)
-
-	// Step 4: Cleanup - deallocate barrier
+	// All threads have completed via pthread_join
+	// Cleanup - deallocate barrier structure from stack
 	fc.out.AddImmToReg("rsp", 16)
 	fc.runtimeStack -= 16
-
-	// V4 TODO: Barrier synchronization
-	// 1. Thread decrements barrier counter after loop (LOCK XADD)
-	// 2. Last thread wakes others with futex
-	// 3. Parent waits on futex barrier instead of executing sequentially
-	// 4. Execute actual loop body (compileStatements) instead of just printing digits
 }
 
 func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
