@@ -4,7 +4,75 @@ Prioritized from foundational to enhancement. Focus on fixing bugs and completin
 
 ## Critical Bugs 🔴
 
-### 1. Fix `safe_divide_result()` map allocation crash
+### 1. Fix parallel loop threading SEGFAULT and iteration bugs
+**Priority:** CRITICAL
+**Status:** BROKEN (threads crash immediately)
+**Location:** `codegen.go:2166-2450`
+**Session Context:** See PROMPT.md for full details
+
+**Three Related Issues:**
+
+**Issue 1A: Thread SEGFAULT (NEW - introduced in latest refactor)**
+- Threads created via pthread_create crash with SIGSEGV immediately
+- Crash occurs in or before thread entry function `_parallel_thread_entry`
+- No output from threads before crash
+- Test: `@@ i in 0..<2 { println(f"i={i}") }` → SEGFAULT
+
+**Issue 1B: Loop iteration bug (PRE-EXISTING)**
+- Even when not crashing, loops execute only ONE iteration per thread
+- Thread 0 with range [0, 2) prints only i=0 (should print i=0, i=1)
+- Thread 1 with range [2, 4) prints only i=2 (should print i=2, i=3)
+- This bug existed BEFORE the refactoring (confirmed in commit 59149d3)
+
+**Issue 1C: Barrier synchronization hang (PRE-EXISTING)**
+- Program doesn't exit after loop completion
+- Futex-based barrier may have race condition
+- All threads wait indefinitely instead of being woken
+
+**Recent Refactoring (Current State):**
+- Changed from `clone()` syscall to `pthread_create()` for portability
+- Moved loop control from hardcoded registers (r12-r14) to rbp-relative stack slots
+- Proper 16-byte stack alignment (64 bytes total)
+- Fixed bug: use rbx instead of rdi after saving argument pointer
+- Stack layout documented in PROMPT.md
+
+**Root Cause Analysis Needed:**
+1. Where exactly does SEGFAULT occur? (use gdb/objdump)
+2. Is function pointer (`_parallel_thread_entry`) being passed correctly?
+3. Is rbp-relative addressing working when rsp changes during function calls?
+4. Why does loop only execute once? (counter increment? condition check? jump?)
+5. Is barrier futex logic correct?
+
+**Action Items:**
+- [ ] **PRIORITY 1:** Debug SEGFAULT with gdb - find exact crash instruction
+- [ ] Verify `LeaSymbolToReg("rdx", "_parallel_thread_entry")` generates correct function pointer
+- [ ] Test with empty loop body to isolate crash location
+- [ ] Examine generated assembly with objdump
+- [ ] **PRIORITY 2:** Once threads run, debug loop iteration issue
+- [ ] Check counter increment code (lines 2356-2359)
+- [ ] Verify loop condition and jump logic (lines 2305-2364)
+- [ ] **PRIORITY 3:** Fix barrier synchronization hang
+- [ ] Review futex wake/wait logic (lines 2373-2427)
+- [ ] Test barrier with simple counter increment
+
+**Alternative Approaches:**
+- Option A: Debug current pthread + rbp-relative implementation
+- Option B: Revert to clone() syscall, fix register clobbering differently
+- Option C: Use register allocator (as user originally requested)
+- Option D: Hybrid - keep pthread, simplify stack layout
+
+**Test Command:**
+```bash
+go build -o flapc *.go
+./flapc testprograms/parallel_no_atomic.flap -o /tmp/test 2>&1 | grep -v DEBUG
+timeout 2 /tmp/test
+# Expected: Print all thread iterations, clean exit
+# Actual: SEGFAULT
+```
+
+---
+
+### 2. Fix `safe_divide_result()` map allocation crash
 **Priority:** HIGH
 **Status:** Broken (segfault on map access)
 **Location:** `codegen.go:9889-9962`
@@ -25,7 +93,7 @@ Prioritized from foundational to enhancement. Focus on fixing bugs and completin
 
 ---
 
-### 2. Refactor printf as robust runtime function, make println use it
+### 3. Refactor printf as robust runtime function, make println use it
 **Priority:** LOW (infrastructure exists, needs implementation decision)
 **Status:** Framework created, helper functions ready
 
@@ -63,8 +131,8 @@ Prioritized from foundational to enhancement. Focus on fixing bugs and completin
 
 ---
 
-### 3. Fix atomic operations in parallel loops
-**Priority:** MEDIUM
+### 4. Fix atomic operations in parallel loops
+**Priority:** MEDIUM (blocked by #1)
 **Status:** Not working inside `@@` loops
 **Reason:** Register allocation conflicts
 
@@ -74,6 +142,7 @@ Prioritized from foundational to enhancement. Focus on fixing bugs and completin
 - Requires parallel-aware register allocation
 
 **Action Items:**
+- [ ] First fix parallel loop threading issues (#1)
 - [ ] Implement context-aware register allocation for parallel sections
 - [ ] Reserve registers for atomic operations in parallel contexts
 - [ ] Add test cases: atomic increment inside `@@` loop
@@ -83,19 +152,19 @@ Prioritized from foundational to enhancement. Focus on fixing bugs and completin
 
 ## Core Features to Complete 🟡
 
-### 4. Complete Result type implementation
+### 5. Complete Result type implementation
 **Priority:** HIGH
-**Dependencies:** Fix #1
+**Dependencies:** Fix #2
 
 **Status:** Partially implemented
 - ✅ `safe_divide()`, `safe_sqrt()`, `safe_ln()` - NaN propagation
-- ⚠️ `safe_divide_result()` - crashes (see #1)
+- ⚠️ `safe_divide_result()` - crashes (see #2)
 - ❌ `safe_sqrt_result()` - not implemented
 - ❌ `safe_ln_result()` - not implemented
 - ❌ Result helper methods (`then`, `map`, `unwrap_or`)
 
 **Action Items:**
-- [ ] Fix `safe_divide_result()` crash (#1)
+- [ ] Fix `safe_divide_result()` crash (#2)
 - [ ] Implement `safe_sqrt_result()` using same pattern
 - [ ] Implement `safe_ln_result()` using same pattern
 - [ ] Add Result helper builtins for chaining
@@ -103,8 +172,8 @@ Prioritized from foundational to enhancement. Focus on fixing bugs and completin
 
 ---
 
-### 5. Implement channels for CSP-style concurrency
-**Priority:** HIGH
+### 6. Implement channels for CSP-style concurrency
+**Priority:** HIGH (blocked by #1)
 **Status:** Not started
 **Design:** See CHANNELS_AND_ENET_PLAN.md Part 1
 
@@ -122,10 +191,10 @@ Prioritized from foundational to enhancement. Focus on fixing bugs and completin
 
 ---
 
-### 6. Implement spawn with channel-based result waiting
-**Priority:** MEDIUM
+### 7. Implement spawn with channel-based result waiting
+**Priority:** MEDIUM (blocked by #6)
 **Status:** Not started
-**Dependencies:** #5 (channels)
+**Dependencies:** #6 (channels)
 **Design:** See SPAWN_DESIGN.md
 
 **Action Items:**
@@ -139,7 +208,7 @@ Prioritized from foundational to enhancement. Focus on fixing bugs and completin
 
 ## Error Handling & Diagnostics 🟢
 
-### 7. Improve compile-time error messages
+### 8. Improve compile-time error messages
 **Priority:** MEDIUM
 **Status:** In progress
 
@@ -154,7 +223,7 @@ Prioritized from foundational to enhancement. Focus on fixing bugs and completin
 
 ## Language Enhancements 🔵
 
-### 8. Add `???` syntax for pseudo-random numbers
+### 9. Add `???` syntax for pseudo-random numbers
 **Priority:** LOW
 **Status:** Not implemented
 
@@ -174,7 +243,7 @@ Prioritized from foundational to enhancement. Focus on fixing bugs and completin
 
 ---
 
-### 9. Improve CStruct ergonomics with typed accessors
+### 10. Improve CStruct ergonomics with typed accessors
 **Priority:** LOW
 **Status:** Not implemented
 
@@ -194,7 +263,7 @@ Desired: `set(ptr, Vec3.x, 1.0)`
 
 ## Optimizations 🟣
 
-### 10. Re-enable strength reduction for integer contexts
+### 11. Re-enable strength reduction for integer contexts
 **Priority:** LOW
 **Status:** Disabled (broke float operations)
 
@@ -212,9 +281,11 @@ Desired: `set(ptr, Vec3.x, 1.0)`
 
 ---
 
-### 11. Register allocator Phase 2/3 (local variables)
+### 12. Register allocator Phase 2/3 (local variables)
 **Priority:** LOW
 **Status:** Deferred pending profiling data
+
+**Note:** Register allocator exists (register_allocator.go) but not fully integrated
 
 **Action Items:**
 - [ ] Profile real-world Flap programs for bottlenecks
@@ -222,6 +293,7 @@ Desired: `set(ptr, Vec3.x, 1.0)`
 - [ ] Implement local variable register mapping
 - [ ] Add register spilling when needed
 - [ ] Measure performance gains vs complexity cost
+- [ ] Consider using for parallel loop control variables (Issue #1)
 
 ---
 
@@ -238,10 +310,14 @@ Desired: `set(ptr, Vec3.x, 1.0)`
 - ✅ Design hybrid error handling (NaN propagation + Result types)
 - ✅ Implement NaN/Inf helper functions (`is_nan`, `is_finite`, `is_inf`)
 - ✅ Implement safe arithmetic with NaN propagation (`safe_divide`, `safe_sqrt`, `safe_ln`)
+- ✅ Switch parallel loops from clone() to pthread_create() (in progress - has bugs)
+- ✅ Refactor parallel loop control to use stack slots instead of hardcoded registers (in progress - has bugs)
 
 ---
 
 **Workflow:** Start from #1 (critical bugs), then move down. Test thoroughly at each step. Commit after each completed item.
+
+**Current Focus:** Issue #1 is CRITICAL and blocking other parallel programming features. All effort should focus on debugging and fixing the thread SEGFAULT, then the iteration bug, then the barrier hang.
 
 ---
 
