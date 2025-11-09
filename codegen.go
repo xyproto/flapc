@@ -2297,8 +2297,10 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	//   [rbp-40]: barrier_ptr
 	//   [rbp-48]: parent_rbp
 	//   [rbp-56]: iterator value (float64)
-	// Need 64 bytes total for 16-byte alignment (8 slots * 8 bytes)
-	fc.out.SubImmFromReg("rsp", 64)
+	// CRITICAL: pthread entry gives us 16-byte aligned rsp. After push rbp + push rbx,
+	// rsp is aligned. We need rsp MISALIGNED by 8 before call instructions (so that
+	// after call pushes return address, it becomes aligned). Therefore, sub by 56 not 64.
+	fc.out.SubImmFromReg("rsp", 56)
 
 	// Load parameters from argument structure and store to stack slots (rbp-relative)
 	// Note: Using rbx since we saved rdi to rbx above
@@ -2460,8 +2462,8 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	wakeExitOffset := int32(threadExitPos - (wakeExitJumpPos + UnconditionalJumpSize))
 	fc.patchJumpImmediate(wakeExitJumpPos+1, wakeExitOffset)
 
-	// Restore stack pointer (matches the sub rsp, 64 in prologue)
-	fc.out.AddImmToReg("rsp", 64)
+	// Restore stack pointer (matches the sub rsp, 56 in prologue)
+	fc.out.AddImmToReg("rsp", 56)
 
 	// TODO: Free the argument structure that was malloc'd in the parent
 	// Currently disabled - memory leak but avoids potential corruption

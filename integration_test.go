@@ -40,12 +40,7 @@ var skipPrograms = map[string]bool{
 
 	// Still need investigation:
 	"atomic_parallel_simple": true, // Segfaults - @@ parallel loop syntax not fully implemented (uses atomic operations in parallel loop body)
-
-	// Parallel loop with malloc: Currently, calling malloc from within parallel threads causes crashes
-	// due to stack alignment or TLS issues. F-strings use malloc internally for string construction.
-	// Core parallel loop functionality works (171/173 tests pass), but malloc-dependent features need work.
-	"parallel_no_atomic":    true, // Uses f-strings which call malloc - crashes in thread
-	"parallel_malloc_access": true, // Directly calls malloc from thread - crashes
+	"parallel_malloc_access": true, // Uses store()/load() primitives which aren't implemented yet
 }
 
 // Programs to compile but not run (require external libraries beyond libc/libm)
