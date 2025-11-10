@@ -21,6 +21,6 @@ is_correct := final_val == 4.0
 is_correct {
     println("PASSED")
 }
-!is_correct {
+not is_correct {
     println("FAILED")
 }

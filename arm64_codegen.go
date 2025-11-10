@@ -1263,8 +1263,11 @@ func (acg *ARM64CodeGen) compileAssignment(assign *AssignStmt) error {
 		}
 	} else {
 		// = Define immutable variable (can shadow existing immutable, but not mutable)
+		// HOWEVER: if variable exists and is mutable, allow update (don't create new variable)
 		if exists && isMutable {
-			return fmt.Errorf("cannot shadow mutable variable '%s' with immutable variable", assign.Name)
+			// Allow updating existing mutable variable with =
+			// Don't need to create new variable, just proceed with code generation
+			assign.IsReuseMutable = true
 		}
 	}
 
@@ -1288,18 +1291,30 @@ func (acg *ARM64CodeGen) compileAssignment(assign *AssignStmt) error {
 	} else {
 		// = or := - Allocate stack space for new variable (8-byte aligned)
 		// This includes shadowing for immutable variables
-		// Variables are stored at positive offsets from frame pointer
-		acg.stackSize += 8
-		acg.stackVars[assign.Name] = acg.stackSize
-		acg.mutableVars[assign.Name] = assign.Mutable
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG: Allocated variable '%s' at stackSize=%d (offset from fp=%d)\n",
-				assign.Name, acg.stackSize, 16+acg.stackSize-8)
+		// HOWEVER: if updating existing mutable variable with =, reuse its offset
+		if assign.IsReuseMutable {
+			// Reuse existing variable's offset (update with =)
+			stackOffset := acg.stackVars[assign.Name]
+			offset = int32(16 + stackOffset - 8)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG: Updating existing mutable variable '%s' at offset=%d\n",
+					assign.Name, offset)
+			}
+		} else {
+			// Allocate new stack space for new variable or shadowing
+			// Variables are stored at positive offsets from frame pointer
+			acg.stackSize += 8
+			acg.stackVars[assign.Name] = acg.stackSize
+			acg.mutableVars[assign.Name] = assign.Mutable
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG: Allocated variable '%s' at stackSize=%d (offset from fp=%d)\n",
+					assign.Name, acg.stackSize, 16+acg.stackSize-8)
+			}
+			// Track the type of the value being assigned
+			acg.varTypes[assign.Name] = acg.getExprType(assign.Value)
+			// x29 points to saved fp location, variables start at offset 16
+			offset = int32(16 + acg.stackSize - 8)
 		}
-		// Track the type of the value being assigned
-		acg.varTypes[assign.Name] = acg.getExprType(assign.Value)
-		// x29 points to saved fp location, variables start at offset 16
-		offset = int32(16 + acg.stackSize - 8)
 	}
 
 	// Store result on stack: str d0, [x29, #offset]

@@ -29,12 +29,13 @@ type Statement interface {
 }
 
 type AssignStmt struct {
-	Name      string
-	Value     Expression
-	Mutable   bool   // true for := or <-, false for =
-	IsUpdate  bool   // true for <-, false for = and :=
-	Precision string // Type annotation: "b64", "f32", etc. (empty if none)
-	IsHot     bool   // true if marked with hot keyword (hot-reloadable function)
+	Name           string
+	Value          Expression
+	Mutable        bool   // true for := or <-, false for =
+	IsUpdate       bool   // true for <-, false for = and :=
+	IsReuseMutable bool   // true when = is used to update existing mutable variable
+	Precision      string // Type annotation: "b64", "f32", etc. (empty if none)
+	IsHot          bool   // true if marked with hot keyword (hot-reloadable function)
 }
 
 func (a *AssignStmt) String() string {

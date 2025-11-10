@@ -1085,24 +1085,28 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 		} else {
 			// = - Define immutable variable (can shadow existing immutable, but not mutable)
 			if exists && fc.mutableVars[s.Name] {
-				return fmt.Errorf("cannot shadow mutable variable '%s' with immutable variable", s.Name)
-			}
-			fc.updateStackOffset(16)
-			offset := fc.stackOffset
-			fc.variables[s.Name] = offset
-			fc.mutableVars[s.Name] = false
-			if fc.debug {
-				if VerboseMode {
-					fmt.Fprintf(os.Stderr, "DEBUG collectSymbols: storing immutable variable '%s' at offset %d\n", s.Name, offset)
+				// Allow updating existing mutable variable with =
+				// Don't create new variable, reuse existing offset
+				s.IsReuseMutable = true
+			} else {
+				// Create new immutable variable
+				fc.updateStackOffset(16)
+				offset := fc.stackOffset
+				fc.variables[s.Name] = offset
+				fc.mutableVars[s.Name] = false
+				if fc.debug {
+					if VerboseMode {
+						fmt.Fprintf(os.Stderr, "DEBUG collectSymbols: storing immutable variable '%s' at offset %d\n", s.Name, offset)
+					}
 				}
-			}
 
-			// Track type if we can determine it from the expression
-			exprType := fc.getExprType(s.Value)
-			if exprType != "number" && exprType != "unknown" {
-				fc.varTypes[s.Name] = exprType
-				if VerboseMode {
-					fmt.Fprintf(os.Stderr, "DEBUG: Setting varTypes[%s] = %s (immutable)\n", s.Name, exprType)
+				// Track type if we can determine it from the expression
+				exprType := fc.getExprType(s.Value)
+				if exprType != "number" && exprType != "unknown" {
+					fc.varTypes[s.Name] = exprType
+					if VerboseMode {
+						fmt.Fprintf(os.Stderr, "DEBUG: Setting varTypes[%s] = %s (immutable)\n", s.Name, exprType)
+					}
 				}
 			}
 		}
@@ -1428,7 +1432,11 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 			}
 		}
 
-		if !s.IsUpdate {
+		// Only allocate new stack space if this is a new variable definition
+		// Don't allocate if:
+		// - IsUpdate (i.e., <- operator)
+		// - IsReuseMutable (i.e., = updating existing mutable variable)
+		if !s.IsUpdate && !s.IsReuseMutable {
 			fc.out.SubImmFromReg("rsp", 16)
 			fc.runtimeStack += 16
 		}
@@ -4560,6 +4568,14 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 }
 
 func (fc *FlapCompiler) compileMatchExpr(expr *MatchExpr) {
+	// UNCONDITIONAL DEBUG - verify this function is called
+	fmt.Fprintf(os.Stderr, "*** MATCHEXPR CALLED at textPos=%d: %d clauses, default=%v\n", fc.eb.text.Len(), len(expr.Clauses), expr.DefaultExpr != nil)
+	for i, clause := range expr.Clauses {
+		hasGuard := clause.Guard != nil
+		resultType := fmt.Sprintf("%T", clause.Result)
+		fmt.Fprintf(os.Stderr, "    Clause %d: hasGuard=%v, resultType=%s\n", i, hasGuard, resultType)
+	}
+
 	fc.compileExpression(expr.Condition)
 
 	fc.labelCounter++
@@ -4661,8 +4677,15 @@ func (fc *FlapCompiler) compileMatchExpr(expr *MatchExpr) {
 	fc.compileMatchDefault(expr.DefaultExpr)
 
 	endPos := fc.eb.text.Len()
-	for _, jumpPos := range endJumpPositions {
+	if fc.debug {
+		fmt.Fprintf(os.Stderr, "DEBUG JUMP PATCHING: endPos = %d, patching %d jumps\n", endPos, len(endJumpPositions))
+	}
+	for i, jumpPos := range endJumpPositions {
 		endOffset := int32(endPos - (jumpPos + 5))
+		if fc.debug {
+			fmt.Fprintf(os.Stderr, "DEBUG JUMP PATCHING: jump %d at pos %d -> endOffset %d (target pos %d)\n",
+				i, jumpPos, endOffset, jumpPos+5+int(endOffset))
+		}
 		fc.patchJumpImmediate(jumpPos+1, endOffset)
 	}
 }
@@ -4681,6 +4704,10 @@ func (fc *FlapCompiler) compileMatchClauseResult(result Expression, endJumps *[]
 	fc.compileExpression(result)
 	fc.inTailPosition = savedTailPosition
 	jumpPos := fc.eb.text.Len()
+	if fc.debug {
+		fmt.Fprintf(os.Stderr, "DEBUG JUMP PATCHING: adding jump at pos %d to endJumps list (count before: %d)\n",
+			jumpPos, len(*endJumps))
+	}
 	fc.out.JumpUnconditional(0)
 	*endJumps = append(*endJumps, jumpPos)
 }

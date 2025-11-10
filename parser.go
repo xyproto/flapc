@@ -984,13 +984,15 @@ func (p *Parser) parseStatement() Statement {
 	}
 
 	// Check for assignment (=, :=, ==>, <-, with optional type annotation, and compound assignments)
-	if p.current.Type == TOKEN_IDENT && (p.peek.Type == TOKEN_EQUALS || p.peek.Type == TOKEN_EQUALS_FAT_ARROW || p.peek.Type == TOKEN_COLON_EQUALS || p.peek.Type == TOKEN_LEFT_ARROW || p.peek.Type == TOKEN_COLON ||
-		p.peek.Type == TOKEN_PLUS_EQUALS || p.peek.Type == TOKEN_MINUS_EQUALS ||
-		p.peek.Type == TOKEN_STAR_EQUALS || p.peek.Type == TOKEN_POWER_EQUALS || p.peek.Type == TOKEN_SLASH_EQUALS || p.peek.Type == TOKEN_MOD_EQUALS) {
-		if isHot {
-			return p.parseAssignmentWithHot(true)
+	if p.current.Type == TOKEN_IDENT {
+		if p.peek.Type == TOKEN_EQUALS || p.peek.Type == TOKEN_EQUALS_FAT_ARROW || p.peek.Type == TOKEN_COLON_EQUALS || p.peek.Type == TOKEN_LEFT_ARROW || p.peek.Type == TOKEN_COLON ||
+			p.peek.Type == TOKEN_PLUS_EQUALS || p.peek.Type == TOKEN_MINUS_EQUALS ||
+			p.peek.Type == TOKEN_STAR_EQUALS || p.peek.Type == TOKEN_POWER_EQUALS || p.peek.Type == TOKEN_SLASH_EQUALS || p.peek.Type == TOKEN_MOD_EQUALS {
+			if isHot {
+				return p.parseAssignmentWithHot(true)
+			}
+			return p.parseAssignment()
 		}
-		return p.parseAssignment()
 	}
 
 	// Otherwise, it's an expression statement (or match expression)
@@ -1438,6 +1440,76 @@ func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
 	defaultExpr := Expression(&NumberExpr{Value: 0})
 	defaultExplicit := false
 
+	p.skipNewlines()
+
+	// Simple conditional mode: if the block doesn't start with an explicit arrow or default arrow,
+	// treat it as a simple conditional that should execute all statements as one block
+	if p.current.Type != TOKEN_ARROW && p.current.Type != TOKEN_DEFAULT_ARROW && p.current.Type != TOKEN_RBRACE {
+		// Try parsing as simple conditional first
+		var statements []Statement
+		foundArrow := false
+
+		for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+			// Check if we encounter pattern matching syntax
+			if p.current.Type == TOKEN_ARROW || p.current.Type == TOKEN_DEFAULT_ARROW {
+				foundArrow = true
+				break
+			}
+
+			// Parse as statement/expression
+			// Try parseStatement first, which handles assignments and other statements
+			startType := p.current.Type
+			stmt := p.parseStatement()
+
+			// Check if parseStatement actually consumed anything
+			if stmt != nil {
+				statements = append(statements, stmt)
+			} else if startType == p.current.Type {
+				// parseStatement didn't consume anything, might be an expression
+				// that should be treated as a statement (like a function call)
+				expr := p.parseExpression()
+				if expr != nil {
+					statements = append(statements, &ExprStmt{Expr: expr})
+				}
+				p.nextToken()
+			}
+
+			// Skip separators between statements
+			p.skipNewlines()
+			if p.current.Type == TOKEN_SEMICOLON {
+				p.nextToken()
+				p.skipNewlines()
+			}
+		}
+
+		// If we didn't find any arrows and have statements, this is a simple conditional
+		if !foundArrow && len(statements) > 0 {
+			// Create a single clause with all statements in a BlockExpr
+			clauses = append(clauses, &MatchClause{
+				Result: &BlockExpr{Statements: statements},
+			})
+
+			if p.current.Type != TOKEN_RBRACE {
+				p.error("expected '}' after conditional block")
+			}
+
+			return &MatchExpr{
+				Condition:       condition,
+				Clauses:         clauses,
+				DefaultExpr:     defaultExpr,
+				DefaultExplicit: defaultExplicit,
+			}
+		}
+
+		// Found arrows, need to re-parse in pattern matching mode
+		// This is tricky because we already consumed tokens
+		// For now, if we detect this case, it's an error - the user should use explicit syntax
+		if foundArrow {
+			p.error("mix of simple statements and pattern matching not supported - use explicit '->' syntax")
+		}
+	}
+
+	// Pattern matching mode: parse clauses with guards/arrows
 	for {
 		p.skipNewlines()
 
@@ -1491,13 +1563,13 @@ func (p *Parser) parseMatchClause() (*MatchClause, bool) {
 	// These tokens can only appear in match targets, not as guard expressions:
 	// - ret, @-, @=, @N (jump/return statements)
 	// - { (block statements)
-	// - identifier <- (assignment statements)
+	// - identifier <- or identifier = (assignment statements)
 	isStatementToken := p.current.Type == TOKEN_RET ||
 		p.current.Type == TOKEN_ERR ||
 		p.current.Type == TOKEN_AT_PLUSPLUS ||
 		p.current.Type == TOKEN_LBRACE ||
 		(p.current.Type == TOKEN_AT && p.peek.Type == TOKEN_NUMBER) ||
-		(p.current.Type == TOKEN_IDENT && p.peek.Type == TOKEN_LEFT_ARROW)
+		(p.current.Type == TOKEN_IDENT && (p.peek.Type == TOKEN_LEFT_ARROW || p.peek.Type == TOKEN_EQUALS))
 
 	if isStatementToken {
 		// Treat as guardless clause (implicit '->'), not a bare clause
@@ -1626,8 +1698,8 @@ func (p *Parser) parseMatchTarget() Expression {
 		// @N is continue (jump to top of loop N), not break
 		return &JumpExpr{Label: label, Value: value, IsBreak: false}
 	case TOKEN_IDENT:
-		// Check if this is an assignment statement (x <- value)
-		if p.peek.Type == TOKEN_LEFT_ARROW {
+		// Check if this is an assignment statement (x <- value or x = value)
+		if p.peek.Type == TOKEN_LEFT_ARROW || p.peek.Type == TOKEN_EQUALS {
 			// Parse as an assignment statement wrapped in a block
 			stmt := p.parseStatement()
 			// After parseStatement, p.current is at the last token of the statement
@@ -3352,6 +3424,15 @@ func (p *Parser) parsePrimary() Expression {
 	case TOKEN_ARENA:
 		// arena { ... }
 		return p.parseArenaExpr()
+	}
+
+	// Check if this is a structural/delimiter token that should just end the expression
+	// These are valid tokens that signal the end of an expression, not syntax errors
+	if p.current.Type == TOKEN_RBRACE || p.current.Type == TOKEN_RPAREN ||
+		p.current.Type == TOKEN_RBRACKET || p.current.Type == TOKEN_COMMA ||
+		p.current.Type == TOKEN_SEMICOLON || p.current.Type == TOKEN_NEWLINE ||
+		p.current.Type == TOKEN_EOF {
+		return nil // Valid delimiter, expression ends here
 	}
 
 	// Unrecognized token in expression position - this is a syntax error
