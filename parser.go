@@ -1469,7 +1469,7 @@ func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
 				// that should be treated as a statement (like a function call)
 				expr := p.parseExpression()
 				if expr != nil {
-					statements = append(statements, &ExprStmt{Expr: expr})
+					statements = append(statements, &ExpressionStmt{Expr: expr})
 				}
 				p.nextToken()
 			}
