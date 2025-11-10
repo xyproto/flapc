@@ -378,15 +378,18 @@ not   // Logical NOT
 
 ```flap
 x = 42        // Immutable - can't reassign
-x = 100       // Compile error!
+x <- 100      // NOT OK, trying to assign a new value to an immutable variable
+x += 10       // NOT OK, trying to modify the value of an aimmutable variable
+x = 100       // NOT OK, trying to initialize a new immutable variable with the same name
 ```
 
 ### Mutable Variables
 
 ```flap
 y := 42       // Mutable
-y = 100       // OK
-y += 10       // OK
+y <- 100      // OK, assignment
+y += 10       // OK, modification
+y = 100       // NOT OK, trying to initialize a new immutable variable with the same name
 ```
 
 ### Update Operator
@@ -394,9 +397,11 @@ y += 10       // OK
 ```flap
 list := [1, 2, 3]
 list[0] <- 99          // Updates list to [99, 2, 3]
+list.0 <- 42           // Updates list to [42, 2, 3]
 
 obj := {x: 10, y: 20}
 obj.x <- 100           // Updates x to 100
+obj[0] <- 42           // Updates x to 42 (Flap maps are ordered)
 ```
 
 ### Move Semantics
@@ -467,11 +472,17 @@ result := x {
     ~> "other"
 }
 
-// Multiple conditions
-x {
+// Multiple conditions (the presence of -> indicates a match block instead of a function block)
+{
     x < 0 -> "negative"
     x == 0 -> "zero"
     x > 0 -> "positive"
+}
+
+// Matching a positive and negative value
+result := x > 0 {
+    -> "positive"
+    ~> "not positive"
 }
 
 // Optional arrows - arrows can be omitted when intent is clear
@@ -504,14 +515,14 @@ result := x > 0 {
     ~> "not positive"    // Default always has ~>
 }
 
-result := x {
+result := x {            // Matching on x
     0 -> "zero"          // Explicit arrows
     1 -> "one"
     ~> "other"
 }
 
 x < 0 {
-    println("negative")  // No arrow, no default
+    println("negative")  // No arrow, this is the case for when x < 0
 }
 ```
 
@@ -543,7 +554,7 @@ process_file := filename => {
     defer close_file(file)  // Executes when scope exits
 
     // ... work with file ...
-    -> result
+    ret result
 }
 
 // LIFO execution order
@@ -557,8 +568,8 @@ demo ==> {
 
 // Resource cleanup pattern
 safe_alloc := size => {
-    ptr := malloc(size)
-    defer free(ptr)  // Guaranteed cleanup
+    ptr := c.malloc(size)
+    defer c.free(ptr)  // Guaranteed cleanup
 
     // Use ptr safely...
     ptr[0] <- 42 as int32
@@ -596,6 +607,11 @@ classify := x => x {
     0 -> "zero"
     ~> x > 0 { -> "positive" ~> "negative" }
 }
+
+// void functions
+hello ==> {
+    println("hello")
+}
 ```
 
 ### Function Calls
@@ -610,6 +626,8 @@ call("free", ptr as ptr)
 ```
 
 ## Loops
+
+The @ symbol is only used in connection with loops in the Flap syntax.
 
 ### Infinite Loop
 
@@ -663,6 +681,9 @@ Flap uses loop labels instead of `break`/`continue` keywords:
         i == 5 and j == 3 {
             ret @1  // Exit outer loop (loop 1) specifically
         }
+        i == 4 {
+            ret @1 42  // Exit outer loop (loop 1) and return the value 42
+        }
         println(f"i={i}, j={j}")
     }
 }
@@ -678,6 +699,23 @@ compute := () => {
         }
     }
     ret 0  // Return from function
+}
+```
+
+Loops without a known max value (such as 0..<10 or a list), or if the counter is modified in the loop,
+MUST include the `max` keyword and the maximum number of iterations (can be `inf`).
+
+For example:
+
+```
+@ i in 0..<10 max 20 {
+  i++
+}
+```
+
+```
+@ i in read_from_channel() max inf {
+  i++
 }
 ```
 
@@ -855,7 +893,7 @@ c.free(ptr)
 
 ```flap
 // Allocate
-ptr = c.malloc(1024.0)
+ptr = c.malloc(1024)
 
 // Use memory
 ptr[0] <- 42 as int32
@@ -898,7 +936,7 @@ arena {
 
 Direct register access for performance-critical code:
 
-### Unified Syntax
+### Unified Unsafe Syntax (similar to the Battlestar programming language")
 
 Works across x86-64, ARM64, and RISC-V:
 
@@ -924,6 +962,8 @@ value := unsafe {
     a0 <- 100      // RISC-V specific
 }
 ```
+
+The CPU order is always the same, first x86_64, then arm64, then riscv64.
 
 ### Memory Operations
 
@@ -970,8 +1010,20 @@ text := f"Use {{ and }} for literal braces"
 
 ```flap
 len := #list             // List length
-append := list :: item   // Prepend item
+append := list :: item   // Prepend item with ::, which is the cons operator
 ```
+
+* `^` is the head operator
+* `_` is the tail operator
+
+Example:
+```
+^[1, 2, 3] // 1
+_[1, 2, 3] // [2, 3]
+```
+
+`^` is different from the binary operators, because there is no `b` suffix.
+
 
 ### Memory Access
 
@@ -999,10 +1051,6 @@ value = ptr[offset] as uint32
 value = ptr[offset] as uint64
 value = ptr[offset] as float32
 value = ptr[offset] as float64
-
-// Legacy function syntax (still supported)
-write_i32(ptr, offset, value)  // equivalent to: ptr[offset] <- value as int32
-value = read_i32(ptr, offset)  // equivalent to: value = ptr[offset] as int32
 ```
 
 ### Math Functions
@@ -1018,13 +1066,13 @@ ceil(x)      // Ceiling
 round(x)     // Round
 log(x)       // Natural logarithm
 exp(x)       // Exponential
-pow(x, y)    // Power
+x ** y       // Power
 ```
 
 ### System
 
 ```flap
-exit(code)   // Exit program
+exit(code)   // Exit program, uses syscall unless if C functions have been called, then the C exit function is called instead.
 ```
 
 ## Examples
@@ -1038,7 +1086,7 @@ factorial := n => {
     @ i in 1..<=n {
         result *= i
     }
-    -> result
+    result  // the last thing in a expression block is returned, or `ret` can be used
 }
 
 // Tail-recursive
@@ -1117,7 +1165,7 @@ particles = c.malloc(particle_count * sizeof(Particle))
 
 // Update loop
 @ frame in 0..<1000 {
-    @@ i in 0..<particle_count {
+    @@ i in 0..<particle_count {      // parallel loop! notice @@
         offset = i * sizeof(Particle)
 
         // Read position and velocity
@@ -1157,12 +1205,12 @@ This section describes a potential object system that fits Flap's design philoso
 ### Design Philosophy
 
 The class system builds on Flap's existing features:
-- **Maps as objects**: Objects are just `map[uint64]float64` with convention
+- **Maps as objects**: Objects are just the standard Flap type (ordered hash maps from uint64 to float64)
 - **Closures as methods**: Methods are lambdas that close over instance data
 - **Composition over inheritance**: Use `<>` to extend behavior maps
 - **Dot notation for instance fields**: `.field` inside methods, `instance.field` outside
 - **No `new` keyword**: Classes are just constructor functions
-- **Minimal syntax**: Only one new keyword (`class`)
+- **Minimal syntax**: (`<>` and `class` is the only needed syntax in Flap for supporting OOP)
 
 ### Class Declaration
 
@@ -1170,7 +1218,7 @@ Classes are syntactic sugar over maps and closures:
 
 ```flap
 class Point {
-    init := (x, y) ==> {
+    init := (x, y) ==> {    // functions named "init" are the constructors, and "deinit" are the deconstructors
         .x = x  // Dot prefix = instance field
         .y = y
     }
@@ -1181,12 +1229,12 @@ class Point {
         sqrt(dx * dx + dy * dy)
     }
 
-    move := (dx, dy) ==> {
+    move := (dx, dy) => {
         .x <- .x + dx
         .y <- .y + dy
     }
 
-    magnitude := ==> {
+    magnitude ==> {
         sqrt(.x * .x + .y * .y)
     }
 }
@@ -1206,7 +1254,7 @@ The `class` keyword desugars to regular Flap code:
 ```flap
 // Class declaration desugars to:
 Point := (x, y) => {
-    instance := {}
+    instance := {}   // {} is for defining/initializing an empty Flap map, since there is no "->" within, and no "=>" in front
     instance["x"] = x
     instance["y"] = y
 
@@ -1221,7 +1269,7 @@ Point := (x, y) => {
         instance["y"] <- instance["y"] + dy
     }
 
-    instance["magnitude"] = () => {
+    instance["magnitude"] ==> {
         sqrt(instance["x"] * instance["x"] + instance["y"] * instance["y"])
     }
 
@@ -1235,28 +1283,28 @@ Instance variables use dot prefix inside class methods:
 
 ```flap
 class Counter {
-    init := start ==> {
+    init := start => {
         .count = start
         .history = []
     }
 
-    increment := ==> {
+    increment ==> {
         .count <- .count + 1
         .history <- .history :: .count
     }
 
-    get := ==> .count
+    get ==> .count
 
-    reset := ==> {
+    reset ==> {
         .count <- 0
         .history <- []
     }
 }
 
-c := Counter(0)
-c.increment()
-c.increment()
-println(c.get())  // 2
+cnt := Counter(0)
+cnt.increment()
+cnt.increment()
+println(cnt.get())  // 2
 ```
 
 ### Class Variables
@@ -1268,11 +1316,11 @@ class Entity {
     Entity.count = 0
     Entity.all = []
 
-    init := name ==> {
+    init = name => {
         .name = name
         .id = Entity.count
-        Entity.count <- Entity.count + 1
-        Entity.all <- Entity.all :: this
+        Entity.count += 1
+        Entity.all <- Entity.all :: this    // Add the current object to the class list "all" by consing it with "::"
     }
 }
 
@@ -1289,7 +1337,7 @@ Extend classes with behavior maps using `<>`:
 ```flap
 // Reusable behaviors as plain maps
 Printable := {
-    to_s: ==> {
+    to_s: => {
         fields := []
         keys(this) | @ key in _ {
             key[0] != '_' {  // Skip private fields
@@ -1309,12 +1357,12 @@ class Point {
     <> Printable
     <> Comparable
 
-    init := (x, y) ==> {
+    init := (x, y) => {
         .x = x
         .y = y
     }
 
-    move := (dx, dy) ==> {
+    move := (dx, dy) => {
         .x <- .x + dx
         .y <- .y + dy
     }
@@ -1331,7 +1379,7 @@ Use naming conventions (underscore for private):
 
 ```flap
 class BankAccount {
-    init := balance ==> {
+    init := balance => {
         .balance = balance
     }
 
@@ -1348,12 +1396,12 @@ class BankAccount {
     withdraw := amount => {
         _validate(amount) {
             .balance <- .balance - amount
-            ret amount
+            amount
         }
         ret 0
     }
 
-    balance := ==> .balance
+    balance ==> .balance
 }
 ```
 
@@ -1370,7 +1418,7 @@ cstruct ParticleData {
 }
 
 class Particle {
-    init := (x, y) ==> {
+    init = (x, y) => {
         .data = call("malloc", ParticleData.size as uint64)
 
         unsafe pointer {
@@ -1397,7 +1445,7 @@ class Particle {
         .vy = 0.0
     }
 
-    update := dt => {
+    update = dt => {
         unsafe float64 {
             rax <- .data as pointer
             rax <- [rax + ParticleData.x.offset]
@@ -1427,7 +1475,7 @@ class Particle {
         }
     }
 
-    destroy := ==> {
+    destroy ==> {
         call("free", .data as ptr)
     }
 }
@@ -1437,7 +1485,7 @@ class Particle {
 
 ```flap
 Serializable := {
-    to_json: ==> {
+    to_json: => {
         parts := []
         keys(this) | @ key in _ {
             key[0] != '_' {
@@ -1449,7 +1497,7 @@ Serializable := {
 }
 
 Validatable := {
-    valid: ==> {
+    valid: => {
         .x >= 0 and .y >= 0
     }
 }
@@ -1460,20 +1508,20 @@ class Point {
 
     Point.origin = nil
 
-    init := (x, y) ==> {
+    init = (x, y) => {
         .x = x
         .y = y
     }
 
-    move := (dx, dy) ==> {
+    move = (dx, dy) => {
         .x <- .x + dx
         .y <- .y + dy
     }
 
-    distance_to := other => {
+    distance_to = other => {
         dx := other.x - .x
         dy := other.y - .y
-        sqrt(dx * dx + dy * dy)
+        sqrt(dx! * dx! + dy! * dy!)
     }
 }
 
@@ -1506,65 +1554,30 @@ extend_decl = "<>" identifier ;
 
 method_decl = identifier ":=" lambda_expr ;
 
-lambda_expr = "(" [ param_list ] ")" "=>" expression
+lambda_expr = [ "(" [ param_list ] ")" ] "=>" expression
             | "==>" expression ;  // No-argument lambda
 
 primary_expr = ...
              | "." identifier ;  // Instance field access (inside class)
 
-// Pipe operator (replacing |>)
+// Pipe operator (like |> in some other languages)
 pipe_expr = postfix_expr { "|" postfix_expr } ;
 ```
 
-### New Keywords and Operators
+### Bitwise operators
 
-Only one new keyword:
-- `class` - Define a class
-
-New operator usage:
-- `<>` - Extend with behavior map (composition)
-- `==>` - Lambda with no arguments (already proposed elsewhere)
-- `|` - Pipe operator (replaces `|>`)
-
-Note: All binary bitwise operators use `b` suffix: `|b`, `&b`, `^b`, `<b`, `>b`, `<<b`, `>>b`, `~b`
-
-### Compatibility Notes
-
-1. **No parser conflicts**: `class` is a new keyword, `<>` repurposes unused operator
-2. **Dot prefix context-sensitive**:
-   - Outside classes: `obj.field` (field access)
-   - Inside classes: `.field` (instance field reference)
-3. **Maps remain fundamental**: Classes compile to maps, no type system changes
-4. **Backward compatible**: All existing code works unchanged
-5. **Pipe operator change**: `|>` removed, use `|` instead (no conflict with `|b`)
-
-### Implementation Strategy
-
-1. **Phase 1**: Desugar classes to regular Flap code (preprocessor approach)
-2. **Phase 2**: Add runtime support for method lookup optimization
-3. **Phase 3**: Optimize with direct field access (eliminate map lookups)
-4. **Phase 4**: Add reflection/introspection capabilities
-
-### Benefits
-
-- **Minimal**: Only one new keyword, reuses existing concepts
-- **Flap's simplicity**: Maps underneath, no hidden complexity
-- **Composition**: `<>` makes behavior reuse explicit and simple
-- **Performance**: Can optimize to direct memory access
-- **Interop**: Works seamlessly with CStruct and C FFI
-- **Familiar**: Dot notation is universal across languages
-- **Clean**: No `self`, `this`, `@`, or `@@` - just `.field` and `ClassName.field`
+All binary bitwise operators use the `b` suffix: `|b`, `&b`, `^b`, `<b`, `>b`, `<<b`, `>>b`, `~b`
 
 ## Special Notes
 
 ### Tail Call Optimization
 
-Flap automatically performs tail-call optimization. Use `->` to indicate explicit tail returns:
+Flap automatically performs tail-call optimization, whenever possible, if there are functions calls at the end of a function block.
 
 ```flap
-loop := n => {
+loop = n => {
     println(n)
-    -> loop(n + 1)  // Tail call - no stack growth
+    loop(n + 1)  // Tail call - no stack growth
 }
 ```
 
@@ -1581,10 +1594,10 @@ println(x + y)
 ### Comments
 
 ```flap
-// Line comment
-
-/* Multi-line comments not supported yet */
+// Single line comment
 ```
+
+There are no multiline comments.
 
 ### String Escapes
 
@@ -1601,34 +1614,17 @@ println(x + y)
 Type names are only keywords after `as`. You can use them as identifiers elsewhere:
 
 ```flap
-int32 := 42           // OK - variable
-result := x as int32  // OK - type cast
+x := 42               // OK - variable
+result := x as int32  // OK - type cast to the C type int32, result can then be used when calling C functions without casting
 ```
 
 ---
 
 ## Error Handling and Diagnostics
 
-### Railway-Oriented Error System
-
-The Flap compiler uses a railway-oriented error handling system that collects and reports multiple errors instead of stopping at the first one.
-
-**Error Categories:**
-1. **Syntax Errors**: Invalid language syntax
-2. **Semantic Errors**: Type mismatches, undefined variables
-3. **Code Generation Errors**: Register allocation failures, etc.
-
-**Example Error Output:**
+Flap has excellent error messages, like this:
 
 ```
-error: undefined variable 'sum'
-  --> example.flap:5:9
-   |
- 5 |     total <- sum + i
-   |              ^^^
-   |
-help: did you mean 'total'?
-
 error: cannot update immutable variable 'x'
   --> example.flap:8:5
    |
@@ -1638,30 +1634,17 @@ error: cannot update immutable variable 'x'
 help: declare 'x' as mutable with ':='
 ```
 
-### Error Recovery
+The error handling system in Flap revolves around returning a Result type.
 
-The compiler attempts to recover from errors and continue parsing to find additional issues:
+The Result type is a float64 that can be interpreted as a pointer. However, if it is an invalid pointer (0xffffffff etc),
+then it is interpreted as an error, and the range of possible invalid pointers are used to implement a 4-letter error code by using the available bits.
+For example "erro" or "eof ". If it is a valid pointer, then it points to the returned result(s).
 
-- **Syntax errors**: Skips to next statement boundary
-- **Undefined variables**: Creates placeholder, continues analysis
-- **Type errors**: Reports mismatch, continues with expected type
+There is no catch/throw or postponed error handling in Flap, only the Result type and syntax to deal with it.
 
-**Maximum Errors**: By default, the compiler stops after collecting 10 errors to avoid overwhelming output.
+As many errors are possible are attempted to be discovered at compile time.
 
-### Compile-Time vs Runtime Errors
-
-**Compile-time errors** (caught by the compiler):
-- Undefined variables
-- Type mismatches in known contexts
-- Syntax errors
-- Immutable variable updates
-
-**Runtime errors** (not caught, will crash):
-- Division by zero
-- Array index out of bounds
-- Null pointer dereference (in unsafe blocks)
-
-Use assertions and defensive programming for runtime safety.
+When a number is divided by 0, it returns a Result type.
 
 ---
 
