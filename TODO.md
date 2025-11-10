@@ -1,198 +1,198 @@
-# TODO - Language Feature Implementation
+# TODO - Actionable Implementation Tasks
 
-This file contains only actionable items related to features defined in LANGUAGE.md. Items are ordered by priority for completing the language specification.
+This file lists concrete implementation tasks for features defined in LANGUAGE.md.
 
-## Critical - Fix Parallel Loops (`@@` syntax)
-
-**Status:** Broken - 2 of 28 parallel tests failing
-**LANGUAGE.md Reference:** Section "Parallel Loops"
-
-**Issue:** Calling `malloc()` from within pthread-created threads causes SIGSEGV.
-
-**Failing Test Cases:**
-1. `parallel_no_atomic` - f-strings call malloc internally
-2. `parallel_malloc_access` - direct malloc from thread
-
-**Root Cause:**
-- Stack alignment issue before `call malloc` (x86-64 ABI requires 16-byte alignment)
-- Thread-local storage (TLS) not properly initialized for glibc malloc
-- Missing thread setup for glibc malloc arena
-
-**Action Items:**
-- [ ] Ensure 16-byte stack alignment before all `call` instructions in thread functions
-- [ ] Initialize TLS properly for pthread threads
-- [ ] Test with alternative malloc implementations (jemalloc, tcmalloc)
-- [ ] Once fixed, re-enable f-strings in parallel loops
-
-**Workaround:** Pre-allocate all memory in parent thread before parallel loop.
-
-**Test Command:**
-```bash
-go test -v -run "TestFlapPrograms/parallel"
-```
+**Status indicators:**
+- 🔴 **CRITICAL** - Blocking or broken functionality
+- 🟡 **HIGH** - Important for language completeness
+- 🟢 **MEDIUM** - Nice to have, enhances usability
+- 🔵 **LOW** - Future enhancements
 
 ---
 
-## High Priority - Complete Result Type
+## ✅ RESOLVED - Parallel Malloc (Was Critical)
 
-**Status:** Partially implemented
-**LANGUAGE.md Reference:** Section "Error Handling - Result Type"
+**Reference:** LANGUAGE.md Section "Parallel Loops"
 
-**Currently Working:**
-- ✅ `safe_divide()` - returns NaN on division by zero
-- ✅ `safe_sqrt()` - returns NaN for negative input
-- ✅ `safe_ln()` - returns NaN for non-positive input
+**Status:** FIXED in commit 8593240
 
-**Not Working:**
-- ⚠️ `safe_divide_result()` - crashes on map access
-- ❌ `safe_sqrt_result()` - not implemented
-- ❌ `safe_ln_result()` - not implemented
-- ❌ Result helper methods (`then`, `map`, `unwrap_or`)
+### What Was Fixed
+`malloc()` calls from pthread threads were causing SIGSEGV due to incorrect stack alignment.
 
-**Action Items:**
-- [ ] Fix `safe_divide_result()` pointer-to-float64 conversion
-- [ ] Verify arena-allocated map format matches Flap map implementation
-- [ ] Implement `safe_sqrt_result()` using same pattern
-- [ ] Implement `safe_ln_result()` using same pattern
-- [ ] Add Result chaining builtins: `result.then()`, `result.map()`, `result.unwrap_or()`
-- [ ] Document Result usage patterns and examples in LANGUAGE.md
+### The Solution
+Changed thread function stack allocation from `sub rsp, 64` to `sub rsp, 56` to ensure RSP is misaligned by 8 bytes before call instructions, as required by x86-64 ABI.
+
+### Verification
+- ✅ `parallel_no_atomic` - f-strings now work in parallel loops
+- ✅ `parallel_malloc_access` - direct malloc works from threads
+- ✅ All parallel tests passing
+
+**Details:** See commit 8593240 and LEARNINGS.md section "Stack Alignment Requirements"
 
 ---
 
-## High Priority - Fix Atomic Operations in Parallel Loops
+## 🟡 HIGH - Implement List Operators (::, ^, _)
 
-**Status:** Not working inside `@@` loops
-**LANGUAGE.md Reference:** Sections "Parallel Loops" + "Atomic Operations"
+**Reference:** LANGUAGE.md Section "List Operations" 
 
-**Problem:** Atomic operations use fixed registers that may be clobbered by parallel loop infrastructure.
+### Cons Operator `::`
+- [ ] Add `::` token to lexer
+- [ ] Add cons expression to AST
+- [ ] Implement cons codegen (create new list, prepend item)
+- [ ] Test with `1 :: 2 :: 3 :: []`
 
-**Action Items:**
+### Head Operator `^`
+- [ ] Add `^` as unary prefix operator in parser
+- [ ] Generate code to extract first element
+- [ ] Return NaN for empty list
+- [ ] Test: `^[1, 2, 3]` returns `1.0`
+
+### Tail Operator `_`
+- [ ] Add `_` as unary prefix operator in parser
+- [ ] Generate code to return list minus first element
+- [ ] Return `[]` for empty list
+- [ ] Test: `_[1, 2, 3]` returns `[2, 3]`
+
+---
+
+## 🟡 HIGH - Implement Reduce Pipe `|||`
+
+**Reference:** LANGUAGE.md Section "Reduce Pipe" 
+
+- [ ] Add `ReduceExpr` to AST (parallel to PipeExpr, ParallelExpr)
+- [ ] Parse `|||` operator (lower precedence than `||`)
+- [ ] Generate reduce/fold codegen with accumulator
+- [ ] Use first element as initial accumulator value
+- [ ] Test: `[1, 2, 3, 4, 5] ||| (acc, x) => acc + x` returns `15.0`
+
+---
+
+## 🟡 HIGH - Complete Result Type Built-ins
+
+**Reference:** LANGUAGE.md Section "Result Type Operations"
+
+### is_error() - ✅ Already implemented
+- [x] Already working in compiler
+
+### error_code() - Extract 4-letter error code
+- [ ] Implement `error_code(value)` builtin
+- [ ] Extract encoded error string from invalid pointer bits
+- [ ] Return as Flap string (e.g., `"dv0 "`, `"nan "`)
+- [ ] Test with division by zero
+
+### unwrap_or() - Get value or default
+- [ ] Implement `unwrap_or(value, default)` builtin
+- [ ] Check if value is error using is_error
+- [ ] Return value if success, default if error
+- [ ] Test: `unwrap_or(10/0, 0.0)` returns `0.0`
+
+---
+
+## 🟡 HIGH - Implement Inclusive Range `..`
+
+**Reference:** LANGUAGE.md Section "Range Loop"
+
+- [ ] Add `..` token to lexer (distinct from `..<`)
+- [ ] Parse inclusive range in parser
+- [ ] Add `inclusive` flag to RangeExpr AST node
+- [ ] Generate loop bounds: `start` to `end` (inclusive)
+- [ ] Test: `@ i in 1..5` iterates 1, 2, 3, 4, 5
+
+---
+
+## 🟢 MEDIUM - Implement Random Operator `???`
+
+**Reference:** LANGUAGE.md Section "Random Operator"
+
+- [ ] Add `???` token to lexer
+- [ ] Add random expression to AST
+- [ ] Implement xoshiro256** PRNG state in runtime
+- [ ] Add `getrandom()` syscall wrapper for Linux
+- [ ] Initialize RNG from `SEED` env var or system entropy
+- [ ] Generate code to call `_flap_random()` runtime function
+- [ ] Make thread-safe for parallel code
+- [ ] Test: verify `???` returns values in [0.0, 1.0)
+- [ ] Test: reproducibility with `SEED=12345`
+
+---
+
+## 🟢 MEDIUM - Fix Atomic Operations in Parallel Loops
+
+**Reference:** LANGUAGE.md Sections "Parallel Loops" + "Atomic Operations"
+
+### Problem
+Atomic operations fail inside `@@` loops due to register clobbering
+
+### Tasks
 - [ ] Implement context-aware register allocation for parallel sections
 - [ ] Reserve registers for atomic operations in parallel contexts
-- [ ] Test: atomic increment inside `@@` loop
-- [ ] Document register usage constraints
+- [ ] Update codegen to avoid clobbering atomic operation registers
+- [ ] Test: `atomic_add()` inside `@@` loop
+- [ ] Document register constraints in LEARNINGS.md
 
 ---
 
-## Medium Priority - Implement Channels (CSP)
+## 🔵 LOW - Improve CStruct Ergonomics
 
-**Status:** Not implemented
-**LANGUAGE.md Reference:** Section "Channels" (if present)
+**Reference:** LANGUAGE.md Section "CStruct"
 
-**Note:** Check if channels are actually specified in LANGUAGE.md. If not, this should be added to LANGUAGE.md first.
-
-**Action Items:**
-- [ ] Define channel syntax and semantics in LANGUAGE.md
-- [ ] Design channel API: `chan_create(capacity)`, `chan_send()`, `chan_recv()`
-- [ ] Implement buffered channels with ring buffer
-- [ ] Implement blocking send/recv with futex
-- [ ] Add `select` statement for multiple channels
-- [ ] Add test cases for producer-consumer patterns
-
----
-
-## Medium Priority - Implement `spawn` with Result Waiting
-
-**Status:** Not implemented
-**LANGUAGE.md Reference:** Section "Concurrency - spawn" (if present)
-
-**Dependencies:** Requires channels implementation
-
-**Note:** Check if spawn result waiting is specified in LANGUAGE.md. If not, add specification first.
-
-**Action Items:**
-- [ ] Define spawn result semantics in LANGUAGE.md
-- [ ] Update spawn to return channel
-- [ ] Child process writes result to channel on exit
-- [ ] Parent blocks on channel recv to get result
-- [ ] Add fork/join pattern examples
-
----
-
-## Low Priority - Implement `???` Pseudo-Random Syntax
-
-**Status:** Not implemented
-**LANGUAGE.md Reference:** Section "Operators - Random Number Generation" (if present)
-
-**Specification:**
-- Returns float64 in range [0.0, 1.0)
-- Use `SEED` env var if set, else UNIX timestamp
-- Use Linux `getrandom()` syscall for quality
-- Initialize RNG state at program start
-
-**Action Items:**
-- [ ] Add `???` token to lexer
-- [ ] Add UnaryExpr case for `???` in parser
-- [ ] Implement RNG state in runtime (xoshiro256**)
-- [ ] Add `getrandom()` syscall wrapper
-- [ ] Generate call to `_flap_random()` runtime function
-- [ ] Test: verify distribution, reproducibility with SEED
-- [ ] Document behavior and seeding in LANGUAGE.md
-
----
-
-## Low Priority - Improve CStruct Ergonomics
-
-**Status:** Partially implemented
-**LANGUAGE.md Reference:** Section "C Interop - CStruct"
-
-**Current Syntax:**
+### Current syntax
 ```flap
-write_f32(ptr, Vec3_x_OFFSET as int32, 1.0)
+ptr[Vec3.x.offset] <- 1.0 as float64
 ```
 
-**Desired Syntax:**
+### Proposed improvement
 ```flap
 set(ptr, Vec3.x, 1.0)
+get(ptr, Vec3.x)
 ```
 
-**Action Items:**
-- [ ] Add `alloc_struct(Type)` builtin - returns typed pointer
-- [ ] Add `set(ptr, Type.field, value)` builtin - type-aware write
-- [ ] Add `get(ptr, Type.field)` builtin - type-aware read
-- [ ] Update CStruct compiler to track field types
-- [ ] Generate field accessor metadata
-- [ ] Update LANGUAGE.md with new syntax examples
+### Tasks
+- [ ] Add `set(ptr, Type.field, value)` builtin
+- [ ] Add `get(ptr, Type.field)` builtin
+- [ ] Track field types in CStruct compiler
+- [ ] Generate type-aware read/write code
+- [ ] Update LANGUAGE.md examples
 
 ---
 
-## Completed ✅
+## ✅ COMPLETED
 
-Features from LANGUAGE.md that are fully working:
+Features from LANGUAGE.md that are fully implemented:
 
-- ✅ Basic parallel loops (`@@` syntax) - 26/28 tests passing
-- ✅ Parallel map operator (`||`)
-- ✅ NaN/Inf propagation (`is_nan`, `is_finite`, `is_inf`)
-- ✅ Safe arithmetic with NaN (`safe_divide`, `safe_sqrt`, `safe_ln`)
-- ✅ Atomic operations (outside parallel loops)
-- ✅ Tail-call optimization
-- ✅ Arena memory management
-- ✅ C FFI (functions and data)
-- ✅ Lambda expressions
-- ✅ For loops, while loops, if/else
-- ✅ Maps (unified type system)
-- ✅ Spawn (basic process spawning)
+- Sequential pipe `|`
+- Parallel map `||`
+- Parallel loops `@@` (all tests passing - malloc fixed!)
+- Arena allocation with `alloc()`
+- Move operator `!`
+- Exclusive range `..<`
+- Length operator `#`
+- Result type with `is_error()`
+- NaN/Inf propagation
+- Atomic operations (outside parallel loops)
+- Tail-call optimization
+- C FFI
+- Lambda expressions
+- Maps and lists
+- Spawn (basic)
+- Power operator `**`
 
 ---
 
-## Notes
+## Adding New Features
 
-**Adding New Language Features:**
+**Process:**
+1. Specify in LANGUAGE.md with syntax, semantics, examples
+2. Add actionable task to this TODO.md
+3. Implement and test
+4. Add passing tests to testprograms/
+5. Move to Completed section in TODO.md
 
-When proposing a new language feature:
-1. **First** add specification to LANGUAGE.md with syntax, semantics, examples
-2. **Then** add implementation task to this TODO.md
-3. **Finally** implement and test
-
-This ensures language design is intentional, not accidental.
-
-**Out of Scope:**
-
-The following are implementation details, not language features:
-- Compiler optimizations (strength reduction, register allocation, etc.)
-- Error message quality
-- Code organization and refactoring
+**Out of Scope for this file:**
+- Compiler optimizations
+- Error message improvements
+- Code refactoring
 - Performance tuning
-- Build system improvements
+- Build system changes
 
-These belong in implementation notes or commit messages, not in language TODO.
+These are implementation details, not language features.

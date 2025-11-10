@@ -7581,6 +7581,205 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
+	// Generate _flap_list_cons(element_float, list_ptr_float) -> new_list_ptr
+	// Prepends an element to a list (Standard ML/Scheme/LISP semantics)
+	// Arguments: rdi = element (as float64 bits), rsi = list pointer (as float64 bits)
+	// Returns: rax = pointer to new list
+	fc.eb.MarkLabel("_flap_list_cons")
+
+	// Function prologue
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+
+	// Save callee-saved registers
+	fc.out.PushReg("rbx")
+	fc.out.PushReg("r12")
+	fc.out.PushReg("r13")
+
+	// Align stack: call(8) + push rbp(8) + 3 pushes(24) = 40 bytes (ALIGNED)
+	// Need to subtract 8 to get misaligned by 8 before malloc call
+	fc.out.SubImmFromReg("rsp", StackSlotSize)
+
+	// Save arguments
+	fc.out.MovRegToReg("r12", "rdi") // r12 = element bits
+	fc.out.MovRegToReg("r13", "rsi") // r13 = list_ptr bits
+
+	// Get list length from [list_ptr + 0]
+	fc.out.MovMemToXmm("xmm0", "r13", 0) // load length as float64
+	fc.out.Cvttsd2si("rbx", "xmm0")      // rbx = length as int64
+
+	// Calculate new length: rbx + 1
+	fc.out.AddImmToReg("rbx", 1)
+
+	// Calculate allocation size: 8 + rbx * 8
+	fc.out.MovRegToReg("rax", "rbx")
+	fc.out.MulRegWithImm("rax", 8)
+	fc.out.AddImmToReg("rax", 8)
+
+	// Call malloc(rax)
+	fc.out.MovRegToReg("rdi", "rax")
+	fc.trackFunctionCall("malloc")
+	fc.eb.GenerateCallInstruction("malloc")
+	fc.out.MovRegToReg("r10", "rax") // r10 = new list pointer
+
+	// Write new length to result
+	fc.out.Cvtsi2sd("xmm0", "rbx")
+	fc.out.MovXmmToMem("xmm0", "r10", 0)
+
+	// Write element at index 0 (offset 8)
+	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.MovRegToMem("r12", "rsp", 0)
+	fc.out.MovMemToXmm("xmm0", "rsp", 0)
+	fc.out.AddImmToReg("rsp", 8)
+	fc.out.MovXmmToMem("xmm0", "r10", 8)
+
+	// Copy old list elements (starting at source offset 8, dest offset 16)
+	fc.out.SubImmFromReg("rbx", 1)         // rbx = old list length
+	fc.out.AddImmToReg("r13", 8)         // r13 = source start (skip length)
+	fc.out.Emit([]byte{0x49, 0x8d, 0x7a, 0x10}) // lea rdi, [r10 + 16] (dest start)
+
+	// Copy loop: rcx = counter
+	fc.out.MovRegToReg("rcx", "rbx")
+	fc.eb.MarkLabel("_cons_copy_loop")
+	fc.out.TestRegReg("rcx", "rcx")
+	fc.out.Emit([]byte{0x74, 0x10}) // jz +16 (skip loop)
+
+	fc.out.MovMemToXmm("xmm0", "r13", 0)
+	fc.out.MovXmmToMem("xmm0", "rdi", 0)
+	fc.out.AddImmToReg("r13", 8)
+	fc.out.AddImmToReg("rdi", 8)
+	fc.out.SubImmFromReg("rcx", 1)
+	fc.out.Emit([]byte{0xeb, 0xeb}) // jmp back to test
+
+	// Return result pointer in rax
+	fc.out.MovRegToReg("rax", "r10")
+
+	// Restore stack
+	fc.out.AddImmToReg("rsp", StackSlotSize)
+
+	// Restore callee-saved registers
+	fc.out.PopReg("r13")
+	fc.out.PopReg("r12")
+	fc.out.PopReg("rbx")
+
+	// Function epilogue
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
+
+	// Generate _flap_list_head(list_ptr_float) -> element_float
+	// Returns the first element of a list (or NaN if empty)
+	// Argument: rdi = list pointer (as float64 bits)
+	// Returns: xmm0 = first element (or NaN)
+	fc.eb.MarkLabel("_flap_list_head")
+
+	// Function prologue
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+
+	// Get list length
+	fc.out.MovMemToXmm("xmm0", "rdi", 0)
+	fc.out.Cvttsd2si("rax", "xmm0")
+
+	// Check if empty
+	fc.out.TestRegReg("rax", "rax")
+	fc.out.Emit([]byte{0x75, 0x12}) // jnz +18 (skip NaN generation)
+
+	// Return NaN for empty list
+	fc.out.Emit([]byte{0x48, 0xb8}) // mov rax, immediate
+	fc.out.Emit([]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf8, 0x7f}) // NaN bits
+	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.MovRegToMem("rax", "rsp", 0)
+	fc.out.MovMemToXmm("xmm0", "rsp", 0)
+	fc.out.AddImmToReg("rsp", 8)
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
+
+	// Load first element at offset 8
+	fc.out.MovMemToXmm("xmm0", "rdi", 8)
+
+	// Function epilogue
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
+
+	// Generate _flap_list_tail(list_ptr_float) -> new_list_ptr_float
+	// Returns all elements except the first (or empty list if empty/single element)
+	// Argument: rdi = list pointer (as float64 bits)
+	// Returns: xmm0 = new list pointer (as float64)
+	fc.eb.MarkLabel("_flap_list_tail")
+
+	// Function prologue
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+
+	// Save callee-saved registers
+	fc.out.PushReg("rbx")
+	fc.out.PushReg("r12")
+
+	// Align stack
+	fc.out.SubImmFromReg("rsp", StackSlotSize)
+
+	// Save list pointer
+	fc.out.MovRegToReg("r12", "rdi")
+
+	// Get list length
+	fc.out.MovMemToXmm("xmm0", "r12", 0)
+	fc.out.Cvttsd2si("rbx", "xmm0")
+
+	// Calculate new length: max(0, length - 1)
+	fc.out.SubImmFromReg("rbx", 1)
+	fc.out.Emit([]byte{0x48, 0xc7, 0xc0, 0x00, 0x00, 0x00, 0x00}) // mov rax, 0
+	fc.out.CmpRegToReg("rbx", "rax")
+	fc.out.Emit([]byte{0x0f, 0x4c, 0xd8}) // cmovl rbx, rax (rbx = max(rbx, 0))
+
+	// Allocate new list: 8 + rbx * 8
+	fc.out.MovRegToReg("rax", "rbx")
+	fc.out.MulRegWithImm("rax", 8)
+	fc.out.AddImmToReg("rax", 8)
+
+	// Call malloc
+	fc.out.MovRegToReg("rdi", "rax")
+	fc.trackFunctionCall("malloc")
+	fc.eb.GenerateCallInstruction("malloc")
+	fc.out.MovRegToReg("r10", "rax") // r10 = new list pointer
+
+	// Write new length
+	fc.out.Cvtsi2sd("xmm0", "rbx")
+	fc.out.MovXmmToMem("xmm0", "r10", 0)
+
+	// Copy elements (skip first element at offset 8, start from offset 16)
+	fc.out.AddImmToReg("r12", 16)        // r12 = source start (skip length + first element)
+	fc.out.Emit([]byte{0x49, 0x8d, 0x7a, 0x08}) // lea rdi, [r10 + 8] (dest start)
+
+	// Copy loop
+	fc.out.MovRegToReg("rcx", "rbx")
+	fc.eb.MarkLabel("_tail_copy_loop")
+	fc.out.TestRegReg("rcx", "rcx")
+	fc.out.Emit([]byte{0x74, 0x10}) // jz +16 (skip loop)
+
+	fc.out.MovMemToXmm("xmm0", "r12", 0)
+	fc.out.MovXmmToMem("xmm0", "rdi", 0)
+	fc.out.AddImmToReg("r12", 8)
+	fc.out.AddImmToReg("rdi", 8)
+	fc.out.SubImmFromReg("rcx", 1)
+	fc.out.Emit([]byte{0xeb, 0xeb}) // jmp back
+
+	// Convert result pointer to float64 for return
+	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.MovRegToMem("r10", "rsp", 0)
+	fc.out.MovMemToXmm("xmm0", "rsp", 0)
+	fc.out.AddImmToReg("rsp", 8)
+
+	// Restore stack
+	fc.out.AddImmToReg("rsp", StackSlotSize)
+
+	// Restore callee-saved registers
+	fc.out.PopReg("r12")
+	fc.out.PopReg("rbx")
+
+	// Function epilogue
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
+
 	// Generate _flap_arena_ensure_capacity if arenas are used
 	if fc.usesArenas {
 		fc.generateArenaEnsureCapacity()

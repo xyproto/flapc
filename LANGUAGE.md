@@ -11,6 +11,7 @@ This document describes the complete Flap programming language: syntax, semantic
 - [Overview](#overview)
 - [Design Philosophy](#design-philosophy)
 - [Type System](#type-system)
+- [Lexical Elements](#lexical-elements)
 - [Grammar](#grammar)
 - [Keywords](#keywords)
 - [Operators](#operators)
@@ -25,7 +26,7 @@ This document describes the complete Flap programming language: syntax, semantic
 - [Unsafe Blocks](#unsafe-blocks)
 - [Built-in Functions](#built-in-functions)
 - [Examples](#examples)
-- [Classes and Objects (Proposed)](#classes-and-objects-proposed)
+- [Classes and Objects](#classes-and-objects)
 
 ## Overview
 
@@ -82,6 +83,23 @@ Everything in Flap is internally `map[uint64]float64`:
 "Hello"         // {0: 72.0, 1: 101.0, 2: 108.0, 3: 108.0, 4: 111.0}
 [1, 2, 3]       // {0: 1.0, 1: 2.0, 2: 3.0}
 {x: 10, y: 20}  // {x: 10.0, y: 20.0}
+[]              // {} (universal empty value)
+```
+
+**Empty Value `[]`:**
+
+The empty literal `[]` represents a universal empty value in Flap's unified type system. Since all values are `map[uint64]float64` internally, `[]` is simply an empty map. It can be used in any context where an empty list or map is needed:
+
+```flap
+// Empty value in different contexts
+empty := []                  // Universal empty
+list := 1 :: 2 :: []        // Builds list from empty
+numbers := []               // Empty that will become list when populated
+result := []                // Empty that will become map when keys added
+
+// The type emerges from usage
+list[0] <- 42               // Now it's a list (sequential keys)
+result["key"] <- 100        // Now it's a map (string/arbitrary keys)
 ```
 
 ### Internal Memory Layout
@@ -129,6 +147,82 @@ x as cstr      // C null-terminated string
 **Important:** Always use full type names (`int32`, `uint64`, `float32`), never abbreviations (`i32`, `u64`, `f32`).
 
 ## Grammar
+## Lexical Elements
+
+### Comments
+
+Flap supports single-line comments using `//`:
+
+```flap
+// This is a comment
+x = 42  // Inline comment after code
+```
+
+Multi-line comments are not supported. Use multiple single-line comments instead.
+
+### Numeric Literals
+
+**Integer Literals:**
+```flap
+42          // Decimal integer
+-17         // Negative integer
+```
+
+**Floating-Point Literals:**
+```flap
+3.14        // Standard notation
+-0.5        // Negative float
+6.022e23    // Scientific notation (6.022 × 10²³)
+1.5e-10     // Negative exponent
+```
+
+**Notes:**
+- All numeric literals are stored as float64 internally
+- Integer semantics require explicit casting: `x as int64`
+- Underscore separators in numbers are not supported
+
+### String Literals
+
+**Regular Strings:**
+```flap
+"hello world"
+"path/to/file"
+""  // Empty string
+```
+
+**F-Strings (Interpolated):**
+```flap
+name = "Alice"
+greeting = f"Hello, {name}!"  // "Hello, Alice!"
+
+x = 42
+message = f"The answer is {x}"  // "The answer is 42"
+```
+
+**Escape Sequences:**
+```flap
+"\n"   // Newline
+"\t"   // Tab
+"\""   // Double quote
+"\\"   // Backslash
+```
+
+### Identifiers
+
+Identifiers (variable names, function names) must:
+- Start with a letter or underscore: `_`, `a`-`z`, `A`-`Z`
+- Continue with letters, digits, or underscores: `a`-`z`, `A`-`Z`, `0`-`9`, `_`
+
+```flap
+valid_name
+CamelCase
+snake_case
+_private
+counter123
+```
+
+Reserved keywords cannot be used as identifiers (see [Keywords](#keywords) section).
+
 
 The hand-written recursive-descent parser accepts the following grammar:
 
@@ -195,7 +289,15 @@ jump_target     = "ret" [ "@" [ number ] ] [ expression ]
 
 block           = "{" { statement { newline } } "}" ;
 
-expression              = logical_or_expr ;
+expression              = pipe_expr ;
+
+pipe_expr               = reduce_pipe_expr { "|||" reduce_pipe_expr } ;
+
+reduce_pipe_expr        = parallel_pipe_expr { "||" parallel_pipe_expr } ;
+
+parallel_pipe_expr      = sequential_pipe_expr { "|" sequential_pipe_expr } ;
+
+sequential_pipe_expr    = logical_or_expr ;
 
 logical_or_expr         = logical_and_expr { ("or" | "xor") logical_and_expr } ;
 
@@ -205,7 +307,7 @@ comparison_expr         = range_expr [ (rel_op range_expr) | ("in" range_expr) ]
 
 rel_op                  = "<" | "<=" | ">" | ">=" | "==" | "!=" ;
 
-range_expr              = additive_expr [ "..<" additive_expr ] ;
+range_expr              = additive_expr [ ( ".." | "..<" ) additive_expr ] ;
 
 additive_expr           = cons_expr { ("+" | "-") cons_expr } ;
 
@@ -217,7 +319,7 @@ multiplicative_expr     = power_expr { ("*" | "/" | "%" | "*+") power_expr } ;
 
 power_expr              = unary_expr { "**" unary_expr } ;
 
-unary_expr              = ("not" | "-" | "#" | "~b") unary_expr
+unary_expr              = ("not" | "-" | "#" | "~b" | "^" | "_") unary_expr
                         | postfix_expr ;
 
 postfix_expr            = primary_expr { "[" expression "]"
@@ -240,7 +342,8 @@ primary_expr            = number
                         | list_literal
                         | map_literal
                         | arena_expr
-                        | unsafe_expr ;
+                        | unsafe_expr
+                        | "???" ;
 
 arena_expr              = "arena" "{" { statement { newline } } [ expression ] "}" ;
 
@@ -248,11 +351,16 @@ unsafe_expr             = "unsafe" "{" { statement { newline } } [ expression ] 
                           [ "{" { statement { newline } } [ expression ] "}" ]
                           [ "{" { statement { newline } } [ expression ] "}" ] ;
 
-lambda_expr             = parameter_list "=>" lambda_body ;
+lambda_expr             = [ parameter_list ] ("=>" | "==>") lambda_body ;
 
 lambda_body             = block | expression [ match_block ] ;
 
-parameter_list          = identifier [ "," identifier ]* ;
+// Lambda arrow semantics:
+// => : Regular function (returns expression or block value)
+// ==> : Match function (body is match block with -> and ~> arms)
+
+parameter_list          = identifier [ "," identifier ]*
+                        | "(" [ identifier [ "," identifier ]* ] ")" ;
 
 argument_list           = expression { "," expression } ;
 
@@ -363,13 +471,53 @@ not   // Logical NOT
 **=   // Power and assign
 ```
 
+### Range and List
+
+```flap
+::    // Cons operator (item :: list prepends item to list)
+..    // Inclusive range (1..10 = 1 to 10)
+..<   // Exclusive range (1..<10 = 1 to 9)
+#     // Length operator
+^     // Head operator (first element of list)
+_     // Tail operator (all but first element of list)
+```
+
+### Pipe Operators
+
+```flap
+|     // Sequential pipe (passes value to next function)
+||    // Parallel pipe (maps function over list elements in parallel)
+|||   // Reduce pipe (summarizes/folds list to single value)
+```
+
 ### Other
 
 ```flap
-::    // Cons operator (prepend to list)
-..<   // Range operator (0..<10 = 0 to 9)
-#     // Length operator
 !     // Move operator (postfix - transfers value)
+???   // Random number operator (returns float64 in [0.0, 1.0))
+```
+
+**Random Operator `???`:**
+
+When implemented, the random operator will:
+- Return a pseudo-random float64 value in the range [0.0, 1.0)
+- Use the `SEED` environment variable if set for reproducible randomness
+- Otherwise initialize from system entropy (Linux `getrandom()` syscall)
+- Use xoshiro256** algorithm for high-quality PRNG
+- Be thread-safe for use in parallel code
+
+Example usage (when implemented):
+```flap
+// Random value
+x := ???                     // 0.0 <= x < 1.0
+
+// Random integer in range
+dice := (??? * 6) as int64   // 0, 1, 2, 3, 4, or 5
+roll := ((??? * 6) as int64) + 1  // 1, 2, 3, 4, 5, or 6
+
+// Reproducible randomness with SEED
+// $ SEED=12345 ./program
+// Will produce same random sequence every run
 ```
 
 ## Variables and Assignment
@@ -391,6 +539,40 @@ y <- 100      // OK, assignment
 y += 10       // OK, modification
 y = 100       // NOT OK, trying to initialize a new immutable variable with the same name
 ```
+
+### Shadowing and Scoping Rules
+
+Flap allows variable shadowing in nested scopes but not in the same scope:
+
+```flap
+// Shadowing in nested scopes - ALLOWED
+x = 10
+println(x)       // 10
+
+{
+    x = 20       // OK - shadows outer x in nested scope
+    println(x)   // 20
+}
+
+println(x)       // 10 - outer x unchanged
+
+// Shadowing in same scope - NOT ALLOWED
+a = 5
+a = 10           // ERROR: cannot redefine immutable variable in same scope
+
+// Function parameters create new scope
+process = x => {
+    x = x * 2    // OK - shadows parameter in function body
+    ret x
+}
+```
+
+**Scoping Rules:**
+- Each `{ }` block creates a new scope
+- Function bodies are their own scope
+- Loop bodies are their own scope
+- Variables shadow outer scopes but don't modify them
+- Mutable variables (`:=`) can be updated with `<-` in same scope
 
 ### Update Operator
 
@@ -530,13 +712,13 @@ x < 0 {
 
 ```flap
 // Explicit tail call with ->
-factorial := (n, acc) => n == 0 {
+factorial = (n, acc) ==> n == 0 {
     -> acc                    // Return accumulator
     ~> factorial(n-1, n*acc)  // Tail call (no stack growth)
 }
 
 // Multi-way tail calls
-fib := n => n {
+fib = n ==> n {
     0 -> 0
     1 -> 1
     ~> fib(n-1) + fib(n-2)
@@ -549,7 +731,7 @@ Defer statements postpone execution of an expression until the enclosing scope e
 
 ```flap
 // Basic defer for cleanup
-process_file := filename => {
+process_file = filename => {
     file := open_file(filename)
     defer close_file(file)  // Executes when scope exits
 
@@ -558,7 +740,7 @@ process_file := filename => {
 }
 
 // LIFO execution order
-demo ==> {
+demo => {
     defer println("First")   // Executes third
     defer println("Second")  // Executes second
     defer println("Third")   // Executes first
@@ -567,14 +749,14 @@ demo ==> {
 // Output: Body\nThird\nSecond\nFirst
 
 // Resource cleanup pattern
-safe_alloc := size => {
+safe_alloc = size => {
     ptr := c.malloc(size)
     defer c.free(ptr)  // Guaranteed cleanup
 
     // Use ptr safely...
     ptr[0] <- 42 as int32
-    value = ptr[0] as int32
-    -> value
+    value := ptr[0] as int32
+    ret value
 }
 ```
 
@@ -588,30 +770,69 @@ safe_alloc := size => {
 
 ### Lambda Syntax
 
+Flap uses two lambda arrows to distinguish function types:
+
+- `=>` for regular functions (returns expression or block value)
+- `==>` for match functions (body contains match arms with `->` and `~>`)
+
 ```flap
-// Single parameter
-square := x => x * x
+// Single parameter - regular function
+square = x => x * x
 
-// Multiple parameters
-add := (a, b) => a + b
+// Multiple parameters - regular function
+add = (a, b) => a + b
 
-// Block body
-complex := (x, y) => {
+// Block body - regular function
+complex = (x, y) => {
     temp := x * 2
     result := temp + y
-    -> result
+    ret result
 }
 
-// With pattern matching
-classify := x => x {
+// Match function - returns match block result
+classify = x ==> x {
     0 -> "zero"
     ~> x > 0 { -> "positive" ~> "negative" }
 }
 
-// void functions
-hello ==> {
+// Match function with condition
+factorial = (n, acc) ==> n == 0 {
+    -> acc
+    ~> factorial(n-1, n*acc)
+}
+
+// No-argument regular functions (both forms valid)
+hello = () => {
     println("hello")
 }
+
+greet => {
+    println("Hello, world!")
+}
+```
+
+**Key Distinctions:**
+- Use `=>` when the function body is a statement block `{ statements }` or expression
+- Use `==>` when the function body is a match block with `->` and `~>` arms
+- This makes the function's intent clear at the definition site
+
+**Parameter Syntax Rules:**
+
+```flap
+// 0 parameters - parentheses optional
+f = () => { println("hello") }    // Explicit empty parens
+g => { println("hello") }          // No parens, inferred no params
+
+// 1 parameter - parentheses optional
+square = x => x * x                // No parens (common style)
+double = (x) => x * 2              // With parens (also valid)
+
+// 2+ parameters - parentheses REQUIRED
+add = (a, b) => a + b              // Must use parens
+multiply = (x, y, z) => x * y * z  // Must use parens
+
+// Multiple parameters without parens is an error
+bad = a, b => a + b                // ERROR: parens required for 2+ params
 ```
 
 ### Function Calls
@@ -641,8 +862,13 @@ The @ symbol is only used in connection with loops in the Flap syntax.
 ### Range Loop
 
 ```flap
-// Exclusive range (0 to 9)
+// Exclusive range (0 to 9) - IMPLEMENTED
 @ i in 0..<10 {
+    println(i)
+}
+
+// Inclusive range (0 to 10)
+@ i in 0..10 {
     println(i)
 }
 
@@ -652,6 +878,10 @@ items := [1, 2, 3, 4, 5]
     println(item)
 }
 ```
+
+**Range Operators:**
+- `..<` (exclusive) - - End value not included: `0..<10` gives 0,1,2,...,9
+- `..` (inclusive) - - End value included: `0..9` would give 0,1,2,...,9
 
 ### Loop Control with Labels
 
@@ -689,7 +919,7 @@ Flap uses loop labels instead of `break`/`continue` keywords:
 }
 
 // ret without @ always returns from function
-compute := () => {
+compute => {
     @ i in 0..<100 {
         i == 50 {
             ret i  // Return from function with value i
@@ -1006,23 +1236,130 @@ result := f"Sum: {a + b}, Product: {a * b}"
 text := f"Use {{ and }} for literal braces"
 ```
 
+### Pipe Operators
+
+Flap provides three pipe operators for functional composition and data transformation:
+
+#### Sequential Pipe `|`
+
+Passes a value to the next function (left-to-right function application):
+
+```flap
+// Basic piping
+x := 10 | double | add_one | square
+// Equivalent to: square(add_one(double(10)))
+
+// Piping into lambda
+result := 42 | x => x * 2 | x => x + 10
+// Equivalent to: (x => x + 10)((x => x * 2)(42))
+
+// Piping with unsafe blocks
+value := unsafe float64 {
+    rax <- ptr
+    rax <- [rax + offset]
+} | x => x * 2.0
+// Takes result of unsafe block, passes to lambda
+
+// Chaining transformations
+data | parse | validate | transform | save
+```
+
+#### Parallel Pipe `||`
+
+Maps a function over list elements **in parallel** (like parallel map):
+
+```flap
+// Apply function to each element in parallel
+results := [1, 2, 3, 4, 5] || x => expensive_computation(x)
+// Runs expensive_computation in parallel for each element
+
+// Chaining parallel operations
+[1, 2, 3, 4] || x => x * 2 || x => x + 1
+// First doubles all in parallel, then adds 1 to all in parallel
+
+// Combining with sequential pipe
+data | load_items || process_item | collect_results
+```
+
+**Note:** `||` creates parallel threads for each element. Use for CPU-intensive operations where parallelism benefits outweigh thread overhead.
+
+#### Reduce Pipe `|||`
+
+Reduces/folds a list to a single value (summarize operation):
+
+**Status:** Not yet implemented - future feature
+
+```flap
+// Sum all elements
+total := [1, 2, 3, 4, 5] ||| (acc, x) => acc + x
+// Equivalent to fold/reduce: ((((1 + 2) + 3) + 4) + 5)
+
+// Find maximum
+max := [3, 7, 2, 9, 1] ||| (acc, x) => acc > x { -> acc ~> x }
+
+// Combine with other pipes
+data | load_list || parse_item ||| (acc, x) => acc + x.value
+// Load list, parse each in parallel, sum the values
+
+// String concatenation
+words := ["Hello", " ", "World"] ||| (acc, s) => acc + s
+// Result: "Hello World"
+```
+
+**Note:** The reduce pipe `|||` requires a binary function `(accumulator, element) => result`. The first element serves as the initial accumulator value.
+
 ### List Operations
+
+**Status:** These operators are specified but not yet fully implemented.
 
 ```flap
 len := #list             // List length
-append := list :: item   // Prepend item with ::, which is the cons operator
+
+// Cons operator (::) - pure function, returns new list
+list1 := [2, 3]
+list2 := 1 :: list1      // Returns [1, 2, 3], list1 unchanged
+list3 := 0 :: list2      // Returns [0, 1, 2, 3], list2 unchanged
+
+// Head operator (^) - returns first element
+first := ^[1, 2, 3]      // 1.0
+second := ^_[1, 2, 3]    // 2.0 (head of tail)
+
+// Tail operator (_) - returns all but first element
+rest := _[1, 2, 3]       // [2, 3]
+all_but_two := __[1, 2, 3, 4]  // [3, 4] (tail of tail)
+
+// Building lists functionally (like Scheme/ML/LISP)
+empty := []
+one := 1 :: empty        // [1]
+two := 2 :: one          // [2, 1]
+three := 3 :: two        // [3, 2, 1]
+
+// Deconstructing lists
+process_list := list => {
+    #list == 0 {
+        ret "empty"
+    }
+    head := ^list
+    tail := _list
+    println(f"Head: {head}, Tail: {tail}")
+}
 ```
 
-* `^` is the head operator
-* `_` is the tail operator
+**Important:** The cons operator `::` follows Standard ML/Scheme/LISP semantics - it is a pure function that constructs and returns a new list without modifying the original list. This maintains immutability.
 
-Example:
-```
-^[1, 2, 3] // 1
-_[1, 2, 3] // [2, 3]
-```
+**Edge Cases:**
+```flap
+// Empty list operations
+^[]    // Returns NaN (error - no head of empty list)
+_[]    // Returns [] (tail of empty is empty)
+1 :: []  // Returns [1]
 
-`^` is different from the binary operators, because there is no `b` suffix.
+// Error checking
+list := []
+is_error(^list) {  // Use is_error to check for NaN
+    println("Cannot take head of empty list")
+}
+```
 
 
 ### Memory Access
@@ -1053,6 +1390,23 @@ value = ptr[offset] as float32
 value = ptr[offset] as float64
 ```
 
+### Memory Allocation
+
+```flap
+alloc(size)  // Allocate memory in current arena (only available inside arena blocks)
+```
+
+**Important:** `alloc()` is only available inside `arena { }` blocks. When an arena block is entered, a new memory arena is created in the meta arena table, and `alloc()` allocates memory from that arena. All allocations are automatically freed when the arena block exits.
+
+Example:
+```flap
+arena {
+    buffer := alloc(1024)     // Allocate 1KB from arena
+    data := alloc(256)        // Allocate 256 bytes from arena
+    // Use memory...
+}  // All allocations automatically freed here
+```
+
 ### Math Functions
 
 ```flap
@@ -1069,6 +1423,41 @@ exp(x)       // Exponential
 x ** y       // Power
 ```
 
+### Result Type Operations
+
+```flap
+is_error(value)           // Returns 1.0 if value is error Result, 0.0 if success
+error_code(value)         // Extracts 4-letter error code as string (e.g., "dv0 ", "nan ")
+unwrap_or(value, default) // Returns value if success, default if error
+```
+
+**Result Type Usage:**
+
+Results are float64 values that can represent either success or error. Error Results use invalid pointer values (like 0xFFFFFFFF) to encode 4-letter error codes.
+
+```flap
+// Division by zero returns error Result
+result := 10 / 0
+
+is_error(result) {
+    println("Error: division by zero")
+    ret 0
+}
+
+// Use the value if no error
+value := result
+println(f"Result: {value}")
+
+// Or use unwrap_or for default value
+safe_value := unwrap_or(result, 0.0)
+```
+
+**Common Error Codes:**
+- `"dv0 "` - Division by zero
+- `"nan "` - Not a number
+- `"sqrt"` - Square root of negative
+- `"log "` - Logarithm of non-positive
+
 ### System
 
 ```flap
@@ -1081,16 +1470,16 @@ exit(code)   // Exit program, uses syscall unless if C functions have been calle
 
 ```flap
 // Iterative
-factorial := n => {
+factorial = n => {
     result := 1
-    @ i in 1..<=n {
+    @ i in 1..n {
         result *= i
     }
     result  // the last thing in a expression block is returned, or `ret` can be used
 }
 
 // Tail-recursive
-factorial := (n, acc) => n == 0 {
+factorial = (n, acc) ==> n == 0 {
     -> acc
     ~> factorial(n-1, n*acc)
 }
@@ -1099,7 +1488,7 @@ factorial := (n, acc) => n == 0 {
 ### Fibonacci
 
 ```flap
-fib := n => n < 2 {
+fib = n ==> n < 2 {
     -> n
     ~> fib(n-1) + fib(n-2)
 }
@@ -1115,15 +1504,15 @@ window := sdl.SDL_CreateWindow("Game", 800, 600, 0)
 renderer := sdl.SDL_CreateRenderer(window, 0)
 
 running := 1
-@ running == 1 {
+@ running == 1 max inf {
     // Handle input
     event_ptr := alloc(56)
     has_event := sdl.SDL_PollEvent(event_ptr)
 
     has_event {
-        event_type := read_u32(event_ptr, 0)
+        event_type := event_ptr[0] as uint32
         event_type == sdl.SDL_EVENT_QUIT {
-            running = 0
+            running <- 0
         }
     }
 
@@ -1151,54 +1540,63 @@ cstruct Particle {
     vy as float64
 }
 
-particle_count = 10000
-particles = c.malloc(particle_count * sizeof(Particle))
+particle_count := 10000
+particles := c.malloc(particle_count * Particle.size)
 
 // Initialize particles
 @ i in 0..<particle_count {
-    offset = i * sizeof(Particle)
-    particles[offset + offsetof(Particle, x)] <- rand() as float64
-    particles[offset + offsetof(Particle, y)] <- rand() as float64
-    particles[offset + offsetof(Particle, vx)] <- 0.0 as float64
-    particles[offset + offsetof(Particle, vy)] <- 0.0 as float64
+    offset := i * Particle.size
+    particles[offset + Particle.x.offset] <- ??? as float64
+    particles[offset + Particle.y.offset] <- ??? as float64
+    particles[offset + Particle.vx.offset] <- 0.0 as float64
+    particles[offset + Particle.vy.offset] <- 0.0 as float64
 }
 
 // Update loop
 @ frame in 0..<1000 {
     @@ i in 0..<particle_count {      // parallel loop! notice @@
-        offset = i * sizeof(Particle)
+        offset := i * Particle.size
 
         // Read position and velocity
-        x = particles[offset + offsetof(Particle, x)] as float64
-        y = particles[offset + offsetof(Particle, y)] as float64
-        vx = particles[offset + offsetof(Particle, vx)] as float64
-        vy = particles[offset + offsetof(Particle, vy)] as float64
+        x := particles[offset + Particle.x.offset] as float64
+        y := particles[offset + Particle.y.offset] as float64
+        vx := particles[offset + Particle.vx.offset] as float64
+        vy := particles[offset + Particle.vy.offset] as float64
 
         // Apply gravity
-        vy = vy + 0.01
+        vy_new := vy + 0.01
 
         // Update position
-        x = x + vx
-        y = y + vy
+        x_new := x + vx
+        y_new := y + vy_new
 
         // Bounce at edges
-        y > 1.0 {
-            y = 1.0
-            vy = -vy * 0.9
+        y_final := y_new
+        vy_final := vy_new
+        y_new > 1.0 {
+            y_final = 1.0
+            vy_final = -vy_new * 0.9
         }
 
         // Write back
-        particles[offset + offsetof(Particle, x)] <- x as float64
-        particles[offset + offsetof(Particle, y)] <- y as float64
-        particles[offset + offsetof(Particle, vx)] <- vx as float64
-        particles[offset + offsetof(Particle, vy)] <- vy as float64
+        particles[offset + Particle.x.offset] <- x_new as float64
+        particles[offset + Particle.y.offset] <- y_final as float64
+        particles[offset + Particle.vx.offset] <- vx as float64
+        particles[offset + Particle.vy.offset] <- vy_final as float64
     }
 }
 ```
 
-## Classes and Objects (Proposed)
+## Classes and Objects
 
 **Status:** Design proposal - Not yet implemented
+
+**Dependencies:** This proposal requires the following additions to the language:
+- `this` keyword - reference to current instance
+- `keys(map)` builtin - returns list of map keys
+- `join(list, separator)` builtin - joins list elements into string
+
+**Note:** For null/empty values, use `[]` (empty list/map) or Result type with error code.
 
 This section describes a potential object system that fits Flap's design philosophy while maintaining compatibility with the existing unified type system.
 
@@ -1218,23 +1616,23 @@ Classes are syntactic sugar over maps and closures:
 
 ```flap
 class Point {
-    init := (x, y) ==> {    // functions named "init" are the constructors, and "deinit" are the deconstructors
+    init = (x, y) => {    // functions named "init" are the constructors, and "deinit" are the deconstructors
         .x = x  // Dot prefix = instance field
         .y = y
     }
 
-    distance := other => {
+    distance = other => {
         dx := other.x - .x
         dy := other.y - .y
         sqrt(dx * dx + dy * dy)
     }
 
-    move := (dx, dy) => {
+    move = (dx, dy) => {
         .x <- .x + dx
         .y <- .y + dy
     }
 
-    magnitude ==> {
+    magnitude => {
         sqrt(.x * .x + .y * .y)
     }
 }
@@ -1253,8 +1651,8 @@ The `class` keyword desugars to regular Flap code:
 
 ```flap
 // Class declaration desugars to:
-Point := (x, y) => {
-    instance := {}   // {} is for defining/initializing an empty Flap map, since there is no "->" within, and no "=>" in front
+Point = (x, y) => {
+    instance := []   // Empty Flap map/list
     instance["x"] = x
     instance["y"] = y
 
@@ -1269,7 +1667,7 @@ Point := (x, y) => {
         instance["y"] <- instance["y"] + dy
     }
 
-    instance["magnitude"] ==> {
+    instance["magnitude"] => {
         sqrt(instance["x"] * instance["x"] + instance["y"] * instance["y"])
     }
 
@@ -1283,19 +1681,19 @@ Instance variables use dot prefix inside class methods:
 
 ```flap
 class Counter {
-    init := start => {
+    init = start => {
         .count = start
         .history = []
     }
 
-    increment ==> {
+    increment => {
         .count <- .count + 1
         .history <- .history :: .count
     }
 
-    get ==> .count
+    get => .count
 
-    reset ==> {
+    reset => {
         .count <- 0
         .history <- []
     }
@@ -1336,10 +1734,10 @@ Extend classes with behavior maps using `<>`:
 
 ```flap
 // Reusable behaviors as plain maps
-Printable := {
-    to_s: => {
+Printable = {
+    to_s = () => {
         fields := []
-        keys(this) | @ key in _ {
+        @ key in keys(this) {
             key[0] != '_' {  // Skip private fields
                 fields <- fields :: f"{key}={this[key]}"
             }
@@ -1348,21 +1746,21 @@ Printable := {
     }
 }
 
-Comparable := {
-    eq: other => .x == other.x and .y == other.y,
-    lt: other => .x < other.x or (.x == other.x and .y < other.y)
+Comparable = {
+    eq = other => .x == other.x and .y == other.y,
+    lt = other => .x < other.x or (.x == other.x and .y < other.y)
 }
 
 class Point {
     <> Printable
     <> Comparable
 
-    init := (x, y) => {
+    init = (x, y) => {
         .x = x
         .y = y
     }
 
-    move := (dx, dy) => {
+    move = (dx, dy) => {
         .x <- .x + dx
         .y <- .y + dy
     }
@@ -1379,29 +1777,29 @@ Use naming conventions (underscore for private):
 
 ```flap
 class BankAccount {
-    init := balance => {
+    init = balance => {
         .balance = balance
     }
 
-    deposit := amount => {
+    deposit = amount => {
         amount > 0 {
             .balance <- .balance + amount
         }
     }
 
-    _validate := amount => {
+    _validate = amount => {
         amount > 0 and amount <= .balance
     }
 
-    withdraw := amount => {
+    withdraw = amount => {
         _validate(amount) {
             .balance <- .balance - amount
-            amount
+            ret amount
         }
         ret 0
     }
 
-    balance ==> .balance
+    balance => .balance
 }
 ```
 
@@ -1446,6 +1844,7 @@ class Particle {
     }
 
     update = dt => {
+        // Read x using unsafe block, pipe to lambda for computation
         unsafe float64 {
             rax <- .data as pointer
             rax <- [rax + ParticleData.x.offset]
@@ -1459,6 +1858,7 @@ class Particle {
             .vx <- .vx + 0.01 * dt
             new_x := x + .vx * dt
 
+            // Write back new x value
             unsafe pointer {
                 rax <- .data as pointer
                 rbx <- new_x
@@ -1475,7 +1875,7 @@ class Particle {
         }
     }
 
-    destroy ==> {
+    destroy => {
         call("free", .data as ptr)
     }
 }
@@ -1484,20 +1884,20 @@ class Particle {
 ### Complete Example
 
 ```flap
-Serializable := {
-    to_json: => {
+Serializable = {
+    to_json = () => {
         parts := []
-        keys(this) | @ key in _ {
+        @ key in keys(this) {
             key[0] != '_' {
-                parts <- parts :: f'"{key}": {this[key]}'
+                parts <- parts :: f"\"{key}\": {this[key]}"
             }
         }
         "{" + join(parts, ", ") + "}"
     }
 }
 
-Validatable := {
-    valid: => {
+Validatable = {
+    valid = () => {
         .x >= 0 and .y >= 0
     }
 }
@@ -1506,7 +1906,7 @@ class Point {
     <> Serializable
     <> Validatable
 
-    Point.origin = nil
+    Point.origin = []
 
     init = (x, y) => {
         .x = x
@@ -1521,7 +1921,7 @@ class Point {
     distance_to = other => {
         dx := other.x - .x
         dy := other.y - .y
-        sqrt(dx! * dx! + dy! * dy!)
+        sqrt(dx * dx + dy * dy)
     }
 }
 
@@ -1552,27 +1952,19 @@ class_var_decl = identifier "." identifier "=" expression ;
 
 extend_decl = "<>" identifier ;
 
-method_decl = identifier ":=" lambda_expr ;
+method_decl = identifier "=" lambda_expr ;
 
-lambda_expr = [ "(" [ param_list ] ")" ] "=>" expression
-            | "==>" expression ;  // No-argument lambda
+lambda_expr = [ parameter_list ] ("=>" | "==>") lambda_body ;
 
 primary_expr = ...
              | "." identifier ;  // Instance field access (inside class)
-
-// Pipe operator (like |> in some other languages)
-pipe_expr = postfix_expr { "|" postfix_expr } ;
 ```
-
-### Bitwise operators
-
-All binary bitwise operators use the `b` suffix: `|b`, `&b`, `^b`, `<b`, `>b`, `<<b`, `>>b`, `~b`
 
 ## Special Notes
 
 ### Tail Call Optimization
 
-Flap automatically performs tail-call optimization, whenever possible, if there are functions calls at the end of a function block.
+Flap automatically performs tail-call optimization, whenever possible, if there are function calls at the end of a function block.
 
 ```flap
 loop = n => {
@@ -1634,18 +2026,42 @@ error: cannot update immutable variable 'x'
 help: declare 'x' as mutable with ':='
 ```
 
-The error handling system in Flap revolves around returning a Result type.
+## Result Type Error Handling
 
-The Result type is a float64 that can be interpreted as a pointer. However, if it is an invalid pointer (0xffffffff etc),
-then it is interpreted as an error, and the range of possible invalid pointers are used to implement a 4-letter error code by using the available bits.
-For example "erro" or "eof ". If it is a valid pointer, then it points to the returned result(s).
+The error handling system in Flap revolves around the Result type.
 
-There is no catch/throw or postponed error handling in Flap, only the Result type and syntax to deal with it.
+### Result Type Representation
 
-As many errors are possible are attempted to be discovered at compile time.
+The Result type uses float64 values that can represent either success or error:
+- **Success values**: Normal float64 values or valid pointers
+- **Error values**: Invalid pointer values (like 0xFFFFFFFF) that encode 4-letter error codes using available bits
 
-When a number is divided by 0, it returns a Result type.
+For example: `"dv0 "` (division by zero), `"nan "` (not a number), `"eof "` (end of file)
 
----
+### Error Handling Operations
 
-**For more examples, see the `testprograms/` directory with 344+ working Flap programs.**
+Use the Result type operations to handle errors (see Built-in Functions → Result Type Operations):
+
+```flap
+// Division by zero example
+result := 10 / 0
+
+// Check for error
+is_error(result) {
+    println("Error occurred")
+    ret 0
+}
+
+// Use value if no error
+println(f"Result: {result}")
+```
+
+### Design Philosophy
+
+There is **no catch/throw or exception system** in Flap. Error handling is explicit:
+- Functions return Result values
+- Caller checks for errors using `is_error()`
+- Errors propagate through return values, not exceptions
+
+Many errors are caught at **compile time** when possible (type errors, undefined variables, etc.). Runtime errors use the Result type for explicit handling.
+

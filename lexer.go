@@ -89,7 +89,7 @@ const (
 	TOKEN_CARET_B    // ^b (bitwise XOR)
 	TOKEN_TILDE_B    // ~b (bitwise NOT)
 	TOKEN_CARET      // ^ (head of list)
-	TOKEN_AMP        // & (tail of list)
+	TOKEN_AMP        // & (tail of list) (reference or address operator)
 	TOKEN_LT_B       // <b (shift left)
 	TOKEN_GT_B       // >b (shift right)
 	TOKEN_LTLT_B     // <<b (rotate left)
