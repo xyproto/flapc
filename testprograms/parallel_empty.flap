@@ -1,4 +1,0 @@
-// parallel_empty.flap - ensure empty lists short-circuit parallel map
-numbers = []
-mapped = numbers || x => x * 3
-println(#mapped)

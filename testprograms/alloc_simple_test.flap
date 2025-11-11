@@ -1,5 +1,0 @@
-// Simpler test - just call alloc and print result
-arena {
-    buffer := alloc(64)
-    printf("buffer = %.0f\n", buffer)
-}

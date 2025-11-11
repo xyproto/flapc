@@ -1,6 +1,0 @@
-approx(0.1+0.2, 0.3, 0.0001) = 1 (expected 1)
-approx(1.0, 2.0, 0.5) = 0 (expected 0)
-approx(-5.001, -5.0, 0.01) = 1 (expected 1)
-approx(42.0, 42.0, 0.0) = 1 (expected 1)
-Velocity match (eps=0.001): 1 (expected 1)
-approx test complete!

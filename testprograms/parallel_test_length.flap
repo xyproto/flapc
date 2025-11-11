@@ -1,8 +1,0 @@
-// parallel_test_length.flap - Test length of result
-values = [1.0, 2.0, 3.0]
-
-doubled = values || x => x * 2
-
-// Print length using # operator
-println(#doubled)
-

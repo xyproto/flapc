@@ -1,7 +1,0 @@
-// Simple C FFI test
-import c as libc
-
-println("Before calling getpid")
-pid := libc.getpid()
-println("After calling getpid")
-println(pid)

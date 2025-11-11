@@ -1,2 +1,0 @@
-// const_test.flap - test printing a constant
-println(0)

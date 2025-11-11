@@ -116,7 +116,7 @@ const (
 	TOKEN_IMPORT      // import (with git URL)
 	TOKEN_FROM        // from (C library imports)
 	TOKEN_DOT         // . (for namespaced calls)
-	TOKEN_DOTDOTEQ    // ..= (inclusive range operator)
+	TOKEN_DOTDOT      // .. (inclusive range operator)
 	TOKEN_DOTDOTLT    // ..< (exclusive range operator)
 	TOKEN_UNSAFE      // unsafe (architecture-specific code blocks)
 	TOKEN_SYSCALL     // syscall (system call in unsafe blocks)
@@ -128,6 +128,7 @@ const (
 	TOKEN_PACKED      // packed (no padding modifier for cstruct)
 	TOKEN_ALIGNED     // aligned (alignment modifier for cstruct)
 	TOKEN_ALIAS       // alias (create keyword aliases for language packs)
+	TOKEN_ORBANG      // or! (unwrap with default value)
 	TOKEN_HOT         // hot (mark function as hot-reloadable)
 	TOKEN_SPAWN       // spawn (spawn background process)
 	TOKEN_HAS         // has (type/class definitions)
@@ -455,6 +456,8 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_ALIGNED, Value: value, Line: l.line, Column: tokenColumn}
 		case "alias":
 			return Token{Type: TOKEN_ALIAS, Value: value, Line: l.line, Column: tokenColumn}
+		case "or!":
+			return Token{Type: TOKEN_ORBANG, Value: value, Line: l.line, Column: tokenColumn}
 		case "hot":
 			return Token{Type: TOKEN_HOT, Value: value, Line: l.line, Column: tokenColumn}
 		case "spawn":
@@ -675,21 +678,18 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_SEMICOLON, Value: ";", Line: l.line, Column: tokenColumn}
 	case '.':
-		// Check for ..< or ..=
+		// Check for ..< (exclusive) or .. (inclusive)
 		if l.pos+1 < len(l.input) && l.input[l.pos+1] == '.' {
 			if l.pos+2 < len(l.input) {
 				if l.input[l.pos+2] == '<' {
 					// ..<
 					l.pos += 3
 					return Token{Type: TOKEN_DOTDOTLT, Value: "..<", Line: l.line, Column: tokenColumn}
-				} else if l.input[l.pos+2] == '=' {
-					// ..=
-					l.pos += 3
-					return Token{Type: TOKEN_DOTDOTEQ, Value: "..=", Line: l.line, Column: tokenColumn}
 				}
 			}
-			// Just .. is an error - must be ..< or ..=
-			// For now, treat as single .
+			// Just .. is inclusive range
+			l.pos += 2
+			return Token{Type: TOKEN_DOTDOT, Value: "..", Line: l.line, Column: tokenColumn}
 		}
 		// Single .
 		l.pos++

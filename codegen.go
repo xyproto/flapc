@@ -3559,23 +3559,18 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			jumpPos := fc.eb.text.Len()
 			fc.out.JumpConditional(JumpNotEqual, 0) // Placeholder, will patch later
 
-			// Division by zero: print error and exit
-			errorMsg := "Error: division by zero\n"
-			errorLabel := fmt.Sprintf("div_zero_error_%d", fc.stringCounter)
-			fc.stringCounter++
-			fc.eb.Define(errorLabel, errorMsg)
+			// Division by zero: return NaN (error Result)
+			// Load NaN value into xmm0
+			fc.out.Emit([]byte{0x48, 0xb8})                                     // mov rax, immediate64
+			fc.out.Emit([]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf8, 0x7f}) // NaN bits
+			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.MovRegToMem("rax", "rsp", 0)
+			fc.out.MovMemToXmm("xmm0", "rsp", 0)
+			fc.out.AddImmToReg("rsp", 8)
 
-			// syscall: write(2, msg, len)
-			fc.out.MovImmToReg("rax", "1")                              // syscall number for write
-			fc.out.MovImmToReg("rdi", "2")                              // fd = 2 (stderr)
-			fc.out.LeaSymbolToReg("rsi", errorLabel)                    // msg = error string
-			fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", len(errorMsg))) // len
-			fc.eb.Emit("syscall")
-
-			// syscall: exit(1)
-			fc.out.MovImmToReg("rax", "60") // syscall number for exit
-			fc.out.MovImmToReg("rdi", "1")  // exit code = 1
-			fc.eb.Emit("syscall")
+			// Jump over the normal division
+			divDonePos := fc.eb.text.Len()
+			fc.out.JumpUnconditional(0) // Placeholder
 
 			// Patch jump to here (safe division)
 			safePos := fc.eb.text.Len()
@@ -3584,6 +3579,11 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.patchJumpImmediate(jumpPos+2, offset)
 
 			fc.out.DivsdXmm("xmm0", "xmm1") // divsd xmm0, xmm1
+
+			// Patch the jump over division
+			endPos := fc.eb.text.Len()
+			divDoneOffset := int32(endPos - (divDonePos + 5))
+			fc.patchJumpImmediate(divDonePos+1, divDoneOffset)
 		case "mod", "%":
 			// Modulo: a mod b = a - b * floor(a / b)
 			// xmm0 = dividend (a), xmm1 = divisor (b)
@@ -3709,6 +3709,22 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.XorRegWithReg("rax", "rcx")
 			// Convert to float64
 			fc.out.Cvtsi2sd("xmm0", "rax")
+		case "or!":
+			// Error unwrap with default: returns xmm0 if not NaN, else xmm1
+			// xmm0 = value, xmm1 = default
+			// Check if xmm0 is NaN by comparing with itself
+			fc.out.Ucomisd("xmm0", "xmm0") // Compare xmm0 with itself
+			// If NaN, parity flag is set (PF=1)
+			// Jump if NOT parity (i.e., if value is valid, skip to end)
+			skipPos := fc.eb.text.Len()
+			fc.out.JumpConditional(JumpNotParity, 0) // jnp (jump if no parity/not NaN)
+			// NaN case: move default value from xmm1 to xmm0 using movsd
+			fc.out.Emit([]byte{0xf2, 0x0f, 0x10, 0xc1}) // movsd xmm0, xmm1
+			// Patch the jump
+			endPos := fc.eb.text.Len()
+			offset := int32(endPos - (skipPos + 6))
+			fc.patchJumpImmediate(skipPos+2, offset)
+			// xmm0 now contains either original value (if not NaN) or default (if NaN)
 		case "shl":
 			// Shift left: convert to int64, shift, convert back
 			fc.out.Cvttsd2si("rax", "xmm0") // rax = int64(xmm0)
@@ -7634,8 +7650,8 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovXmmToMem("xmm0", "r10", 8)
 
 	// Copy old list elements (starting at source offset 8, dest offset 16)
-	fc.out.SubImmFromReg("rbx", 1)         // rbx = old list length
-	fc.out.AddImmToReg("r13", 8)         // r13 = source start (skip length)
+	fc.out.SubImmFromReg("rbx", 1)              // rbx = old list length
+	fc.out.AddImmToReg("r13", 8)                // r13 = source start (skip length)
 	fc.out.Emit([]byte{0x49, 0x8d, 0x7a, 0x10}) // lea rdi, [r10 + 16] (dest start)
 
 	// Copy loop: rcx = counter
@@ -7685,7 +7701,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.Emit([]byte{0x75, 0x12}) // jnz +18 (skip NaN generation)
 
 	// Return NaN for empty list
-	fc.out.Emit([]byte{0x48, 0xb8}) // mov rax, immediate
+	fc.out.Emit([]byte{0x48, 0xb8})                                     // mov rax, immediate
 	fc.out.Emit([]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf8, 0x7f}) // NaN bits
 	fc.out.SubImmFromReg("rsp", 8)
 	fc.out.MovRegToMem("rax", "rsp", 0)
@@ -7747,7 +7763,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovXmmToMem("xmm0", "r10", 0)
 
 	// Copy elements (skip first element at offset 8, start from offset 16)
-	fc.out.AddImmToReg("r12", 16)        // r12 = source start (skip length + first element)
+	fc.out.AddImmToReg("r12", 16)               // r12 = source start (skip length + first element)
 	fc.out.Emit([]byte{0x49, 0x8d, 0x7a, 0x08}) // lea rdi, [r10 + 8] (dest start)
 
 	// Copy loop
@@ -9621,6 +9637,23 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		offset := int32(truePos - jumpEnd)
 		fc.patchJumpImmediate(jumpPos+2, offset)
 		// Convert rax to float
+		fc.out.Cvtsi2sd("xmm0", "rax")
+		return
+
+	case "is_error":
+		// is_error(value) - returns 1.0 if value is NaN (error), 0.0 otherwise
+		if len(call.Args) != 1 {
+			compilerError("is_error requires exactly 1 argument")
+		}
+		// Compile argument into xmm0
+		fc.compileExpression(call.Args[0])
+		// Check if xmm0 is NaN by comparing with itself
+		fc.out.Ucomisd("xmm0", "xmm0")
+		// If NaN, parity flag is set
+		fc.out.XorRegWithReg("rax", "rax")          // rax = 0
+		fc.out.Emit([]byte{0x0f, 0x9a, 0xc0})       // setp al (sets al to 1 if PF=1, i.e., NaN)
+		fc.out.Emit([]byte{0x48, 0x0f, 0xb6, 0xc0}) // movzx rax, al
+		// Convert to float64
 		fc.out.Cvtsi2sd("xmm0", "rax")
 		return
 

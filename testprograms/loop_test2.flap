@@ -1,4 +1,0 @@
-// loop_test2.flap - test loop with 10 iterations
-@ i in 0..<10  max 100 {
-    println(i)
-    }

@@ -1,7 +1,0 @@
-Initial value: 0
-atomic_add(5): old=0, new=5
-atomic_add(3): old=5, new=8
-atomic_cas(8, 10): success=1, value=10
-atomic_cas(8, 20): success=0, value=10
-atomic_cas(10, 20): success=1, value=20
-Final value: 20

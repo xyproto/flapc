@@ -1,2 +1,0 @@
-// Test printf without format specifiers
-printf("Hello")

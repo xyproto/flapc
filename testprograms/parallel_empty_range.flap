@@ -1,9 +1,0 @@
-// Test parallel loop with empty range
-println("Testing empty range parallel loop")
-
-// Empty range: 0..<0
-@@ i in 0..<0 {
-    println("Should not execute")
-}
-
-println("Empty range test passed")

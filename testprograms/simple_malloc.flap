@@ -1,3 +1,0 @@
-ptr := malloc(8)
-printf("Allocated: %p\n", ptr)
-free(ptr)

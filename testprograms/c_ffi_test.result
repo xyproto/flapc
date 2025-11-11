@@ -1,4 +1,0 @@
-Testing SDL3 C FFI (headless mode)...
-SDL_Init(0) returned: 1
-SDL3 initialized successfully!
-SDL3 C FFI test passed!

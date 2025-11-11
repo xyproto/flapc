@@ -1,4 +1,0 @@
-// parallel_parse_test.flap - test parallel operator parsing
-numbers = [1, 2, 3, 4, 5]
-doubled = numbers || x => x * 2
-println("Done")

@@ -1,9 +1,0 @@
-// parallel_test_single.flap - Test parallel operator with single element
-values = [1.0]
-
-// Map operation: double the value
-doubled = values || x => x * 2
-
-// Print the element
-println(doubled[0])
-

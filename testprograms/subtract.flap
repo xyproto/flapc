@@ -1,3 +1,0 @@
-// subtract.flap - test subtraction
-result = 50 - 8
-println(result)

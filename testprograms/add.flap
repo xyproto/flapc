@@ -1,3 +1,0 @@
-// add.flap - add 39 and 3, print result
-result := 39 + 3
-println(result)

@@ -78,3 +78,6 @@ release/
 snake/snake_*
 wpo_simple_test
 wpo_test
+
+*.backup
+*.bak

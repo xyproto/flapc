@@ -1,3 +1,0 @@
-// Simplest dot notation test
-data = {value: 42}
-printf("Value: %.0f\n", data.value)

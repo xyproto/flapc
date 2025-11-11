@@ -1,9 +1,0 @@
-@ i in 0..<4 {
-    printf("iteration %g\n", i)
-}
-
-sum := 0
-@ i in 0..<5 {
-    sum <- sum + i
-}
-printf("sum = %g\n", sum)

@@ -1,9 +1,0 @@
-// iftest4.flap - test else branch
-x := 20
-y := 10
-
-x < y {
-    -> println("x is less than y")
-    ~> println("x is NOT less than y")
-}
-

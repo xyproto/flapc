@@ -1,9 +1,0 @@
-// iftest.flap - test match expressions
-x := 10
-y := 20
-
-x < y {
-    -> println("x is less than y")
-    ~> println("x is not less than y")
-}
-

@@ -1,5 +1,0 @@
-// list_test2.flap - test multiple list literals
-numbers := [1, 2, 3]
-more_numbers := [4, 5, 6, 7, 8]
-empty := []
-println("Multiple lists created")

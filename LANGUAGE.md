@@ -1427,8 +1427,8 @@ x ** y       // Power
 
 ```flap
 is_error(value)           // Returns 1.0 if value is error Result, 0.0 if success
-error_code(value)         // Extracts 4-letter error code as string (e.g., "dv0 ", "nan ")
-unwrap_or(value, default) // Returns value if success, default if error
+value or! default         // Returns value if success, default if error (unwrap with default)
+value.error               // Extracts 4-letter error code as string (e.g., "dv0 ", "nan ")
 ```
 
 **Result Type Usage:**

@@ -1,8 +1,0 @@
-// Test @ loop syntax (simplified from @)
-println("Testing @ loop syntax:")
-
-@ i in 0..<5  max 50 {
-    println(i)
-}
-
-println("Done!")

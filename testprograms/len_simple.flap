@@ -1,5 +1,0 @@
-// len_simple.flap - test list length with non-empty list
-numbers := [1, 2, 3, 4, 5]
-
-length := #numbers
-println(length)

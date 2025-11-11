@@ -1,5 +1,0 @@
-// parallel_simple_test.flap - simpler parallel test
-numbers = [1, 2, 3]
-doubled = numbers || x => x * 2
-first = doubled[0]
-println(first)

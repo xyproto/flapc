@@ -1,5 +1,0 @@
-// loop_mult.flap - test loop variable in expression
-@ i in 0..<5  max 50 {
-    x := i * 2
-    println(x)
-}

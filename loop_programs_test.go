@@ -1,0 +1,138 @@
+package main
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"testing"
+)
+
+// TestLoopPrograms tests loop constructs
+func TestLoopPrograms(t *testing.T) {
+	tests := []struct {
+		name     string
+		source   string
+		expected string
+	}{
+		{
+			name: "simple_range_loop",
+			source: `@ i in 0..<5 {
+    println(i)
+}
+`,
+			expected: "0\n1\n2\n3\n4\n",
+		},
+		{
+			name: "loop_with_arithmetic",
+			source: `sum := 0
+@ i in 1..<11 {
+    sum += i
+}
+println(sum)
+`,
+			expected: "55\n",
+		},
+		{
+			name: "nested_loops",
+			source: `@ i in 0..<3 {
+    @ j in 0..<3 {
+        printf("%v ", i * 3 + j)
+    }
+    println("")
+}
+`,
+			expected: "0 1 2 \n3 4 5 \n6 7 8 \n",
+		},
+		{
+			name: "loop_break",
+			source: `@ i in 0..<10 {
+    i > 5 {
+        ret @
+    }
+    println(i)
+}
+`,
+			expected: "0\n1\n2\n3\n4\n5\n",
+		},
+		{
+			name: "list_iteration",
+			source: `items := [10, 20, 30, 40]
+@ item in items {
+    println(item)
+}
+`,
+			expected: "10\n20\n30\n40\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testInlineFlap(t, tt.name, tt.source, tt.expected)
+		})
+	}
+}
+
+// TestExistingLoopPrograms runs existing loop test programs
+func TestExistingLoopPrograms(t *testing.T) {
+	tests := []string{
+		"loop_test",
+		"loop_test2",
+		"loop_simple_test",
+		"loop_mult",
+		"loop_with_arithmetic",
+		"loop_at_test",
+		"loop_break_test",
+		"nested_loop",
+	}
+
+	for _, name := range tests {
+		t.Run(name, func(t *testing.T) {
+			srcPath := filepath.Join("testprograms", name+".flap")
+			resultPath := filepath.Join("testprograms", name+".result")
+
+			if _, err := os.Stat(srcPath); os.IsNotExist(err) {
+				t.Skipf("Source file %s not found", srcPath)
+				return
+			}
+
+			var expected string
+			if data, err := os.ReadFile(resultPath); err == nil {
+				expected = string(data)
+			}
+
+			tmpDir := t.TempDir()
+			exePath := filepath.Join(tmpDir, name)
+
+			platform := GetDefaultPlatform()
+			if err := CompileFlap(srcPath, exePath, platform); err != nil {
+				t.Fatalf("Compilation failed: %v", err)
+			}
+
+			cmd := exec.Command("timeout", "5s", exePath)
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				if _, ok := err.(*exec.ExitError); !ok {
+					t.Fatalf("Execution failed: %v", err)
+				}
+			}
+
+			if expected != "" {
+				actual := string(output)
+				if actual != expected {
+					t.Errorf("Output mismatch:\nExpected:\n%s\nActual:\n%s",
+						expected, actual)
+				}
+			}
+		})
+	}
+}
+
+// TestInclusiveRange tests the inclusive range operator (..)
+func TestInclusiveRange(t *testing.T) {
+	source := `@ i in 1..5 {
+    println(i)
+}
+`
+	expected := "1\n2\n3\n4\n5\n"
+	testInlineFlap(t, "inclusive_range", source, expected)
+}

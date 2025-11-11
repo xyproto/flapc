@@ -1,7 +1,0 @@
-// manual_list_test.flap - Manually create a list to test indexing
-test := [0.0, 99.0, 99.0]
-
-println(test[0])
-println(test[1])
-println(test[2])
-

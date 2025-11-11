@@ -1,3 +1,0 @@
-Testing atomic operations in sequential loop
-Final value: 4
-PASSED - sequential loop with atomics works

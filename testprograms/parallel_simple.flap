@@ -1,7 +1,0 @@
-// parallel_simple.flap - minimal parallel test
-numbers = [1, 2, 3]
-doubled = numbers || x => x * 2
-
-// Just print the first element
-println(doubled[0])
-

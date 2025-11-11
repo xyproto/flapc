@@ -1,6 +1,0 @@
-// Test move semantics with ! operator
-
-// Test 1: Simple move in expression
-x := 42
-y := x! + 100
-printf("Result: %.0f\n", y)

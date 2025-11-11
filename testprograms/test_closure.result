@@ -1,5 +1,0 @@
-makeAdder(5)(10) = 15 (expected 15)
-makeAdder(100)(23) = 123 (expected 123)
-add10(5) = 15 (expected 15)
-add20(5) = 25 (expected 25)
-Closure test complete!

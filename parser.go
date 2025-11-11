@@ -2533,7 +2533,7 @@ func (p *Parser) parseParallel() Expression {
 func (p *Parser) parseLogicalOr() Expression {
 	left := p.parseLogicalAnd()
 
-	for p.peek.Type == TOKEN_OR || p.peek.Type == TOKEN_XOR {
+	for p.peek.Type == TOKEN_OR || p.peek.Type == TOKEN_XOR || p.peek.Type == TOKEN_ORBANG {
 		p.nextToken() // skip current
 		op := p.current.Value
 		p.nextToken() // skip operator
@@ -2587,9 +2587,9 @@ func (p *Parser) parseRange() Expression {
 	left := p.parseCons()
 
 	// Check for range operators
-	if p.peek.Type == TOKEN_DOTDOTLT || p.peek.Type == TOKEN_DOTDOTEQ {
+	if p.peek.Type == TOKEN_DOTDOTLT || p.peek.Type == TOKEN_DOTDOT {
 		p.nextToken() // move to left expr
-		inclusive := p.current.Type == TOKEN_DOTDOTEQ
+		inclusive := p.current.Type == TOKEN_DOTDOT
 		p.nextToken() // skip range operator
 		right := p.parseCons()
 		return &RangeExpr{Start: left, End: right, Inclusive: inclusive}

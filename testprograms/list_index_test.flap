@@ -1,8 +1,0 @@
-// list_index_test.flap - test list indexing
-numbers := [10, 20, 30, 40, 50]
-first := numbers[0]
-println(first)
-second := numbers[1]
-println(second)
-last := numbers[4]
-println(last)

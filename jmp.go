@@ -27,6 +27,8 @@ const (
 	JumpAboveOrEqual                        // JAE/JNB - above or equal (unsigned)
 	JumpBelow                               // JB/JNAE - below (unsigned)
 	JumpBelowOrEqual                        // JBE/JNA - below or equal (unsigned)
+	JumpParity                              // JP - parity/NaN
+	JumpNotParity                           // JNP - not parity/not NaN
 )
 
 // JumpConditional generates a conditional jump instruction
@@ -92,6 +94,12 @@ func (o *Out) jmpX86Conditional(condition JumpCondition, offset int32) {
 	case JumpBelowOrEqual:
 		opcode = 0x86
 		name = "jbe"
+	case JumpParity:
+		opcode = 0x8A
+		name = "jp"
+	case JumpNotParity:
+		opcode = 0x8B
+		name = "jnp"
 	default:
 		return
 	}

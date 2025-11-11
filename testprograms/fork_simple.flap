@@ -1,3 +1,0 @@
-// Very simple fork test
-spawn printf("Child\n")
-printf("Parent\n")

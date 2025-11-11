@@ -1,4 +1,0 @@
-// loop_test.flap - test basic loop
-@ i in 0..<5  max 50 {
-    println(@i)
-}

@@ -1,4 +1,0 @@
-// lambda_multi_arg_test.flap - test lambda with multiple arguments
-add := x, y => x + y
-result := add(3, 7)
-println(result)
