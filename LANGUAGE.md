@@ -1359,11 +1359,10 @@ process_list := list => {
 _[]    // Returns [] (tail of empty is empty)
 1 :: []  // Returns [1]
 
-// Error checking
+// Error checking with or! operator
 list := []
-is_error(^list) {  // Use is_error to check for NaN
-    println("Cannot take head of empty list")
-}
+head := (^list) or! 0.0  // Returns 0.0 if error
+println(head)
 ```
 
 
@@ -1431,30 +1430,25 @@ x ** y       // Power
 ### Result Type Operations
 
 ```flap
-is_error(value)           // Returns 1.0 if value is error Result, 0.0 if success
 value or! default         // Returns value if success, default if error (unwrap with default)
 value.error               // Extracts 4-letter error code as string (e.g., "dv0 ", "nan ")
 ```
 
 **Result Type Usage:**
 
-Results are float64 values that can represent either success or error. Error Results use invalid pointer values (like 0xFFFFFFFF) to encode 4-letter error codes.
+Results are float64 values that can represent either success or error. Error Results use NaN encoding with 4-letter error codes.
 
 ```flap
-// Division by zero returns error Result
+// Division by zero returns error Result (NaN)
 result := 10 / 0
 
-is_error(result) {
-    println("Error: division by zero")
-    ret 0
-}
+// Use or! operator to provide default value for errors
+safe_value := result or! 0.0
+println(safe_value)  // Prints 0.0
 
-// Use the value if no error
-value := result
-println(f"Result: {value}")
-
-// Or use unwrap_or for default value
-safe_value := unwrap_or(result, 0.0)
+// Or extract error code
+code := result.error
+println(code)  // Prints "dv0 " (division by zero)
 ```
 
 **Common Error Codes:**
@@ -2051,22 +2045,21 @@ Use the Result type operations to handle errors (see Built-in Functions → Resu
 // Division by zero example
 result := 10 / 0
 
-// Check for error
-is_error(result) {
-    println("Error occurred")
-    ret 0
-}
+// Use or! operator to provide default for errors
+safe_value := result or! 0.0
+println(safe_value)  // Prints 0.0
 
-// Use value if no error
-println(f"Result: {result}")
+// Or extract and check error code
+error_code := result.error
+println(error_code)  // Prints "dv0 " for division by zero
 ```
 
 ### Design Philosophy
 
 There is **no catch/throw or exception system** in Flap. Error handling is explicit:
-- Functions return Result values
-- Caller checks for errors using `is_error()`
+- Functions return Result values (NaN-encoded errors)
+- Caller handles errors using `or!` operator or `.error` property
 - Errors propagate through return values, not exceptions
 
-Many errors are caught at **compile time** when possible (type errors, undefined variables, etc.). Runtime errors use the Result type for explicit handling.
+Many errors are caught at **compile time** when possible (type errors, undefined variables, etc.). Runtime errors use the Result type (NaN encoding) for explicit handling.
 

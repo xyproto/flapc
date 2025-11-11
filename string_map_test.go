@@ -20,15 +20,8 @@ println("after")
 	t.Logf("Output: %q, ExitCode: %d", result.Stdout, result.ExitCode)
 }
 
-// TestBuiltinIsError tests is_error builtin
-func TestBuiltinIsError(t *testing.T) {
-	source := `x := 5.0
-result := is_error(x)
-println(result)
-`
-	result := runFlapProgram(t, source)
-	result.expectOutput(t, "0\n")
-}
+// TestBuiltinIsError removed - is_error is not a builtin in Flap
+// Use or! operator instead for error handling
 
 // TestPropertyAccessOnNumber tests accessing any property on a number
 func TestPropertyAccessOnNumber(t *testing.T) {

@@ -7,13 +7,11 @@ import (
 // TestDivisionByZeroReturnsNaN tests that division by zero returns NaN not exit
 func TestDivisionByZeroReturnsNaN(t *testing.T) {
 	source := `x := 10 / 0
-is_error(x) {
-    -> println("ERROR")
-    ~> println("OK")
-}
+safe := x or! -999.0
+println(safe)
 `
 	result := runFlapProgram(t, source)
-	result.expectOutput(t, "ERROR\n")
+	result.expectOutput(t, "-999\n")
 }
 
 // TestOrBangWithSuccess tests or! with successful value

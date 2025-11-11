@@ -9678,23 +9678,6 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.Cvtsi2sd("xmm0", "rax")
 		return
 
-	case "is_error":
-		// is_error(value) - returns 1.0 if value is NaN (error), 0.0 otherwise
-		if len(call.Args) != 1 {
-			compilerError("is_error requires exactly 1 argument")
-		}
-		// Compile argument into xmm0
-		fc.compileExpression(call.Args[0])
-		// Check if xmm0 is NaN by comparing with itself
-		fc.out.Ucomisd("xmm0", "xmm0")
-		// If NaN, parity flag is set
-		fc.out.XorRegWithReg("rax", "rax")          // rax = 0
-		fc.out.Emit([]byte{0x0f, 0x9a, 0xc0})       // setp al (sets al to 1 if PF=1, i.e., NaN)
-		fc.out.Emit([]byte{0x48, 0x0f, 0xb6, 0xc0}) // movzx rax, al
-		// Convert to float64
-		fc.out.Cvtsi2sd("xmm0", "rax")
-		return
-
 	case "_error_code_extract":
 		// .error property - extract 4-letter error code from NaN-encoded Result
 		// For now, always return empty string (TODO: check if NaN and extract code)

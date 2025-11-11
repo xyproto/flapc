@@ -40,6 +40,7 @@ import (
 )
 
 var globalParseCallCount = 0
+var debugParser = false // Set to true for parser debugging
 
 const (
 	// Buffer sizes for runtime operations
@@ -1005,6 +1006,9 @@ func (p *Parser) parseStatement() Statement {
 	if expr != nil {
 		// Only parse match blocks if we're not already inside one
 		if !p.inMatchBlock && p.peek.Type == TOKEN_LBRACE {
+			if debugParser {
+				fmt.Fprintf(os.Stderr, "DEBUG: parseStatement found expr with { ahead, calling parseMatchBlock\n")
+			}
 			p.nextToken() // move to '{'
 			p.nextToken() // skip '{'
 			p.skipNewlines()
@@ -1441,6 +1445,56 @@ func (p *Parser) parseIndexedAssignment() Statement {
 	}
 }
 
+// blockContainsMatchArrows scans ahead to check if the block contains -> or ~> arrows
+// Returns true if any match arrows are found, false otherwise
+func (p *Parser) blockContainsMatchArrows() bool {
+	// Create a new lexer from the same source at the current position
+	// to scan ahead without modifying the parser state
+	tempLexer := &Lexer{
+		input:     p.lexer.input,
+		pos:       p.lexer.pos,
+		line:      p.lexer.line,
+		column:    p.lexer.column,
+		lineStart: p.lexer.lineStart,
+	}
+	
+	tempParser := &Parser{
+		lexer:    tempLexer,
+		current:  p.current,
+		peek:     p.peek,
+		filename: p.filename,
+		source:   p.source,
+	}
+	
+	braceDepth := 0
+	foundArrow := false
+	
+	// Scan through tokens until we exit the block
+	for i := 0; i < 1000; i++ { // Safety limit
+		if tempParser.current.Type == TOKEN_EOF {
+			break
+		}
+		
+		if tempParser.current.Type == TOKEN_LBRACE {
+			braceDepth++
+		} else if tempParser.current.Type == TOKEN_RBRACE {
+			braceDepth--
+			if braceDepth < 0 {
+				// We've exited the block
+				break
+			}
+		} else if braceDepth == 0 && (tempParser.current.Type == TOKEN_ARROW || tempParser.current.Type == TOKEN_DEFAULT_ARROW) {
+			// Found an arrow at the top level of the block
+			foundArrow = true
+			break
+		}
+		
+		tempParser.nextToken()
+	}
+	
+	return foundArrow
+}
+
 func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
 	// Set flag to prevent nested match block parsing
 	oldInMatchBlock := p.inMatchBlock
@@ -1453,9 +1507,15 @@ func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
 
 	p.skipNewlines()
 
-	// Simple conditional mode: if the block doesn't start with an explicit arrow or default arrow,
+	// Check if the block contains any match arrows (-> or ~>) to decide parsing mode
+	hasMatchArrows := p.blockContainsMatchArrows()
+	if debugParser {
+		fmt.Fprintf(os.Stderr, "DEBUG: parseMatchBlock hasMatchArrows=%v current=%v\n", hasMatchArrows, p.current.Type)
+	}
+	
+	// Simple conditional mode: if the block doesn't contain match arrows,
 	// treat it as a simple conditional that should execute all statements as one block
-	if p.current.Type != TOKEN_ARROW && p.current.Type != TOKEN_DEFAULT_ARROW && p.current.Type != TOKEN_RBRACE {
+	if !hasMatchArrows && p.current.Type != TOKEN_ARROW && p.current.Type != TOKEN_DEFAULT_ARROW && p.current.Type != TOKEN_RBRACE {
 		// Try parsing as simple conditional first
 		var statements []Statement
 		foundDefaultArrow := false
