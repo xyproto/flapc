@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 // FlapResult holds the result of running a Flap program
@@ -20,23 +19,27 @@ type FlapResult struct {
 }
 
 // runFlapProgram compiles and runs a Flap program, returning full output
-// Executables are created in /dev/shm for speed (or /tmp) and cleaned up automatically
+// Executables are created in isolated temp directories and cleaned up automatically
 func runFlapProgram(t *testing.T, source string) FlapResult {
 	t.Helper()
 
-	// Use /dev/shm if available (faster), otherwise /tmp
+	// Try /dev/shm first (faster on Linux), fall back to os.TempDir()
 	tmpBase := "/dev/shm"
 	if _, err := os.Stat(tmpBase); os.IsNotExist(err) {
-		tmpBase = "/tmp"
+		tmpBase = os.TempDir()
 	}
 
-	// Create unique temporary files
-	tmpSrc := filepath.Join(tmpBase, fmt.Sprintf("flap_test_%d_%d.flap", os.Getpid(), time.Now().UnixNano()))
-	tmpExe := filepath.Join(tmpBase, fmt.Sprintf("flap_test_%d_%d", os.Getpid(), time.Now().UnixNano()))
+	// Create a unique test directory to isolate from sibling .flap files
+	// This prevents the compiler from loading other test files as dependencies
+	tmpDir, err := os.MkdirTemp(tmpBase, "flapc_test_*")
+	if err != nil {
+		return FlapResult{CompileError: fmt.Sprintf("Failed to create test dir: %v", err)}
+	}
+	defer os.RemoveAll(tmpDir)
 
-	// Ensure cleanup
-	defer os.Remove(tmpSrc)
-	defer os.Remove(tmpExe)
+	// Create test files in isolated directory
+	tmpSrc := filepath.Join(tmpDir, "test.flap")
+	tmpExe := filepath.Join(tmpDir, "test")
 
 	// Write source
 	if err := os.WriteFile(tmpSrc, []byte(source), 0644); err != nil {

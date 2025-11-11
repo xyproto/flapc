@@ -4,6 +4,22 @@ import (
 	"testing"
 )
 
+// TestListUpdateMinimal tests most basic list update
+func TestListUpdateMinimal(t *testing.T) {
+	source := `nums := [5]
+nums[0] <- 10
+println(nums[0])
+`
+	result := runFlapProgram(t, source)
+	if result.ExitCode != 0 {
+		t.Logf("Exit code: %d", result.ExitCode)
+		t.Logf("Stderr: %s", result.Stderr)
+		t.Logf("Stdout: %s", result.Stdout)
+		t.FailNow()
+	}
+	result.expectOutput(t, "10\n")
+}
+
 // TestListUpdateBasic tests basic list element update
 func TestListUpdateBasic(t *testing.T) {
 	source := `arr := [5, 10, 15]
