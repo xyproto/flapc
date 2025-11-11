@@ -79,6 +79,9 @@ func (r FlapResult) expectOutput(t *testing.T, expected string) {
 	if r.CompileError != "" {
 		t.Fatalf("Compilation failed: %s", r.CompileError)
 	}
+	if r.ExitCode != 0 {
+		t.Errorf("Program exited with code %d\nStderr: %s\nStdout: %s", r.ExitCode, r.Stderr, r.Stdout)
+	}
 	if r.Stdout != expected {
 		t.Errorf("Output mismatch:\nExpected:\n%s\nActual:\n%s", expected, r.Stdout)
 	}

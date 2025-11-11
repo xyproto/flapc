@@ -536,6 +536,10 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 		if lambdaSet[funcName] {
 			continue
 		}
+		// Skip internal runtime functions (start with _flap or flap_) - they are resolved directly
+		if strings.HasPrefix(funcName, "_flap") || strings.HasPrefix(funcName, "flap_") {
+			continue
+		}
 		if !pltSet[funcName] {
 			pltFunctions = append(pltFunctions, funcName)
 			pltSet[funcName] = true
@@ -7845,7 +7849,16 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// Returns: rax = new list pointer
 	fc.eb.MarkLabel("_flap_list_update")
 	
-	// Function prologue
+	// TEMPORARY: Just return the original list unchanged for debugging
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+	fc.out.MovRegToReg("rax", "rdi")  // return original list
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
+	
+	return // Skip the complex implementation for now
+	
+	// Function prologue (DISABLED FOR NOW)
 	fc.out.PushReg("rbp")
 	fc.out.MovRegToReg("rbp", "rsp")
 	fc.out.PushReg("rbx")   // old list ptr

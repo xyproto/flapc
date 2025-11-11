@@ -542,7 +542,16 @@ func (eb *ExecutableBuilder) PatchCallSites(textAddr uint64) {
 
 	for _, patch := range eb.callPatches {
 		// Find the target symbol address (should be a label in the text section)
+		// For internal functions, try without the $stub suffix first
 		targetOffset := eb.LabelOffset(patch.targetName)
+		if targetOffset < 0 && strings.HasSuffix(patch.targetName, "$stub") {
+			// Try looking for internal label without $stub suffix
+			baseName := patch.targetName[:len(patch.targetName)-5]
+			targetOffset = eb.LabelOffset(baseName)
+			if VerboseMode && targetOffset >= 0 {
+				fmt.Fprintf(os.Stderr, "DEBUG: Found internal label %s at offset %d (was looking for %s)\n", baseName, targetOffset, patch.targetName)
+			}
+		}
 		if targetOffset < 0 {
 			if VerboseMode {
 				fmt.Fprintf(os.Stderr, "Warning: Label %s not found for call patch\n", patch.targetName)
@@ -816,10 +825,11 @@ func (eb *ExecutableBuilder) GenerateCallInstruction(funcName string) error {
 		fmt.Fprint(os.Stderr, funcName+"@plt:")
 	}
 
-	// Strip leading underscore if present (for Mach-O compatibility)
+	// Strip leading underscore for Mach-O compatibility, but NOT for internal Flap runtime functions
+	// Internal functions (starting with _flap) should keep their underscore
 	targetName := funcName
-	if strings.HasPrefix(funcName, "_") {
-		targetName = funcName[1:] // Remove underscore
+	if strings.HasPrefix(funcName, "_") && !strings.HasPrefix(funcName, "_flap") {
+		targetName = funcName[1:] // Remove underscore for external C functions
 	}
 
 	// Register the call patch for later resolution
