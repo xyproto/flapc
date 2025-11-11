@@ -444,6 +444,10 @@ xor   // Logical XOR
 not   // Logical NOT
 ```
 
+**Operator Precedence Note:**
+
+Logical operators (`and`, `or`) have appropriate precedence so that expressions like `a >= 0.3 and a <= 0.7` work without needing parentheses. The comparison operators (`<`, `<=`, `>`, `>=`, `==`, `!=`) bind tighter than logical operators.
+
 ### Bitwise
 
 ```flap
@@ -494,30 +498,31 @@ _     // Tail operator (all but first element of list)
 
 ```flap
 !     // Move operator (postfix - transfers value)
-???   // Random number operator (returns float64 in [0.0, 1.0))
+???   // Secure random number operator (returns float64 in [0.0, 1.0))
 ```
 
 **Random Operator `???`:**
 
-When implemented, the random operator will:
-- Return a pseudo-random float64 value in the range [0.0, 1.0)
-- Use the `SEED` environment variable if set for reproducible randomness
-- Otherwise initialize from system entropy (Linux `getrandom()` syscall)
-- Use xoshiro256** algorithm for high-quality PRNG
-- Be thread-safe for use in parallel code
+The random operator provides cryptographically secure random numbers:
+- Returns a float64 value in the range [0.0, 1.0)
+- Uses Linux `getrandom()` syscall for secure random bytes
+- Does not require seeding (kernel entropy pool is used)
+- Suitable for security-sensitive applications
+- Each call generates fresh random bytes
 
-Example usage (when implemented):
+Example usage:
 ```flap
-// Random value
+// Secure random value
 x := ???                     // 0.0 <= x < 1.0
 
 // Random integer in range
 dice := (??? * 6) as int64   // 0, 1, 2, 3, 4, or 5
 roll := ((??? * 6) as int64) + 1  // 1, 2, 3, 4, 5, or 6
 
-// Reproducible randomness with SEED
-// $ SEED=12345 ./program
-// Will produce same random sequence every run
+// Random selection from list
+items := [10, 20, 30, 40, 50]
+idx := (??? * #items) as int64
+chosen := items[idx]
 ```
 
 ## Variables and Assignment

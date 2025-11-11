@@ -39,6 +39,8 @@ import (
 	"strings"
 )
 
+var globalParseCallCount = 0
+
 const (
 	// Buffer sizes for runtime operations
 	stringBufferSize = 256 // Maximum string buffer size for conversions
@@ -82,17 +84,18 @@ func (p *Parser) parseNumberLiteral(s string) float64 {
 }
 
 type Parser struct {
-	lexer       *Lexer
-	current     Token
-	peek        Token
-	filename    string
-	source      string
-	loopDepth   int                     // Current loop nesting level (0 = not in loop, 1 = outer loop, etc.)
-	constants   map[string]Expression   // Compile-time constants (immutable literals)
-	aliases     map[string]TokenType    // Keyword aliases (e.g., "for" -> TOKEN_AT)
-	cstructs    map[string]*CStructDecl // CStruct declarations for metadata access
-	speculative bool                    // True when in speculative parsing mode (suppress errors)
-	errors      *ErrorCollector         // Railway-oriented error collector
+	lexer        *Lexer
+	current      Token
+	peek         Token
+	filename     string
+	source       string
+	loopDepth    int                     // Current loop nesting level (0 = not in loop, 1 = outer loop, etc.)
+	constants    map[string]Expression   // Compile-time constants (immutable literals)
+	aliases      map[string]TokenType    // Keyword aliases (e.g., "for" -> TOKEN_AT)
+	cstructs     map[string]*CStructDecl // CStruct declarations for metadata access
+	speculative  bool                    // True when in speculative parsing mode (suppress errors)
+	errors       *ErrorCollector         // Railway-oriented error collector
+	inMatchBlock bool                    // True when parsing inside a match block (prevents nested match parsing)
 }
 
 type parserState struct {
@@ -119,6 +122,7 @@ func (p *Parser) restoreState(state parserState) {
 }
 
 func NewParser(input string) *Parser {
+	globalParseCallCount = 0 // Reset global counter for each parser instance
 	p := &Parser{
 		lexer:     NewLexer(input),
 		filename:  "<input>",
@@ -135,6 +139,7 @@ func NewParser(input string) *Parser {
 }
 
 func NewParserWithFilename(input, filename string) *Parser {
+	globalParseCallCount = 0 // Reset global counter for each parser instance
 	p := &Parser{
 		lexer:     NewLexer(input),
 		filename:  filename,
@@ -998,7 +1003,8 @@ func (p *Parser) parseStatement() Statement {
 	// Otherwise, it's an expression statement (or match expression)
 	expr := p.parseExpression()
 	if expr != nil {
-		if p.peek.Type == TOKEN_LBRACE {
+		// Only parse match blocks if we're not already inside one
+		if !p.inMatchBlock && p.peek.Type == TOKEN_LBRACE {
 			p.nextToken() // move to '{'
 			p.nextToken() // skip '{'
 			p.skipNewlines()
@@ -1436,6 +1442,11 @@ func (p *Parser) parseIndexedAssignment() Statement {
 }
 
 func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
+	// Set flag to prevent nested match block parsing
+	oldInMatchBlock := p.inMatchBlock
+	p.inMatchBlock = true
+	defer func() { p.inMatchBlock = oldInMatchBlock }()
+
 	clauses := []*MatchClause{}
 	defaultExpr := Expression(&NumberExpr{Value: 0})
 	defaultExplicit := false
@@ -1447,13 +1458,18 @@ func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
 	if p.current.Type != TOKEN_ARROW && p.current.Type != TOKEN_DEFAULT_ARROW && p.current.Type != TOKEN_RBRACE {
 		// Try parsing as simple conditional first
 		var statements []Statement
-		foundArrow := false
+		foundDefaultArrow := false
 
 		for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
-			// Check if we encounter pattern matching syntax
-			if p.current.Type == TOKEN_ARROW || p.current.Type == TOKEN_DEFAULT_ARROW {
-				foundArrow = true
+			// Check if we encounter default arrow at top level
+			if p.current.Type == TOKEN_DEFAULT_ARROW {
+				foundDefaultArrow = true
 				break
+			}
+
+			// Check for explicit arrow (not allowed in simple mode)
+			if p.current.Type == TOKEN_ARROW {
+				p.error("mix of simple statements and pattern matching not supported - use explicit '->' syntax")
 			}
 
 			// Parse as statement/expression
@@ -1482,9 +1498,15 @@ func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
 			}
 		}
 
-		// If we didn't find any arrows and have statements, this is a simple conditional
-		if !foundArrow && len(statements) > 0 {
-			// Create a single clause with all statements in a BlockExpr
+		// If we found a default arrow after statements, treat the statements as guardless clause
+		if foundDefaultArrow && len(statements) > 0 {
+			// Create a guardless clause with all statements before ~>
+			clauses = append(clauses, &MatchClause{
+				Result: &BlockExpr{Statements: statements},
+			})
+			// Fall through to continue parsing default clause and other clauses
+		} else if !foundDefaultArrow && len(statements) > 0 {
+			// If we didn't find any arrows and have statements, this is a simple conditional
 			clauses = append(clauses, &MatchClause{
 				Result: &BlockExpr{Statements: statements},
 			})
@@ -1500,17 +1522,16 @@ func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
 				DefaultExplicit: defaultExplicit,
 			}
 		}
-
-		// Found arrows, need to re-parse in pattern matching mode
-		// This is tricky because we already consumed tokens
-		// For now, if we detect this case, it's an error - the user should use explicit syntax
-		if foundArrow {
-			p.error("mix of simple statements and pattern matching not supported - use explicit '->' syntax")
-		}
 	}
 
 	// Pattern matching mode: parse clauses with guards/arrows
+	loopCount := 0
 	for {
+		loopCount++
+		if loopCount > 10 {
+			p.error(fmt.Sprintf("infinite loop in parseMatchBlock: stuck at token type=%v value='%v' line=%d", p.current.Type, p.current.Value, p.current.Line))
+		}
+
 		p.skipNewlines()
 
 		if p.current.Type == TOKEN_RBRACE {
@@ -1578,7 +1599,18 @@ func (p *Parser) parseMatchClause() (*MatchClause, bool) {
 		return &MatchClause{Result: result}, false
 	}
 
+	// BEFORE parsing guard
+	beforeLine := p.current.Line
+	beforeValue := p.current.Value
+	beforeType := p.current.Type
+
 	guard := p.parseExpression()
+
+	// AFTER parsing guard - check if we advanced
+	if beforeLine == p.current.Line && beforeValue == p.current.Value && beforeType == p.current.Type {
+		p.error(fmt.Sprintf("parseExpression() didn't advance from token '%v' (type %v) at line %d", p.current.Value, p.current.Type, p.current.Line))
+	}
+
 	p.nextToken()
 	p.skipNewlines()
 
@@ -1606,7 +1638,13 @@ func (p *Parser) parseMatchTarget() Expression {
 		p.skipNewlines()
 
 		var statements []Statement
+		loopCount := 0
 		for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+			loopCount++
+			if loopCount > 1000 {
+				p.error(fmt.Sprintf("infinite loop in parseMatchTarget block: stuck at token %v", p.current))
+			}
+
 			stmt := p.parseStatement()
 			if stmt != nil {
 				statements = append(statements, stmt)
@@ -1718,7 +1756,12 @@ func (p *Parser) parseMatchTarget() Expression {
 			p.nextToken() // move to '{'
 			p.nextToken() // skip '{'
 			p.skipNewlines()
-			return p.parseMatchBlock(expr)
+			matchExpr := p.parseMatchBlock(expr)
+			// parseMatchBlock leaves p.current on '}', we need to consume it
+			if p.current.Type == TOKEN_RBRACE {
+				p.nextToken() // consume '}'
+			}
+			return matchExpr
 		}
 
 		p.nextToken()
@@ -2469,6 +2512,10 @@ func (p *Parser) parseOnePatternClause() *PatternClause {
 }
 
 func (p *Parser) parseExpression() Expression {
+	globalParseCallCount++
+	if globalParseCallCount > 10000 {
+		p.error(fmt.Sprintf("infinite recursion in parseExpression: count=%d, token type=%v value='%v' line=%d", globalParseCallCount, p.current.Type, p.current.Value, p.current.Line))
+	}
 	return p.parseErrorHandling()
 }
 
@@ -3000,11 +3047,21 @@ func (p *Parser) parsePostfix() Expression {
 					expr = &NamespacedIdentExpr{Namespace: ident.Name, Name: fieldName}
 				}
 			} else {
-				// Regular field access - hash the field name and create index expression
-				hashValue := hashStringKey(fieldName)
-				expr = &IndexExpr{
-					List:  expr,
-					Index: &NumberExpr{Value: float64(hashValue)},
+				// Check for special property access on Result types
+				if fieldName == "error" {
+					// .error property - extract error code from Result type
+					// This will be handled specially in codegen
+					expr = &CallExpr{
+						Function: "_error_code_extract",
+						Args:     []Expression{expr},
+					}
+				} else {
+					// Regular field access - hash the field name and create index expression
+					hashValue := hashStringKey(fieldName)
+					expr = &IndexExpr{
+						List:  expr,
+						Index: &NumberExpr{Value: float64(hashValue)},
+					}
 				}
 			}
 		} else {
@@ -3041,6 +3098,9 @@ func (p *Parser) parsePrimary() Expression {
 
 	case TOKEN_INF:
 		return &NumberExpr{Value: math.Inf(1)}
+
+	case TOKEN_RANDOM:
+		return &RandomExpr{}
 
 	case TOKEN_STRING:
 		return &StringExpr{Value: p.current.Value}

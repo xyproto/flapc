@@ -966,20 +966,24 @@ func (eb *ExecutableBuilder) patchTextInELF() {
 	elfBuf := eb.elf.Bytes()
 	newText := eb.text.Bytes()
 
-	fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: elfBuf size=%d, newText size=%d\n", len(elfBuf), len(newText))
-	fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: newText first 50 bytes: %x\n", newText[:min(50, len(newText))])
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: elfBuf size=%d, newText size=%d\n", len(elfBuf), len(newText))
+		fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: newText first 50 bytes: %x\n", newText[:min(50, len(newText))])
+	}
 
 	// Search for 49 ff d3 (call r11) in newText
-	callFound := false
-	for i := 0; i <= len(newText)-3; i++ {
-		if newText[i] == 0x49 && newText[i+1] == 0xFF && newText[i+2] == 0xD3 {
-			fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: Found 49 FF D3 at offset %d (0x%x) in newText\n", i, i)
-			callFound = true
-			break
+	if VerboseMode {
+		callFound := false
+		for i := 0; i <= len(newText)-3; i++ {
+			if newText[i] == 0x49 && newText[i+1] == 0xFF && newText[i+2] == 0xD3 {
+				fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: Found 49 FF D3 at offset %d (0x%x) in newText\n", i, i)
+				callFound = true
+				break
+			}
 		}
-	}
-	if !callFound {
-		fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: WARNING - 49 FF D3 (call r11) NOT FOUND in newText buffer!\n")
+		if !callFound {
+			fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: WARNING - 49 FF D3 (call r11) NOT FOUND in newText buffer!\n")
+		}
 	}
 
 	// Find the text section in the ELF buffer
@@ -989,8 +993,10 @@ func (eb *ExecutableBuilder) patchTextInELF() {
 	textOffset := 0x3000 // text is now on page 0x3000 (separate from PLT/_start)
 	textSize := len(newText)
 
-	fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: textOffset=0x%x, textSize=%d\n", textOffset, textSize)
-	fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: about to copy newText to elfBuf[0x%x:0x%x]\n", textOffset, textOffset+textSize)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: textOffset=0x%x, textSize=%d\n", textOffset, textSize)
+		fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: about to copy newText to elfBuf[0x%x:0x%x]\n", textOffset, textOffset+textSize)
+	}
 
 	// CRITICAL: The dynamic section starts 4 pages after text section
 	// Text section is pre-allocated 4 pages (16KB) at offset 0x3000
@@ -1017,8 +1023,10 @@ func (eb *ExecutableBuilder) patchTextInELF() {
 
 	// Get fresh reference to buffer after potential resize
 	elfBuf = eb.elf.Bytes()
-	fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: after copy, elfBuf[0x%x:0x%x] = %x\n",
-		textOffset, textOffset+min(50, textSize), elfBuf[textOffset:textOffset+min(50, textSize)])
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG patchTextInELF: after copy, elfBuf[0x%x:0x%x] = %x\n",
+			textOffset, textOffset+min(50, textSize), elfBuf[textOffset:textOffset+min(50, textSize)])
+	}
 
 	// No need to update Program Headers - they were generated correctly in elf_complete.go
 	// with the new multi-page layout (PLT/_start at 0x2000, text at 0x3000)
@@ -1045,14 +1053,20 @@ func (eb *ExecutableBuilder) patchDataInELF() {
 	dataOffset := int(eb.dataOffsetInELF)
 	dataSize := len(newData)
 
-	fmt.Fprintf(os.Stderr, "DEBUG patchDataInELF: elfBuf size=%d, newData size=%d\n", len(elfBuf), len(newData))
-	fmt.Fprintf(os.Stderr, "DEBUG patchDataInELF: dataOffset=0x%x, dataSize=%d\n", dataOffset, dataSize)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG patchDataInELF: elfBuf size=%d, newData size=%d\n", len(elfBuf), len(newData))
+		fmt.Fprintf(os.Stderr, "DEBUG patchDataInELF: dataOffset=0x%x, dataSize=%d\n", dataOffset, dataSize)
+	}
 
 	if dataOffset > 0 && dataOffset+dataSize <= len(elfBuf) {
-		fmt.Fprintf(os.Stderr, "DEBUG patchDataInELF: copying newData to elfBuf[0x%x:0x%x]\n", dataOffset, dataOffset+dataSize)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG patchDataInELF: copying newData to elfBuf[0x%x:0x%x]\n", dataOffset, dataOffset+dataSize)
+		}
 		copy(elfBuf[dataOffset:dataOffset+dataSize], newData)
-		fmt.Fprintf(os.Stderr, "DEBUG patchDataInELF: first 32 bytes of .data = %x\n", newData[:min(32, len(newData))])
-	} else {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG patchDataInELF: first 32 bytes of .data = %x\n", newData[:min(32, len(newData))])
+		}
+	} else if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG patchDataInELF: WARNING - invalid offset or size (offset=%d, size=%d, elfBuf=%d)\n",
 			dataOffset, dataSize, len(elfBuf))
 	}
@@ -1078,7 +1092,7 @@ func (eb *ExecutableBuilder) patchDynsymInELF(ds *DynamicSections) {
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "DEBUG patchDynsymInELF: patched symbol table successfully\n")
 		}
-	} else {
+	} else if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG patchDynsymInELF: WARNING - invalid offset or size (offset=%d, size=%d, elfBuf=%d)\n",
 			dynsymOffset, dynsymSize, len(elfBuf))
 	}

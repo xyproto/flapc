@@ -1062,7 +1062,7 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 			}
 		} else if s.Mutable {
 			if exists {
-				return fmt.Errorf("variable '%s' already defined (use <- to update)", s.Name)
+				return fmt.Errorf("variable '%s' already defined (use <- to update) [currently at offset %d]", s.Name, fc.variables[s.Name])
 			}
 			fc.updateStackOffset(16)
 			offset := fc.stackOffset
@@ -2840,6 +2840,52 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.MovMemToXmm("xmm0", "rax", 0)
 		}
 
+	case *RandomExpr:
+		// ??? operator: secure random float64 in [0.0, 1.0) using getrandom syscall
+		// getrandom syscall: rax=318, rdi=buffer, rsi=length, rdx=flags
+		// We need 8 random bytes for a uint64
+
+		// Allocate space on stack for random bytes (8 bytes, keep aligned)
+		fc.out.SubImmFromReg("rsp", 8)
+
+		// Call getrandom: syscall(318, rsp, 8, 0)
+		fc.out.MovImmToReg("rax", "318")   // getrandom syscall number
+		fc.out.MovRegToReg("rdi", "rsp")   // buffer = stack pointer
+		fc.out.MovImmToReg("rsi", "8")     // length = 8 bytes
+		fc.out.XorRegWithReg("rdx", "rdx") // flags = 0
+		fc.out.Syscall()
+
+		// Load the random uint64 from stack
+		fc.out.MovMemToReg("rax", "rsp", 0)
+
+		// Clean up stack
+		fc.out.AddImmToReg("rsp", 8)
+
+		// Convert to float64 in range [0.0, 1.0)
+		// Use upper 53 bits for mantissa (IEEE 754 double precision has 53 bits precision)
+		// Shift right by 11 bits to get 53-bit value
+		fc.out.ShrRegByImm("rax", 11)
+
+		// Convert to float64 and divide by 2^53 to get [0.0, 1.0)
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+		// Load 2^53 as divisor
+		labelName := fmt.Sprintf("float_2pow53_%d", fc.stringCounter)
+		fc.stringCounter++
+		divisor := float64(1 << 53) // 2^53 = 9007199254740992
+		bits := uint64(0)
+		*(*float64)(unsafe.Pointer(&bits)) = divisor
+		var floatData []byte
+		for i := 0; i < 8; i++ {
+			floatData = append(floatData, byte((bits>>(i*8))&ByteMask))
+		}
+		fc.eb.Define(labelName, string(floatData))
+
+		// Divide to get [0.0, 1.0)
+		fc.out.LeaSymbolToReg("rax", labelName)
+		fc.out.MovMemToXmm("xmm1", "rax", 0)
+		fc.out.DivsdXmm("xmm0", "xmm1")
+
 	case *StringExpr:
 		labelName := fmt.Sprintf("str_%d", fc.stringCounter)
 		fc.stringCounter++
@@ -4584,14 +4630,6 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 }
 
 func (fc *FlapCompiler) compileMatchExpr(expr *MatchExpr) {
-	// UNCONDITIONAL DEBUG - verify this function is called
-	fmt.Fprintf(os.Stderr, "*** MATCHEXPR CALLED at textPos=%d: %d clauses, default=%v\n", fc.eb.text.Len(), len(expr.Clauses), expr.DefaultExpr != nil)
-	for i, clause := range expr.Clauses {
-		hasGuard := clause.Guard != nil
-		resultType := fmt.Sprintf("%T", clause.Result)
-		fmt.Fprintf(os.Stderr, "    Clause %d: hasGuard=%v, resultType=%s\n", i, hasGuard, resultType)
-	}
-
 	fc.compileExpression(expr.Condition)
 
 	fc.labelCounter++
@@ -9655,6 +9693,17 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.Emit([]byte{0x48, 0x0f, 0xb6, 0xc0}) // movzx rax, al
 		// Convert to float64
 		fc.out.Cvtsi2sd("xmm0", "rax")
+		return
+
+	case "_error_code_extract":
+		// .error property - extract 4-letter error code from NaN-encoded Result
+		// For now, always return empty string (TODO: check if NaN and extract code)
+		if len(call.Args) != 1 {
+			compilerError("_error_code_extract requires exactly 1 argument")
+		}
+		// Just return empty string - don't evaluate the argument
+		// (evaluating it might crash if it's being used as a map index)
+		fc.compileExpression(&StringExpr{Value: ""})
 		return
 
 	case "println":

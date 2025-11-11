@@ -67,14 +67,6 @@ flapc
 
 release/
 
-# Compiled test binaries (in root only)
-/test_*
-/trace_*
-/block_param
-/cstruct_*
-/sdl*
-/factorial
-/snake_*
 snake/snake_*
 wpo_simple_test
 wpo_test

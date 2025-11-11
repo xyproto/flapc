@@ -318,6 +318,13 @@ type NumberExpr struct {
 func (n *NumberExpr) String() string  { return fmt.Sprintf("%g", n.Value) }
 func (n *NumberExpr) expressionNode() {}
 
+type RandomExpr struct {
+	// Represents the ??? operator - secure random float64 in [0.0, 1.0) using getrandom
+}
+
+func (r *RandomExpr) String() string  { return "???" }
+func (r *RandomExpr) expressionNode() {}
+
 type StringExpr struct {
 	Value string
 }

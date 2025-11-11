@@ -134,6 +134,7 @@ const (
 	TOKEN_HAS         // has (type/class definitions)
 	TOKEN_CLASS       // class (class definition)
 	TOKEN_LTGT        // <> (composition operator)
+	TOKEN_RANDOM      // ??? (random number operator)
 )
 
 // Code generation constants
@@ -653,6 +654,14 @@ func (l *Lexer) NextToken() Token {
 		// Standalone ! is move operator
 		l.pos++
 		return Token{Type: TOKEN_BANG, Value: "!", Line: l.line, Column: tokenColumn}
+	case '?':
+		// Check for ??? (random number operator)
+		if l.pos+1 < len(l.input) && l.input[l.pos+1] == '?' && l.pos+2 < len(l.input) && l.input[l.pos+2] == '?' {
+			l.pos += 3
+			return Token{Type: TOKEN_RANDOM, Value: "???", Line: l.line, Column: tokenColumn}
+		}
+		// Single ? is not a valid token in Flap
+		return Token{Type: TOKEN_EOF, Value: "", Line: l.line, Column: tokenColumn}
 	case '~':
 		// Check for ~> first, then ~b
 		if l.peek() == '>' {

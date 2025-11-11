@@ -7,61 +7,37 @@ import (
 	"testing"
 )
 
-// TestLambdaPrograms tests lambda expressions and closures
-func TestLambdaPrograms(t *testing.T) {
+// TestCStructPrograms tests C struct interop
+func TestCStructPrograms(t *testing.T) {
 	tests := []struct {
 		name     string
 		source   string
 		expected string
 	}{
 		{
-			name: "simple_lambda",
-			source: `square := x => x * x
-result := square(5)
-println(result)
-`,
-			expected: "25\n",
-		},
-		{
-			name: "lambda_with_multiple_params",
-			source: `add := (a, b) => a + b
-result := add(10, 20)
-println(result)
-`,
-			expected: "30\n",
-		},
-		{
-			name: "lambda_with_block",
-			source: `calculate := (x, y) => {
-    temp := x * 2
-    result := temp + y
-    ret result
+			name: "simple_cstruct",
+			source: `cstruct Point {
+    x as float64,
+    y as float64
 }
-println(calculate(5, 3))
+
+println(Point.size)
+println(Point.x.offset)
+println(Point.y.offset)
 `,
-			expected: "13\n",
+			expected: "16\n0\n8\n",
 		},
 		{
-			name: "recursive_lambda",
-			source: `factorial := (n, acc) ==> n == 0 {
-    -> acc
-    ~> factorial(n-1, n*acc) max 100
+			name: "packed_cstruct",
+			source: `cstruct Data packed {
+    a as uint8,
+    b as uint32,
+    c as uint8
 }
-println(factorial(5, 1))
+
+println(Data.size)
 `,
-			expected: "120\n",
-		},
-		{
-			name: "lambda_match",
-			source: `classify := x ==> x {
-    0 -> "zero"
-    ~> x > 0 { -> "positive" ~> "negative" }
-}
-println(classify(0))
-println(classify(5))
-println(classify(-3))
-`,
-			expected: "zero\npositive\nnegative\n",
+			expected: "6\n",
 		},
 	}
 
@@ -72,18 +48,14 @@ println(classify(-3))
 	}
 }
 
-// TestExistingLambdaPrograms runs existing lambda test programs
-func TestExistingLambdaPrograms(t *testing.T) {
+// TestExistingCStructPrograms runs existing cstruct test programs
+func TestExistingCStructPrograms(t *testing.T) {
 	tests := []string{
-		"lambda_test",
-		"lambda_syntax_test",
-		"lambda_calculator",
-		"lambda_comprehensive",
-		"lambda_direct_test",
-		"lambda_multi_arg_test",
-		"lambda_multiple_test",
-		"lambda_parse_test",
-		"lambda_store_test",
+		"cstruct_test",
+		"cstruct_syntax_test",
+		"cstruct_helpers_test",
+		"cstruct_modifiers_test",
+		"cstruct_arena_test",
 	}
 
 	for _, name := range tests {

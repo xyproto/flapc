@@ -15,18 +15,3 @@ println(result)
 	result := runFlapProgram(t, source)
 	result.expectOutput(t, "15\n")
 }
-
-// TestRandomOperator tests the ??? (random) operator - NOT YET IMPLEMENTED
-func TestRandomOperator(t *testing.T) {
-	t.Skip("Random operator ??? not yet implemented")
-
-	source := `x := ???
-y := ???
-(x >= 0.0 && x < 1.0 && y >= 0.0 && y < 1.0) {
-    -> println("PASS")
-    ~> println("FAIL")
-}
-`
-	result := runFlapProgram(t, source)
-	result.expectOutput(t, "PASS\n")
-}

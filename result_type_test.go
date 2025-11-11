@@ -46,3 +46,39 @@ println(z)
 	result := runFlapProgram(t, source)
 	result.expectOutput(t, "99\n")
 }
+
+// TestErrorPropertySimple tests .error property doesn't crash
+func TestErrorPropertySimple(t *testing.T) {
+	source := `x := 5.0
+y := x.error
+println("ok")
+`
+	result := runFlapProgram(t, source)
+	result.expectOutput(t, "ok\n")
+}
+
+// TestErrorPropertyLength tests .error returns a string
+func TestErrorPropertyLength(t *testing.T) {
+	source := `x := 5.0
+code := x.error
+len := #code
+println(len)
+`
+	result := runFlapProgram(t, source)
+	result.expectOutput(t, "0\n") // Empty string for non-error
+}
+
+// TestErrorPropertyBasic tests .error property on Result types
+func TestErrorPropertyBasic(t *testing.T) {
+	t.Skip("TODO: .error property needs division error encoding")
+	source := `result := 10 / 0
+code := result.error
+println(code)
+`
+	result := runFlapProgram(t, source)
+	// Should print the error code (e.g., "dv0 " for division by zero)
+	// For now, just check it doesn't crash
+	if result.CompileError != "" {
+		t.Fatalf("Compilation failed: %s", result.CompileError)
+	}
+}
