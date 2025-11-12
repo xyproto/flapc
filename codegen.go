@@ -3866,8 +3866,11 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.AddImmToReg("rsp", 8)
 
 			fc.eb.GenerateCallInstruction("_flap_list_cons")
-			// Result pointer in rax, convert to float for xmm0
-			fc.out.Cvtsi2sd("xmm0", "rax")
+			// Result pointer in rax, move to xmm0 preserving bit pattern
+			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.MovRegToMem("rax", "rsp", 0)
+			fc.out.MovMemToXmm("xmm0", "rsp", 0)
+			fc.out.AddImmToReg("rsp", 8)
 		}
 
 	case *CallExpr:
@@ -7665,7 +7668,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Save arguments
 	fc.out.MovRegToReg("r12", "rdi") // r12 = element bits
-	fc.out.MovRegToReg("r13", "rsi") // r13 = list_ptr bits
+	fc.out.MovRegToReg("r13", "rsi") // r13 = list_ptr (already the actual pointer value)
 
 	// Get list length from [list_ptr + 0]
 	fc.out.MovMemToXmm("xmm0", "r13", 0) // load length as float64

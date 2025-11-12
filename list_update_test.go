@@ -90,14 +90,14 @@ println(arr[3])
 
 // TestConsOperator tests the cons operator (::)
 func TestConsOperator(t *testing.T) {
-	t.Skip("TODO: cons operator needs implementation")
 	source := `list1 := [2, 3, 4]
 list2 := 1 :: list1
 println(list2[0])
 println(list2[1])
+println(list2[2])
 `
 	result := runFlapProgram(t, source)
-	result.expectOutput(t, "1\n2\n")
+	result.expectOutput(t, "1\n2\n3\n")
 }
 
 // TestTailOperatorBasic tests the tail operator (_)
