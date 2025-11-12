@@ -7742,8 +7742,9 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	
 	// Jump back to loop test
 	currentPos2 := fc.eb.text.Len()
-	backOffset2 := int32(copyLoopStart - (currentPos2 + 2)) // +2 for jmp instruction size
-	fc.out.Emit([]byte{0xeb, byte(backOffset2)}) // jmp rel8 back to test
+	backOffset2 := int32(copyLoopStart - (currentPos2 + 5)) // +5 for jmp rel32 instruction size
+	fc.out.Emit([]byte{0xe9}) // jmp rel32
+	fc.out.Emit([]byte{byte(backOffset2), byte(backOffset2 >> 8), byte(backOffset2 >> 16), byte(backOffset2 >> 24)})
 	
 	// Patch the done jump
 	copyDonePos := fc.eb.text.Len()
