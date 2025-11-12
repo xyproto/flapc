@@ -1611,6 +1611,18 @@ func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
 		}
 
 		clause, _ := p.parseMatchClause()
+		
+		// Convert value matches to equality checks
+		if clause.IsValueMatch && clause.Guard != nil {
+			// Transform: 0 -> "zero" into: condition == 0 -> "zero"
+			clause.Guard = &BinaryExpr{
+				Left:     condition,
+				Operator: "==",
+				Right:    clause.Guard,
+			}
+			clause.IsValueMatch = false
+		}
+		
 		clauses = append(clauses, clause)
 	}
 
@@ -1659,17 +1671,16 @@ func (p *Parser) parseMatchClause() (*MatchClause, bool) {
 		return &MatchClause{Result: result}, false
 	}
 
-	// BEFORE parsing guard
-	beforeLine := p.current.Line
-	beforeValue := p.current.Value
-	beforeType := p.current.Type
-
-	guard := p.parseExpression()
-
-	// AFTER parsing guard - check if we advanced
-	if beforeLine == p.current.Line && beforeValue == p.current.Value && beforeType == p.current.Type {
-		p.error(fmt.Sprintf("parseExpression() didn't advance from token '%v' (type %v) at line %d", p.current.Value, p.current.Type, p.current.Line))
+	// Check for guard prefix |
+	isGuard := false
+	if p.current.Type == TOKEN_PIPE {
+		isGuard = true
+		p.nextToken() // skip '|'
+		p.skipNewlines()
 	}
+
+	// Parse the pattern or guard expression
+	expr := p.parseExpression()
 
 	p.nextToken()
 	p.skipNewlines()
@@ -1679,11 +1690,19 @@ func (p *Parser) parseMatchClause() (*MatchClause, bool) {
 		p.skipNewlines()
 		result := p.parseMatchTarget()
 		p.skipNewlines()
-		return &MatchClause{Guard: guard, Result: result}, false
+		
+		// If it's a guard, use the expression as-is
+		// Otherwise, it's a value match - we'll need the condition from parseMatchBlock
+		if isGuard {
+			return &MatchClause{Guard: expr, Result: result}, false
+		} else {
+			// Store the value pattern in Guard for now - parseMatchBlock will convert it
+			return &MatchClause{Guard: expr, Result: result, IsValueMatch: true}, false
+		}
 	}
 
 	// Bare expression clause (sugar for '-> expr')
-	return &MatchClause{Result: guard}, true
+	return &MatchClause{Result: expr}, true
 }
 
 func (p *Parser) parseMatchTarget() Expression {

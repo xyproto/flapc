@@ -442,8 +442,9 @@ func (i *InExpr) String() string {
 func (i *InExpr) expressionNode() {}
 
 type MatchClause struct {
-	Guard  Expression
-	Result Expression
+	Guard        Expression
+	Result       Expression
+	IsValueMatch bool // True if this is a value match (0 -> ...), false if guard (| x > 0 -> ...)
 }
 
 type MatchExpr struct {

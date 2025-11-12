@@ -685,31 +685,44 @@ x == 0 {
 }
 ```
 
-**Match Expression Arrow Rules:**
+**Match Expression Syntax:**
 
-Match expressions support flexible arrow syntax:
+Match expressions distinguish between **value matching** and **guard conditions**:
 
-1. **Arrows optional for clarity**: When the intent is unambiguous, arrows (`->`) can be omitted
-2. **Single positive case**: Just write the expression without an arrow
-3. **Default case**: Always uses `~>` arrow to distinguish it
-4. **Explicit jumps/returns**: Use `->` when explicitly returning or jumping
-5. **Consistent style recommended**: Pick one style per match block for readability
+1. **Value matching**: `value -> result` - Matches when input equals value
+2. **Guard conditions**: `| condition -> result` - Evaluates boolean expression (use `|` prefix)
+3. **Default case**: `~> result` - Always uses `~>` arrow
+4. **Implicit form**: Expression without arrow (for simple conditionals)
 
 ```flap
-// All these are valid:
-result := x > 0 {
-    "positive"           // Implicit - no arrow needed
-    ~> "not positive"    // Default always has ~>
+// Value matching (checks equality)
+result := x {
+    0 -> "zero"           // Matches when x == 0
+    1 -> "one"            // Matches when x == 1
+    2 -> "two"            // Matches when x == 2
+    ~> "other"            // Default case
 }
 
-result := x {            // Matching on x
-    0 -> "zero"          // Explicit arrows
-    1 -> "one"
-    ~> "other"
+// Guard conditions (use | prefix for boolean expressions)
+result := x {
+    | x > 10 -> "large"       // Guard: evaluates x > 10
+    | x > 0 -> "positive"     // Guard: evaluates x > 0
+    | x == 0 -> "zero"        // Guard: evaluates x == 0
+    ~> "negative"             // Default case
 }
 
-x < 0 {
-    println("negative")  // No arrow, this is the case for when x < 0
+// Can mix value matching and guards
+result := x {
+    0 -> "zero"               // Value match
+    | x > 0 && x < 10 -> "small positive"  // Guard
+    | x >= 10 -> "large"      // Guard
+    ~> "negative"             // Default
+}
+
+// Simple conditional (no value/guard distinction)
+x > 0 {
+    println("positive")       // Executes when x > 0
+    ~> println("not positive") // Default case
 }
 ```
 
