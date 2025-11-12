@@ -1029,11 +1029,11 @@ func (p *Parser) tryParseNonParenLambda() Expression {
 		return nil
 	}
 
-	// Single param: x =>
+	// Single param: x => or x ==>
 	firstParam := p.current.Value
-	if p.peek.Type == TOKEN_FAT_ARROW {
+	if p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_EQUALS_FAT_ARROW {
 		p.nextToken() // skip param
-		p.nextToken() // skip '=>'
+		p.nextToken() // skip '=>' or '==>'
 		body := p.parseLambdaBody()
 		return &LambdaExpr{Params: []string{firstParam}, Body: body}
 	}
@@ -1062,10 +1062,10 @@ func (p *Parser) tryParseNonParenLambda() Expression {
 
 		params = append(params, p.current.Value)
 
-		if p.peek.Type == TOKEN_FAT_ARROW {
+		if p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_EQUALS_FAT_ARROW {
 			// Found the fat arrow! This is a lambda
 			p.nextToken() // skip last param
-			p.nextToken() // skip '=>'
+			p.nextToken() // skip '=>' or '==>'
 			body := p.parseLambdaBody()
 			return &LambdaExpr{Params: params, Body: body}
 		}
