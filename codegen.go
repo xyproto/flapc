@@ -244,6 +244,14 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.out.MovRegToReg("rbp", "rsp")
 	// Do NOT subtract from RSP here - we want it at (16n - 8) for C ABI compliance
 
+	// Initialize default arena for list operations (1MB capacity)
+	fc.out.MovImmToReg("rdi", "1048576") // 1MB = 1024 * 1024
+	fc.trackFunctionCall("flap_arena_create")
+	fc.eb.GenerateCallInstruction("flap_arena_create")
+	// Store arena pointer in _flap_default_arena
+	fc.out.LeaSymbolToReg("rbx", "_flap_default_arena")
+	fc.out.MovRegToMem("rax", "rbx", 0)
+	
 	// Initialize registers
 	fc.out.XorRegWithReg("rax", "rax")
 	fc.out.XorRegWithReg("rdi", "rdi")
@@ -447,6 +455,9 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	// Predeclare lambda symbols so closure initialization can reference them
 	fc.predeclareLambdaSymbols()
 
+	// Always define default arena for list operations (even without explicit arena blocks)
+	fc.eb.Define("_flap_default_arena", "\x00\x00\x00\x00\x00\x00\x00\x00")
+	
 	// Predeclare arena symbols if arenas are used
 	if fc.usesArenas {
 		fc.eb.Define("_flap_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")
@@ -7661,9 +7672,10 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PushReg("rbx")
 	fc.out.PushReg("r12")
 	fc.out.PushReg("r13")
+	fc.out.PushReg("r14")
 
-	// Align stack: call(8) + push rbp(8) + 3 pushes(24) = 40 bytes (ALIGNED)
-	// Need to subtract 8 to get misaligned by 8 before malloc call
+	// Align stack: call(8) + push rbp(8) + 4 pushes(32) = 48 bytes (ALIGNED)
+	// Need to subtract 8 to get misaligned by 8 before arena_alloc call
 	fc.out.SubImmFromReg("rsp", StackSlotSize)
 
 	// Save arguments
@@ -7681,11 +7693,14 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovRegToReg("rax", "rbx")
 	fc.out.MulRegWithImm("rax", 8)
 	fc.out.AddImmToReg("rax", 8)
+	fc.out.MovRegToReg("r14", "rax") // r14 = size to allocate
 
-	// Call malloc(rax)
-	fc.out.MovRegToReg("rdi", "rax")
-	fc.trackFunctionCall("malloc")
-	fc.eb.GenerateCallInstruction("malloc")
+	// Load default arena pointer and allocate
+	fc.out.LeaSymbolToReg("rax", "_flap_default_arena")
+	fc.out.MovMemToReg("rdi", "rax", 0) // rdi = arena pointer
+	fc.out.MovRegToReg("rsi", "r14")     // rsi = size
+	fc.trackFunctionCall("flap_arena_alloc")
+	fc.eb.GenerateCallInstruction("flap_arena_alloc")
 	fc.out.MovRegToReg("r10", "rax") // r10 = new list pointer
 
 	// Write new length to result
@@ -7724,6 +7739,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	// Restore callee-saved registers
+	fc.out.PopReg("r14")
 	fc.out.PopReg("r13")
 	fc.out.PopReg("r12")
 	fc.out.PopReg("rbx")
