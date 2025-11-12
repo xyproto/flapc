@@ -244,13 +244,17 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.out.MovRegToReg("rbp", "rsp")
 	// Do NOT subtract from RSP here - we want it at (16n - 8) for C ABI compliance
 
-	// Initialize default arena for list operations (1MB capacity)
-	fc.out.MovImmToReg("rdi", "1048576") // 1MB = 1024 * 1024
-	fc.trackFunctionCall("flap_arena_create")
-	fc.eb.GenerateCallInstruction("flap_arena_create")
-	// Store arena pointer in _flap_default_arena
-	fc.out.LeaSymbolToReg("rbx", "_flap_default_arena")
-	fc.out.MovRegToMem("rax", "rbx", 0)
+	// Initialize default arena manually (avoid malloc during bootstrap)
+	// Arena struct: [buffer_ptr(8)][capacity(8)][offset(8)][alignment(8)]
+	fc.out.LeaSymbolToReg("rax", "_flap_default_arena_struct") // rax = arena struct
+	fc.out.LeaSymbolToReg("rbx", "_flap_default_arena_buffer") // rbx = buffer
+	fc.out.MovRegToMem("rbx", "rax", 0)      // [struct+0] = buffer_ptr
+	fc.out.MovImmToMem(1048576, "rax", 8)    // [struct+8] = capacity (1MB)
+	fc.out.MovImmToMem(0, "rax", 16)         // [struct+16] = offset (0)
+	fc.out.MovImmToMem(8, "rax", 24)         // [struct+24] = alignment (8)
+	// Store arena struct pointer in _flap_default_arena
+	fc.out.LeaSymbolToReg("rcx", "_flap_default_arena")
+	fc.out.MovRegToMem("rax", "rcx", 0)
 	
 	// Initialize registers
 	fc.out.XorRegWithReg("rax", "rax")
@@ -457,6 +461,9 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 
 	// Always define default arena for list operations (even without explicit arena blocks)
 	fc.eb.Define("_flap_default_arena", "\x00\x00\x00\x00\x00\x00\x00\x00")
+	// Define static arena structure (32 bytes) and buffer (1MB) to bootstrap without malloc
+	fc.eb.Define("_flap_default_arena_struct", strings.Repeat("\x00", 32))
+	fc.eb.Define("_flap_default_arena_buffer", strings.Repeat("\x00", 1048576))
 	
 	// Predeclare arena symbols if arenas are used
 	if fc.usesArenas {
