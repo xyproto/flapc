@@ -1826,8 +1826,13 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	}
 
 	// Save the counter register if using one (callee-saved registers)
+	// CRITICAL: Add 8-byte padding to maintain 16-byte stack alignment for C calls
+	// The push instruction is 8 bytes, which breaks alignment. Add 8 more to fix it.
 	if useRegister && loopDepth > 0 {
 		fc.out.PushReg(counterReg)
+		fc.runtimeStack += 8
+		// Add 8-byte padding to maintain 16-byte alignment
+		fc.out.SubImmFromReg("rsp", 8)
 		fc.runtimeStack += 8
 	}
 
@@ -1988,7 +1993,10 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	fc.runtimeStack -= int(stackSize)
 
 	// Restore the counter register if we saved it
+	// Remove padding first, then pop register
 	if useRegister && loopDepth > 0 {
+		fc.out.AddImmToReg("rsp", 8) // Remove alignment padding
+		fc.runtimeStack -= 8
 		fc.out.PopReg(counterReg)
 		fc.runtimeStack -= 8
 	}
@@ -2706,6 +2714,9 @@ func (fc *FlapCompiler) compileJumpStatement(stmt *JumpStmt) {
 
 	if stmt.Label == 0 {
 		// Label 0 with IsBreak=false means innermost loop continue
+		targetLoopIndex = len(fc.activeLoops) - 1
+	} else if stmt.Label == -1 {
+		// Label -1 means current loop (from "ret @" without number)
 		targetLoopIndex = len(fc.activeLoops) - 1
 	} else {
 		// Find loop with specified label
@@ -9796,6 +9807,14 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		return
 
 	case "println":
+		// If printf has been used, flush all stdio streams before syscall write
+		// This ensures printf's buffered output is written before our direct syscall
+		if fc.usedFunctions["printf"] {
+			fc.out.XorRegWithReg("rdi", "rdi") // fflush(NULL) flushes all output streams
+			fc.trackFunctionCall("fflush")
+			fc.eb.GenerateCallInstruction("fflush")
+		}
+		
 		if len(call.Args) == 0 {
 			// Just print a newline
 			newlineLabel := fmt.Sprintf("newline_%d", fc.stringCounter)
