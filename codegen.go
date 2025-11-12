@@ -203,6 +203,9 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	// Clear moved variables tracking for this compilation
 	fc.movedVars = make(map[string]bool)
 	fc.scopedMoved = []map[string]bool{make(map[string]bool)}
+	
+	// Always enable arenas - list operations now use arena allocation
+	fc.usesArenas = true
 
 	if fc.debug {
 		if VerboseMode {
@@ -228,24 +231,37 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.eb.Define("fmt_str", "%s\x00")
 	fc.eb.Define("fmt_int", "%ld\n\x00")
 	fc.eb.Define("fmt_float", "%.0f\n\x00") // Print float without decimal places
+	fc.eb.Define("_str_debug_default_arena", "DEBUG: Initializing default arena\n\x00")
+	fc.eb.Define("_str_debug_arena_value", "DEBUG: Arena pointer value: %p\n\x00")
 	fc.eb.Define("_loop_max_exceeded_msg", "Error: loop exceeded maximum iterations\n\x00")
 	fc.eb.Define("_recursion_max_exceeded_msg", "Error: recursion exceeded maximum depth\n\x00")
 	fc.eb.Define("_null_ptr_msg", "ERROR: Null pointer dereference detected\n\x00")
 	fc.eb.Define("_bounds_negative_msg", "ERROR: Array index out of bounds (index < 0)\n\x00")
 	fc.eb.Define("_bounds_too_large_msg", "ERROR: Array index out of bounds (index >= length)\n\x00")
 	fc.eb.Define("_malloc_failed_msg", "ERROR: Memory allocation failed (out of memory)\n\x00")
+	
+	// Define default arena globals (must be before code generation that references them)
+	fc.eb.Define("_flap_default_arena", "\x00\x00\x00\x00\x00\x00\x00\x00")
+	fc.eb.Define("_flap_default_arena_struct", strings.Repeat("\x00", 32))
+	fc.eb.Define("_flap_default_arena_buffer", strings.Repeat("\x00", 1048576))
 
 	// Generate code
 	// Set up stack frame
 	// Note: After _start JMPs here, RSP is 16-byte aligned (kernel guarantee)
 	// After PUSH RBP, RSP = (16n - 8), which is correct for making C function calls
 	// (CALL will push return address, making RSP = 16n - 16, then function prologue adjusts)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Generating prologue and arena init at text offset %d\n", fc.eb.text.Len())
+	}
 	fc.out.PushReg("rbp")
 	fc.out.MovRegToReg("rbp", "rsp")
 	// Do NOT subtract from RSP here - we want it at (16n - 8) for C ABI compliance
 
 	// Initialize default arena manually (avoid malloc during bootstrap)
 	// Arena struct: [buffer_ptr(8)][capacity(8)][offset(8)][alignment(8)]
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Generating arena init at text offset %d\n", fc.eb.text.Len())
+	}
 	fc.out.LeaSymbolToReg("rax", "_flap_default_arena_struct") // rax = arena struct
 	fc.out.LeaSymbolToReg("rbx", "_flap_default_arena_buffer") // rbx = buffer
 	fc.out.MovRegToMem("rbx", "rax", 0)      // [struct+0] = buffer_ptr
@@ -459,12 +475,6 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	// Predeclare lambda symbols so closure initialization can reference them
 	fc.predeclareLambdaSymbols()
 
-	// Always define default arena for list operations (even without explicit arena blocks)
-	fc.eb.Define("_flap_default_arena", "\x00\x00\x00\x00\x00\x00\x00\x00")
-	// Define static arena structure (32 bytes) and buffer (1MB) to bootstrap without malloc
-	fc.eb.Define("_flap_default_arena_struct", strings.Repeat("\x00", 32))
-	fc.eb.Define("_flap_default_arena_buffer", strings.Repeat("\x00", 1048576))
-	
 	// Predeclare arena symbols if arenas are used
 	if fc.usesArenas {
 		fc.eb.Define("_flap_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")
