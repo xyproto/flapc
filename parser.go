@@ -2130,6 +2130,14 @@ func (p *Parser) parseLoopStatement() Statement {
 				// List literal - known at compile time, no runtime check needed
 				maxIterations = int64(len(listExpr.Elements))
 				needsRuntimeCheck = false
+			} else if _, ok := iterable.(*IdentExpr); ok {
+				// Variable (could be a list or map) - use runtime length check
+				maxIterations = math.MaxInt64 // Use max value, will check length at runtime
+				needsRuntimeCheck = true
+			} else if _, ok := iterable.(*IndexExpr); ok {
+				// Indexed expression (e.g., lists[0]) - use runtime length check
+				maxIterations = math.MaxInt64
+				needsRuntimeCheck = true
 			} else {
 				// Not a range expression or list literal, require explicit max
 				p.error("loop requires 'max' clause (or use range expression like 0..<10 or list literal)")
@@ -2262,6 +2270,14 @@ func (p *Parser) parseLoopStatement() Statement {
 				// List literal - known at compile time, no runtime check needed
 				maxIterations = int64(len(listExpr.Elements))
 				needsRuntimeCheck = false
+			} else if _, ok := iterable.(*IdentExpr); ok {
+				// Variable (could be a list or map) - use runtime length check
+				maxIterations = math.MaxInt64 // Use max value, will check length at runtime
+				needsRuntimeCheck = true
+			} else if _, ok := iterable.(*IndexExpr); ok {
+				// Indexed expression (e.g., lists[0]) - use runtime length check
+				maxIterations = math.MaxInt64
+				needsRuntimeCheck = true
 			} else {
 				// Not a range expression or list literal, require explicit max
 				p.error("loop requires 'max' clause (or use range expression like 0..<10 or list literal)")
