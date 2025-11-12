@@ -35,6 +35,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 )
@@ -286,6 +287,7 @@ func (p *Parser) skipNewlines() {
 }
 
 func (p *Parser) ParseProgram() *Program {
+	globalParseCallCount = 0 // Reset for each program parse
 	program := &Program{}
 
 	p.skipNewlines()
@@ -1006,8 +1008,8 @@ func (p *Parser) parseStatement() Statement {
 	if expr != nil {
 		// Only parse match blocks if we're not already inside one
 		if !p.inMatchBlock && p.peek.Type == TOKEN_LBRACE {
-			if debugParser {
-				fmt.Fprintf(os.Stderr, "DEBUG: parseStatement found expr with { ahead, calling parseMatchBlock\n")
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG parseStatement: calling parseMatchBlock with expr=%T, inMatchBlock=%v\n", expr, p.inMatchBlock)
 			}
 			p.nextToken() // move to '{'
 			p.nextToken() // skip '{'
@@ -1540,6 +1542,7 @@ func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
 			// Check if parseStatement actually consumed anything
 			if stmt != nil {
 				statements = append(statements, stmt)
+				p.nextToken() // Advance past the statement
 			} else if startType == p.current.Type {
 				// parseStatement didn't consume anything, might be an expression
 				// that should be treated as a statement (like a function call)
@@ -1592,9 +1595,15 @@ func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
 			p.error(fmt.Sprintf("infinite loop in parseMatchBlock: stuck at token type=%v value='%v' line=%d", p.current.Type, p.current.Value, p.current.Line))
 		}
 
+		if debugParser {
+			fmt.Fprintf(os.Stderr, "DEBUG parseMatchBlock loop %d: current=%v peek=%v\n", loopCount, p.current, p.peek)
+		}
 		p.skipNewlines()
 
 		if p.current.Type == TOKEN_RBRACE {
+			if debugParser {
+				fmt.Fprintf(os.Stderr, "DEBUG parseMatchBlock: breaking at RBRACE\n")
+			}
 			break
 		}
 
@@ -1680,9 +1689,18 @@ func (p *Parser) parseMatchClause() (*MatchClause, bool) {
 	}
 
 	// Parse the pattern or guard expression
+	if debugParser {
+		fmt.Fprintf(os.Stderr, "DEBUG parseMatchClause: before parseExpression, current=%v peek=%v\n", p.current, p.peek)
+	}
 	expr := p.parseExpression()
+	if debugParser {
+		fmt.Fprintf(os.Stderr, "DEBUG parseMatchClause: after parseExpression, current=%v peek=%v\n", p.current, p.peek)
+	}
 
 	p.nextToken()
+	if debugParser {
+		fmt.Fprintf(os.Stderr, "DEBUG parseMatchClause: after nextToken, current=%v peek=%v\n", p.current, p.peek)
+	}
 	p.skipNewlines()
 
 	if p.current.Type == TOKEN_ARROW {
@@ -2592,7 +2610,9 @@ func (p *Parser) parseOnePatternClause() *PatternClause {
 
 func (p *Parser) parseExpression() Expression {
 	globalParseCallCount++
-	if globalParseCallCount > 10000 {
+	if globalParseCallCount > 100 {
+		// Print stack trace
+		debug.PrintStack()
 		p.error(fmt.Sprintf("infinite recursion in parseExpression: count=%d, token type=%v value='%v' line=%d", globalParseCallCount, p.current.Type, p.current.Value, p.current.Line))
 	}
 	return p.parseErrorHandling()
