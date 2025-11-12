@@ -422,6 +422,32 @@ value := get(ptr, Vec3.x)
 
 ---
 
-**Last Updated:** 2025-11-11  
+---
+
+## 🛡️ Code Quality & Bug Prevention
+
+### SafeBuffer - Preventing Reset() Bugs
+
+**Problem:** Manual `bytes.Buffer.Reset()` calls caused data loss, stale data, and timing bugs.
+
+**Solution:** Implemented `SafeBuffer` and `ScopedBuffer` in `safe_buffer.go`:
+
+- ✅ Explicit lifecycle management (commit/reset)
+- ✅ Prevents writes after commit (panic in debug)
+- ✅ Named buffers for debugging
+- ✅ RAII-like patterns with defer
+- ✅ Comprehensive tests
+
+**Migration Status:**
+- [ ] Migrate ExecutableBuilder buffers (elf, rodata, data, text)
+- [ ] Migrate DynamicSections buffers (dynsym, hash, dynamic, etc.)
+- [ ] Audit all `.Reset()` calls in codebase
+- [ ] Replace with SafeBuffer where appropriate
+
+**See:** `safe_buffer.go`, `safe_buffer_test.go`, `safe_buffer_example.go`, and LEARNINGS.md
+
+---
+
+**Last Updated:** 2025-11-12  
 **Compiler Version:** flapc 1.3.0  
 **Next Milestone:** 100% Core Feature Completion

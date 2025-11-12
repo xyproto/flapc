@@ -357,6 +357,70 @@ var counters = [0.0, 0.0, ..., 0.0]  // 64 elements (512 bytes)
 7. **Trust the hardware, verify the software**: x86-64 is battle-tested, your code isn't
 8. **When in doubt, check the disassembly**: The assembly never lies
 
+## Buffer Management and Reset() Bugs
+
+### Problem: Manual Reset() Calls
+
+**Issue**: Directly calling `bytes.Buffer.Reset()` throughout the codebase led to several classes of bugs:
+
+1. **Data Loss**: Resetting a buffer before all readers have finished reading it
+2. **Stale Data**: Forgetting to reset a buffer, causing old data to corrupt new data
+3. **Timing Issues**: Resetting at the wrong point in a multi-pass compilation flow
+4. **Unclear Lifecycle**: No clear indication of when a buffer is "done" being written to
+
+**Symptoms**:
+- Rodata symbols disappearing after recompilation passes
+- String literals getting corrupted addresses
+- PLT/GOT entries pointing to wrong locations
+- Inconsistent behavior depending on whether buffers were reset
+
+### Solution: SafeBuffer and ScopedBuffer
+
+**Implementation**: Created `safe_buffer.go` with two helper types:
+
+1. **SafeBuffer**: Explicit lifecycle management
+   - Tracks whether buffer is "committed" (ready for reading)
+   - Prevents writes after commit (panic in debug mode)
+   - Requires explicit Reset() to reuse
+   - Named buffers for better debugging
+
+2. **ScopedBuffer**: Automatic cleanup
+   - RAII-like pattern with defer
+   - Ensures Complete() is called
+   - Clear read/write phases
+   - Prevents reading uncommitted data
+
+**Benefits**:
+- Compile-time/runtime safety: panics on misuse in development
+- Self-documenting code: buffer lifecycle is explicit
+- Easier debugging: buffer names in error messages
+- Prevents entire class of Reset() bugs
+
+**Migration Strategy**:
+```go
+// Old dangerous pattern:
+buf := &bytes.Buffer{}
+buf.Write(data1)
+// ... lots of code ...
+buf.Reset()  // Might reset too early or too late!
+buf.Write(data2)
+
+// New safe pattern:
+sb := NewSafeBuffer("mydata")
+sb.Write(data1)
+sb.Commit()  // Explicitly mark as complete
+// ... can read safely ...
+sb.Reset()   // Explicitly clear for reuse
+sb.Write(data2)
+sb.Commit()
+```
+
+**Future Work**:
+- Migrate ExecutableBuilder buffers to SafeBuffer
+- Use ScopedBuffer for temporary assembly generation
+- Add SafeBuffer tracking to DynamicSections
+- Consider making SafeBuffer mandatory for all compilation buffers
+
 ## References
 
 Useful resources that helped during development:
