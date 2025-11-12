@@ -7847,22 +7847,27 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// Updates a list element at the given index (functional - returns new list)
 	// Arguments: rdi = list_ptr, rsi = index (integer), xmm0 = new value (float64)
 	// Returns: rax = new list pointer
-	// TODO: Fix crash in loop implementation - for now just return original list
+	// TODO: Migrate to arena-based allocation instead of malloc
 	fc.eb.MarkLabel("_flap_list_update")
 	
-	// Function prologue
+	// Function prologue - exactly like _flap_list_cons
 	fc.out.PushReg("rbp")
 	fc.out.MovRegToReg("rbp", "rsp")
 	fc.out.PushReg("rbx")   // old list ptr
 	fc.out.PushReg("r12")   // new list ptr
 	fc.out.PushReg("r13")   // target index
-	fc.out.SubImmFromReg("rsp", 8) // align stack
+	fc.out.PushReg("r14")   // new value bits (low 32)
+	fc.out.PushReg("r15")   // new value bits (high 32)
+	
+	// Stack: call(8) + rbp(8) + 5 regs(40) = 56 bytes
+	// Subtract 8 to make 64 bytes total -> misaligned by 8 before malloc
+	fc.out.SubImmFromReg("rsp", StackSlotSize)
 	
 	// Save arguments
 	fc.out.MovRegToReg("rbx", "rdi")      // rbx = old list ptr
 	fc.out.MovRegToReg("r13", "rsi")      // r13 = target index
-	fc.out.SubImmFromReg("rsp", 8)
-	fc.out.MovXmmToMem("xmm0", "rsp", 0)  // save new value to stack
+	// Save xmm0 (new value) via r14:r15
+	fc.out.MovqXmmToReg("r14", "xmm0")
 	
 	// Get length from old list
 	fc.out.MovMemToXmm("xmm0", "rbx", 0)
@@ -7883,62 +7888,52 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.Cvtsi2sd("xmm0", "rcx")
 	fc.out.MovXmmToMem("xmm0", "r12", 0)
 	
-	// Copy loop: r14 = current index (0..length-1)
-	fc.out.PushReg("r14")
-	fc.out.XorRegWithReg("r14", "r14")   // r14 = 0
+	// Restore new value to xmm2 for use in loop
+	fc.out.MovqRegToXmm("xmm2", "r14")
 	
-	// Loop start
-	updateLoopStart := fc.eb.text.Len()
-	fc.out.CmpRegToReg("r14", "rcx")
-	updateLoopEndJumpPos := fc.eb.text.Len()
-	fc.out.JumpConditional(JumpGreaterOrEqual, 0) // will patch
-	updateLoopEndJumpEnd := fc.eb.text.Len()
+	// Simple loop to copy all elements, updating target index
+	// Use r15 as loop counter (0..length-1)
+	fc.out.XorRegWithReg("r15", "r15")  // r15 = 0
 	
-	// Calculate offset: (r14 * 8) + 8
-	fc.out.MovRegToReg("rax", "r14")
+	// Copy loop - iterate over all elements
+	fc.eb.MarkLabel("_list_update_loop")
+	fc.out.CmpRegToReg("r15", "rcx")
+	fc.out.Emit([]byte{0x7d, 0x2c}) // jge +44 to end
+	
+	// Calculate byte offset: r15 * 8 + 8
+	fc.out.MovRegToReg("rax", "r15")
 	fc.out.ShlRegByImm("rax", 3)
 	fc.out.AddImmToReg("rax", 8)
 	
-	// Check if r14 == r13 (target index)
-	fc.out.CmpRegToReg("r14", "r13")
-	notTargetJumpPos := fc.eb.text.Len()
-	fc.out.JumpConditional(JumpNotEqual, 0) // will patch
-	notTargetJumpEnd := fc.eb.text.Len()
+	// Check if this is the target index
+	fc.out.CmpRegToReg("r15", "r13")
+	fc.out.Emit([]byte{0x75, 0x0d}) // jne +13 (copy old value)
 	
-	// Target index: use new value
-	fc.out.MovMemToXmm("xmm0", "rsp", 0)
+	// This is target index: store new value (in xmm2)
 	fc.out.MovRegToReg("rsi", "rax")
 	fc.out.AddRegToReg("rsi", "r12")
-	fc.out.MovXmmToMem("xmm0", "rsi", 0)
-	skipCopyJumpPos := fc.eb.text.Len()
-	fc.out.JumpUnconditional(0) // will patch
-	skipCopyJumpEnd := fc.eb.text.Len()
+	fc.out.MovXmmToMem("xmm2", "rsi", 0)
+	fc.out.Emit([]byte{0xeb, 0x11}) // jmp +17 (to increment)
 	
 	// Not target: copy old value
-	updateNotTargetLabel := fc.eb.text.Len()
-	fc.patchJumpImmediate(notTargetJumpPos+2, int32(updateNotTargetLabel-notTargetJumpEnd))
 	fc.out.MovRegToReg("rsi", "rax")
 	fc.out.AddRegToReg("rsi", "rbx")
-	fc.out.MovMemToXmm("xmm1", "rsi", 0)
+	fc.out.MovMemToXmm("xmm3", "rsi", 0)
 	fc.out.MovRegToReg("rsi", "rax")
 	fc.out.AddRegToReg("rsi", "r12")
-	fc.out.MovXmmToMem("xmm1", "rsi", 0)
+	fc.out.MovXmmToMem("xmm3", "rsi", 0)
 	
-	// Continue: increment and loop
-	updateContinueLabel := fc.eb.text.Len()
-	fc.patchJumpImmediate(skipCopyJumpPos+1, int32(updateContinueLabel-skipCopyJumpEnd))
-	fc.out.AddImmToReg("r14", 1)
-	fc.out.JumpUnconditional(int32(updateLoopStart - (fc.eb.text.Len() + 5)))
+	// Increment and loop back
+	fc.out.AddImmToReg("r15", 1)
+	fc.out.Emit([]byte{0xeb, 0xca}) // jmp -54 (back to loop start)
 	
-	// Loop end
-	updateLoopEnd := fc.eb.text.Len()
-	fc.patchJumpImmediate(updateLoopEndJumpPos+2, int32(updateLoopEnd-updateLoopEndJumpEnd))
-	
-	// Cleanup and return
-	fc.out.PopReg("r14")
-	fc.out.AddImmToReg("rsp", 8) // remove saved xmm0
+	// Return new list pointer
 	fc.out.MovRegToReg("rax", "r12")
-	fc.out.AddImmToReg("rsp", 8) // restore alignment
+	
+	// Restore stack and registers
+	fc.out.AddImmToReg("rsp", StackSlotSize)
+	fc.out.PopReg("r15")
+	fc.out.PopReg("r14")
 	fc.out.PopReg("r13")
 	fc.out.PopReg("r12")
 	fc.out.PopReg("rbx")
