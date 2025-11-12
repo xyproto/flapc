@@ -241,9 +241,10 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.eb.Define("_malloc_failed_msg", "ERROR: Memory allocation failed (out of memory)\n\x00")
 	
 	// Define default arena globals (must be before code generation that references them)
-	fc.eb.Define("_flap_default_arena", "\x00\x00\x00\x00\x00\x00\x00\x00")
-	fc.eb.Define("_flap_default_arena_struct", strings.Repeat("\x00", 32))
-	fc.eb.Define("_flap_default_arena_buffer", strings.Repeat("\x00", 1048576))
+	fc.eb.DefineWritable("_flap_default_arena", "\x00\x00\x00\x00\x00\x00\x00\x00")
+	fc.eb.DefineWritable("_flap_default_arena_struct", strings.Repeat("\x00", 32))
+	// Use 64KB buffer instead of 1MB - more likely to be properly aligned by linker
+	fc.eb.DefineWritable("_flap_default_arena_buffer", strings.Repeat("\x00", 65536))
 
 	// Generate code
 	// NOTE: Arena initialization moved to writeELF() to ensure it's after _start jump target
@@ -894,7 +895,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	fc.out.LeaSymbolToReg("rax", "_flap_default_arena_struct") // rax = arena struct
 	fc.out.LeaSymbolToReg("rbx", "_flap_default_arena_buffer") // rbx = buffer
 	fc.out.MovRegToMem("rbx", "rax", 0)      // [struct+0] = buffer_ptr
-	fc.out.MovImmToMem(1048576, "rax", 8)    // [struct+8] = capacity (1MB)
+	fc.out.MovImmToMem(65536, "rax", 8)      // [struct+8] = capacity (64KB)
 	fc.out.MovImmToMem(0, "rax", 16)         // [struct+16] = offset (0)
 	fc.out.MovImmToMem(8, "rax", 24)         // [struct+24] = alignment (8)
 	// Store arena struct pointer in _flap_default_arena
@@ -7683,8 +7684,10 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PushReg("r14")
 
 	// Align stack: call(8) + push rbp(8) + 4 pushes(32) = 48 bytes (ALIGNED)
-	// Need to subtract 8 to get misaligned by 8 before arena_alloc call
-	fc.out.SubImmFromReg("rsp", StackSlotSize)
+	// After 48 bytes, rsp is at 16n-48 which is aligned
+	// C functions expect rsp at 16n-8 before CALL (so after CALL it's at 16n-16 = aligned)
+	// So we need to be at 16n-48 which is already 16n (mod 16), meaning misaligned by 8! Perfect.
+	// NO NEED to adjust stack - it's already correctly misaligned
 
 	// Save arguments
 	fc.out.MovRegToReg("r12", "rdi") // r12 = element bits
@@ -7701,14 +7704,11 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovRegToReg("rax", "rbx")
 	fc.out.MulRegWithImm("rax", 8)
 	fc.out.AddImmToReg("rax", 8)
-	fc.out.MovRegToReg("r14", "rax") // r14 = size to allocate
 
-	// Load default arena pointer and allocate
-	fc.out.LeaSymbolToReg("rax", "_flap_default_arena")
-	fc.out.MovMemToReg("rdi", "rax", 0) // rdi = arena pointer
-	fc.out.MovRegToReg("rsi", "r14")     // rsi = size
-	fc.trackFunctionCall("flap_arena_alloc")
-	fc.eb.GenerateCallInstruction("flap_arena_alloc")
+	// TEMPORARY: Use malloc directly (TODO: fix arena allocation)
+	fc.out.MovRegToReg("rdi", "rax") // size to allocate
+	fc.trackFunctionCall("malloc")
+	fc.eb.GenerateCallInstruction("malloc")
 	fc.out.MovRegToReg("r10", "rax") // r10 = new list pointer
 
 	// Write new length to result
@@ -7729,22 +7729,28 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Copy loop: rcx = counter
 	fc.out.MovRegToReg("rcx", "rbx")
-	fc.eb.MarkLabel("_cons_copy_loop")
+	copyLoopStart := fc.eb.text.Len()
 	fc.out.TestRegReg("rcx", "rcx")
-	fc.out.Emit([]byte{0x74, 0x10}) // jz +16 (skip loop)
+	copyDoneJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0) // jz to done (will patch)
 
 	fc.out.MovMemToXmm("xmm0", "r13", 0)
 	fc.out.MovXmmToMem("xmm0", "rdi", 0)
 	fc.out.AddImmToReg("r13", 8)
 	fc.out.AddImmToReg("rdi", 8)
 	fc.out.SubImmFromReg("rcx", 1)
-	fc.out.Emit([]byte{0xeb, 0xeb}) // jmp back to test
+	
+	// Jump back to loop test
+	currentPos2 := fc.eb.text.Len()
+	backOffset2 := int32(copyLoopStart - (currentPos2 + 2)) // +2 for jmp instruction size
+	fc.out.Emit([]byte{0xeb, byte(backOffset2)}) // jmp rel8 back to test
+	
+	// Patch the done jump
+	copyDonePos := fc.eb.text.Len()
+	fc.patchJumpImmediate(copyDoneJump+2, int32(copyDonePos-(copyDoneJump+6)))
 
 	// Return result pointer in rax
 	fc.out.MovRegToReg("rax", "r10")
-
-	// Restore stack
-	fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	// Restore callee-saved registers
 	fc.out.PopReg("r14")
