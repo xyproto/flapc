@@ -246,33 +246,9 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.eb.Define("_flap_default_arena_buffer", strings.Repeat("\x00", 1048576))
 
 	// Generate code
-	// Set up stack frame
-	// Note: After _start JMPs here, RSP is 16-byte aligned (kernel guarantee)
-	// After PUSH RBP, RSP = (16n - 8), which is correct for making C function calls
-	// (CALL will push return address, making RSP = 16n - 16, then function prologue adjusts)
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG: Generating prologue and arena init at text offset %d\n", fc.eb.text.Len())
-	}
-	fc.out.PushReg("rbp")
-	fc.out.MovRegToReg("rbp", "rsp")
-	// Do NOT subtract from RSP here - we want it at (16n - 8) for C ABI compliance
-
-	// Initialize default arena manually (avoid malloc during bootstrap)
-	// Arena struct: [buffer_ptr(8)][capacity(8)][offset(8)][alignment(8)]
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG: Generating arena init at text offset %d\n", fc.eb.text.Len())
-	}
-	fc.out.LeaSymbolToReg("rax", "_flap_default_arena_struct") // rax = arena struct
-	fc.out.LeaSymbolToReg("rbx", "_flap_default_arena_buffer") // rbx = buffer
-	fc.out.MovRegToMem("rbx", "rax", 0)      // [struct+0] = buffer_ptr
-	fc.out.MovImmToMem(1048576, "rax", 8)    // [struct+8] = capacity (1MB)
-	fc.out.MovImmToMem(0, "rax", 16)         // [struct+16] = offset (0)
-	fc.out.MovImmToMem(8, "rax", 24)         // [struct+24] = alignment (8)
-	// Store arena struct pointer in _flap_default_arena
-	fc.out.LeaSymbolToReg("rcx", "_flap_default_arena")
-	fc.out.MovRegToMem("rax", "rcx", 0)
+	// NOTE: Arena initialization moved to writeELF() to ensure it's after _start jump target
 	
-	// Initialize registers
+	// Initialize registers at entry (where _start jumps to)
 	fc.out.XorRegWithReg("rax", "rax")
 	fc.out.XorRegWithReg("rdi", "rdi")
 	fc.out.XorRegWithReg("rsi", "rsi")
@@ -909,6 +885,21 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	// Rebuilding it would change its address and break PC-relative references
 
 	fc.pushDeferScope()
+
+	// Initialize default arena at program start (before any user code)
+	// This is where _start jumps to, so it will execute first
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Generating arena init at text offset %d (after _start jump target)\n", fc.eb.text.Len())
+	}
+	fc.out.LeaSymbolToReg("rax", "_flap_default_arena_struct") // rax = arena struct
+	fc.out.LeaSymbolToReg("rbx", "_flap_default_arena_buffer") // rbx = buffer
+	fc.out.MovRegToMem("rbx", "rax", 0)      // [struct+0] = buffer_ptr
+	fc.out.MovImmToMem(1048576, "rax", 8)    // [struct+8] = capacity (1MB)
+	fc.out.MovImmToMem(0, "rax", 16)         // [struct+16] = offset (0)
+	fc.out.MovImmToMem(8, "rax", 24)         // [struct+24] = alignment (8)
+	// Store arena struct pointer in _flap_default_arena
+	fc.out.LeaSymbolToReg("rcx", "_flap_default_arena")
+	fc.out.MovRegToMem("rax", "rcx", 0)
 
 	// Generate code with symbols collected
 	for _, stmt := range program.Statements {
