@@ -5474,6 +5474,7 @@ func (fc *FlapCompiler) emitNullPointerCheck(reg string) {
 
 	// Null pointer detected - print error and exit
 	fc.out.LeaSymbolToReg("rdi", "_null_ptr_msg")
+	fc.out.XorRegWithReg("rax", "rax") // AL=0 for variadic function
 	fc.trackFunctionCall("printf")
 	fc.eb.GenerateCallInstruction("printf")
 
@@ -5510,6 +5511,7 @@ func (fc *FlapCompiler) emitBoundsCheck(indexReg, lengthReg string) {
 	// Index < 0 error handler
 	negativePos := fc.eb.text.Len()
 	fc.out.LeaSymbolToReg("rdi", "_bounds_negative_msg")
+	fc.out.XorRegWithReg("rax", "rax") // AL=0 for variadic function
 	fc.trackFunctionCall("printf")
 	fc.eb.GenerateCallInstruction("printf")
 	fc.out.MovImmToReg("rdi", "1")
@@ -5519,6 +5521,7 @@ func (fc *FlapCompiler) emitBoundsCheck(indexReg, lengthReg string) {
 	// Index >= length error handler
 	tooLargePos := fc.eb.text.Len()
 	fc.out.LeaSymbolToReg("rdi", "_bounds_too_large_msg")
+	fc.out.XorRegWithReg("rax", "rax") // AL=0 for variadic function
 	fc.trackFunctionCall("printf")
 	fc.eb.GenerateCallInstruction("printf")
 	fc.out.MovImmToReg("rdi", "1")
