@@ -3304,61 +3304,6 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		fc.inTailPosition = false
 		defer func() { fc.inTailPosition = savedTailPosition }()
 
-		// Handle or! error handling operator (special case: short-circuit)
-		if e.Operator == "or!" {
-			// Evaluate the condition expression (comparisons now return 0.0/1.0)
-			fc.compileExpression(e.Left)
-			// xmm0 contains the condition result
-
-			// Compare with 0.0 to check if condition is false
-			fc.out.XorpdXmm("xmm1", "xmm1") // xmm1 = 0.0
-			fc.out.Ucomisd("xmm0", "xmm1")  // Compare xmm0 with 0
-
-			// Jump to success label if condition is non-zero (true)
-			// Save position for jump patching
-			jumpPos := fc.eb.text.Len()
-			fc.out.JumpConditional(JumpNotEqual, 0) // Placeholder, will patch later
-
-			// Condition is false (zero): print error message and exit
-			// Right side should be a string literal
-			if strExpr, ok := e.Right.(*StringExpr); ok {
-				// Write error message to stderr (fd=2)
-				errorMsg := strExpr.Value + "\n"
-
-				// Create label for error message
-				errorLabel := fmt.Sprintf("error_msg_%d", fc.stringCounter)
-				fc.stringCounter++
-				fc.eb.Define(errorLabel, errorMsg)
-
-				// syscall: write(2, msg, len)
-				fc.out.MovImmToReg("rax", "1")                              // syscall number for write
-				fc.out.MovImmToReg("rdi", "2")                              // fd = 2 (stderr)
-				fc.out.LeaSymbolToReg("rsi", errorLabel)                    // msg = error string
-				fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", len(errorMsg))) // len
-				fc.eb.Emit("syscall")
-
-				// syscall: exit(1)
-				fc.out.MovImmToReg("rax", "60") // syscall number for exit
-				fc.out.MovImmToReg("rdi", "1")  // exit code = 1
-				fc.eb.Emit("syscall")
-			} else {
-				// Right side is not a string literal, just exit with code 1
-				fc.out.MovImmToReg("rax", "60") // syscall number for exit
-				fc.out.MovImmToReg("rdi", "1")  // exit code = 1
-				fc.eb.Emit("syscall")
-			}
-
-			// Success label: condition was true, patch jump to here
-			successPos := fc.eb.text.Len()
-			// Calculate offset from end of jump instruction to success position
-			// JumpConditional emits 6 bytes on x86-64 (0x0f 0x85 + 4-byte offset)
-			jumpEndPos := jumpPos + 6
-			offset := int32(successPos - jumpEndPos)
-			fc.patchJumpImmediate(jumpPos+2, offset) // +2 to skip opcode bytes, patch the 4-byte offset
-			// xmm0 still contains the original condition value
-			return
-		}
-
 		// Check for string/list/map operations with + operator
 		if e.Operator == "+" {
 			leftType := fc.getExprType(e.Left)
@@ -9823,13 +9768,31 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 	case "_error_code_extract":
 		// .error property - extract 4-letter error code from NaN-encoded Result
-		// For now, always return empty string (TODO: check if NaN and extract code)
 		if len(call.Args) != 1 {
 			compilerError("_error_code_extract requires exactly 1 argument")
 		}
-		// Just return empty string - don't evaluate the argument
-		// (evaluating it might crash if it's being used as a map index)
-		fc.compileExpression(&StringExpr{Value: ""})
+		// Evaluate the argument to get the value in xmm0
+		fc.compileExpression(call.Args[0])
+		
+		// TODO: Check if xmm0 is NaN and extract 4-letter error code from mantissa
+		// For now, always return empty string (non-error case)
+		// The value in xmm0 is discarded
+		
+		// Create empty string by compiling a StringExpr
+		// This will create the string data and load its pointer into xmm0
+		labelName := fmt.Sprintf("str_%d", fc.stringCounter)
+		fc.stringCounter++
+		
+		// Empty string: just the count (0.0) in 8 bytes
+		var mapData []byte
+		countBits := uint64(0) // count = 0
+		for i := 0; i < 8; i++ {
+			mapData = append(mapData, byte((countBits>>(i*8))&ByteMask))
+		}
+		
+		fc.eb.Define(labelName, string(mapData))
+		fc.out.LeaSymbolToReg("rax", labelName)
+		fc.out.MovqRegToXmm("xmm0", "rax")
 		return
 
 	case "println":

@@ -3141,9 +3141,19 @@ func (p *Parser) parsePostfix() Expression {
 						expr = &CallExpr{Function: namespacedName, Args: args}
 					}
 				} else {
-					// Could be a C constant (sdl.SDL_INIT_VIDEO) or field access
-					// We'll create a special NamespacedIdentExpr to distinguish at compile time
-					expr = &NamespacedIdentExpr{Namespace: ident.Name, Name: fieldName}
+					// Check for special property access on Result types
+					if fieldName == "error" {
+						// .error property - extract error code from Result type
+						// This will be handled specially in codegen
+						expr = &CallExpr{
+							Function: "_error_code_extract",
+							Args:     []Expression{expr},
+						}
+					} else {
+						// Could be a C constant (sdl.SDL_INIT_VIDEO) or namespace access
+						// We'll create a special NamespacedIdentExpr to distinguish at compile time
+						expr = &NamespacedIdentExpr{Namespace: ident.Name, Name: fieldName}
+					}
 				}
 			} else {
 				// Check for special property access on Result types
