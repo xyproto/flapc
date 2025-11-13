@@ -601,8 +601,8 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_LEFT_ARROW, Value: "<-", Line: l.line, Column: tokenColumn}
 		}
 		// Check for <<<b (rotate left) - must check before <<b
-		if l.peek() == '<' && l.pos+2 < len(l.input) && l.input[l.pos+2] == '<' && 
-		   l.pos+3 < len(l.input) && l.input[l.pos+3] == 'b' {
+		if l.peek() == '<' && l.pos+2 < len(l.input) && l.input[l.pos+2] == '<' &&
+			l.pos+3 < len(l.input) && l.input[l.pos+3] == 'b' {
 			l.pos += 4
 			return Token{Type: TOKEN_LTLTLT_B, Value: "<<<b", Line: l.line, Column: tokenColumn}
 		}
@@ -624,8 +624,8 @@ func (l *Lexer) NextToken() Token {
 	case '>':
 		// Check for >>>b (rotate right), then >>b (shift right), then >=, then >
 		// Check for >>>b (rotate right) - must check before >>b
-		if l.peek() == '>' && l.pos+2 < len(l.input) && l.input[l.pos+2] == '>' && 
-		   l.pos+3 < len(l.input) && l.input[l.pos+3] == 'b' {
+		if l.peek() == '>' && l.pos+2 < len(l.input) && l.input[l.pos+2] == '>' &&
+			l.pos+3 < len(l.input) && l.input[l.pos+3] == 'b' {
 			l.pos += 4
 			return Token{Type: TOKEN_GTGTGT_B, Value: ">>>b", Line: l.line, Column: tokenColumn}
 		}

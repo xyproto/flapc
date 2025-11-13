@@ -9,25 +9,25 @@ package main
 
 func (fc *FuncCompiler) compileWithSafety() error {
 	// ... collect symbols ...
-	
+
 	// DANGER: Reset might lose data or reset at wrong time
 	fc.eb.rodata.Reset()
-	
+
 	// Write symbols
 	for _, symbol := range symbols {
 		fc.eb.WriteRodata(data)
 	}
-	
+
 	// ... more code ...
-	
+
 	// DANGER: Another reset in different place
 	fc.eb.data.Reset()
-	
+
 	// Write more data
 	for _, symbol := range dataSymbols {
 		fc.eb.WriteData(data)
 	}
-	
+
 	return nil
 }
 
@@ -36,31 +36,31 @@ NEW PATTERN (using SafeBuffer):
 func (fc *FuncCompiler) compileWithSafety() error {
 	// Phase 1: Collect symbols (read-only phase)
 	// ... collect symbols ...
-	
+
 	// Phase 2: Write rodata (write phase)
 	rodataBuf := NewSafeBuffer("rodata")
 	for _, symbol := range symbols {
 		rodataBuf.Write(data)
 	}
 	rodataBuf.Commit()  // Explicitly mark as complete
-	
+
 	// Phase 3: Can now safely read from rodataBuf
 	// ... use rodataBuf.Bytes() ...
-	
+
 	// Phase 4: Write data section (separate buffer)
 	dataBuf := NewSafeBuffer("data")
 	for _, symbol := range dataSymbols {
 		dataBuf.Write(data)
 	}
 	dataBuf.Commit()
-	
+
 	// If recompilation needed, explicit reset:
 	if needRecompile {
 		rodataBuf.Reset()  // Clear and uncommit
 		// ... rewrite rodata ...
 		rodataBuf.Commit()
 	}
-	
+
 	return nil
 }
 

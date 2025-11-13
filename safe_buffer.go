@@ -52,7 +52,7 @@ func (sb *SafeBuffer) Commit() {
 // Reset clears the buffer and uncommits it. Safe to call anytime.
 func (sb *SafeBuffer) Reset() {
 	if VerboseMode && sb.committed {
-		fmt.Fprintf(os.Stderr, "SafeBuffer(%s): Reset called on committed buffer, clearing %d bytes\n", 
+		fmt.Fprintf(os.Stderr, "SafeBuffer(%s): Reset called on committed buffer, clearing %d bytes\n",
 			sb.name, sb.buf.Len())
 	}
 	sb.buf.Reset()
@@ -73,9 +73,10 @@ func (sb *SafeBuffer) MustNotBeCommitted() {
 
 // ScopedBuffer provides automatic reset-on-complete semantics for temporary buffers.
 // Usage:
-//   scope := NewScopedBuffer("mytemp")
-//   defer scope.Complete()  // Automatically resets on exit
-//   ... write to scope.Buffer() ...
+//
+//	scope := NewScopedBuffer("mytemp")
+//	defer scope.Complete()  // Automatically resets on exit
+//	... write to scope.Buffer() ...
 type ScopedBuffer struct {
 	buf  *SafeBuffer
 	done bool

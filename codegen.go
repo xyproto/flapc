@@ -203,7 +203,7 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	// Clear moved variables tracking for this compilation
 	fc.movedVars = make(map[string]bool)
 	fc.scopedMoved = []map[string]bool{make(map[string]bool)}
-	
+
 	// Always enable arenas - list operations now use arena allocation
 	fc.usesArenas = true
 
@@ -239,7 +239,7 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.eb.Define("_bounds_negative_msg", "ERROR: Array index out of bounds (index < 0)\n\x00")
 	fc.eb.Define("_bounds_too_large_msg", "ERROR: Array index out of bounds (index >= length)\n\x00")
 	fc.eb.Define("_malloc_failed_msg", "ERROR: Memory allocation failed (out of memory)\n\x00")
-	
+
 	// Define default arena globals (must be before code generation that references them)
 	fc.eb.DefineWritable("_flap_default_arena", "\x00\x00\x00\x00\x00\x00\x00\x00")
 	fc.eb.DefineWritable("_flap_default_arena_struct", strings.Repeat("\x00", 32))
@@ -248,7 +248,7 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 
 	// Generate code
 	// NOTE: Arena initialization moved to writeELF() to ensure it's after _start jump target
-	
+
 	// Initialize registers at entry (where _start jumps to)
 	fc.out.XorRegWithReg("rax", "rax")
 	fc.out.XorRegWithReg("rdi", "rdi")
@@ -894,10 +894,10 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	}
 	fc.out.LeaSymbolToReg("rax", "_flap_default_arena_struct") // rax = arena struct
 	fc.out.LeaSymbolToReg("rbx", "_flap_default_arena_buffer") // rbx = buffer
-	fc.out.MovRegToMem("rbx", "rax", 0)      // [struct+0] = buffer_ptr
-	fc.out.MovImmToMem(65536, "rax", 8)      // [struct+8] = capacity (64KB)
-	fc.out.MovImmToMem(0, "rax", 16)         // [struct+16] = offset (0)
-	fc.out.MovImmToMem(8, "rax", 24)         // [struct+24] = alignment (8)
+	fc.out.MovRegToMem("rbx", "rax", 0)                        // [struct+0] = buffer_ptr
+	fc.out.MovImmToMem(65536, "rax", 8)                        // [struct+8] = capacity (64KB)
+	fc.out.MovImmToMem(0, "rax", 16)                           // [struct+16] = offset (0)
+	fc.out.MovImmToMem(8, "rax", 24)                           // [struct+24] = alignment (8)
 	// Store arena struct pointer in _flap_default_arena
 	fc.out.LeaSymbolToReg("rcx", "_flap_default_arena")
 	fc.out.MovRegToMem("rax", "rcx", 0)
@@ -7674,13 +7674,13 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.AddImmToReg("r13", 8)
 	fc.out.AddImmToReg("rdi", 8)
 	fc.out.SubImmFromReg("rcx", 1)
-	
+
 	// Jump back to loop test
 	currentPos2 := fc.eb.text.Len()
 	backOffset2 := int32(copyLoopStart - (currentPos2 + 5)) // +5 for jmp rel32 instruction size
-	fc.out.Emit([]byte{0xe9}) // jmp rel32
+	fc.out.Emit([]byte{0xe9})                               // jmp rel32
 	fc.out.Emit([]byte{byte(backOffset2), byte(backOffset2 >> 8), byte(backOffset2 >> 16), byte(backOffset2 >> 24)})
-	
+
 	// Patch the done jump
 	copyDonePos := fc.eb.text.Len()
 	fc.patchJumpImmediate(copyDoneJump+2, int32(copyDonePos-(copyDoneJump+6)))
@@ -7818,72 +7818,72 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// Returns: rax = new list pointer
 	// TODO: Migrate to arena-based allocation instead of malloc
 	fc.eb.MarkLabel("_flap_list_update")
-	
+
 	// Function prologue - exactly like _flap_list_cons
 	fc.out.PushReg("rbp")
 	fc.out.MovRegToReg("rbp", "rsp")
-	fc.out.PushReg("rbx")   // old list ptr
-	fc.out.PushReg("r12")   // new list ptr
-	fc.out.PushReg("r13")   // target index
-	fc.out.PushReg("r14")   // new value bits (low 32)
-	fc.out.PushReg("r15")   // new value bits (high 32)
-	
+	fc.out.PushReg("rbx") // old list ptr
+	fc.out.PushReg("r12") // new list ptr
+	fc.out.PushReg("r13") // target index
+	fc.out.PushReg("r14") // new value bits (low 32)
+	fc.out.PushReg("r15") // new value bits (high 32)
+
 	// Stack: call(8) + rbp(8) + 5 regs(40) = 56 bytes
 	// Subtract 8 to make 64 bytes total -> misaligned by 8 before malloc
 	fc.out.SubImmFromReg("rsp", StackSlotSize)
-	
+
 	// Save arguments
-	fc.out.MovRegToReg("rbx", "rdi")      // rbx = old list ptr
-	fc.out.MovRegToReg("r13", "rsi")      // r13 = target index
+	fc.out.MovRegToReg("rbx", "rdi") // rbx = old list ptr
+	fc.out.MovRegToReg("r13", "rsi") // r13 = target index
 	// Save xmm0 (new value) via r14:r15
 	fc.out.MovqXmmToReg("r14", "xmm0")
-	
+
 	// Get length from old list
 	fc.out.MovMemToXmm("xmm0", "rbx", 0)
-	fc.out.Cvttsd2si("rcx", "xmm0")      // rcx = length
-	
+	fc.out.Cvttsd2si("rcx", "xmm0") // rcx = length
+
 	// Calculate allocation size: 8 + length * 8
 	fc.out.MovRegToReg("rax", "rcx")
 	fc.out.MulRegWithImm("rax", 8)
 	fc.out.AddImmToReg("rax", 8)
-	
+
 	// Call malloc
 	fc.out.MovRegToReg("rdi", "rax")
 	fc.trackFunctionCall("malloc")
 	fc.eb.GenerateCallInstruction("malloc")
-	fc.out.MovRegToReg("r12", "rax")     // r12 = new list ptr
-	
+	fc.out.MovRegToReg("r12", "rax") // r12 = new list ptr
+
 	// Write length to new list
 	fc.out.Cvtsi2sd("xmm0", "rcx")
 	fc.out.MovXmmToMem("xmm0", "r12", 0)
-	
+
 	// Restore new value to xmm2 for use in loop
 	fc.out.MovqRegToXmm("xmm2", "r14")
-	
+
 	// Simple loop to copy all elements, updating target index
 	// Use r15 as loop counter (0..length-1)
-	fc.out.XorRegWithReg("r15", "r15")  // r15 = 0
-	
+	fc.out.XorRegWithReg("r15", "r15") // r15 = 0
+
 	// Copy loop - iterate over all elements
 	fc.eb.MarkLabel("_list_update_loop")
 	fc.out.CmpRegToReg("r15", "rcx")
 	fc.out.Emit([]byte{0x7d, 0x2c}) // jge +44 to end
-	
+
 	// Calculate byte offset: r15 * 8 + 8
 	fc.out.MovRegToReg("rax", "r15")
 	fc.out.ShlRegByImm("rax", 3)
 	fc.out.AddImmToReg("rax", 8)
-	
+
 	// Check if this is the target index
 	fc.out.CmpRegToReg("r15", "r13")
 	fc.out.Emit([]byte{0x75, 0x0d}) // jne +13 (copy old value)
-	
+
 	// This is target index: store new value (in xmm2)
 	fc.out.MovRegToReg("rsi", "rax")
 	fc.out.AddRegToReg("rsi", "r12")
 	fc.out.MovXmmToMem("xmm2", "rsi", 0)
 	fc.out.Emit([]byte{0xeb, 0x11}) // jmp +17 (to increment)
-	
+
 	// Not target: copy old value
 	fc.out.MovRegToReg("rsi", "rax")
 	fc.out.AddRegToReg("rsi", "rbx")
@@ -7891,14 +7891,14 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovRegToReg("rsi", "rax")
 	fc.out.AddRegToReg("rsi", "r12")
 	fc.out.MovXmmToMem("xmm3", "rsi", 0)
-	
+
 	// Increment and loop back
 	fc.out.AddImmToReg("r15", 1)
 	fc.out.Emit([]byte{0xeb, 0xca}) // jmp -54 (back to loop start)
-	
+
 	// Return new list pointer
 	fc.out.MovRegToReg("rax", "r12")
-	
+
 	// Restore stack and registers
 	fc.out.AddImmToReg("rsp", StackSlotSize)
 	fc.out.PopReg("r15")
@@ -9760,23 +9760,23 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		}
 		// Evaluate the argument to get the value in xmm0
 		fc.compileExpression(call.Args[0])
-		
+
 		// TODO: Check if xmm0 is NaN and extract 4-letter error code from mantissa
 		// For now, always return empty string (non-error case)
 		// The value in xmm0 is discarded
-		
+
 		// Create empty string by compiling a StringExpr
 		// This will create the string data and load its pointer into xmm0
 		labelName := fmt.Sprintf("str_%d", fc.stringCounter)
 		fc.stringCounter++
-		
+
 		// Empty string: just the count (0.0) in 8 bytes
 		var mapData []byte
 		countBits := uint64(0) // count = 0
 		for i := 0; i < 8; i++ {
 			mapData = append(mapData, byte((countBits>>(i*8))&ByteMask))
 		}
-		
+
 		fc.eb.Define(labelName, string(mapData))
 		fc.out.LeaSymbolToReg("rax", labelName)
 		fc.out.MovqRegToXmm("xmm0", "rax")
@@ -9790,7 +9790,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			fc.trackFunctionCall("fflush")
 			fc.eb.GenerateCallInstruction("fflush")
 		}
-		
+
 		if len(call.Args) == 0 {
 			// Just print a newline
 			newlineLabel := fmt.Sprintf("newline_%d", fc.stringCounter)
@@ -12647,34 +12647,34 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Compile arguments in reverse order (will use stack)
 		// First, compile list and save to stack
-		fc.compileExpression(call.Args[0])  // list -> xmm0
+		fc.compileExpression(call.Args[0]) // list -> xmm0
 		fc.out.SubImmFromReg("rsp", 8)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
-		
+
 		// Compile index and save to stack
-		fc.compileExpression(call.Args[1])  // index -> xmm0
+		fc.compileExpression(call.Args[1]) // index -> xmm0
 		fc.out.SubImmFromReg("rsp", 8)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
-		
+
 		// Compile value (leave in xmm0)
-		fc.compileExpression(call.Args[2])  // value -> xmm0
-		
+		fc.compileExpression(call.Args[2]) // value -> xmm0
+
 		// Now setup arguments for flap_list_update(rdi=list_ptr, rsi=index, xmm0=value)
 		// Pop index into rsi
 		fc.out.MovMemToXmm("xmm1", "rsp", 0)
 		fc.out.AddImmToReg("rsp", 8)
-		fc.out.Cvttsd2si("rsi", "xmm1")  // rsi = index as integer
-		
+		fc.out.Cvttsd2si("rsi", "xmm1") // rsi = index as integer
+
 		// Pop list pointer into rdi
 		fc.out.MovMemToXmm("xmm2", "rsp", 0)
 		fc.out.AddImmToReg("rsp", 8)
-		fc.out.MovqXmmToReg("rdi", "xmm2")  // rdi = list pointer
-		
+		fc.out.MovqXmmToReg("rdi", "xmm2") // rdi = list pointer
+
 		// xmm0 already has the value
 		// Call the runtime function
 		fc.trackFunctionCall("_flap_list_update")
 		fc.eb.GenerateCallInstruction("_flap_list_update")
-		
+
 		// Convert result (rax = pointer) to float64 in xmm0
 		fc.out.SubImmFromReg("rsp", 8)
 		fc.out.MovRegToMem("rax", "rsp", 0)

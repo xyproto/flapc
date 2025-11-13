@@ -1458,7 +1458,7 @@ func (p *Parser) blockContainsMatchArrows() bool {
 		column:    p.lexer.column,
 		lineStart: p.lexer.lineStart,
 	}
-	
+
 	tempParser := &Parser{
 		lexer:    tempLexer,
 		current:  p.current,
@@ -1466,16 +1466,16 @@ func (p *Parser) blockContainsMatchArrows() bool {
 		filename: p.filename,
 		source:   p.source,
 	}
-	
+
 	braceDepth := 0
 	foundArrow := false
-	
+
 	// Scan through tokens until we exit the block
 	for i := 0; i < 1000; i++ { // Safety limit
 		if tempParser.current.Type == TOKEN_EOF {
 			break
 		}
-		
+
 		if tempParser.current.Type == TOKEN_LBRACE {
 			braceDepth++
 		} else if tempParser.current.Type == TOKEN_RBRACE {
@@ -1489,10 +1489,10 @@ func (p *Parser) blockContainsMatchArrows() bool {
 			foundArrow = true
 			break
 		}
-		
+
 		tempParser.nextToken()
 	}
-	
+
 	return foundArrow
 }
 
@@ -1513,7 +1513,7 @@ func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
 	if debugParser {
 		fmt.Fprintf(os.Stderr, "DEBUG: parseMatchBlock hasMatchArrows=%v current=%v\n", hasMatchArrows, p.current.Type)
 	}
-	
+
 	// Simple conditional mode: if the block doesn't contain match arrows,
 	// treat it as a simple conditional that should execute all statements as one block
 	if !hasMatchArrows && p.current.Type != TOKEN_ARROW && p.current.Type != TOKEN_DEFAULT_ARROW && p.current.Type != TOKEN_RBRACE {
@@ -1619,7 +1619,7 @@ func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
 		}
 
 		clause, _ := p.parseMatchClause()
-		
+
 		// Convert value matches to equality checks
 		if clause.IsValueMatch && clause.Guard != nil {
 			// Transform: 0 -> "zero" into: condition == 0 -> "zero"
@@ -1630,7 +1630,7 @@ func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
 			}
 			clause.IsValueMatch = false
 		}
-		
+
 		clauses = append(clauses, clause)
 	}
 
@@ -1707,7 +1707,7 @@ func (p *Parser) parseMatchClause() (*MatchClause, bool) {
 		p.skipNewlines()
 		result := p.parseMatchTarget()
 		p.skipNewlines()
-		
+
 		// If it's a guard, use the expression as-is
 		// Otherwise, it's a value match - we'll need the condition from parseMatchBlock
 		if isGuard {
