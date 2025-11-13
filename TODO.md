@@ -1,122 +1,141 @@
-# TODO - Remaining Issues
+# TODO - Bug Fixes
 
-**Test Status:** 114/147 tests passing (77.6%)
+**Test Status:** 118/147 passing (80.3%)  
+**Goal:** 95%+ pass rate for Flap 2.0 release
 
 ---
 
-## 🐛 Critical Issues
+## Critical Bugs
 
-### 1. List mutation causes segfault (HIGH PRIORITY)
-**Tests:** `TestListUpdateBasic`, `TestListUpdateMinimal`, `TestListUpdateSingleElement`, `TestListPrograms/list_update`, `TestListOperationsComprehensive/list_update`  
-**Files:** `list_update_test.go`, `list_programs_test.go`, `string_map_test.go`
+### 1. List/Map Mutation Segfault
+**Failing Tests:** 14 tests (list_update_*, list_cons, map_update)  
+**Root Cause:** Literals stored in read-only `.rodata` section
 
-**Problem:** List literals are stored in .rodata (read-only memory), so updating them causes segfault:
+**Problem:**
 ```flap
 nums := [1, 2, 3]
-nums[0] <- 99    # SEGFAULT - trying to write to read-only memory
+nums[0] <- 99    // SEGFAULT - writes to .rodata
 ```
 
-**Solution:** Implement arena-based allocation for list literals (started in commit 26f59f4 but reverted due to issues):
-- Lists need to be allocated in writable memory (heap or arena)
-- Use `flap_arena_alloc` or `malloc` for list creation
-- Fix `initializeMetaArenaAndGlobalArena()` implementation
-- Test arena allocation thoroughly before re-enabling
+**Solution Plan:**
+1. Allocate list/map literals in writable memory (not .rodata)
+2. Options: arena allocation or malloc/free
+3. Emit machine code that calls arena allocator or malloc
+4. Copy literal data from .rodata to writable heap
+5. Update ListExpr and MapExpr codegen in `codegen.go`
 
-**Files to modify:** `codegen.go` (case *ListExpr, around line 3860)
+**Files:** `codegen.go` (line ~3860, case *ListExpr and *MapExpr)
 
----
-
-### 2. List cons operator crashes
-**Test:** `TestListOperationsComprehensive/list_cons`
-
-Cons operator `::` also crashes, likely for same reason as list mutation (trying to modify read-only data).
-
-**Solution:** Same as #1 - arena-based allocation.
+**Note:** Arena infrastructure exists but has bugs. Consider using simple malloc first, then switch to arena later.
 
 ---
 
-### 3. Lambda block syntax not working
-**Tests:** `TestLambdaPrograms/lambda_with_block`, `TestLambdaPrograms/lambda_match`  
-**File:** `lambda_programs_test.go`
+### 2. Lambda Block Bodies Not Working
+**Failing Tests:** 2 tests (lambda_with_block, lambda_match)
 
-Lambdas with block bodies fail to compile:
+**Problem:**
 ```flap
 f := x => {
     y := x + 1
     y * 2
-}
+}  // Fails
+```
+Single expressions work: `f := x => x + 1`
+
+**Investigation:**
+- Check parser handling of `LambdaExpr` with `BlockExpr` body
+- Verify codegen for lambda closures with multiple statements
+- Compare with function definition codegen (which works)
+
+**Files:** `parser.go` (parseLambda), `codegen.go` (case *LambdaExpr)
+
+---
+
+### 3. Map Update Returns Wrong Value
+**Failing Tests:** 1 test (map_update)
+
+**Problem:**
+```flap
+m := {a: 10}
+m[a] <- 20
+println(m[a])  // Prints 0 instead of 20
 ```
 
-Note: Single-expression lambdas work fine: `x => x + 1`
+**Investigation:**
+- Check `__flap_map_update` implementation
+- Verify map update codegen generates correct machine code
+- May be related to same root cause as list mutation
 
-**Investigation needed:** Check parser's lambda block handling and codegen for block-based lambdas.
-
----
-
-## 🔧 Medium Priority Issues
-
-### 4. ENet tests failing
-**Tests:** `TestENetCompilation/enet_simple`, `TestENetCodeGeneration/simple_test.flap`  
-**File:** `enet_test.go`
-
-External library integration issue. May be test environment setup problem.
+**Files:** `codegen.go` (map update logic)
 
 ---
 
-### 5. Lambda error test not triggering
-**Test:** `TestCompilationErrors/lambda_bad_syntax`  
-**File:** `compiler_test.go`
+## Medium Priority
 
-Expected compilation error not triggered. Verify test expectation is correct per LANGUAGE.md spec.
+### 4. Parallel Loop Edge Cases
+**Failing Tests:** 1 test (TestParallelSimpleCompiles)
 
----
+Basic parallel loops work, but some edge case fails. Investigate specific test failure.
 
-### 6. Map update test failing
-**Test:** `TestMapOperations/map_update`
-
-Similar to list update - may be related to mutability issues.
+**Files:** `parallel_programs_test.go`
 
 ---
 
-## 📝 Implementation Notes
+### 5. ENet Integration
+**Failing Tests:** 2 tests (ENet compilation/codegen)
 
-### Arena Allocator Status
-The arena allocator infrastructure exists but has issues:
-- `initializeMetaArenaAndGlobalArena()` - needs debugging
-- `flap_arena_alloc` - runtime function exists
-- Global arena creation - currently commented out due to crashes
+May be test environment issue (missing libenet). Verify:
+- ENet library available
+- Linking works
+- Test expectations are correct
 
-**Next steps:**
-1. Debug meta-arena initialization
-2. Test arena alloc thoroughly with simple programs
-3. Convert list literals to use arena allocation
-4. Ensure proper cleanup on program exit
-
-### Test Infrastructure
-All tests use isolated temp directories to prevent cross-contamination.
-Test helpers in `test_helpers.go` handle compilation and execution.
+**Files:** `enet_test.go`, `enet_codegen.go`
 
 ---
 
-## 🔍 Debugging Commands
+### 6. Compilation Error Tests
+**Failing Tests:** Various error-checking tests
+
+Some tests expect compilation to fail but it succeeds. Review test expectations against LANGUAGE.md spec.
+
+**Files:** `compiler_test.go`
+
+---
+
+## Quick Commands
 
 ```bash
 # Run all tests
 go test
 
-# Run specific test with details
-go test -v -run="TestName/subtest"
+# Run specific test
+go test -v -run="TestName"
 
-# Check segfault with timeout
-timeout 2 ./compiled_program
+# Debug segfault
+./flapc test.flap test && timeout 2 ./test || echo "Crashed: $?"
 
-# Build and test manually
-./flapc test.flap test && ./test
-
-# Count passing tests
-go test -v 2>&1 | grep -E "^---\s(PASS):" | wc -l
+# Check machine code
+objdump -d ./test | less
 ```
 
 ---
 
-**Status:** Core compiler is complete and functional. Remaining issues are primarily around memory management for mutable data structures.
+## Implementation Notes
+
+**Memory Strategy:**
+- Short-term: Use malloc for list/map literals
+- Long-term: Debug arena allocator, switch to arena-based allocation
+- Arena infrastructure exists in `flap_runtime.go`
+
+**Debugging Approach:**
+1. Create minimal failing test case
+2. Compile with `./flapc -o test test.flap`
+3. Inspect machine code with `objdump -d test`
+4. Run with timeout to catch segfaults
+5. Use gdb if needed: `gdb ./test`
+
+**Priority:** Fix list mutation first (blocks 14 tests), then lambda blocks (blocks 2 tests).
+
+---
+
+**Next:** After fixing these bugs, run full test suite and aim for 95%+ pass rate.
