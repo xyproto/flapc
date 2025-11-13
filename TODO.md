@@ -3,30 +3,38 @@
 **Test Status:** 118/147 passing (80.3%)  
 **Goal:** 95%+ pass rate for Flap 2.0 release
 
+**Language Spec Status:** ✅ FIXED - Mutability semantics clarified in LANGUAGE.md
+
 ---
 
 ## Critical Bugs
 
-### 1. List/Map Mutation Segfault
+### 1. List/Map Mutation Implementation
 **Failing Tests:** 14 tests (list_update_*, list_cons, map_update)  
-**Root Cause:** Literals stored in read-only `.rodata` section
+**Root Cause:** `:=` collections stored in .rodata instead of writable memory
 
-**Problem:**
+**Language Design (NOW CLARIFIED):**
+- `=` creates immutable variable with immutable value (stored in .rodata)
+- `:=` creates mutable variable with mutable value (must be in writable memory)
+
+**Implementation Fix Needed:**
 ```flap
-nums := [1, 2, 3]
-nums[0] <- 99    // SEGFAULT - writes to .rodata
+nums := [1, 2, 3]     // Must allocate in writable memory (heap/arena)
+nums[0] <- 99         // Should work (currently segfaults)
+
+readonly = [1, 2, 3]  // Can stay in .rodata
+readonly[0] <- 99     // Should error (currently does)
 ```
 
-**Solution Plan:**
-1. Allocate list/map literals in writable memory (not .rodata)
-2. Options: arena allocation or malloc/free
-3. Emit machine code that calls arena allocator or malloc
-4. Copy literal data from .rodata to writable heap
-5. Update ListExpr and MapExpr codegen in `codegen.go`
+**Solution:**
+1. When generating code for `:=` with list/map literal:
+   - Allocate writable memory (malloc or arena)
+   - Copy literal data from .rodata to writable memory
+   - Return pointer to writable copy
+2. Keep `=` behavior (direct .rodata reference)
+3. Update codegen.go ListExpr and MapExpr cases
 
-**Files:** `codegen.go` (line ~3860, case *ListExpr and *MapExpr)
-
-**Note:** Arena infrastructure exists but has bugs. Consider using simple malloc first, then switch to arena later.
+**Files:** `codegen.go` (lines ~3860)
 
 ---
 

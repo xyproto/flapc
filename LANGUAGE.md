@@ -180,11 +180,17 @@ is_error(x) { ... }    // Check for error
 Zero-cost error handling.
 
 ### 17. **Immutable-by-Default**
-Variables are immutable unless explicitly mutable:
+Variables and values are immutable unless explicitly declared mutable:
 ```flap
-x := 5        // Immutable (can't change)
-y <- 10       // Mutable (can change)
+x = 5         // Immutable variable (can't reassign)
+y := 10       // Mutable variable (can reassign with <-)
+
+list = [1, 2, 3]      // Immutable list (can't modify elements)
+nums := [4, 5, 6]     // Mutable list (can modify elements)
+nums[0] <- 99         // OK - nums is mutable
 ```
+
+The `:=` operator means both the variable AND its value are mutable.
 
 ### 18. **Named Logical Operators**
 ```flap
@@ -793,20 +799,35 @@ chosen := items[idx]
 ### Immutable by Default
 
 ```flap
-x = 42        // Immutable - can't reassign
-x <- 100      // NOT OK, trying to assign a new value to an immutable variable
-x += 10       // NOT OK, trying to modify the value of an aimmutable variable
-x = 100       // NOT OK, trying to initialize a new immutable variable with the same name
+x = 42        // Immutable variable - can't reassign
+x <- 100      // ERROR: can't reassign immutable variable
+x += 10       // ERROR: can't modify immutable variable
+x = 100       // ERROR: can't redefine in same scope
+
+list = [1, 2, 3]    // Immutable list - can't modify elements
+list[0] <- 99       // ERROR: can't modify immutable list
+list <- [4, 5, 6]   // ERROR: can't reassign immutable variable
 ```
 
-### Mutable Variables
+### Mutable Variables and Values
+
+The `:=` operator creates a mutable variable whose value can also be mutated (if it's a collection):
 
 ```flap
-y := 42       // Mutable
-y <- 100      // OK, assignment
-y += 10       // OK, modification
-y = 100       // NOT OK, trying to initialize a new immutable variable with the same name
+y := 42       // Mutable variable
+y <- 100      // OK: reassign variable
+y += 10       // OK: modify variable (equivalent to y <- y + 10)
+
+nums := [1, 2, 3]     // Mutable variable with mutable list
+nums[0] <- 99         // OK: modify list element
+nums <- [4, 5, 6]     // OK: reassign to new list
+
+obj := {x: 10, y: 20} // Mutable variable with mutable map
+obj.x <- 100          // OK: modify map value
+obj <- {a: 1, b: 2}   // OK: reassign to new map
 ```
+
+**Key principle:** `:=` means mutable everywhere - both the variable binding and the value's internal state (if applicable) can be changed.
 
 ### Shadowing and Scoping Rules
 
@@ -844,15 +865,63 @@ process = x => {
 
 ### Update Operator
 
-```flap
-list := [1, 2, 3]
-list[0] <- 99          // Updates list to [99, 2, 3]
-list.0 <- 42           // Updates list to [42, 2, 3]
+The `<-` operator updates mutable variables or collection elements:
 
+```flap
+// Update mutable variable
+x := 42
+x <- 100              // Reassign x to 100
+
+// Update mutable list elements (requires := declaration)
+list := [1, 2, 3]
+list[0] <- 99         // Updates list to [99, 2, 3]
+list.0 <- 42          // Updates list to [42, 2, 3] (dot syntax)
+
+// Update mutable map values (requires := declaration)
 obj := {x: 10, y: 20}
-obj.x <- 100           // Updates x to 100
-obj[0] <- 42           // Updates x to 42 (Flap maps are ordered)
+obj.x <- 100          // Updates x to 100
+obj["x"] <- 200       // Updates x to 200 (bracket syntax)
+
+// Immutable collections cannot be updated
+readonly = [1, 2, 3]
+readonly[0] <- 99     // ERROR: cannot modify immutable list
 ```
+
+### Mutability Semantics Clarified
+
+Flap distinguishes between **variable mutability** (can you reassign the variable name?) and **value mutability** (can you mutate the contents of a collection?).
+
+The assignment operator determines both:
+
+| Operator | Variable Mutability | Value Mutability | Example |
+|----------|---------------------|------------------|---------|
+| `=` | Immutable (can't reassign) | Immutable (can't modify contents) | `x = [1,2,3]` |
+| `:=` | Mutable (can reassign) | Mutable (can modify contents) | `x := [1,2,3]` |
+
+**Examples:**
+
+```flap
+// Immutable binding, immutable value
+nums = [1, 2, 3]
+nums <- [4, 5, 6]     // ERROR: can't reassign immutable variable
+nums[0] <- 99         // ERROR: can't modify immutable list
+
+// Mutable binding, mutable value
+vals := [1, 2, 3]
+vals <- [4, 5, 6]     // OK: reassign variable to new list
+vals[0] <- 99         // OK: modify list element in place
+
+// Same for maps
+config = {x: 10}
+config.x <- 20        // ERROR: immutable map
+config <- {y: 30}     // ERROR: immutable variable
+
+settings := {x: 10}
+settings.x <- 20      // OK: mutable map
+settings <- {y: 30}   // OK: mutable variable
+```
+
+**Implementation note:** Immutable collections are stored in read-only memory (`.rodata`), while mutable collections are allocated in writable memory (heap or arena). This is handled automatically by the compiler based on the assignment operator used.
 
 ### Move Semantics
 
