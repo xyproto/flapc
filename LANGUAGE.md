@@ -101,9 +101,9 @@ msg = => :5000                  // Receive message
 ```
 
 ### 8. **Fork-Based Process Model**
-Flap uses Unix `fork()` semantics with `spawn`:
+Flap uses Unix `fork()` semantics with `flap`:
 ```flap
-spawn worker()    // New process (copy-on-write)
+flap worker()    // New process (copy-on-write)
 ```
 No threads, no shared memory bugs—just processes and messages.
 
@@ -422,7 +422,7 @@ statement       = use_statement
                 | receive_loop
                 | jump_statement
                 | defer_statement
-                | spawn_statement
+                | flap_statement
                 | assignment
                 | expression_statement ;
 
@@ -451,7 +451,7 @@ receive_loop    = "@" identifier "," identifier "in" expression [ "max" expressi
 jump_statement  = "ret" [ "@" [ number ] ] [ expression ]
                 | "->" expression ;
 
-spawn_statement = "spawn" expression ;
+flap_statement  = "flap" expression ;
 
 defer_statement = "defer" expression ;
 
@@ -581,7 +581,7 @@ fstring                 = 'f"' { character | "{" expression "}" } '"' ;
 ### Reserved Keywords
 
 ```
-alias and arena as cstruct defer err has hot import in not or ret spawn unsafe use xor
+alias and arena as cstruct defer err flap has hot import in not or ret unsafe use xor
 ```
 
 **Special keywords:**
@@ -694,13 +694,14 @@ _     // Tail operator (all but first element of list)
 ### Concurrency Operators
 
 ```flap
-<==   // Send operator (sends message to address)
+<=    // Send operator (sends message to address)
 ```
 
-All addresses are strings:
+Address literals use `:` prefix:
 ```flap
-":8080" <== "hello"                  // Send to local port (IPC)
-"server.com:8080" <== "data"         // Send to remote address (network)
+:8080 <= "hello"                     // Send to local port (IPC)
+:localhost:8080 <= "hello"           // Explicit localhost
+:server.com:8080 <= "data"           // Send to remote address (network)
 ```
 
 ### Other
@@ -1220,14 +1221,14 @@ Available atomic operations:
 - `atomic_add(ptr, value)` - Atomically add and return old value
 - `atomic_cas(ptr, expected, desired)` - Compare-and-swap
 
-### Spawn
+### Flap (Process Spawning)
 
 ```flap
 // Fire-and-forget process
-spawn background_task()
+flap background_task()
 
 // Fork and continue
-pid := spawn {
+pid := flap {
     // Child process code
     println("Child running")
 }
@@ -1260,14 +1261,16 @@ Send messages to addresses (write to channel):
 :localhost:3000 <= f"value={x}"     // Send with f-string
 ```
 
-#### Receive Operator: `=>`
+#### Receive Syntax
 
 Receive messages from addresses (read from channel):
 
 ```flap
-msg = => :5000           // Blocking receive (waits for one message)
-msg = => :8080           // Returns string message
+:5000 <= msg             // Blocking receive (waits for one message)
+:8080 <= response        // Returns string message
 ```
+
+Note: The receive syntax reuses the send operator `<=` but with the address on the left. This is consistent and minimal.
 
 #### Receive Loop
 
@@ -1312,19 +1315,21 @@ The receive loop syntax `@ msg, from in address`:
 **Request-Response:**
 ```flap
 :server.com:5000 <= "get_status"
-response = => :5000
+:5000 <= response
 println(response)
 ```
 
 **Concurrent Workers:**
 ```flap
 // Spawn 4 workers listening on :7000
-parallel(4, worker => {
-    @ task, from in :7000 {
-        result := process(task)
-        from <= result
+@ i in 0..<4 {
+    flap {
+        @ task, from in :7000 {
+            result := process(task)
+            from <= result
+        }
     }
-})
+}
 ```
 
 #### ENet Properties

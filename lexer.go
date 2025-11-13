@@ -57,7 +57,8 @@ const (
 	TOKEN_FAT_ARROW        // =>
 	TOKEN_EQUALS_FAT_ARROW // ==> (shorthand for = =>)
 	TOKEN_LEFT_ARROW       // <-
-	TOKEN_SEND             // <== (ENet send operator)
+	TOKEN_SEND        // <= (ENet send operator)
+	TOKEN_ENET_ADDR   // :8080 or :host:port (ENet address literal)
 	TOKEN_PIPE             // |
 	TOKEN_PIPEPIPE         // ||
 	TOKEN_HASH             // #
@@ -557,8 +558,30 @@ func (l *Lexer) NextToken() Token {
 			l.pos += 2 // skip both ':' and ':'
 			return Token{Type: TOKEN_CONS, Value: "::", Line: l.line, Column: tokenColumn}
 		}
-		// Check for port literal: :5000 or :worker
-		// Colon for map literals and slice syntax
+		// Check for ENet address literal: :8080 or :host:8080
+		if l.pos+1 < len(l.input) {
+			next := l.input[l.pos+1]
+			if unicode.IsDigit(rune(next)) || unicode.IsLetter(rune(next)) {
+				// This looks like an ENet address
+				start := l.pos
+				l.pos++ // skip ':'
+				// Read host or port
+				for l.pos < len(l.input) && (unicode.IsLetter(rune(l.input[l.pos])) ||
+					unicode.IsDigit(rune(l.input[l.pos])) || l.input[l.pos] == '.' || l.input[l.pos] == '-') {
+					l.pos++
+				}
+				// Check for second colon (host:port format)
+				if l.pos < len(l.input) && l.input[l.pos] == ':' {
+					l.pos++ // skip second ':'
+					// Read port number
+					for l.pos < len(l.input) && unicode.IsDigit(rune(l.input[l.pos])) {
+						l.pos++
+					}
+				}
+				return Token{Type: TOKEN_ENET_ADDR, Value: l.input[start:l.pos], Line: l.line, Column: tokenColumn}
+			}
+		}
+		// Regular colon for map literals and slice syntax
 		l.pos++
 		return Token{Type: TOKEN_COLON, Value: ":", Line: l.line, Column: tokenColumn}
 	case '=':
@@ -612,12 +635,8 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_LTLT_B, Value: "<<b", Line: l.line, Column: tokenColumn}
 		}
 		if l.peek() == '=' {
-			if l.pos+2 < len(l.input) && l.input[l.pos+2] == '=' {
-				l.pos += 3
-				return Token{Type: TOKEN_SEND, Value: "<==", Line: l.line, Column: tokenColumn}
-			}
 			l.pos += 2
-			return Token{Type: TOKEN_LE, Value: "<=", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_SEND, Value: "<=", Line: l.line, Column: tokenColumn}
 		}
 		l.pos++
 		return Token{Type: TOKEN_LT, Value: "<", Line: l.line, Column: tokenColumn}
