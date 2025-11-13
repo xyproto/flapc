@@ -705,9 +705,10 @@ func (l *Lexer) NextToken() Token {
 			start := l.pos
 			l.pos++ // skip @
 			
-			// Parse hostname or IP (optional)
-			if l.pos < len(l.input) && l.input[l.pos] != ':' && (l.input[l.pos] < '0' || l.input[l.pos] > '9') {
-				// Parse hostname (alphanumeric, dots, hyphens)
+			// Parse hostname or IP address (optional, before colon)
+			// Can be: localhost, example.com, 192.168.1.100, etc.
+			if l.pos < len(l.input) && l.input[l.pos] != ':' {
+				// Parse hostname or IP (alphanumeric, dots, hyphens)
 				for l.pos < len(l.input) && (unicode.IsLetter(rune(l.input[l.pos])) || unicode.IsDigit(rune(l.input[l.pos])) || l.input[l.pos] == '.' || l.input[l.pos] == '-') {
 					if l.input[l.pos] == ':' {
 						break
@@ -716,7 +717,7 @@ func (l *Lexer) NextToken() Token {
 				}
 			}
 			
-			// Parse port
+			// Parse port (required for address literals)
 			if l.pos < len(l.input) && (l.input[l.pos] == ':' || (l.input[l.pos] >= '0' && l.input[l.pos] <= '9')) {
 				if l.input[l.pos] == ':' {
 					l.pos++ // skip colon
