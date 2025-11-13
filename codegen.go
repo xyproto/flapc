@@ -88,7 +88,7 @@ type FlapCompiler struct {
 	hasExplicitExit      bool                         // Track if program contains explicit exit() call
 	debug                bool                         // Enable debug output (set via DEBUG env var)
 	cContext             bool                         // When true, compile expressions for C FFI (affects strings, pointers, ints)
-	currentArena         int                          // Arena depth (0=none, 1=first arena, 2=nested, etc.)
+	currentArena         int                          // Current arena index (starts at 1 for global arena = meta-arena[0])
 	usesArenas           bool                         // Track if program uses any arena blocks
 	cacheEnabledLambdas  map[string]bool              // Track which lambdas use cme
 	deferredExprs        [][]Expression               // Stack of deferred expressions per scope (LIFO order)
@@ -165,7 +165,7 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 		hotFunctions:        make(map[string]bool),
 		hotFunctionTable:    make(map[string]int),
 		debug:               debugEnabled,
-		currentArena:        -1,
+		currentArena:        1, // Start at arena 1 (which is meta-arena[0], the global arena)
 		regAlloc:            NewRegisterAllocator(platform.Arch),
 		movedVars:           make(map[string]bool),
 		scopeDepth:          0,
@@ -204,7 +204,7 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.movedVars = make(map[string]bool)
 	fc.scopedMoved = []map[string]bool{make(map[string]bool)}
 
-	// Always enable arenas - list operations now use arena allocation
+	// Always enable arenas - all list operations use arena allocation
 	fc.usesArenas = true
 
 	if fc.debug {
@@ -246,8 +246,12 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	// Use 64KB buffer instead of 1MB - more likely to be properly aligned by linker
 	fc.eb.DefineWritable("_flap_default_arena_buffer", strings.Repeat("\x00", 65536))
 
-	// Generate code
-	// NOTE: Arena initialization moved to writeELF() to ensure it's after _start jump target
+	// Predeclare arena symbols if arenas are used (always true now)
+	fc.eb.Define("_flap_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")
+	fc.eb.Define("_flap_arena_meta_cap", "\x00\x00\x00\x00\x00\x00\x00\x00")
+	fc.eb.Define("_flap_arena_meta_len", "\x00\x00\x00\x00\x00\x00\x00\x00")
+	fc.eb.Define("_arena_null_error", "ERROR: Arena alloc returned NULL\n")
+	fc.eb.Define("_count_mismatch_error", "ERROR: Count write/read mismatch!\n")
 
 	// Initialize registers at entry (where _start jumps to)
 	fc.out.XorRegWithReg("rax", "rax")
@@ -424,8 +428,9 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 		}
 	}
 
-	// Reset arena depth before compilation pass
-	fc.currentArena = 0
+	// currentArena is already set to 1 in NewFlapCompiler (representing meta-arena[0])
+	// Initialize meta-arena and create arena 0 (the global arena used for all allocations)
+	fc.initializeMetaArenaAndGlobalArena()
 
 	// Function prologue - set up stack frame for main code
 	fc.out.PushReg("rbp")
@@ -452,19 +457,6 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	// Predeclare lambda symbols so closure initialization can reference them
 	fc.predeclareLambdaSymbols()
 
-	// Predeclare arena symbols if arenas are used
-	if fc.usesArenas {
-		fc.eb.Define("_flap_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")
-		fc.eb.Define("_flap_arena_meta_cap", "\x00\x00\x00\x00\x00\x00\x00\x00")
-		fc.eb.Define("_flap_arena_meta_len", "\x00\x00\x00\x00\x00\x00\x00\x00")
-		fc.eb.Define("_arena_null_error", "ERROR: Arena alloc returned NULL\n")
-		fc.eb.Define("_count_mismatch_error", "ERROR: Count write/read mismatch!\n")
-		fc.eb.Define("_str_debug_arena_ptr", "DEBUG: Arena pointer from create: %p\n")
-		fc.eb.Define("_str_debug_arena_store", "DEBUG: Stored arena at index %ld, address %p\n")
-		fc.eb.Define("_str_debug_meta_ptr", "DEBUG: Meta-arena pointer: %p\n")
-		fc.eb.Define("_str_debug_arena_load", "DEBUG: Loaded arena pointer: %p\n")
-	}
-
 	// Second pass: Generate actual code with all symbols known
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG: Compiling %d statements\n", len(program.Statements))
@@ -483,6 +475,9 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	}
 
 	fc.popDeferScope()
+
+	// Cleanup all arenas in meta-arena at program exit
+	fc.cleanupAllArenas()
 
 	// Always add implicit exit at the end of the program
 	// Even if there's an exit() call in the code, it might be conditional
@@ -927,13 +922,13 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	}
 
 	// Generate lambda functions
+	// (lambdas are generated after the main code, so they can reference main code)
 	fc.generateLambdaFunctions()
 
 	// Generate pattern lambda functions
 	fc.generatePatternLambdaFunctions()
 
-	// Generate runtime helper functions AFTER second lambda pass, BEFORE WriteCompleteDynamicELF
-	// This must happen before WriteCompleteDynamicELF because that captures the text buffer
+	// Generate runtime helper functions AFTER lambda generation
 	fc.generateRuntimeHelpers()
 
 	// Collect rodata symbols again (lambda/runtime functions may have created new ones)
@@ -1617,19 +1612,19 @@ func (fc *FlapCompiler) compileArenaStmt(stmt *ArenaStmt) {
 	// Mark that this program uses arenas
 	fc.usesArenas = true
 
-	// Save previous arena context and increment depth
+	// Save previous arena context and increment to next arena
 	previousArena := fc.currentArena
 	fc.currentArena++
-	arenaDepth := fc.currentArena
+	arenaIndex := fc.currentArena - 1 // Convert arena number to 0-based index
 
 	// Ensure meta-arena has enough capacity
-	// Call _flap_arena_ensure_capacity(arenaDepth)
-	fc.out.MovImmToReg("rdi", fmt.Sprintf("%d", arenaDepth))
+	// Call _flap_arena_ensure_capacity(arenaIndex + 1)
+	fc.out.MovImmToReg("rdi", fmt.Sprintf("%d", fc.currentArena))
 	fc.out.CallSymbol("_flap_arena_ensure_capacity")
 
-	// Load arena pointer from meta-arena: _flap_arena_meta[arenaDepth-1]
-	// Each pointer is 8 bytes, so offset = (arenaDepth-1) * 8
-	offset := (arenaDepth - 1) * 8
+	// Load arena pointer from meta-arena: _flap_arena_meta[arenaIndex]
+	// Each pointer is 8 bytes, so offset = arenaIndex * 8
+	offset := arenaIndex * 8
 	fc.out.LeaSymbolToReg("rax", "_flap_arena_meta")
 	fc.out.MovMemToReg("rax", "rax", 0)      // Load the meta-arena pointer
 	fc.out.MovMemToReg("rax", "rax", offset) // Load the arena pointer from slot
@@ -3860,7 +3855,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		fc.compileExpression(listExpr)
 
 	case *ListExpr:
-		// Lists must be mutable - allocate on heap using malloc
+		// Lists must be mutable - allocate using global arena
 		// List format: [length (8 bytes)] [element1] [element2] ...
 		length := len(e.Elements)
 		
@@ -3870,13 +3865,18 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		// Save callee-saved register
 		fc.out.PushReg("r12")
 		
-		// Align stack for malloc call (16-byte alignment required)
+		// Align stack for call (16-byte alignment required)
 		fc.out.SubImmFromReg("rsp", 8)
 		
-		// Call malloc to allocate memory
-		fc.out.MovImmToReg("rdi", strconv.Itoa(sizeInBytes))
-		fc.trackFunctionCall("malloc")
-		fc.eb.GenerateCallInstruction("malloc")
+		// Load current arena pointer and allocate memory
+		arenaIndex := fc.currentArena - 1
+		arenaOffset := arenaIndex * 8
+		fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
+		fc.out.MovMemToReg("rdi", "rdi", 0)             // rdi = meta-arena pointer
+		fc.out.MovMemToReg("rdi", "rdi", arenaOffset)   // rdi = arena pointer from slot
+		fc.out.MovImmToReg("rsi", strconv.Itoa(sizeInBytes)) // size in rsi
+		fc.trackFunctionCall("flap_arena_alloc")
+		fc.eb.GenerateCallInstruction("flap_arena_alloc")
 		// rax now contains the pointer to allocated memory
 		
 		// Restore stack alignment
@@ -7797,11 +7797,11 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
-	// Generate _flap_list_update(list_ptr, index, value) -> new_list_ptr
+	// Generate _flap_list_update(list_ptr, index, value, arena_ptr) -> new_list_ptr
 	// Updates a list element at the given index (functional - returns new list)
-	// Arguments: rdi = list_ptr, rsi = index (integer), xmm0 = new value (float64)
+	// Arguments: rdi = list_ptr, rsi = index (integer), xmm0 = new value (float64), rdx = arena_ptr
 	// Returns: rax = new list pointer
-	// TODO: Migrate to arena-based allocation instead of malloc
+	// Uses specified arena for allocation
 	fc.eb.MarkLabel("_flap_list_update")
 
 	// Function prologue
@@ -7811,14 +7811,15 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PushReg("r12") // new list ptr
 	fc.out.PushReg("r13") // target index
 	fc.out.PushReg("r14") // new value bits
+	fc.out.PushReg("r15") // arena ptr
 
-	// Stack: call(8) + rbp(8) + 4 regs(32) = 48 bytes (aligned)
-	// Subtract 8 to make 56 bytes total -> misaligned by 8 before malloc
+	// Stack: call(8) + rbp(8) + 5 regs(40) = 56 bytes (aligned)
 	fc.out.SubImmFromReg("rsp", StackSlotSize)
 
 	// Save arguments
-	fc.out.MovRegToReg("rbx", "rdi") // rbx = old list ptr
-	fc.out.MovRegToReg("r13", "rsi") // r13 = target index
+	fc.out.MovRegToReg("rbx", "rdi")  // rbx = old list ptr
+	fc.out.MovRegToReg("r13", "rsi")  // r13 = target index
+	fc.out.MovRegToReg("r15", "rdx")  // r15 = arena ptr
 	// Save xmm0 (new value) to r14
 	fc.out.MovqXmmToReg("r14", "xmm0")
 
@@ -7831,10 +7832,12 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MulRegWithImm("rax", 8)
 	fc.out.AddImmToReg("rax", 8)
 
-	// Call malloc
-	fc.out.MovRegToReg("rdi", "rax")
-	fc.trackFunctionCall("malloc")
-	fc.eb.GenerateCallInstruction("malloc")
+	// Allocate from specified arena
+	// Call flap_arena_alloc(rdi=arena_ptr, rsi=size)
+	fc.out.MovRegToReg("rdi", "r15") // arena ptr in rdi
+	fc.out.MovRegToReg("rsi", "rax") // size in rsi
+	fc.trackFunctionCall("flap_arena_alloc")
+	fc.eb.GenerateCallInstruction("flap_arena_alloc")
 	fc.out.MovRegToReg("r12", "rax") // r12 = new list ptr
 
 	// Write length to new list
@@ -7845,21 +7848,21 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovqRegToXmm("xmm2", "r14")
 
 	// Simple loop to copy all elements, updating target index
-	// Use r15 (not saved - can use as scratch) as loop counter (0..length-1)
-	fc.out.XorRegWithReg("r15", "r15") // r15 = 0
+	// Use r8 as loop counter (0..length-1)
+	fc.out.XorRegWithReg("r8", "r8") // r8 = 0
 
 	// Copy loop - iterate over all elements
 	fc.eb.MarkLabel("_list_update_loop")
-	fc.out.CmpRegToReg("r15", "rcx")
+	fc.out.CmpRegToReg("r8", "rcx")
 	fc.out.Emit([]byte{0x7d, 0x2c}) // jge +44 to end
 
-	// Calculate byte offset: r15 * 8 + 8
-	fc.out.MovRegToReg("rax", "r15")
+	// Calculate byte offset: r8 * 8 + 8
+	fc.out.MovRegToReg("rax", "r8")
 	fc.out.ShlRegByImm("rax", 3)
 	fc.out.AddImmToReg("rax", 8)
 
 	// Check if this is the target index
-	fc.out.CmpRegToReg("r15", "r13")
+	fc.out.CmpRegToReg("r8", "r13")
 	fc.out.Emit([]byte{0x75, 0x0d}) // jne +13 (copy old value)
 
 	// This is target index: store new value (in xmm2)
@@ -7877,7 +7880,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovXmmToMem("xmm3", "rsi", 0)
 
 	// Increment and loop back
-	fc.out.AddImmToReg("r15", 1)
+	fc.out.AddImmToReg("r8", 1)
 	fc.out.Emit([]byte{0xeb, 0xca}) // jmp -54 (back to loop start)
 
 	// Return new list pointer
@@ -7885,6 +7888,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Restore stack and registers
 	fc.out.AddImmToReg("rsp", StackSlotSize)
+	fc.out.PopReg("r15")
 	fc.out.PopReg("r14")
 	fc.out.PopReg("r13")
 	fc.out.PopReg("r12")
@@ -7896,6 +7900,110 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	if fc.usesArenas {
 		fc.generateArenaEnsureCapacity()
 	}
+}
+
+// initializeMetaArenaAndGlobalArena initializes the meta-arena and creates arena 0 (global arena)
+func (fc *FlapCompiler) initializeMetaArenaAndGlobalArena() {
+	// Inline initialization of meta-arena with capacity for 1 arena
+	// This avoids calling a function that hasn't been generated yet
+	
+	// Allocate meta-arena array: malloc(8 * 1) = 8 bytes for 1 arena pointer
+	fc.out.MovImmToReg("rdi", "8")
+	fc.trackFunctionCall("malloc")
+	fc.eb.GenerateCallInstruction("malloc")
+	
+	// Store meta-arena pointer
+	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta")
+	fc.out.MovRegToMem("rax", "rbx", 0)
+	
+	// Set meta-arena capacity = 1
+	fc.out.MovImmToReg("rcx", "1")
+	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta_cap")
+	fc.out.MovRegToMem("rcx", "rbx", 0)
+	
+	// Create arena 0 using flap_arena_create
+	// We need to generate a simple arena struct inline
+	// Arena struct: [base_ptr(8), capacity(8), used(8), alignment(8)] = 32 bytes
+	fc.out.MovImmToReg("rdi", "1048576") // Initial arena size: 1MB
+	fc.trackFunctionCall("malloc")
+	fc.eb.GenerateCallInstruction("malloc")
+	fc.out.MovRegToReg("r12", "rax") // r12 = arena buffer
+	
+	// Allocate arena struct: malloc(32)
+	fc.out.MovImmToReg("rdi", "32")
+	fc.trackFunctionCall("malloc")
+	fc.eb.GenerateCallInstruction("malloc")
+	// rax = arena struct pointer
+	
+	// Initialize arena struct
+	fc.out.MovRegToMem("r12", "rax", 0)        // base_ptr = arena buffer
+	fc.out.MovImmToReg("rcx", "1048576")
+	fc.out.MovRegToMem("rcx", "rax", 8)        // capacity = 1MB
+	fc.out.XorRegWithReg("rcx", "rcx")
+	fc.out.MovRegToMem("rcx", "rax", 16)       // used = 0
+	fc.out.MovImmToReg("rcx", "8")
+	fc.out.MovRegToMem("rcx", "rax", 24)       // alignment = 8
+	
+	// Store arena pointer in meta-arena[0]
+	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta")
+	fc.out.MovMemToReg("rbx", "rbx", 0)        // rbx = meta-arena pointer
+	fc.out.MovRegToMem("rax", "rbx", 0)        // meta-arena[0] = arena struct
+	
+	// Set meta-arena len = 1
+	fc.out.MovImmToReg("rcx", "1")
+	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta_len")
+	fc.out.MovRegToMem("rcx", "rbx", 0)
+}
+
+// cleanupAllArenas frees all arenas in the meta-arena
+func (fc *FlapCompiler) cleanupAllArenas() {
+	// Load meta-arena pointer
+	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta")
+	fc.out.MovMemToReg("rbx", "rbx", 0) // rbx = meta-arena pointer
+
+	// Check if meta-arena is NULL (no arenas allocated)
+	fc.out.TestRegReg("rbx", "rbx")
+	skipCleanupJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0) // je skip_cleanup
+
+	// Load meta-arena length
+	fc.out.LeaSymbolToReg("rax", "_flap_arena_meta_len")
+	fc.out.MovMemToReg("rcx", "rax", 0) // rcx = number of arenas
+
+	// Loop through all arenas and free them
+	fc.out.XorRegWithReg("r8", "r8") // r8 = index = 0
+
+	cleanupLoopStart := fc.eb.text.Len()
+	fc.out.CmpRegToReg("r8", "rcx")
+	skipCleanupEnd := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreaterOrEqual, 0) // jge cleanup_done
+
+	// Load arena pointer at index r8
+	fc.out.MovRegToReg("rax", "r8")
+	fc.out.ShlRegByImm("rax", 3) // offset = index * 8
+	fc.out.AddRegToReg("rax", "rbx")
+	fc.out.MovMemToReg("rdi", "rax", 0) // rdi = arena_ptrs[r8]
+
+	// Free the arena
+	fc.trackFunctionCall("free")
+	fc.eb.GenerateCallInstruction("free")
+
+	// Increment index
+	fc.out.AddImmToReg("r8", 1)
+	backOffset := int32(cleanupLoopStart - (fc.eb.text.Len() + UnconditionalJumpSize))
+	fc.out.JumpUnconditional(backOffset)
+
+	// cleanup_done: Free the meta-arena itself
+	cleanupDone := fc.eb.text.Len()
+	fc.patchJumpImmediate(skipCleanupEnd+2, int32(cleanupDone-(skipCleanupEnd+ConditionalJumpSize)))
+
+	fc.out.MovRegToReg("rdi", "rbx") // meta-arena pointer
+	fc.trackFunctionCall("free")
+	fc.eb.GenerateCallInstruction("free")
+
+	// skip_cleanup:
+	skipCleanup := fc.eb.text.Len()
+	fc.patchJumpImmediate(skipCleanupJump+2, int32(skipCleanup-(skipCleanupJump+ConditionalJumpSize)))
 }
 
 // generateArenaEnsureCapacity generates the _flap_arena_ensure_capacity function
@@ -11780,20 +11888,15 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		}
 
 	case "alloc":
-		// alloc(size) - Context-aware memory allocation
-		// Inside arena { }: allocates from arena with auto-growing
-		// Outside arena: error (use malloc via C FFI if needed)
+		// alloc(size) - Allocates memory from current arena
+		// Current arena is always available (starts at arena 1 = meta-arena[0])
 		if len(call.Args) != 1 {
 			compilerError("alloc() requires 1 argument (size)")
 		}
 
-		// Check if we're in an arena context
-		if fc.currentArena == 0 {
-			compilerError("alloc() can only be used inside an arena { ... } block. Use malloc() via C FFI if you need manual memory management.")
-		}
-
 		// Load arena pointer from meta-arena: _flap_arena_meta[currentArena-1]
-		offset := (fc.currentArena - 1) * 8
+		arenaIndex := fc.currentArena - 1 // Convert to 0-based index
+		offset := arenaIndex * 8
 		fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
 		fc.out.MovMemToReg("rdi", "rdi", 0)      // Load the meta-arena pointer
 		fc.out.MovMemToReg("rdi", "rdi", offset) // Load the arena pointer from slot
@@ -12642,7 +12745,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Compile value (leave in xmm0)
 		fc.compileExpression(call.Args[2]) // value -> xmm0
 
-		// Now setup arguments for flap_list_update(rdi=list_ptr, rsi=index, xmm0=value)
+		// Now setup arguments for flap_list_update(rdi=list_ptr, rsi=index, xmm0=value, rcx=arena_ptr)
 		// Pop index into rsi
 		fc.out.MovMemToXmm("xmm1", "rsp", 0)
 		fc.out.AddImmToReg("rsp", 8)
@@ -12654,6 +12757,13 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.MovqXmmToReg("rdi", "xmm2") // rdi = list pointer
 
 		// xmm0 already has the value
+		// Load current arena pointer into rdx (4th argument)
+		arenaIndex := fc.currentArena - 1
+		arenaOffset := arenaIndex * 8
+		fc.out.LeaSymbolToReg("rdx", "_flap_arena_meta")
+		fc.out.MovMemToReg("rdx", "rdx", 0)             // rdx = meta-arena pointer
+		fc.out.MovMemToReg("rdx", "rdx", arenaOffset)   // rdx = arena pointer from slot
+
 		// Call the runtime function
 		fc.trackFunctionCall("_flap_list_update")
 		fc.eb.GenerateCallInstruction("_flap_list_update")
