@@ -542,3 +542,32 @@ func (o *Out) callSymbolX86(symbol string) {
 		targetName: symbol,
 	})
 }
+
+// Cld clears the direction flag (for string operations)
+func (o *Out) Cld() {
+	switch o.target.Arch() {
+	case ArchX86_64:
+		o.Write(0xFC)
+	case ArchARM64:
+		// ARM64 doesn't have direction flag
+	case ArchRiscv64:
+		// RISC-V doesn't have direction flag
+	}
+}
+
+// RepMovsb repeats movsb rcx times (copies rcx bytes from rsi to rdi)
+func (o *Out) RepMovsb() {
+	switch o.target.Arch() {
+	case ArchX86_64:
+		o.Write(0xF3) // REP prefix
+		o.Write(0xA4) // MOVSB
+	case ArchARM64:
+		// ARM64: implement with a loop or memcpy call
+		// For now, just panic - this shouldn't be called for ARM64
+		compilerError("RepMovsb not implemented for ARM64")
+	case ArchRiscv64:
+		// RISC-V: implement with a loop or memcpy call
+		compilerError("RepMovsb not implemented for RISC-V")
+	}
+}
+

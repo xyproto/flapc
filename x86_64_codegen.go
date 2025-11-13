@@ -1136,3 +1136,15 @@ func (x *X86_64CodeGen) Ucomisd(reg1, reg2 string) {
 	modrm := uint8(0xC0) | (uint8(xmm1Num&7) << 3) | uint8(xmm2Num&7)
 	x.write(modrm)
 }
+
+// Cld clears the direction flag (for string operations)
+func (x *X86_64CodeGen) Cld() {
+	x.write(0xFC)
+}
+
+// RepMovsb repeats movsb rcx times (copies rcx bytes from rsi to rdi)
+func (x *X86_64CodeGen) RepMovsb() {
+	x.write(0xF3) // REP prefix
+	x.write(0xA4) // MOVSB
+}
+

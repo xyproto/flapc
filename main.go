@@ -540,6 +540,15 @@ func getSyscallNumbers(target Target) map[string]string {
 func (eb *ExecutableBuilder) PatchCallSites(textAddr uint64) {
 	textBytes := eb.text.Bytes()
 
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG PatchCallSites: Have %d labels, %d call patches\n", len(eb.labels), len(eb.callPatches))
+		for name, offset := range eb.labels {
+			if strings.Contains(name, "arena") {
+				fmt.Fprintf(os.Stderr, "  Label: %s at offset %d\n", name, offset)
+			}
+		}
+	}
+
 	for _, patch := range eb.callPatches {
 		// Find the target symbol address (should be a label in the text section)
 		// For internal functions, try without the $stub suffix first
@@ -554,7 +563,7 @@ func (eb *ExecutableBuilder) PatchCallSites(textAddr uint64) {
 		}
 		if targetOffset < 0 {
 			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "Warning: Label %s not found for call patch\n", patch.targetName)
+				fmt.Fprintf(os.Stderr, "Warning: Label %s not found for call patch (have %d labels total)\n", patch.targetName, len(eb.labels))
 			}
 			continue
 		}
