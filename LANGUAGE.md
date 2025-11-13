@@ -327,9 +327,53 @@ x as float64   // 64-bit float (no-op, native type)
 
 x as ptr       // Raw pointer
 x as cstr      // C null-terminated string
+x as address   // Network/IPC address
 ```
 
 **Important:** Always use full type names (`int32`, `uint64`, `float32`), never abbreviations (`i32`, `u64`, `f32`).
+
+### Address Type
+
+Addresses are a distinct type used for network and IPC communication. They can be converted to and from strings using the `as` keyword:
+
+```flap
+// Address literals
+addr1 := @8080                    // Port on localhost
+addr2 := @localhost:8080          // Explicit localhost
+addr3 := @server.com:8080         // Remote server
+
+// Convert address to string
+addr_str := @8080 as string       // "localhost:8080" or ":8080"
+remote_str := @server.com:8080 as string  // "server.com:8080"
+
+// Convert string to address
+addr := "localhost:8080" as address
+addr2 := ":8080" as address
+
+// Use in sending
+addr <= "message"                 // Send to converted address
+@8080 <= "direct"                 // Send to literal address
+```
+
+**Address Type Properties:**
+- Addresses are stored internally as `map[uint64]float64` (like all Flap values)
+- The map representation encodes port and hostname characters
+- Use `as address` to convert from string
+- Use `as string` to convert to string
+- Address literals use `@` prefix
+- The `from` variable in receive loops is automatically an address type
+
+**Internal Representation:**
+An address is stored as an ordered map with specific keys:
+- `0`: Port number (as float64)
+- `1`, `2`, `3`, ...: Individual characters of hostname (as float64 Unicode code points)
+
+Examples:
+- `@8080` → `{0: 8080.0}` (no hostname, implies localhost)
+- `@localhost:8080` → `{0: 8080.0, 1: 108.0, 2: 111.0, 3: 99.0, 4: 97.0, 5: 108.0, 6: 104.0, 7: 111.0, 8: 115.0, 9: 116.0}` (port + 'localhost')
+- `@server.com:5000` → `{0: 5000.0, 1: 115.0, 2: 101.0, 3: 114.0, 4: 118.0, 5: 101.0, 6: 114.0, 7: 46.0, 8: 99.0, 9: 111.0, 10: 109.0}` (port + 'server.com')
+
+This representation stores addresses exactly like strings, with the port at index 0 and hostname characters at subsequent indices.
 
 ## Grammar
 ## Lexical Elements
@@ -448,8 +492,7 @@ loop_statement  = "@" block
 
 receive_loop    = "@" identifier "," identifier "in" enet_address [ "max" expression ] block ;
 
-jump_statement  = "ret" [ "@" [ number ] ] [ expression ]
-                | "->" expression ;
+jump_statement  = "ret" [ "@" [ number ] ] [ expression ] ;
 
 spawn_statement    = "spawn" expression ;
 
@@ -523,7 +566,7 @@ cast_type               = "int8" | "int16" | "int32" | "int64"
                         | "uint8" | "uint16" | "uint32" | "uint64"
                         | "float32" | "float64"
                         | "cstr" | "ptr"
-                        | "number" | "string" | "list" ;
+                        | "number" | "string" | "list" | "address" ;
 
 primary_expr            = number
                         | string
@@ -604,7 +647,7 @@ These are only keywords in specific contexts (e.g., after `as`):
 
 ```
 int8 int16 int32 int64 uint8 uint16 uint32 uint64 float32 float64
-cstr ptr number string list packed aligned
+cstr ptr number string list address packed aligned
 ```
 
 You can use contextual keywords as variable names:
@@ -1329,6 +1372,15 @@ The receive loop syntax `@ msg, from in @address`:
 @server.com:5000 <= "get_status"
 @5000 <= response  // Receive into 'response' variable
 println(response)
+
+// Working with address variables
+server := @server.com:5000
+server <= "request"
+
+// Convert from string
+addr_string := "localhost:8080"
+addr := addr_string as address
+addr <= "message"
 ```
 
 **Concurrent Workers:**
