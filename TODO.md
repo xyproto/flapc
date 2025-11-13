@@ -1,44 +1,15 @@
 # TODO - Bug Fixes
 
-**Test Status:** 118/147 passing (80.3%)  
+**Test Status:** 122/176 passing (69.3%)  
 **Goal:** 95%+ pass rate for Flap 2.0 release
 
-**Language Spec Status:** ✅ FIXED - Mutability semantics clarified in LANGUAGE.md
+**Recent Progress:** Fixed list literal allocation - all list operations now work except cons operator
 
 ---
 
 ## Critical Bugs
 
-### 1. List/Map Mutation Implementation
-**Failing Tests:** 14 tests (list_update_*, list_cons, map_update)  
-**Root Cause:** `:=` collections stored in .rodata instead of writable memory
-
-**Language Design (NOW CLARIFIED):**
-- `=` creates immutable variable with immutable value (stored in .rodata)
-- `:=` creates mutable variable with mutable value (must be in writable memory)
-
-**Implementation Fix Needed:**
-```flap
-nums := [1, 2, 3]     // Must allocate in writable memory (heap/arena)
-nums[0] <- 99         // Should work (currently segfaults)
-
-readonly = [1, 2, 3]  // Can stay in .rodata
-readonly[0] <- 99     // Should error (currently does)
-```
-
-**Solution:**
-1. When generating code for `:=` with list/map literal:
-   - Allocate writable memory (malloc or arena)
-   - Copy literal data from .rodata to writable memory
-   - Return pointer to writable copy
-2. Keep `=` behavior (direct .rodata reference)
-3. Update codegen.go ListExpr and MapExpr cases
-
-**Files:** `codegen.go` (lines ~3860)
-
----
-
-### 2. Lambda Block Bodies Not Working
+### 1. Lambda Block Bodies Not Working
 **Failing Tests:** 2 tests (lambda_with_block, lambda_match)
 
 **Problem:**
@@ -59,7 +30,7 @@ Single expressions work: `f := x => x + 1`
 
 ---
 
-### 3. Map Update Returns Wrong Value
+### 2. Map Update Returns Wrong Value
 **Failing Tests:** 1 test (map_update)
 
 **Problem:**
@@ -72,24 +43,31 @@ println(m[a])  // Prints 0 instead of 20
 **Investigation:**
 - Check `__flap_map_update` implementation
 - Verify map update codegen generates correct machine code
-- May be related to same root cause as list mutation
 
 **Files:** `codegen.go` (map update logic)
 
 ---
 
-## Medium Priority
+### 3. List Cons Operator Crashes
+**Failing Tests:** 1 test (list_cons)
 
-### 4. Parallel Loop Edge Cases
-**Failing Tests:** 1 test (TestParallelSimpleCompiles)
+**Problem:**
+```flap
+result := 1 :: [2, 3]  // Segfaults
+```
 
-Basic parallel loops work, but some edge case fails. Investigate specific test failure.
+**Investigation:**
+- Check `_flap_list_cons` runtime implementation
+- Verify cons operator codegen in `case "::"`
+- Cons should create new list: [1, 2, 3]
 
-**Files:** `parallel_programs_test.go`
+**Files:** `codegen.go` (lines ~3914-3934)
 
 ---
 
-### 5. ENet Integration
+## Medium Priority
+
+### 4. ENet Integration
 **Failing Tests:** 2 tests (ENet compilation/codegen)
 
 May be test environment issue (missing libenet). Verify:
@@ -101,10 +79,10 @@ May be test environment issue (missing libenet). Verify:
 
 ---
 
-### 6. Compilation Error Tests
-**Failing Tests:** Various error-checking tests
+### 5. Compilation Error Tests
+**Failing Tests:** 1 test (lambda_bad_syntax)
 
-Some tests expect compilation to fail but it succeeds. Review test expectations against LANGUAGE.md spec.
+Test expects compilation to fail but it succeeds. Review test expectations against LANGUAGE.md spec.
 
 **Files:** `compiler_test.go`
 
