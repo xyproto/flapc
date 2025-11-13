@@ -20,6 +20,7 @@ This document describes the complete Flap programming language: syntax, semantic
 - [Functions and Lambdas](#functions-and-lambdas)
 - [Loops](#loops)
 - [Parallel Programming](#parallel-programming)
+- [ENet Channels](#enet-channels-concurrency-via-message-passing)
 - [C FFI](#c-ffi)
 - [CStruct](#cstruct)
 - [Memory Management](#memory-management)
@@ -234,6 +235,7 @@ statement       = use_statement
                 | cstruct_decl
                 | arena_statement
                 | loop_statement
+                | receive_loop
                 | jump_statement
                 | defer_statement
                 | spawn_statement
@@ -259,6 +261,8 @@ arena_statement = "arena" block ;
 loop_statement  = "@" block
                 | "@" identifier "in" expression block
                 | "@@" identifier "in" expression block ;
+
+receive_loop    = "@" identifier "," identifier "in" expression [ "max" expression ] block ;
 
 jump_statement  = "ret" [ "@" [ number ] ] [ expression ]
                 | "->" expression ;
@@ -289,7 +293,9 @@ jump_target     = "ret" [ "@" [ number ] ] [ expression ]
 
 block           = "{" { statement { newline } } "}" ;
 
-expression              = pipe_expr ;
+expression              = send_expr ;
+
+send_expr               = pipe_expr [ "<==" pipe_expr ] ;
 
 pipe_expr               = reduce_pipe_expr { "|||" reduce_pipe_expr } ;
 
@@ -336,6 +342,7 @@ cast_type               = "int8" | "int16" | "int32" | "int64"
 primary_expr            = number
                         | string
                         | fstring
+                        | port_literal
                         | identifier
                         | "(" expression ")"
                         | lambda_expr
@@ -344,6 +351,8 @@ primary_expr            = number
                         | arena_expr
                         | unsafe_expr
                         | "???" ;
+
+port_literal            = ":" number ;
 
 arena_expr              = "arena" "{" { statement { newline } } [ expression ] "}" ;
 
@@ -494,6 +503,19 @@ _     // Tail operator (all but first element of list)
 |     // Sequential pipe (passes value to next function)
 ||    // Parallel pipe (maps function over list elements in parallel)
 |||   // Reduce pipe (summarizes/folds list to single value)
+```
+
+### Concurrency Operators
+
+```flap
+<==   // Send operator (sends message to port/address)
+:5000 // Port literal (ENet server on localhost:5000)
+```
+
+Example:
+```flap
+:8080 <== "hello"                 // Send to local port
+"server.com:8080" <== "data"      // Send to remote address
 ```
 
 ### Other
@@ -1025,6 +1047,82 @@ pid := spawn {
     println("Child running")
 }
 ```
+
+### ENet Channels (Concurrency via Message Passing)
+
+Flap uses **ENet** for all inter-process communication and networking. ENet provides fast, reliable UDP-based messaging that unifies IPC and network communication with the same syntax.
+
+#### Port Literals
+
+```flap
+:5000                    // Port on localhost (ENet server)
+"server.com:5000"        // Remote address (string)
+"192.168.1.100:7777"     // IP + port
+```
+
+#### Sending Messages
+
+The send operator `<==` sends messages to ports:
+
+```flap
+// Send to local port (IPC)
+:5000 <== "hello"
+
+// Send to remote address (network)
+"server.com:8080" <== "data"
+
+// Send arbitrary data
+port := :3000
+port <== f"Status: {value}"
+```
+
+#### Receiving Messages
+
+Use receive loops to handle incoming messages:
+
+```flap
+// Receive loop: @ msg, from in port
+@ msg, from in :5000 {
+    println(f"Got: {msg} from {from}")
+}
+
+// Pattern matching on messages
+@ msg, from in :5000 {
+    msg {
+        "ping" -> from <== "pong"
+        "quit" -> ret
+        ~> from <== "unknown command"
+    }
+}
+
+// With iteration limit
+@ msg, from in :5000 max 100 {
+    process(msg)
+}
+```
+
+The receive loop:
+- **msg**: The received message (string)
+- **from**: Sender address (e.g., "127.0.0.1:51234")
+- Blocks waiting for messages
+- Can use `ret` to exit the loop
+
+#### Complete Example: Echo Server
+
+```flap
+// Echo server on port 8080
+@ msg, from in :8080 {
+    println(f"Received: {msg}")
+    from <== f"Echo: {msg}"
+}
+```
+
+#### ENet Properties
+
+- **Reliable**: Messages delivered in order (like TCP)
+- **Fast**: UDP-based, low latency
+- **Unified**: Same syntax for IPC and network
+- **Simple**: No setup required, just send/receive
 
 ## C FFI
 
