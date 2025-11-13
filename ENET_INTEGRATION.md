@@ -9,27 +9,28 @@
 
 ## Flap Syntax
 
-### Port Literals
+### Address Format
+All addresses are strings:
 ```flap
-:5000                    // Port on localhost (ENet server)
+":5000"                  // Port on localhost (ENet server)
 "server.com:8080"        // Remote address (string)
 ```
 
 ### Sending Messages
 ```flap
-:5000 <== "hello"                // Send to local port
-"192.168.1.100:8080" <== "data"  // Send to remote address
+":5000" <== "hello"                // Send to local port
+"192.168.1.100:8080" <== "data"    // Send to remote address
 ```
 
 ### Receiving Messages
 ```flap
 // Basic receive loop
-@ msg, from in :5000 {
+@ msg, from in ":5000" {
     println(f"Got: {msg} from {from}")
 }
 
 // With pattern matching
-@ msg, from in :8080 {
+@ msg, from in ":8080" {
     msg {
         "ping" -> from <== "pong"
         "quit" -> ret
@@ -38,7 +39,7 @@
 }
 
 // With iteration limit
-@ msg, from in :5000 max 100 {
+@ msg, from in ":5000" max 100 {
     process(msg)
 }
 ```
@@ -54,15 +55,15 @@
 
 ### What Needs to Work
 
-1. **Parse `:5000` as port literal**
-   - Token: `TOKEN_COLON` followed by `TOKEN_NUMBER`
-   - AST: `NumberExpr` with special marker, or `PortLiteralExpr`
+1. **Parse string addresses**
+   - Strings like `":5000"` are just regular strings
+   - No special parsing needed
 
 2. **Parse `target <== message`**
    - Token: `TOKEN_SEND` or `TOKEN_LESS_EQUAL_EQUAL`
    - AST: `SendExpr{Target, Message}`
 
-3. **Parse `@ msg, from in :5000 { ... }`**
+3. **Parse `@ msg, from in ":5000" { ... }`**
    - Already in parser (check for bugs)
    - AST: `ReceiveLoopStmt`
 
@@ -137,7 +138,7 @@ go test -v -run="TestENetMultiClient"
 ### Minimal Working Example
 ```flap
 // server.flap
-@ msg, from in :8080 {
+@ msg, from in ":8080" {
     println(f"Received: {msg}")
     from <== f"Echo: {msg}"
 }
@@ -145,8 +146,8 @@ go test -v -run="TestENetMultiClient"
 
 ```flap
 // client.flap
-:8080 <== "hello"
-@ reply, from in :9000 max 1 {
+":8080" <== "hello"
+@ reply, from in ":9000" max 1 {
     println(f"Got: {reply}")
 }
 ```

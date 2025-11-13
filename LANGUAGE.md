@@ -8,6 +8,7 @@ This document describes the complete Flap programming language: syntax, semantic
 
 ## Table of Contents
 
+- [What Makes Flap Unique](#what-makes-flap-unique)
 - [Overview](#overview)
 - [Design Philosophy](#design-philosophy)
 - [Type System](#type-system)
@@ -28,6 +29,188 @@ This document describes the complete Flap programming language: syntax, semantic
 - [Built-in Functions](#built-in-functions)
 - [Examples](#examples)
 - [Classes and Objects](#classes-and-objects)
+
+## What Makes Flap Unique
+
+Flap brings together several novel or rare features that distinguish it from other systems programming languages:
+
+### 1. **Universal Map Type System**
+The entire language is built on a single type: `map[uint64]float64`. Every value—numbers, strings, lists, functions—is represented as this hash map. This radical simplification enables:
+- No type system complexity
+- Uniform memory representation
+- Natural duck typing
+- Simple FFI (cast to native types only at boundaries)
+
+### 2. **Direct Machine Code Generation (No IR, No LLVM)**
+The compiler emits x86_64, ARM64, and RISCV64 machine code directly from the AST:
+- **No intermediate representation** - AST → machine code in one pass
+- **No dependencies** - completely self-contained compiler
+- **Fast compilation** - no IR translation overhead
+- **Small compiler** - ~30k lines of Go
+- **Deterministic output** - same code every time
+
+### 3. **Match Blocks as Function Bodies**
+Every function body `{ ... }` is actually a match expression:
+```flap
+factorial := n => {
+    n == 0 -> 1
+    ~> n * factorial(n - 1)
+}
+```
+Lines without `->` become the default case. This unifies:
+- Pattern matching
+- Function bodies  
+- Conditional expressions
+- Guard clauses
+
+### 4. **Unified Lambda Syntax (`=>`)**
+All functions—named, anonymous, inline—use the same `=>` arrow:
+```flap
+f := x => x + 1                    // Simple lambda
+g := (x, y) => x * y               // Multiple parameters
+h := x => { x > 0 -> "pos" }       // With match block
+```
+
+### 5. **Bitwise Operators with `b` Suffix**
+All bitwise operations are suffixed with `b` to eliminate ambiguity:
+```flap
+<<b >>b <<<b >>>b    // Shifts and rotates
+&b |b ^b ~b          // Logical operations
+```
+No confusion with `<`, `>`, `&`, `|` in other contexts.
+
+### 6. **Explicit String Encoding (`.bytes`, `.runes`)**
+Strings are UTF-8 by default, but you choose how to iterate:
+```flap
+".bytes"    // Iterate as bytes (uint8)
+".runes"    // Iterate as Unicode code points (runes)
+```
+No hidden cost—you decide the representation.
+
+### 7. **ENet for All Concurrency**
+Instead of channels, goroutines, or async/await, Flap uses **ENet** (reliable UDP) for:
+- Inter-process communication
+- Network messaging  
+- All concurrency coordination
+
+Same syntax for local and remote:
+```flap
+":8080" <== "message"              // Local IPC
+"server.com:8080" <== "message"    // Network
+```
+
+### 8. **Fork-Based Process Model**
+Flap uses Unix `fork()` semantics with `spawn`:
+```flap
+spawn worker()    // New process (copy-on-write)
+```
+No threads, no shared memory bugs—just processes and messages.
+
+### 9. **Pipe Operators for Data Flow**
+Three pipe operators for different execution models:
+```flap
+|      // Sequential pipe: value → function
+||     // Parallel pipe: map over list in parallel  
+|||    // Reduce pipe: fold list to single value
+```
+
+### 10. **C FFI via DWARF Debug Info**
+Import C libraries without writing bindings:
+```flap
+import sdl3 as sdl
+window := sdl.SDL_CreateWindow("Game", 800, 600, 0)
+```
+The compiler reads DWARF debug info to infer function signatures automatically.
+
+### 11. **CStruct with Direct Memory Access**
+Define C-compatible structs with computed field offsets:
+```flap
+cstruct Vec3 {
+    x as float32,
+    y as float32,
+    z as float32
+}
+
+ptr[Vec3.x.offset] <- 1.0 as float32
+```
+Access fields by offset—no marshaling overhead.
+
+### 12. **Arena Allocators as Language Feature**
+Scoped memory management without garbage collection:
+```flap
+result := arena {
+    data := allocate(1024)
+    process(data)
+    final_value
+}
+// All arena memory freed here
+```
+
+### 13. **Tail-Call Optimization Always On**
+The compiler automatically optimizes tail calls—no special syntax required:
+```flap
+factorial := (n, acc) => {
+    n == 0 -> acc
+    ~> factorial(n - 1, acc * n)    // Optimized to loop
+}
+```
+
+### 14. **Cryptographically Secure Random Operator**
+Built-in operator for secure random numbers:
+```flap
+???    // Returns float64 in [0.0, 1.0) from kernel entropy
+```
+Uses `getrandom()` syscall—no seeding needed.
+
+### 15. **Move Operator `!` (Postfix)**
+Explicit ownership transfer:
+```flap
+large_data!    // Moves value, original becomes invalid
+```
+Prevents accidental copies of large structures.
+
+### 16. **Result Type with NaN Error Encoding**
+Errors encoded in NaN bit patterns (no Result<T, E> wrapper):
+```flap
+x := 10 / 0            // Returns NaN with error code
+is_error(x) { ... }    // Check for error
+```
+Zero-cost error handling.
+
+### 17. **Immutable-by-Default**
+Variables are immutable unless explicitly mutable:
+```flap
+x := 5        // Immutable (can't change)
+y <- 10       // Mutable (can change)
+```
+
+### 18. **Named Logical Operators**
+```flap
+and or xor not    // Words, not symbols
+```
+More readable, especially for newcomers.
+
+### 19. **No Garbage Collector**
+Manual memory management with:
+- Stack allocation (default)
+- Arena allocators (scoped)
+- C malloc/free (explicit)
+- No pauses, no runtime overhead
+
+### 20. **Single-Pass Compilation**
+Lexer → Parser → AST → Optimizer → Machine Code → ELF
+- No IR layers
+- Fast incremental builds
+- Predictable compilation times
+
+---
+
+These features combine to create a language that is:
+- **Minimal** - Few concepts, orthogonally combined
+- **Fast** - No runtime, no GC, direct machine code
+- **Explicit** - No magic, no hidden costs
+- **Composable** - Small features that work together
+- **Pragmatic** - Solves real problems with simple tools
 
 ## Overview
 
@@ -342,7 +525,6 @@ cast_type               = "int8" | "int16" | "int32" | "int64"
 primary_expr            = number
                         | string
                         | fstring
-                        | port_literal
                         | identifier
                         | "(" expression ")"
                         | lambda_expr
@@ -351,8 +533,6 @@ primary_expr            = number
                         | arena_expr
                         | unsafe_expr
                         | "???" ;
-
-port_literal            = ":" number ;
 
 arena_expr              = "arena" "{" { statement { newline } } [ expression ] "}" ;
 
@@ -508,14 +688,13 @@ _     // Tail operator (all but first element of list)
 ### Concurrency Operators
 
 ```flap
-<==   // Send operator (sends message to port/address)
-:5000 // Port literal (ENet server on localhost:5000)
+<==   // Send operator (sends message to address)
 ```
 
-Example:
+All addresses are strings:
 ```flap
-:8080 <== "hello"                 // Send to local port
-"server.com:8080" <== "data"      // Send to remote address
+":8080" <== "hello"                  // Send to local port (IPC)
+"server.com:8080" <== "data"         // Send to remote address (network)
 ```
 
 ### Other
@@ -1052,27 +1231,29 @@ pid := spawn {
 
 Flap uses **ENet** for all inter-process communication and networking. ENet provides fast, reliable UDP-based messaging that unifies IPC and network communication with the same syntax.
 
-#### Port Literals
+#### Address Format
+
+All addresses are strings:
 
 ```flap
-:5000                    // Port on localhost (ENet server)
-"server.com:5000"        // Remote address (string)
+":5000"                  // Port on localhost (IPC - fast)
+"server.com:5000"        // Remote address (network)
 "192.168.1.100:7777"     // IP + port
 ```
 
 #### Sending Messages
 
-The send operator `<==` sends messages to ports:
+The send operator `<==` sends messages to addresses:
 
 ```flap
 // Send to local port (IPC)
-:5000 <== "hello"
+":5000" <== "hello"
 
 // Send to remote address (network)
 "server.com:8080" <== "data"
 
 // Send arbitrary data
-port := :3000
+port := ":3000"
 port <== f"Status: {value}"
 ```
 
@@ -1081,13 +1262,13 @@ port <== f"Status: {value}"
 Use receive loops to handle incoming messages:
 
 ```flap
-// Receive loop: @ msg, from in port
-@ msg, from in :5000 {
+// Receive loop: @ msg, from in address
+@ msg, from in ":5000" {
     println(f"Got: {msg} from {from}")
 }
 
 // Pattern matching on messages
-@ msg, from in :5000 {
+@ msg, from in ":5000" {
     msg {
         "ping" -> from <== "pong"
         "quit" -> ret
@@ -1096,7 +1277,7 @@ Use receive loops to handle incoming messages:
 }
 
 // With iteration limit
-@ msg, from in :5000 max 100 {
+@ msg, from in ":5000" max 100 {
     process(msg)
 }
 ```
@@ -1111,7 +1292,7 @@ The receive loop:
 
 ```flap
 // Echo server on port 8080
-@ msg, from in :8080 {
+@ msg, from in ":8080" {
     println(f"Received: {msg}")
     from <== f"Echo: {msg}"
 }
