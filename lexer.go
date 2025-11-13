@@ -65,10 +65,6 @@ const (
 	TOKEN_OR               // or keyword
 	TOKEN_NOT              // not keyword
 	TOKEN_XOR              // xor keyword
-	TOKEN_SHL              // shl keyword
-	TOKEN_SHR              // shr keyword
-	TOKEN_ROL              // rol keyword
-	TOKEN_ROR              // ror keyword
 	TOKEN_INCREMENT        // ++
 	TOKEN_DECREMENT        // --
 	TOKEN_FMA              // *+ (fused multiply-add)
@@ -90,10 +86,10 @@ const (
 	TOKEN_TILDE_B    // ~b (bitwise NOT)
 	TOKEN_CARET      // ^ (head of list)
 	TOKEN_AMP        // & (tail of list) (reference or address operator)
-	TOKEN_LT_B       // <b (shift left)
-	TOKEN_GT_B       // >b (shift right)
-	TOKEN_LTLT_B     // <<b (rotate left)
-	TOKEN_GTGT_B     // >>b (rotate right)
+	TOKEN_LTLT_B     // <<b (shift left)
+	TOKEN_GTGT_B     // >>b (shift right)
+	TOKEN_LTLTLT_B   // <<<b (rotate left)
+	TOKEN_GTGTGT_B   // >>>b (rotate right)
 	TOKEN_AS         // as (type casting)
 	// C type keywords
 	TOKEN_I8   // i8
@@ -469,14 +465,6 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_CLASS, Value: value, Line: l.line, Column: tokenColumn}
 		case "xor":
 			return Token{Type: TOKEN_XOR, Value: value, Line: l.line, Column: tokenColumn}
-		case "shl":
-			return Token{Type: TOKEN_SHL, Value: value, Line: l.line, Column: tokenColumn}
-		case "shr":
-			return Token{Type: TOKEN_SHR, Value: value, Line: l.line, Column: tokenColumn}
-		case "rol":
-			return Token{Type: TOKEN_ROL, Value: value, Line: l.line, Column: tokenColumn}
-		case "ror":
-			return Token{Type: TOKEN_ROR, Value: value, Line: l.line, Column: tokenColumn}
 			// Note: All type keywords (i8, i16, i32, i64, u8, u16, u32, u64, f32, f64,
 			// cstr, ptr, number, string, list) are contextual keywords.
 			// They are only treated as type keywords after "as" in cast expressions.
@@ -598,7 +586,7 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_EQUALS, Value: "=", Line: l.line, Column: tokenColumn}
 	case '<':
-		// Check for <>, then <-?, then <-, then <<b (rotate left), then <b (shift left), then <=, then <
+		// Check for <>, then <-?, then <-, then <<<b (rotate left), then <<b (shift left), then <=, then <
 		if l.peek() == '>' {
 			l.pos += 2
 			return Token{Type: TOKEN_LTGT, Value: "<>", Line: l.line, Column: tokenColumn}
@@ -612,13 +600,16 @@ func (l *Lexer) NextToken() Token {
 			l.pos += 2
 			return Token{Type: TOKEN_LEFT_ARROW, Value: "<-", Line: l.line, Column: tokenColumn}
 		}
+		// Check for <<<b (rotate left) - must check before <<b
+		if l.peek() == '<' && l.pos+2 < len(l.input) && l.input[l.pos+2] == '<' && 
+		   l.pos+3 < len(l.input) && l.input[l.pos+3] == 'b' {
+			l.pos += 4
+			return Token{Type: TOKEN_LTLTLT_B, Value: "<<<b", Line: l.line, Column: tokenColumn}
+		}
+		// Check for <<b (shift left)
 		if l.peek() == '<' && l.pos+2 < len(l.input) && l.input[l.pos+2] == 'b' {
 			l.pos += 3
 			return Token{Type: TOKEN_LTLT_B, Value: "<<b", Line: l.line, Column: tokenColumn}
-		}
-		if l.peek() == 'b' {
-			l.pos += 2
-			return Token{Type: TOKEN_LT_B, Value: "<b", Line: l.line, Column: tokenColumn}
 		}
 		if l.peek() == '=' {
 			if l.pos+2 < len(l.input) && l.input[l.pos+2] == '=' {
@@ -631,14 +622,17 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_LT, Value: "<", Line: l.line, Column: tokenColumn}
 	case '>':
-		// Check for >>b (rotate right), then >b (shift right), then >=, then >
+		// Check for >>>b (rotate right), then >>b (shift right), then >=, then >
+		// Check for >>>b (rotate right) - must check before >>b
+		if l.peek() == '>' && l.pos+2 < len(l.input) && l.input[l.pos+2] == '>' && 
+		   l.pos+3 < len(l.input) && l.input[l.pos+3] == 'b' {
+			l.pos += 4
+			return Token{Type: TOKEN_GTGTGT_B, Value: ">>>b", Line: l.line, Column: tokenColumn}
+		}
+		// Check for >>b (shift right)
 		if l.peek() == '>' && l.pos+2 < len(l.input) && l.input[l.pos+2] == 'b' {
 			l.pos += 3
 			return Token{Type: TOKEN_GTGT_B, Value: ">>b", Line: l.line, Column: tokenColumn}
-		}
-		if l.peek() == 'b' {
-			l.pos += 2
-			return Token{Type: TOKEN_GT_B, Value: ">b", Line: l.line, Column: tokenColumn}
 		}
 		if l.peek() == '=' {
 			l.pos += 2

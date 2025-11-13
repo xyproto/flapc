@@ -541,8 +541,7 @@ func (p *Parser) parseAliasStmt() *AliasStmt {
 		TOKEN_AT: true, TOKEN_IN: true, TOKEN_RET: true, TOKEN_ERR: true,
 		TOKEN_UNSAFE: true, TOKEN_ARENA: true, TOKEN_DEFER: true,
 		TOKEN_MAX: true, TOKEN_INF: true, TOKEN_AND: true, TOKEN_OR: true,
-		TOKEN_NOT: true, TOKEN_XOR: true, TOKEN_SHL: true, TOKEN_SHR: true,
-		TOKEN_ROL: true, TOKEN_ROR: true, TOKEN_AT_PLUSPLUS: true,
+		TOKEN_NOT: true, TOKEN_XOR: true, TOKEN_AT_PLUSPLUS: true,
 	}
 
 	// Special handling for @ operators (break/continue)
@@ -2846,12 +2845,10 @@ func (p *Parser) parseAdditive() Expression {
 func (p *Parser) parseBitwise() Expression {
 	left := p.parseMultiplicative()
 
-	for p.peek.Type == TOKEN_SHL || p.peek.Type == TOKEN_SHR ||
-		p.peek.Type == TOKEN_ROL || p.peek.Type == TOKEN_ROR ||
-		p.peek.Type == TOKEN_PIPE_B || p.peek.Type == TOKEN_AMP_B ||
-		p.peek.Type == TOKEN_CARET_B || p.peek.Type == TOKEN_LT_B ||
-		p.peek.Type == TOKEN_GT_B || p.peek.Type == TOKEN_LTLT_B ||
-		p.peek.Type == TOKEN_GTGT_B {
+	for p.peek.Type == TOKEN_PIPE_B || p.peek.Type == TOKEN_AMP_B ||
+		p.peek.Type == TOKEN_CARET_B || p.peek.Type == TOKEN_LTLT_B ||
+		p.peek.Type == TOKEN_GTGT_B || p.peek.Type == TOKEN_LTLTLT_B ||
+		p.peek.Type == TOKEN_GTGTGT_B {
 		p.nextToken()
 		op := p.current.Value
 		p.nextToken()

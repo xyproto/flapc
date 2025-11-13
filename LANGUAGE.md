@@ -313,7 +313,7 @@ additive_expr           = cons_expr { ("+" | "-") cons_expr } ;
 
 cons_expr               = bitwise_expr { "::" bitwise_expr } ;
 
-bitwise_expr            = multiplicative_expr { ("|b" | "&b" | "^b" | "<b" | ">b" | "<<b" | ">>b") multiplicative_expr } ;
+bitwise_expr            = multiplicative_expr { ("|b" | "&b" | "^b" | "<<b" | ">>b" | "<<<b" | ">>>b") multiplicative_expr } ;
 
 multiplicative_expr     = power_expr { ("*" | "/" | "%" | "*+") power_expr } ;
 
@@ -453,14 +453,14 @@ Logical operators (`and`, `or`) have appropriate precedence so that expressions 
 ### Bitwise
 
 ```flap
-&b    // Bitwise AND
-|b    // Bitwise OR
-^b    // Bitwise XOR
-~b    // Bitwise NOT
-<b    // Shift left (logical)
->b    // Shift right (logical)
-<<b   // Rotate left
->>b   // Rotate right
+&b     // Bitwise AND
+|b     // Bitwise OR
+^b     // Bitwise XOR
+~b     // Bitwise NOT
+<<b    // Shift left
+>>b    // Shift right
+<<<b   // Rotate left
+>>>b   // Rotate right
 ```
 
 ### Assignment

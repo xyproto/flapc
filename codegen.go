@@ -3756,25 +3756,25 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			offset := int32(endPos - (skipPos + 6))
 			fc.patchJumpImmediate(skipPos+2, offset)
 			// xmm0 now contains either original value (if not NaN) or default (if NaN)
-		case "shl":
+		case "<<b":
 			// Shift left: convert to int64, shift, convert back
 			fc.out.Cvttsd2si("rax", "xmm0") // rax = int64(xmm0)
 			fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int64(xmm1)
 			fc.out.ShlClReg("rax", "cl")    // rax <<= cl
 			fc.out.Cvtsi2sd("xmm0", "rax")  // xmm0 = float64(rax)
-		case "shr":
+		case ">>b":
 			// Shift right: convert to int64, shift, convert back
 			fc.out.Cvttsd2si("rax", "xmm0") // rax = int64(xmm0)
 			fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int64(xmm1)
 			fc.out.ShrClReg("rax", "cl")    // rax >>= cl
 			fc.out.Cvtsi2sd("xmm0", "rax")  // xmm0 = float64(rax)
-		case "rol":
+		case "<<<b":
 			// Rotate left: convert to int64, rotate, convert back
 			fc.out.Cvttsd2si("rax", "xmm0") // rax = int64(xmm0)
 			fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int64(xmm1)
 			fc.out.RolClReg("rax", "cl")    // rol rax, cl
 			fc.out.Cvtsi2sd("xmm0", "rax")  // xmm0 = float64(rax)
-		case "ror":
+		case ">>>b":
 			// Rotate right: convert to int64, rotate, convert back
 			fc.out.Cvttsd2si("rax", "xmm0") // rax = int64(xmm0)
 			fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int64(xmm1)
@@ -3798,30 +3798,6 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.Cvttsd2si("rcx", "xmm1")    // rcx = int64(xmm1)
 			fc.out.XorRegWithReg("rax", "rcx") // rax ^= rcx
 			fc.out.Cvtsi2sd("xmm0", "rax")     // xmm0 = float64(rax)
-		case "<b":
-			// Shift left (same as shl): convert to int64, shift, convert back
-			fc.out.Cvttsd2si("rax", "xmm0") // rax = int64(xmm0)
-			fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int64(xmm1)
-			fc.out.ShlClReg("rax", "cl")    // rax <<= cl
-			fc.out.Cvtsi2sd("xmm0", "rax")  // xmm0 = float64(rax)
-		case ">b":
-			// Shift right (same as shr): convert to int64, shift, convert back
-			fc.out.Cvttsd2si("rax", "xmm0") // rax = int64(xmm0)
-			fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int64(xmm1)
-			fc.out.ShrClReg("rax", "cl")    // rax >>= cl
-			fc.out.Cvtsi2sd("xmm0", "rax")  // xmm0 = float64(rax)
-		case "<<b":
-			// Rotate left (same as rol): convert to int64, rotate, convert back
-			fc.out.Cvttsd2si("rax", "xmm0") // rax = int64(xmm0)
-			fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int64(xmm1)
-			fc.out.RolClReg("rax", "cl")    // rol rax, cl
-			fc.out.Cvtsi2sd("xmm0", "rax")  // xmm0 = float64(rax)
-		case ">>b":
-			// Rotate right (same as ror): convert to int64, rotate, convert back
-			fc.out.Cvttsd2si("rax", "xmm0") // rax = int64(xmm0)
-			fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int64(xmm1)
-			fc.out.RorClReg("rax", "cl")    // ror rax, cl
-			fc.out.Cvtsi2sd("xmm0", "rax")  // xmm0 = float64(rax)
 		case "**":
 			// Power: call pow(base, exponent) from libm
 			// xmm0 = base, xmm1 = exponent -> result in xmm0
