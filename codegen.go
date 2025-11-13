@@ -3860,60 +3860,50 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		fc.compileExpression(listExpr)
 
 	case *ListExpr:
-		// Following Lisp philosophy: even empty lists are objects (length=0), not null
-		// Create list data in .rodata and return pointer
+		// Lists must be mutable - allocate on heap using malloc
 		// List format: [length (8 bytes)] [element1] [element2] ...
-
-		// Allocate list data in .rodata
-		labelName := fmt.Sprintf("list_%d", fc.stringCounter)
-		fc.stringCounter++
-
-		// Store list as: [length (8 bytes)] [element1] [element2] ...
-		var listData []byte
-
-		// First, add length as float64
-		length := float64(len(e.Elements))
-		lengthBits := uint64(0)
-		*(*float64)(unsafe.Pointer(&lengthBits)) = length
-		listData = append(listData, byte(lengthBits&ByteMask))
-		listData = append(listData, byte((lengthBits>>8)&ByteMask))
-		listData = append(listData, byte((lengthBits>>16)&ByteMask))
-		listData = append(listData, byte((lengthBits>>24)&ByteMask))
-		listData = append(listData, byte((lengthBits>>32)&ByteMask))
-		listData = append(listData, byte((lengthBits>>40)&ByteMask))
-		listData = append(listData, byte((lengthBits>>48)&ByteMask))
-		listData = append(listData, byte((lengthBits>>56)&ByteMask))
-
-		// Then add elements
-		for _, elem := range e.Elements {
-			// Evaluate element to get float64 value
-			// For now, only support number literals
-			if numExpr, ok := elem.(*NumberExpr); ok {
-				val := numExpr.Value
-				// Convert float64 to 8 bytes (little-endian)
-				bits := uint64(0)
-				*(*float64)(unsafe.Pointer(&bits)) = val
-				listData = append(listData, byte(bits&ByteMask))
-				listData = append(listData, byte((bits>>8)&ByteMask))
-				listData = append(listData, byte((bits>>16)&ByteMask))
-				listData = append(listData, byte((bits>>24)&ByteMask))
-				listData = append(listData, byte((bits>>32)&ByteMask))
-				listData = append(listData, byte((bits>>40)&ByteMask))
-				listData = append(listData, byte((bits>>48)&ByteMask))
-				listData = append(listData, byte((bits>>56)&ByteMask))
-			} else {
-				compilerError("list literal elements must be constant numbers")
-			}
+		length := len(e.Elements)
+		
+		// Calculate size: 8 bytes for length + (length * 8) bytes for elements
+		sizeInBytes := 8 + (length * 8)
+		
+		// Save callee-saved register
+		fc.out.PushReg("r12")
+		
+		// Align stack for malloc call (16-byte alignment required)
+		fc.out.SubImmFromReg("rsp", 8)
+		
+		// Call malloc to allocate memory
+		fc.out.MovImmToReg("rdi", strconv.Itoa(sizeInBytes))
+		fc.trackFunctionCall("malloc")
+		fc.eb.GenerateCallInstruction("malloc")
+		// rax now contains the pointer to allocated memory
+		
+		// Restore stack alignment
+		fc.out.AddImmToReg("rsp", 8)
+		
+		// Save pointer to r12
+		fc.out.MovRegToReg("r12", "rax")
+		
+		// Write length as first float64
+		fc.out.MovImmToReg("rax", strconv.Itoa(length))
+		fc.out.Cvtsi2sd("xmm1", "rax")
+		fc.out.MovXmmToMem("xmm1", "r12", 0)
+		
+		// Write each element
+		for i, elem := range e.Elements {
+			// Compile element expression into xmm0
+			fc.compileExpression(elem)
+			// Write to list[i+1] (offset 8 + i*8)
+			offset := 8 + (i * 8)
+			fc.out.MovXmmToMem("xmm0", "r12", offset)
 		}
-
-		fc.eb.Define(labelName, string(listData))
-		fc.out.LeaSymbolToReg("rax", labelName)
-		// Convert pointer to float64: reinterpret rax as xmm0
-		// Push rax to stack, then load as float64 into xmm0
-		fc.out.SubImmFromReg("rsp", StackSlotSize)
-		fc.out.MovRegToMem("rax", "rsp", 0)
-		fc.out.MovMemToXmm("xmm0", "rsp", 0)
-		fc.out.AddImmToReg("rsp", StackSlotSize)
+		
+		// Return pointer in xmm0 (convert pointer to float64)
+		fc.out.MovqRegToXmm("xmm0", "r12")
+		
+		// Restore r12
+		fc.out.PopReg("r12")
 
 	case *InExpr:
 		// Membership testing: value in container
@@ -7613,10 +7603,8 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PushReg("r14")
 
 	// Align stack: call(8) + push rbp(8) + 4 pushes(32) = 48 bytes (ALIGNED)
-	// After 48 bytes, rsp is at 16n-48 which is aligned
-	// C functions expect rsp at 16n-8 before CALL (so after CALL it's at 16n-16 = aligned)
-	// So we need to be at 16n-48 which is already 16n (mod 16), meaning misaligned by 8! Perfect.
-	// NO NEED to adjust stack - it's already correctly misaligned
+	// Need to subtract 8 to be misaligned by 8 before calling malloc
+	fc.out.SubImmFromReg("rsp", StackSlotSize)
 
 	// Save arguments
 	fc.out.MovRegToReg("r12", "rdi") // r12 = element bits
@@ -7681,6 +7669,9 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Return result pointer in rax
 	fc.out.MovRegToReg("rax", "r10")
+
+	// Restore stack alignment
+	fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	// Restore callee-saved registers
 	fc.out.PopReg("r14")
@@ -7813,23 +7804,22 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// TODO: Migrate to arena-based allocation instead of malloc
 	fc.eb.MarkLabel("_flap_list_update")
 
-	// Function prologue - exactly like _flap_list_cons
+	// Function prologue
 	fc.out.PushReg("rbp")
 	fc.out.MovRegToReg("rbp", "rsp")
 	fc.out.PushReg("rbx") // old list ptr
 	fc.out.PushReg("r12") // new list ptr
 	fc.out.PushReg("r13") // target index
-	fc.out.PushReg("r14") // new value bits (low 32)
-	fc.out.PushReg("r15") // new value bits (high 32)
+	fc.out.PushReg("r14") // new value bits
 
-	// Stack: call(8) + rbp(8) + 5 regs(40) = 56 bytes
-	// Subtract 8 to make 64 bytes total -> misaligned by 8 before malloc
+	// Stack: call(8) + rbp(8) + 4 regs(32) = 48 bytes (aligned)
+	// Subtract 8 to make 56 bytes total -> misaligned by 8 before malloc
 	fc.out.SubImmFromReg("rsp", StackSlotSize)
 
 	// Save arguments
 	fc.out.MovRegToReg("rbx", "rdi") // rbx = old list ptr
 	fc.out.MovRegToReg("r13", "rsi") // r13 = target index
-	// Save xmm0 (new value) via r14:r15
+	// Save xmm0 (new value) to r14
 	fc.out.MovqXmmToReg("r14", "xmm0")
 
 	// Get length from old list
@@ -7855,7 +7845,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovqRegToXmm("xmm2", "r14")
 
 	// Simple loop to copy all elements, updating target index
-	// Use r15 as loop counter (0..length-1)
+	// Use r15 (not saved - can use as scratch) as loop counter (0..length-1)
 	fc.out.XorRegWithReg("r15", "r15") // r15 = 0
 
 	// Copy loop - iterate over all elements
@@ -7895,7 +7885,6 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Restore stack and registers
 	fc.out.AddImmToReg("rsp", StackSlotSize)
-	fc.out.PopReg("r15")
 	fc.out.PopReg("r14")
 	fc.out.PopReg("r13")
 	fc.out.PopReg("r12")
