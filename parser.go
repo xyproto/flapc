@@ -757,7 +757,7 @@ func (p *Parser) parseClassDecl() *ClassDecl {
 			// Parse lambda expression - need to handle different lambda forms
 			var lambda *LambdaExpr
 
-			if p.current.Type == TOKEN_EQUALS_FAT_ARROW {
+			if p.current.Type == TOKEN_FAT_ARROW {
 				// No-argument lambda: ==> body
 				p.nextToken() // skip '==>'
 				body := p.parseLambdaBody()
@@ -993,7 +993,7 @@ func (p *Parser) parseStatement() Statement {
 
 	// Check for assignment (=, :=, ==>, <-, with optional type annotation, and compound assignments)
 	if p.current.Type == TOKEN_IDENT {
-		if p.peek.Type == TOKEN_EQUALS || p.peek.Type == TOKEN_EQUALS_FAT_ARROW || p.peek.Type == TOKEN_COLON_EQUALS || p.peek.Type == TOKEN_LEFT_ARROW || p.peek.Type == TOKEN_COLON ||
+		if p.peek.Type == TOKEN_EQUALS || p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_COLON_EQUALS || p.peek.Type == TOKEN_LEFT_ARROW || p.peek.Type == TOKEN_COLON ||
 			p.peek.Type == TOKEN_PLUS_EQUALS || p.peek.Type == TOKEN_MINUS_EQUALS ||
 			p.peek.Type == TOKEN_STAR_EQUALS || p.peek.Type == TOKEN_POWER_EQUALS || p.peek.Type == TOKEN_SLASH_EQUALS || p.peek.Type == TOKEN_MOD_EQUALS {
 			if isHot {
@@ -1033,7 +1033,7 @@ func (p *Parser) tryParseNonParenLambda() Expression {
 
 	// Single param: x => or x ==>
 	firstParam := p.current.Value
-	if p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_EQUALS_FAT_ARROW {
+	if p.peek.Type == TOKEN_FAT_ARROW {
 		p.nextToken() // skip param
 		p.nextToken() // skip '=>' or '==>'
 		body := p.parseLambdaBody()
@@ -1064,7 +1064,7 @@ func (p *Parser) tryParseNonParenLambda() Expression {
 
 		params = append(params, p.current.Value)
 
-		if p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_EQUALS_FAT_ARROW {
+		if p.peek.Type == TOKEN_FAT_ARROW {
 			// Found the fat arrow! This is a lambda
 			p.nextToken() // skip last param
 			p.nextToken() // skip '=>' or '==>'
@@ -1221,7 +1221,7 @@ func (p *Parser) parseAssignmentWithHot(isHot bool) *AssignStmt {
 	mutable := p.current.Type == TOKEN_COLON_EQUALS || isUpdate
 
 	// Handle ==> as shorthand for = =>
-	isEqualsArrow := p.current.Type == TOKEN_EQUALS_FAT_ARROW
+	isEqualsArrow := p.current.Type == TOKEN_FAT_ARROW
 
 	p.nextToken() // skip '=' or ':=' or '<-' or '==>' or compound operator
 
@@ -3211,7 +3211,7 @@ func (p *Parser) parsePrimary() Expression {
 		expr := p.parsePrimary()
 		return &LengthExpr{Operand: expr}
 
-	case TOKEN_EQUALS_FAT_ARROW:
+	case TOKEN_FAT_ARROW:
 		// No-argument lambda: ==> body
 		p.nextToken() // skip '==>'
 		body := p.parseLambdaBody()
@@ -3398,7 +3398,7 @@ func (p *Parser) parsePrimary() Expression {
 
 		// Check for empty parameter list: () =>, () ==>, or () ->
 		if p.current.Type == TOKEN_RPAREN {
-			if p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_EQUALS_FAT_ARROW || p.peek.Type == TOKEN_ARROW {
+			if p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_ARROW {
 				p.nextToken() // skip ')'
 				p.nextToken() // skip '=>', '==>', or '->'
 				body := p.parseLambdaBody()
@@ -3469,7 +3469,7 @@ func (p *Parser) parsePrimary() Expression {
 			}
 
 			// peek should be '=>', '==>', or '->'
-			if p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_EQUALS_FAT_ARROW || p.peek.Type == TOKEN_ARROW {
+			if p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_ARROW {
 				// It's a lambda!
 				p.nextToken() // skip ')'
 				p.nextToken() // skip '=>', '==>', or '->'

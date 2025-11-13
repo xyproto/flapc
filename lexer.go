@@ -574,10 +574,11 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_COLON, Value: ":", Line: l.line, Column: tokenColumn}
 	case '=':
-		// Check for ==> (must check before =>)
+		// Check for ==> (legacy syntax, now treated as =>)
 		if l.peek() == '=' && l.peekAhead(1) == '>' {
 			l.pos += 3
-			return Token{Type: TOKEN_EQUALS_FAT_ARROW, Value: "==>", Line: l.line, Column: tokenColumn}
+			// Return FAT_ARROW instead of EQUALS_FAT_ARROW (unified syntax)
+			return Token{Type: TOKEN_FAT_ARROW, Value: "=>", Line: l.line, Column: tokenColumn}
 		}
 		// Check for =>
 		if l.peek() == '>' {

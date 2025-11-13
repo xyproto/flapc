@@ -43,7 +43,7 @@ println(calculate(5, 3))
 		},
 		{
 			name: "recursive_lambda",
-			source: `factorial := (n, acc) ==> n == 0 {
+			source: `factorial := (n, acc) => n == 0 {
     -> acc
     ~> factorial(n-1, n*acc) max 100
 }
@@ -53,7 +53,7 @@ println(factorial(5, 1))
 		},
 		{
 			name: "lambda_match",
-			source: `classify := x ==> x {
+			source: `classify := x => x {
     0 -> "zero"
     ~> x > 0 { -> "positive" ~> "negative" }
 }

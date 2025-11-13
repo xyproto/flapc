@@ -351,13 +351,15 @@ unsafe_expr             = "unsafe" "{" { statement { newline } } [ expression ] 
                           [ "{" { statement { newline } } [ expression ] "}" ]
                           [ "{" { statement { newline } } [ expression ] "}" ] ;
 
-lambda_expr             = [ parameter_list ] ("=>" | "==>") lambda_body ;
+lambda_expr             = [ parameter_list ] "=>" lambda_body ;
 
 lambda_body             = block | expression [ match_block ] ;
 
 // Lambda arrow semantics:
-// => : Regular function (returns expression or block value)
-// ==> : Match function (body is match block with -> and ~> arms)
+// => : Unified arrow for all functions
+// Block semantics inferred from content:
+//   - Contains -> or ~> : match block
+//   - No arrows : statement block
 
 parameter_list          = identifier [ "," identifier ]*
                         | "(" [ identifier [ "," identifier ]* ] ")" ;
@@ -730,13 +732,13 @@ x > 0 {
 
 ```flap
 // Explicit tail call with ->
-factorial = (n, acc) ==> n == 0 {
+factorial = (n, acc) => n == 0 {
     -> acc                    // Return accumulator
     ~> factorial(n-1, n*acc)  // Tail call (no stack growth)
 }
 
 // Multi-way tail calls
-fib = n ==> n {
+fib = n => n {
     0 -> 0
     1 -> 1
     ~> fib(n-1) + fib(n-2)
@@ -788,10 +790,10 @@ safe_alloc = size => {
 
 ### Lambda Syntax
 
-Flap uses two lambda arrows to distinguish function types:
+Flap uses a single lambda arrow `=>` for all functions. The block semantics are automatically inferred from the content:
 
-- `=>` for regular functions (returns expression or block value)
-- `==>` for match functions (body contains match arms with `->` and `~>`)
+- **Regular function**: Block contains statements without match arrows (`->` or `~>`)
+- **Match function**: Block contains match arrows (`->` or `~>`)
 
 ```flap
 // Single parameter - regular function
@@ -800,21 +802,21 @@ square = x => x * x
 // Multiple parameters - regular function
 add = (a, b) => a + b
 
-// Block body - regular function
+// Block body - regular function (no arrows)
 complex = (x, y) => {
     temp := x * 2
     result := temp + y
     ret result
 }
 
-// Match function - returns match block result
-classify = x ==> x {
+// Match function - block contains arrows
+classify = x => x {
     0 -> "zero"
     ~> x > 0 { -> "positive" ~> "negative" }
 }
 
 // Match function with condition
-factorial = (n, acc) ==> n == 0 {
+factorial = (n, acc) => n == 0 {
     -> acc
     ~> factorial(n-1, n*acc)
 }
@@ -829,10 +831,10 @@ greet => {
 }
 ```
 
-**Key Distinctions:**
-- Use `=>` when the function body is a statement block `{ statements }` or expression
-- Use `==>` when the function body is a match block with `->` and `~>` arms
-- This makes the function's intent clear at the definition site
+**Key Rule:**
+- A block `{ ... }` is treated as a **match block** if it contains `->` or `~>` arrows
+- Otherwise, it's treated as a **statement block** where the last expression is returned
+- This makes the distinction natural and eliminates the need for two arrow types
 
 **Parameter Syntax Rules:**
 
@@ -1491,7 +1493,7 @@ factorial = n => {
 }
 
 // Tail-recursive
-factorial = (n, acc) ==> n == 0 {
+factorial = (n, acc) => n == 0 {
     -> acc
     ~> factorial(n-1, n*acc)
 }
@@ -1500,7 +1502,7 @@ factorial = (n, acc) ==> n == 0 {
 ### Fibonacci
 
 ```flap
-fib = n ==> n < 2 {
+fib = n => n < 2 {
     -> n
     ~> fib(n-1) + fib(n-2)
 }
@@ -1966,7 +1968,7 @@ extend_decl = "<>" identifier ;
 
 method_decl = identifier "=" lambda_expr ;
 
-lambda_expr = [ parameter_list ] ("=>" | "==>") lambda_body ;
+lambda_expr = [ parameter_list ] "=>" lambda_body ;
 
 primary_expr = ...
              | "." identifier ;  // Instance field access (inside class)
