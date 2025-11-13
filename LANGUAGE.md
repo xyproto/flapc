@@ -59,7 +59,7 @@ factorial := n => {
 ```
 Lines without `->` become the default case. This unifies:
 - Pattern matching
-- Function bodies  
+- Function bodies
 - Conditional expressions
 - Guard clauses
 
@@ -90,20 +90,20 @@ No hidden cost—you decide the representation.
 ### 7. **ENet for All Concurrency**
 Instead of channels, goroutines, or async/await, Flap uses **ENet** (reliable UDP) for:
 - Inter-process communication
-- Network messaging  
+- Network messaging
 - All concurrency coordination
 
 Same syntax for local and remote:
 ```flap
-:8080 <= "message"              // Local IPC
-:server.com:8080 <= "message"   // Network
-msg = => :5000                  // Receive message
+@8080 <= "message"              // Send to local port
+@server.com:8080 <= "message"   // Send to remote server
+@5000 <= msg                    // Receive message (blocking)
 ```
 
 ### 8. **Fork-Based Process Model**
-Flap uses Unix `fork()` semantics with `flap`:
+Flap uses Unix `fork()` semantics with `spawn`:
 ```flap
-flap worker()    // New process (copy-on-write)
+spawn worker()    // New process (copy-on-write, background)
 ```
 No threads, no shared memory bugs—just processes and messages.
 
@@ -111,7 +111,7 @@ No threads, no shared memory bugs—just processes and messages.
 Three pipe operators for different execution models:
 ```flap
 |      // Sequential pipe: value → function
-||     // Parallel pipe: map over list in parallel  
+||     // Parallel pipe: map over list in parallel
 |||    // Reduce pipe: fold list to single value
 ```
 
@@ -422,7 +422,7 @@ statement       = use_statement
                 | receive_loop
                 | jump_statement
                 | defer_statement
-                | flap_statement
+                | spawn_statement
                 | assignment
                 | expression_statement ;
 
@@ -451,7 +451,7 @@ receive_loop    = "@" identifier "," identifier "in" expression [ "max" expressi
 jump_statement  = "ret" [ "@" [ number ] ] [ expression ]
                 | "->" expression ;
 
-flap_statement  = "flap" expression ;
+spawn_statement    = "spawn" expression ;
 
 defer_statement = "defer" expression ;
 
@@ -538,7 +538,7 @@ primary_expr            = number
                         | unsafe_expr
                         | "???" ;
 
-enet_address            = ":" ( digit { digit } | identifier [ ":" digit { digit } ] ) ;
+enet_address            = "@" ( digit { digit } | [ identifier ] ":" digit { digit } ) ;
 
 arena_expr              = "arena" "{" { statement { newline } } [ expression ] "}" ;
 
@@ -581,14 +581,13 @@ fstring                 = 'f"' { character | "{" expression "}" } '"' ;
 ### Reserved Keywords
 
 ```
-alias and arena as cstruct defer err flap has hot import in not or ret unsafe use xor
+alias and arena as spawn cstruct defer err has import in not or ret unsafe use xor
 ```
 
 **Special keywords:**
 - `ret` - Return from function/loop
 - `err` - Return error value (NaN-based Result types)
 - `has` - Check if key exists in map
-- `hot` - Mark function for hot-reloading
 - `alias` - Create type or function aliases
 
 ### Contextual Keywords
@@ -1221,14 +1220,14 @@ Available atomic operations:
 - `atomic_add(ptr, value)` - Atomically add and return old value
 - `atomic_cas(ptr, expected, desired)` - Compare-and-swap
 
-### Flap (Process Spawning)
+### Background Process Spawning
 
 ```flap
-// Fire-and-forget process
-flap background_task()
+// Fire-and-forget process (background)
+spawn background_task()
 
 // Fork and continue
-pid := flap {
+pid := spawn {
     // Child process code
     println("Child running")
 }
@@ -1242,23 +1241,26 @@ Flap uses **ENet** for all inter-process communication and networking. ENet prov
 
 #### Address Literals
 
-Addresses use the `:` prefix:
+Addresses use the `@` prefix:
 
 ```flap
-:8080                    // Port on localhost (IPC - fast)
-:localhost:8080          // Explicit localhost
-:server.com:8080         // Remote hostname
-:192.168.1.100:7777      // IP address + port
+@8080                    // Port on localhost (IPC - fast)
+@:8080                   // Explicit colon notation
+@localhost:8080          // Explicit localhost
+@server.com:8080         // Remote hostname
+@192.168.1.100:7777      // IP address + port
 ```
+
+The `@` prefix distinguishes ENet addresses from other values and avoids conflicts with dictionary syntax.
 
 #### Send Operator: `<=`
 
 Send messages to addresses (write to channel):
 
 ```flap
-:5000 <= "hello"                    // Send to local port
-:server.com:8080 <= "data"          // Send to remote server
-:localhost:3000 <= f"value={x}"     // Send with f-string
+@5000 <= "hello"                    // Send to local port
+@server.com:8080 <= "data"          // Send to remote server
+@localhost:3000 <= f"value={x}"     // Send with f-string
 ```
 
 #### Receive Syntax
@@ -1266,8 +1268,8 @@ Send messages to addresses (write to channel):
 Receive messages from addresses (read from channel):
 
 ```flap
-:5000 <= msg             // Blocking receive (waits for one message)
-:8080 <= response        // Returns string message
+@5000 <= msg             // Blocking receive (waits for one message)
+@8080 <= response        // Returns string message
 ```
 
 Note: The receive syntax reuses the send operator `<=` but with the address on the left. This is consistent and minimal.
@@ -1278,12 +1280,12 @@ Process multiple messages with a loop:
 
 ```flap
 // Basic receive loop
-@ msg, from in :5000 {
+@ msg, from in @5000 {
     println(f"Got: {msg} from {from}")
 }
 
 // Pattern matching on messages
-@ msg, from in :8080 {
+@ msg, from in @8080 {
     msg {
         "ping" -> from <= "pong"
         "quit" -> ret
@@ -1292,7 +1294,7 @@ Process multiple messages with a loop:
 }
 
 // Limited iterations
-@ msg, from in :9000 max 100 {
+@ msg, from in @9000 max 100 {
     process(msg)
 }
 ```
@@ -1307,24 +1309,24 @@ The receive loop syntax `@ msg, from in address`:
 
 **Echo Server:**
 ```flap
-@ msg, from in :8080 {
+@ msg, from in @8080 {
     from <= f"Echo: {msg}"
 }
 ```
 
 **Request-Response:**
 ```flap
-:server.com:5000 <= "get_status"
-:5000 <= response
+@server.com:5000 <= "get_status"
+@5000 <= response
 println(response)
 ```
 
 **Concurrent Workers:**
 ```flap
-// Spawn 4 workers listening on :7000
+// Spawn 4 workers listening on @7000
 @ i in 0..<4 {
-    flap {
-        @ task, from in :7000 {
+    spawn {
+        @ task, from in @7000 {
             result := process(task)
             from <= result
         }
@@ -2391,4 +2393,3 @@ There is **no catch/throw or exception system** in Flap. Error handling is expli
 - Errors propagate through return values, not exceptions
 
 Many errors are caught at **compile time** when possible (type errors, undefined variables, etc.). Runtime errors use the Result type (NaN encoding) for explicit handling.
-

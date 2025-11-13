@@ -3227,6 +3227,10 @@ func (p *Parser) parsePrimary() Expression {
 	case TOKEN_STRING:
 		return &StringExpr{Value: p.current.Value}
 
+	case TOKEN_ENET_ADDR:
+		// ENet address literal like :8080 or :localhost:8080
+		return &StringExpr{Value: p.current.Value}
+
 	case TOKEN_FSTRING:
 		return p.parseFString()
 
