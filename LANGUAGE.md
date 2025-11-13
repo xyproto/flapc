@@ -63,12 +63,13 @@ Lines without `->` become the default case. This unifies:
 - Conditional expressions
 - Guard clauses
 
-### 4. **Unified Lambda Syntax (`=>`)**
+### 4. **Unified Lambda Syntax (`=>` and `==>`)**
 All functions—named, anonymous, inline—use the same `=>` arrow:
 ```flap
-f := x => x + 1                    // Simple lambda
-g := (x, y) => x * y               // Multiple parameters
-h := x => { x > 0 -> "pos" }       // With match block
+f = x => x + 1                     // Simple lambda
+g = (x, y) => x * y                // Multiple parameters
+h = x => { x > 0 -> "pos" }        // With match block
+hello ==> println("Hello!")        // No-arg shorthand (==> is alias for = () =>)
 ```
 
 ### 5. **Bitwise Operators with `b` Suffix**
@@ -498,7 +499,7 @@ spawn_statement    = "spawn" expression ;
 
 defer_statement = "defer" expression ;
 
-assignment      = identifier ("=" | ":=" | "<-") expression
+assignment      = identifier ("=" | ":=" | "<-" | "==>") expression
                 | identifier ("+=" | "-=" | "*=" | "/=" | "%=" | "**=") expression
                 | indexed_expr "<-" expression ;
 
@@ -597,7 +598,8 @@ unsafe_expr             = "unsafe" "{" { statement { newline } } [ expression ] 
                           [ "{" { statement { newline } } [ expression ] "}" ]
                           [ "{" { statement { newline } } [ expression ] "}" ] ;
 
-lambda_expr             = [ parameter_list ] "=>" lambda_body ;
+lambda_expr             = [ parameter_list ] "=>" lambda_body 
+                        | "==>" lambda_body ;  // Shorthand for () =>
 
 lambda_body             = block | expression [ match_block ] ;
 
@@ -714,6 +716,7 @@ Logical operators (`and`, `or`) have appropriate precedence so that expressions 
 =     // Immutable assignment (first time only)
 :=    // Mutable assignment (can reassign)
 <-    // Update operator (for maps/lists)
+==>   // Shorthand for = () => (no-argument function)
 +=    // Add and assign
 -=    // Subtract and assign
 *=    // Multiply and assign
@@ -1079,13 +1082,18 @@ factorial = (n, acc) => n == 0 {
     ~> factorial(n-1, n*acc)
 }
 
-// No-argument regular functions (both forms valid)
+// No-argument regular functions (three forms valid)
 hello = () => {
     println("hello")
 }
 
 greet => {
     println("Hello, world!")
+}
+
+// Shorthand for no-argument functions
+welcome ==> {
+    println("Welcome!")
 }
 ```
 
@@ -1097,9 +1105,10 @@ greet => {
 **Parameter Syntax Rules:**
 
 ```flap
-// 0 parameters - parentheses optional
+// 0 parameters - multiple options
 f = () => { println("hello") }    // Explicit empty parens
 g => { println("hello") }          // No parens, inferred no params
+h ==> { println("hello") }         // Shorthand: ==> is alias for = () =>
 
 // 1 parameter - parentheses optional
 square = x => x * x                // No parens (common style)
@@ -1111,6 +1120,24 @@ multiply = (x, y, z) => x * y * z  // Must use parens
 
 // Multiple parameters without parens is an error
 bad = a, b => a + b                // ERROR: parens required for 2+ params
+```
+
+**Variable Assignment for Functions:**
+
+Functions are values and don't need mutable assignment. Use `=` (immutable) for function definitions:
+
+```flap
+// Functions use = (immutable assignment)
+add = (a, b) => a + b
+square = x => x * x
+greet ==> println("Hello!")
+
+// No need for := when defining functions
+// (functions are values assigned once)
+
+// But you CAN reassign if you use :=
+counter := x => x + 1      // Mutable
+counter <- x => x + 2      // Can reassign
 ```
 
 ### Function Calls
