@@ -14,7 +14,7 @@
 //
 // Implementation Coverage:
 // - All LANGUAGE.md v2.0.0 grammar constructs
-// - All statement types (use, import, cstruct, arena, defer, alias, spawn, ret, loops, assignments)
+// - All statement types (use, import, cstruct, arena, defer, alias, flap, ret, loops, assignments)
 // - All expression types (literals, operators, lambdas, match, unsafe, arena, memory access)
 // - All operators (arithmetic, comparison, logical, bitwise, power)
 // - Loop control with @N labels and ret @ syntax
@@ -448,13 +448,13 @@ func (p *Parser) parseDeferStmt() *DeferStmt {
 	return &DeferStmt{Call: expr}
 }
 
-func (p *Parser) parseSpawnStmt() *SpawnStmt {
-	p.nextToken() // skip 'spawn'
+func (p *Parser) parseFlapStmt() *SpawnStmt {
+	p.nextToken() // skip 'flap'
 
 	// Parse the expression to spawn
 	expr := p.parseExpression()
 	if expr == nil {
-		p.error("expected expression after 'spawn'")
+		p.error("expected expression after 'flap'")
 	}
 
 	// Check for optional pipe syntax: | params | block
@@ -469,7 +469,7 @@ func (p *Parser) parseSpawnStmt() *SpawnStmt {
 		// For now, only support simple identifiers, not map destructuring
 		for {
 			if p.current.Type != TOKEN_IDENT {
-				p.error("expected identifier in spawn pipe parameters")
+				p.error("expected identifier in flap pipe parameters")
 			}
 			params = append(params, p.current.Value)
 			p.nextToken()
@@ -479,7 +479,7 @@ func (p *Parser) parseSpawnStmt() *SpawnStmt {
 			} else if p.current.Type == TOKEN_PIPE {
 				break
 			} else {
-				p.error("expected ',' or '|' in spawn pipe parameters")
+				p.error("expected ',' or '|' in flap pipe parameters")
 			}
 		}
 
@@ -487,7 +487,7 @@ func (p *Parser) parseSpawnStmt() *SpawnStmt {
 
 		// Parse block
 		if p.current.Type != TOKEN_LBRACE {
-			p.error("expected block after spawn pipe parameters")
+			p.error("expected block after flap pipe parameters")
 		}
 
 		// Parse as BlockExpr
@@ -505,7 +505,7 @@ func (p *Parser) parseSpawnStmt() *SpawnStmt {
 		}
 
 		if p.current.Type != TOKEN_RBRACE {
-			p.error("expected '}' at end of spawn block")
+			p.error("expected '}' at end of flap block")
 		}
 	}
 
@@ -895,9 +895,9 @@ func (p *Parser) parseStatement() Statement {
 		return p.parseAliasStmt()
 	}
 
-	// Check for spawn keyword
-	if p.current.Type == TOKEN_SPAWN {
-		return p.parseSpawnStmt()
+	// Check for flap keyword (spawn process)
+	if p.current.Type == TOKEN_FLAP {
+		return p.parseFlapStmt()
 	}
 
 	// Check for ret/err keywords (but not if followed by assignment operator)

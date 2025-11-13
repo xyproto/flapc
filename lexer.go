@@ -127,7 +127,7 @@ const (
 	TOKEN_ALIAS       // alias (create keyword aliases for language packs)
 	TOKEN_ORBANG      // or! (unwrap with default value)
 	TOKEN_HOT         // hot (mark function as hot-reloadable)
-	TOKEN_SPAWN       // spawn (spawn background process)
+	TOKEN_FLAP        // flap (spawn background process with fork)
 	TOKEN_HAS         // has (type/class definitions)
 	TOKEN_CLASS       // class (class definition)
 	TOKEN_LTGT        // <> (composition operator)
@@ -458,8 +458,8 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_ORBANG, Value: value, Line: l.line, Column: tokenColumn}
 		case "hot":
 			return Token{Type: TOKEN_HOT, Value: value, Line: l.line, Column: tokenColumn}
-		case "spawn":
-			return Token{Type: TOKEN_SPAWN, Value: value, Line: l.line, Column: tokenColumn}
+		case "flap":
+			return Token{Type: TOKEN_FLAP, Value: value, Line: l.line, Column: tokenColumn}
 		case "has":
 			return Token{Type: TOKEN_HAS, Value: value, Line: l.line, Column: tokenColumn}
 		case "class":

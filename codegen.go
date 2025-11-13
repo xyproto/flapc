@@ -1678,7 +1678,7 @@ func (fc *FlapCompiler) compileSpawnStmt(stmt *SpawnStmt) {
 	if stmt.Block != nil {
 		// TODO: Implement pipe-based result waiting
 		// For now, just error if pipe syntax is used
-		compilerError("spawn with pipe syntax (| params | block) not yet implemented - use simple spawn for now")
+		compilerError("flap with pipe syntax (| params | block) not yet implemented - use simple flap for now")
 	}
 
 	// Jump over child code
@@ -1692,7 +1692,7 @@ func (fc *FlapCompiler) compileSpawnStmt(stmt *SpawnStmt) {
 	childOffset := int32(childStartPos - (childJumpPos + ConditionalJumpSize))
 	fc.patchJumpImmediate(childJumpPos+2, childOffset)
 
-	// Execute the spawned expression
+	// Execute the flapped expression
 	fc.compileExpression(stmt.Expr)
 
 	// Flush all output streams before exiting

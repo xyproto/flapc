@@ -967,7 +967,7 @@ type DeferStmt struct {
 func (d *DeferStmt) String() string { return "defer " + d.Call.String() }
 func (d *DeferStmt) statementNode() {}
 
-// SpawnStmt represents a spawned process: spawn expr [ | params | block ]
+// SpawnStmt represents a flapped process: flap expr [ | params | block ]
 // Creates a new process via fork() and optionally waits for result
 type SpawnStmt struct {
 	Expr   Expression // Expression to execute in child process
@@ -976,7 +976,7 @@ type SpawnStmt struct {
 }
 
 func (s *SpawnStmt) String() string {
-	result := "spawn " + s.Expr.String()
+	result := "flap " + s.Expr.String()
 	if s.Block != nil {
 		result += " | "
 		for i, param := range s.Params {
