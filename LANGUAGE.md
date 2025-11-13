@@ -448,8 +448,7 @@ loop_statement  = "@" block
 
 receive_loop    = "@" identifier "," identifier "in" expression [ "max" expression ] block ;
 
-jump_statement  = "ret" [ "@" [ number ] ] [ expression ]
-                | "->" expression ;
+jump_statement  = "ret" [ "@" [ number ] ] [ expression ] ;
 
 spawn_statement    = "spawn" expression ;
 
@@ -1301,7 +1300,7 @@ Process multiple messages with a loop:
 
 The receive loop syntax `@ msg, from in address`:
 - **msg**: The received message (string)
-- **from**: Sender's address as a string (e.g., "127.0.0.1:51234")
+- **from**: Sender's address (can be used directly with `<=` to send back)
 - Blocks waiting for messages
 - Use `ret` to exit the loop
 
