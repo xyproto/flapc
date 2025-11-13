@@ -429,8 +429,8 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	}
 
 	// currentArena is already set to 1 in NewFlapCompiler (representing meta-arena[0])
-	// Initialize meta-arena and create arena 0 (the global arena used for all allocations)
-	fc.initializeMetaArenaAndGlobalArena()
+	// Arena initialization is disabled for now - TODO: fix arena allocation for lists
+	// fc.initializeMetaArenaAndGlobalArena()
 
 	// Function prologue - set up stack frame for main code
 	fc.out.PushReg("rbp")
@@ -3855,55 +3855,60 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		fc.compileExpression(listExpr)
 
 	case *ListExpr:
-		// Lists must be mutable - allocate using global arena
+		// Following Lisp philosophy: even empty lists are objects (length=0), not null
+		// Create list data in .rodata and return pointer
 		// List format: [length (8 bytes)] [element1] [element2] ...
-		length := len(e.Elements)
-		
-		// Calculate size: 8 bytes for length + (length * 8) bytes for elements
-		sizeInBytes := 8 + (length * 8)
-		
-		// Save callee-saved register
-		fc.out.PushReg("r12")
-		
-		// Align stack for call (16-byte alignment required)
-		fc.out.SubImmFromReg("rsp", 8)
-		
-		// Load current arena pointer and allocate memory
-		arenaIndex := fc.currentArena - 1
-		arenaOffset := arenaIndex * 8
-		fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
-		fc.out.MovMemToReg("rdi", "rdi", 0)             // rdi = meta-arena pointer
-		fc.out.MovMemToReg("rdi", "rdi", arenaOffset)   // rdi = arena pointer from slot
-		fc.out.MovImmToReg("rsi", strconv.Itoa(sizeInBytes)) // size in rsi
-		fc.trackFunctionCall("flap_arena_alloc")
-		fc.eb.GenerateCallInstruction("flap_arena_alloc")
-		// rax now contains the pointer to allocated memory
-		
-		// Restore stack alignment
-		fc.out.AddImmToReg("rsp", 8)
-		
-		// Save pointer to r12
-		fc.out.MovRegToReg("r12", "rax")
-		
-		// Write length as first float64
-		fc.out.MovImmToReg("rax", strconv.Itoa(length))
-		fc.out.Cvtsi2sd("xmm1", "rax")
-		fc.out.MovXmmToMem("xmm1", "r12", 0)
-		
-		// Write each element
-		for i, elem := range e.Elements {
-			// Compile element expression into xmm0
-			fc.compileExpression(elem)
-			// Write to list[i+1] (offset 8 + i*8)
-			offset := 8 + (i * 8)
-			fc.out.MovXmmToMem("xmm0", "r12", offset)
+
+		// Allocate list data in .rodata
+		labelName := fmt.Sprintf("list_%d", fc.stringCounter)
+		fc.stringCounter++
+
+		// Store list as: [length (8 bytes)] [element1] [element2] ...
+		var listData []byte
+
+		// First, add length as float64
+		length := float64(len(e.Elements))
+		lengthBits := uint64(0)
+		*(*float64)(unsafe.Pointer(&lengthBits)) = length
+		listData = append(listData, byte(lengthBits&ByteMask))
+		listData = append(listData, byte((lengthBits>>8)&ByteMask))
+		listData = append(listData, byte((lengthBits>>16)&ByteMask))
+		listData = append(listData, byte((lengthBits>>24)&ByteMask))
+		listData = append(listData, byte((lengthBits>>32)&ByteMask))
+		listData = append(listData, byte((lengthBits>>40)&ByteMask))
+		listData = append(listData, byte((lengthBits>>48)&ByteMask))
+		listData = append(listData, byte((lengthBits>>56)&ByteMask))
+
+		// Then add elements
+		for _, elem := range e.Elements {
+			// Evaluate element to get float64 value
+			// For now, only support number literals
+			if numExpr, ok := elem.(*NumberExpr); ok {
+				val := numExpr.Value
+				// Convert float64 to 8 bytes (little-endian)
+				bits := uint64(0)
+				*(*float64)(unsafe.Pointer(&bits)) = val
+				listData = append(listData, byte(bits&ByteMask))
+				listData = append(listData, byte((bits>>8)&ByteMask))
+				listData = append(listData, byte((bits>>16)&ByteMask))
+				listData = append(listData, byte((bits>>24)&ByteMask))
+				listData = append(listData, byte((bits>>32)&ByteMask))
+				listData = append(listData, byte((bits>>40)&ByteMask))
+				listData = append(listData, byte((bits>>48)&ByteMask))
+				listData = append(listData, byte((bits>>56)&ByteMask))
+			} else {
+				compilerError("list literal elements must be constant numbers")
+			}
 		}
-		
-		// Return pointer in xmm0 (convert pointer to float64)
-		fc.out.MovqRegToXmm("xmm0", "r12")
-		
-		// Restore r12
-		fc.out.PopReg("r12")
+
+		fc.eb.Define(labelName, string(listData))
+		fc.out.LeaSymbolToReg("rax", labelName)
+		// Convert pointer to float64: reinterpret rax as xmm0
+		// Push rax to stack, then load as float64 into xmm0
+		fc.out.SubImmFromReg("rsp", StackSlotSize)
+		fc.out.MovRegToMem("rax", "rsp", 0)
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+		fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	case *InExpr:
 		// Membership testing: value in container
