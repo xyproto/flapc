@@ -1475,6 +1475,73 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 		}
 		fc.out.MovXmmToMem("xmm0", baseReg, -offset)
 
+	case *MapUpdateStmt:
+		// Direct map/list element update: arr[idx] <- value
+		// Memory layout: [length (float64)] [elem0] [elem1] ...
+		// Address of elem[i] = list_ptr + 8 + (i * 8)
+
+		// Check if variable exists and is mutable
+		offset, exists := fc.variables[s.MapName]
+		if !exists {
+			suggestions := findSimilarIdentifiers(s.MapName, fc.variables, 3)
+			if len(suggestions) > 0 {
+				compilerError("undefined variable '%s'. Did you mean: %s?", s.MapName, strings.Join(suggestions, ", "))
+			} else {
+				compilerError("undefined variable '%s'", s.MapName)
+			}
+		}
+
+		if !fc.mutableVars[s.MapName] {
+			compilerError("cannot modify immutable list '%s'", s.MapName)
+		}
+
+		// Compile index expression -> xmm0
+		fc.compileExpression(s.Index)
+		
+		// Save index to stack
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+		// Compile value expression -> xmm0
+		fc.compileExpression(s.Value)
+
+		// Save value to stack
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+		// Load list pointer from variable
+		baseReg := "rbp"
+		if fc.parentVariables != nil && fc.parentVariables[s.MapName] {
+			baseReg = "r11"
+		}
+		fc.out.MovMemToXmm("xmm1", baseReg, -offset)
+		
+		// Convert list pointer to rax
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovXmmToMem("xmm1", "rsp", 0)
+		fc.out.MovMemToReg("rax", "rsp", 0)
+		fc.out.AddImmToReg("rsp", 8)
+
+		// Load index from stack and convert to integer in rcx
+		fc.out.MovMemToXmm("xmm2", "rsp", 8) // index is 8 bytes below top
+		fc.out.Cvttsd2si("rcx", "xmm2")      // rcx = integer index
+
+		// Calculate offset: 8 + (index * 8) = 8 + index << 3
+		fc.out.ShlImmReg("rcx", 3)  // rcx = index * 8
+		fc.out.AddImmToReg("rcx", 8) // rcx = 8 + index * 8
+
+		// Add offset to list pointer: rax + rcx = address of element
+		fc.out.AddRegToReg("rax", "rcx") // rax = address of element
+
+		// Load value from stack into xmm0
+		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+
+		// Write value to memory at [rax]
+		fc.out.MovXmmToMem("xmm0", "rax", 0)
+
+		// Clean up stack (index + value)
+		fc.out.AddImmToReg("rsp", 16)
+
 	case *LoopStmt:
 		fc.compileLoopStatement(s)
 

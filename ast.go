@@ -55,6 +55,17 @@ func (a *AssignStmt) String() string {
 }
 func (a *AssignStmt) statementNode() {}
 
+type MapUpdateStmt struct {
+	MapName string     // Name of the map/list variable
+	Index   Expression // Index expression
+	Value   Expression // New value
+}
+
+func (m *MapUpdateStmt) String() string {
+	return fmt.Sprintf("%s[%s] <- %s", m.MapName, m.Index.String(), m.Value.String())
+}
+func (m *MapUpdateStmt) statementNode() {}
+
 type UseStmt struct {
 	Path string // Import path: "./file.flap" or "package_name"
 }

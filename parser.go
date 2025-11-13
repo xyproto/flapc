@@ -1411,24 +1411,11 @@ func (p *Parser) parseIndexedAssignment() Statement {
 		return &ExpressionStmt{Expr: writeCall}
 	} else {
 		// ARRAY UPDATE: arr[idx] <- value
-		// Transform into: arr <- __flap_map_update(arr, idx, value)
-
-		args := []Expression{
-			&IdentExpr{Name: ptrName},
-			indexExpr,
-			valueExpr,
-		}
-
-		updateCall := &CallExpr{
-			Function: "__flap_map_update",
-			Args:     args,
-		}
-
-		return &AssignStmt{
-			Name:     ptrName,
-			Value:    updateCall,
-			Mutable:  true,
-			IsUpdate: true,
+		// Create a direct map update statement
+		return &MapUpdateStmt{
+			MapName: ptrName,
+			Index:   indexExpr,
+			Value:   valueExpr,
 		}
 	}
 }
