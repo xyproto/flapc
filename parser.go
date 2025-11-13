@@ -2651,13 +2651,12 @@ func (p *Parser) parsePipe() Expression {
 func (p *Parser) parseSend() Expression {
 	left := p.parseParallel()
 
-	// Check for send operator: expr <== expr
-	// This handles: :5000 <== "msg" or port <== "data"
-	// Note: Using <== instead of <- to avoid ambiguity with variable updates (x <- value)
-	// and instead of <= to avoid confusion with comparison operator
-	if p.peek.Type == TOKEN_SEND {
+	// Check for send operator: @address <= expr
+	// If left is an address literal and next token is <=, it's a send operation
+	// Otherwise, <= is treated as less-than-or-equal in parseComparison
+	if _, isAddress := left.(*AddressLiteralExpr); isAddress && p.peek.Type == TOKEN_LE {
 		p.nextToken() // move to left expr
-		p.nextToken() // skip '<=='
+		p.nextToken() // skip '<='
 		right := p.parseParallel()
 		return &SendExpr{Target: left, Message: right}
 	}

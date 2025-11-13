@@ -751,7 +751,7 @@ type SendExpr struct {
 }
 
 func (s *SendExpr) String() string {
-	return s.Target.String() + " <== " + s.Message.String()
+	return s.Target.String() + " <= " + s.Message.String()
 }
 func (s *SendExpr) expressionNode() {}
 

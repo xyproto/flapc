@@ -250,14 +250,14 @@ println(x)
 		},
 		{
 			name: "shift_left",
-			source: `x := 5 <b 2
+			source: `x := 5 <<b 2
 println(x)
 `,
 			expected: "20\n",
 		},
 		{
 			name: "shift_right",
-			source: `x := 20 >b 2
+			source: `x := 20 >>b 2
 println(x)
 `,
 			expected: "5\n",

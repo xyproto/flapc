@@ -57,7 +57,6 @@ const (
 	TOKEN_FAT_ARROW        // =>
 	TOKEN_EQUALS_FAT_ARROW // ==> (shorthand for = =>)
 	TOKEN_LEFT_ARROW       // <-
-	TOKEN_SEND             // <= (ENet send operator)
 	TOKEN_ADDRESS_LITERAL  // @8080 or @host:port (ENet address literal)
 	TOKEN_PIPE             // |
 	TOKEN_PIPEPIPE         // ||
@@ -607,7 +606,7 @@ func (l *Lexer) NextToken() Token {
 		}
 		if l.peek() == '=' {
 			l.pos += 2
-			return Token{Type: TOKEN_SEND, Value: "<=", Line: l.line, Column: tokenColumn}
+			return Token{Type: TOKEN_LE, Value: "<=", Line: l.line, Column: tokenColumn}
 		}
 		l.pos++
 		return Token{Type: TOKEN_LT, Value: "<", Line: l.line, Column: tokenColumn}
