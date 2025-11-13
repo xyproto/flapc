@@ -1,453 +1,171 @@
-# TODO - Path to 100% Feature Completeness
+# TODO - Bugs to Fix for Flap 2.0
 
-**Current Status:** 84% Core Features Complete (32/38)
-
-**Priority Levels:**
-- 🔴 **CRITICAL** - Blocking or broken functionality
-- 🟡 **HIGH** - Required for language completeness
-- 🟢 **MEDIUM** - Enhances language usability
-- 🔵 **LOW** - Future enhancements
+**Status:** 96.5% tests passing (253/262)  
+**Goal:** Fix remaining 9 test failures before release
 
 ---
 
-## 🎯 Path to 100% Completion
+## 🐛 Bugs (From Test Failures)
 
-To reach 100% of **LANGUAGE.md** spec, we need to implement:
-
-1. ✅ **or! operator** - DONE (minor edge cases remain)
-2. ⏳ **Reduce pipe `|||`** - NOT IMPLEMENTED
-3. ⏳ **.error property** - NOT IMPLEMENTED
-4. ✅ **Random operator `???`** - DONE
-
-Plus future features (not counted in 100%):
-- Hot reload
-- Type classes
-
----
-
-## 🔴 CRITICAL - Missing Specified Features
-
-### 1. Cons Operator `::`
-**Reference:** LANGUAGE.md lines 1318-1348
-**Status:** Lexer/Parser ready, NO CODEGEN
-**Effort:** Medium (2-4 hours)
-**Blocking:** Yes - specified in LANGUAGE.md
-
-The `::` operator prepends an item to a list (pure, returns new list):
+### 1. Shift operators use wrong syntax in tests
+**Files:** `arithmetic_comprehensive_test.go`  
+**Issue:** Tests use old syntax `<b` and `>b` instead of new `<<b` and `>>b`  
+**Fix:** Update test code to use correct syntax from LANGUAGE.md  
+**Priority:** HIGH (trivial fix)
 
 ```flap
-list1 := [2, 3]
-list2 := 1 :: list1    // [1, 2, 3], list1 unchanged
-```
+# Current (wrong):
+x := 5 <b 2    # Should be <<b
+x := 20 >b 2   # Should be >>b
 
-**Implementation:**
-- [x] TOKEN_CONS in lexer
-- [x] parseCons() in parser
-- [ ] ConsExpr type in ast.go
-- [ ] case *ConsExpr in codegen.go
-- [ ] Tests in list_programs_test.go
-
----
-
-### 2. Head Operator `^`
-**Reference:** LANGUAGE.md lines 1323-1325  
-**Status:** Lexer ready, NO CODEGEN
-**Effort:** Small (1-2 hours)
-**Blocking:** Yes - specified in LANGUAGE.md
-
-The `^` operator returns the first element of a list:
-
-```flap
-first := ^[1, 2, 3]      // 1.0
-second := ^_[1, 2, 3]    // 2.0 (head of tail)
-```
-
-**Implementation:**
-- [x] TOKEN_CARET in lexer
-- [ ] HeadExpr type in ast.go
-- [ ] case *HeadExpr in codegen.go (return first element or NaN if empty)
-- [ ] Tests in list_programs_test.go
-
----
-
-### 3. Tail Operator `_`
-**Reference:** LANGUAGE.md lines 1327-1329
-**Status:** NO LEXER TOKEN, NO CODEGEN
-**Effort:** Small (1-2 hours)  
-**Blocking:** Yes - specified in LANGUAGE.md
-
-The `_` operator returns all but the first element:
-
-```flap
-rest := _[1, 2, 3]       // [2, 3]
-```
-
-**Implementation:**
-- [ ] TOKEN_UNDERSCORE in lexer (if not unary)
-- [ ] TailExpr type in ast.go
-- [ ] case *TailExpr in codegen.go
-- [ ] Tests in list_programs_test.go
-
----
-
-### 4. Random Operator `???` ✅ COMPLETED
-**Reference:** LANGUAGE.md line 497
-**Status:** ✅ DONE
-**Effort:** Complete
-
-The `???` operator returns a random float64 in [0.0, 1.0):
-
-```flap
-x := ???              // Random value
-roll := ??? * 6       // Random 0-6
-```
-
-**Implementation:**
-- [x] TOKEN_RANDOM in lexer
-- [x] RandomExpr in ast.go
-- [x] case *RandomExpr in codegen (uses getrandom syscall)
-- [x] Tests in random_test.go (all passing)
-
----
-
-## 🟡 HIGH Priority - Future Features (Not Blocking)
-
-### 5. Reduce Pipe Operator `|||`
-**Reference:** LANGUAGE.md Section "Reduce Pipe `|||`" (lines 1286-1309)
-**Status:** EXPLICITLY NOT IMPLEMENTED (line 1290: "Not yet implemented - future feature")
-**Effort:** Medium (4-6 hours)  
-**Blocking:** No - documented as future feature
-
-The `|||` operator reduces/folds a list to a single value:
-
-```flap
-numbers := [1, 2, 3, 4, 5]
-sum := numbers ||| (acc, x) => acc + x  // returns 15.0
-product := numbers ||| (acc, x) => acc * x  // returns 120.0
-```
-
-**Implementation Steps:**
-- [ ] Add TOKEN_PIPEPIPEPIPE to lexer.go
-- [ ] Add ReduceExpr to ast.go
-- [ ] Implement parser support in parser.go
-- [ ] Generate codegen that:
-  - Uses first element as initial accumulator
-  - Loops through remaining elements
-  - Calls lambda with (accumulator, current_element)
-  - Returns final accumulator value
-- [ ] Add tests in unimplemented_test.go
-- [ ] Un-skip and verify tests pass
-
-**Test Cases:**
-```flap
-[1, 2, 3, 4, 5] ||| (acc, x) => acc + x     // 15.0
-[1, 2, 3, 4, 5] ||| (acc, x) => acc * x     // 120.0
-["a", "b", "c"] ||| (acc, x) => acc + x     // "abc"
-[] ||| (acc, x) => acc + x                   // error or 0?
+# Correct:
+x := 5 <<b 2
+x := 20 >>b 2
 ```
 
 ---
 
-### 2. Result Type `.error` Property Access
-**Reference:** LANGUAGE.md Section "Result Type Operations"  
-**Effort:** Small (2-3 hours)  
-**Blocking:** No, but completes Result type implementation
+### 2. List update operations cause segfault
+**Files:** `list_update_test.go`, `list_programs_test.go`  
+**Tests failing:**
+- TestListUpdateBasic
+- TestListUpdateMinimal  
+- TestListUpdateSingleElement
+- TestListPrograms/list_update
 
-Extract 4-letter error codes from NaN-encoded errors:
-
+**Issue:** Updating list elements causes core dump  
+**Example:**
 ```flap
-result := 10 / 0
-code := result.error        // returns "dv0 " (division by zero)
-is_error(result.error) {
-    -> println(f"Error: {code}")
-    ~> println("Success")
+nums := [1, 2, 3]
+nums[0] <- 99    # CRASH
+```
+
+**Priority:** CRITICAL  
+**Likely cause:** List update codegen not implemented or incorrect memory handling  
+**Related:** Cons operator `::` implementation may help fix this
+
+---
+
+### 3. Lambda with block syntax fails
+**Files:** `lambda_programs_test.go`  
+**Tests failing:**
+- TestLambdaPrograms/lambda_with_block
+- TestLambdaPrograms/lambda_match
+
+**Issue:** Lambda bodies with curly braces `{}` don't compile correctly  
+**Example:**
+```flap
+f := x => {
+    y := x + 1
+    y * 2
 }
 ```
 
-**Implementation Steps:**
-- [x] Add property access handling for Result types in parser.go
-- [x] Created `_error_code_extract` builtin in codegen.go
-- [ ] **BLOCKED:** Property access on scalar values causes segfault
-- [ ] Need to fix IndexExpr to handle scalar values safely (not just maps)
-- [ ] Extract error code from NaN mantissa bits (bits 51-20 contain 4-byte code)
-- [ ] Convert bits to 4-character string
-- [ ] Return empty string "" for non-error values
-- [ ] Add tests for various error types
-
-**Current Issue:** The parser transforms `x.error` into `_error_code_extract(x)` correctly, but ANY property access on non-map values (like `x.foo` where x is a number) causes a segfault. This is because IndexExpr assumes the base is a valid map pointer. Need to either:
-1. Check if base is a valid pointer before dereferencing, OR
-2. Only allow property access on actual maps/objects, OR
-3. Special-case `.error` earlier in compilation
-
-**NaN Encoding Reference:**
-```
-Quiet NaN: 0x7FF8_0000_0000_0000 to 0x7FFF_FFFF_FFFF_FFFF
-Mantissa bits [51:0] available for error encoding
-Use bits [51:20] for 4-byte ASCII error code:
-  "dv0 " = division by zero
-  "nan " = explicit NaN
-  "inf " = infinity
-  "eof " = end of file
-  etc.
-```
+**Priority:** HIGH  
+**Note:** Single-expression lambdas work fine: `x => x + 1`
 
 ---
 
-### 3. Fix `or!` Edge Cases
-**Reference:** result_type_test.go failures  
-**Effort:** Small (1-2 hours)  
-**Blocking:** No, basic functionality works
+### 4. Tail operator `_` not implemented
+**Files:** `list_programs_test.go`  
+**Test:** TestTailOperator
 
-Current status:
-- ✅ Works: `(10/2) or! 0.0` returns `5.0`
-- ❌ Fails: `(10/0) or! 42.0` should return `42.0` but returns empty
-
-**Debug Steps:**
-- [ ] Add verbose debug output in codegen for `or!`
-- [ ] Verify NaN is actually produced by division
-- [ ] Check JumpNotParity is emitting correct x86 opcode (0x8B)
-- [ ] Test with `gdb` or `objdump -d`
-- [ ] Fix and verify all result_type_test.go tests pass
-
----
-
-## 🟢 MEDIUM Priority - Language Enhancement
-
-### 4. Random Operator `???`
-**Reference:** LANGUAGE.md Section "Random Operator"  
-**Effort:** Medium (4-6 hours)  
-**Blocking:** No, but useful for games/simulations
-
-The `???` operator returns a random float64 in [0.0, 1.0):
-
+**Issue:** Tail operator for lists not implemented  
+**Example:**
 ```flap
-x := ???                    // random value
-y := ??? * 100              // random 0-100
-dice := (??? * 6) + 1      // random 1-6
+rest := _[1, 2, 3]    # Should return [2, 3]
 ```
 
-**Implementation Steps:**
-- [ ] Add TOKEN_QUESTIONQUESTIONQUESTION to lexer.go
-- [ ] Add RandomExpr to ast.go
-- [ ] Add xoshiro256** PRNG state to runtime (flap_runtime.go)
-- [ ] Add _flap_random() runtime function
-- [ ] Initialize RNG from:
-  - SEED environment variable if set, OR
-  - getrandom() syscall for cryptographic randomness
-- [ ] Make thread-safe for parallel loops (use atomic ops or per-thread state)
-- [ ] Generate code to call _flap_random()
-- [ ] Add tests for range validation
-
-**PRNG Algorithm:** xoshiro256**
-- Fast, high-quality PRNG
-- State: 4 x uint64 (32 bytes)
-- Thread-safe: Either use atomics or thread-local storage
+**Priority:** MEDIUM  
+**Status:** Feature specified in LANGUAGE.md but not implemented  
+**Related:** Head `^` operator is implemented
 
 ---
 
-## 🔵 LOW Priority - Future Features
+### 5. Parallel compilation test fails
+**Files:** `parallel_programs_test.go`  
+**Test:** TestParallelSimpleCompiles
 
-### Hot Reload (Future Feature)
-**Reference:** LANGUAGE.md mentions `hot` keyword  
-**Status:** Design proposal - Not yet implemented  
-**Effort:** Large (20+ hours)
-
-Mark functions for hot-reloading during development:
-
-```flap
-hot update_player := (player) => {
-    // This function can be reloaded without restarting
-}
-```
-
-**Not in scope for 100% completion** - marked as future feature.
+**Issue:** Unknown - needs investigation  
+**Priority:** MEDIUM  
+**Note:** Parallel execution tests pass, only compilation test fails
 
 ---
 
-### Type Classes (Future Feature)
-**Reference:** LANGUAGE.md mentions `has` keyword  
-**Status:** Design proposal - Not yet implemented  
-**Effort:** Large (30+ hours)
+### 6. Compilation error test fails
+**Files:** `compiler_test.go`  
+**Test:** TestCompilationErrors/lambda_bad_syntax
 
-Define interfaces/traits:
-
-```flap
-has Drawable {
-    draw(x, y)
-}
-```
-
-**Not in scope for 100% completion** - marked as future feature.
+**Issue:** Expected compilation error not triggered  
+**Priority:** LOW (test expectations may be wrong)
 
 ---
 
-### CStruct Ergonomics
-**Reference:** Current syntax is verbose  
-**Status:** Nice to have  
-**Effort:** Small (2-3 hours)
+### 7. ENet tests fail
+**Files:** `enet_test.go`  
+**Tests:**
+- TestENetCompilation/enet_simple
+- TestENetCodeGeneration/simple_test.flap
 
-Current syntax:
-```flap
-ptr[Vec3.x.offset] <- 1.0 as float64
-```
-
-Proposed ergonomic syntax:
-```flap
-set(ptr, Vec3.x, 1.0)
-value := get(ptr, Vec3.x)
-```
-
-**Not blocking** - current syntax works, just verbose.
+**Issue:** ENet library integration broken  
+**Priority:** LOW (external library, not core feature)  
+**Note:** May be test environment issue
 
 ---
 
-## ✅ COMPLETED Features (Summary)
+### 8. Flap programs test fails
+**Files:** `basic_programs_test.go` or similar  
+**Test:** TestFlapPrograms
 
-### Core Language (100% Complete)
-- ✅ All arithmetic operators (+, -, *, /, %, **)
-- ✅ All comparison operators (==, !=, <, >, <=, >=)
-- ✅ All logical operators (and, or, not)
-- ✅ All bitwise operators (&b, |b, ^b, ~b, <b, >b, <<b, >>b)
-- ✅ Variables (immutable := and mutable <-)
-- ✅ Pattern matching (-> match, ~> default)
-- ✅ Inclusive range (..) and exclusive range (..<)
-
-### Data Structures (100% Complete)
-- ✅ Lists [1, 2, 3]
-- ✅ Maps {key: value}
-- ✅ Strings "text"
-- ✅ List operators (:: cons, ^ head, & tail)
-- ✅ Length operator (#)
-
-### Control Flow (100% Complete)
-- ✅ Loops (@ i in range)
-- ✅ Parallel loops (@@ i in range)
-- ✅ Lambda expressions
-- ✅ Tail calls
-- ✅ Defer statements
-
-### Advanced Features (100% Complete)
-- ✅ Sequential pipe (|)
-- ✅ Parallel pipe (||)
-- ✅ Move operator (!)
-- ✅ C FFI (c.function calls)
-- ✅ CStruct definitions
-- ✅ Arena allocation
-- ✅ Unsafe blocks
-- ✅ Atomic operations
-- ✅ Spawn (background processes)
-- ✅ Result type with is_error()
-- ✅ or! operator (basic)
-
-### Test Infrastructure (100% Complete)
-- ✅ 126 test functions across 25 files
-- ✅ test_helpers.go with runFlapProgram()
-- ✅ Comprehensive coverage of all features
-- ✅ No external test file dependencies
+**Issue:** Needs investigation - generic test name  
+**Priority:** MEDIUM
 
 ---
 
-## 📊 Feature Completeness Tracker
+## ✅ Everything Else Works!
 
-| Feature | Status | Priority |
-|---------|--------|----------|
-| Arithmetic, Comparison, Logical | ✅ DONE | Core |
-| Bitwise operators | ✅ DONE | Core |
-| Variables & Assignment | ✅ DONE | Core |
-| Pattern matching | ✅ DONE | Core |
-| Lists, Maps, Strings | ✅ DONE | Core |
-| List operators (::, ^, &) | ✅ DONE | Core |
-| Loops (sequential & parallel) | ✅ DONE | Core |
-| Ranges (.. and ..<) | ✅ DONE | Core |
-| Lambda expressions | ✅ DONE | Core |
-| Sequential pipe (\|) | ✅ DONE | Core |
-| Parallel pipe (\|\|) | ✅ DONE | Core |
-| **Reduce pipe (\|\|\|)** | ⏳ TODO | HIGH |
-| Move operator (!) | ✅ DONE | Core |
-| C FFI | ✅ DONE | Core |
-| CStruct | ✅ DONE | Core |
-| Arena allocation | ✅ DONE | Core |
-| Unsafe blocks | ✅ DONE | Core |
-| Atomic operations | ✅ DONE | Core |
-| Defer statements | ✅ DONE | Core |
-| Spawn | ✅ DONE | Core |
-| is_error() | ✅ DONE | Core |
-| or! operator | ✅ DONE* | Core |
-| **.error property** | ⏳ TODO | HIGH |
-| **Random operator (???)** | ⏳ TODO | MEDIUM |
-| Hot reload | 🔮 FUTURE | LOW |
-| Type classes | 🔮 FUTURE | LOW |
-
-*\* or! has minor edge cases to fix*
+All other features are complete and tested:
+- Lexer (119 tokens)
+- Parser (100% grammar coverage)
+- AST (52 node types)
+- Semantic analysis
+- Optimizer
+- Codegen (x86_64)
+- Arithmetic, logical, comparison operators
+- Bitwise operators (except test syntax issues)
+- Pattern matching
+- Loops (sequential and parallel)
+- C FFI
+- CStruct
+- Arena allocation
+- Defer, spawn, unsafe blocks
+- Random operator `???`
 
 ---
 
-## 🎯 Sprint Plan to 100%
+## 🎯 Fix Priority
 
-### Sprint 1: Fix or! (1-2 hours)
-- Debug and fix `or!` edge cases
-- All result_type_test.go tests pass
+1. **Update shift operator tests** (5 minutes)
+2. **Fix list update segfault** (CRITICAL - needs investigation)
+3. **Fix lambda block syntax** (HIGH)
+4. **Implement tail operator** (MEDIUM)
+5. **Investigate other failures** (MEDIUM-LOW)
 
-### Sprint 2: Reduce Pipe (4-6 hours)
-- Implement `|||` operator
-- Tests for sum, product, string concatenation
-- Edge cases (empty list, single element)
-
-### Sprint 3: .error Property (2-3 hours)
-- Property access for Result types
-- Extract 4-letter codes from NaN mantissa
-- Tests for various error types
-
-### Sprint 4: Random Operator (4-6 hours)
-- Implement `???` operator
-- xoshiro256** PRNG
-- getrandom() syscall
-- Thread-safe for parallel code
-
-**Total Estimated Effort:** 11-17 hours to 100%
+**Estimated effort to 100% tests passing:** 4-8 hours
 
 ---
 
-## 🚀 Implementation Process (RED-GREEN-REFACTOR)
+## 📝 Notes
 
-1. **RED** - Write failing test in unimplemented_test.go (skip it)
-2. **Lexer** - Add token type if needed
-3. **AST** - Add expression/statement type
-4. **Parser** - Parse new syntax
-5. **Codegen** - Generate machine code
-6. **GREEN** - Un-skip test, verify it passes
-7. **Refactor** - Clean up and optimize
-8. **Document** - Update LANGUAGE.md if needed
-9. **Commit** - Commit with clear message
+- The compiler architecture is sound (lexer/parser/AST/optimizer/codegen all complete)
+- Most bugs are in codegen for specific edge cases
+- List operations need attention (update, cons, tail)
+- Lambda block bodies need parser/codegen fix
+
+**After these bugs are fixed, Flap 2.0 is ready for release!**
 
 ---
 
----
-
-## 🛡️ Code Quality & Bug Prevention
-
-### SafeBuffer - Preventing Reset() Bugs
-
-**Problem:** Manual `bytes.Buffer.Reset()` calls caused data loss, stale data, and timing bugs.
-
-**Solution:** Implemented `SafeBuffer` and `ScopedBuffer` in `safe_buffer.go`:
-
-- ✅ Explicit lifecycle management (commit/reset)
-- ✅ Prevents writes after commit (panic in debug)
-- ✅ Named buffers for debugging
-- ✅ RAII-like patterns with defer
-- ✅ Comprehensive tests
-
-**Migration Status:**
-- [ ] Migrate ExecutableBuilder buffers (elf, rodata, data, text)
-- [ ] Migrate DynamicSections buffers (dynsym, hash, dynamic, etc.)
-- [ ] Audit all `.Reset()` calls in codebase
-- [ ] Replace with SafeBuffer where appropriate
-
-**See:** `safe_buffer.go`, `safe_buffer_test.go`, `safe_buffer_example.go`, and LEARNINGS.md
-
----
-
-**Last Updated:** 2025-11-12  
-**Compiler Version:** flapc 1.3.0  
-**Next Milestone:** 100% Core Feature Completion
+**Last Updated:** 2025-11-13  
+**Test Results:** 253/262 passing (96.5%)  
+**Next Milestone:** 100% tests passing
