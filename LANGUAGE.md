@@ -446,9 +446,10 @@ loop_statement  = "@" block
                 | "@" identifier "in" expression block
                 | "@@" identifier "in" expression block ;
 
-receive_loop    = "@" identifier "," identifier "in" expression [ "max" expression ] block ;
+receive_loop    = "@" identifier "," identifier "in" enet_address [ "max" expression ] block ;
 
-jump_statement  = "ret" [ "@" [ number ] ] [ expression ] ;
+jump_statement  = "ret" [ "@" [ number ] ] [ expression ]
+                | "->" expression ;
 
 spawn_statement    = "spawn" expression ;
 
@@ -537,7 +538,15 @@ primary_expr            = number
                         | unsafe_expr
                         | "???" ;
 
-enet_address            = "@" ( digit { digit } | [ identifier ] ":" digit { digit } ) ;
+enet_address            = "@" port_or_host_port ;
+
+port_or_host_port       = port | [ hostname ":" ] port ;
+
+port                    = digit { digit } ;
+
+hostname                = identifier | ip_address ;
+
+ip_address              = digit { digit } "." digit { digit } "." digit { digit } "." digit { digit } ;
 
 arena_expr              = "arena" "{" { statement { newline } } [ expression ] "}" ;
 
@@ -695,11 +704,11 @@ _     // Tail operator (all but first element of list)
 <=    // Send operator (sends message to address)
 ```
 
-Address literals use `:` prefix:
+Address literals use `@` prefix:
 ```flap
-:8080 <= "hello"                     // Send to local port (IPC)
-:localhost:8080 <= "hello"           // Explicit localhost
-:server.com:8080 <= "data"           // Send to remote address (network)
+@8080 <= "hello"                     // Send to local port (IPC)
+@localhost:8080 <= "hello"           // Explicit localhost
+@server.com:8080 <= "data"           // Send to remote address (network)
 ```
 
 ### Other
@@ -1298,25 +1307,27 @@ Process multiple messages with a loop:
 }
 ```
 
-The receive loop syntax `@ msg, from in address`:
+The receive loop syntax `@ msg, from in @address`:
 - **msg**: The received message (string)
-- **from**: Sender's address (can be used directly with `<=` to send back)
+- **from**: Sender's address as address literal (can be used directly with `<=` to send back)
 - Blocks waiting for messages
 - Use `ret` to exit the loop
+
+**Note:** The `from` variable is automatically an address literal type that can be used directly with the send operator `<=`.
 
 #### Complete Examples
 
 **Echo Server:**
 ```flap
 @ msg, from in @8080 {
-    from <= f"Echo: {msg}"
+    from <= f"Echo: {msg}"  // 'from' is address literal type
 }
 ```
 
 **Request-Response:**
 ```flap
 @server.com:5000 <= "get_status"
-@5000 <= response
+@5000 <= response  // Receive into 'response' variable
 println(response)
 ```
 
