@@ -72,30 +72,16 @@ func (is *IncrementalState) InitialCompile(inputPath, outputPath string) error {
 	return nil
 }
 
-// extractHotFunctions walks the AST and collects hot function definitions
+// extractHotFunctions walks the AST and collects hot function definitions (DISABLED - hot keyword removed)
 func (is *IncrementalState) extractHotFunctions(program *Program, filePath string) {
-	for _, stmt := range program.Statements {
-		if assignStmt, ok := stmt.(*AssignStmt); ok {
-			if assignStmt.IsHot {
-				if lambdaExpr, isLambda := assignStmt.Value.(*LambdaExpr); isLambda {
-					funcDef := &FunctionDef{
-						Name:   assignStmt.Name,
-						Lambda: lambdaExpr,
-						IsHot:  true,
-					}
-					is.hotFunctions[assignStmt.Name] = funcDef
-					is.hotFunctionFiles[assignStmt.Name] = filePath
-				}
-			}
-		}
-	}
+	// Hot-reloading feature removed from language spec
+	return
 }
 
 // FunctionDef represents a hot function definition
 type FunctionDef struct {
 	Name   string
 	Lambda *LambdaExpr
-	IsHot  bool
 }
 
 // IncrementalRecompile recompiles only the changed file's hot functions
@@ -149,17 +135,9 @@ func (is *IncrementalState) IncrementalRecompile(changedPath string) ([]string, 
 	// Extract new hot functions from the changed file
 	is.extractHotFunctions(program, changedPath)
 
-	// Find which hot functions actually changed or are new
+	// Find which hot functions actually changed or are new (DISABLED - hot keyword removed)
 	updatedFuncs := []string{}
-	for _, stmt := range program.Statements {
-		if assignStmt, ok := stmt.(*AssignStmt); ok {
-			if assignStmt.IsHot {
-				if _, isLambda := assignStmt.Value.(*LambdaExpr); isLambda {
-					updatedFuncs = append(updatedFuncs, assignStmt.Name)
-				}
-			}
-		}
-	}
+	// Hot-reloading feature removed from language spec
 
 	if len(updatedFuncs) == 0 {
 		if VerboseMode {

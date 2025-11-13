@@ -448,13 +448,13 @@ func (p *Parser) parseDeferStmt() *DeferStmt {
 	return &DeferStmt{Call: expr}
 }
 
-func (p *Parser) parseFlapStmt() *SpawnStmt {
-	p.nextToken() // skip 'flap'
+func (p *Parser) parseSpawnStmt() *SpawnStmt {
+	p.nextToken() // skip 'spawn'
 
 	// Parse the expression to spawn
 	expr := p.parseExpression()
 	if expr == nil {
-		p.error("expected expression after 'flap'")
+		p.error("expected expression after 'spawn'")
 	}
 
 	// Check for optional pipe syntax: | params | block
@@ -849,12 +849,6 @@ func (p *Parser) parseStructLiteral(structName string) *StructLiteralExpr {
 }
 
 func (p *Parser) parseStatement() Statement {
-	isHot := false
-	if p.current.Type == TOKEN_HOT {
-		isHot = true
-		p.nextToken()
-	}
-
 	// Check for use keyword (imports)
 	if p.current.Type == TOKEN_USE {
 		p.nextToken() // skip 'use'
@@ -895,9 +889,9 @@ func (p *Parser) parseStatement() Statement {
 		return p.parseAliasStmt()
 	}
 
-	// Check for flap keyword (spawn process)
-	if p.current.Type == TOKEN_FLAP {
-		return p.parseFlapStmt()
+	// Check for spawn keyword (spawn process)
+	if p.current.Type == TOKEN_SPAWN {
+		return p.parseSpawnStmt()
 	}
 
 	// Check for ret/err keywords (but not if followed by assignment operator)
@@ -995,9 +989,6 @@ func (p *Parser) parseStatement() Statement {
 		if p.peek.Type == TOKEN_EQUALS || p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_COLON_EQUALS || p.peek.Type == TOKEN_LEFT_ARROW || p.peek.Type == TOKEN_COLON ||
 			p.peek.Type == TOKEN_PLUS_EQUALS || p.peek.Type == TOKEN_MINUS_EQUALS ||
 			p.peek.Type == TOKEN_STAR_EQUALS || p.peek.Type == TOKEN_POWER_EQUALS || p.peek.Type == TOKEN_SLASH_EQUALS || p.peek.Type == TOKEN_MOD_EQUALS {
-			if isHot {
-				return p.parseAssignmentWithHot(true)
-			}
 			return p.parseAssignment()
 		}
 	}
@@ -1175,10 +1166,6 @@ func (p *Parser) parseFString() Expression {
 }
 
 func (p *Parser) parseAssignment() *AssignStmt {
-	return p.parseAssignmentWithHot(false)
-}
-
-func (p *Parser) parseAssignmentWithHot(isHot bool) *AssignStmt {
 	name := p.current.Value
 	p.nextToken() // skip identifier
 
@@ -1320,7 +1307,7 @@ func (p *Parser) parseAssignmentWithHot(isHot bool) *AssignStmt {
 		}
 	}
 
-	return &AssignStmt{Name: name, Value: value, Mutable: mutable, IsUpdate: isUpdate, Precision: precision, IsHot: isHot}
+	return &AssignStmt{Name: name, Value: value, Mutable: mutable, IsUpdate: isUpdate, Precision: precision}
 }
 
 func (p *Parser) parseIndexedAssignment() Statement {
@@ -2014,8 +2001,8 @@ func (p *Parser) parseLoopStatement() Statement {
 				p.nextToken()
 			}
 
-			// Expect second identifier (allow TOKEN_FROM as identifier here)
-			if p.current.Type != TOKEN_IDENT && p.current.Type != TOKEN_FROM {
+			// Expect second identifier
+			if p.current.Type != TOKEN_IDENT {
 				p.error("expected identifier after comma in receive loop")
 			}
 			secondIdent := p.current.Value
@@ -3071,7 +3058,7 @@ func (p *Parser) parsePostfix() Expression {
 					"float32": true, "float64": true, "cstr": true, "cstring": true,
 					"ptr": true, "pointer": true,
 					"int": true, "uint": true,
-					"number": true, "string": true, "list": true,
+					"number": true, "string": true, "list": true, "address": true,
 				}
 				if validTypes[p.current.Value] {
 					castType = p.current.Value
@@ -3227,9 +3214,9 @@ func (p *Parser) parsePrimary() Expression {
 	case TOKEN_STRING:
 		return &StringExpr{Value: p.current.Value}
 
-	case TOKEN_ENET_ADDR:
-		// ENet address literal like :8080 or :localhost:8080
-		return &StringExpr{Value: p.current.Value}
+	case TOKEN_ADDRESS_LITERAL:
+		// ENet address literal like @8080 or @localhost:8080
+		return &AddressLiteralExpr{Value: p.current.Value}
 
 	case TOKEN_FSTRING:
 		return p.parseFString()

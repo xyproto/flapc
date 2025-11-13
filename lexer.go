@@ -57,8 +57,8 @@ const (
 	TOKEN_FAT_ARROW        // =>
 	TOKEN_EQUALS_FAT_ARROW // ==> (shorthand for = =>)
 	TOKEN_LEFT_ARROW       // <-
-	TOKEN_SEND        // <= (ENet send operator)
-	TOKEN_ENET_ADDR   // :8080 or :host:port (ENet address literal)
+	TOKEN_SEND             // <= (ENet send operator)
+	TOKEN_ADDRESS_LITERAL  // @8080 or @host:port (ENet address literal)
 	TOKEN_PIPE             // |
 	TOKEN_PIPEPIPE         // ||
 	TOKEN_HASH             // #
@@ -111,7 +111,6 @@ const (
 	TOKEN_LIST_TYPE   // list (type)
 	TOKEN_USE         // use (import)
 	TOKEN_IMPORT      // import (with git URL)
-	TOKEN_FROM        // from (C library imports)
 	TOKEN_DOT         // . (for namespaced calls)
 	TOKEN_DOTDOT      // .. (inclusive range operator)
 	TOKEN_DOTDOTLT    // ..< (exclusive range operator)
@@ -126,8 +125,7 @@ const (
 	TOKEN_ALIGNED     // aligned (alignment modifier for cstruct)
 	TOKEN_ALIAS       // alias (create keyword aliases for language packs)
 	TOKEN_ORBANG      // or! (unwrap with default value)
-	TOKEN_HOT         // hot (mark function as hot-reloadable)
-	TOKEN_FLAP        // flap (spawn background process with fork)
+	TOKEN_SPAWN       // spawn (spawn background process with fork)
 	TOKEN_HAS         // has (type/class definitions)
 	TOKEN_CLASS       // class (class definition)
 	TOKEN_LTGT        // <> (composition operator)
@@ -430,8 +428,6 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_USE, Value: value, Line: l.line, Column: tokenColumn}
 		case "import":
 			return Token{Type: TOKEN_IMPORT, Value: value, Line: l.line, Column: tokenColumn}
-		case "from":
-			return Token{Type: TOKEN_FROM, Value: value, Line: l.line, Column: tokenColumn}
 		case "as":
 			return Token{Type: TOKEN_AS, Value: value, Line: l.line, Column: tokenColumn}
 		case "unsafe":
@@ -456,10 +452,8 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_ALIAS, Value: value, Line: l.line, Column: tokenColumn}
 		case "or!":
 			return Token{Type: TOKEN_ORBANG, Value: value, Line: l.line, Column: tokenColumn}
-		case "hot":
-			return Token{Type: TOKEN_HOT, Value: value, Line: l.line, Column: tokenColumn}
-		case "flap":
-			return Token{Type: TOKEN_FLAP, Value: value, Line: l.line, Column: tokenColumn}
+		case "spawn":
+			return Token{Type: TOKEN_SPAWN, Value: value, Line: l.line, Column: tokenColumn}
 		case "has":
 			return Token{Type: TOKEN_HAS, Value: value, Line: l.line, Column: tokenColumn}
 		case "class":
@@ -557,29 +551,6 @@ func (l *Lexer) NextToken() Token {
 		if l.peek() == ':' {
 			l.pos += 2 // skip both ':' and ':'
 			return Token{Type: TOKEN_CONS, Value: "::", Line: l.line, Column: tokenColumn}
-		}
-		// Check for ENet address literal: :8080 or :host:8080
-		if l.pos+1 < len(l.input) {
-			next := l.input[l.pos+1]
-			if unicode.IsDigit(rune(next)) || unicode.IsLetter(rune(next)) {
-				// This looks like an ENet address
-				start := l.pos
-				l.pos++ // skip ':'
-				// Read host or port
-				for l.pos < len(l.input) && (unicode.IsLetter(rune(l.input[l.pos])) ||
-					unicode.IsDigit(rune(l.input[l.pos])) || l.input[l.pos] == '.' || l.input[l.pos] == '-') {
-					l.pos++
-				}
-				// Check for second colon (host:port format)
-				if l.pos < len(l.input) && l.input[l.pos] == ':' {
-					l.pos++ // skip second ':'
-					// Read port number
-					for l.pos < len(l.input) && unicode.IsDigit(rune(l.input[l.pos])) {
-						l.pos++
-					}
-				}
-				return Token{Type: TOKEN_ENET_ADDR, Value: l.input[start:l.pos], Line: l.line, Column: tokenColumn}
-			}
 		}
 		// Regular colon for map literals and slice syntax
 		l.pos++
@@ -718,24 +689,58 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_DOT, Value: ".", Line: l.line, Column: tokenColumn}
 	case '@':
-		// Check for @@, @++, @first, @last, @counter, @i
-		// Check for @@ first (parallel loop with all cores)
+		// Check for @@ (parallel loop)
 		if l.peek() == '@' {
 			l.pos += 2
 			return Token{Type: TOKEN_AT_AT, Value: "@@", Line: l.line, Column: tokenColumn}
 		}
-		// Check for @++
+		// Check for @++ 
 		if l.peek() == '+' && l.pos+2 < len(l.input) && l.input[l.pos+2] == '+' {
 			l.pos += 3
 			return Token{Type: TOKEN_AT_PLUSPLUS, Value: "@++", Line: l.line, Column: tokenColumn}
 		}
-		if l.peek() >= 'a' && l.peek() <= 'z' {
+		
+		// Check for address literals: @8080, @:8080, @localhost:8080, @192.168.1.100:7777
+		if l.peek() == ':' || (l.peek() >= '0' && l.peek() <= '9') || (l.peek() >= 'a' && l.peek() <= 'z') || (l.peek() >= 'A' && l.peek() <= 'Z') {
 			start := l.pos
 			l.pos++ // skip @
+			
+			// Parse hostname or IP (optional)
+			if l.pos < len(l.input) && l.input[l.pos] != ':' && (l.input[l.pos] < '0' || l.input[l.pos] > '9') {
+				// Parse hostname (alphanumeric, dots, hyphens)
+				for l.pos < len(l.input) && (unicode.IsLetter(rune(l.input[l.pos])) || unicode.IsDigit(rune(l.input[l.pos])) || l.input[l.pos] == '.' || l.input[l.pos] == '-') {
+					if l.input[l.pos] == ':' {
+						break
+					}
+					l.pos++
+				}
+			}
+			
+			// Parse port
+			if l.pos < len(l.input) && (l.input[l.pos] == ':' || (l.input[l.pos] >= '0' && l.input[l.pos] <= '9')) {
+				if l.input[l.pos] == ':' {
+					l.pos++ // skip colon
+				}
+				// Parse port number
+				if l.pos < len(l.input) && l.input[l.pos] >= '0' && l.input[l.pos] <= '9' {
+					for l.pos < len(l.input) && l.input[l.pos] >= '0' && l.input[l.pos] <= '9' {
+						l.pos++
+					}
+					// This is an address literal
+					return Token{Type: TOKEN_ADDRESS_LITERAL, Value: l.input[start:l.pos], Line: l.line, Column: tokenColumn}
+				}
+			}
+			
+			// Not an address literal, backtrack and check for special keywords
+			l.pos = start + 1
+			value := ""
 			for l.pos < len(l.input) && ((l.input[l.pos] >= 'a' && l.input[l.pos] <= 'z') || (l.input[l.pos] >= 'A' && l.input[l.pos] <= 'Z')) {
 				l.pos++
 			}
-			value := l.input[start:l.pos]
+			if l.pos > start+1 {
+				value = l.input[start:l.pos]
+			}
+			
 			if value == "@first" {
 				return Token{Type: TOKEN_AT_FIRST, Value: value, Line: l.line, Column: tokenColumn}
 			}
@@ -748,7 +753,6 @@ func (l *Lexer) NextToken() Token {
 			if value == "@i" {
 				// Check if followed by a number (e.g., @i1, @i2)
 				if l.pos < len(l.input) && l.input[l.pos] >= '0' && l.input[l.pos] <= '9' {
-					// Parse the number
 					numStart := l.pos
 					for l.pos < len(l.input) && l.input[l.pos] >= '0' && l.input[l.pos] <= '9' {
 						l.pos++
@@ -758,10 +762,8 @@ func (l *Lexer) NextToken() Token {
 				}
 				return Token{Type: TOKEN_AT_I, Value: value, Line: l.line, Column: tokenColumn}
 			}
-			// Unknown @identifier, treat as error or identifier
-			l.pos = start + 1
-			return Token{Type: TOKEN_AT, Value: "@", Line: l.line, Column: tokenColumn}
 		}
+		
 		l.pos++
 		return Token{Type: TOKEN_AT, Value: "@", Line: l.line, Column: tokenColumn}
 	case '{':

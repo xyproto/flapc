@@ -1470,12 +1470,6 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 			fc.runtimeStack += 16
 		}
 
-		if s.IsHot {
-			if _, isLambda := s.Value.(*LambdaExpr); isLambda {
-				fc.hotFunctions[s.Name] = true
-			}
-		}
-
 		fc.currentAssignName = s.Name
 		fc.compileExpression(s.Value)
 		fc.currentAssignName = ""

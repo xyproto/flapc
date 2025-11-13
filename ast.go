@@ -35,7 +35,6 @@ type AssignStmt struct {
 	IsUpdate       bool   // true for <-, false for = and :=
 	IsReuseMutable bool   // true when = is used to update existing mutable variable
 	Precision      string // Type annotation: "b64", "f32", etc. (empty if none)
-	IsHot          bool   // true if marked with hot keyword (hot-reloadable function)
 }
 
 func (a *AssignStmt) String() string {
@@ -341,6 +340,13 @@ type FStringExpr struct {
 
 func (f *FStringExpr) String() string  { return "f\"...\"" }
 func (f *FStringExpr) expressionNode() {}
+
+type AddressLiteralExpr struct {
+	Value string // The full address like "@8080" or "@localhost:8080"
+}
+
+func (a *AddressLiteralExpr) String() string  { return a.Value }
+func (a *AddressLiteralExpr) expressionNode() {}
 
 type IdentExpr struct {
 	Name string
