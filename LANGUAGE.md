@@ -95,8 +95,9 @@ Instead of channels, goroutines, or async/await, Flap uses **ENet** (reliable UD
 
 Same syntax for local and remote:
 ```flap
-":8080" <== "message"              // Local IPC
-"server.com:8080" <== "message"    // Network
+:8080 <= "message"              // Local IPC
+:server.com:8080 <= "message"   // Network
+msg = => :5000                  // Receive message
 ```
 
 ### 8. **Fork-Based Process Model**
@@ -478,7 +479,9 @@ block           = "{" { statement { newline } } "}" ;
 
 expression              = send_expr ;
 
-send_expr               = pipe_expr [ "<==" pipe_expr ] ;
+send_expr               = receive_expr [ "<=" receive_expr ] ;
+
+receive_expr            = "=>" pipe_expr | pipe_expr ;
 
 pipe_expr               = reduce_pipe_expr { "|||" reduce_pipe_expr } ;
 
@@ -525,6 +528,7 @@ cast_type               = "int8" | "int16" | "int32" | "int64"
 primary_expr            = number
                         | string
                         | fstring
+                        | enet_address
                         | identifier
                         | "(" expression ")"
                         | lambda_expr
@@ -533,6 +537,8 @@ primary_expr            = number
                         | arena_expr
                         | unsafe_expr
                         | "???" ;
+
+enet_address            = ":" ( digit { digit } | identifier [ ":" digit { digit } ] ) ;
 
 arena_expr              = "arena" "{" { statement { newline } } [ expression ] "}" ;
 
@@ -1231,79 +1237,103 @@ pid := spawn {
 
 Flap uses **ENet** for all inter-process communication and networking. ENet provides fast, reliable UDP-based messaging that unifies IPC and network communication with the same syntax.
 
-#### Address Format
+**Philosophy**: Everything is a message. Local and remote communication use identical syntax.
 
-All addresses are strings:
+#### Address Literals
+
+Addresses use the `:` prefix:
 
 ```flap
-":5000"                  // Port on localhost (IPC - fast)
-"server.com:5000"        // Remote address (network)
-"192.168.1.100:7777"     // IP + port
+:8080                    // Port on localhost (IPC - fast)
+:localhost:8080          // Explicit localhost
+:server.com:8080         // Remote hostname
+:192.168.1.100:7777      // IP address + port
 ```
 
-#### Sending Messages
+#### Send Operator: `<=`
 
-The send operator `<==` sends messages to addresses:
+Send messages to addresses (write to channel):
 
 ```flap
-// Send to local port (IPC)
-":5000" <== "hello"
-
-// Send to remote address (network)
-"server.com:8080" <== "data"
-
-// Send arbitrary data
-port := ":3000"
-port <== f"Status: {value}"
+:5000 <= "hello"                    // Send to local port
+:server.com:8080 <= "data"          // Send to remote server
+:localhost:3000 <= f"value={x}"     // Send with f-string
 ```
 
-#### Receiving Messages
+#### Receive Operator: `=>`
 
-Use receive loops to handle incoming messages:
+Receive messages from addresses (read from channel):
 
 ```flap
-// Receive loop: @ msg, from in address
-@ msg, from in ":5000" {
+msg = => :5000           // Blocking receive (waits for one message)
+msg = => :8080           // Returns string message
+```
+
+#### Receive Loop
+
+Process multiple messages with a loop:
+
+```flap
+// Basic receive loop
+@ msg, from in :5000 {
     println(f"Got: {msg} from {from}")
 }
 
 // Pattern matching on messages
-@ msg, from in ":5000" {
+@ msg, from in :8080 {
     msg {
-        "ping" -> from <== "pong"
+        "ping" -> from <= "pong"
         "quit" -> ret
-        ~> from <== "unknown command"
+        ~> from <= "unknown"
     }
 }
 
-// With iteration limit
-@ msg, from in ":5000" max 100 {
+// Limited iterations
+@ msg, from in :9000 max 100 {
     process(msg)
 }
 ```
 
-The receive loop:
+The receive loop syntax `@ msg, from in address`:
 - **msg**: The received message (string)
-- **from**: Sender address (e.g., "127.0.0.1:51234")
+- **from**: Sender's address as a string (e.g., "127.0.0.1:51234")
 - Blocks waiting for messages
-- Can use `ret` to exit the loop
+- Use `ret` to exit the loop
 
-#### Complete Example: Echo Server
+#### Complete Examples
 
+**Echo Server:**
 ```flap
-// Echo server on port 8080
-@ msg, from in ":8080" {
-    println(f"Received: {msg}")
-    from <== f"Echo: {msg}"
+@ msg, from in :8080 {
+    from <= f"Echo: {msg}"
 }
+```
+
+**Request-Response:**
+```flap
+:server.com:5000 <= "get_status"
+response = => :5000
+println(response)
+```
+
+**Concurrent Workers:**
+```flap
+// Spawn 4 workers listening on :7000
+parallel(4, worker => {
+    @ task, from in :7000 {
+        result := process(task)
+        from <= result
+    }
+})
 ```
 
 #### ENet Properties
 
-- **Reliable**: Messages delivered in order (like TCP)
-- **Fast**: UDP-based, low latency
+- **Reliable**: Messages delivered in order
+- **Fast**: UDP-based, low overhead
 - **Unified**: Same syntax for IPC and network
-- **Simple**: No setup required, just send/receive
+- **Simple**: No setup, no configuration
+- **UNIX Philosophy**: Everything is a message stream
 
 ## C FFI
 
