@@ -8077,6 +8077,80 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
+	// Generate _flap_string_println(string_ptr) - prints string followed by newline
+	// Argument: rdi = string pointer (map with [count][0][char0][1][char1]...)
+	// Uses write syscall - no PLT dependencies
+	fc.eb.MarkLabel("_flap_string_println")
+	
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+	fc.out.PushReg("rbx")
+	fc.out.PushReg("r12")
+	fc.out.PushReg("r13")
+	
+	fc.out.MovRegToReg("rbx", "rdi") // rbx = string pointer
+	
+	// Get length
+	fc.out.MovMemToXmm("xmm0", "rbx", 0)
+	fc.out.Cvttsd2si("r12", "xmm0") // r12 = length
+	
+	// Allocate 1-byte buffer on stack
+	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.MovRegToReg("r13", "rsp") // r13 = buffer address
+	
+	// Loop through characters
+	fc.out.XorRegWithReg("rcx", "rcx") // rcx = index
+	
+	strPrintLoopStart := fc.eb.text.Len()
+	fc.out.CmpRegToReg("rcx", "r12")
+	strPrintLoopEnd := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreaterOrEqual, 0)
+	strPrintLoopEndPos := fc.eb.text.Len()
+	
+	// Calculate offset: 16 + index * 16
+	fc.out.MovRegToReg("rax", "rcx")
+	fc.out.ShlImmReg("rax", 4)      // rax = index * 16
+	fc.out.AddImmToReg("rax", 16)   // rax = 16 + index * 16
+	fc.out.AddRegToReg("rax", "rbx") // rax = string_ptr + offset
+	
+	// Load character code
+	fc.out.MovMemToXmm("xmm0", "rax", 0)
+	fc.out.Cvttsd2si("rdi", "xmm0")
+	fc.out.MovRegToMem("rdi", "r13", 0)
+	
+	// write(1, buffer, 1)
+	fc.out.MovImmToReg("rax", "1")   // syscall: write
+	fc.out.MovImmToReg("rdi", "1")   // fd: stdout
+	fc.out.MovRegToReg("rsi", "r13") // buffer
+	fc.out.MovImmToReg("rdx", "1")   // length: 1
+	fc.out.Syscall()
+	
+	// Increment and loop
+	fc.out.IncReg("rcx")
+	strPrintBackOffset := int32(strPrintLoopStart - (fc.eb.text.Len() + 5))
+	fc.out.JumpUnconditional(strPrintBackOffset)
+	
+	// Patch loop end
+	strPrintDonePos := fc.eb.text.Len()
+	fc.patchJumpImmediate(strPrintLoopEnd+2, int32(strPrintDonePos-strPrintLoopEndPos))
+	
+	// Print newline
+	fc.out.MovImmToReg("rax", "10") // '\n'
+	fc.out.MovRegToMem("rax", "r13", 0)
+	fc.out.MovImmToReg("rax", "1")   // syscall: write
+	fc.out.MovImmToReg("rdi", "1")   // fd: stdout
+	fc.out.MovRegToReg("rsi", "r13") // buffer
+	fc.out.MovImmToReg("rdx", "1")   // length: 1
+	fc.out.Syscall()
+	
+	// Restore
+	fc.out.AddImmToReg("rsp", 8)
+	fc.out.PopReg("r13")
+	fc.out.PopReg("r12")
+	fc.out.PopReg("rbx")
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
+
 	// Generate _flap_arena_ensure_capacity if arenas are used
 	if fc.usesArenas {
 		fc.generateArenaEnsureCapacity()
@@ -10089,19 +10163,20 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			fc.eb.GenerateCallInstruction("printf")
 			return
 		} else if argType == "string" {
-			// String variable - need to convert map to C string first, then use printf
-			// For now, use printf with %f\n as workaround
-			// TODO: Implement proper string map to C string conversion
+			// String variable - call _flap_string_println helper
+			// Strings are maps: [count][0][char0][1][char1]...
 			fc.compileExpression(arg)
-
-			fmtLabel := fmt.Sprintf("println_fmt_%d", fc.stringCounter)
-			fc.stringCounter++
-			fc.eb.Define(fmtLabel, "%f\n\x00")
-
-			fc.out.LeaSymbolToReg("rdi", fmtLabel)
-			// xmm0 already has the value
-			fc.trackFunctionCall("printf")
-			fc.eb.GenerateCallInstruction("printf")
+			// xmm0 contains string pointer
+			
+			// Convert to integer pointer in rdi
+			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.MovXmmToMem("xmm0", "rsp", 0)
+			fc.out.MovMemToReg("rdi", "rsp", 0)
+			fc.out.AddImmToReg("rsp", 8)
+			
+			// Call helper function
+			fc.trackFunctionCall("_flap_string_println")
+			fc.eb.GenerateCallInstruction("_flap_string_println")
 			return
 		} else if argType == "list" || argType == "map" {
 			// Print list/map - iterate and use printf for each element
