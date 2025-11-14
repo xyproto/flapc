@@ -96,9 +96,9 @@ Instead of channels, goroutines, or async/await, Flap uses **ENet** (reliable UD
 
 Same syntax for local and remote:
 ```flap
-@8080 <= "message"              // Send to local port
-@server.com:8080 <= "message"   // Send to remote server
-@5000 <= msg                    // Receive message (blocking)
+@8080 <- "message"              // Send to local port
+@server.com:8080 <- "message"   // Send to remote server
+@5000 <- msg                    // Receive message (blocking)
 ```
 
 ### 8. **Fork-Based Process Model**
@@ -285,7 +285,7 @@ The empty literal `[]` represents a universal empty value in Flap's unified type
 ```flap
 // Empty value in different contexts
 empty := []                  // Universal empty
-list := 1 :: 2 :: []        // Builds list from empty
+list := []                   // Empty list
 numbers := []               // Empty that will become list when populated
 result := []                // Empty that will become map when keys added
 
@@ -296,23 +296,31 @@ result["key"] <- 100        // Now it's a map (string/arbitrary keys)
 
 ### Internal Memory Layout
 
-While conceptually everything is `map[uint64]float64`, the compiler uses two distinct memory layouts for efficiency:
+Everything in Flap uses a single unified memory representation: **ordered hash map from uint64 to float64**.
 
-**Lists (Position-Indexed)**
-- Syntax: `[1.0, 2.0, 3.0]`
-- Memory: `[length: float64][element0: float64][element1: float64]...`
-- Size: `8 + (length × 8)` bytes
-- Indexing: Position-based offset calculation
-- Access: `arr[1]` loads from `base_ptr + 8 + (1 × 8)`
-
-**Maps (Key-Indexed)**
-- Syntax: `{0: 10.0, 5: 20.0}` (explicit keys)
-- Memory: `[count: float64][key0: float64][val0: float64][key1: float64][val1: float64]...`
+**Universal Memory Layout:**
+- Memory: `[count: float64][key0: uint64][val0: float64][key1: uint64][val1: float64]...`
 - Size: `8 + (count × 16)` bytes
-- Indexing: Linear search comparing keys
-- Access: `map[5]` scans pairs until key matches
+- All values (numbers, strings, lists, maps, objects) use this exact same layout
+- Keys are always uint64 (string keys are hashed to uint64)
+- Values are always float64 (or bit-cast representations)
 
-Lists use contiguous position-based storage, while maps use sparse key-value pairs. The distinction allows dense arrays to avoid storing redundant position keys, while true maps can have arbitrary sparse keys like `{100: 1.0, 500: 2.0}`.
+**Examples:**
+```flap
+42              // {0: 42.0}
+"Hello"         // {0: 72.0, 1: 101.0, 2: 108.0, 3: 108.0, 4: 111.0}
+[1, 2, 3]       // {0: 1.0, 1: 2.0, 2: 3.0}
+{x: 10, y: 20}  // {hash("x"): 10.0, hash("y"): 20.0}
+[]              // Empty map (count = 0)
+```
+
+**Operations:**
+- Index: `value[key]` - Linear search through key-value pairs
+- Length: `#value` - Read count field (first 8 bytes)
+- Append: `value.append(item)` - Add new key-value pair at next index
+- Insert: `value[key] <- val` - Update or insert key-value pair
+
+There is only one type, one memory layout, one implementation. No special cases.
 
 ### Type Casting
 
@@ -358,8 +366,8 @@ addr := "localhost:8080" as address
 addr2 := ":8080" as address
 
 // Use in sending
-addr <= "message"                 // Send to converted address
-@8080 <= "direct"                 // Send to literal address
+addr <- "message"                 // Send to converted address
+@8080 <- "direct"                 // Send to literal address
 ```
 
 **Address Type Properties:**
@@ -529,7 +537,7 @@ block           = "{" { statement { newline } } "}" ;
 
 expression              = send_expr ;
 
-send_expr               = receive_expr [ "<=" receive_expr ] ;
+send_expr               = receive_expr [ "<-" receive_expr ] ;
 
 receive_expr            = "=>" pipe_expr | pipe_expr ;
 
@@ -551,9 +559,7 @@ rel_op                  = "<" | "<=" | ">" | ">=" | "==" | "!=" ;
 
 range_expr              = additive_expr [ ( ".." | "..<" ) additive_expr ] ;
 
-additive_expr           = cons_expr { ("+" | "-") cons_expr } ;
-
-cons_expr               = bitwise_expr { "::" bitwise_expr } ;
+additive_expr           = bitwise_expr { ("+" | "-") bitwise_expr } ;
 
 bitwise_expr            = multiplicative_expr { ("|b" | "&b" | "^b" | "<<b" | ">>b" | "<<<b" | ">>>b") multiplicative_expr } ;
 
@@ -561,11 +567,12 @@ multiplicative_expr     = power_expr { ("*" | "/" | "%" | "*+") power_expr } ;
 
 power_expr              = unary_expr { "**" unary_expr } ;
 
-unary_expr              = ("not" | "-" | "#" | "~b" | "^" | "_") unary_expr
+unary_expr              = ("not" | "-" | "#" | "~b") unary_expr
                         | postfix_expr ;
 
 postfix_expr            = primary_expr { "[" expression "]"
                                        | "(" [ argument_list ] ")"
+                                       | "." identifier [ "(" [ argument_list ] ")" ]
                                        | "as" cast_type
                                        | "!" } ;
 
@@ -734,12 +741,9 @@ Logical operators (`and`, `or`) have appropriate precedence so that expressions 
 ### Range and List
 
 ```flap
-::    // Cons operator (item :: list prepends item to list)
 ..    // Inclusive range (1..10 = 1 to 10)
 ..<   // Exclusive range (1..<10 = 1 to 9)
-#     // Length operator
-^     // Head operator (first element of list)
-_     // Tail operator (all but first element of list)
+#     // Length operator (reads count field)
 ```
 
 ### Pipe Operators
@@ -753,14 +757,14 @@ _     // Tail operator (all but first element of list)
 ### Concurrency Operators
 
 ```flap
-<=    // Send operator (sends message to address)
+<-    // Send operator (sends message to address/port)
 ```
 
 Address literals use `@` prefix:
 ```flap
-@8080 <= "hello"                     // Send to local port (IPC)
-@localhost:8080 <= "hello"           // Explicit localhost
-@server.com:8080 <= "data"           // Send to remote address (network)
+@8080 <- "hello"                     // Send to local port (IPC)
+@localhost:8080 <- "hello"           // Explicit localhost
+@server.com:8080 <- "data"           // Send to remote address (network)
 ```
 
 ### Other
@@ -1220,6 +1224,36 @@ ptr := call("malloc", 1024 as uint64)
 call("free", ptr as ptr)
 ```
 
+### Method Call Syntax Sugar
+
+Method call syntax `x.method(y, z)` is syntactic sugar for `method(x, y, z)`:
+
+```flap
+// These are equivalent:
+list.append(42)          // Method syntax
+append(list, 42)         // Function call syntax
+
+// These are equivalent:
+list.head()              // Method syntax
+head(list)               // Function call syntax
+
+// These are equivalent:
+value.to_string(16)      // Method syntax (value, base)
+to_string(value, 16)     // Function call syntax
+
+// Property access without parens just looks up the field
+obj.x                    // Accesses field x in map obj
+obj.method               // Returns the function stored at key "method"
+obj.method()             // Calls the function with obj as first argument
+```
+
+**Key Points:**
+- `x.method(args)` desugars to `method(x, args)` at parse time
+- The receiver `x` becomes the first argument to the function
+- This is pure syntactic sugar - no special "method" concept
+- Any function can be called with method syntax if the first parameter matches
+- Allows for fluent/chaining style: `list.append(1).append(2).append(3)`
+
 ## Loops
 
 The @ symbol is only used in connection with loops in the Flap syntax.
@@ -1400,14 +1434,14 @@ Addresses use the `@` prefix:
 
 The `@` prefix distinguishes ENet addresses from other values and avoids conflicts with dictionary syntax.
 
-#### Send Operator: `<=`
+#### Send Operator: `<-`
 
 Send messages to addresses (write to channel):
 
 ```flap
-@5000 <= "hello"                    // Send to local port
-@server.com:8080 <= "data"          // Send to remote server
-@localhost:3000 <= f"value={x}"     // Send with f-string
+@5000 <- "hello"                    // Send to local port
+@server.com:8080 <- "data"          // Send to remote server
+@localhost:3000 <- f"value={x}"     // Send with f-string
 ```
 
 #### Receive Syntax
@@ -1415,11 +1449,11 @@ Send messages to addresses (write to channel):
 Receive messages from addresses (read from channel):
 
 ```flap
-@5000 <= msg             // Blocking receive (waits for one message)
-@8080 <= response        // Returns string message
+@5000 <- msg             // Blocking receive (waits for one message)
+@8080 <- response        // Returns string message
 ```
 
-Note: The receive syntax reuses the send operator `<=` but with the address on the left. This is consistent and minimal.
+Note: The receive syntax uses the `<-` operator. When the address is on the left, it receives; when on the right, it sends.
 
 #### Receive Loop
 
@@ -1434,9 +1468,9 @@ Process multiple messages with a loop:
 // Pattern matching on messages
 @ msg, from in @8080 {
     msg {
-        "ping" -> from <= "pong"
+        "ping" -> from <- "pong"
         "quit" -> ret
-        ~> from <= "unknown"
+        ~> from <- "unknown"
     }
 }
 
@@ -1448,35 +1482,35 @@ Process multiple messages with a loop:
 
 The receive loop syntax `@ msg, from in @address`:
 - **msg**: The received message (string)
-- **from**: Sender's address as address literal (can be used directly with `<=` to send back)
+- **from**: Sender's address as address literal (can be used directly with `<-` to send back)
 - Blocks waiting for messages
 - Use `ret` to exit the loop
 
-**Note:** The `from` variable is automatically an address literal type that can be used directly with the send operator `<=`.
+**Note:** The `from` variable is automatically an address literal type that can be used directly with the send operator `<-`.
 
 #### Complete Examples
 
 **Echo Server:**
 ```flap
 @ msg, from in @8080 {
-    from <= f"Echo: {msg}"  // 'from' is address literal type
+    from <- f"Echo: {msg}"  // 'from' is address literal type
 }
 ```
 
 **Request-Response:**
 ```flap
-@server.com:5000 <= "get_status"
-@5000 <= response  // Receive into 'response' variable
+@server.com:5000 <- "get_status"
+@5000 <- response  // Receive into 'response' variable
 println(response)
 
 // Working with address variables
 server := @server.com:5000
-server <= "request"
+server <- "request"
 
 // Convert from string
 addr_string := "localhost:8080"
 addr := addr_string as address
-addr <= "message"
+addr <- "message"
 ```
 
 **Concurrent Workers:**
@@ -1486,7 +1520,7 @@ addr <= "message"
     spawn {
         @ task, from in @7000 {
             result := process(task)
-            from <= result
+            from <- result
         }
     }
 }
@@ -1708,6 +1742,7 @@ unsafe {
 print("Hello")           // Print without newline
 println("World")         // Print with newline
 printf("x=%d\n", x)      // C-style formatted print
+printa()                 // Print the value in the "a" register (rax on x86_64, x0 on ARM64, a0 on RISC-V) - for debugging
 ```
 
 ### String Operations
@@ -1804,55 +1839,71 @@ words := ["Hello", " ", "World"] ||| (acc, s) => acc + s
 
 ### List Operations
 
-**Status:** These operators are specified but not yet fully implemented.
+Lists in Flap use the universal `map[uint64]float64` representation with sequential integer keys starting from 0.
 
 ```flap
-len := #list             // List length
+// Create lists
+list := [1, 2, 3]        // {0: 1.0, 1: 2.0, 2: 3.0}
+empty := []              // {} (count = 0)
 
-// Cons operator (::) - pure function, returns new list
-list1 := [2, 3]
-list2 := 1 :: list1      // Returns [1, 2, 3], list1 unchanged
-list3 := 0 :: list2      // Returns [0, 1, 2, 3], list2 unchanged
+// Length operator
+len := #list             // Returns count field (O(1))
 
-// Head operator (^) - returns first element
-first := ^[1, 2, 3]      // 1.0
-second := ^_[1, 2, 3]    // 2.0 (head of tail)
+// Indexing (linear search through key-value pairs)
+first := list[0]         // Returns value at key 0
+second := list[1]        // Returns value at key 1
 
-// Tail operator (_) - returns all but first element
-rest := _[1, 2, 3]       // [2, 3]
-all_but_two := __[1, 2, 3, 4]  // [3, 4] (tail of tail)
+// Append method (grows the map)
+list := [1, 2, 3]
+list.append(4)           // Method syntax: adds {3: 4.0} to map (now [1, 2, 3, 4])
+append(list, 5)          // Function syntax: same as list.append(5)
 
-// Building lists functionally (like Scheme/ML/LISP)
+// Head method (returns first element as a number)
+list := [1, 2, 3]
+first := list.head()     // Method syntax: returns 1.0 (the value at key 0)
+first := head(list)      // Function syntax: same as list.head()
 empty := []
-one := 1 :: empty        // [1]
-two := 2 :: one          // [2, 1]
-three := 3 :: two        // [3, 2, 1]
+val := empty.head()      // Returns NaN (error - empty list has no head)
 
-// Deconstructing lists
+// Tail method (returns new list without first element)
+list := [1, 2, 3, 4]
+rest := list.tail()      // Method syntax: returns [2, 3, 4]
+rest := tail(list)       // Function syntax: same as list.tail()
+single := [42]
+tail := single.tail()    // Returns [] (empty map)
+empty := []
+empty_tail := empty.tail()  // Returns [] (tail of empty is empty)
+
+// Iteration
+@ item in list {
+    println(item)
+}
+
+// Building lists incrementally
+numbers := []
+numbers.append(10)       // [10]
+numbers.append(20)       // [10, 20]
+numbers.append(30)       // [10, 20, 30]
+
+// Recursive list processing
 process_list := list => {
     #list == 0 {
-        ret "empty"
+        ret "done"
     }
-    head := ^list
-    tail := _list
-    println(f"Head: {head}, Tail: {tail}")
+    head := list.head()
+    tail := list.tail()
+    println(f"Processing: {head}")
+    process_list(tail)
 }
 ```
 
-**Important:** The cons operator `::` follows Standard ML/Scheme/LISP semantics - it is a pure function that constructs and returns a new list without modifying the original list. This maintains immutability.
-
-**Edge Cases:**
-```flap
-// Empty list operations
-^[]    // Returns NaN (error - no head of empty list)
-_[]    // Returns [] (tail of empty is empty)
-1 :: []  // Returns [1]
-
-// Error checking with or! operator
-list := []
-head := (^list) or! 0.0  // Returns 0.0 if error
-println(head)
-```
+**Implementation:**
+- Lists are just maps with sequential uint64 keys: 0, 1, 2, 3, ...
+- Memory: `[count: float64][key0: uint64][val0: float64][key1: uint64][val1: float64]...`
+- `.append(value)` finds the next sequential key and inserts the pair
+- `.head()` returns the value at key 0 (or NaN if empty)
+- `.tail()` creates a new map with keys shifted down by 1 (key 1 becomes 0, key 2 becomes 1, etc.)
+- No special list type - just the universal ordered map
 
 
 ### Memory Access

@@ -467,7 +467,7 @@ ch := make(chan int)        // NO channels
 spawn process_data()
 
 // Use ENet addresses for communication
-@5000 <= "message"
+@5000 <- "message"
 @ msg, from in @5000 {
     process(msg)
 }
@@ -477,25 +477,26 @@ spawn process_data()
 
 ## Parser - DON'T Add Ambiguous Syntax
 
-### ❌ DON'T: Overload `<-` operator
+### ✅ DO: Use `<-` for both update and send/receive
 
-**Tempting but wrong:**
-```flap
-// Confusing: <- used for both receive and update
-@5000 <- msg       // Receive? Or update?
-x <- 42            // Update? Or receive?
-```
-
-**Why it's wrong:**
-- `<-` is update operator only
-- `<=` is send/receive operator for addresses
-- Overloading creates ambiguity
-
-**Correct approach:**
+**The `<-` operator is unified:**
 ```flap
 x <- 42            // Update mutable variable
-@5000 <= msg       // Send to address
-@5000 <= response  // Receive into variable (blocking)
+@5000 <- msg       // Send to address
+@5000 <- response  // Receive into variable (blocking)
+```
+
+**Why it works:**
+- Context determines meaning: variable on left = update, address on left/right = send/receive
+- Minimal syntax with no ambiguity
+- Consistent with channel semantics from other languages
+- Single arrow for all data flow operations
+
+**Direction matters:**
+```flap
+x <- 42            // Data flows INTO x (update)
+@5000 <- "hello"   // Data flows INTO @5000 (send)
+@5000 <- msg       // Data flows FROM @5000 INTO msg (receive)
 ```
 
 ---
@@ -583,6 +584,8 @@ func TestSomething(t *testing.T) {
     // ...
 }
 ```
+
+The exception is if a problem is hard to debug, and it's easier to write an executable to /tmp or /dev/shm, view the code with objdump or ndisasm, or debug it with gdb, and then remove the executable afterwards.
 
 ---
 
