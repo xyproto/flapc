@@ -12849,41 +12849,88 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.AddImmToReg("rsp", 8)
 
 	case "append":
-		// append(list, value) - Add element to end of list
+		// append(list, value) - Add element to end of list  
 		// Returns new list with value appended
+		// Implemented inline using memcpy approach
 		if len(call.Args) != 2 {
 			compilerError("append() requires exactly 2 arguments (list, value)")
 		}
 
-		// Compile list argument
+		// Compile and save both arguments
 		fc.compileExpression(call.Args[0]) // list -> xmm0
 		fc.out.SubImmFromReg("rsp", 8)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
 
-		// Compile value argument (leave in xmm0)
 		fc.compileExpression(call.Args[1]) // value -> xmm0
-
-		// Setup arguments: rdi=list_ptr, xmm0=value, rsi=arena_ptr
-		fc.out.MovMemToXmm("xmm1", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 8)
-		fc.out.MovqXmmToReg("rdi", "xmm1") // rdi = list pointer
-
-		// Load current arena pointer into rsi (2nd argument)
-		arenaIndex := fc.currentArena - 1
-		arenaOffset := arenaIndex * 8
-		fc.out.LeaSymbolToReg("rsi", "_flap_arena_meta")
-		fc.out.MovMemToReg("rsi", "rsi", 0)           // rsi = meta-arena pointer
-		fc.out.MovMemToReg("rsi", "rsi", arenaOffset) // rsi = arena pointer from slot
-
-		// Call runtime function
-		fc.trackFunctionCall("_flap_list_append")
-		fc.eb.GenerateCallInstruction("_flap_list_append")
-
-		// Convert result (rax = pointer) to float64 in xmm0
 		fc.out.SubImmFromReg("rsp", 8)
-		fc.out.MovRegToMem("rax", "rsp", 0)
-		fc.out.MovMemToXmm("xmm0", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+		// Load list pointer and get count
+		fc.out.MovMemToXmm("xmm1", "rsp", 8)
+		fc.out.MovqXmmToReg("rsi", "xmm1")   // rsi = old list pointer
+		fc.out.MovMemToXmm("xmm2", "rsi", 0) // xmm2 = count (as float)
+		fc.out.Cvttsd2si("rcx", "xmm2")      // rcx = count (as int)
+
+		// Calculate sizes
+		// Old size: 8 + count * 16
+		// New size: 8 + (count + 1) * 16 = 24 + count * 16
+		fc.out.MovRegToReg("rdx", "rcx")
+		fc.out.ShlImmReg("rdx", 4)    // rdx = count * 16
+		fc.out.AddImmToReg("rdx", 24) // rdx = new size
+
+		// Allocate new list
+		fc.out.MovRegToReg("rdi", "rdx")
+		fc.out.PushReg("rsi") // Save old list ptr
+		fc.out.PushReg("rcx") // Save count
+		fc.trackFunctionCall("malloc")
+		fc.eb.GenerateCallInstruction("malloc")
+		fc.out.PopReg("rcx") // Restore count
+		fc.out.PopReg("rsi") // Restore old list ptr
+
+		// rax = new list, rsi = old list, rcx = count
+
+		// Store new count
+		fc.out.AddImmToReg("rcx", 1)      // rcx = count + 1
+		fc.out.Cvtsi2sd("xmm3", "rcx")    // xmm3 = new count as float
+		fc.out.MovXmmToMem("xmm3", "rax", 0)
+		fc.out.SubImmFromReg("rcx", 1)    // rcx = old count again
+
+		// Copy old list data using memcpy
+		// memcpy(dest+8, src+8, count*16) - skip count field
+		fc.out.LeaMemToReg("rdi", "rax", 8) // rdi = dest + 8
+		fc.out.LeaMemToReg("rsi", "rsi", 8) // rsi = src + 8
+		fc.out.MovRegToReg("rdx", "rcx")
+		fc.out.ShlImmReg("rdx", 4) // rdx = count * 16 (bytes to copy)
+
+		fc.out.PushReg("rax") // Save new list ptr
+		fc.out.PushReg("rcx") // Save count
+		fc.trackFunctionCall("memcpy")
+		fc.eb.GenerateCallInstruction("memcpy")
+		fc.out.PopReg("rcx") // Restore count
+		fc.out.PopReg("rax") // Restore new list ptr
+
+		// Add new entry at end
+		// Offset = 8 + count * 16
+		fc.out.MovRegToReg("rdx", "rcx")
+		fc.out.ShlImmReg("rdx", 4)       // rdx = count * 16
+		fc.out.AddImmToReg("rdx", 8)     // rdx = offset
+
+		// Store key (count as uint64)
+		fc.out.MovRegToMem("rcx", "rax", 0)
+		fc.out.AddRegToReg("rax", "rdx")
+
+		// Store value
+		fc.out.MovMemToXmm("xmm4", "rsp", 0) // Load value from stack
+		fc.out.MovXmmToMem("xmm4", "rax", 8)
+
+		// Restore pointer to start
+		fc.out.SubRegFromReg("rax", "rdx")
+
+		// Clean stack
+		fc.out.AddImmToReg("rsp", 16) // Pop value and old list
+
+		// Return new list pointer in xmm0
+		fc.out.MovqRegToXmm("xmm0", "rax")
 
 	case "head":
 		// head(list) - Get first element of list (returns NaN if empty)
@@ -12920,31 +12967,148 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.MovqRegToXmm("xmm0", "rax")    // xmm0 = result
 
 	case "tail":
-		// tail(list) - Get list without first element (returns empty list if empty or single element)
+		// tail(list) - Get list without first element
+		// Returns new list with keys shifted down: [1,2,3] -> [0,1]
+		// Implemented inline to avoid external dependencies
 		if len(call.Args) != 1 {
 			compilerError("tail() requires exactly 1 argument (list)")
 		}
 
 		// Compile list argument
 		fc.compileExpression(call.Args[0]) // list -> xmm0
-		fc.out.MovqXmmToReg("rdi", "xmm0")  // rdi = list pointer
+		fc.out.MovqXmmToReg("rsi", "xmm0")   // rsi = old list pointer
 
-		// Load current arena pointer into rsi
-		arenaIndex := fc.currentArena - 1
-		arenaOffset := arenaIndex * 8
-		fc.out.LeaSymbolToReg("rsi", "_flap_arena_meta")
-		fc.out.MovMemToReg("rsi", "rsi", 0)           // rsi = meta-arena pointer
-		fc.out.MovMemToReg("rsi", "rsi", arenaOffset) // rsi = arena pointer from slot
+		// Get count
+		fc.out.MovMemToXmm("xmm1", "rsi", 0) // xmm1 = count
+		fc.out.Cvttsd2si("rcx", "xmm1")      // rcx = count as int
 
-		// Call runtime function
-		fc.trackFunctionCall("_flap_list_tail")
-		fc.eb.GenerateCallInstruction("_flap_list_tail")
+		// Check if empty or single element
+		fc.out.CmpRegToImm("rcx", 1)
+		
+		// If count <= 1, return empty list (pointer = 0)
+		fc.out.XorpdXmm("xmm0", "xmm0") // xmm0 = 0.0 (empty list)
+		fc.out.MovImmToReg("rax", "0")
+		fc.out.MovImmToReg("r10", "0")
+		fc.out.Cmovbe("rax", "r10") // rax = 0 if count <= 1
+		
+		// Otherwise, need to create new list
+		// New count = old count - 1
+		fc.out.SubImmFromReg("rcx", 1) // rcx = new count
+		
+		// Calculate new size: 8 + new_count * 16
+		fc.out.MovRegToReg("rdx", "rcx")
+		fc.out.ShlImmReg("rdx", 4)    // rdx = new_count * 16
+		fc.out.AddImmToReg("rdx", 8)  // rdx = new size
 
-		// Convert result (rax = pointer) to float64 in xmm0
-		fc.out.SubImmFromReg("rsp", 8)
-		fc.out.MovRegToMem("rax", "rsp", 0)
-		fc.out.MovMemToXmm("xmm0", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 8)
+		// Only allocate if count was > 1
+		fc.out.MovRegToReg("rdi", "rdx")
+		fc.out.PushReg("rsi") // Save old list
+		fc.out.PushReg("rcx") // Save new count
+		
+		// Conditional call to malloc
+		fc.out.TestRegReg("rcx", "rcx")
+		skipMallocStart := fc.eb.text.Len()
+		fc.eb.text.WriteByte(0x0F) // jle rel32 (jump if rcx <= 0)
+		fc.eb.text.WriteByte(0x8E)
+		skipMallocPatch := fc.eb.text.Len()
+		fc.eb.text.Write([]byte{0, 0, 0, 0})
+		
+		fc.trackFunctionCall("malloc")
+		fc.eb.GenerateCallInstruction("malloc")
+		
+		skipMallocEnd := fc.eb.text.Len()
+		skipOffset := skipMallocEnd - (skipMallocStart + 6)
+		fc.eb.text.Bytes()[skipMallocPatch] = byte(skipOffset)
+		fc.eb.text.Bytes()[skipMallocPatch+1] = byte(skipOffset >> 8)
+		fc.eb.text.Bytes()[skipMallocPatch+2] = byte(skipOffset >> 16)
+		fc.eb.text.Bytes()[skipMallocPatch+3] = byte(skipOffset >> 24)
+		
+		fc.out.PopReg("rcx") // Restore new count
+		fc.out.PopReg("rsi") // Restore old list
+
+		// rax = new list (or 0), rsi = old list, rcx = new count
+
+		// Store new count
+		fc.out.Cvtsi2sd("xmm2", "rcx")
+		fc.out.MovXmmToMem("xmm2", "rax", 0)
+
+		// Copy entries from old list, shifting keys down by 1
+		// Source: old_list + 8 + 16 (skip count and first entry)
+		// Dest: new_list + 8
+		// Count: new_count * 16 bytes
+		fc.out.LeaMemToReg("rdi", "rax", 8)  // rdi = dest + 8
+		fc.out.LeaMemToReg("rsi", "rsi", 24) // rsi = src + 8 + 16 (skip first entry)
+		fc.out.MovRegToReg("rdx", "rcx")
+		fc.out.ShlImmReg("rdx", 4) // rdx = new_count * 16
+
+		fc.out.PushReg("rax") // Save new list
+		fc.out.PushReg("rcx") // Save new count
+		
+		// Only copy if new_count > 0
+		fc.out.TestRegReg("rcx", "rcx")
+		skipCopyStart := fc.eb.text.Len()
+		fc.eb.text.WriteByte(0x0F) // jle rel32
+		fc.eb.text.WriteByte(0x8E)
+		skipCopyPatch := fc.eb.text.Len()
+		fc.eb.text.Write([]byte{0, 0, 0, 0})
+		
+		fc.trackFunctionCall("memcpy")
+		fc.eb.GenerateCallInstruction("memcpy")
+		
+		skipCopyEnd := fc.eb.text.Len()
+		skipCopyOffset := skipCopyEnd - (skipCopyStart + 6)
+		fc.eb.text.Bytes()[skipCopyPatch] = byte(skipCopyOffset)
+		fc.eb.text.Bytes()[skipCopyPatch+1] = byte(skipCopyOffset >> 8)
+		fc.eb.text.Bytes()[skipCopyPatch+2] = byte(skipCopyOffset >> 16)
+		fc.eb.text.Bytes()[skipCopyPatch+3] = byte(skipCopyOffset >> 24)
+		
+		fc.out.PopReg("rcx") // Restore new count
+		fc.out.PopReg("rax") // Restore new list
+
+		// Now need to shift all keys down by 1
+		// Loop through entries and decrement each key
+		fc.out.TestRegReg("rcx", "rcx")
+		fc.out.MovImmToReg("rdx", "0") // rdx = index
+		
+		// Loop: for i in 0..new_count { new_list[8 + i*16] -= 1 }
+		keyFixStart := fc.eb.text.Len()
+		fc.out.CmpRegToReg("rdx", "rcx")
+		keyFixLoopEnd := fc.eb.text.Len()
+		fc.eb.text.WriteByte(0x0F) // jge rel32
+		fc.eb.text.WriteByte(0x8D)
+		keyFixPatch := fc.eb.text.Len()
+		fc.eb.text.Write([]byte{0, 0, 0, 0})
+		
+		// Calculate offset: 8 + rdx * 16
+		fc.out.MovRegToReg("r8", "rdx")
+		fc.out.ShlImmReg("r8", 4)
+		fc.out.AddImmToReg("r8", 8)
+		
+		// Load key, decrement, store back
+		fc.out.MovMemToReg("r9", "rax", 0)
+		fc.out.AddRegToReg("rax", "r8")
+		fc.out.MovMemToReg("r9", "rax", 0) // r9 = key
+		fc.out.SubImmFromReg("r9", 1)      // r9--
+		fc.out.MovRegToMem("r9", "rax", 0) // Store back
+		fc.out.SubRegFromReg("rax", "r8")  // rax back to start
+		
+		fc.out.AddImmToReg("rdx", 1) // rdx++
+		jmpKeyFix := keyFixStart - (fc.eb.text.Len() + 5)
+		fc.eb.text.WriteByte(0xE9) // jmp rel32
+		fc.eb.text.Write([]byte{
+			byte(jmpKeyFix), byte(jmpKeyFix >> 8),
+			byte(jmpKeyFix >> 16), byte(jmpKeyFix >> 24),
+		})
+		
+		keyFixEndActual := fc.eb.text.Len()
+		keyFixEndOffset := keyFixEndActual - (keyFixLoopEnd + 6)
+		fc.eb.text.Bytes()[keyFixPatch] = byte(keyFixEndOffset)
+		fc.eb.text.Bytes()[keyFixPatch+1] = byte(keyFixEndOffset >> 8)
+		fc.eb.text.Bytes()[keyFixPatch+2] = byte(keyFixEndOffset >> 16)
+		fc.eb.text.Bytes()[keyFixPatch+3] = byte(keyFixEndOffset >> 24)
+
+		// Return new list pointer in xmm0
+		fc.out.MovqRegToXmm("xmm0", "rax")
 
 	case "printa":
 		// printa() - Print value in rax register for debugging
