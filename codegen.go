@@ -1533,7 +1533,7 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 			// Calculate offset: 8 + (index * 16) + 8 = 16 + index * 16
 			// Memory layout: [count][key0][val0][key1][val1]...
 			// Value at index i is at: 8 + i*16 + 8
-			fc.out.ShlImmReg("rcx", 4)   // rcx = index * 16
+			fc.out.ShlImmReg("rcx", 4)    // rcx = index * 16
 			fc.out.AddImmToReg("rcx", 16) // rcx = 16 + index * 16
 
 			// Add offset to list pointer: rax + rcx = address of value
@@ -4490,7 +4490,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.Cvttsd2si("rcx", "xmm0")
 
 			// Calculate offset: 16 + index * 16
-			fc.out.ShlImmReg("rcx", 4)   // rcx = index * 16
+			fc.out.ShlImmReg("rcx", 4)    // rcx = index * 16
 			fc.out.AddImmToReg("rcx", 16) // rcx = 16 + index * 16
 
 			// Add offset to list pointer: rbx + rcx = address of value
