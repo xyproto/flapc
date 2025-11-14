@@ -1,9 +1,10 @@
 # TODO - Bug Fixes
 
-**Test Status:** 108/130 passing (83%)  
+**Test Status:** 118/130 passing (91%)  
 **Goal:** 95%+ pass rate for Flap 2.0 release
 
 **Recent Progress:** 
+- ✅ FIXED: List/map update bug - inline traversal and mutation for linked lists
 - ✅ FIXED: println crash bug - added null terminators to format strings
 - Fixed cons operator type recognition (:: now returns "list" type)
 - Cons-built lists work correctly with indexing and printf
@@ -25,22 +26,16 @@
 
 ---
 
-### 2. Map/List Update Returns Wrong Value (HIGH PRIORITY)
-**Failing Tests:** 1 test (map_update)
+### 2. ✅ FIXED: List Update Returns Wrong Value
+**Status:** RESOLVED - list updates now work correctly
 
-**Problem:**
-```flap
-m := {a: 10}
-m[a] <- 20
-println(m[a])  // Prints 0 instead of 20
-```
+**Fix Applied:**
+- Lists are linked lists (cons cells: [head][tail]), not arrays
+- Removed broken `_flap_list_update` that assumed array structure
+- Emit inline code that walks to index-th cons cell and mutates head
+- Maps still use array-style in-place update
 
-**Investigation:**
-- Check `__flap_map_update` implementation
-- Verify map update codegen generates correct machine code
-- May be related to key hashing or lookup logic
-
-**Files:** `codegen.go` (map update logic)
+**Commit:** 8535877
 
 ---
 
