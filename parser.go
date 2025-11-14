@@ -3113,8 +3113,25 @@ func (p *Parser) parsePostfix() Expression {
 					}
 				}
 			} else {
-				// Check for special property access on Result types
-				if fieldName == "error" {
+				// Check if this is a method call: obj.method(args)
+				if p.peek.Type == TOKEN_LPAREN {
+					// Method call syntax sugar: obj.method(args) -> method(obj, args)
+					p.nextToken() // skip field name
+					p.nextToken() // skip '('
+					args := []Expression{expr} // receiver becomes first argument
+
+					if p.current.Type != TOKEN_RPAREN {
+						args = append(args, p.parseExpression())
+						for p.peek.Type == TOKEN_COMMA {
+							p.nextToken() // skip current
+							p.nextToken() // skip ','
+							args = append(args, p.parseExpression())
+						}
+						p.nextToken() // move to ')'
+					}
+					// Desugar to function call with receiver as first arg
+					expr = &CallExpr{Function: fieldName, Args: args}
+				} else if fieldName == "error" {
 					// .error property - extract error code from Result type
 					// This will be handled specially in codegen
 					expr = &CallExpr{
