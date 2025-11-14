@@ -1147,4 +1147,3 @@ func (x *X86_64CodeGen) RepMovsb() {
 	x.write(0xF3) // REP prefix
 	x.write(0xA4) // MOVSB
 }
-

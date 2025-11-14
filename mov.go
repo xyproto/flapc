@@ -570,4 +570,3 @@ func (o *Out) RepMovsb() {
 		compilerError("RepMovsb not implemented for RISC-V")
 	}
 }
-

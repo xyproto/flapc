@@ -3116,8 +3116,8 @@ func (p *Parser) parsePostfix() Expression {
 				// Check if this is a method call: obj.method(args)
 				if p.peek.Type == TOKEN_LPAREN {
 					// Method call syntax sugar: obj.method(args) -> method(obj, args)
-					p.nextToken() // skip field name
-					p.nextToken() // skip '('
+					p.nextToken()              // skip field name
+					p.nextToken()              // skip '('
 					args := []Expression{expr} // receiver becomes first argument
 
 					if p.current.Type != TOKEN_RPAREN {

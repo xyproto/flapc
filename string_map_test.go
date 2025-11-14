@@ -180,7 +180,7 @@ println(lst[2])
 			expected: "10\n99\n30\n",
 		},
 		// Removed: list_cons test - cons operator (::) has been removed
-		// Removed: list_head test - head operator (^) has been removed  
+		// Removed: list_head test - head operator (^) has been removed
 		// Removed: list_tail test - tail operator (&) has been removed
 		// TODO: Add new tests for append(), head(), tail() functions
 	}

@@ -688,17 +688,17 @@ func (l *Lexer) NextToken() Token {
 			l.pos += 2
 			return Token{Type: TOKEN_AT_AT, Value: "@@", Line: l.line, Column: tokenColumn}
 		}
-		// Check for @++ 
+		// Check for @++
 		if l.peek() == '+' && l.pos+2 < len(l.input) && l.input[l.pos+2] == '+' {
 			l.pos += 3
 			return Token{Type: TOKEN_AT_PLUSPLUS, Value: "@++", Line: l.line, Column: tokenColumn}
 		}
-		
+
 		// Check for address literals: @8080, @:8080, @localhost:8080, @192.168.1.100:7777
 		if l.peek() == ':' || (l.peek() >= '0' && l.peek() <= '9') || (l.peek() >= 'a' && l.peek() <= 'z') || (l.peek() >= 'A' && l.peek() <= 'Z') {
 			start := l.pos
 			l.pos++ // skip @
-			
+
 			// Parse hostname or IP address (optional, before colon)
 			// Can be: localhost, example.com, 192.168.1.100, etc.
 			if l.pos < len(l.input) && l.input[l.pos] != ':' {
@@ -710,7 +710,7 @@ func (l *Lexer) NextToken() Token {
 					l.pos++
 				}
 			}
-			
+
 			// Parse port (required for address literals)
 			if l.pos < len(l.input) && (l.input[l.pos] == ':' || (l.input[l.pos] >= '0' && l.input[l.pos] <= '9')) {
 				if l.input[l.pos] == ':' {
@@ -725,7 +725,7 @@ func (l *Lexer) NextToken() Token {
 					return Token{Type: TOKEN_ADDRESS_LITERAL, Value: l.input[start:l.pos], Line: l.line, Column: tokenColumn}
 				}
 			}
-			
+
 			// Not an address literal, backtrack and check for special keywords
 			l.pos = start + 1
 			value := ""
@@ -735,7 +735,7 @@ func (l *Lexer) NextToken() Token {
 			if l.pos > start+1 {
 				value = l.input[start:l.pos]
 			}
-			
+
 			if value == "@first" {
 				return Token{Type: TOKEN_AT_FIRST, Value: value, Line: l.line, Column: tokenColumn}
 			}
@@ -758,7 +758,7 @@ func (l *Lexer) NextToken() Token {
 				return Token{Type: TOKEN_AT_I, Value: value, Line: l.line, Column: tokenColumn}
 			}
 		}
-		
+
 		l.pos++
 		return Token{Type: TOKEN_AT, Value: "@", Line: l.line, Column: tokenColumn}
 	case '{':

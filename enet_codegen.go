@@ -52,7 +52,7 @@ func (eg *ENetCodeGenerator) CompileENetFunction(functionName, cCode string) ([]
 
 %s
 `, cCode)
-	
+
 	if err := ioutil.WriteFile(cFile, []byte(fullCode), 0644); err != nil {
 		return nil, fmt.Errorf("failed to write C file: %v", err)
 	}

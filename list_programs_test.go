@@ -123,7 +123,7 @@ println(first)
 	result.expectOutput(t, "1\n")
 }
 
-// TestTailFunction tests the tail() builtin function  
+// TestTailFunction tests the tail() builtin function
 func TestTailFunction(t *testing.T) {
 	t.Skip("TODO: tail() function needs debugging")
 	source := `list := [1, 2, 3, 4]
