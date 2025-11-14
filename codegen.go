@@ -2722,19 +2722,19 @@ func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
 	fc.out.MovMemToReg("rbx", "rsp", 0)
 	fc.out.AddImmToReg("rsp", StackSlotSize)
 
-	// Skip length prefix: rbx += 8
-	fc.out.AddImmToReg("rbx", 8)
-
+	// Lists are maps: [count][key0][val0][key1][val1]...
+	// Element at index i is at: 8 + i*16 + 8 = 16 + i*16
 	// Load index into rax
 	fc.out.MovMemToReg("rax", "rbp", -indexOffset)
 
-	// Calculate offset: rax * 8
-	fc.out.MulRegWithImm("rax", 8)
+	// Calculate offset: 16 + index * 16
+	fc.out.ShlImmReg("rax", 4)   // rax = index * 16
+	fc.out.AddImmToReg("rax", 16) // rax = 16 + index * 16
 
 	// Add offset to base: rbx = rbx + rax
 	fc.out.AddRegToReg("rbx", "rax")
 
-	// Load element from list: movsd xmm0, [rbx]
+	// Load element value from list: movsd xmm0, [rbx]
 	fc.out.MovMemToXmm("xmm0", "rbx", 0)
 
 	// Store in iterator variable
