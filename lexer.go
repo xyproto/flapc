@@ -34,12 +34,11 @@ const (
 	TOKEN_RPAREN
 	TOKEN_COMMA
 	TOKEN_COLON
-	TOKEN_CONS // :: (list cons/prepend operator)
 	TOKEN_SEMICOLON
 	TOKEN_NEWLINE
 	TOKEN_LT               // <
 	TOKEN_GT               // >
-	TOKEN_LE               // <=
+	TOKEN_LE               // <= (less than or equal - comparison operator)
 	TOKEN_GE               // >=
 	TOKEN_EQ               // ==
 	TOKEN_NE               // !=
@@ -56,7 +55,7 @@ const (
 	TOKEN_ARROW            // ->
 	TOKEN_FAT_ARROW        // =>
 	TOKEN_EQUALS_FAT_ARROW // ==> (shorthand for = =>)
-	TOKEN_LEFT_ARROW       // <-
+	TOKEN_LEFT_ARROW       // <- (update operator and ENet send/receive)
 	TOKEN_ADDRESS_LITERAL  // @8080 or @host:port (ENet address literal)
 	TOKEN_PIPE             // |
 	TOKEN_PIPEPIPE         // ||
@@ -84,8 +83,8 @@ const (
 	TOKEN_AMP_B      // &b (bitwise AND)
 	TOKEN_CARET_B    // ^b (bitwise XOR)
 	TOKEN_TILDE_B    // ~b (bitwise NOT)
-	TOKEN_CARET      // ^ (head of list)
-	TOKEN_AMP        // & (tail of list) (reference or address operator)
+	TOKEN_AMP        // & (used in unsafe blocks, not for lists)
+	TOKEN_CARET      // ^ (reserved, not used for head operator)
 	TOKEN_LTLT_B     // <<b (shift left)
 	TOKEN_GTGT_B     // >>b (shift right)
 	TOKEN_LTLTLT_B   // <<<b (rotate left)
@@ -547,11 +546,7 @@ func (l *Lexer) NextToken() Token {
 			l.pos += 2 // skip both ':' and '='
 			return Token{Type: TOKEN_COLON_EQUALS, Value: ":=", Line: l.line, Column: tokenColumn}
 		}
-		if l.peek() == ':' {
-			l.pos += 2 // skip both ':' and ':'
-			return Token{Type: TOKEN_CONS, Value: "::", Line: l.line, Column: tokenColumn}
-		}
-		// Regular colon for map literals and slice syntax
+		// Regular colon for map literals and method calls
 		l.pos++
 		return Token{Type: TOKEN_COLON, Value: ":", Line: l.line, Column: tokenColumn}
 	case '=':

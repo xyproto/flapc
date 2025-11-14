@@ -2718,32 +2718,15 @@ func (p *Parser) parseComparison() Expression {
 
 // parseRange handles range expressions (0..<10 or 0..=10)
 func (p *Parser) parseRange() Expression {
-	left := p.parseCons()
+	left := p.parseAdditive()
 
 	// Check for range operators
 	if p.peek.Type == TOKEN_DOTDOTLT || p.peek.Type == TOKEN_DOTDOT {
 		p.nextToken() // move to left expr
 		inclusive := p.current.Type == TOKEN_DOTDOT
 		p.nextToken() // skip range operator
-		right := p.parseCons()
+		right := p.parseAdditive()
 		return &RangeExpr{Start: left, End: right, Inclusive: inclusive}
-	}
-
-	return left
-}
-
-// parseCons handles the :: (list cons/prepend) operator
-// Cons is right-associative: 1 :: 2 :: [3] = 1 :: (2 :: [3])
-func (p *Parser) parseCons() Expression {
-	left := p.parseAdditive()
-
-	if p.peek.Type == TOKEN_CONS {
-		p.nextToken() // move to ::
-		op := p.current.Value
-		p.nextToken() // move past ::
-		// Right-associative: recursively parse the right side
-		right := p.parseCons()
-		return &BinaryExpr{Left: left, Operator: op, Right: right}
 	}
 
 	return left
@@ -2886,19 +2869,7 @@ func (p *Parser) parseUnary() Expression {
 		return &UnaryExpr{Operator: "~b", Operand: operand}
 	}
 
-	// Handle head operator: ^
-	if p.current.Type == TOKEN_CARET {
-		p.nextToken() // skip '^'
-		operand := p.parseUnary()
-		return &UnaryExpr{Operator: "^", Operand: operand}
-	}
-
-	// Handle tail operator: &
-	if p.current.Type == TOKEN_AMP {
-		p.nextToken() // skip '&'
-		operand := p.parseUnary()
-		return &UnaryExpr{Operator: "&", Operand: operand}
-	}
+	// Head (^) and tail (&) operators removed - use .head() and .tail() methods instead
 
 	// Unary minus handled in parsePrimary for simplicity
 	return p.parsePostfix()
