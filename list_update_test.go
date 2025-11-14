@@ -102,8 +102,8 @@ println(list2[3])
 	result.expectOutput(t, "1\n2\n3\n4\n")
 }
 
-// TestTailFunction tests the tail() builtin function
-func TestTailFunction(t *testing.T) {
+// TestTailFunctionUpdate tests the tail() builtin function (list_update context)
+func TestTailFunctionUpdate(t *testing.T) {
 	t.Skip("TODO: tail() function needs debugging")
 	source := `list := [1, 2, 3, 4]
 rest := tail(list)
