@@ -12931,8 +12931,12 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Return new list pointer in xmm0
 		fc.out.MovqRegToXmm("xmm0", "rax")
+		return
 
 	case "head":
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Matched head() builtin case!\n")
+		}
 		// head(list) - Get first element of list (returns NaN if empty)
 		if len(call.Args) != 1 {
 			compilerError("head() requires exactly 1 argument (list)")
@@ -12965,6 +12969,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.MovqXmmToReg("rcx", "xmm3")    // rcx = value (as bits)
 		fc.out.Cmovne("rax", "rcx")           // if count != 0, rax = value
 		fc.out.MovqRegToXmm("xmm0", "rax")    // xmm0 = result
+		return
 
 	case "tail":
 		// tail(list) - Get list without first element
@@ -13109,6 +13114,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Return new list pointer in xmm0
 		fc.out.MovqRegToXmm("xmm0", "rax")
+		return
 
 	case "printa":
 		// printa() - Print value in rax register for debugging
@@ -13134,6 +13140,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.XorpdXmm("xmm0", "xmm0")
 
 	default:
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Hit default case for function='%s'\n", call.Function)
+		}
 		// Unknown function - track it for dependency resolution
 		fc.unknownFunctions[call.Function] = true
 		fc.trackFunctionCall(call.Function)
