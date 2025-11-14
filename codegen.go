@@ -8087,6 +8087,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PushReg("rbx")
 	fc.out.PushReg("r12")
 	fc.out.PushReg("r13")
+	fc.out.PushReg("r14")
 	
 	fc.out.MovRegToReg("rbx", "rdi") // rbx = string pointer
 	
@@ -8099,16 +8100,16 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovRegToReg("r13", "rsp") // r13 = buffer address
 	
 	// Loop through characters
-	fc.out.XorRegWithReg("rcx", "rcx") // rcx = index
+	fc.out.XorRegWithReg("r14", "r14") // r14 = index (use r14 instead of rcx since syscall clobbers rcx)
 	
 	strPrintLoopStart := fc.eb.text.Len()
-	fc.out.CmpRegToReg("rcx", "r12")
+	fc.out.CmpRegToReg("r14", "r12")
 	strPrintLoopEnd := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpGreaterOrEqual, 0)
 	strPrintLoopEndPos := fc.eb.text.Len()
 	
 	// Calculate offset: 16 + index * 16
-	fc.out.MovRegToReg("rax", "rcx")
+	fc.out.MovRegToReg("rax", "r14")
 	fc.out.ShlImmReg("rax", 4)      // rax = index * 16
 	fc.out.AddImmToReg("rax", 16)   // rax = 16 + index * 16
 	fc.out.AddRegToReg("rax", "rbx") // rax = string_ptr + offset
@@ -8126,7 +8127,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.Syscall()
 	
 	// Increment and loop
-	fc.out.IncReg("rcx")
+	fc.out.IncReg("r14")
 	strPrintBackOffset := int32(strPrintLoopStart - (fc.eb.text.Len() + 5))
 	fc.out.JumpUnconditional(strPrintBackOffset)
 	
@@ -8145,6 +8146,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	
 	// Restore
 	fc.out.AddImmToReg("rsp", 8)
+	fc.out.PopReg("r14")
 	fc.out.PopReg("r13")
 	fc.out.PopReg("r12")
 	fc.out.PopReg("rbx")
