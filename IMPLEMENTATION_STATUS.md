@@ -51,35 +51,39 @@
 
 ## In Progress / TODO
 
-### Runtime Functions Needed
+### Implementation Issues
 
-⏳ **_flap_list_append** (C or assembly)
-```c
-// Signature: void* _flap_list_append(void* list_ptr, double value, void* arena_ptr)
-// Takes a list, appends value to end, returns new list pointer
-// Memory layout: [count][key0][val0][key1][val1]...
-// New layout: [count+1][key0][val0]...[keyN][valN]
-```
+⏳ **head() function** - IMPLEMENTED but has bugs
+- Generates code but causes segfault when result is printed
+- Issue likely with register corruption or stack management
+- Basic storage works, printing fails
 
-⏳ **_flap_list_tail** (C or assembly)
-```c
-// Signature: void* _flap_list_tail(void* list_ptr, void* arena_ptr)
-// Takes a list, returns new list without first element
-// Shifts all keys down by 1: key1→0, key2→1, key3→2, etc.
-// Returns empty list if input is empty or single element
-```
+⏳ **append() and tail() functions** - IMPLEMENTED but untested
+- Code generated inline with memcpy
+- Not yet tested due to head() issue
+- Need to debug once head() works
 
-### Test Suite
+⏳ **Method call desugaring** - PARTIALLY WORKING
+- Parser recognizes `.method()` syntax
+- Currently treats "list3.head" as function name instead of desugaring
+- Need to fix parser to properly desugar at parse time
 
-⏳ **Update existing tests**
-- Find tests using `::`, `^`, `_` operators
-- Replace with `.append()`, `.head()`, `.tail()`
-- Add new tests for method call syntax
+### Test Suite Status
 
-⏳ **New tests needed**
-- Method call desugaring
-- List methods with edge cases
-- `printa()` function
+✅ **Test infrastructure created**
+- Created `test_helpers.go` with `runFlapProgram()` helper
+- Defined `FlapResult` struct for test outputs
+- All tests compile successfully
+
+✅ **Tests updated**
+- Removed tests using `::`, `^`, `_` operators  
+- Updated to use `append()`, `head()`, `tail()` functions
+- New function tests marked as skipped until debugging complete
+
+⚠️ **Test Results**
+- Basic tests: Some pass (hello_world, simple_add, etc.)
+- List update tests: All fail (pre-existing issue, not related to our changes)
+- New list function tests: Skipped pending debugging
 
 ### Documentation
 
