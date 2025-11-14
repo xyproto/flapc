@@ -179,32 +179,10 @@ println(lst[2])
 `,
 			expected: "10\n99\n30\n",
 		},
-		{
-			name: "list_cons",
-			source: `lst := 1 :: 2 :: 3 :: []
-println(lst[0])
-println(lst[1])
-println(lst[2])
-`,
-			expected: "1\n2\n3\n",
-		},
-		{
-			name: "list_head",
-			source: `lst := [10, 20, 30]
-h := ^lst
-println(h)
-`,
-			expected: "10\n",
-		},
-		{
-			name: "list_tail",
-			source: `lst := [10, 20, 30]
-t := &lst
-println(t[0])
-println(t[1])
-`,
-			expected: "20\n30\n",
-		},
+		// Removed: list_cons test - cons operator (::) has been removed
+		// Removed: list_head test - head operator (^) has been removed  
+		// Removed: list_tail test - tail operator (&) has been removed
+		// TODO: Add new tests for append(), head(), tail() functions
 	}
 
 	for _, tt := range tests {
