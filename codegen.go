@@ -10077,7 +10077,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			// String literal - use printf with %s\n
 			labelName := fmt.Sprintf("str_%d", fc.stringCounter)
 			fc.stringCounter++
-			fc.eb.Define(labelName, strExpr.Value)
+			fc.eb.Define(labelName, strExpr.Value+"\x00")
 
 			fmtLabel := fmt.Sprintf("println_fmt_%d", fc.stringCounter)
 			fc.stringCounter++
