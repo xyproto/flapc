@@ -1,0 +1,7 @@
+c := 1 :: 2 :: 3 :: []
+x := c[0]
+y := c[1]
+z := c[2]
+println(x)
+println(y)
+println(z)

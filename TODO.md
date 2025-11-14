@@ -1,15 +1,61 @@
 # TODO - Bug Fixes
 
-**Test Status:** 122/176 passing (69.3%)  
+**Test Status:** 119/147 passing (81%)  
 **Goal:** 95%+ pass rate for Flap 2.0 release
 
-**Recent Progress:** Fixed list literal allocation - all list operations now work except cons operator
+**Recent Progress:** Created MEMORY.md documenting memory management philosophy
 
 ---
 
 ## Critical Bugs
 
-### 1. Lambda Block Bodies Not Working
+### 1. Remove Malloc from Cons Operator (HIGH PRIORITY)
+**Failing Tests:** 1 test (list_cons)
+**Issue:** #1 - Memory management philosophy violation
+
+**Problem:**
+```flap
+result := 1 :: [2, 3]  // Segfaults due to malloc in _flap_list_cons
+```
+
+**Root Cause:**
+The cons operator (`::`) currently calls malloc directly, which violates the Flap memory philosophy. According to MEMORY.md and LANGUAGE.md:
+- Cons should use arena allocation
+- Malloc should ONLY be used for: (1) user c.malloc(), (2) arena metadata, (3) arena growth
+- The current implementation crashes in parallel contexts and with stack alignment issues
+
+**Solution:**
+1. Create a global default arena for implicit allocations
+2. Rewrite `_flap_list_cons` to use arena allocation instead of malloc
+3. If inside explicit arena block, use that arena; otherwise use default arena
+
+**Files:** 
+- `codegen.go` (line 7697-7700: remove malloc, use arena allocation)
+- `flap_runtime.go` (implement global default arena)
+- `MEMORY.md` (documents the philosophy - already done)
+
+---
+
+### 2. Map Update Returns Wrong Value
+**Failing Tests:** 1 test (map_update)
+
+**Problem:**
+```flap
+m := {a: 10}
+m[a] <- 20
+println(m[a])  // Prints 0 instead of 20
+```
+
+**Investigation:**
+- Check `__flap_map_update` implementation
+- Verify map update codegen generates correct machine code
+- May be related to key hashing or lookup logic
+
+**Files:** `codegen.go` (map update logic)
+
+---
+
+### 3. Lambda Block Bodies Not Working
 **Failing Tests:** 2 tests (lambda_with_block, lambda_match)
 
 **Problem:**
@@ -27,41 +73,6 @@ Single expressions work: `f := x => x + 1`
 - Compare with function definition codegen (which works)
 
 **Files:** `parser.go` (parseLambda), `codegen.go` (case *LambdaExpr)
-
----
-
-### 2. Map Update Returns Wrong Value
-**Failing Tests:** 1 test (map_update)
-
-**Problem:**
-```flap
-m := {a: 10}
-m[a] <- 20
-println(m[a])  // Prints 0 instead of 20
-```
-
-**Investigation:**
-- Check `__flap_map_update` implementation
-- Verify map update codegen generates correct machine code
-
-**Files:** `codegen.go` (map update logic)
-
----
-
-### 3. List Cons Operator Crashes
-**Failing Tests:** 1 test (list_cons)
-
-**Problem:**
-```flap
-result := 1 :: [2, 3]  // Segfaults
-```
-
-**Investigation:**
-- Check `_flap_list_cons` runtime implementation
-- Verify cons operator codegen in `case "::"`
-- Cons should create new list: [1, 2, 3]
-
-**Files:** `codegen.go` (lines ~3914-3934)
 
 ---
 

@@ -1,0 +1,2 @@
+lst := 2 :: 3 :: []
+println(#lst)

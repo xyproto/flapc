@@ -2861,6 +2861,10 @@ func (fc *FlapCompiler) getExprType(expr Expression) string {
 		// C constants are always numbers
 		return "number"
 	case *BinaryExpr:
+		// Cons operator :: always returns a list
+		if e.Operator == "::" {
+			return "list"
+		}
 		// Binary expressions between strings return strings if operator is "+"
 		if e.Operator == "+" {
 			leftType := fc.getExprType(e.Left)
@@ -4446,7 +4450,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			envSize := len(e.CapturedVars) * 8
 			totalSize := 16 + envSize // closure object + environment
 
-			// Allocate memory with malloc
+			// DO NOT USE MALLOC! See MEMORY.md - closures should use arena allocation
+			// TODO: Replace with arena allocation
+			// Allocate memory (temporary malloc)
 			// Ensure stack is 16-byte aligned before call
 			// Save current rsp to restore after alignment
 			fc.out.MovRegToReg("r13", "rsp") // Save original rsp
@@ -5635,7 +5641,8 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	fc.out.ShlRegImm("rdi", "3")     // rdi = length * 8
 	fc.out.AddImmToReg("rdi", 8)     // rdi = 8 + length * 8
 
-	// Call malloc to allocate result list on heap
+	// DO NOT USE MALLOC! See MEMORY.md - should use arena allocation
+	// TODO: Replace with arena allocation (if mutable) or .rodata (if immutable)
 	fc.trackFunctionCall("malloc")
 	fc.eb.GenerateCallInstruction("malloc")
 
@@ -6257,7 +6264,8 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x0f}) // add rax, 15
 	fc.out.Emit([]byte{0x48, 0x83, 0xe0, 0xf0}) // and rax, ~15
 
-	// Call malloc(rax)
+	// DO NOT USE MALLOC! See MEMORY.md - string concat should use arena allocation
+	// TODO: Replace with arena allocation
 	fc.out.MovRegToReg("rdi", "rax")
 	fc.trackFunctionCall("malloc") // Track for PLT patching
 	fc.eb.GenerateCallInstruction("malloc")
@@ -6356,7 +6364,9 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovMemToXmm("xmm0", "r12", 0)
 	fc.out.Emit([]byte{0xf2, 0x4c, 0x0f, 0x2c, 0xf0}) // cvttsd2si r14, xmm0 (r14 = codepoint count)
 
-	// Allocate memory: malloc(count * 4 + 1) for UTF-8 (max 4 bytes per codepoint + null)
+	// DO NOT USE MALLOC! See MEMORY.md - C string conversion should use arena allocation
+	// TODO: Replace with arena allocation (or stack for small strings)
+	// Allocate memory: count * 4 + 1 for UTF-8 (max 4 bytes per codepoint + null)
 	fc.out.MovRegToReg("rdi", "r14")
 	fc.out.Emit([]byte{0x48, 0xc1, 0xe7, 0x02}) // shl rdi, 2 (multiply by 4)
 	fc.out.Emit([]byte{0x48, 0x83, 0xc7, 0x01}) // add rdi, 1
@@ -7694,10 +7704,13 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MulRegWithImm("rax", 8)
 	fc.out.AddImmToReg("rax", 8)
 
-	// TEMPORARY: Use malloc directly (TODO: fix arena allocation)
-	fc.out.MovRegToReg("rdi", "rax") // size to allocate
-	fc.trackFunctionCall("malloc")
-	fc.eb.GenerateCallInstruction("malloc")
+	// Use arena allocation instead of malloc (see MEMORY.md)
+	// We use the default arena (_flap_default_arena_struct) for cons operations
+	fc.out.MovRegToReg("r14", "rax")                             // r14 = size to allocate (save it)
+	fc.out.LeaSymbolToReg("rdi", "_flap_default_arena_struct")  // rdi = arena pointer
+	fc.out.MovRegToReg("rsi", "r14")                             // rsi = size
+	fc.trackFunctionCall("flap_arena_alloc")
+	fc.eb.GenerateCallInstruction("flap_arena_alloc")
 	fc.out.MovRegToReg("r10", "rax") // r10 = new list pointer
 
 	// Write new length to result

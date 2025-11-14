@@ -1,0 +1,6 @@
+a := 3 :: []
+println(#a)
+b := 2 :: a
+println(#b)
+c := 1 :: b
+println(#c)

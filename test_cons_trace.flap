@@ -1,0 +1,7 @@
+a := 3 :: []
+println("After first cons")
+b := 2 :: a
+println("After second cons")
+c := 1 :: b
+println("After third cons")
+println(c[0])

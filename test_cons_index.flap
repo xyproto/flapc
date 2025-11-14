@@ -1,0 +1,6 @@
+a := 3 :: []
+b := 2 :: a
+c := 1 :: b
+println(c[0])
+println(c[1])
+println(c[2])

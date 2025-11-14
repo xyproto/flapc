@@ -1,0 +1,4 @@
+lst := [1, 2, 3]
+println(lst[0])
+println(lst[1])
+println(lst[2])
