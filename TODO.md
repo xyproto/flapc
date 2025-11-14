@@ -1,7 +1,7 @@
 # TODO - Bug Fixes
 
-**Test Status:** 120/130 passing (92%)  
-**Goal:** 95%+ pass rate for Flap 2.0 release
+**Test Status:** 121/130 passing (93%)  
+**Goal:** 95%+ pass rate for Flap 2.0 release (4 more tests needed!)
 
 **Recent Progress:** 
 - ✅ REDESIGNED: Lists now use universal map representation (everything is map[uint64]float64)
