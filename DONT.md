@@ -173,7 +173,7 @@ if x > 0 {      // WRONG - 'if' doesn't exist
 **Correct approach:**
 ```flap
 // Guard match (note the | prefix for conditions)
-x {
+{
     | x > 0 -> println("positive")
     ~> println("negative")
 }
@@ -181,6 +181,12 @@ x {
 // Or simple conditional
 x > 0 {
     println("positive")
+    ~> println("negative")
+}
+
+// Or with the optional arrow
+x > 0 {
+    -> println("positive")
     ~> println("negative")
 }
 ```

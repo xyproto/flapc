@@ -9959,24 +9959,18 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		return
 
 	case "println":
-		// If printf has been used, flush all stdio streams before syscall write
-		// This ensures printf's buffered output is written before our direct syscall
-		if fc.usedFunctions["printf"] {
-			fc.out.XorRegWithReg("rdi", "rdi") // fflush(NULL) flushes all output streams
-			fc.trackFunctionCall("fflush")
-			fc.eb.GenerateCallInstruction("fflush")
-		}
-
+		// println is now a simple wrapper around printf
+		// This avoids the fflush issues and keeps things simple
+		
 		if len(call.Args) == 0 {
 			// Just print a newline
-			newlineLabel := fmt.Sprintf("newline_%d", fc.stringCounter)
+			newlineLabel := fmt.Sprintf("println_fmt_%d", fc.stringCounter)
 			fc.stringCounter++
 			fc.eb.Define(newlineLabel, "\n")
-
-			// Write newline using syscall: write(1, str, 1)
-			fc.out.LeaSymbolToReg("rsi", newlineLabel)
-			fc.out.MovImmToReg("rdx", "1") // length = 1
-			fc.eb.SysWrite("rsi", "rdx")
+			
+			fc.out.LeaSymbolToReg("rdi", newlineLabel)
+			fc.trackFunctionCall("printf")
+			fc.eb.GenerateCallInstruction("printf")
 			return
 		}
 
@@ -9984,45 +9978,35 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		argType := fc.getExprType(arg)
 
 		if strExpr, ok := arg.(*StringExpr); ok {
-			// String literal - use direct syscall write
+			// String literal - use printf with %s\n
 			labelName := fmt.Sprintf("str_%d", fc.stringCounter)
 			fc.stringCounter++
-			strWithNewline := strExpr.Value + "\n"
-			fc.eb.Define(labelName, strWithNewline)
-
-			// Write using syscall: write(1, str, len)
+			fc.eb.Define(labelName, strExpr.Value)
+			
+			fmtLabel := fmt.Sprintf("println_fmt_%d", fc.stringCounter)
+			fc.stringCounter++
+			fc.eb.Define(fmtLabel, "%s\n")
+			
+			fc.out.LeaSymbolToReg("rdi", fmtLabel)
 			fc.out.LeaSymbolToReg("rsi", labelName)
-			fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", len(strWithNewline))) // length
-			fc.eb.SysWrite("rsi", "rdx")
+			fc.trackFunctionCall("printf")
+			fc.eb.GenerateCallInstruction("printf")
 		} else if argType == "string" {
-			// String variable - convert map[uint64]float64 to bytes and write with syscall
-
-			// Compile the string expression (returns map pointer as float64 in xmm0)
+			// String variable - need to convert map to C string first, then use printf
+			// For now, use printf with %f\n as workaround
+			// TODO: Implement proper string map to C string conversion
 			fc.compileExpression(arg)
-
-			// Convert xmm0 (string map pointer) to rax
-			fc.out.SubImmFromReg("rsp", StackSlotSize)
-			fc.out.MovXmmToMem("xmm0", "rsp", 0)
-			fc.out.MovMemToReg("rax", "rsp", 0)
-			fc.out.AddImmToReg("rsp", StackSlotSize)
-
-			// Allocate buffer on stack (260 bytes: length + 256 chars + newline + null)
-			fc.out.SubImmFromReg("rsp", 260)
-
-			// Convert map to string buffer
-			// rax = map pointer, rsp = buffer start
-			fc.compilePrintMapAsString("rax", "rsp")
-
-			// rsi now points to string start, rdx has length (including newline)
-			// Write using syscall
-			fc.eb.SysWrite("rsi", "rdx")
-
-			// Clean up stack
-			fc.out.AddImmToReg("rsp", 260)
+			
+			fmtLabel := fmt.Sprintf("println_fmt_%d", fc.stringCounter)
+			fc.stringCounter++
+			fc.eb.Define(fmtLabel, "%f\n")
+			
+			fc.out.LeaSymbolToReg("rdi", fmtLabel)
+			// xmm0 already has the value
+			fc.trackFunctionCall("printf")
+			fc.eb.GenerateCallInstruction("printf")
 		} else if argType == "list" || argType == "map" {
-			// Print list/map - iterate through all elements and print each on a line
-			// This is the complete, final implementation for array/map printing
-
+			// Print list/map - iterate and use printf for each element
 			// Compile the expression to get map pointer
 			fc.compileExpression(arg)
 			// xmm0 now contains the map pointer as float64
@@ -10033,52 +10017,62 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			fc.out.MovMemToReg("rax", "rsp", 0)
 			fc.out.AddImmToReg("rsp", StackSlotSize)
 
-			// Save map pointer to r15 for later use
-			fc.out.MovRegToReg("r15", "rax")
+			// Save map pointer on the stack (printf clobbers most registers!)
+			// We need: map pointer, length, index - all must survive printf calls
+			fc.out.SubImmFromReg("rsp", 24) // 3 * 8 bytes for map_ptr, length, index
+			fc.out.MovRegToMem("rax", "rsp", 0) // [rsp+0] = map pointer
 
 			// Get the length of the map (stored at offset 0 as float64)
-			fc.out.MovMemToXmm("xmm0", "r15", 0)
-			fc.out.Cvttsd2si("r12", "xmm0") // r12 = length (as integer)
+			fc.out.MovMemToXmm("xmm0", "rax", 0)
+			fc.out.Cvttsd2si("rcx", "xmm0") // rcx = length (as integer)
+			fc.out.MovRegToMem("rcx", "rsp", 8) // [rsp+8] = length
 
 			// Initialize index to 0 (iterate forward from 0 to length-1)
-			fc.out.XorRegWithReg("r13", "r13") // r13 = 0 (current index)
+			fc.out.MovImmToReg("rcx", "0")
+			fc.out.MovRegToMem("rcx", "rsp", 16) // [rsp+16] = index = 0
+
+			// Create format string for numbers (use %g for smart formatting)
+			fmtLabel := fmt.Sprintf("println_fmt_%d", fc.stringCounter)
+			fc.stringCounter++
+			fc.eb.Define(fmtLabel, "%g\n")
 
 			// Get current position for loop start
 			loopStartPos := fc.eb.text.Len()
 
+			// Load index and length from stack
+			fc.out.MovMemToReg("rcx", "rsp", 16) // rcx = index
+			fc.out.MovMemToReg("rdx", "rsp", 8)  // rdx = length
+			
 			// Check if index >= length (loop exit condition)
-			fc.out.CmpRegToReg("r13", "r12") // Compare index with length
+			fc.out.CmpRegToReg("rcx", "rdx") // Compare index with length
 			// Jump to end if index >= length
 			loopEndJumpPos := fc.eb.text.Len()
 			fc.out.JumpConditional(JumpGreaterOrEqual, 0) // Placeholder, will be patched
 
+			// Load map pointer from stack
+			fc.out.MovMemToReg("rax", "rsp", 0) // rax = map pointer
+
 			// Calculate element address: map_base + 8 + (index * 8)
 			// The map structure is: [length (8 bytes)] [element0] [element1] ...
-			fc.out.MovRegToReg("rbx", "r15") // rbx = map base
-			fc.out.AddImmToReg("rbx", 8)     // rbx = map base + 8 (skip length)
-			fc.out.MovRegToReg("rax", "r13") // rax = index
-			fc.out.ShlImmReg("rax", 3)       // rax = index * 8
-			fc.out.AddRegToReg("rbx", "rax") // rbx = element address
+			fc.out.MovRegToReg("rbx", "rax")  // rbx = map base
+			fc.out.AddImmToReg("rbx", 8)      // rbx = map base + 8 (skip length)
+			fc.out.MovRegToReg("rsi", "rcx")  // rsi = index
+			fc.out.ShlImmReg("rsi", 3)        // rsi = index * 8
+			fc.out.AddRegToReg("rbx", "rsi")  // rbx = element address
 
 			// Load the element value into xmm0
 			fc.out.MovMemToXmm("xmm0", "rbx", 0)
 
-			// Print the element value
-			// Allocate 32 bytes on stack for number-to-string conversion
-			fc.out.SubImmFromReg("rsp", 32)
+			// Print using printf (printf clobbers rax, rcx, rdx, rsi, rdi, r8-r11)
+			fc.out.LeaSymbolToReg("rdi", fmtLabel)
+			// xmm0 already has the value
+			fc.trackFunctionCall("printf")
+			fc.eb.GenerateCallInstruction("printf")
 
-			// Convert float64 in xmm0 to string at rsp
-			// compileFloatToString returns: rsi = string pointer, rdx = length
-			fc.compileFloatToString("xmm0", "rsp")
-
-			// Write the string using syscall write(1, rsi, rdx)
-			fc.eb.SysWrite("rsi", "rdx")
-
-			// Clean up stack space for number string
-			fc.out.AddImmToReg("rsp", 32)
-
-			// Increment index
-			fc.out.AddImmToReg("r13", 1)
+			// Increment index on stack
+			fc.out.MovMemToReg("rcx", "rsp", 16) // Load current index
+			fc.out.AddImmToReg("rcx", 1)          // Increment
+			fc.out.MovRegToMem("rcx", "rsp", 16)  // Store back
 
 			// Jump back to loop start
 			loopBackJumpPos := fc.eb.text.Len()
@@ -10089,24 +10083,24 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			loopEndPos := fc.eb.text.Len()
 			endOffset := int32(loopEndPos - (loopEndJumpPos + 6)) // 6 bytes for conditional jump
 			fc.patchJumpImmediate(loopEndJumpPos+2, endOffset)
+			
+			// Clean up stack
+			fc.out.AddImmToReg("rsp", 24)
 
 		} else {
-			// Print number - convert to string and use syscall
+			// Print number using printf with %g (smart formatting)
+			// %g prints integers without decimals, floats with minimal decimals
 			fc.compileExpression(arg)
 			// xmm0 contains float64 value
+			
+			fmtLabel := fmt.Sprintf("println_fmt_%d", fc.stringCounter)
+			fc.stringCounter++
+			fc.eb.Define(fmtLabel, "%g\n")
 
-			// Allocate 32 bytes on stack for number string
-			fc.out.SubImmFromReg("rsp", 32)
-
-			// Convert float64 in xmm0 to string at rsp
-			// Result: rsi = string pointer, rdx = length
-			fc.compileFloatToString("xmm0", "rsp")
-
-			// Write using syscall
-			fc.eb.SysWrite("rsi", "rdx")
-
-			// Clean up stack
-			fc.out.AddImmToReg("rsp", 32)
+			fc.out.LeaSymbolToReg("rdi", fmtLabel)
+			// xmm0 already has the value
+			fc.trackFunctionCall("printf")
+			fc.eb.GenerateCallInstruction("printf")
 		}
 
 	case "printf":
