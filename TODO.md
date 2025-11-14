@@ -1,129 +1,59 @@
 # TODO - Bug Fixes
 
-**Test Status:** 124/130 passing (95.4%) ✅ GOAL ACHIEVED!
-**Goal:** 95%+ pass rate for Flap 2.0 release ✅
+**Test Status:** 125/130 passing (96.2%) ✅
+**New Goal:** 98%+ pass rate (128/130 tests needed - 3 more tests!)
 
 **Recent Progress:** 
-- ✅ GOAL REACHED: 95.4% pass rate!
-- ✅ REDESIGNED: Lists now use universal map representation (everything is map[uint64]float64)
-- ✅ FIXED: List/map update bug - inline offset calculation for map-based lists
-- ✅ FIXED: println crash bug - added null terminators to format strings
+- ✅ 95% GOAL EXCEEDED: Now at 96.2%!
+- ✅ FIXED: List iteration for map-based lists
+- ✅ REDESIGNED: Lists now use universal map representation
+- ✅ FIXED: List/map update bug
+- ✅ FIXED: println crash bug
 - ✅ FIXED: ENet tests - added example files
-- ✅ FIXED: Lambda bad syntax test - test was using correct syntax
-- Lists follow Flap philosophy: [1,2,3] = [count][0][1.0][1][2.0][2][3.0]
-- O(1) indexing, updates, and length operations
-
-### 1. ✅ FIXED: println Crashes After Cons Operations
-**Status:** RESOLVED - println now works correctly
-
-**Fix Applied:**
-- Added `\x00` null terminators to all println format strings
-- Printf was reading garbage without null terminators
-- Added return statements to prevent case fall-through
-- Added fflush to PLT functions list
-
-**Commit:** e9f2151
+- ✅ FIXED: Lambda bad syntax test
 
 ---
 
-### 2. ✅ FIXED: List Update Returns Wrong Value
-**Status:** RESOLVED - list updates now work correctly
+## Remaining Issues (5 failing tests)
 
-**Fix Applied:**
-- Lists are linked lists (cons cells: [head][tail]), not arrays
-- Removed broken `_flap_list_update` that assumed array structure
-- Emit inline code that walks to index-th cons cell and mutates head
-- Maps still use array-style in-place update
+### String Variable Printing (3 tests)
+**Failing Tests:** string_variable, string_concatenation, empty_string
 
-**Commit:** 8535877
+**Issue:** println() doesn't handle string variables - prints "0.000000" instead of string content
+
+**Solution:** Use write syscall to print character by character:
+- Strings are maps: `[count][0][char0][1][char1]...`
+- Loop through indices, load character codes
+- Use `write(1, buffer, 1)` syscall for each char
+- No PLT needed - pure syscalls!
+
+**Files:** `codegen.go` (line 10091-10105)
 
 ---
 
-### 3. Lambda Block Bodies Not Working
-**Failing Tests:** 2 tests (lambda_with_block, lambda_match)
+### Lambda Block Bodies (2 tests)
+**Failing Tests:** lambda_with_block, lambda_match
 
 **Problem:**
 ```flap
 f := x => {
     y := x + 1
     y * 2
-}  // Fails
+}  // Not implemented
 ```
+
 Single expressions work: `f := x => x + 1`
 
-**Investigation:**
-- Check parser handling of `LambdaExpr` with `BlockExpr` body
-- Verify codegen for lambda closures with multiple statements
-- Compare with function definition codegen (which works)
+**Solution:** BlockExpr bodies need proper code generation in lambda compilation
 
-**Files:** `parser.go` (parseLambda), `codegen.go` (case *LambdaExpr)
+**Files:** `codegen.go` (lambda compilation)
 
 ---
 
-## Medium Priority
+## Performance Wins from List Redesign
+- O(1) indexing (was O(n) with linked lists)
+- O(1) length (was O(n))
+- O(1) updates
+- Better cache locality
+- 400+ lines of code removed
 
-### 4. ENet Integration
-**Failing Tests:** 2 tests (ENet compilation/codegen)
-
-May be test environment issue (missing libenet). Verify:
-- ENet library available
-- Linking works
-- Test expectations are correct
-
-**Files:** `enet_test.go`, `enet_codegen.go`
-
----
-
-### 5. Compilation Error Tests
-**Failing Tests:** 1 test (lambda_bad_syntax)
-
-Test expects compilation to fail but it succeeds. Review test expectations against LANGUAGE.md spec.
-
-**Files:** `compiler_test.go`
-
----
-
-## Quick Commands
-
-```bash
-# Run all tests
-go test
-
-# Run specific test
-go test -v -run="TestName"
-
-# Debug segfault
-./flapc test.flap test && timeout 2 ./test || echo "Crashed: $?"
-
-# Check machine code
-objdump -d ./test | less
-```
-
----
-
-## Implementation Notes
-
-**Memory Strategy:**
-- Cons operator now uses arena allocation (fixed!)
-- Default arena (arena0) initialized at program start
-- Lists built with cons use arena0 automatically
-- See MEMORY.md for full details
-
-**Debugging Approach:**
-1. Create minimal failing test case
-2. Compile with `./flapc -o test test.flap`
-3. Use printf instead of println to isolate issue
-4. Inspect machine code with `objdump -d test`
-5. Run with timeout to catch segfaults
-6. Use gdb if needed: `gdb ./test`
-
-**Priority:** Fix println/cons interaction first (blocks 1 test), then lambda blocks (blocks 2 tests), then map update (blocks 1 test).
-
----
-
-**Next:** After fixing these bugs, run full test suite and aim for 95%+ pass rate.
-
-
-Additional tasks:
-
-- [ ] `.error()` should strip spaces from the end of the error code string.
