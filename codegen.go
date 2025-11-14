@@ -517,7 +517,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 
 	// Build pltFunctions list from all called functions
 	// Start with essential functions that runtime helpers need
-	pltFunctions := []string{"printf", "exit", "malloc", "free", "realloc", "strlen", "pow"}
+	pltFunctions := []string{"printf", "exit", "malloc", "free", "realloc", "strlen", "pow", "fflush"}
 
 	// Add all functions from usedFunctions (includes call() dynamic calls)
 	pltSet := make(map[string]bool)
@@ -9957,7 +9957,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			// Just print a newline
 			newlineLabel := fmt.Sprintf("println_fmt_%d", fc.stringCounter)
 			fc.stringCounter++
-			fc.eb.Define(newlineLabel, "\n")
+			fc.eb.Define(newlineLabel, "\n\x00")
 			
 			fc.out.LeaSymbolToReg("rdi", newlineLabel)
 			fc.trackFunctionCall("printf")
@@ -9976,12 +9976,13 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			
 			fmtLabel := fmt.Sprintf("println_fmt_%d", fc.stringCounter)
 			fc.stringCounter++
-			fc.eb.Define(fmtLabel, "%s\n")
+			fc.eb.Define(fmtLabel, "%s\n\x00")
 			
 			fc.out.LeaSymbolToReg("rdi", fmtLabel)
 			fc.out.LeaSymbolToReg("rsi", labelName)
 			fc.trackFunctionCall("printf")
 			fc.eb.GenerateCallInstruction("printf")
+			return
 		} else if argType == "string" {
 			// String variable - need to convert map to C string first, then use printf
 			// For now, use printf with %f\n as workaround
@@ -9990,12 +9991,13 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			
 			fmtLabel := fmt.Sprintf("println_fmt_%d", fc.stringCounter)
 			fc.stringCounter++
-			fc.eb.Define(fmtLabel, "%f\n")
+			fc.eb.Define(fmtLabel, "%f\n\x00")
 			
 			fc.out.LeaSymbolToReg("rdi", fmtLabel)
 			// xmm0 already has the value
 			fc.trackFunctionCall("printf")
 			fc.eb.GenerateCallInstruction("printf")
+			return
 		} else if argType == "list" || argType == "map" {
 			// Print list/map - iterate and use printf for each element
 			// Compile the expression to get map pointer
@@ -10025,7 +10027,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			// Create format string for numbers (use %g for smart formatting)
 			fmtLabel := fmt.Sprintf("println_fmt_%d", fc.stringCounter)
 			fc.stringCounter++
-			fc.eb.Define(fmtLabel, "%g\n")
+			fc.eb.Define(fmtLabel, "%g\n\x00")
 
 			// Get current position for loop start
 			loopStartPos := fc.eb.text.Len()
@@ -10079,6 +10081,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			
 			// Clean up stack
 			fc.out.AddImmToReg("rsp", 24)
+			return
 
 		} else {
 			// Print number using printf with %g (smart formatting)
@@ -10088,7 +10091,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			
 			fmtLabel := fmt.Sprintf("println_fmt_%d", fc.stringCounter)
 			fc.stringCounter++
-			fc.eb.Define(fmtLabel, "%g\n")
+			fc.eb.Define(fmtLabel, "%g\n\x00")
 
 			fc.out.LeaSymbolToReg("rdi", fmtLabel)
 			// xmm0 already has the value
@@ -10097,6 +10100,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			fc.trackFunctionCall("printf")
 			fc.eb.GenerateCallInstruction("printf")
 		}
+		return
 
 	case "printf":
 		if len(call.Args) == 0 {
