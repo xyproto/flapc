@@ -1,13 +1,14 @@
 # TODO - Bug Fixes
 
-**Test Status:** 118/130 passing (91%)  
+**Test Status:** 120/130 passing (92%)  
 **Goal:** 95%+ pass rate for Flap 2.0 release
 
 **Recent Progress:** 
-- ✅ FIXED: List/map update bug - inline traversal and mutation for linked lists
+- ✅ REDESIGNED: Lists now use universal map representation (everything is map[uint64]float64)
+- ✅ FIXED: List/map update bug - inline offset calculation for map-based lists
 - ✅ FIXED: println crash bug - added null terminators to format strings
-- Fixed cons operator type recognition (:: now returns "list" type)
-- Cons-built lists work correctly with indexing and printf
+- Lists follow Flap philosophy: [1,2,3] = [count][0][1.0][1][2.0][2][3.0]
+- O(1) indexing, updates, and length operations
 
 ---
 
