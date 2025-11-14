@@ -1,9 +1,10 @@
 # TODO - Bug Fixes
 
-**Test Status:** 119/147 passing (81%)  
+**Test Status:** 108/130 passing (83%)  
 **Goal:** 95%+ pass rate for Flap 2.0 release
 
 **Recent Progress:** 
+- ✅ FIXED: println crash bug - added null terminators to format strings
 - Fixed cons operator type recognition (:: now returns "list" type)
 - Cons-built lists work correctly with indexing and printf
 
@@ -11,40 +12,20 @@
 
 ## Critical Bugs
 
-### 1. println Crashes After Cons Operations (HIGH PRIORITY)
-**Failing Tests:** 1 test (list_cons with println)
-**Issue:** #1 - println segfaults when used after cons operations
+### 1. ✅ FIXED: println Crashes After Cons Operations
+**Status:** RESOLVED - println now works correctly
 
-**Problem:**
-```flap
-lst := 1 :: 2 :: []
-println(lst[0])  // Crashes with segfault
-printf("%f\n", lst[0])  // Works fine
-```
+**Fix Applied:**
+- Added `\x00` null terminators to all println format strings
+- Printf was reading garbage without null terminators
+- Added return statements to prevent case fall-through
+- Added fflush to PLT functions list
 
-**Root Cause:**
-- Cons operations use arena allocation (calling flap_arena_alloc)
-- Arena allocator may call realloc which is a C function
-- println implementation has inline string formatting code
-- Crash occurs specifically with println, not printf
-- Issue appears to be register/stack corruption in println inline code
-- Warning: "No PLT entry or label for fflush" suggests fflush being called incorrectly
-
-**Workaround:** Use printf instead of println after cons operations
-
-**Solution Steps:**
-1. Investigate why fflush is being called when printf wasn't used
-2. Check if println's inline code properly saves/restores registers
-3. Verify stack alignment in println after cons operations
-4. Consider: should println use printf internally instead of inline code?
-
-**Files:** 
-- `codegen.go` (line 9961-10100: println implementation)
-- Need to debug register usage and stack state
+**Commit:** e9f2151
 
 ---
 
-### 2. Map Update Returns Wrong Value
+### 2. Map/List Update Returns Wrong Value (HIGH PRIORITY)
 **Failing Tests:** 1 test (map_update)
 
 **Problem:**

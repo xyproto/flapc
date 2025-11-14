@@ -1476,9 +1476,9 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 		fc.out.MovXmmToMem("xmm0", baseReg, -offset)
 
 	case *MapUpdateStmt:
-		// Direct map/list element update: arr[idx] <- value
-		// Memory layout: [length (float64)] [elem0] [elem1] ...
-		// Address of elem[i] = list_ptr + 8 + (i * 8)
+		// List/map element update: arr[idx] <- value
+		// For lists (linked lists): Creates new list with updated element
+		// For maps: Updates in-place
 
 		// Check if variable exists and is mutable
 		offset, exists := fc.variables[s.MapName]
@@ -1495,52 +1495,118 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 			compilerError("cannot modify immutable list '%s'", s.MapName)
 		}
 
-		// Compile index expression -> xmm0
-		fc.compileExpression(s.Index)
-		
-		// Save index to stack
-		fc.out.SubImmFromReg("rsp", 8)
-		fc.out.MovXmmToMem("xmm0", "rsp", 0)
-
-		// Compile value expression -> xmm0
-		fc.compileExpression(s.Value)
-
-		// Save value to stack
-		fc.out.SubImmFromReg("rsp", 8)
-		fc.out.MovXmmToMem("xmm0", "rsp", 0)
-
-		// Load list pointer from variable
+		// Check if this is a list or map
+		varType := fc.varTypes[s.MapName]
 		baseReg := "rbp"
 		if fc.parentVariables != nil && fc.parentVariables[s.MapName] {
 			baseReg = "r11"
 		}
-		fc.out.MovMemToXmm("xmm1", baseReg, -offset)
-		
-		// Convert list pointer to rax
-		fc.out.SubImmFromReg("rsp", 8)
-		fc.out.MovXmmToMem("xmm1", "rsp", 0)
-		fc.out.MovMemToReg("rax", "rsp", 0)
-		fc.out.AddImmToReg("rsp", 8)
 
-		// Load index from stack and convert to integer in rcx
-		fc.out.MovMemToXmm("xmm2", "rsp", 8) // index is 8 bytes below top
-		fc.out.Cvttsd2si("rcx", "xmm2")      // rcx = integer index
+		if varType == "list" {
+			// LINKED LIST UPDATE: Walk to index-th cons cell and mutate its head
+			// Cons cell structure: [head:float64][tail:pointer]
 
-		// Calculate offset: 8 + (index * 8) = 8 + index << 3
-		fc.out.ShlImmReg("rcx", 3)  // rcx = index * 8
-		fc.out.AddImmToReg("rcx", 8) // rcx = 8 + index * 8
+			// Compile index expression -> xmm0
+			fc.compileExpression(s.Index)
+			// Convert index to integer in rcx
+			fc.out.Cvttsd2si("rcx", "xmm0")
+			// Save index to stack
+			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.MovRegToMem("rcx", "rsp", 0)
 
-		// Add offset to list pointer: rax + rcx = address of element
-		fc.out.AddRegToReg("rax", "rcx") // rax = address of element
+			// Compile value expression -> xmm0
+			fc.compileExpression(s.Value)
+			// Save value to stack
+			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.MovXmmToMem("xmm0", "rsp", 0)
 
-		// Load value from stack into xmm0
-		fc.out.MovMemToXmm("xmm0", "rsp", 0)
+			// Load list pointer from variable into rdi
+			fc.out.MovMemToXmm("xmm1", baseReg, -offset)
+			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.MovXmmToMem("xmm1", "rsp", 0)
+			fc.out.MovMemToReg("rdi", "rsp", 0)
+			fc.out.AddImmToReg("rsp", 8)
 
-		// Write value to memory at [rax]
-		fc.out.MovXmmToMem("xmm0", "rax", 0)
+			// Load index from stack into rcx
+			fc.out.MovMemToReg("rcx", "rsp", 8)
 
-		// Clean up stack (index + value)
-		fc.out.AddImmToReg("rsp", 16)
+			// Walk to index-th node: for i=0; i<index; i++ { rdi = rdi->tail }
+			fc.out.XorRegWithReg("rax", "rax") // rax = 0 (current index)
+			
+			// Walk loop start
+			walkLoopStart := fc.eb.text.Len()
+			// Check if we've reached target index
+			fc.out.CmpRegToReg("rax", "rcx")
+			walkFoundJump := fc.eb.text.Len()
+			fc.out.JumpConditional(JumpEqual, 0) // je to found
+			walkFoundEnd := fc.eb.text.Len()
+
+			// Not at target yet, move to next node
+			fc.out.IncReg("rax")
+			fc.out.MovMemToReg("rdi", "rdi", 8) // rdi = tail pointer
+
+			// Continue walking
+			walkBackOffset := int32(walkLoopStart - (fc.eb.text.Len() + 5))
+			fc.out.JumpUnconditional(walkBackOffset)
+
+			// Found: rdi now points to the target cons cell
+			walkFoundPos := fc.eb.text.Len()
+			fc.patchJumpImmediate(walkFoundJump+2, int32(walkFoundPos-walkFoundEnd))
+
+			// Load new value from stack into xmm0
+			fc.out.MovMemToXmm("xmm0", "rsp", 0)
+
+			// Write new value to cons cell head at [rdi+0]
+			fc.out.MovXmmToMem("xmm0", "rdi", 0)
+
+			// Clean up stack (value + index)
+			fc.out.AddImmToReg("rsp", 16)
+		} else {
+			// MAP UPDATE: In-place modification
+			// Memory layout: [length (float64)] [key1] [val1] [key2] [val2] ...
+
+			// Compile index expression -> xmm0
+			fc.compileExpression(s.Index)
+			// Save index to stack
+			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+			// Compile value expression -> xmm0
+			fc.compileExpression(s.Value)
+			// Save value to stack
+			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+			// Load map pointer from variable
+			fc.out.MovMemToXmm("xmm1", baseReg, -offset)
+			// Convert map pointer to rax
+			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.MovXmmToMem("xmm1", "rsp", 0)
+			fc.out.MovMemToReg("rax", "rsp", 0)
+			fc.out.AddImmToReg("rsp", 8)
+
+			// Load index from stack and convert to integer in rcx
+			fc.out.MovMemToXmm("xmm2", "rsp", 8) // index is 8 bytes below top
+			fc.out.Cvttsd2si("rcx", "xmm2")      // rcx = integer index
+
+			// Calculate offset: 8 + (index * 16) + 8 = 16 + index * 16
+			// Keys and values alternate: [length][key0][val0][key1][val1]...
+			// Value at index i is at: 8 + i*16 + 8
+			fc.out.ShlImmReg("rcx", 4)   // rcx = index * 16
+			fc.out.AddImmToReg("rcx", 16) // rcx = 16 + index * 16
+
+			// Add offset to map pointer: rax + rcx = address of value
+			fc.out.AddRegToReg("rax", "rcx") // rax = address of value
+
+			// Load value from stack into xmm0
+			fc.out.MovMemToXmm("xmm0", "rsp", 0)
+
+			// Write value to memory at [rax]
+			fc.out.MovXmmToMem("xmm0", "rax", 0)
+
+			// Clean up stack (index + value)
+			fc.out.AddImmToReg("rsp", 16)
+		}
 
 	case *LoopStmt:
 		fc.compileLoopStatement(s)

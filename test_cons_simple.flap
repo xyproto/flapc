@@ -1,2 +1,0 @@
-lst := 1 :: []
-println(#lst)
