@@ -2800,7 +2800,7 @@ func (fc *FlapCompiler) compileJumpStatement(stmt *JumpStmt) {
 
 		// REGISTER ALLOCATOR: Restore callee-saved registers (for lambda functions)
 		if fc.currentLambda != nil {
-			fc.out.AddImmToReg("rsp", 8) // Remove alignment padding
+			fc.out.SubImmFromReg("rsp", 8) // Point to saved rbx
 			fc.out.PopReg("rbx")
 		}
 
