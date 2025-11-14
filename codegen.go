@@ -2728,7 +2728,7 @@ func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
 	fc.out.MovMemToReg("rax", "rbp", -indexOffset)
 
 	// Calculate offset: 16 + index * 16
-	fc.out.ShlImmReg("rax", 4)   // rax = index * 16
+	fc.out.ShlImmReg("rax", 4)    // rax = index * 16
 	fc.out.AddImmToReg("rax", 16) // rax = 16 + index * 16
 
 	// Add offset to base: rbx = rbx + rax
