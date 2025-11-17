@@ -81,8 +81,8 @@ println("done")
 		t.Run(tt.name, func(t *testing.T) {
 			result := compileAndRun(t, tt.source)
 			if !strings.Contains(result, tt.expected) {
-			t.Errorf("Expected output to contain: %s, got: %s", tt.expected, result)
-		}
+				t.Errorf("Expected output to contain: %s, got: %s", tt.expected, result)
+			}
 		})
 	}
 }

@@ -282,7 +282,7 @@ insertion_sort_helper = (arr, i) => {
 // Helper to concatenate parts of array (skip index from..to)
 concat_parts = (arr, i, skip_from, skip_to, end, result) => {
 	| i >= end -> result
-	| (i >= skip_from) && (i < skip_to) -> concat_parts(arr, i + 1, skip_from, skip_to, end, result)
+	| (i >= skip_from) and (i < skip_to) -> concat_parts(arr, i + 1, skip_from, skip_to, end, result)
 	~> concat_parts(arr, i + 1, skip_from, skip_to, end, result.append(arr[i]))
 }
 
@@ -301,5 +301,3 @@ printf("Sorted: %v %v %v %v %v %v %v %v\n", sorted[0], sorted[1], sorted[2], sor
 		t.Errorf("Expected '1 1 2 3 4 5 6 9' in sorted output, got: %s", output)
 	}
 }
-
-

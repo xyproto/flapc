@@ -1,10 +1,10 @@
 package main
 
 import (
-	"strings"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 

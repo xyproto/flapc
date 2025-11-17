@@ -52,9 +52,9 @@ var debugParser = false // Set to true for parser debugging
 const (
 	// Parser recursion and iteration safety limits
 	// These prevent infinite loops and stack overflows during parsing
-	maxParseRecursion = 1000  // Maximum recursion depth for parser calls
+	maxParseRecursion  = 1000  // Maximum recursion depth for parser calls
 	maxBlockIterations = 10000 // Maximum iterations for parsing block statements
-	maxASTIterations = 1000   // Maximum iterations for AST traversal
+	maxASTIterations   = 1000  // Maximum iterations for AST traversal
 
 	// Buffer sizes for runtime operations
 	stringBufferSize = 256 // Maximum string buffer size for conversions
@@ -3823,7 +3823,7 @@ func (p *Parser) parsePrimary() Expression {
 		// - `.field` means `this.field`
 		// - `. ` (dot followed by space/newline) means `this`
 		p.nextToken() // skip '.'
-		
+
 		// Check if followed by identifier
 		if p.current.Type == TOKEN_IDENT {
 			fieldName := p.current.Value
@@ -3834,7 +3834,7 @@ func (p *Parser) parsePrimary() Expression {
 				Right:    &IdentExpr{Name: fieldName},
 			}
 		}
-		
+
 		// Otherwise, just return "this"
 		// Move back one token since we consumed the dot but there's no field
 		p.current = Token{Type: TOKEN_DOT, Value: ".", Line: p.current.Line, Column: p.current.Column}
