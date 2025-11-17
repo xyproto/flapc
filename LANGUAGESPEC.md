@@ -1456,71 +1456,108 @@ abs(x)
 
 ## Error Handling
 
-### Result Type
+### Result Type Design
 
-Operations that can fail return a **Result**, which is `map[uint64]float64` that either:
-1. Contains the actual value (success case)
-2. Contains an error code string (error case)
+Flap uses a **Result type** for operations that can fail. A Result is still `map[uint64]float64`, but with special semantic meaning tracked by the compiler.
+
+**Byte Layout:**
+```
+[type_byte][length_or_code][data...][[0x00]
+```
+
+**Type Bytes:**
+```
+0x01 - Flap Number (success)
+0x02 - Flap String (success)
+0x03 - Flap List (success)
+0x04 - Flap Map (success)
+0x05 - Flap Address (success)
+0xE0 - Error (failure, followed by 4-char error code)
+0x10-0x1B - C types (int8, int16, ..., ptr, cstr)
+```
+
+**Success case:**
+- Type byte indicates the Flap or C type
+- Length field (uint64) indicates number of key-value pairs
+- Key-value pairs follow (each pair is uint64 key, float64 value)
+- Terminated with 0x00 byte
+
+**Error case:**
+- Type byte is 0xE0
+- Followed by 4-byte error code (ASCII, space-padded)
+- Terminated with 0x00 byte
+
+### Standard Error Codes
+
+Error codes are 4 bytes, space-padded if shorter:
+
+```
+"dv0 " - Division by zero
+"idx " - Index out of bounds
+"key " - Key not found
+"typ " - Type mismatch
+"nil " - Null pointer
+"mem " - Out of memory
+"arg " - Invalid argument
+"io  " - I/O error
+"net " - Network error
+"prs " - Parse error
+"ovf " - Overflow
+"udf " - Undefined
+```
+
+**Note:** The `.error` accessor strips trailing spaces on access.
+
+### Operations That Return Results
 
 ```flap
-result = risky_operation()
+// Arithmetic errors
+x = 10 / 0              // Error: "dv0 " (division by zero)
+y = 2 ** 1000           // Error: "ovf " (overflow)
 
-// Check for error
-result.error { 
-    != "" -> println("Error:", result.error) 
-}
+// Index errors
+xs = [1, 2, 3]
+z = xs[10]              // Error: "idx " (out of bounds)
 
-// Or use match
-result.error {
-    "" -> println("Success:", result)
-    ~> println("Failed:", result.error)
-}
+// Key errors
+m = { x: 10 }
+w = m.y                 // Error: "key " (key not found)
+
+// Custom errors
+err = error("arg")      // Create error with code "arg "
 ```
 
-### Result Encoding
+### The `.error` Accessor
 
-A Result is detected as error/success at runtime:
-
-1. **Pointer check:** If the value can be interpreted as a valid pointer (address > 0x1000), it's **SUCCESS** (contains actual value)
-2. **Error code:** If not a valid pointer, interpret as 4-character error code string
-
-**Note:** The Result type is still `map[uint64]float64`, but with special semantic meaning tracked by the compiler. See [TYPE_TRACKING.md](TYPE_TRACKING.md) for implementation details.
-
-Error codes (4 chars, space-padded, trailing spaces stripped on access):
-```
-"dv0" - Division by zero
-"idx" - Index out of bounds
-"key" - Key not found
-"typ" - Type mismatch
-"nil" - Null pointer
-"mem" - Out of memory
-"arg" - Invalid argument
-"io"  - I/O error
-"net" - Network error
-"prs" - Parse error
-```
-
-### .error Property
-
-Every value has `.error` accessor:
+Every value has a `.error` accessor that:
+- Returns `""` (empty string) for success values
+- Returns the error code string (spaces stripped) for error values
 
 ```flap
-x = 10 / 0              // Error result
-x.error                 // Returns "dv0" (trailing spaces stripped)
+x = 10 / 2              // Success: returns 5.0
+x.error                 // Returns "" (empty)
 
-y = 10 / 2              // Success result  
-y.error                 // Returns "" (empty string)
+y = 10 / 0              // Error: division by zero
+y.error                 // Returns "dv0" (spaces stripped)
 
-// Common pattern
+// Typical usage
 result.error {
     "" -> proceed(result)
     ~> handle_error(result.error)
 }
+
+// Match on specific errors
+result.error {
+    "" -> println("Success:", result)
+    "dv0" -> println("Division by zero")
+    "mem" -> println("Out of memory")
+    ~> println("Unknown error:", result.error)
+}
 ```
 
-### or! Operator
+### The `or!` Operator
 
-The `or!` operator provides default values for errors:
+The `or!` operator provides a default value when the left side is an error:
 
 ```flap
 x = 10 / 0              // Error result
@@ -1530,15 +1567,17 @@ y = 10 / 2              // Success result (value 5)
 safe2 = y or! 99        // Returns 5 (success case)
 ```
 
-How it works:
-1. Evaluate left side
-2. If error: return right side
-3. If success: return left side value
+**Semantics:**
+1. Evaluate left operand
+2. Check type byte: if 0xE0 (error), return right operand
+3. Otherwise, return left operand value
 
-### Error Propagation Pattern
+**Precedence:** Lower than logical OR, higher than send operator
+
+### Error Propagation Patterns
 
 ```flap
-// Manual propagation
+// Check and early return
 process = input => {
     step1 = validate(input)
     step1.error { != "" -> step1 }  // Return error early
@@ -1549,12 +1588,136 @@ process = input => {
     finalize(step2)
 }
 
-// With or! for defaults
+// Default values with or!
 compute = input => {
     x = parse(input) or! 0     // Use 0 if parse fails
     y = divide(100, x) or! -1  // Use -1 if division fails
     y * 2
 }
+
+// Chained operations with error handling
+result = fetch_data()
+    | parse or! []              // Default to empty list
+    | transform
+    | validate or! error("typ") // Custom error
+```
+
+### Creating Custom Errors
+
+Use the `error` function to create error Results:
+
+```flap
+// Create error with code
+validate = x => {
+    x < 0 { ret error("arg") }  // Negative argument
+    x
+}
+
+// Or detect errors from operations
+divide = (a, b) => {
+    result = a / b
+    result.error { 
+        != "" -> result          // Propagate error
+        ~> result                // Return success
+    }
+}
+```
+
+### Error Type Tracking
+
+The compiler tracks whether a value is a Result type:
+
+```flap
+// Compiler knows this returns Result
+divide = (a, b) => {
+    b == 0 { ret error("dv0") }
+    a / b
+}
+
+// Compiler propagates Result type
+compute = x => {
+    y = divide(100, x)  // y has Result type
+    y or! 0             // Handles potential error
+}
+
+// Compiler warns if Result not checked
+risky = x => {
+    y = divide(100, x)  // Warning: unchecked Result
+    println(y)          // May print error value
+}
+```
+
+See [TYPE_TRACKING.md](TYPE_TRACKING.md) for implementation details.
+
+### Result Type Memory Layout
+
+**Success value (number 42):**
+```
+Bytes: 01 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 40 45 00 00 00 00 00 00 00 00
+       ↑  ↑----- length=1 ----↑  ↑------- key=0 -------↑  ↑------- value=42.0 ------↑  ↑ term
+       type=01 (number)
+```
+
+**Error value (division by zero):**
+```
+Bytes: E0 64 76 30 20 00
+       ↑  ↑----- "dv0 " -----↑  ↑ term
+       type=E0 (error)
+```
+
+### `.error` Implementation
+
+The `.error` accessor:
+1. Checks type byte (first byte of value)
+2. If 0xE0: extract next 4 bytes as error code string
+3. Strip trailing spaces from error code
+4. Return error code string
+5. Otherwise: return empty string ""
+
+### `or!` Implementation
+
+The `or!` operator:
+1. Evaluates left operand
+2. Checks type byte (first byte)
+3. If 0xE0: returns right operand
+4. Otherwise: returns left operand value (strips type metadata)
+
+### Best Practices
+
+**Do:**
+- Check `.error` for operations that can fail
+- Use `or!` for simple default values
+- Match on specific error codes for different handling
+- Propagate errors up the call chain
+- Create custom errors with descriptive codes
+
+**Don't:**
+- Ignore error results
+- Use empty error codes (use specific 4-char codes)
+- Mix error codes with success values
+- Assume all errors are the same
+
+**Examples:**
+
+```flap
+// Good: check errors
+result = fetch_data()
+result.error {
+    "" -> process(result)
+    "net" -> retry()
+    ~> fail(result.error)
+}
+
+// Good: use or! for defaults
+data = fetch_data() or! []
+count = #data
+
+// Bad: ignore errors
+result = fetch_data()  // May be error
+process(result)        // May process error value
+
+// Bad: vague error code
+validate = x => x < 0 { ret error("bad") }  // Use "arg" instead
 ```
 
 ## Compilation and Execution
