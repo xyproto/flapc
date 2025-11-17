@@ -1,31 +1,37 @@
-// parser.go - Flap Language Parser (Version 2.0.0 - FINAL)
+// parser.go - Flap Language Parser (Version 3.0.0)
 //
-// Version: 2.0.0 (Final)
-// Date: 2025-11-06
-// Status: Complete - Stable for 50+ years
+// Version: 3.0.0
+// Date: 2025-11-17
+// Status: Canonical Implementation of GRAMMAR.md and LANGUAGESPEC.md v3.0
 //
-// This parser is the authoritative implementation of LANGUAGESPEC.md v2.0.0.
+// This parser is the authoritative implementation of GRAMMAR.md and LANGUAGESPEC.md v3.0.0.
 // It implements a complete recursive descent parser for the Flap programming
-// language, targeting x86_64 Linux.
+// language with direct machine code generation for x86_64, ARM64, and RISCV64.
 //
-// Stability Commitment:
-// This parser is feature-complete and stable. No breaking changes will be made.
-// All future work will focus on bug fixes and optimizations only.
+// Key Features (Flap 3.0):
+// - Universal type system: map[uint64]float64
+// - Block disambiguation: maps vs matches vs statements
+// - Value match (with expression) and guard match (with |)
+// - Minimal parentheses philosophy
+// - Functions defined with = (not :=) by convention
+// - Bitwise operators with 'b' suffix
+// - ENet-style message passing
+// - Direct machine code generation (no IR)
 //
 // Implementation Coverage:
-// - All LANGUAGESPEC.md v2.0.0 grammar constructs
-// - All statement types (use, import, cstruct, arena, defer, alias, flap, ret, loops, assignments)
-// - All expression types (literals, operators, lambdas, match, unsafe, arena, memory access)
-// - All operators (arithmetic, comparison, logical, bitwise, power)
-// - Loop control with @N labels and ret @ syntax
-// - Memory read/write with ptr[offset] syntax
+// - All GRAMMAR.md grammar constructs
+// - All statement types (cstruct, arena, unsafe, loops, assignments, ret, break, continue)
+// - All expression types (literals, operators, lambdas, match blocks, blocks)
+// - All operators (arithmetic, comparison, logical, bitwise, power, pipe)
+// - Block disambiguation (map literal, match block, statement block)
+// - Guard syntax (| at line start)
 // - C FFI and syscall support
 //
 // This file contains the core parser that transforms Flap source code
 // into an Abstract Syntax Tree (AST). It handles:
 // - Tokenization and lexical analysis via Lexer
-// - Recursive descent parsing with 55+ parse methods
-// - Expression parsing with proper operator precedence
+// - Recursive descent parsing with operator precedence
+// - Expression parsing with proper precedence climbing
 // - Statement parsing for all Flap constructs
 // - AST node construction with semantic validation
 
@@ -1420,6 +1426,72 @@ func (p *Parser) parseIndexedAssignment() Statement {
 	}
 }
 
+// BlockType represents the type of block as determined by disambiguation
+type BlockType int
+
+const (
+	BlockTypeMap       BlockType = iota // {key: value, ...}
+	BlockTypeMatch                      // {pattern -> result, ...} or {| guard -> result}
+	BlockTypeStatement                  // {stmt; stmt; expr}
+)
+
+// disambiguateBlock determines block type according to GRAMMAR.md rules:
+// 1. Contains ':' before any arrows → Map literal
+// 2. Contains '->' or '~>' → Match block
+// 3. Otherwise → Statement block
+func (p *Parser) disambiguateBlock() BlockType {
+	// Create temporary lexer for lookahead
+	tempLexer := &Lexer{
+		input:     p.lexer.input,
+		pos:       p.lexer.pos,
+		line:      p.lexer.line,
+		column:    p.lexer.column,
+		lineStart: p.lexer.lineStart,
+	}
+
+	braceDepth := 1 // We're already inside the opening {
+	foundColon := false
+	foundArrow := false
+
+	// Scan tokens within this block
+	for i := 0; i < 10000; i++ { // Safety limit
+		tok := tempLexer.NextToken()
+
+		if tok.Type == TOKEN_EOF {
+			break
+		}
+
+		if tok.Type == TOKEN_LBRACE {
+			braceDepth++
+		} else if tok.Type == TOKEN_RBRACE {
+			braceDepth--
+			if braceDepth == 0 {
+				// Exited the block
+				break
+			}
+		} else if braceDepth == 1 {
+			// At top level of this block
+			if tok.Type == TOKEN_COLON && !foundArrow {
+				// Found ':' before any arrows → map literal
+				foundColon = true
+			} else if tok.Type == TOKEN_ARROW || tok.Type == TOKEN_DEFAULT_ARROW {
+				// Found arrow → match block
+				foundArrow = true
+				break
+			}
+		}
+	}
+
+	// Apply disambiguation rules in order
+	if foundColon && !foundArrow {
+		return BlockTypeMap
+	}
+	if foundArrow {
+		return BlockTypeMatch
+	}
+	return BlockTypeStatement
+}
+
 // blockContainsMatchArrows scans ahead to check if the block contains -> or ~> arrows
 // Returns true if any match arrows are found, false otherwise
 func (p *Parser) blockContainsMatchArrows() bool {
@@ -1470,6 +1542,26 @@ func (p *Parser) blockContainsMatchArrows() bool {
 	return foundArrow
 }
 
+// parseMatchBlock parses a match block according to GRAMMAR.md:
+//
+// TWO FORMS:
+//
+// 1. Value Match (with expression before {):
+//    Evaluates expression once, matches result against patterns
+//    Example: x { 0 -> "zero"  5 -> "five"  ~> "other" }
+//    The condition parameter contains the evaluated expression
+//
+// 2. Guard Match (no expression, uses | at line start):
+//    Each | branch evaluates independently (short-circuits)
+//    Example: { | x == 0 -> "zero"  | x > 0 -> "positive"  ~> "negative" }
+//    The condition parameter is typically nil or a boolean true
+//
+// Both forms support:
+// - Match clauses: pattern -> result  or  | guard -> result
+// - Default clause: ~> result
+//
+// The | is only a guard marker when at the start of a line.
+// Otherwise | is the pipe operator.
 func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
 	// Set flag to prevent nested match block parsing
 	oldInMatchBlock := p.inMatchBlock
@@ -1624,6 +1716,15 @@ func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
 	}
 }
 
+// parseMatchClause parses a single match clause:
+//
+// Forms:
+// 1. Guardless: -> result
+// 2. Value pattern: value -> result
+// 3. Guard: | condition -> result   (| only when at line start)
+//
+// Returns (clause, isBareExpression)
+// where isBareExpression means no explicit arrow was used
 func (p *Parser) parseMatchClause() (*MatchClause, bool) {
 	// Guardless clause starting with '->' (explicit)
 	if p.current.Type == TOKEN_ARROW {
@@ -1636,7 +1737,8 @@ func (p *Parser) parseMatchClause() (*MatchClause, bool) {
 
 	// Guardless clause without '->' (implicit): check for statement-only tokens
 	// These tokens can only appear in match targets, not as guard expressions:
-	// - ret, @-, @=, @N (jump/return statements)
+	// - ret, err (return statements)
+	// - @++, @N (jump statements)
 	// - { (block statements)
 	// - identifier <- or identifier = (assignment statements)
 	isStatementToken := p.current.Type == TOKEN_RET ||
@@ -1653,7 +1755,9 @@ func (p *Parser) parseMatchClause() (*MatchClause, bool) {
 		return &MatchClause{Result: result}, false
 	}
 
-	// Check for guard prefix |
+	// Check for guard prefix | (only at line start in match blocks)
+	// Important: | is guard marker ONLY at line start in match context
+	// Otherwise | is the pipe operator
 	isGuard := false
 	if p.current.Type == TOKEN_PIPE {
 		isGuard = true
