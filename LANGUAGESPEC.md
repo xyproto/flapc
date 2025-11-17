@@ -36,6 +36,7 @@ This is not an implementation detail — this IS Flap.
 - [Loops](#loops)
 - [Parallel Programming](#parallel-programming)
 - [ENet Channels](#enet-channels)
+- [Classes and Object-Oriented Programming](#classes-and-object-oriented-programming)
 - [C FFI](#c-ffi)
 - [CStruct](#cstruct)
 - [Memory Management](#memory-management)
@@ -599,11 +600,60 @@ nums = [1, 2, 3, 4, 5]
 
 ### Loop Control
 
+Flap uses `ret @` with loop labels instead of `break`/`continue`:
+
 ```flap
-@ i in 0..100 {
-    i == 50 { break }     // Exit loop
-    i % 2 == 0 { continue }  // Skip even numbers
+// Exit current loop
+@ i in 0..<100 {
+    i > 50 { ret @ }      // Exit current loop
+    i == 42 { ret @ 42 }  // Exit loop with value 42
     println(i)
+}
+
+// Nested loops with explicit labels
+@ i in 0..<10 {           // Loop @1 (outer)
+    @ j in 0..<10 {       // Loop @2 (inner)
+        j == 5 { ret @ }         // Exit inner loop (@2)
+        i == 5 { ret @1 }        // Exit outer loop (@1)
+        i == 3 and j == 7 { ret @1 42 }  // Exit outer loop with value
+        println(i, j)
+    }
+}
+
+// ret without @ returns from function
+compute = n => {
+    @ i in 0..<100 {
+        i == n { ret i }  // Return from function with value
+        i == 50 { ret @ } // Exit loop only, continue function
+    }
+    ret 0  // Return from function
+}
+```
+
+**Loop Labels:**
+- `ret @` or `ret @1` - Exit innermost loop
+- `ret @2` - Exit second loop level
+- `ret @N value` - Exit loop N with value
+- `ret value` - Return from function (not loop)
+
+### Loop `max` Keyword
+
+Loops with unknown bounds or modified counters require `max`:
+
+```flap
+// Counter modified in loop
+@ i in 0..<10 max 20 {
+    i++  // Modified counter - needs max
+}
+
+// Unknown iteration count
+@ msg in read_channel() max inf {
+    process(msg)
+}
+
+// Condition-based loop
+@ x < threshold max 1000 {
+    x = compute_next(x)
 }
 ```
 
@@ -682,6 +732,452 @@ stage3 ==> @ { result = => &8081; save(result) }
 ```
 
 **Note:** ENet channels are compiled directly into machine code that uses ENet library calls.
+
+## Classes and Object-Oriented Programming
+
+Flap supports classes as syntactic sugar over maps and closures, following the philosophy that everything is `map[uint64]float64`.
+
+### Design Philosophy
+
+- **Syntactic sugar:** Classes compile to regular maps and lambdas
+- **No new types:** Objects are still `map[uint64]float64`
+- **Composition:** Use `<>` to extend with behavior maps (no inheritance)
+- **Minimal syntax:** Only adds the `class` keyword
+- **Transparent:** You can always see what the class desugars to
+
+### Class Declaration
+
+Classes group data and methods together:
+
+```flap
+class Point {
+    init := (x, y) ==> {
+        .x = x
+        .y = y
+    }
+    
+    distance := other => {
+        dx := other.x - .x
+        dy := other.y - .y
+        sqrt(dx * dx + dy * dy)
+    }
+    
+    move := (dx, dy) ==> {
+        .x <- .x + dx
+        .y <- .y + dy
+    }
+}
+
+// Create instance
+p1 := Point(10, 20)
+p2 := Point(30, 40)
+
+// Call methods
+dist := p1.distance(p2)
+p1.move(5, 5)
+```
+
+### How Classes Work
+
+A class declaration creates a constructor function:
+
+```flap
+// This class:
+class Counter {
+    init := start ==> {
+        .count = start
+    }
+    
+    increment := ==> {
+        .count <- .count + 1
+    }
+}
+
+// Desugars to this:
+Counter := start => {
+    instance := {}
+    instance["count"] = start
+    instance["increment"] = () => {
+        instance["count"] <- instance["count"] + 1
+    }
+    ret instance
+}
+```
+
+### Instance Fields and `this`
+
+Inside methods, `.field` accesses instance fields. The `this` keyword refers to the current instance:
+
+```flap
+class List {
+    init := ==> {
+        .items = []
+    }
+    
+    add := item => {
+        .items <- .items :: item
+        ret this  // Return self for chaining
+    }
+    
+    size := ==> .items.length
+}
+
+list := List().add(1).add(2).add(3)  // Method chaining via this
+println(list.size())  // 3
+```
+
+**Key points:**
+- `.field` is shorthand for `this.field` inside methods
+- `this` refers to the current instance
+- Return `this` for method chaining
+- Outside methods, use `instance.field` explicitly
+
+```flap
+class Account {
+    init := balance ==> {
+        .balance = balance
+    }
+    
+    withdraw := amount => {
+        amount > .balance {
+            ret -1  // Insufficient funds
+        }
+        .balance <- .balance - amount
+        ret 0
+    }
+    
+    deposit := amount => {
+        .balance <- .balance + amount
+    }
+    
+    get_balance := ==> .balance
+}
+
+acc := Account(100)
+acc.deposit(50)
+println(acc.get_balance())  // 150
+```
+
+### Class Fields (Static)
+
+Class fields are shared across all instances:
+
+```flap
+class Entity {
+    Entity.count = 0
+    Entity.all = []
+    
+    init := name ==> {
+        .name = name
+        .id = Entity.count
+        Entity.count <- Entity.count + 1
+        Entity.all <- Entity.all :: instance
+    }
+    
+    get_total := ==> Entity.count
+}
+
+e1 := Entity("Alice")
+e2 := Entity("Bob")
+println(e1.get_total())  // 2
+println(Entity.count)    // 2
+```
+
+### Composition with `<>`
+
+Extend classes with behavior maps:
+
+```flap
+// Define behavior map
+Serializable := {
+    to_json: ==> {
+        // Serialize instance to JSON string
+        keys := .keys()
+        @ i in 0..<keys.length {
+            // Build JSON...
+        }
+    },
+    from_json: json => {
+        // Parse JSON and populate instance
+    }
+}
+
+// Extend class with behavior
+class User <> Serializable {
+    init := (name, email) ==> {
+        .name = name
+        .email = email
+    }
+}
+
+user := User("Alice", "alice@example.com")
+json := user.to_json()
+```
+
+Multiple behaviors:
+
+```flap
+class Product <> Serializable <> Validatable <> Timestamped {
+    init := (name, price) ==> {
+        .name = name
+        .price = price
+        .created_at = now()
+    }
+}
+```
+
+### Method Semantics
+
+**Instance methods** close over the instance:
+
+```flap
+class Box {
+    init := value ==> {
+        .value = value
+    }
+    
+    get := ==> .value
+    set := v ==> { .value <- v }
+}
+
+b := Box(42)
+getter := b.get  // Captures b
+println(getter())  // 42
+```
+
+**Class methods** don't capture instances:
+
+```flap
+class Math {
+    Math.PI = 3.14159
+    
+    // Note: no init, Math is never instantiated
+    Math.circle_area = radius => Math.PI * radius * radius
+}
+
+area := Math.circle_area(10)
+```
+
+### Private Methods (Convention)
+
+Use underscore prefix for "private" methods:
+
+```flap
+class Parser {
+    init := input ==> {
+        .input = input
+        .pos = 0
+    }
+    
+    _peek := ==> {
+        .pos < .input.length {
+            ret .input[.pos]
+        }
+        ret -1
+    }
+    
+    _advance := ==> {
+        .pos <- .pos + 1
+    }
+    
+    parse_number := ==> {
+        result := 0
+        @ ._ peek() >= 48 && ._peek() <= 57 {
+            result <- result * 10 + (._peek() - 48)
+            ._advance()
+        }
+        ret result
+    }
+}
+```
+
+### Method Chaining
+
+Return `.` or `instance` to enable chaining:
+
+```flap
+class StringBuilder {
+    init := ==> {
+        .parts = []
+    }
+    
+    append := str ==> {
+        .parts <- .parts :: str
+        ret .  // Return self
+    }
+    
+    build := ==> {
+        result := ""
+        @ part in .parts {
+            result <- result + part
+        }
+        ret result
+    }
+}
+
+str := StringBuilder()
+    .append("Hello")
+    .append(" ")
+    .append("World")
+    .build()
+
+println(str)  // "Hello World"
+```
+
+### Integration with CStruct
+
+Combine classes and CStruct for high performance:
+
+```flap
+cstruct Vec3Data {
+    x as float64,
+    y as float64,
+    z as float64
+}
+
+class Vec3 {
+    init := (x, y, z) ==> {
+        .data = call("malloc", Vec3Data.size as uint64)
+        
+        unsafe float64 {
+            rax <- .data as ptr
+            [rax] <- x
+            [rax + 8] <- y
+            [rax + 16] <- z
+        }
+    }
+    
+    dot := other => {
+        unsafe float64 {
+            rax <- .data as ptr
+            rbx <- other.data as ptr
+            xmm0 <- [rax]
+            xmm0 <- xmm0 * [rbx]
+            xmm1 <- [rax + 8]
+            xmm1 <- xmm1 * [rbx + 8]
+            xmm0 <- xmm0 + xmm1
+            xmm1 <- [rax + 16]
+            xmm1 <- xmm1 * [rbx + 16]
+            xmm0 <- xmm0 + xmm1
+        }
+    }
+    
+    free := ==> call("free", .data as ptr)
+}
+
+v1 := Vec3(1, 2, 3)
+v2 := Vec3(4, 5, 6)
+println(v1.dot(v2))  // 32.0
+v1.free()
+v2.free()
+```
+
+### No Inheritance
+
+Flap does not support classical inheritance. Use composition:
+
+```flap
+// Instead of:
+// class Dog extends Animal { ... }
+
+// Do this:
+Animal := {
+    eat: ==> println("Eating..."),
+    sleep: ==> println("Sleeping...")
+}
+
+class Dog <> Animal {
+    init := name ==> {
+        .name = name
+    }
+    
+    bark := ==> println("Woof!")
+}
+
+dog := Dog("Rex")
+dog.eat()    // From Animal
+dog.bark()   // From Dog
+```
+
+### When to Use Classes
+
+**Use classes when:**
+- You have related data and behavior
+- You want familiar OOP syntax
+- You need encapsulation (via naming conventions)
+- You're building objects with state
+
+**Don't use classes when:**
+- Simple data structures (use maps)
+- Stateless functions (use plain functions)
+- Performance-critical code (use CStruct + functions)
+
+### Examples
+
+**Stack data structure:**
+
+```flap
+class Stack {
+    init := ==> {
+        .items = []
+    }
+    
+    push := item ==> {
+        .items <- .items :: item
+    }
+    
+    pop := ==> {
+        .items.length == 0 {
+            ret ??  // Empty
+        }
+        last := .items[.items.length - 1]
+        .items <- .items[0..<(.items.length - 1)]
+        ret last
+    }
+    
+    is_empty := ==> .items.length == 0
+}
+
+s := Stack()
+s.push(1)
+s.push(2)
+s.push(3)
+println(s.pop())  // 3
+```
+
+**Simple ORM-like class:**
+
+```flap
+class Model {
+    Model.table = ""
+    
+    init := data ==> {
+        .data = data
+    }
+    
+    save := ==> {
+        query := f"INSERT INTO {Model.table} VALUES (...)"
+        // Execute query...
+    }
+    
+    delete := ==> {
+        id := .data["id"]
+        query := f"DELETE FROM {Model.table} WHERE id = {id}"
+        // Execute query...
+    }
+}
+
+class User <> Model {
+    Model.table = "users"
+    
+    init := (name, email) ==> {
+        .data = { name: name, email: email }
+    }
+}
+
+user := User("Alice", "alice@example.com")
+user.save()
+```
 
 ## C FFI
 

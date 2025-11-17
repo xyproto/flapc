@@ -133,19 +133,25 @@ statement       = assignment
                 | arena_statement
                 | parallel_statement
                 | cstruct_decl
-                | return_statement
-                | break_statement
-                | continue_statement ;
+                | class_decl
+                | return_statement ;
 
-return_statement = "ret" [ expression ] ;
-
-break_statement  = "break" ;
-
-continue_statement = "continue" ;
+return_statement = "ret" [ "@" [ integer ] ] [ expression ] ;
 
 cstruct_decl    = "cstruct" identifier "{" { field_decl } "}" ;
 
 field_decl      = identifier "as" c_type [ "," ] ;
+
+class_decl      = "class" identifier [ extend_clause ] "{" { class_member } "}" ;
+
+extend_clause   = "<>" identifier ;
+
+class_member    = class_field_decl
+                | method_decl ;
+
+class_field_decl = identifier "." identifier "=" expression ;
+
+method_decl     = identifier ":=" lambda_expr ;
 
 c_type          = "int8" | "int16" | "int32" | "int64"
                 | "uint8" | "uint16" | "uint32" | "uint64"
@@ -155,8 +161,8 @@ c_type          = "int8" | "int16" | "int32" | "int64"
 arena_statement = "arena" block ;
 
 loop_statement  = "@" block
-                | "@" identifier "in" expression block
-                | "@" expression block ;
+                | "@" identifier "in" expression [ "max" expression ] block
+                | "@" expression [ "max" expression ] block ;
 
 parallel_statement = "||" identifier "in" expression block ;
 
@@ -245,11 +251,14 @@ primary_expr    = identifier
                 | map_literal
                 | lambda_expr
                 | enet_address
+                | instance_field
                 | "(" expression ")"
                 | "??"
                 | unsafe_expr
                 | arena_expr
                 | "???" ;
+
+instance_field  = "." identifier ;
 
 enet_address    = "&" port_or_host_port ;
 
@@ -425,7 +434,7 @@ No multi-line comments.
 ### Reserved Keywords
 
 ```
-ret break continue arena unsafe cstruct as
+ret arena unsafe cstruct class as max this defer spawn import
 ```
 
 ### Contextual Keywords
@@ -658,6 +667,54 @@ The `@` symbol introduces loops (one of three forms):
 @ condition { ... }        // While loop
 ```
 
+**Loop Control with `ret @`:**
+
+Instead of `break`/`continue` keywords, Flap uses `ret @` with loop labels:
+
+```flap
+// Exit current loop
+@ i in 0..<100 {
+    i > 50 { ret @ }      // Exit loop (equivalent to ret @1)
+    i == 42 { ret @ 42 }  // Exit loop with value 42
+    println(i)
+}
+
+// Nested loops - explicit labels
+@ i in 0..<10 {           // This is loop @1
+    @ j in 0..<10 {       // This is loop @2
+        j == 5 { ret @ }         // Exit inner loop (current loop)
+        i == 5 { ret @1 }        // Exit outer loop (loop @1)
+        i == 3 and j == 7 { ret @1 42 }  // Exit outer loop with value
+        println(i, j)
+    }
+}
+
+// ret without @ returns from function
+compute = n => {
+    @ i in 0..<100 {
+        i == n { ret i }  // Return from function
+        i == 50 { ret @ } // Exit loop only
+    }
+    ret 0
+}
+```
+
+**Loop `max` Keyword:**
+
+Loops with unknown bounds or modified counters require `max`:
+
+```flap
+// Counter modified - needs max
+@ i in 0..<10 max 20 {
+    i++  // Modified counter
+}
+
+// Unknown iterations - needs max
+@ msg in read_channel() max inf {
+    process(msg)
+}
+```
+
 #### Address Operator
 
 The `&` symbol creates ENet addresses (network endpoints):
@@ -693,6 +750,341 @@ Disambiguated by contents (see Block Disambiguation Rules above):
 { x: 10 }                // Map: contains :
 x { 0 -> "zero" }        // Match: contains ->
 { temp = x * 2; temp }   // Statement block: no : or ->
+```
+
+## Classes and Object-Oriented Programming
+
+Flap supports classes as syntactic sugar over maps and closures, providing a familiar OOP interface while maintaining the language's fundamental simplicity.
+
+### Core Principles
+
+- **Maps as objects:** Objects are `map[uint64]float64` with conventions
+- **Closures as methods:** Methods are lambdas that close over instance data
+- **Composition over inheritance:** Use `<>` to extend with behavior maps
+- **Dot notation:** `.field` inside methods for instance fields
+- **Minimal syntax:** Only one new keyword (`class`)
+- **Desugars to regular Flap:** Classes compile to maps and lambdas
+
+### Class Declaration
+
+```flap
+class Point {
+    // Constructor (implicit)
+    init := (x, y) ==> {
+        .x = x
+        .y = y
+    }
+    
+    // Instance methods
+    distance := other => {
+        dx := other.x - .x
+        dy := other.y - .y
+        sqrt(dx * dx + dy * dy)
+    }
+    
+    move := (dx, dy) ==> {
+        .x <- .x + dx
+        .y <- .y + dy
+    }
+}
+
+// Usage
+p1 := Point(10, 20)
+p2 := Point(30, 40)
+dist := p1.distance(p2)
+p1.move(5, 5)
+```
+
+### Desugaring
+
+Classes desugar to regular Flap code:
+
+```flap
+// class Point { ... } becomes:
+Point := (x, y) => {
+    instance := {}
+    instance["x"] = x
+    instance["y"] = y
+    
+    instance["distance"] = other => {
+        dx := other["x"] - instance["x"]
+        dy := other["y"] - instance["y"]
+        sqrt(dx * dx + dy * dy)
+    }
+    
+    instance["move"] = (dx, dy) => {
+        instance["x"] <- instance["x"] + dx
+        instance["y"] <- instance["y"] + dy
+    }
+    
+    ret instance
+}
+```
+
+### Instance Fields
+
+Use `.field` inside class methods to access instance state:
+
+```flap
+class Counter {
+    init := start ==> {
+        .count = start
+        .history = []
+    }
+    
+    increment := ==> {
+        .count <- .count + 1
+        .history <- .history :: .count
+    }
+    
+    get := ==> .count
+}
+
+c := Counter(0)
+c.increment()
+println(c.get())  // 1
+```
+
+### Class Fields (Static Members)
+
+Use `ClassName.field` for class-level state:
+
+```flap
+class Entity {
+    Entity.count = 0
+    Entity.all = []
+    
+    init := name ==> {
+        .name = name
+        .id = Entity.count
+        Entity.count <- Entity.count + 1
+        Entity.all <- Entity.all :: instance
+    }
+}
+
+e1 := Entity("Alice")
+e2 := Entity("Bob")
+println(Entity.count)  // 2
+```
+
+### Composition with `<>`
+
+Extend classes with behavior maps using `<>`:
+
+```flap
+Serializable := {
+    to_json: ==> {
+        // Convert instance to JSON
+    },
+    from_json: json => {
+        // Parse JSON to instance
+    }
+}
+
+class Point <> Serializable {
+    init := (x, y) ==> {
+        .x = x
+        .y = y
+    }
+}
+
+p := Point(10, 20)
+json := p.to_json()
+```
+
+Multiple extensions:
+
+```flap
+class User <> Serializable <> Validatable <> Timestamped {
+    init := name ==> {
+        .name = name
+        .created_at = now()
+    }
+}
+```
+
+### Instance Field Resolution
+
+Inside class methods:
+- `.field` → instance field access
+- `ClassName.field` → class field access
+- `other.field` → other instance field access
+
+```flap
+class Point {
+    Point.origin = nil  // Class field
+    
+    init := (x, y) ==> {
+        .x = x           // Instance field (this instance)
+        .y = y
+    }
+    
+    distance_to_origin := ==> {
+        .distance(Point.origin)  // Class field access
+    }
+    
+    distance := other => {
+        dx := other.x - .x       // Other instance field vs this instance field
+        dy := other.y - .y
+        sqrt(dx * dx + dy * dy)
+    }
+}
+
+Point.origin = Point(0, 0)  // Initialize class field
+```
+
+### Private Methods Convention
+
+Use underscore prefix for "private" methods (by convention):
+
+```flap
+class Account {
+    init := balance ==> {
+        .balance = balance
+    }
+    
+    _validate := amount => {
+        amount > 0 && amount <= .balance
+    }
+    
+    withdraw := amount => {
+        ._ validate(amount) {
+            .balance <- .balance - amount
+            ret 0
+        }
+        ret -1  // Error
+    }
+}
+```
+
+### Integration with CStruct
+
+Combine classes with CStruct for performance:
+
+```flap
+cstruct Vec2Data {
+    x as float64,
+    y as float64
+}
+
+class Vec2 {
+    init := (x, y) ==> {
+        .data = call("malloc", Vec2Data.size as uint64)
+        unsafe float64 {
+            rax <- .data as ptr
+            [rax] <- x
+            [rax + 8] <- y
+        }
+    }
+    
+    magnitude := ==> {
+        unsafe float64 {
+            rax <- .data as ptr
+            xmm0 <- [rax]
+            xmm1 <- [rax + 8]
+            xmm0 <- xmm0 * xmm0
+            xmm1 <- xmm1 * xmm1
+            xmm0 <- xmm0 + xmm1
+        } | result => sqrt(result)
+    }
+}
+```
+
+### Operator Overloading via Methods
+
+While Flap doesn't have operator overloading syntax, you can define methods with operator-like names:
+
+```flap
+class Complex {
+    init := (real, imag) ==> {
+        .real = real
+        .imag = imag
+    }
+    
+    add := other => Complex(.real + other.real, .imag + other.imag)
+    mul := other => Complex(
+        .real * other.real - .imag * other.imag,
+        .real * other.imag + .imag * other.real
+    )
+}
+
+a := Complex(1, 2)
+b := Complex(3, 4)
+c := a.add(b)
+```
+
+### The `<>` Operator
+
+The `<>` operator merges behavior maps into the class:
+
+```ebnf
+class_decl = "class" identifier { "<>" identifier } "{" { class_member } "}" ;
+```
+
+Semantically:
+
+```flap
+class Point <> Serializable <> Validatable {
+    // members
+}
+
+// Desugars to:
+Point := (...) => {
+    instance := {}
+    // Merge Serializable methods
+    @ key in Serializable { instance[key] <- Serializable[key] }
+    // Merge Validatable methods
+    @ key in Validatable { instance[key] <- Validatable[key] }
+    // Add Point-specific members
+    // ...
+    ret instance
+}
+```
+
+### Method Chaining
+
+Methods that return `instance` (or `.` implicitly) enable chaining:
+
+```flap
+class Builder {
+    init := ==> {
+        .parts = []
+    }
+    
+    add := part ==> {
+        .parts <- .parts :: part
+        ret .  // Return self
+    }
+    
+    build := ==> .parts
+}
+
+result := Builder().add("A").add("B").add("C").build()
+```
+
+### No Inheritance
+
+Flap deliberately avoids inheritance hierarchies. Use composition:
+
+```flap
+// Instead of inheritance
+Drawable := {
+    draw: ==> println("Drawing...")
+}
+
+Movable := {
+    move: (dx, dy) ==> {
+        .x <- .x + dx
+        .y <- .y + dy
+    }
+}
+
+class Sprite <> Drawable <> Movable {
+    init := (x, y) ==> {
+        .x = x
+        .y = y
+    }
+}
 ```
 
 ## Parsing Algorithm
