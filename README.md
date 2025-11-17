@@ -35,8 +35,8 @@ Direct C library calls: `c.malloc()`, `import sdl3`. CStruct for C-compatible la
 ### 8. **Arena Memory & Move Semantics**
 `arena {...}` for scope-based cleanup. `x!` for ownership transfer. No GC pauses.
 
-### 9. **List Operators**
-`::` (cons), `^` (head), `_` (tail), `#` (length). Functional programming without imports.
+### 9. **List Methods**
+Built-in list operations: `.length`, indexing, slicing. Lists are maps with sequential keys starting at 0.
 
 ### 10. **Cryptographic Random Built-in**
 `???` generates secure random using OS CSPRNG. No setup required.
