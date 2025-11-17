@@ -3379,106 +3379,96 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		case "#":
 			// Length operator: return length of list/map/string
 			// For numbers, return 1.0 (numbers are single-element maps)
-			// xmm0 contains either a pointer to the map or a number value
-			fc.out.SubImmFromReg("rsp", StackSlotSize)
-			fc.out.MovXmmToMem("xmm0", "rsp", 0)
-			fc.out.MovMemToReg("rax", "rsp", 0)
+			operandType := fc.getExprType(e.Operand)
 			
-			// Check if rax is a valid pointer (> 0x1000)
-			// If it's a small value, it's likely a number, so return 1.0
-			fc.out.CmpRegToImm("rax", 0x1000)
-			skipJumpPos := fc.eb.text.Len()
-			fc.out.JumpConditional(JumpBelow, 0) // Placeholder, will patch
-			
-			// It's a pointer, load the count from the map
-			fc.out.MovMemToXmm("xmm0", "rax", 0)
-			doneJumpPos := fc.eb.text.Len()
-			fc.out.JumpUnconditional(0) // Placeholder, will patch
-			
-			// Skip target: It's a number, return 1.0
-			skipTarget := fc.eb.text.Len()
-			fc.out.MovImmToReg("rax", "1")
-			fc.out.Cvtsi2sd("xmm0", "rax")
-			
-			// Patch the skip jump
-			skipOffset := int32(skipTarget - (skipJumpPos + ConditionalJumpSize))
-			fc.patchJumpImmediate(skipJumpPos+2, skipOffset)
-			
-			// Done target
-			doneTarget := fc.eb.text.Len()
-			
-			// Patch the done jump
-			doneOffset := int32(doneTarget - (doneJumpPos + UnconditionalJumpSize))
-			fc.patchJumpImmediate(doneJumpPos+1, doneOffset)
-			
-			fc.out.AddImmToReg("rsp", StackSlotSize)
+			if operandType == "number" {
+				// It's a number, return 1.0
+				fc.out.MovImmToReg("rax", "1")
+				fc.out.Cvtsi2sd("xmm0", "rax")
+			} else {
+				// It's a map/list/string pointer, load length from offset 0
+				fc.out.SubImmFromReg("rsp", StackSlotSize)
+				fc.out.MovXmmToMem("xmm0", "rsp", 0)
+				fc.out.MovMemToReg("rax", "rsp", 0)
+				fc.out.AddImmToReg("rsp", StackSlotSize)
+				
+				// Load the count from the map at offset 0
+				fc.out.MovMemToXmm("xmm0", "rax", 0)
+			}
 		case "^":
 			// Head operator: return first element of list/map
 			// For numbers, return the number itself
-			// xmm0 contains either a pointer to the map or a number value
-			fc.out.SubImmFromReg("rsp", StackSlotSize)
-			fc.out.MovXmmToMem("xmm0", "rsp", 0)
-			fc.out.MovMemToReg("rax", "rsp", 0)
+			operandType := fc.getExprType(e.Operand)
 			
-			// Check if rax is a valid pointer (> 0x1000)
-			// If it's a small value, it's likely a number, so return it as-is
-			fc.out.CmpRegToImm("rax", 0x1000)
-			skipJumpPos := fc.eb.text.Len()
-			fc.out.JumpConditional(JumpBelow, 0) // Placeholder, will patch
+			if operandType == "number" {
+				// It's a number, return it as-is (xmm0 already contains it)
+				// No-op
+			} else {
+				// It's a map/list/string pointer, load first element
+				fc.out.SubImmFromReg("rsp", StackSlotSize)
+				fc.out.MovXmmToMem("xmm0", "rsp", 0)
+				fc.out.MovMemToReg("rax", "rsp", 0)
+				fc.out.AddImmToReg("rsp", StackSlotSize)
+				
+				// Skip past length (8 bytes) + first key (8 bytes) to get to first value
+				fc.out.AddImmToReg("rax", 16)
+				fc.out.MovMemToXmm("xmm0", "rax", 0)
+			}
+		case "_":
+			// Tail operator: return list/map without first element
+			// For numbers, return [] (empty list, represented as 0.0)
+			operandType := fc.getExprType(e.Operand)
 			
-			// It's a pointer, load the first element
-			// Skip past length (8 bytes) to get to first element
-			fc.out.AddImmToReg("rax", 8)
-			fc.out.MovMemToXmm("xmm0", "rax", 0)
-			doneJumpPos := fc.eb.text.Len()
-			fc.out.JumpUnconditional(0) // Placeholder, will patch
-			
-			// Skip target: It's a number, xmm0 already contains it (do nothing)
-			skipTarget := fc.eb.text.Len()
-			
-			// Patch the skip jump
-			skipOffset := int32(skipTarget - (skipJumpPos + ConditionalJumpSize))
-			fc.patchJumpImmediate(skipJumpPos+2, skipOffset)
-			
-			// Done target
-			doneTarget := fc.eb.text.Len()
-			
-			// Patch the done jump
-			doneOffset := int32(doneTarget - (doneJumpPos + UnconditionalJumpSize))
-			fc.patchJumpImmediate(doneJumpPos+1, doneOffset)
-			
-			fc.out.AddImmToReg("rsp", StackSlotSize)
-		case "&":
-			// Tail operator: return list without first element
-			// xmm0 contains list pointer (as float64)
-			// We need to create a new list starting from element 1
-			// For now, just adjust the pointer by 8 bytes (skip first element)
-			// Note: This is a simplified implementation
-			fc.out.SubImmFromReg("rsp", StackSlotSize)
-			fc.out.MovXmmToMem("xmm0", "rsp", 0)
-			fc.out.MovMemToReg("rax", "rsp", 0)
-			fc.out.AddImmToReg("rsp", StackSlotSize)
-			// Load current length
-			fc.out.MovMemToReg("rcx", "rax", 0)
-			// Decrement length (convert to int, subtract 1, convert back)
-			fc.out.SubImmFromReg("rsp", StackSlotSize)
-			fc.out.MovRegToMem("rcx", "rsp", 0)
-			fc.out.MovMemToXmm("xmm1", "rsp", 0)
-			fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int(length)
-			fc.out.SubImmFromReg("rcx", 1)  // rcx = length - 1
-			fc.out.Cvtsi2sd("xmm1", "rcx")  // xmm1 = float(length - 1)
-			fc.out.MovXmmToMem("xmm1", "rsp", 0)
-			fc.out.MovMemToReg("rcx", "rsp", 0)
-			fc.out.AddImmToReg("rsp", StackSlotSize)
-			// Store new length
-			fc.out.MovRegToMem("rcx", "rax", 0)
-			// Skip first element (advance by 8 bytes)
-			fc.out.AddImmToReg("rax", 8)
-			// Return adjusted pointer in xmm0
-			fc.out.SubImmFromReg("rsp", StackSlotSize)
-			fc.out.MovRegToMem("rax", "rsp", 0)
-			fc.out.MovMemToXmm("xmm0", "rsp", 0)
-			fc.out.AddImmToReg("rsp", StackSlotSize)
+			if operandType == "number" {
+				// It's a number, return empty list (0.0)
+				fc.out.XorpdXmm("xmm0", "xmm0") // xmm0 = 0.0
+			} else {
+				// It's a map/list/string pointer
+				fc.out.SubImmFromReg("rsp", StackSlotSize)
+				fc.out.MovXmmToMem("xmm0", "rsp", 0)
+				fc.out.MovMemToReg("rax", "rsp", 0)
+				fc.out.AddImmToReg("rsp", StackSlotSize)
+				
+				// Load length from map at offset 0
+				fc.out.MovMemToXmm("xmm1", "rax", 0)
+				fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int(length)
+				
+				// Check if length is 0 or 1
+				fc.out.CmpRegToImm("rcx", 1)
+				
+				emptyJumpPos := fc.eb.text.Len()
+				fc.out.JumpConditional(JumpLessOrEqual, 0) // Placeholder
+				
+				// Length > 1: return pointer to rest of list (skip first element)
+				// Skip length (8) + first key (8) + first value (8) = 24 bytes
+				fc.out.AddImmToReg("rax", 24)
+				fc.out.SubImmFromReg("rsp", StackSlotSize)
+				fc.out.MovRegToMem("rax", "rsp", 0)
+				fc.out.MovMemToXmm("xmm0", "rsp", 0)
+				fc.out.AddImmToReg("rsp", StackSlotSize)
+				
+				doneJumpPos := fc.eb.text.Len()
+				fc.out.JumpUnconditional(0) // Placeholder
+				
+				// Empty case: return 0.0
+				emptyTarget := fc.eb.text.Len()
+				fc.out.XorpdXmm("xmm0", "xmm0") // xmm0 = 0.0
+				
+				// Done
+				doneTarget := fc.eb.text.Len()
+				
+				// Patch jumps
+				emptyOffset := int32(emptyTarget - (emptyJumpPos + ConditionalJumpSize))
+				fc.patchJumpImmediate(emptyJumpPos+2, emptyOffset)
+				
+				doneOffset := int32(doneTarget - (doneJumpPos + UnconditionalJumpSize))
+				fc.patchJumpImmediate(doneJumpPos+1, doneOffset)
+			}
+		case "$":
+			// Address value operator: treat value as memory address
+			// This is for low-level operations, just pass through for now
+			// xmm0 already contains the value (interpreted as address)
+			// No-op: the value in xmm0 is already the "address"
 		}
 
 	case *PostfixExpr:

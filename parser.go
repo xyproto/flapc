@@ -3107,7 +3107,19 @@ func (p *Parser) parseUnary() Expression {
 		return &UnaryExpr{Operator: "#", Operand: operand}
 	}
 
-	// Head (^) and tail (&) operators removed - use .head() and .tail() methods instead
+	// Handle prefix head operator: ^xs
+	if p.current.Type == TOKEN_CARET {
+		p.nextToken() // skip '^'
+		operand := p.parseUnary()
+		return &UnaryExpr{Operator: "^", Operand: operand}
+	}
+
+	// Handle prefix tail operator: _xs
+	if p.current.Type == TOKEN_UNDERSCORE {
+		p.nextToken() // skip '_'
+		operand := p.parseUnary()
+		return &UnaryExpr{Operator: "_", Operand: operand}
+	}
 
 	// Unary minus handled in parsePrimary for simplicity
 	return p.parsePostfix()
@@ -3453,6 +3465,12 @@ func (p *Parser) parsePrimary() Expression {
 	case TOKEN_ADDRESS_LITERAL:
 		// ENet address literal like &8080 or &localhost:8080
 		return &AddressLiteralExpr{Value: p.current.Value}
+
+	case TOKEN_DOLLAR:
+		// Address value operator: $expr
+		p.nextToken() // skip '$'
+		expr := p.parsePrimary()
+		return &UnaryExpr{Operator: "$", Operand: expr}
 
 	case TOKEN_FSTRING:
 		return p.parseFString()

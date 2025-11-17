@@ -232,7 +232,7 @@ multiplicative_expr = power_expr { ("*" | "/" | "%") power_expr } ;
 
 power_expr      = unary_expr { "**" unary_expr } ;
 
-unary_expr      = ( "-" | "!" | "~b" | "#" ) unary_expr
+unary_expr      = ( "-" | "!" | "~b" | "#" | "^" | "_" ) unary_expr
                 | postfix_expr ;
 
 postfix_expr    = primary_expr { postfix_op } ;
@@ -252,6 +252,7 @@ primary_expr    = identifier
                 | map_literal
                 | lambda_expr
                 | enet_address
+                | address_value
                 | instance_field
                 | this_expr
                 | "(" expression ")"
@@ -267,6 +268,8 @@ this_expr       = "." [ " " | newline ] ;  // Dot followed by space or newline m
 enet_address    = "&" port_or_host_port ;
 
 port_or_host_port = port | [ hostname ":" ] port ;
+
+address_value   = "$" expression ;
 
 port            = digit { digit } ;
 
@@ -520,6 +523,19 @@ All bitwise operators use `b` suffix:
 **=   Exponentiate and assign
 ```
 
+### Collection Operators
+
+```
+^     Head operator (prefix) - get first element
+_     Tail operator (prefix) - get all but first element
+#     Length operator (prefix or postfix)
+```
+
+**Head/Tail Semantics:**
+- **Numbers**: `^num` returns `num`, `_num` returns `[]`
+- **Lists/Maps**: `^xs` returns first element, `_xs` returns remaining elements
+- **Empty**: `^[]` and `_[]` return `[]`
+
 ### Other Operators
 
 ```
@@ -532,12 +548,12 @@ All bitwise operators use `b` suffix:
 <-    Send (ENet)
 =>    Receive (ENet, prefix)
 !     Move operator (postfix)
-#     Length operator (prefix or postfix)
 .     Field access
 []    Indexing
 ()    Function call
 @     Loop
-&     Address (ENet)
+&     ENet address (network endpoints)
+$     Address value (memory addresses)
 ??    Random number
 ```
 
@@ -546,7 +562,7 @@ All bitwise operators use `b` suffix:
 From highest to lowest precedence:
 
 1. **Primary**: `()` `[]` `.` function call, postfix `!`, postfix `#`
-2. **Unary**: `-` `!` `~b` `#`
+2. **Unary**: `-` `!` `~b` `#` `^` `_`
 3. **Power**: `**`
 4. **Multiplicative**: `*` `/` `%`
 5. **Additive**: `+` `-`

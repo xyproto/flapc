@@ -181,7 +181,35 @@ Parallel loops use `fork()` for true isolation:
 |||  Reduce/fold
 ```
 
-### 11. C FFI via DWARF
+### 11. Head and Tail Operators
+
+```flap
+^    Head (prefix) - get first element
+_    Tail (prefix) - get all but first
+#    Length (prefix or postfix)
+```
+
+**Semantics:**
+```flap
+// Lists and maps
+xs = [1, 2, 3]
+^xs          // 1.0 (first element)
+_xs          // [2, 3] (remaining elements)
+#xs          // 3.0 (length)
+
+// Numbers (single-element maps)
+n = 42
+^n           // 42.0 (the number itself)
+_n           // [] (empty - no remaining elements)
+#n           // 1.0 (map has one entry)
+
+// Empty collections
+^[]          // [] (no head)
+_[]          // [] (no tail)
+#[]          // 0.0 (empty)
+```
+
+### 12. C FFI via DWARF
 
 Parse C headers automatically using DWARF debug info:
 
@@ -189,7 +217,7 @@ Parse C headers automatically using DWARF debug info:
 result = c_function(arg1, arg2)  // Direct C calls
 ```
 
-### 12. CStruct with Direct Memory Access
+### 13. CStruct with Direct Memory Access
 
 ```flap
 cstruct Point {
@@ -200,7 +228,7 @@ p = Point(1.0, 2.0)
 p.x  // Direct memory offset access
 ```
 
-### 13. Tail-Call Optimization Always On
+### 14. Tail-Call Optimization Always On
 
 ```flap
 factorial = (n, acc) => n == 0 {
@@ -209,26 +237,26 @@ factorial = (n, acc) => n == 0 {
 }
 ```
 
-### 14. Cryptographically Secure Random
+### 15. Cryptographically Secure Random
 
 ```flap
 x = ??  // Uses OS CSPRNG
 ```
 
-### 15. Move Operator `!` (Postfix)
+### 16. Move Operator `!` (Postfix)
 
 ```flap
 new_owner = old_owner!  // Transfer ownership
 ```
 
-### 16. Result Type with NaN Error Encoding
+### 17. Result Type with NaN Error Encoding
 
 ```flap
 result = risky_operation()
 result.error { != "" -> println("Error:", result.error) }
 ```
 
-### 17. Immutable-by-Default
+### 18. Immutable-by-Default
 
 ```flap
 x = 42      // Immutable

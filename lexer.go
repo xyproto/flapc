@@ -86,7 +86,9 @@ const (
 	TOKEN_CARET_B    // ^b (bitwise XOR)
 	TOKEN_TILDE_B    // ~b (bitwise NOT)
 	TOKEN_AMP        // & (used in unsafe blocks, not for lists)
-	TOKEN_CARET      // ^ (reserved, not used for head operator)
+	TOKEN_CARET      // ^ (head operator)
+	TOKEN_UNDERSCORE // _ (tail operator)
+	TOKEN_DOLLAR     // $ (address value operator)
 	TOKEN_LTLT_B     // <<b (shift left)
 	TOKEN_GTGT_B     // >>b (shift right)
 	TOKEN_LTLTLT_B   // <<<b (rotate left)
@@ -362,8 +364,8 @@ func (l *Lexer) NextToken() Token {
 		return Token{Type: TOKEN_NUMBER, Value: l.input[start:l.pos], Line: l.line, Column: tokenColumn}
 	}
 
-	// Identifier or keyword
-	if unicode.IsLetter(rune(ch)) || ch == '_' {
+	// Identifier or keyword (cannot start with underscore or digit)
+	if unicode.IsLetter(rune(ch)) {
 		start := l.pos
 		for l.pos < len(l.input) && (unicode.IsLetter(rune(l.input[l.pos])) || unicode.IsDigit(rune(l.input[l.pos])) || l.input[l.pos] == '_') {
 			l.pos++
@@ -848,6 +850,14 @@ func (l *Lexer) NextToken() Token {
 	case '#':
 		l.pos++
 		return Token{Type: TOKEN_HASH, Value: "#", Line: l.line, Column: tokenColumn}
+	case '_':
+		// It's the tail operator (standalone underscore)
+		// Note: identifiers cannot start with underscore in Flap
+		l.pos++
+		return Token{Type: TOKEN_UNDERSCORE, Value: "_", Line: l.line, Column: tokenColumn}
+	case '$':
+		l.pos++
+		return Token{Type: TOKEN_DOLLAR, Value: "$", Line: l.line, Column: tokenColumn}
 	}
 
 	return Token{Type: TOKEN_EOF, Line: l.line, Column: tokenColumn}
