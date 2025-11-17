@@ -20,13 +20,13 @@ func TestHelloWorld(t *testing.T) {
 // TestFibonacci tests a recursive fibonacci implementation
 func TestFibonacci(t *testing.T) {
 	code := `
-fib = n => n {
-	0 -> 0
-	1 -> 1
+fib = n => {
+	| n == 0 -> 0
+	| n == 1 -> 1
 	~> fib(n - 1) + fib(n - 2)
 }
 
-result := fib(10)
+result = fib(10)
 printf("fib(10) = %v\n", result)
 `
 	output := compileAndRun(t, code)
@@ -38,12 +38,12 @@ printf("fib(10) = %v\n", result)
 // Test99Bottles tests a simple counting program (inspired by 99 bottles)
 func Test99Bottles(t *testing.T) {
 	code := `
-countdown = (n, acc) => n == 0 {
-	-> acc
+countdown = (n, acc) => {
+	| n == 0 -> acc
 	~> countdown(n - 1, acc + n)
 }
 
-result := countdown(3, 0)
+result = countdown(3, 0)
 printf("Sum from 1 to 3: %v\n", result)
 `
 	output := compileAndRun(t, code)
@@ -56,8 +56,8 @@ printf("Sum from 1 to 3: %v\n", result)
 func TestCFunctionCall(t *testing.T) {
 	code := `
 // Simple calculation that would benefit from C stdlib
-x := -42
-result := x < 0 { -> -x ~> x }  // abs implementation
+x = -42
+result = { | x < 0 -> -x ~> x }  // abs implementation
 printf("abs(%v) = %v\n", x, result)
 `
 	output := compileAndRun(t, code)

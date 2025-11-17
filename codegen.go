@@ -9951,12 +9951,8 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 	isRecursive := fc.currentLambda != nil && call.Function == fc.currentLambda.Name
 
 	if isRecursive {
-		// Recursive calls REQUIRE the 'max' keyword
-		if !call.NeedsRecursionCheck {
-			compilerError("recursive call to '%s' requires 'max' clause: %s(...) max N or %s(...) max inf",
-				call.Function, call.Function, call.Function)
-		}
-		// Compile recursive call with depth tracking
+		// Note: Recursive calls do NOT require 'max' keyword (that's only for loops)
+		// Compile recursive call with tail call optimization if possible
 		fc.compileRecursiveCall(call)
 		return
 	}
