@@ -37,7 +37,7 @@
 - 0x1B: C float64
 
 **Actions:**
-1. Update LANGUAGE.md with new type system specification
+1. Update LANGUAGESPEC.md with new type system specification
 2. Update grammar to reflect type-tagged values
 3. Modify lexer to recognize type contexts
 4. Update parser to generate type information
@@ -93,7 +93,7 @@ result := 0 {
 
 ### Implicit Match Blocks in Function Bodies
 
-**Current State:** LANGUAGE.md claims all function bodies `{ ... }` are match expressions, but parser doesn't support it
+**Current State:** LANGUAGESPEC.md claims all function bodies `{ ... }` are match expressions, but parser doesn't support it
 
 **Documentation says:**
 ```flap
@@ -112,7 +112,7 @@ factorial := n => {
 4. Test extensively (this is a major syntax change)
 5. Update all examples and documentation
 
-**Alternative:** Update LANGUAGE.md to match current implementation
+**Alternative:** Update LANGUAGESPEC.md to match current implementation
 
 ---
 

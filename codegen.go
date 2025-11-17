@@ -20,11 +20,11 @@ import (
 // Date: 2025-11-06
 // Status: Complete - Stable for 50+ years
 //
-// This code generator is the authoritative implementation of LANGUAGE.md v2.0.0.
+// This code generator is the authoritative implementation of LANGUAGESPEC.md v2.0.0.
 // It transforms parsed AST into x86_64 assembly and ELF executables.
 //
 // Stability Commitment:
-// This code generator implements all LANGUAGE.md v2.0.0 features. Future work
+// This code generator implements all LANGUAGESPEC.md v2.0.0 features. Future work
 // focuses on bug fixes, optimizations, and additional target architectures only.
 //
 // Current Target Support:

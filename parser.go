@@ -4,7 +4,7 @@
 // Date: 2025-11-06
 // Status: Complete - Stable for 50+ years
 //
-// This parser is the authoritative implementation of LANGUAGE.md v2.0.0.
+// This parser is the authoritative implementation of LANGUAGESPEC.md v2.0.0.
 // It implements a complete recursive descent parser for the Flap programming
 // language, targeting x86_64 Linux.
 //
@@ -13,7 +13,7 @@
 // All future work will focus on bug fixes and optimizations only.
 //
 // Implementation Coverage:
-// - All LANGUAGE.md v2.0.0 grammar constructs
+// - All LANGUAGESPEC.md v2.0.0 grammar constructs
 // - All statement types (use, import, cstruct, arena, defer, alias, flap, ret, loops, assignments)
 // - All expression types (literals, operators, lambdas, match, unsafe, arena, memory access)
 // - All operators (arithmetic, comparison, logical, bitwise, power)

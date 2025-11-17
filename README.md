@@ -351,10 +351,10 @@ doubled := map(numbers, x => x * 2)
 
 ## Documentation
 
-- **[LANGUAGE.md](LANGUAGE.md)** - Complete language specification
-- **[TODO.md](TODO.md)** - Development roadmap
-- **[LEARNINGS.md](LEARNINGS.md)** - Design decisions
-- **[testprograms/](testprograms/)** - 250+ example programs
+- **[LANGUAGESPEC.md](LANGUAGESPEC.md)** - Language semantics and design
+- **[GRAMMAR.md](GRAMMAR.md)** - Formal grammar specification (EBNF)
+- **[DEVELOPMENT.md](DEVELOPMENT.md)** - Compiler development guide
+- **[RELEASE_NOTES_2.0.md](RELEASE_NOTES_2.0.md)** - Version 2.0 changes
 
 ## Compilation
 

@@ -451,7 +451,7 @@ See TODO30.md for Flap 3.0 roadmap.
 
 ## Resources
 
-- **Language Spec:** LANGUAGE.md
+- **Language Spec:** LANGUAGESPEC.md
 - **User Guide:** README.md
 - **Known Issues:** FAILURES.md
 - **Release Notes:** RELEASE_NOTES_2.0.md

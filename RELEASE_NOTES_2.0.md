@@ -67,7 +67,7 @@ process = x => {
 
 ### Documentation
 - **README.md**: Completely rewritten with accurate, tested examples
-- **LANGUAGE.md**: Updated grammar and operator sections
+- **LANGUAGESPEC.md**: Updated grammar and operator sections
 - Removed all deprecated/legacy references
 
 ### Code Quality
@@ -156,7 +156,7 @@ sudo install -Dm755 flapc /usr/bin/flapc
 ## Links
 
 - Repository: https://github.com/xyproto/flapc
-- Documentation: [LANGUAGE.md](LANGUAGE.md)
+- Documentation: [LANGUAGESPEC.md](LANGUAGESPEC.md)
 - Examples: [testprograms/](testprograms/)
 
 ---

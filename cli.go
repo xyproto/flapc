@@ -317,7 +317,7 @@ EXAMPLES:
     ./script.flap arg1 arg2
 
 DOCUMENTATION:
-    For language documentation, see LANGUAGE.md
+    For language documentation, see LANGUAGESPEC.md
     For help or bug reports: https://github.com/anthropics/flapc/issues
 
 `)
