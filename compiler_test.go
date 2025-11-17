@@ -222,7 +222,6 @@ func TestCTypeSize(t *testing.T) {
 	}
 }
 
-
 func testParallelSimpleCompilesOLD(t *testing.T) {
 	// FIXED: Lambda epilogue fix resolved crashes on all platforms including ARM64
 

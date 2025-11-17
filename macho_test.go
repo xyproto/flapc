@@ -408,7 +408,7 @@ func TestMachOExecutable(t *testing.T) {
 	}
 
 	// Debug: write to alternate file for comparison
-	debugFile := filepath.Join(os.TempDir(), "test_bytes_direct")
+	debugFile := filepath.Join(t.TempDir(), "test_bytes_direct")
 	os.WriteFile(debugFile, bytesToWrite, 0755)
 
 	err = os.WriteFile(tmpfilePath, bytesToWrite, 0755)

@@ -19,24 +19,22 @@ func TestENetCompilation(t *testing.T) {
 	platform := GetDefaultPlatform()
 
 	examples := []struct {
-		name     string
-		source   string
-		expected string
+		name   string
+		source string
 	}{
 		{
-			name:     "enet_simple",
-			source:   "examples/enet/simple_test.flap",
-			expected: "/tmp/test_enet_simple",
+			name:   "enet_simple",
+			source: "examples/enet/simple_test.flap",
 		},
 	}
 
 	for _, example := range examples {
 		t.Run(example.name, func(t *testing.T) {
-			// Clean up any existing binary
-			os.Remove(example.expected)
+			tmpDir := t.TempDir()
+			outPath := filepath.Join(tmpDir, "test_"+example.name)
 
 			// Try to compile
-			err := CompileFlap(example.source, example.expected, platform)
+			err := CompileFlap(example.source, outPath, platform)
 
 			// We expect compilation to succeed (generates assembly/binary)
 			// It may fail at link time if ENet is not installed, which is acceptable
@@ -56,12 +54,12 @@ func TestENetCompilation(t *testing.T) {
 			t.Logf("%s: Full compilation and linking successful", example.name)
 
 			// Verify binary was created
-			if _, err := os.Stat(example.expected); os.IsNotExist(err) {
-				t.Fatalf("%s: Binary not created at %s", example.name, example.expected)
+			if _, err := os.Stat(outPath); os.IsNotExist(err) {
+				t.Fatalf("%s: Binary not created at %s", example.name, outPath)
 			}
 
 			// Verify it's executable
-			fileInfo, err := os.Stat(example.expected)
+			fileInfo, err := os.Stat(outPath)
 			if err != nil {
 				t.Fatalf("%s: Failed to stat binary: %v", example.name, err)
 			}
@@ -71,7 +69,7 @@ func TestENetCompilation(t *testing.T) {
 			}
 
 			// Clean up
-			os.Remove(example.expected)
+			os.Remove(outPath)
 		})
 	}
 }
@@ -151,7 +149,8 @@ func TestENetWithLibraryIfAvailable(t *testing.T) {
 
 	// Try to compile with ENet
 	platform := GetDefaultPlatform()
-	serverBin := "/tmp/test_enet_server_runtime"
+	tmpDir := t.TempDir()
+	serverBin := filepath.Join(tmpDir, "test_enet_server_runtime")
 	err := CompileFlap("examples/enet/server.flap", serverBin, platform)
 
 	if err != nil {

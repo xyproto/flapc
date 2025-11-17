@@ -74,7 +74,8 @@ func TestELFOSABI(t *testing.T) {
 
 // TestMinimalELFSize ensures we stay under size targets
 func TestMinimalELFSize(t *testing.T) {
-	tmpfile := filepath.Join(os.TempDir(), "flapc_size_test")
+	tmpDir := t.TempDir()
+	tmpfile := filepath.Join(tmpDir, "flapc_size_test")
 	defer os.Remove(tmpfile)
 
 	eb, err := New("x86_64-linux")
@@ -183,7 +184,8 @@ func TestDynamicELFExecutable(t *testing.T) {
 
 // TestELFSegmentAlignment verifies proper segment alignment
 func TestELFSegmentAlignment(t *testing.T) {
-	tmpfile := filepath.Join(os.TempDir(), "flapc_align_test")
+	tmpDir := t.TempDir()
+	tmpfile := filepath.Join(tmpDir, "flapc_align_test")
 	defer os.Remove(tmpfile)
 
 	eb, err := New("x86_64-linux")
@@ -234,7 +236,8 @@ func TestELFSegmentAlignment(t *testing.T) {
 
 // TestELFInterpSegment verifies interpreter segment exists and is valid
 func TestELFInterpSegment(t *testing.T) {
-	tmpfile := filepath.Join(os.TempDir(), "flapc_interp_test")
+	tmpDir := t.TempDir()
+	tmpfile := filepath.Join(tmpDir, "flapc_interp_test")
 	defer os.Remove(tmpfile)
 
 	eb, err := New("x86_64-linux")
@@ -302,7 +305,8 @@ func TestELFInterpSegment(t *testing.T) {
 
 // TestELFDynamicSegment verifies dynamic segment structure
 func TestELFDynamicSegment(t *testing.T) {
-	tmpfile := filepath.Join(os.TempDir(), "flapc_dynamic_seg_test")
+	tmpDir := t.TempDir()
+	tmpfile := filepath.Join(tmpDir, "flapc_dynamic_seg_test")
 	defer os.Remove(tmpfile)
 
 	eb, err := New("x86_64-linux")
@@ -361,7 +365,8 @@ func TestELFDynamicSegment(t *testing.T) {
 
 // TestELFType verifies ET_DYN type for PIE executables
 func TestELFType(t *testing.T) {
-	tmpfile := filepath.Join(os.TempDir(), "flapc_type_test")
+	tmpDir := t.TempDir()
+	tmpfile := filepath.Join(tmpDir, "flapc_type_test")
 	defer os.Remove(tmpfile)
 
 	eb, err := New("x86_64-linux")
@@ -465,7 +470,8 @@ func TestELFMachine(t *testing.T) {
 
 // TestELFPermissions verifies executable permissions
 func TestELFPermissions(t *testing.T) {
-	tmpfile := filepath.Join(os.TempDir(), "flapc_perms_test")
+	tmpDir := t.TempDir()
+	tmpfile := filepath.Join(tmpDir, "flapc_perms_test")
 	defer os.Remove(tmpfile)
 
 	eb, err := New("x86_64-linux")

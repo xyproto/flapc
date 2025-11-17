@@ -28,10 +28,8 @@ func TestARM64BasicCompilation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tmpFile := filepath.Join(os.TempDir(), "test_arm64_"+tt.name+".flap")
-			outFile := filepath.Join(os.TempDir(), "test_arm64_"+tt.name)
-			defer os.Remove(tmpFile)
-			defer os.Remove(outFile)
+			tmpFile := filepath.Join(t.TempDir(), "test_arm64_"+tt.name+".flap")
+			outFile := filepath.Join(t.TempDir(), "test_arm64_"+tt.name)
 
 			// Write test program
 			if err := os.WriteFile(tmpFile, []byte(tt.code), 0644); err != nil {
