@@ -314,32 +314,39 @@ person.x  // Also works - different map, same key
 
 ### Immutable Assignment (`=`)
 
-Creates immutable binding:
+Creates immutable binding (cannot reassign variable or modify contents):
 
 ```flap
 x = 42
 x = 100  // ERROR: cannot reassign immutable variable
+
+nums = [1, 2, 3]
+nums[0] = 99  // ERROR: cannot modify immutable value
 ```
 
 **Use for:**
 - Constants
-- Function definitions
+- Function definitions (standard practice)
 - Values that won't change
 
 ### Mutable Assignment (`:=`)
 
-Creates mutable binding:
+Creates mutable binding (can reassign variable and modify contents):
 
 ```flap
 x := 42
-x := 100  // OK: mutable variable
+x := 100  // OK: reassign mutable variable
 x <- 200  // OK: update with <-
+
+nums := [1, 2, 3]
+nums[0] <- 99  // OK: modify mutable value
 ```
 
 **Use for:**
 - Loop counters
 - Accumulators
 - Values that will change
+- Functions that need reassignment (rare)
 
 ### Update Operator (`<-`)
 
@@ -811,41 +818,42 @@ Counter := start => {
 }
 ```
 
-### Instance Fields and `this`
+### Instance Fields and "this"
 
-Inside methods, `.field` accesses instance fields. The `this` keyword refers to the current instance:
+Inside methods, `.field` accesses instance fields. The `. ` expression (dot followed by space or newline) means "this":
 
 ```flap
 class List {
-    init := ==> {
+    init = () => {
         .items = []
     }
     
-    add := item => {
+    add = item => {
         .items <- .items :: item
-        ret this  // Return self for chaining
+        ret .   // Return this (self) for chaining
     }
     
-    size := ==> .items.length
+    size = () => .items.length
 }
 
-list := List().add(1).add(2).add(3)  // Method chaining via this
+list = List().add(1).add(2).add(3)  // Method chaining via `. `
 println(list.size())  // 3
 ```
 
 **Key points:**
-- `.field` is shorthand for `this.field` inside methods
-- `this` refers to the current instance
-- Return `this` for method chaining
+- `.field` accesses instance field inside methods
+- `. ` (dot space or dot newline) means "this" (the current instance)
+- Return `. ` for method chaining
 - Outside methods, use `instance.field` explicitly
+- No `this` keyword - use `. ` instead
 
 ```flap
 class Account {
-    init := balance ==> {
+    init = balance => {
         .balance = balance
     }
     
-    withdraw := amount => {
+    withdraw = amount => {
         amount > .balance {
             ret -1  // Insufficient funds
         }
@@ -853,14 +861,14 @@ class Account {
         ret 0
     }
     
-    deposit := amount => {
+    deposit = amount => {
         .balance <- .balance + amount
     }
     
-    get_balance := ==> .balance
+    get_balance = () => .balance
 }
 
-acc := Account(100)
+acc = Account(100)
 acc.deposit(50)
 println(acc.get_balance())  // 150
 ```
@@ -1002,20 +1010,20 @@ class Parser {
 
 ### Method Chaining
 
-Return `.` or `instance` to enable chaining:
+Return `. ` (this) to enable chaining:
 
 ```flap
 class StringBuilder {
-    init := ==> {
+    init = () => {
         .parts = []
     }
     
-    append := str ==> {
+    append = str => {
         .parts <- .parts :: str
-        ret .  // Return self
+        ret .  // Return this (self)
     }
     
-    build := ==> {
+    build = () => {
         result := ""
         @ part in .parts {
             result <- result + part
@@ -1024,7 +1032,7 @@ class StringBuilder {
     }
 }
 
-str := StringBuilder()
+str = StringBuilder()
     .append("Hello")
     .append(" ")
     .append("World")
@@ -1127,15 +1135,15 @@ dog.bark()   // From Dog
 
 ```flap
 class Stack {
-    init := ==> {
+    init = () => {
         .items = []
     }
     
-    push := item ==> {
+    push = item => {
         .items <- .items :: item
     }
     
-    pop := ==> {
+    pop = () => {
         .items.length == 0 {
             ret ??  // Empty
         }
@@ -1144,10 +1152,10 @@ class Stack {
         ret last
     }
     
-    is_empty := ==> .items.length == 0
+    is_empty = () => .items.length == 0
 }
 
-s := Stack()
+s = Stack()
 s.push(1)
 s.push(2)
 s.push(3)

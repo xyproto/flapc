@@ -252,7 +252,7 @@ primary_expr    = identifier
                 | lambda_expr
                 | enet_address
                 | instance_field
-                | "this"
+                | this_expr
                 | "(" expression ")"
                 | "??"
                 | unsafe_expr
@@ -260,6 +260,8 @@ primary_expr    = identifier
                 | "???" ;
 
 instance_field  = "." identifier ;
+
+this_expr       = "." [ " " | newline ] ;  // Dot followed by space or newline means "this"
 
 enet_address    = "&" port_or_host_port ;
 
@@ -504,10 +506,10 @@ All bitwise operators use `b` suffix:
 ### Assignment Operators
 
 ```
-=     Immutable assignment
-:=    Mutable assignment
+=     Immutable assignment (cannot reassign variable or modify value)
+:=    Mutable assignment (can reassign variable and modify value)
 <-    Update/reassignment (for mutable vars)
-==>   No-arg lambda shorthand (alias for = () =>)
+==>   No-arg lambda shorthand (alias for () =>)
 
 +=    Add and assign
 -=    Subtract and assign
@@ -898,7 +900,7 @@ json := p.to_json()
 
 ```flap
 class User <> Serializable <> Validatable <> Timestamped {
-    init := name ==> {
+    init = name => {
         .name = name
         .created_at = now()
     }
@@ -1045,23 +1047,23 @@ Point := (...) => {
 
 ### Method Chaining
 
-Methods that return `instance` (or `.` implicitly) enable chaining:
+Methods that return `. ` (this) enable chaining:
 
 ```flap
 class Builder {
-    init := ==> {
+    init = () => {
         .parts = []
     }
     
-    add := part ==> {
+    add = part => {
         .parts <- .parts :: part
-        ret .  // Return self
+        ret .  // Return this (self)
     }
     
-    build := ==> .parts
+    build = () => .parts
 }
 
-result := Builder().add("A").add("B").add("C").build()
+result = Builder().add("A").add("B").add("C").build()
 ```
 
 ### No Inheritance
