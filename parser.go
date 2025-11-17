@@ -50,6 +50,12 @@ var globalParseCallCount = 0
 var debugParser = false // Set to true for parser debugging
 
 const (
+	// Parser recursion and iteration safety limits
+	// These prevent infinite loops and stack overflows during parsing
+	maxParseRecursion = 1000  // Maximum recursion depth for parser calls
+	maxBlockIterations = 10000 // Maximum iterations for parsing block statements
+	maxASTIterations = 1000   // Maximum iterations for AST traversal
+
 	// Buffer sizes for runtime operations
 	stringBufferSize = 256 // Maximum string buffer size for conversions
 	socketBufferSize = 256 // Network socket buffer size
@@ -1059,9 +1065,9 @@ func (p *Parser) tryParseNonParenLambda() Expression {
 		return &LambdaExpr{Params: []string{firstParam}, Body: body}
 	}
 
-	// Error if using -> instead of =>
+	// If we see -> it's not a lambda (it's a match arrow), just return nil
 	if p.peek.Type == TOKEN_ARROW {
-		p.error("lambda definitions must use '=>' not '->' (e.g., x => x * 2)")
+		return nil
 	}
 
 	// Multi param: x, y, z =>
@@ -1091,9 +1097,9 @@ func (p *Parser) tryParseNonParenLambda() Expression {
 			return &LambdaExpr{Params: params, Body: body}
 		}
 
-		// Error if using -> instead of =>
+		// If we see -> it's not a lambda, just return nil
 		if p.peek.Type == TOKEN_ARROW {
-			p.error("lambda definitions must use '=>' not '->' (e.g., x, y => x + y)")
+			return nil
 		}
 	}
 
@@ -1548,7 +1554,7 @@ func (p *Parser) disambiguateBlock() BlockType {
 	foundArrow := false
 
 	// Scan tokens within this block
-	for i := 0; i < 10000; i++ { // Safety limit
+	for i := 0; i < maxBlockIterations; i++ {
 		tok := tempLexer.NextToken()
 
 		if tok.Type == TOKEN_EOF {
@@ -1611,7 +1617,7 @@ func (p *Parser) blockContainsMatchArrows() bool {
 	foundArrow := false
 
 	// Scan through tokens until we exit the block
-	for i := 0; i < 1000; i++ { // Safety limit
+	for i := 0; i < maxASTIterations; i++ {
 		if tempParser.current.Type == TOKEN_EOF {
 			break
 		}
@@ -1909,7 +1915,7 @@ func (p *Parser) parseMatchTarget() Expression {
 		loopCount := 0
 		for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
 			loopCount++
-			if loopCount > 1000 {
+			if loopCount > maxASTIterations {
 				p.error(fmt.Sprintf("infinite loop in parseMatchTarget block: stuck at token %v", p.current))
 			}
 
@@ -2797,7 +2803,7 @@ func (p *Parser) parseOnePatternClause() *PatternClause {
 
 func (p *Parser) parseExpression() Expression {
 	globalParseCallCount++
-	if globalParseCallCount > 100 {
+	if globalParseCallCount > maxParseRecursion {
 		// Print stack trace
 		debug.PrintStack()
 		p.error(fmt.Sprintf("infinite recursion in parseExpression: count=%d, token type=%v value='%v' line=%d", globalParseCallCount, p.current.Type, p.current.Value, p.current.Line))
@@ -3495,10 +3501,8 @@ func (p *Parser) parsePrimary() Expression {
 			}
 		}
 
-		// Error if using -> instead of =>
-		if p.peek.Type == TOKEN_ARROW {
-			p.error("lambda definitions must use '=>' not '->' (e.g., x => x * 2)")
-		}
+		// If we see -> it's not a lambda error (it's a match arrow), continue parsing
+		// The -> will be handled correctly in match clause parsing
 
 		// Dot notation is now handled entirely in parsePostfix
 		// This includes both field access (obj.field) and namespaced calls (namespace.func())

@@ -1,9 +1,6 @@
 package main
 
 import (
-	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -165,8 +162,7 @@ func TestQuickSort(t *testing.T) {
 	code := `
 // Concatenate two lists recursively
 concat = (left, right, i, result) => {
-	len_left = #left
-	| i >= len_left -> concat_right(right, 0, result)
+	| i >= #left -> concat_right(right, 0, result)
 	~> concat(left, right, i + 1, result.append(left[i]))
 }
 
@@ -183,8 +179,7 @@ add_to_partition = (elem, pivot, less, greater) => {
 
 // Partition array recursively
 partition_helper = (arr, pivot, i, less, greater) => {
-	len_arr = #arr
-	| i >= len_arr -> [less, greater]
+	| i >= #arr -> [less, greater]
 	~> {
 		elem = arr[i]
 		updated = add_to_partition(elem, pivot, less, greater)
@@ -194,8 +189,7 @@ partition_helper = (arr, pivot, i, less, greater) => {
 
 // QuickSort implementation
 quicksort = arr => {
-	len_arr = #arr
-	| len_arr <= 1 -> arr
+	| #arr <= 1 -> arr
 	~> {
 		pivot = arr[0]
 		partitioned = partition_helper(arr, pivot, 1, [], [])
@@ -249,34 +243,63 @@ printf("Sum from 1 to 10: %v\n", result)
 	}
 }
 
-// compileAndRun is a helper function that compiles and runs Flap code,
-// returning the output
-func compileAndRun(t *testing.T, code string) string {
-	t.Helper()
-
-	// Create temporary directory
-	tmpDir := t.TempDir()
-
-	// Write source file
-	srcFile := filepath.Join(tmpDir, "test.flap")
-	if err := os.WriteFile(srcFile, []byte(code), 0644); err != nil {
-		t.Fatalf("Failed to write source file: %v", err)
+// TestInsertionSort tests insertion sort algorithm
+func TestInsertionSort(t *testing.T) {
+	code := `
+// Build a new list with element inserted at correct position
+insert_at = (arr, insert_pos, val) => {
+	build_result = (i, result) => {
+		| i > #arr -> result
+		| i == insert_pos -> build_result(i + 1, result.append(val).append(arr[i]))
+		| i < insert_pos -> build_result(i + 1, result.append(arr[i]))
+		~> build_result(i + 1, result.append(arr[i]))
 	}
-
-	// Compile
-	exePath := filepath.Join(tmpDir, "test")
-	cmd := exec.Command("./flapc", "-o", exePath, srcFile)
-	compileOutput, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("Compilation failed: %v\nOutput: %s", err, compileOutput)
-	}
-
-	// Run
-	cmd = exec.Command(exePath)
-	runOutput, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("Execution failed: %v\nOutput: %s", err, runOutput)
-	}
-
-	return string(runOutput)
+	build_result(0, [])
 }
+
+// Find position where value should be inserted
+find_insert_pos = (arr, pos, val) => {
+	| pos < 0 -> 0
+	| arr[pos] > val -> find_insert_pos(arr, pos - 1, val)
+	~> pos + 1
+}
+
+// Insertion sort helper - processes one position at a time
+insertion_sort_helper = (arr, i) => {
+	| i >= #arr -> arr
+	~> {
+		current = arr[i]
+		// Remove current element from array
+		without_current = concat_parts(arr, 0, i, i + 1, #arr, [])
+		// Find where to insert it
+		insert_pos = find_insert_pos(without_current, i - 1, current)
+		// Insert it and continue
+		arr_with_insert = insert_at(without_current, insert_pos, current)
+		insertion_sort_helper(arr_with_insert, i + 1)
+	}
+}
+
+// Helper to concatenate parts of array (skip index from..to)
+concat_parts = (arr, i, skip_from, skip_to, end, result) => {
+	| i >= end -> result
+	| (i >= skip_from) && (i < skip_to) -> concat_parts(arr, i + 1, skip_from, skip_to, end, result)
+	~> concat_parts(arr, i + 1, skip_from, skip_to, end, result.append(arr[i]))
+}
+
+// Main insertion sort function
+insertion_sort = arr => {
+	| #arr <= 1 -> arr
+	~> insertion_sort_helper(arr, 1)
+}
+
+numbers = [3, 1, 4, 1, 5, 9, 2, 6]
+sorted = insertion_sort(numbers)
+printf("Sorted: %v %v %v %v %v %v %v %v\n", sorted[0], sorted[1], sorted[2], sorted[3], sorted[4], sorted[5], sorted[6], sorted[7])
+`
+	output := compileAndRun(t, code)
+	if !strings.Contains(output, "1 1 2 3 4 5 6 9") {
+		t.Errorf("Expected '1 1 2 3 4 5 6 9' in sorted output, got: %s", output)
+	}
+}
+
+
