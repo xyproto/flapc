@@ -49,30 +49,73 @@ The compiler emits x86_64, ARM64, and RISCV64 machine code directly from the AST
 - **Small compiler** - ~30k lines of Go
 - **Deterministic output** - same code every time
 
-### 3. **Match Blocks as Function Bodies**
-Every function body `{ ... }` is actually a match expression:
+### 3. **Blocks: Maps, Matches, and Statements**
+Blocks `{ ... }` are disambiguated by their contents:
+
 ```flap
-factorial := n => {
-    n == 0 -> 1
-    ~> n * factorial(n - 1)
+// Map literal: contains key: value
+config = { port: 8080, host: "localhost" }
+
+// Statement block: no -> or ~> arrows
+compute = x => {
+    temp = x * 2
+    result = temp + 10
+    result  // last value returned
+}
+
+// Value match: expression before {, patterns with ->
+classify = x => x {
+    0 -> "zero"
+    5 -> "five"
+    ~> "other"
+}
+
+// Guard match: no expression before {, branches with |
+classify = x => {
+    | x == 0 -> "zero"
+    | x > 0 -> "positive"
+    ~> "negative"
 }
 ```
-Lines without `->` become the default case. This unifies:
-- Pattern matching
-- Function bodies
-- Conditional expressions
-- Guard clauses
+
+**Block disambiguation rules:**
+1. Contains `:` (before arrows) → Map literal
+2. Contains `->` or `~>` → Match block (value or guard)
+3. Otherwise → Statement block
+
+This unifies maps, pattern matching, guards, and function bodies into one syntax.
 
 ### 4. **Unified Lambda Syntax (`=>` and `==>`)**
-All functions—named, anonymous, inline—use the same `=>` arrow:
+All functions use `=>`. Define with `=` (immutable) not `:=` unless reassignment needed:
 ```flap
-f = x => x + 1                     // Simple lambda
-g = (x, y) => x * y                // Multiple parameters
-h = x => { x > 0 -> "pos" }        // With match block
-hello ==> println("Hello!")        // No-arg shorthand (==> is alias for = () =>)
+// Use = for functions (standard)
+square = x => x * 2
+add = (x, y) => x + y
+compute = x => { temp = x * 2; temp + 10 }
+classify = x => x { 0 -> "zero" ~> "other" }
+hello ==> println("Hello!")        // ==> shorthand for () =>
+
+// Only use := if function will be reassigned
+handler := x => println(x)
+handler := x => println("DEBUG:", x)  // reassignment
 ```
 
-### 5. **Bitwise Operators with `b` Suffix**
+**Convention:** Functions are immutable by default (`=`), only use `:=` when needed.
+
+### 5. **Minimal Parentheses**
+Avoid parentheses unless needed for precedence or grouping:
+```flap
+// Good: no unnecessary parens
+x > 0 { -> "positive" ~> "negative" }
+result = x + y * z
+classify = x => x { 0 -> "zero" ~> "other" }
+
+// Only use when needed
+result = (x + y) * z              // precedence
+cond = (x > 0 && y < 10) { ... }  // complex condition grouping
+```
+
+### 6. **Bitwise Operators with `b` Suffix**
 All bitwise operations are suffixed with `b` to eliminate ambiguity:
 ```flap
 <<b >>b <<<b >>>b    // Shifts and rotates
@@ -151,8 +194,8 @@ result := arena {
 ### 13. **Tail-Call Optimization Always On**
 The compiler automatically optimizes tail calls—no special syntax required:
 ```flap
-factorial := (n, acc) => {
-    n == 0 -> acc
+factorial = (n, acc) => n == 0 {
+    -> acc
     ~> factorial(n - 1, acc * n)    // Optimized to loop
 }
 ```
@@ -522,9 +565,12 @@ indexed_expr    = identifier "[" expression "]" ;
 expression_statement = expression [ match_block ] ;
 
 match_block     = "{" ( default_arm
-                      | match_clause { match_clause } [ default_arm ] ) "}" ;
+                      | match_clause { match_clause } [ default_arm ]
+                      | guard_clause { guard_clause } [ default_arm ] ) "}" ;
 
 match_clause    = expression [ "->" match_target ] ;
+
+guard_clause    = "|" expression "->" match_target ;
 
 default_arm     = "~>" match_target ;
 
@@ -616,11 +662,25 @@ lambda_expr             = [ parameter_list ] "=>" lambda_body
 
 lambda_body             = block | expression [ match_block ] ;
 
-// Lambda arrow semantics:
-// => : Unified arrow for all functions
-// Block semantics inferred from content:
-//   - Contains -> or ~> : match block
-//   - No arrows : statement block
+// Lambda body semantics:
+// 1. block: Statement block, map literal, or match block
+//    Block type determined by contents:
+//    - Contains `:` before arrows → map literal
+//    - Contains `->` or `~>` → match block
+//    - Otherwise → statement block
+//
+// 2. expression [ match_block ]: Value match
+//    Example: x => x { 0 -> "zero" ~> "other" }
+//    Expression is evaluated, result matched against patterns
+//
+// Match block forms:
+//   Value match: expr { pattern -> result }
+//   Guard match: { | condition -> result }
+//
+// Examples:
+//   x => x { 0 -> "zero" }           // Value match
+//   x => { | x > 0 -> "pos" }        // Guard match
+//   x => { temp = x * 2; temp }      // Statement block
 
 parameter_list          = identifier [ "," identifier ]*
                         | "(" [ identifier [ "," identifier ]* ] ")" ;
@@ -941,7 +1001,7 @@ a := 10
 b := a! + a!      // Compile error: a moved twice
 
 // Move with function calls
-process := data => data * 2
+process = data => data * 2
 value := 100
 result := process(value!)  // Transfers value to function
 ```
@@ -963,7 +1023,7 @@ result := process(value!)  // Transfers value to function
 **Example - Complex Expression:**
 
 ```flap
-compute := (a, b, c) => a * b + c
+compute = (a, b, c) => a * b + c
 
 x := 10
 y := 20
@@ -1023,44 +1083,70 @@ x == 0 {
 
 **Match Expression Syntax:**
 
-Match expressions distinguish between **value matching** and **guard conditions**:
+Match blocks have two forms: **value match** and **guard match**.
 
-1. **Value matching**: `value -> result` - Matches when input equals value
-2. **Guard conditions**: `| condition -> result` - Evaluates boolean expression (use `|` prefix)
-3. **Default case**: `~> result` - Always uses `~>` arrow
-4. **Implicit form**: Expression without arrow (for simple conditionals)
+### Value Match (with expression before `{`)
+
+Evaluates expression, then matches its result against patterns:
 
 ```flap
-// Value matching (checks equality)
-result := x {
-    0 -> "zero"           // Matches when x == 0
-    1 -> "one"            // Matches when x == 1
-    2 -> "two"            // Matches when x == 2
-    ~> "other"            // Default case
+// Match on literal values
+x = 5
+result = x {
+    0 -> "zero"
+    5 -> "five"
+    10 -> "ten"
+    ~> "other"
 }
 
-// Guard conditions (use | prefix for boolean expressions)
-result := x {
-    | x > 10 -> "large"       // Guard: evaluates x > 10
-    | x > 0 -> "positive"     // Guard: evaluates x > 0
-    | x == 0 -> "zero"        // Guard: evaluates x == 0
-    ~> "negative"             // Default case
+// Match on boolean (1 = true, 0 = false)
+result = (x > 0) {
+    1 -> "positive"
+    0 -> "not positive"
 }
 
-// Can mix value matching and guards
-result := x {
-    0 -> "zero"               // Value match
-    | x > 0 && x < 10 -> "small positive"  // Guard
-    | x >= 10 -> "large"      // Guard
-    ~> "negative"             // Default
-}
-
-// Simple conditional (no value/guard distinction)
-x > 0 {
-    println("positive")       // Executes when x > 0
-    ~> println("not positive") // Default case
+// Shorthand with default
+result = (x > 10) {
+    1 -> "large"
+    ~> "small"
 }
 ```
+
+### Guard Match (no expression, branches with `|`)
+
+Each branch evaluates its own condition:
+
+```flap
+// Guard branches with |
+classify = x => {
+    | x == 0 -> "zero"
+    | x > 0 -> "positive"
+    | x < 0 -> "negative"
+    ~> "unknown"  // optional default
+}
+
+// Multiple conditions
+category = age => {
+    | age < 13 -> "child"
+    | age < 18 -> "teen"
+    | age < 65 -> "adult"
+    ~> "senior"
+}
+
+// Can be used inline
+result = x {
+    | x > 100 -> "huge"
+    | x > 10 -> "big"
+    | x > 0 -> "small"
+    ~> "tiny"
+}
+```
+
+**Key difference:**
+- **Value match:** One expression evaluated once, result matched against patterns
+- **Guard match:** Each `|` branch evaluates independently (short-circuits on first true)
+
+**Default case:** `~>` works in both forms
 
 ### Tail Calls
 
@@ -1209,7 +1295,7 @@ greet ==> println("Hello!")
 // (functions are values assigned once)
 
 // But you CAN reassign if you use :=
-counter := x => x + 1      // Mutable
+counter = x => x + 1      // Mutable
 counter <- x => x + 2      // Can reassign
 ```
 
@@ -1886,7 +1972,7 @@ numbers.append(20)       // [10, 20]
 numbers.append(30)       // [10, 20, 30]
 
 // Recursive list processing
-process_list := list => {
+process_list = list => {
     #list == 0 {
         ret "done"
     }

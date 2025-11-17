@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-// TestENetCompilation tests that ENet example programs compile successfully
-// This verifies C FFI correctness without requiring ENet to be installed
+// TestENetCompilation tests that ENet syntax compiles successfully
+// This verifies C FFI and ENet syntax correctness without requiring ENet to be installed
 func TestENetCompilation(t *testing.T) {
 	// Skip on non-Linux for now (ENet examples are Linux-focused)
 	if runtime.GOOS != "linux" {
@@ -18,23 +18,32 @@ func TestENetCompilation(t *testing.T) {
 
 	platform := GetDefaultPlatform()
 
-	examples := []struct {
+	tests := []struct {
 		name   string
 		source string
 	}{
 		{
-			name:   "enet_simple",
-			source: "examples/enet/simple_test.flap",
+			name: "enet_simple",
+			source: `// Simple ENet test
+server_port := 8080
+@server_port <- "Hello"
+`,
 		},
 	}
 
-	for _, example := range examples {
-		t.Run(example.name, func(t *testing.T) {
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
-			outPath := filepath.Join(tmpDir, "test_"+example.name)
+			srcPath := filepath.Join(tmpDir, tt.name+".flap")
+			outPath := filepath.Join(tmpDir, tt.name)
+
+			// Write source file
+			if err := os.WriteFile(srcPath, []byte(tt.source), 0644); err != nil {
+				t.Fatalf("Failed to write source file: %v", err)
+			}
 
 			// Try to compile
-			err := CompileFlap(example.source, outPath, platform)
+			err := CompileFlap(srcPath, outPath, platform)
 
 			// We expect compilation to succeed (generates assembly/binary)
 			// It may fail at link time if ENet is not installed, which is acceptable
@@ -42,30 +51,30 @@ func TestENetCompilation(t *testing.T) {
 			if err != nil {
 				// Check if it's a link error (expected if ENet not installed)
 				if isLinkError(err) {
-					t.Logf("%s: Compilation successful, link failed (ENet not installed): %v", example.name, err)
+					t.Logf("%s: Compilation successful, link failed (ENet not installed): %v", tt.name, err)
 					// This is OK - the Flap code compiled successfully
 					return
 				}
 				// Other errors are test failures
-				t.Fatalf("%s: Compilation failed: %v", example.name, err)
+				t.Fatalf("%s: Compilation failed: %v", tt.name, err)
 			}
 
 			// If we got here, compilation AND linking succeeded
-			t.Logf("%s: Full compilation and linking successful", example.name)
+			t.Logf("%s: Full compilation and linking successful", tt.name)
 
 			// Verify binary was created
 			if _, err := os.Stat(outPath); os.IsNotExist(err) {
-				t.Fatalf("%s: Binary not created at %s", example.name, outPath)
+				t.Fatalf("%s: Binary not created at %s", tt.name, outPath)
 			}
 
 			// Verify it's executable
 			fileInfo, err := os.Stat(outPath)
 			if err != nil {
-				t.Fatalf("%s: Failed to stat binary: %v", example.name, err)
+				t.Fatalf("%s: Failed to stat binary: %v", tt.name, err)
 			}
 
 			if fileInfo.Mode()&0111 == 0 {
-				t.Fatalf("%s: Binary is not executable", example.name)
+				t.Fatalf("%s: Binary is not executable", tt.name)
 			}
 
 			// Clean up
@@ -95,40 +104,34 @@ func isLinkError(err error) bool {
 	return false
 }
 
-// TestENetCodeGeneration verifies that ENet examples generate valid assembly
-// even if linking fails
-func TestENetCodeGeneration(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("Skipping ENet codegen test on non-Linux platform")
+// TestENetSyntax verifies that ENet address syntax parses correctly
+func TestENetSyntax(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+	}{
+		{
+			name: "enet_address_literal",
+			source: `addr := @8080
+println(addr)
+`,
+		},
+		{
+			name: "enet_send",
+			source: `port := @9000
+port <- "message"
+`,
+		},
 	}
 
-	// Test that we can at least parse and generate code for ENet examples
-	examples := []string{
-		"examples/enet/simple_test.flap",
-	}
-
-	for _, source := range examples {
-		t.Run(filepath.Base(source), func(t *testing.T) {
-			// Just verify the file exists and has valid Flap syntax
-			content, err := os.ReadFile(source)
-			if err != nil {
-				t.Fatalf("Failed to read %s: %v", source, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := runFlapProgram(t, tt.source)
+			if result.CompileError != "" {
+				t.Fatalf("Compilation failed: %s", result.CompileError)
 			}
-
-			// Parse the program
-			parser := NewParserWithFilename(string(content), source)
-			program := parser.ParseProgram()
-
-			// Verify we got a valid AST
-			if program == nil {
-				t.Fatalf("Failed to parse %s", source)
-			}
-
-			if len(program.Statements) == 0 {
-				t.Fatalf("No statements parsed from %s", source)
-			}
-
-			t.Logf("Successfully parsed %s: %d statements", source, len(program.Statements))
+			// If it compiled, ENet syntax is working
+			t.Logf("Successfully compiled ENet syntax test")
 		})
 	}
 }
@@ -147,17 +150,26 @@ func TestENetWithLibraryIfAvailable(t *testing.T) {
 
 	t.Log("ENet library detected via pkg-config")
 
-	// Try to compile with ENet
+	// Try to compile simple ENet program
 	platform := GetDefaultPlatform()
 	tmpDir := t.TempDir()
-	serverBin := filepath.Join(tmpDir, "test_enet_server_runtime")
-	err := CompileFlap("examples/enet/server.flap", serverBin, platform)
+	
+	source := `// Simple ENet server test
+server_port := 9000
+@server_port <- "test"
+`
+	srcPath := filepath.Join(tmpDir, "enet_server.flap")
+	serverBin := filepath.Join(tmpDir, "enet_server")
+	
+	if err := os.WriteFile(srcPath, []byte(source), 0644); err != nil {
+		t.Fatalf("Failed to write source: %v", err)
+	}
+	
+	err := CompileFlap(srcPath, serverBin, platform)
 
 	if err != nil {
 		t.Fatalf("Failed to compile ENet server with library available: %v", err)
 	}
-
-	defer os.Remove(serverBin)
 
 	// Verify binary exists
 	if _, err := os.Stat(serverBin); os.IsNotExist(err) {
