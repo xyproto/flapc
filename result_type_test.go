@@ -79,14 +79,46 @@ println(len)
 	}
 }
 
-// TestErrorPropertyBasic tests .error property on Result types
+// TestErrorPropertyBasic tests .error property on Result types  
 func TestErrorPropertyBasic(t *testing.T) {
-	t.Skip("TODO: .error property needs division error encoding")
-	source := `result := 10 / 0
-code := result.error
+	t.Skip("TODO: Division by zero needs to encode error in result value")
+	source := `result = 10 / 0
+code = result.error
+code {
+    "" -> println("no error")
+    ~> println(f"error: {code}")
+}
+`
+	result := compileAndRun(t, source)
+	if !strings.Contains(result, "error: dv0") {
+		t.Errorf("Expected output to contain 'error: dv0', got: %s", result)
+	}
+}
+
+// TestErrorFunction tests creating errors with error() function
+func TestErrorFunction(t *testing.T) {
+	t.Skip("TODO: error() function not yet implemented")
+	source := `err = call("error", "arg")
+code = err.error
 println(code)
 `
-	_ = compileAndRun(t, source)
-	// Should print the error code (e.g., "dv0 " for division by zero)
-	// For now, just check it doesn't crash (compileAndRun will fail test if compilation fails)
+	result := compileAndRun(t, source)
+	if !strings.Contains(result, "arg") {
+		t.Errorf("Expected output to contain 'arg', got: %s", result)
+	}
+}
+
+// TestErrorPropertyOnSuccess tests .error returns empty string for success
+func TestErrorPropertyOnSuccess(t *testing.T) {
+	source := `result := 10 / 2
+code := result.error
+code {
+    "" -> println("success")
+    ~> println(f"error: {code}")
+}
+`
+	result := compileAndRun(t, source)
+	if !strings.Contains(result, "success") {
+		t.Errorf("Expected output to contain 'success', got: %s", result)
+	}
 }
