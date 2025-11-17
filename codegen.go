@@ -9592,6 +9592,12 @@ func (fc *FlapCompiler) compileRecursiveCall(call *CallExpr) {
 
 	fc.nonTailCalls++
 
+	// Check if this is a pure single-argument function eligible for automatic memoization
+	if fc.currentLambda != nil && fc.currentLambda.IsPure && len(call.Args) == 1 {
+		fc.compileMemoizedCall(call, fc.currentLambda)
+		return
+	}
+
 	// Compile a recursive call with optional depth tracking
 	// Only track depth if max is not infinite (for zero runtime overhead with max inf)
 	// TODO: Depth tracking currently disabled - requires writable .bss/.data section support

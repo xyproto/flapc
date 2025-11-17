@@ -1506,6 +1506,11 @@ func (p *Parser) parseMapLiteralBody() *MapExpr {
 // 2. Contains '->' or '~>' → Match block
 // 3. Otherwise → Statement block
 func (p *Parser) disambiguateBlock() BlockType {
+	// Quick check: if next token (after {) is }, it's an empty map
+	if p.peek.Type == TOKEN_RBRACE {
+		return BlockTypeMap
+	}
+
 	// Create temporary lexer for lookahead
 	tempLexer := &Lexer{
 		input:     p.lexer.input,
@@ -1522,8 +1527,6 @@ func (p *Parser) disambiguateBlock() BlockType {
 	// Scan tokens within this block
 	for i := 0; i < 10000; i++ { // Safety limit
 		tok := tempLexer.NextToken()
-
-
 
 		if tok.Type == TOKEN_EOF {
 			break
@@ -1549,8 +1552,6 @@ func (p *Parser) disambiguateBlock() BlockType {
 			}
 		}
 	}
-
-
 
 	// Apply disambiguation rules in order
 	if foundColon && !foundArrow {

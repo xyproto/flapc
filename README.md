@@ -42,7 +42,7 @@ Flap combines several **novel or extremely rare** features that distinguish it f
 ### 5. **Minimal Syntax Philosophy** ✨
 - **Named operators**: `and`/`or`/`not`/`xor` (not symbolic `&&`/`||`)
 - **Explicit casts**: `x as uint64` (not function-style `uint64(x)`)
-- **Unicode operators**: `@` for loops, `∅` for empty (optional alternatives to ASCII)
+- **No null/nil**: Only `[]` (empty list) and `{}` (empty map) represent emptiness
 - **No keywords bloat**: `ret` (not `return`), `@` (not `for`/`while`)
 
 ### 6. **Built-in Parallelism** ⚙️
