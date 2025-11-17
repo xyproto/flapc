@@ -904,7 +904,9 @@ abs(x)
 
 ### Result Type
 
-Operations that can fail return a result with `.error` field:
+Operations that can fail return a **Result**, which is `map[uint64]float64` that either:
+1. Contains the actual value (success case)
+2. Contains an error code string (error case)
 
 ```flap
 result = risky_operation()
@@ -916,28 +918,66 @@ result.error {
 
 // Or use match
 result.error {
-    "" -> println("Success:", result.value)
+    "" -> println("Success:", result)
     ~> println("Failed:", result.error)
 }
 ```
 
-### NaN Encoding
+### Result Encoding
 
-Errors are encoded in special map entries:
-- Error information stored as NaN values in the map
-- Zero overhead when no error
-- Uses the underlying `map[uint64]float64` representation
+A Result is detected as error/success at runtime:
 
-**Note:** While the float64 values in the map happen to be IEEE 754 doubles, the error encoding is a map-level feature, not a float-level operation.
+1. **Pointer check:** If the value can be interpreted as a valid pointer (address > 0x1000), it's **SUCCESS** (contains actual value)
+2. **Error code:** If not a valid pointer, interpret as 4-character error code string
 
-### .error Method
+Error codes (4 chars, space-padded):
+```
+"dv0 " - Division by zero
+"idx " - Index out of bounds
+"key " - Key not found
+"typ " - Type mismatch
+"nil " - Null pointer
+"mem " - Out of memory
+"arg " - Invalid argument
+"io  " - I/O error
+"net " - Network error
+"prs " - Parse error
+```
+
+### .error Property
 
 Every value has `.error` accessor:
 
 ```flap
-x = compute()
-x.error == "" { -> proceed(x) ~> handle_error(x.error) }
+x = 10 / 0              // Error result
+x.error                 // Returns "dv0" (trailing space stripped)
+
+y = 10 / 2              // Success result  
+y.error                 // Returns "" (empty string)
+
+// Common pattern
+result.error {
+    "" -> proceed(result)
+    ~> handle_error(result.error)
+}
 ```
+
+### or! Operator
+
+The `or!` operator provides default values for errors:
+
+```flap
+x = 10 / 0              // Error result
+safe = x or! 99         // Returns 99 (error case)
+
+y = 10 / 2              // Success result (value 5)
+safe2 = y or! 99        // Returns 5 (success case)
+```
+
+How it works:
+1. Evaluate left side
+2. If error: return right side
+3. If success: return left side value
 
 ## Examples
 
