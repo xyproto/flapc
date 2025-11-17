@@ -157,9 +157,11 @@ Loops without known bounds required the `max` keyword:
 
 ### Fix Required
 
-1. Add `max` keyword to loop grammar
-2. Document when `max` is required
+1. Add `max` keyword to loop grammar ✅ DONE
+2. Document when `max` is required ✅ DONE
 3. Add compiler checks for missing `max`
+
+**Important Note:** The `max` keyword is ONLY for loops, not for recursive function calls. Recursive calls do not use `max`.
 
 ---
 

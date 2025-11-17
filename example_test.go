@@ -23,7 +23,7 @@ func TestFibonacci(t *testing.T) {
 fib = n => n {
 	0 -> 0
 	1 -> 1
-	~> fib(n - 1) max 100 + fib(n - 2) max 100
+	~> fib(n - 1) + fib(n - 2)
 }
 
 result := fib(10)
@@ -40,7 +40,7 @@ func Test99Bottles(t *testing.T) {
 	code := `
 countdown = (n, acc) => n == 0 {
 	-> acc
-	~> countdown(n - 1, acc + n) max 100
+	~> countdown(n - 1, acc + n)
 }
 
 result := countdown(3, 0)
