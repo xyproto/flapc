@@ -44,7 +44,7 @@ a == b and b == c and c == d and d == e {
 		{
 			name: "random in arithmetic expression",
 			program: `
-roll := ((??? * 6) as int64) + 1
+roll := (??? * 6) | 0 + 1
 roll >= 1 and roll <= 6 {
 	-> println(1)
 	~> println(0)
