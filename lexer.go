@@ -56,6 +56,7 @@ const (
 	TOKEN_FAT_ARROW        // =>
 	TOKEN_EQUALS_FAT_ARROW // ==> (shorthand for = =>)
 	TOKEN_LEFT_ARROW       // <- (update operator and ENet send/receive)
+	TOKEN_COLONCOLON       // :: (list append/cons operator)
 	TOKEN_AMPERSAND        // & (address operator)
 	TOKEN_ADDRESS_LITERAL  // &8080 or &host:port (ENet address literal)
 	TOKEN_PIPE             // |
@@ -546,6 +547,10 @@ func (l *Lexer) NextToken() Token {
 		if l.peek() == '=' {
 			l.pos += 2 // skip both ':' and '='
 			return Token{Type: TOKEN_COLON_EQUALS, Value: ":=", Line: l.line, Column: tokenColumn}
+		}
+		if l.peek() == ':' {
+			l.pos += 2 // skip both ':'
+			return Token{Type: TOKEN_COLONCOLON, Value: "::", Line: l.line, Column: tokenColumn}
 		}
 		// Regular colon for map literals and method calls
 		l.pos++
