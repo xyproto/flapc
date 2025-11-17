@@ -1,6 +1,0 @@
-// Simple ENet test - basic compilation test
-// This verifies ENet syntax parsing without requiring network operations
-
-// Test that address strings parse correctly
-addr := ":5000"
-println("ENet test OK")
