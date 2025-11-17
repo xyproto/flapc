@@ -70,7 +70,7 @@ classify = x => x {
     ~> "other"
 }
 
-// Guard match: no expression before {, branches with |
+// Guard match: no expression before {, branches with | at line start
 classify = x => {
     | x == 0 -> "zero"
     | x > 0 -> "positive"
@@ -570,7 +570,7 @@ match_block     = "{" ( default_arm
 
 match_clause    = expression [ "->" match_target ] ;
 
-guard_clause    = "|" expression "->" match_target ;
+guard_clause    = "|" expression "->" match_target ;  // | must be at start of line
 
 default_arm     = "~>" match_target ;
 
@@ -675,12 +675,13 @@ lambda_body             = block | expression [ match_block ] ;
 //
 // Match block forms:
 //   Value match: expr { pattern -> result }
-//   Guard match: { | condition -> result }
+//   Guard match: { | condition -> result }  (| at line start only)
 //
 // Examples:
 //   x => x { 0 -> "zero" }           // Value match
-//   x => { | x > 0 -> "pos" }        // Guard match
+//   x => { | x > 0 -> "pos" }        // Guard match (| at start)
 //   x => { temp = x * 2; temp }      // Statement block
+//   x => data | transform            // Pipe operator (| not at start)
 
 parameter_list          = identifier [ "," identifier ]*
                         | "(" [ identifier [ "," identifier ]* ] ")" ;
@@ -1112,12 +1113,12 @@ result = (x > 10) {
 }
 ```
 
-### Guard Match (no expression, branches with `|`)
+### Guard Match (no expression, branches with `|` at line start)
 
-Each branch evaluates its own condition:
+Each branch evaluates its own condition. The `|` must be at the start of the line:
 
 ```flap
-// Guard branches with |
+// Guard branches with | at line start
 classify = x => {
     | x == 0 -> "zero"
     | x > 0 -> "positive"
@@ -1132,19 +1133,22 @@ category = age => {
     | age < 65 -> "adult"
     ~> "senior"
 }
+```
 
-// Can be used inline
-result = x {
-    | x > 100 -> "huge"
-    | x > 10 -> "big"
-    | x > 0 -> "small"
-    ~> "tiny"
-}
+**Important:** The `|` is only a guard marker when at the start of a line/clause.
+Otherwise `|` is the pipe operator:
+
+```flap
+// This is a guard (| at start)
+x => { | x > 0 -> "positive" }
+
+// This is a pipe operator (| not at start)
+result = data | transform | filter
 ```
 
 **Key difference:**
 - **Value match:** One expression evaluated once, result matched against patterns
-- **Guard match:** Each `|` branch evaluates independently (short-circuits on first true)
+- **Guard match:** Each `|` branch (at line start) evaluates independently (short-circuits on first true)
 
 **Default case:** `~>` works in both forms
 
