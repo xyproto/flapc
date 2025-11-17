@@ -517,7 +517,7 @@ factorial = n => {
     result
 }
 
-// No-arg shorthand: ==> desugars to () =>
+// No-argument shorthand: ==> desugars to () =>
 greet ==> println("Hello!")
 // Equivalent to: greet = () => println("Hello!")
 
@@ -526,6 +526,11 @@ hello ==> {
     println("World")
 }
 // Equivalent to: hello = () => { println("Hello"); println("World") }
+
+// Common use cases for ==>
+worker ==> @ { process_forever() }     // Background worker
+init ==> setup_resources()             // Initialization function
+cleanup ==> release_all()              // Cleanup callback
 ```
 
 ### Lambda Expressions
@@ -644,10 +649,18 @@ compute = n => {
 }
 ```
 
-**Loop Labels:**
+**Loop Label Numbering:**
+
+Loops are automatically numbered from **outermost to innermost**:
+- `@1` = outermost loop
+- `@2` = second level (nested inside @1)
+- `@3` = third level (nested inside @2)
+- `@` = current/innermost loop (same as highest number)
+
+**Loop Control Syntax:**
 - `ret @` or `ret @1` - Exit innermost loop
-- `ret @2` - Exit second loop level
-- `ret @N value` - Exit loop N with value
+- `ret @2` - Exit second loop level (jump out to @1)
+- `ret @N value` - Exit loop N with return value
 - `ret value` - Return from function (not loop)
 
 ### Loop `max` Keyword

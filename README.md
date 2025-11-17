@@ -2,96 +2,52 @@
 
 [![Go CI](https://github.com/xyproto/flapc/actions/workflows/ci.yml/badge.svg)](https://github.com/xyproto/flapc/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause) [![Go Report Card](https://goreportcard.com/badge/github.com/xyproto/flapc)](https://goreportcard.com/report/github.com/xyproto/flapc)
 
-**Flap** is a compiled systems programming language that generates native machine code directly—no LLVM, no intermediate representations, just pure compilation speed and simplicity.
+**Flap** is a systems programming language that compiles directly to native machine code (x86-64, ARM64, RISC-V) without LLVM, IR, or dependencies.
 
 **Version:** 3.0.0  
-**Platform:** Linux x86-64 (primary), ARM64 & RISC-V (experimental)  
-**Status:** Production-ready - 97%+ tests passing
+**Status:** Production-ready
 
-## 🚀 What Makes Flap Unique
+## 🌟 What Makes Flap Novel
 
-Flap combines several **novel or extremely rare** features that distinguish it from all other programming languages:
+Flap is distinguished by these rare/unique design choices:
 
-### 1. **Universal Map Type System** 🗺️
-- **Everything** in Flap is `map[uint64]float64` — not "represented as," but literally **IS** this type
-- Numbers: `{0: 42.0}` • Strings: `{0: 72, 1: 101, ...}` • Lists: `{0: x, 1: y}` • Objects: `{hash(k): v}`
-- No type system, no primitives, no exceptions — just one unified ordered map
-- Enables natural duck typing, trivial FFI, and zero type-checking overhead
+### 1. **One Type for Everything**
+Everything IS `map[uint64]float64` — numbers, strings, lists, objects, functions. No type system complexity.
 
-### 2. **Direct Machine Code Emission** ⚡
-- AST → native machine code in **one pass** (no IR, no backend layers)
-- Compiles to x86-64, ARM64, and RISC-V directly from the compiler written in Go
-- **Sub-millisecond compilation** for typical programs
-- **Zero dependencies** — completely self-contained (no LLVM, no GCC, no linker)
-- Generates static ELF/Mach-O binaries with full control over every byte
+### 2. **Direct Machine Code from AST**
+AST → x86-64/ARM64/RISC-V in one pass. No IR, no LLVM. Sub-millisecond compilation. ~30k lines of Go.
 
-### 3. **Context-Sensitive Block Disambiguation** 🧩
-- `{ ... }` means different things based on **contents**, not syntax markers:
-  - `{x: 1}` → Map literal (has `:` before arrows)
-  - `{x -> y}` → Match block (has `->` or `~>`)
-  - `{x := 1}` → Statement block (no arrows or colons)
-- Eliminates need for separate `match`/`switch` keywords
-- Pattern matching and maps use the same natural `{...}` syntax
+### 3. **Context-Sensitive Blocks**
+`{...}` disambiguated by contents: `{x: 1}` = map, `{x -> y}` = match, `{x := 1}` = statements. No `match` keyword needed.
 
-### 4. **Intelligent Lambda Semantics** 🎯
-- Functions defined with `=` are immutable (preferred for pure functions)
-- Functions defined with `:=` are mutable (rare, for stateful closures)
-- Single arrow `=>` for all lambdas (no confusion between `->` and `=>`)
-- Tail-call optimization automatically applied
+### 4. **Minimal Keyword Design**
+`ret @` for loop control (numbered labels `@1`, `@2`), `@` for loops, `==>` for no-arg lambdas, named operators (`and`/`or`/`not`).
 
-### 5. **Minimal Syntax Philosophy** ✨
-- **Named operators**: `and`/`or`/`not`/`xor` (not symbolic `&&`/`||`)
-- **Explicit casts**: `x as uint64` (not function-style `uint64(x)`)
-- **No null/nil**: Only `[]` (empty list) and `{}` (empty map) represent emptiness
-- **No keywords bloat**: `ret` (not `return`), `@` (not `for`/`while`)
+### 5. **Built-in Parallelism**
+`@@` for parallel loops with automatic barrier sync. Native atomic operations. No thread management.
 
-### 6. **Built-in Parallelism** ⚙️
-- `@@` loops use all CPU cores automatically with barrier synchronization
-- Native atomic operations (`atomic_add`, `atomic_store`, etc.)
-- No thread management, no mutexes — just parallel loops
+### 6. **Zero-Cost C FFI**
+Direct C library calls: `c.malloc()`, `import sdl3`. CStruct for C-compatible layouts.
 
-### 7. **Arena Memory Management** 🏛️
-- `arena { ... }` blocks for automatic scope-based cleanup
-- Perfect for frame-based allocation (games, simulations)
-- No GC pauses, deterministic cleanup
+### 7. **Immutable by Default**
+`x = 42` is immutable, `x := 42` is mutable. Functions use `=` not `:=`.
 
-### 8. **Zero-Cost C FFI** 🔌
-- Direct calls to any C library with automatic type marshaling
-- `c.malloc()`, `c.memset()` — just works
-- `import sdl3 as sdl` → full SDL3 access
-- CStruct for C-compatible memory layouts
+### 8. **Arena Memory & Move Semantics**
+`arena {...}` for scope-based cleanup. `x!` for ownership transfer. No GC pauses.
 
-### 9. **Operator-Based List Manipulation** 📋
-- `::` cons operator: `1 :: [2, 3]` → `[1, 2, 3]`
-- `^` head: `^list` → first element
-- `_` tail: `_list` → all but first
-- `#` length: `#list` → size
-- Functional programming without special syntax
+### 9. **List Operators**
+`::` (cons), `^` (head), `_` (tail), `#` (length). Functional programming without imports.
 
-### 10. **Built-in Secure Random** 🎲
-- `???` operator generates cryptographically secure random: `0.0 ≤ ??? < 1.0`
-- No imports, no setup — just `???`
+### 10. **Cryptographic Random Built-in**
+`???` generates secure random using OS CSPRNG. No setup required.
 
-### 11. **Native SIMD Support** 🚄
-- AVX-512 instructions emitted directly for vector operations
-- Compiler recognizes patterns and generates optimal SIMD code
-- No intrinsics, no special types — just fast math
+### 11. **Tail-Call Optimization Always On**
+Recursive functions automatically optimized to loops.
 
-### 12. **Self-Contained Compiler** 📦
-- Entire compiler is ~30k lines of pure Go
-- No external dependencies (no LLVM libs, no C libraries)
-- Deterministic compilation (same input → same binary every time)
-- Single binary: `flapc program.flap` → native executable
+### 12. **Self-Contained & Deterministic**
+Zero dependencies, same input → same binary. Entire toolchain in one executable.
 
 ---
-
-## Why Flap?
-
-**Direct compilation** — No VM, no interpreter, no JIT  
-**Unified types** — One type system to rule them all  
-**Minimal syntax** — Learn in minutes, master in hours  
-**Zero dependencies** — Compiler and runtime are self-contained  
-**Native performance** — Direct machine code, no overhead
 
 ## Quick Start
 
@@ -137,89 +93,33 @@ y <- y + 1    // Update operator
 y++           // Increment (mutable vars only)
 ```
 
-### Functions (Lambdas)
+### Functions
 
 ```flap
-// Single arrow => for all functions
 square = x => x * x
 add = (a, b) => a + b
+greet ==> println("Hello!")  // No-arg shorthand for () =>
 
-// Block body - no arrows means statement block
-process = x => {
-    temp := x * 2
-    result := temp + 1
-    ret result
-}
+// Match expression
+classify = x => x { 0 -> "zero" | 1 -> "one" | ~> "many" }
 
-// Value match - expression before { with -> arrows
-classify = x => x {
-    0 -> "zero"
-    1 -> "one"
-    ~> "many"
-}
-
-// Guard match - no expression, uses | at line start
-classify = x => {
-    | x == 0 -> "zero"
-    | x < 0 -> "negative"
-    ~> "positive"
-}
+// Guard match
+sign = x => { | x < 0 -> "neg" | x > 0 -> "pos" | ~> "zero" }
 ```
 
-### Loops
+### Loops with Numbered Labels
 
 ```flap
-// Range loops
-@ i in 0..<10 {
-    println(i)
-}
+@ i in 0..<10 { println(i) }                  // Range
+@ item in [1, 2, 3] { println(item) }         // Collection
+@@ i in 0..<1000 { process(i) }               // Parallel
 
-// List iteration
-items := [1, 2, 3, 4, 5]
-@ item in items {
-    println(item)
-}
-
-// Parallel loops (uses all CPU cores)
-@@ i in 0..<1000 {
-    process(i)
-}
-
-// Infinite loops
-@ {
-    update()
-    render()
-}
-
-// Loop control
-@ i in 0..<100 {
-    i > 50 { ret @ }  // Break from loop
-    println(i)
-}
-```
-
-### Match Expressions
-
-```flap
-// Value match - match on x's value
-result = x {
-    0 -> "zero"
-    1 -> "one"
-    ~> "many"      // Default case
-}
-
-// Boolean match - match on condition result (1 or 0)
-result = x > 0 {
-    1 -> "positive"
-    0 -> "not positive"
-}
-
-// Guard match - independent conditions
-sign = n => {
-    | n == 0 -> "zero"
-    | n < 0 -> "negative"
-    | n > 0 -> "positive"
-    ~> "NaN"  // Default
+// Loop control with numbered labels (@1 = outer, @2 = inner)
+@ i in 0..<10 {                   // Loop @1
+    @ j in 0..<10 {               // Loop @2
+        j == 5 { ret @ }          // Exit @2 (inner)
+        i == 5 { ret @1 }         // Exit @1 (outer)
+    }
 }
 ```
 

@@ -647,18 +647,48 @@ classify = x => {
 ->   Match arm result
 ~>   Default match arm
 =>   Lambda or receive
-==>  No-arg lambda shorthand
+==>  No-arg lambda shorthand (desugars to () =>)
 ```
 
 Context determines meaning:
 
 ```flap
-f = x => x + 1           // Lambda
-msg = => &8080           // Receive
+f = x => x + 1           // Lambda with one arg
+msg = => &8080           // Receive from channel
 x { 0 -> "zero" }        // Match arm
 x { ~> "default" }       // Default arm
-greet ==> println("Hi")  // No-arg lambda
+greet ==> println("Hi")  // No-arg lambda: () => println("Hi")
 ```
+
+#### No-Argument Lambda Shorthand: `==>`
+
+The `==>` operator is syntactic sugar for defining functions with zero arguments:
+
+```flap
+// These are equivalent:
+greet ==> println("Hello!")
+greet = () => println("Hello!")
+
+// With block body:
+worker ==> {
+    @ { process_forever() }
+}
+// Equivalent to:
+worker = () => {
+    @ { process_forever() }
+}
+
+// Common use cases:
+init ==> setup_resources()        // Initialization
+cleanup ==> release_all()          // Cleanup callback
+background ==> @ { poll_events() } // Background worker
+```
+
+**When to use `==>`:**
+- Functions that take no arguments
+- Callbacks and event handlers
+- Worker/background tasks
+- Initialization/cleanup routines
 
 #### Loop Forms
 
@@ -670,33 +700,39 @@ The `@` symbol introduces loops (one of three forms):
 @ condition { ... }        // While loop
 ```
 
-**Loop Control with `ret @`:**
+**Loop Control with `ret @` and Numbered Labels:**
 
-Instead of `break`/`continue` keywords, Flap uses `ret @` with loop labels:
+Instead of `break`/`continue` keywords, Flap uses `ret @` with automatically numbered loop labels.
+
+**Loop Numbering:** Loops are numbered from outermost to innermost:
+- `@1` = outermost loop
+- `@2` = second level (nested inside @1)  
+- `@3` = third level (nested inside @2)
+- `@` = current/innermost loop
 
 ```flap
 // Exit current loop
 @ i in 0..<100 {
-    i > 50 { ret @ }      // Exit loop (equivalent to ret @1)
+    i > 50 { ret @ }      // Exit current loop (same as ret @1 here)
     i == 42 { ret @ 42 }  // Exit loop with value 42
     println(i)
 }
 
-// Nested loops - explicit labels
-@ i in 0..<10 {           // This is loop @1
-    @ j in 0..<10 {       // This is loop @2
-        j == 5 { ret @ }         // Exit inner loop (current loop)
-        i == 5 { ret @1 }        // Exit outer loop (loop @1)
-        i == 3 and j == 7 { ret @1 42 }  // Exit outer loop with value
+// Nested loops with numbered labels
+@ i in 0..<10 {           // Loop @1 (outermost)
+    @ j in 0..<10 {       // Loop @2 (inner)
+        j == 5 { ret @ }         // Exit loop @2 (innermost)
+        i == 5 { ret @1 }        // Exit loop @1 (outer)
+        i == 3 and j == 7 { ret @1 42 }  // Exit loop @1 with value
         println(i, j)
     }
 }
 
-// ret without @ returns from function
+// ret without @ returns from function (not loop)
 compute = n => {
     @ i in 0..<100 {
         i == n { ret i }  // Return from function
-        i == 50 { ret @ } // Exit loop only
+        i == 50 { ret @ } // Exit loop only, continue function
     }
     ret 0
 }

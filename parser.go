@@ -701,9 +701,20 @@ func (p *Parser) parseClassDecl() *ClassDecl {
 	name := p.current.Value
 	p.nextToken() // skip class name
 
+	// Parse optional compositions: <> Mixin1 <> Mixin2 ...
+	compositions := []string{}
+	for p.current.Type == TOKEN_LTGT {
+		p.nextToken() // skip '<>'
+		if p.current.Type != TOKEN_IDENT {
+			p.error("expected identifier after '<>' in class declaration")
+		}
+		compositions = append(compositions, p.current.Value)
+		p.nextToken() // skip identifier
+	}
+
 	// Expect '{'
 	if p.current.Type != TOKEN_LBRACE {
-		p.error("expected '{' after class name")
+		p.error("expected '{' after class name (and optional mixins)")
 	}
 	p.nextToken() // skip '{'
 	p.skipNewlines()
@@ -711,21 +722,8 @@ func (p *Parser) parseClassDecl() *ClassDecl {
 	// Parse class body
 	classVars := make(map[string]Expression)
 	methods := make(map[string]*LambdaExpr)
-	compositions := []string{}
 
 	for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
-		// Check for composition: <> identifier
-		if p.current.Type == TOKEN_LTGT {
-			p.nextToken() // skip '<>'
-			if p.current.Type != TOKEN_IDENT {
-				p.error("expected identifier after '<>' in class")
-			}
-			compositions = append(compositions, p.current.Value)
-			p.nextToken() // skip identifier
-			p.skipNewlines()
-			continue
-		}
-
 		// Parse identifier (for class var or method)
 		if p.current.Type != TOKEN_IDENT {
 			p.error("expected identifier in class body")
@@ -755,9 +753,9 @@ func (p *Parser) parseClassDecl() *ClassDecl {
 			continue
 		}
 
-		// Check for method definition: identifier := lambda
-		if p.current.Type == TOKEN_COLON_EQUALS {
-			p.nextToken() // skip ':='
+		// Check for method definition: identifier = lambda or identifier := lambda
+		if p.current.Type == TOKEN_EQUALS || p.current.Type == TOKEN_COLON_EQUALS {
+			p.nextToken() // skip '=' or ':='
 
 			// Parse lambda expression - need to handle different lambda forms
 			var lambda *LambdaExpr
@@ -773,21 +771,21 @@ func (p *Parser) parseClassDecl() *ClassDecl {
 				var ok bool
 				lambda, ok = expr.(*LambdaExpr)
 				if !ok {
-					p.error("expected lambda expression after ':=' in method definition")
+					p.error("expected lambda expression after '=' or ':=' in method definition")
 				}
 			} else if p.current.Type == TOKEN_IDENT {
 				// Non-parenthesized lambda: x => body or x, y => body
 				expr := p.tryParseNonParenLambda()
 				if expr == nil {
-					p.error("expected lambda expression after ':=' in method definition")
+					p.error("expected lambda expression after '=' or ':=' in method definition")
 				}
 				var ok bool
 				lambda, ok = expr.(*LambdaExpr)
 				if !ok {
-					p.error("expected lambda expression after ':=' in method definition")
+					p.error("expected lambda expression after '=' or ':=' in method definition")
 				}
 			} else {
-				p.error("expected lambda expression after ':=' in method definition")
+				p.error("expected lambda expression after '=' or ':=' in method definition")
 			}
 
 			methods[ident] = lambda
@@ -795,7 +793,7 @@ func (p *Parser) parseClassDecl() *ClassDecl {
 			continue
 		}
 
-		p.error("expected ':=' for method or '.' for class variable in class body")
+		p.error("expected '=' or ':=' for method, or '.' for class variable in class body")
 	}
 
 	// Expect '}'
