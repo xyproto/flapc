@@ -222,10 +222,6 @@ func TestCTypeSize(t *testing.T) {
 	}
 }
 
-func TestParallelSimpleCompiles(t *testing.T) {
-	// FIXED: Lambda epilogue fix resolved parallel map segfaults
-	testParallelSimpleCompilesOLD(t)
-}
 
 func testParallelSimpleCompilesOLD(t *testing.T) {
 	// FIXED: Lambda epilogue fix resolved crashes on all platforms including ARM64

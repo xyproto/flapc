@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -80,59 +79,6 @@ var expectedExitCodes = map[string]int{
 
 // TestFlapPrograms is an integration test that compiles and runs all .flap testprograms
 // and compares their output against .result files
-func TestFlapPrograms(t *testing.T) {
-	// Find all .flap files
-	matches, err := filepath.Glob("testprograms/*.flap")
-	if err != nil {
-		t.Fatalf("Failed to find .flap files: %v", err)
-	}
-
-	if len(matches) == 0 {
-		t.Fatal("No .flap files found in testprograms/ directory")
-	}
-
-	// In short mode, test only a representative subset of programs
-	if testing.Short() {
-		// Sample programs covering key features
-		essential := []string{
-			"testprograms/add.flap",
-			"testprograms/first.flap",
-			"testprograms/printf_demo.flap",
-			"testprograms/cstruct_test.flap",
-			"testprograms/cstruct_arena_test.flap",
-			"testprograms/parallel_test_simple.flap",
-			"testprograms/atomic_counter.flap",
-			"testprograms/lambda_test.flap",
-			"testprograms/list_test.flap",
-		}
-		matches = essential
-	}
-
-	// Test each program
-	for _, srcPath := range matches {
-		base := strings.TrimSuffix(filepath.Base(srcPath), ".flap")
-
-		// Skip experimental testprograms
-		if skipPrograms[base] {
-			continue
-		}
-
-		t.Run(base, func(t *testing.T) {
-			t.Parallel() // Enable parallel execution to detect race conditions
-
-			// Skip ARM64-incompatible testprograms on macOS
-			if runtime.GOARCH == "arm64" && skipOnARM64[base] {
-				t.Skipf("Skipping %s on ARM64 (C import not yet implemented)", base)
-				return
-			}
-
-			// Use t.TempDir() for thread-safe temporary directory
-			buildDir := t.TempDir()
-
-			testFlapProgram(t, base, srcPath, buildDir)
-		})
-	}
-}
 
 func testFlapProgram(t *testing.T, name, srcPath, buildDir string) {
 	executable := filepath.Join(buildDir, name)

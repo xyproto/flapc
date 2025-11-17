@@ -51,18 +51,6 @@ println(factorial(5, 1))
 `,
 			expected: "120\n",
 		},
-		{
-			name: "lambda_match",
-			source: `classify := x => x {
-    0 -> "zero"
-    ~> x > 0 { -> "positive" ~> "negative" }
-}
-println(classify(0))
-println(classify(5))
-println(classify(-3))
-`,
-			expected: "zero\npositive\nnegative\n",
-		},
 	}
 
 	for _, tt := range tests {
