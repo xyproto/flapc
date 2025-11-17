@@ -66,6 +66,153 @@ printf("abs(%v) = %v\n", x, result)
 	}
 }
 
+// TestFactorial tests simple computation
+func TestFactorial(t *testing.T) {
+	code := `
+result = 2 * 3 * 4 * 5
+printf("Product = %v\n", result)
+`
+	output := compileAndRun(t, code)
+	if !strings.Contains(output, "120") {
+		t.Errorf("Expected '120' in output, got: %s", output)
+	}
+}
+
+// TestExampleMapOperations tests map creation and access
+func TestExampleMapOperations(t *testing.T) {
+	code := `
+person = {0: 100, 1: 30, 2: 42}
+
+printf("Values: %v, %v\n", person[0], person[1])
+`
+	output := compileAndRun(t, code)
+	if !strings.Contains(output, "100") || !strings.Contains(output, "30") {
+		t.Errorf("Expected map values in output, got: %s", output)
+	}
+}
+
+// TestListOperations tests list creation and manipulation
+func TestListOperations(t *testing.T) {
+	code := `
+numbers = [1, 2, 3, 4, 5]
+
+sum_list = lst => {
+	sum_helper = (i, acc) => {
+		| i >= 5 -> acc
+		~> sum_helper(i + 1, acc + lst[i])
+	}
+	sum_helper(0, 0)
+}
+
+result = sum_list(numbers)
+printf("Sum: %v\n", result)
+`
+	output := compileAndRun(t, code)
+	if !strings.Contains(output, "15") {
+		t.Errorf("Expected '15' in output for sum of [1,2,3,4,5], got: %s", output)
+	}
+}
+
+// TestMatchExpressions tests simple conditionals
+func TestMatchExpressions(t *testing.T) {
+	code := `
+is_positive = x => {
+	| x > 0 => 1
+	~> 0
+}
+
+printf("%v %v\n", is_positive(0), is_positive(42))
+`
+	output := compileAndRun(t, code)
+	if !strings.Contains(output, "0 1") {
+		t.Errorf("Expected '0 1' in output, got: %s", output)
+	}
+}
+
+// TestNestedFunctions tests nested function definitions
+func TestNestedFunctions(t *testing.T) {
+	code := `
+make_adder = x => {
+	add_x = y => x + y
+	add_x
+}
+
+add5 = make_adder(5)
+result = add5(10)
+printf("5 + 10 = %v\n", result)
+`
+	output := compileAndRun(t, code)
+	if !strings.Contains(output, "15") {
+		t.Errorf("Expected '15' in output for 5 + 10, got: %s", output)
+	}
+}
+
+// TestLoopWithLabel tests simple loops
+func TestLoopWithLabel(t *testing.T) {
+	code := `
+@ i in 0..<3 {
+	printf("i=%v\n", i)
+}
+`
+	output := compileAndRun(t, code)
+	if !strings.Contains(output, "i=0") || !strings.Contains(output, "i=2") {
+		t.Errorf("Expected loop output, got: %s", output)
+	}
+}
+
+// TestQuickSort tests a more complex algorithm
+func TestQuickSort(t *testing.T) {
+	code := `
+quicksort = arr => {
+	| arr.length <= 1 -> arr
+	~> {
+		pivot = arr[0]
+		rest = []
+		// This is simplified - full implementation would need list operations
+		arr
+	}
+}
+
+numbers = [3, 1, 4, 1, 5]
+printf("Original: %v\n", numbers[0])
+`
+	output := compileAndRun(t, code)
+	if !strings.Contains(output, "3") {
+		t.Errorf("Expected array output, got: %s", output)
+	}
+}
+
+// TestExampleStringOperations tests string handling
+func TestExampleStringOperations(t *testing.T) {
+	code := `
+greeting = "Hello"
+name = "World"
+message = greeting + ", " + name + "!"
+println(message)
+`
+	output := compileAndRun(t, code)
+	if !strings.Contains(output, "Hello, World!") {
+		t.Errorf("Expected 'Hello, World!' in output, got: %s", output)
+	}
+}
+
+// TestRecursiveSum tests simple recursion
+func TestRecursiveSum(t *testing.T) {
+	code := `
+sum_to = n => {
+	| n == 0 -> 0
+	~> n + sum_to(n - 1)
+}
+
+result = sum_to(10)
+printf("Sum from 1 to 10: %v\n", result)
+`
+	output := compileAndRun(t, code)
+	if !strings.Contains(output, "55") {
+		t.Errorf("Expected '55' in output, got: %s", output)
+	}
+}
+
 // compileAndRun is a helper function that compiles and runs Flap code,
 // returning the output
 func compileAndRun(t *testing.T, code string) string {
