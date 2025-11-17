@@ -1,7 +1,7 @@
 # Documentation Liberties Taken (Violations of Flap Philosophy)
 
-**Date:** 2025-11-17  
-**Commits:** bd30ab6, 2f92e4f, 2489052  
+**Date:** 2025-11-17
+**Commits:** bd30ab6, 2f92e4f, 2489052
 **Files Affected:** GRAMMAR.md, LANGUAGESPEC.md
 
 This document catalogs all incorrect statements introduced in recent documentation that violate Flap's core philosophy: **Everything is `map[uint64]float64`**.
@@ -30,7 +30,7 @@ Not "everything is represented as" or "everything maps to" — **everything IS a
 - Numbers are NOT "64-bit IEEE 754 floating-point values" — they are `map[uint64]float64` with one entry `{0: value}`
 - Strings are NOT "UTF-8 encoded text" — they are `map[uint64]float64` with indices as keys and character codes as values
 - There is no "single entry", "byte index", "field hash" — these are just keys in the universal map
-- All values have the SAME underlying type: `map[uint64]float64`
+- All values have the SAME underlying type: `map[uint64]float64` (ordered).
 
 ---
 
@@ -85,7 +85,7 @@ Example:
 "A"       // {0: 65.0}
 ""        // {} (empty map)
 
-Note: Character codes happen to align with ASCII/UTF-8 for convenience, 
+Note: Character codes happen to align with ASCII/UTF-8 for convenience,
 but strings are NOT "UTF-8 encoded text" — they are ordered maps.
 ```
 
@@ -119,7 +119,7 @@ Every value in Flap IS `map[uint64]float64`:
 - **Objects**: `{key_hash: value, ...}`
 - **Functions**: `{0: code_pointer, 1: closure_data, ...}`
 
-There are no special cases. No "single entry maps", no "byte indices", 
+There are no special cases. No "single entry maps", no "byte indices",
 no "field hashes" — just uint64 keys and float64 values in every case.
 ```
 
@@ -191,7 +191,7 @@ The documentation correctly states `[]` is an empty map, but doesn't emphasize t
 ### ✅ What Should Be Emphasized
 
 ```
-[]  // This is {}, the empty map. 
+[]  // This is {}, the empty map.
     // Not "empty list", not "empty array", not "null"
     // Just an empty map[uint64]float64
 ```
@@ -248,13 +248,13 @@ These inaccuracies:
 
 ## Correction Checklist
 
-- [ ] GRAMMAR.md Line 329: Numbers are maps, not IEEE 754 primitives
-- [ ] GRAMMAR.md Line 351: Strings are maps, not UTF-8 text
-- [ ] LANGUAGESPEC.md Line 254-257: Rewrite type descriptions to emphasize map uniformity
-- [ ] LANGUAGESPEC.md Line 133: Remove "UTF-8 byte array" terminology
-- [ ] LANGUAGESPEC.md Line 845: Remove "UTF-8 byte array" terminology
-- [ ] LANGUAGESPEC.md Line 907: Clarify NaN encoding is map-level, not float-level
-- [ ] Add prominent section in both docs: "Everything is map[uint64]float64 (No Exceptions)"
+- [x] GRAMMAR.md Line 329: Numbers are maps, not IEEE 754 primitives
+- [x] GRAMMAR.md Line 351: Strings are maps, not UTF-8 text
+- [x] LANGUAGESPEC.md Line 254-257: Rewrite type descriptions to emphasize map uniformity
+- [x] LANGUAGESPEC.md Line 133: Remove "UTF-8 byte array" terminology
+- [x] LANGUAGESPEC.md Line 845: Remove "UTF-8 byte array" terminology
+- [x] LANGUAGESPEC.md Line 907: Clarify NaN encoding is map-level, not float-level
+- [x] Add prominent section in both docs: "Everything is map[uint64]float64 (No Exceptions)"
 
 ---
 
@@ -285,6 +285,6 @@ This is not an implementation detail — this IS Flap.
 
 ---
 
-**Status:** Awaiting correction  
-**Priority:** Critical (affects core language understanding)  
-**Estimate:** 30 minutes to fix all instances
+**Status:** ✅ CORRECTED (2025-11-17)
+**Priority:** Critical (affects core language understanding)
+**Resolution:** All violations fixed, both documents now accurately reflect Flap's universal type system

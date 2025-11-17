@@ -6,6 +6,25 @@
 
 This document describes the complete semantics, behavior, and design philosophy of the Flap programming language. For the formal grammar, see [GRAMMAR.md](GRAMMAR.md).
 
+## ⚠️ CRITICAL: The Universal Type
+
+Flap has exactly ONE type: `map[uint64]float64`
+
+Not "represented as" or "backed by" — every value IS this map:
+
+```flap
+42              // {0: 42.0}
+"Hello"         // {0: 72.0, 1: 101.0, 2: 108.0, 3: 108.0, 4: 111.0}
+[1, 2, 3]       // {0: 1.0, 1: 2.0, 2: 3.0}
+{x: 10}         // {hash("x"): 10.0}
+[]              // {}
+```
+
+There are NO special types, NO primitives, NO exceptions.
+Everything is a map from uint64 to float64.
+
+This is not an implementation detail — this IS Flap.
+
 ## Table of Contents
 
 - [What Makes Flap Unique](#what-makes-flap-unique)
@@ -31,7 +50,7 @@ Flap brings together several novel or rare features that distinguish it from oth
 
 ### 1. Universal Map Type System
 
-The entire language is built on a single type: `map[uint64]float64`. Every value—numbers, strings, lists, functions—is represented as this hash map. This radical simplification enables:
+The entire language is built on a single type: `map[uint64]float64`. Every value—numbers, strings, lists, functions—IS this map. This radical simplification enables:
 - No type system complexity
 - Uniform memory representation
 - Natural duck typing
@@ -130,8 +149,8 @@ All bitwise operations are suffixed with `b` to eliminate ambiguity:
 
 ```flap
 text = "Hello"
-bytes = text.bytes   // UTF-8 byte array
-runes = text.runes   // Unicode code point array
+bytes = text.bytes   // Map of byte values {0: byte0, 1: byte1, ...}
+runes = text.runes   // Map of Unicode code points {0: rune0, 1: rune1, ...}
 ```
 
 ### 8. ENet for All Concurrency
@@ -250,12 +269,15 @@ y := 100    // Mutable (explicit)
 
 Flap uses a **universal map type**: `map[uint64]float64`
 
-Every value in Flap is this map:
-- **Numbers**: Map with single entry (0 → float64)
-- **Strings**: Map from byte index → byte value
-- **Lists**: Map from index → element value
-- **Objects**: Map from field hash → field value
-- **Functions**: Map containing code pointer and closures
+Every value in Flap IS `map[uint64]float64`:
+
+- **Numbers**: `{0: number_value}`
+- **Strings**: `{0: char0, 1: char1, 2: char2, ...}`
+- **Lists**: `{0: elem0, 1: elem1, 2: elem2, ...}`
+- **Objects**: `{key_hash: value, ...}`
+- **Functions**: `{0: code_pointer, 1: closure_data, ...}`
+
+There are no special cases. No "single entry maps", no "byte indices", no "field hashes" — just uint64 keys and float64 values in every case.
 
 ### Type Conversions
 
@@ -841,10 +863,10 @@ printa(x)           // Atomic print (thread-safe)
 
 ```flap
 s = "Hello"
-s.length            // 5
-s.bytes             // UTF-8 byte array
-s.runes             // Unicode code point array
-s + " World"        // Concatenation
+s.length            // 5 (number of entries in the map)
+s.bytes             // Map of byte values {0: 72.0, 1: 101.0, ...}
+s.runes             // Map of Unicode code points
+s + " World"        // Concatenation (merges maps)
 ```
 
 ### List Operations
@@ -901,10 +923,12 @@ result.error {
 
 ### NaN Encoding
 
-Errors are encoded in NaN values:
-- Error string stored in NaN payload
+Errors are encoded in special map entries:
+- Error information stored as NaN values in the map
 - Zero overhead when no error
-- Compatible with IEEE 754
+- Uses the underlying `map[uint64]float64` representation
+
+**Note:** While the float64 values in the map happen to be IEEE 754 doubles, the error encoding is a map-level feature, not a float-level operation.
 
 ### .error Method
 

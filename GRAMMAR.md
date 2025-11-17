@@ -6,6 +6,25 @@
 
 This document defines the complete formal grammar of the Flap programming language using Extended Backus-Naur Form (EBNF).
 
+## ⚠️ CRITICAL: The Universal Type
+
+Flap has exactly ONE type: `map[uint64]float64`
+
+Not "represented as" or "backed by" — every value IS this map:
+
+```flap
+42              // {0: 42.0}
+"Hello"         // {0: 72.0, 1: 101.0, 2: 108.0, 3: 108.0, 4: 111.0}
+[1, 2, 3]       // {0: 1.0, 1: 2.0, 2: 3.0}
+{x: 10}         // {hash("x"): 10.0}
+[]              // {}
+```
+
+There are NO special types, NO primitives, NO exceptions.
+Everything is a map from uint64 to float64.
+
+This is not an implementation detail — this IS Flap.
+
 ## Table of Contents
 
 - [Grammar Notation](#grammar-notation)
@@ -326,7 +345,7 @@ my-var     // contains hyphen
 
 ### Numbers
 
-Numbers are 64-bit IEEE 754 floating-point values:
+Numbers are `map[uint64]float64` with a single entry at key 0:
 
 ```ebnf
 number = [ "-" ] digit { digit } [ "." digit { digit } ] ;
@@ -334,30 +353,39 @@ number = [ "-" ] digit { digit } [ "." digit { digit } ] ;
 
 **Examples:**
 ```flap
-42
-3.14159
--17
-0.001
-1000000
--273.15
+42              // {0: 42.0}
+3.14159         // {0: 3.14159}
+-17             // {0: -17.0}
+0.001           // {0: 0.001}
+1000000         // {0: 1000000.0}
+-273.15         // {0: -273.15}
 ```
 
 **Special values:**
-- `??` - cryptographically secure random number [0, 1)
-- Result of `0/0` - NaN (used for error encoding)
+- `??` - cryptographically secure random number [0, 1) → `{0: random_value}`
+- Result of `0/0` - NaN (used for error encoding) → `{0: NaN}`
+
+**Note:** While the values stored happen to be IEEE 754 doubles, this is an implementation detail. Numbers ARE maps, not primitives.
 
 ### Strings
 
-Strings are UTF-8 encoded text:
+Strings are `map[uint64]float64` where keys are indices and values are character codes:
 
 ```ebnf
 string = '"' { character } '"' ;
 ```
 
+**Examples:**
+```flap
+"Hello"         // {0: 72.0, 1: 101.0, 2: 108.0, 3: 108.0, 4: 111.0}
+"A"             // {0: 65.0}
+""              // {} (empty map)
+```
+
 **Escape sequences:**
-- `\n` - newline
-- `\t` - tab
-- `\r` - carriage return
+- `\n` - newline (character code 10)
+- `\t` - tab (character code 9)
+- `\r` - carriage return (character code 13)
 - `\\` - backslash
 - `\"` - quote
 - `\xHH` - hex byte
