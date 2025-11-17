@@ -146,17 +146,17 @@ func TestENetWithLibraryIfAvailable(t *testing.T) {
 	// Try to compile simple ENet program
 	platform := GetDefaultPlatform()
 	tmpDir := t.TempDir()
-	
+
 	source := `// Simple test
 println("ENet test")
 `
 	srcPath := filepath.Join(tmpDir, "enet_server.flap")
 	serverBin := filepath.Join(tmpDir, "enet_server")
-	
+
 	if err := os.WriteFile(srcPath, []byte(source), 0644); err != nil {
 		t.Fatalf("Failed to write source: %v", err)
 	}
-	
+
 	err := CompileFlap(srcPath, serverBin, platform)
 
 	if err != nil {

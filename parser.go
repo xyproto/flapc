@@ -1617,15 +1617,15 @@ func (p *Parser) blockContainsMatchArrows() bool {
 //
 // TWO FORMS:
 //
-// 1. Value Match (with expression before {):
-//    Evaluates expression once, matches result against patterns
-//    Example: x { 0 -> "zero"  5 -> "five"  ~> "other" }
-//    The condition parameter contains the evaluated expression
+//  1. Value Match (with expression before {):
+//     Evaluates expression once, matches result against patterns
+//     Example: x { 0 -> "zero"  5 -> "five"  ~> "other" }
+//     The condition parameter contains the evaluated expression
 //
-// 2. Guard Match (no expression, uses | at line start):
-//    Each | branch evaluates independently (short-circuits)
-//    Example: { | x == 0 -> "zero"  | x > 0 -> "positive"  ~> "negative" }
-//    The condition parameter is typically nil or a boolean true
+//  2. Guard Match (no expression, uses | at line start):
+//     Each | branch evaluates independently (short-circuits)
+//     Example: { | x == 0 -> "zero"  | x > 0 -> "positive"  ~> "negative" }
+//     The condition parameter is typically nil or a boolean true
 //
 // Both forms support:
 // - Match clauses: pattern -> result  or  | guard -> result
@@ -3676,8 +3676,6 @@ func (p *Parser) parsePrimary() Expression {
 	case TOKEN_LBRACE:
 		// Disambiguate block type: map, match, or statement block
 		blockType := p.disambiguateBlock()
-
-
 
 		p.nextToken() // skip '{'
 		p.skipNewlines()
