@@ -1,8 +1,8 @@
 # Flap Grammar Specification
 
-**Version:** 2.0.0  
+**Version:** 3.0.0  
 **Date:** 2025-11-17  
-**Status:** Canonical Grammar Reference
+**Status:** Canonical Grammar Reference for Flap 3.0 Release
 
 This document defines the complete formal grammar of the Flap programming language using Extended Backus-Naur Form (EBNF).
 
@@ -553,6 +553,167 @@ From highest to lowest precedence:
 - Right-associative: `**`, all assignments
 - Non-associative: Comparison operators (can't chain)
 
+## Parsing Rules
+
+### Minimal Parentheses Philosophy
+
+Flap minimizes parenthesis usage. Use parentheses only when:
+
+1. **Precedence override needed:**
+   ```flap
+   (x + y) * z      // Override precedence
+   ```
+
+2. **Complex condition grouping:**
+   ```flap
+   (x > 0 && y < 10) { ... }  // Group condition
+   ```
+
+3. **Multiple lambda parameters:**
+   ```flap
+   (x, y) => x + y  // Multiple params
+   ```
+
+**Not needed:**
+```flap
+// Good: no unnecessary parens
+x > 0 { -> "positive" ~> "negative" }
+result = x + y * z
+classify = x => x { 0 -> "zero" ~> "other" }
+
+// Bad: unnecessary parens
+result = x > 0 { -> ("positive") ~> ("negative") }
+compute = (x) => (x * 2)
+```
+
+### Statement Termination
+
+Statements are terminated by newlines:
+
+```flap
+x = 10
+y = 20
+z = x + y
+```
+
+Multiple statements on one line require explicit semicolons:
+
+```flap
+x = 10; y = 20; z = x + y
+```
+
+### Whitespace Rules
+
+- **Significant newlines**: End statements
+- **Insignificant whitespace**: Spaces, tabs (except in strings)
+- **Indentation**: Not significant (unlike Python)
+
+### Edge Cases
+
+#### Pipe vs Guard
+
+The `|` character is context-dependent:
+
+```flap
+// Pipe operator (| not at line start)
+result = data | transform | filter
+
+// Guard marker (| at line start)
+classify = x => {
+    | x > 0 -> "positive"
+    | x < 0 -> "negative"
+    ~> "zero"
+}
+```
+
+**Rule:** `|` at the start of a line/clause (after `{` or newline) is a guard marker. Otherwise it's the pipe operator.
+
+#### Arrow Disambiguation
+
+```flap
+->   Match arm result
+~>   Default match arm
+=>   Lambda or receive
+==>  No-arg lambda shorthand
+```
+
+Context determines meaning:
+
+```flap
+f = x => x + 1           // Lambda
+msg = => @8080           // Receive
+x { 0 -> "zero" }        // Match arm
+x { ~> "default" }       // Default arm
+greet ==> println("Hi")  // No-arg lambda
+```
+
+#### Block vs Map vs Match
+
+Disambiguated by contents (see Block Disambiguation Rules above):
+
+```flap
+{ x: 10 }                // Map: contains :
+x { 0 -> "zero" }        // Match: contains ->
+{ temp = x * 2; temp }   // Statement block: no : or ->
+```
+
+## Parsing Algorithm
+
+### High-Level Flow
+
+```
+1. Tokenize (lexer.go)
+   Source → Tokens
+
+2. Parse (parser.go)
+   Tokens → AST
+
+3. Type Inference (optional, see TYPE_TRACKING.md)
+   AST → AST with type annotations
+
+4. Code Generation (x86_64_codegen.go, arm64_codegen.go, riscv64_codegen.go)
+   AST → Machine code
+
+5. Linking (elf.go, macho.go)
+   Machine code → Executable
+```
+
+### Parser Implementation Notes
+
+**Recursive Descent:**
+- Hand-written recursive descent parser
+- Operator precedence climbing for expressions
+- Look-ahead for block disambiguation
+
+**Error Recovery:**
+- Continue parsing after errors when possible
+- Collect multiple errors per pass
+- Provide helpful error messages with line numbers
+
+**Performance:**
+- Single-pass parsing (no separate AST transformation)
+- Minimal memory allocation
+- Fast compilation (typically <100ms for small programs)
+
+## Grammar Extensions for Future Versions
+
+The grammar is designed to be extensible. Potential future additions:
+
+- **Type aliases:** `type Point = { x: float64, y: float64 }`
+- **Generics:** `f = <T>(x as T) => x`
+- **Macros:** `macro! name { ... }`
+- **Modules:** `import "module"`
+
+These extensions must preserve:
+1. Universal map type system
+2. Minimal syntax philosophy
+3. Direct code generation capability
+
 ---
 
-**Note:** This grammar is the canonical reference. The compiler implementation (parser.go) should match this specification exactly.
+**Note:** This grammar is the canonical reference for Flap 3.0. The compiler implementation (lexer.go, parser.go) must match this specification exactly.
+
+**See also:**
+- [LANGUAGESPEC.md](LANGUAGESPEC.md) - Complete language semantics
+- [TYPE_TRACKING.md](TYPE_TRACKING.md) - Compile-time type system
+- [LIBERTIES.md](LIBERTIES.md) - Documentation accuracy guidelines

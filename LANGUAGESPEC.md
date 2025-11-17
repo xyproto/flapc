@@ -1,8 +1,8 @@
 # Flap Language Specification
 
-**Version:** 2.0.0  
+**Version:** 3.0.0  
 **Date:** 2025-11-17  
-**Status:** Canonical Language Reference
+**Status:** Canonical Language Reference for Flap 3.0 Release
 
 This document describes the complete semantics, behavior, and design philosophy of the Flap programming language. For the formal grammar, see [GRAMMAR.md](GRAMMAR.md).
 
@@ -930,18 +930,20 @@ A Result is detected as error/success at runtime:
 1. **Pointer check:** If the value can be interpreted as a valid pointer (address > 0x1000), it's **SUCCESS** (contains actual value)
 2. **Error code:** If not a valid pointer, interpret as 4-character error code string
 
-Error codes (4 chars, space-padded):
+**Note:** The Result type is still `map[uint64]float64`, but with special semantic meaning tracked by the compiler. See [TYPE_TRACKING.md](TYPE_TRACKING.md) for implementation details.
+
+Error codes (4 chars, space-padded, trailing spaces stripped on access):
 ```
-"dv0 " - Division by zero
-"idx " - Index out of bounds
-"key " - Key not found
-"typ " - Type mismatch
-"nil " - Null pointer
-"mem " - Out of memory
-"arg " - Invalid argument
-"io  " - I/O error
-"net " - Network error
-"prs " - Parse error
+"dv0" - Division by zero
+"idx" - Index out of bounds
+"key" - Key not found
+"typ" - Type mismatch
+"nil" - Null pointer
+"mem" - Out of memory
+"arg" - Invalid argument
+"io"  - I/O error
+"net" - Network error
+"prs" - Parse error
 ```
 
 ### .error Property
@@ -950,7 +952,7 @@ Every value has `.error` accessor:
 
 ```flap
 x = 10 / 0              // Error result
-x.error                 // Returns "dv0" (trailing space stripped)
+x.error                 // Returns "dv0" (trailing spaces stripped)
 
 y = 10 / 2              // Success result  
 y.error                 // Returns "" (empty string)
@@ -979,6 +981,72 @@ How it works:
 2. If error: return right side
 3. If success: return left side value
 
+### Error Propagation Pattern
+
+```flap
+// Manual propagation
+process = input => {
+    step1 = validate(input)
+    step1.error { != "" -> step1 }  // Return error early
+    
+    step2 = transform(step1)
+    step2.error { != "" -> step2 }
+    
+    finalize(step2)
+}
+
+// With or! for defaults
+compute = input => {
+    x = parse(input) or! 0     // Use 0 if parse fails
+    y = divide(100, x) or! -1  // Use -1 if division fails
+    y * 2
+}
+```
+
+## Compilation and Execution
+
+### Compiler Usage
+
+```bash
+# Compile to executable
+flapc program.flap -o program
+
+# Compile with C library
+flapc program.flap -o program -lm
+
+# Specify target architecture
+flapc program.flap -o program -arch arm64
+flapc program.flap -o program -arch riscv64
+
+# Hot reload mode (Unix)
+flapc --hot program.flap
+
+# Show version
+flapc --version
+```
+
+### Supported Architectures
+
+- **x86_64** (AMD64) - Primary platform
+- **ARM64** (AArch64) - Full support
+- **RISCV64** - Full support
+
+### Compilation Process
+
+1. **Lexing**: Source code → tokens
+2. **Parsing**: Tokens → AST
+3. **Type Inference**: Track semantic types (see TYPE_TRACKING.md)
+4. **Code Generation**: AST → machine code (direct, no IR)
+5. **Linking**: Produce ELF (Linux), Mach-O (macOS), or PE (Windows)
+
+### Performance Characteristics
+
+- **Compilation**: Fast (no IR overhead)
+- **Tail calls**: Always optimized to loops
+- **Arithmetic**: SIMD for vectorizable operations
+- **Memory**: Arena allocators for predictable patterns
+- **Concurrency**: OS-level parallelism via fork()
+
 ## Examples
 
 ### Hello World
@@ -999,11 +1067,14 @@ factorial = n => {
     result
 }
 
-// Tail-recursive
+// Tail-recursive (optimized to loop)
 factorial = (n, acc) => n == 0 {
     -> acc
     ~> factorial(n-1, n*acc)
 }
+
+// Usage
+println(factorial(5, 1))  // 120
 ```
 
 ### FizzBuzz
@@ -1024,6 +1095,76 @@ factorial = (n, acc) => n == 0 {
 }
 ```
 
+### List Processing
+
+```flap
+// Map, filter, reduce
+numbers = [1, 2, 3, 4, 5]
+
+// Map: double each number
+doubled = numbers | x => x * 2
+
+// Filter: only even numbers
+evens = numbers | x => x % 2 == 0 { 1 -> x ~> [] }
+
+// Reduce: sum all numbers
+total = numbers ||| (acc, x) => acc + x
+
+println(f"Total: {total}")
+```
+
+### Pattern Matching
+
+```flap
+// Value match
+classify_number = x => x {
+    0 -> "zero"
+    1 -> "one"
+    2 -> "two"
+    ~> "many"
+}
+
+// Guard match
+classify_age = age => {
+    | age < 13 -> "child"
+    | age < 18 -> "teen"
+    | age < 65 -> "adult"
+    ~> "senior"
+}
+
+// Nested match
+check_value = x => x {
+    0 -> "zero"
+    ~> x > 0 {
+        1 -> "positive"
+        0 -> "negative"
+    }
+}
+```
+
+### Error Handling
+
+```flap
+// Division with error handling
+safe_divide = (a, b) => {
+    result = a / b
+    result.error {
+        "" -> f"Result: {result}"
+        ~> f"Error: {result.error}"
+    }
+}
+
+println(safe_divide(10, 2))   // "Result: 5"
+println(safe_divide(10, 0))   // "Error: dv0"
+
+// With or! operator
+compute = (a, b) => {
+    x = a / b or! 1.0     // Default to 1.0 on error
+    y = x * 2
+    y
+}
+```
+
 ### Parallel Processing
 
 ```flap
@@ -1035,17 +1176,34 @@ results = data || x => expensive_computation(x)
 // Sum results
 total = results ||| (acc, x) => acc + x
 
-println(total)
+println(f"Total: {total}")
 ```
 
 ### Web Server (ENet)
 
 ```flap
+// Simple echo server
 server ==> {
     @ {
         request = => @8080
-        response = handle_request(request)
-        @8080 <- response
+        println(f"Received: {request}")
+        @8080 <- f"Echo: {request}"
+    }
+}
+
+// HTTP-like handler
+handle_request = req => {
+    method = req.method
+    path = req.path
+    
+    method {
+        "GET" -> path {
+            "/" -> "Welcome!"
+            "/api" -> "{status: ok}"
+            ~> "Not found"
+        }
+        "POST" -> process_post(req)
+        ~> "Method not allowed"
     }
 }
 
@@ -1055,21 +1213,362 @@ server()
 ### C Interop
 
 ```flap
+// Define C struct
 cstruct Buffer {
     data as ptr,
-    size as int32
+    size as int32,
+    capacity as int32
 }
 
-buf = Buffer(c_malloc(1024), 1024)
-c_memset(buf.data, 0, buf.size)
-// Use buffer
-c_free(buf.data)
+// Use C functions
+create_buffer = size => {
+    ptr = c_malloc(size)
+    ptr == 0 {
+        1 -> Buffer(0, 0, 0)  // Failed
+        ~> Buffer(ptr, 0, size)
+    }
+}
+
+write_buffer = (buf, data) => {
+    buf.size + 1 > buf.capacity {
+        1 -> buf  // Buffer full
+        ~> {
+            c_memcpy(buf.data + buf.size, data, 1)
+            buf.size <- buf.size + 1
+            buf
+        }
+    }
+}
+
+free_buffer = buf => {
+    buf.data != 0 { c_free(buf.data) }
+}
+
+// Usage
+buf := create_buffer(1024)
+buf := write_buffer(buf, 65)  // Write 'A'
+free_buffer(buf)
 ```
+
+### Advanced: Custom Allocator
+
+```flap
+// Arena allocator pattern
+process_requests = requests => {
+    arena {
+        results := []
+        @ req in requests {
+            result = handle_request(req)
+            results <- results + [result]
+        }
+        results
+    }
+    // All arena memory freed here
+}
+```
+
+### Advanced: Unsafe Assembly
+
+```flap
+// Direct syscall (Linux x86_64)
+print_fast = msg => {
+    len = msg.length
+    unsafe {
+        rax <- 1         // sys_write
+        rdi <- 1         // stdout
+        rsi <- msg       // buffer
+        rdx <- len       // length
+        syscall
+    }
+}
+
+// Atomic compare-and-swap
+cas = (ptr, old, new) => unsafe int32 {
+    rax <- old
+    lock cmpxchg [ptr], new
+} {
+    1  // Success
+} {
+    0  // Failed
+}
+```
+
+## Design Rationale
+
+### Why One Universal Type?
+
+Traditional languages have complex type hierarchies:
+- Primitive types (int, float, char, bool)
+- Reference types (objects, arrays, strings)
+- Special types (null, undefined, NaN)
+- Type conversions and coercions
+- Boxing/unboxing overhead
+
+**Flap's approach:** Everything is `map[uint64]float64`
+
+**Benefits:**
+1. **Conceptual simplicity:** Learn one type, understand the entire language
+2. **Implementation simplicity:** One memory layout, one set of operations
+3. **No type coercion bugs:** No implicit conversions to reason about
+4. **Uniform FFI:** Cast to C types only at boundaries
+5. **Natural duck typing:** If it has the key, it works
+6. **Optimization freedom:** Compiler can represent values efficiently while preserving semantics
+
+### Why Direct Machine Code Generation?
+
+Most compilers use intermediate representations (IR):
+- LLVM IR (Rust, Swift, Clang)
+- JVM bytecode (Java, Kotlin, Scala)
+- WebAssembly (many languages)
+- Custom IR (Go, V8)
+
+**Flap's approach:** AST → Machine code directly
+
+**Benefits:**
+1. **Fast compilation:** No IR translation overhead
+2. **Small compiler:** ~30k lines vs hundreds of thousands
+3. **No dependencies:** Self-contained, no LLVM/GCC required
+4. **Predictable output:** Same code every time
+5. **Full control:** Optimize for Flap's semantics, not general-purpose IR
+
+**Trade-offs:**
+- More code per architecture (x86_64, ARM64, RISCV64)
+- Manual optimization (no LLVM optimization passes)
+- More maintenance burden
+
+**Why it's worth it:** Flap's simplicity makes per-architecture code manageable. The universal type system means optimizations work uniformly across all values.
+
+### Why Fork-Based Parallelism?
+
+Many languages use threads or async/await:
+- Shared memory (requires synchronization)
+- Green threads (runtime complexity)
+- Async/await (function coloring problem)
+
+**Flap's approach:** `fork()` + ENet channels
+
+**Benefits:**
+1. **True isolation:** Separate address spaces
+2. **No data races:** No shared memory to corrupt
+3. **OS-level scheduling:** Leverage existing scheduler
+4. **Simple mental model:** Process per task
+5. **Fault isolation:** One process crash doesn't kill others
+
+**Trade-offs:**
+- Higher memory overhead per task
+- Process creation cost
+- IPC overhead for communication
+
+**Why it's worth it:** Safety and simplicity trump performance for most use cases. For hot paths, use threads in unsafe blocks.
+
+### Why ENet for Concurrency?
+
+Traditional approaches:
+- Channels (Go, Rust): Good but language-specific
+- Actors (Erlang, Akka): Heavy runtime
+- MPI: Complex API
+
+**Flap's approach:** ENet-style network channels
+
+**Benefits:**
+1. **Familiar model:** Network programming concepts
+2. **Local or remote:** Same API for both
+3. **Simple implementation:** Thin wrapper over ENet library
+4. **Battle-tested:** ENet proven in game networking
+5. **Scales naturally:** From single machine to distributed
+
+**Design:**
+```flap
+@8080 <- msg           // Send to local port
+@"host:9000" <- msg    // Send to remote host
+data = => @8080        // Receive from port
+```
+
+Clean, minimal, network-inspired.
+
+### Why No Garbage Collection?
+
+GC languages (Java, Go, Python) have:
+- Unpredictable pause times
+- Memory overhead (GC metadata)
+- Performance cliffs (GC pressure)
+- Tuning complexity
+
+**Flap's approach:** Arena allocators + move semantics
+
+**Benefits:**
+1. **Predictable performance:** No GC pauses
+2. **Low overhead:** No GC metadata
+3. **Simple reasoning:** Allocation/deallocation explicit
+4. **Natural patterns:** Arena for requests, move for ownership
+
+**Trade-offs:**
+- Manual memory management
+- Potential for leaks (if not careful)
+- More cognitive load
+
+**Why it's worth it:** Systems programming demands predictability. Arenas make manual management tractable.
+
+### Why Minimal Syntax?
+
+Many languages accumulate features:
+- Multiple ways to do the same thing
+- Special case syntax
+- Keyword proliferation
+
+**Flap's approach:** Minimal, orthogonal features
+
+**Examples:**
+- One loop construct: `@`
+- One function syntax: `=>`
+- One block syntax: `{ }`
+- Disambiguate by contents, not syntax
+
+**Benefits:**
+1. **Easy to learn:** Fewer concepts
+2. **Easy to parse:** Simpler compiler
+3. **Less bikeshedding:** Fewer style debates
+4. **Uniform code:** Looks consistent
+
+**Philosophy:** "One obvious way to do it"
+
+### Why Bitwise Operators Need `b` Suffix?
+
+In C-like languages:
+```c
+if (x & FLAG)  // Bitwise AND - easy to confuse with &&
+if (x | FLAG)  // Bitwise OR - easy to confuse with ||
+```
+
+**Flap's approach:** Explicit `b` suffix
+
+```flap
+x &b FLAG     // Clearly bitwise
+x && y        // Clearly logical
+x | transform // Clearly pipe
+x |b mask     // Clearly bitwise
+```
+
+**Benefits:**
+1. **No ambiguity:** Obvious at a glance
+2. **No precedence confusion:** Different operators, different precedence
+3. **Frees `|` for pipes:** Pipe operator feels natural
+4. **Consistent:** All bitwise ops have `b` suffix
+
+### Design Principles Summary
+
+1. **Radical simplification:** One type, one way
+2. **Explicit over implicit:** No hidden complexity
+3. **Performance without compromise:** Direct code generation
+4. **Safety where practical:** Arenas, move semantics, immutable-by-default
+5. **Minimal syntax:** Orthogonal features, no redundancy
+6. **Predictable behavior:** No GC, no hidden allocations
+7. **Systems-level control:** Direct assembly when needed
+8. **Familiar concepts:** Borrow from proven designs
+
+**Flap is not trying to be:**
+- A replacement for application languages (Python, JavaScript)
+- A replacement for safe languages (Rust, Ada)
+- A general-purpose language for all domains
+
+**Flap is designed for:**
+- Systems programming with radical simplicity
+- Performance-critical code with predictable behavior
+- Programmers who value minimalism over features
+- Domains where direct machine control matters
+
+---
+
+## Frequently Asked Questions
+
+### Is Flap practical for real projects?
+
+Yes, but in specific domains:
+- Systems utilities
+- Network services
+- Embedded systems
+- Performance-critical components
+
+Not ideal for:
+- Large applications (no module system yet)
+- GUI applications (no standard library)
+- Rapid prototyping (manual memory management)
+
+### How fast is Flap?
+
+Comparable to C for:
+- Arithmetic operations
+- Memory operations
+- System calls
+
+Slower than C for:
+- String operations (map overhead)
+- Complex data structures (map overhead)
+
+Faster than C for:
+- Compilation (direct code generation)
+- FFI (no marshalling overhead)
+
+### Is the universal type system really practical?
+
+Yes, with caveats:
+- **Numbers:** Zero overhead (compiler optimizes to registers)
+- **Small strings:** Some overhead (map allocation)
+- **Large data:** Similar to C (heap allocation either way)
+- **FFI:** Zero overhead (direct casts at boundaries)
+
+The compiler's type tracking (see TYPE_TRACKING.md) eliminates most overhead.
+
+### Why not use LLVM?
+
+LLVM would give:
+- Better optimization
+- More architectures
+- Proven backend
+
+But cost:
+- 500MB+ dependency
+- Slow compilation
+- Complex integration
+- Loss of control
+
+For Flap's goals (fast compilation, small compiler, direct control), hand-written backends win.
+
+### What about memory safety?
+
+Flap is **not memory-safe by default** like Rust.
+
+However:
+- Immutable-by-default reduces bugs
+- Arena allocators prevent use-after-free
+- Move semantics reduce double-free
+- No GC means no GC bugs
+
+Trade-off: Less safe than Rust, simpler to use.
+
+### Can I use Flap in production?
+
+Flap 3.0 is ready for:
+- Personal projects
+- Internal tools
+- Experiments
+- Performance prototypes
+
+Not yet ready for:
+- Mission-critical systems
+- Large teams (no module system)
+- Long-term maintenance (young language)
+
+Use your judgment.
 
 ---
 
 **For grammar details, see [GRAMMAR.md](GRAMMAR.md)**
 
+**For compiler type tracking, see [TYPE_TRACKING.md](TYPE_TRACKING.md)**
+
+**For documentation accuracy, see [LIBERTIES.md](LIBERTIES.md)**
+
 **For development info, see [DEVELOPMENT.md](DEVELOPMENT.md)**
 
-**For release notes, see [RELEASE_NOTES_2.0.md](RELEASE_NOTES_2.0.md)**
+**For known issues, see [FAILURES.md](FAILURES.md)**
