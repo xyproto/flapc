@@ -988,6 +988,20 @@ func (p *Parser) parseStatement() Statement {
 		}
 	}
 
+	// Check for `.field` assignment (this.field = value)
+	if p.current.Type == TOKEN_DOT && p.peek.Type == TOKEN_IDENT {
+		p.nextToken() // skip '.'
+		fieldName := "this." + p.current.Value
+		p.current.Value = fieldName
+		p.current.Type = TOKEN_IDENT
+		// Now handle as regular assignment
+		if p.peek.Type == TOKEN_EQUALS || p.peek.Type == TOKEN_COLON_EQUALS || p.peek.Type == TOKEN_LEFT_ARROW ||
+			p.peek.Type == TOKEN_PLUS_EQUALS || p.peek.Type == TOKEN_MINUS_EQUALS ||
+			p.peek.Type == TOKEN_STAR_EQUALS || p.peek.Type == TOKEN_POWER_EQUALS || p.peek.Type == TOKEN_SLASH_EQUALS || p.peek.Type == TOKEN_MOD_EQUALS {
+			return p.parseAssignment()
+		}
+	}
+
 	// Check for assignment (=, :=, ==>, <-, with optional type annotation, and compound assignments)
 	if p.current.Type == TOKEN_IDENT {
 		if p.peek.Type == TOKEN_EQUALS || p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_COLON_EQUALS || p.peek.Type == TOKEN_LEFT_ARROW || p.peek.Type == TOKEN_COLON ||
@@ -3757,6 +3771,28 @@ func (p *Parser) parsePrimary() Expression {
 	case TOKEN_ARENA:
 		// arena { ... }
 		return p.parseArenaExpr()
+
+	case TOKEN_DOT:
+		// Dot notation for "this":
+		// - `.field` means `this.field`
+		// - `. ` (dot followed by space/newline) means `this`
+		p.nextToken() // skip '.'
+		
+		// Check if followed by identifier
+		if p.current.Type == TOKEN_IDENT {
+			fieldName := p.current.Value
+			// Return field access on "this"
+			return &BinaryExpr{
+				Operator: ".",
+				Left:     &IdentExpr{Name: "this"},
+				Right:    &IdentExpr{Name: fieldName},
+			}
+		}
+		
+		// Otherwise, just return "this"
+		// Move back one token since we consumed the dot but there's no field
+		p.current = Token{Type: TOKEN_DOT, Value: ".", Line: p.current.Line, Column: p.current.Column}
+		return &IdentExpr{Name: "this"}
 	}
 
 	// Check if this is a structural/delimiter token that should just end the expression
