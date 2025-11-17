@@ -135,3 +135,81 @@ println(rest[2])
 	result := runFlapProgram(t, source)
 	result.expectOutput(t, "2\n3\n4\n")
 }
+
+// TestAppendMethod tests the .append() method syntax sugar
+func TestAppendMethod(t *testing.T) {
+	source := `xs := [1, 2, 3]
+ys := xs.append(4)
+println(ys[0])
+println(ys[1])
+println(ys[2])
+println(ys[3])
+println(#ys)
+`
+	testInlineFlap(t, "append_method", source, "1\n2\n3\n4\n4\n")
+}
+
+// TestAppendFunctionBasic tests the append() function directly
+func TestAppendFunctionBasic(t *testing.T) {
+	source := `xs := [10, 20]
+ys := append(xs, 30)
+println(ys[0])
+println(ys[1])
+println(ys[2])
+println(#ys)
+`
+	testInlineFlap(t, "append_function", source, "10\n20\n30\n3\n")
+}
+
+// TestPopMethod tests the .pop() method syntax sugar
+func TestPopMethod(t *testing.T) {
+	source := `xs := [1, 2, 3, 4]
+result := xs.pop()
+new_list := result[0]
+popped_value := result[1]
+println(new_list[0])
+println(new_list[1])
+println(new_list[2])
+println(popped_value)
+println(#new_list)
+`
+	testInlineFlap(t, "pop_method", source, "1\n2\n3\n4\n3\n")
+}
+
+// TestPopFunction tests the pop() function directly
+func TestPopFunction(t *testing.T) {
+	source := `xs := [10, 20, 30]
+result := pop(xs)
+new_list := result[0]
+popped := result[1]
+println(new_list[0])
+println(new_list[1])
+println(popped)
+println(#new_list)
+`
+	testInlineFlap(t, "pop_function", source, "10\n20\n30\n2\n")
+}
+
+// TestPopEmptyList tests pop() on an empty list
+func TestPopEmptyList(t *testing.T) {
+	source := `xs := []
+result := pop(xs)
+new_list := result[0]
+popped := result[1]
+println(#new_list)
+println(is_nan(popped))
+`
+	testInlineFlap(t, "pop_empty", source, "0\n1\n")
+}
+
+// TestAppendChaining tests method chaining with append
+func TestAppendChaining(t *testing.T) {
+	source := `xs := []
+ys := xs.append(1).append(2).append(3)
+println(ys[0])
+println(ys[1])
+println(ys[2])
+println(#ys)
+`
+	testInlineFlap(t, "append_chaining", source, "1\n2\n3\n3\n")
+}

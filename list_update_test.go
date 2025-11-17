@@ -90,7 +90,6 @@ println(arr[3])
 
 // TestAppendFunction tests the append() builtin function
 func TestAppendFunction(t *testing.T) {
-	t.Skip("TODO: append() function needs debugging")
 	source := `list1 := [1, 2, 3]
 list2 := append(list1, 4)
 println(list2[0])

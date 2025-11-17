@@ -101,6 +101,7 @@ type Parser struct {
 	constants    map[string]Expression   // Compile-time constants (immutable literals)
 	aliases      map[string]TokenType    // Keyword aliases (e.g., "for" -> TOKEN_AT)
 	cstructs     map[string]*CStructDecl // CStruct declarations for metadata access
+	cImports     map[string]bool         // C import namespaces (e.g., "sdl", "c")
 	speculative  bool                    // True when in speculative parsing mode (suppress errors)
 	errors       *ErrorCollector         // Railway-oriented error collector
 	inMatchBlock bool                    // True when parsing inside a match block (prevents nested match parsing)
@@ -138,8 +139,11 @@ func NewParser(input string) *Parser {
 		constants: make(map[string]Expression),
 		aliases:   make(map[string]TokenType),
 		cstructs:  make(map[string]*CStructDecl),
+		cImports:  make(map[string]bool),
 		errors:    NewErrorCollector(10),
 	}
+	// Register built-in C namespace
+	p.cImports["c"] = true
 	p.errors.SetSourceCode(input)
 	p.nextToken()
 	p.nextToken()
@@ -155,8 +159,11 @@ func NewParserWithFilename(input, filename string) *Parser {
 		constants: make(map[string]Expression),
 		aliases:   make(map[string]TokenType),
 		cstructs:  make(map[string]*CStructDecl),
+		cImports:  make(map[string]bool),
 		errors:    NewErrorCollector(10),
 	}
+	// Register built-in C namespace
+	p.cImports["c"] = true
 	p.errors.SetSourceCode(input)
 	p.nextToken()
 	p.nextToken()
@@ -364,6 +371,8 @@ func (p *Parser) parseImport() Statement {
 				soFilename = soPath[lastSlash+1:]
 			}
 
+			// Register C import namespace
+			p.cImports[alias] = true
 			return &CImportStmt{Library: soFilename, Alias: alias, SoPath: soPath}
 		}
 
@@ -409,6 +418,8 @@ func (p *Parser) parseImport() Statement {
 		alias := p.current.Value
 		p.nextToken()
 
+		// Register C import namespace
+		p.cImports[alias] = true
 		return &CImportStmt{Library: libName, Alias: alias}
 	}
 
@@ -3287,29 +3298,49 @@ func (p *Parser) parsePostfix() Expression {
 						}
 					}
 				} else if p.peek.Type == TOKEN_LPAREN {
-					// Namespaced function call - combine identifiers
-					namespacedName := ident.Name + "." + fieldName
-					p.nextToken() // skip second identifier
-					p.nextToken() // skip '('
-					args := []Expression{}
+					// Check if this is a C import namespace (e.g., sdl, c) or a method call (e.g., xs.append)
+					if p.cImports[ident.Name] {
+						// Namespaced function call - combine identifiers
+						namespacedName := ident.Name + "." + fieldName
+						p.nextToken() // skip second identifier
+						p.nextToken() // skip '('
+						args := []Expression{}
 
-					if p.current.Type != TOKEN_RPAREN {
-						args = append(args, p.parseExpression())
-						for p.peek.Type == TOKEN_COMMA {
-							p.nextToken() // skip current
-							p.nextToken() // skip ','
+						if p.current.Type != TOKEN_RPAREN {
 							args = append(args, p.parseExpression())
+							for p.peek.Type == TOKEN_COMMA {
+								p.nextToken() // skip current
+								p.nextToken() // skip ','
+								args = append(args, p.parseExpression())
+							}
+							p.nextToken() // move to ')'
 						}
-						p.nextToken() // move to ')'
-					}
-					// Check if this is a C FFI call (c.malloc, c.free, etc.)
-					isCFFI := ident.Name == "c"
-					if isCFFI {
-						// For C FFI calls, use just the function name without the "c." prefix
-						expr = &CallExpr{Function: fieldName, Args: args, IsCFFI: true}
+						// Check if this is a C FFI call (c.malloc, c.free, etc.)
+						isCFFI := ident.Name == "c"
+						if isCFFI {
+							// For C FFI calls, use just the function name without the "c." prefix
+							expr = &CallExpr{Function: fieldName, Args: args, IsCFFI: true}
+						} else {
+							// Regular namespaced call (e.g., sdl.SDL_Init)
+							expr = &CallExpr{Function: namespacedName, Args: args}
+						}
 					} else {
-						// Regular namespaced call (e.g., sdl.SDL_Init)
-						expr = &CallExpr{Function: namespacedName, Args: args}
+						// Method call syntax sugar: obj.method(args) -> method(obj, args)
+						p.nextToken()              // skip field name
+						p.nextToken()              // skip '('
+						args := []Expression{expr} // receiver becomes first argument
+
+						if p.current.Type != TOKEN_RPAREN {
+							args = append(args, p.parseExpression())
+							for p.peek.Type == TOKEN_COMMA {
+								p.nextToken() // skip current
+								p.nextToken() // skip ','
+								args = append(args, p.parseExpression())
+							}
+							p.nextToken() // move to ')'
+						}
+						// Desugar to function call with receiver as first arg
+						expr = &CallExpr{Function: fieldName, Args: args}
 					}
 				} else {
 					// Check for special property access on Result types
