@@ -353,7 +353,7 @@ func (f *FStringExpr) String() string  { return "f\"...\"" }
 func (f *FStringExpr) expressionNode() {}
 
 type AddressLiteralExpr struct {
-	Value string // The full address like "@8080" or "@localhost:8080"
+	Value string // The full address like "&8080" or "&localhost:8080"
 }
 
 func (a *AddressLiteralExpr) String() string  { return a.Value }

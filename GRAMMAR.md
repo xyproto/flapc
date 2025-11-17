@@ -251,7 +251,7 @@ primary_expr    = identifier
                 | arena_expr
                 | "???" ;
 
-enet_address    = "@" port_or_host_port ;
+enet_address    = "&" port_or_host_port ;
 
 port_or_host_port = port | [ hostname ":" ] port ;
 
@@ -522,7 +522,8 @@ All bitwise operators use `b` suffix:
 .     Field access
 []    Indexing
 ()    Function call
-@     Loop / ENet address
+@     Loop
+&     Address (ENet)
 ??    Random number
 ```
 
@@ -641,10 +642,47 @@ Context determines meaning:
 
 ```flap
 f = x => x + 1           // Lambda
-msg = => @8080           // Receive
+msg = => &8080           // Receive
 x { 0 -> "zero" }        // Match arm
 x { ~> "default" }       // Default arm
 greet ==> println("Hi")  // No-arg lambda
+```
+
+#### Loop Forms
+
+The `@` symbol introduces loops (one of three forms):
+
+```flap
+@ { ... }                  // Infinite loop
+@ i in collection { ... }  // For-each loop
+@ condition { ... }        // While loop
+```
+
+#### Address Operator
+
+The `&` symbol creates ENet addresses (network endpoints):
+
+```flap
+&8080                      // Port only: & followed by digits
+&localhost:8080            // Host:port: & followed by identifier/IP + :
+&192.168.1.1:3000          // IP:port
+```
+
+**Examples:**
+```flap
+// Loops (statement context)
+@ { println("Forever") }           // Infinite loop
+@ i in [1, 2, 3] { println(i) }    // For-each loop
+@ x < 10 { x = x + 1 }             // While loop
+
+// Addresses (expression context)
+server = @8080                      // Address literal
+client = &localhost:9000            // Address with hostname
+remote = &192.168.1.100:3000        // Address with IP
+
+// Unambiguous in context
+listen(&8080)                       // Function call with address
+@ x > 0 { send(&8080, data) }      // Loop with address inside
 ```
 
 #### Block vs Map vs Match

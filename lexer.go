@@ -56,7 +56,8 @@ const (
 	TOKEN_FAT_ARROW        // =>
 	TOKEN_EQUALS_FAT_ARROW // ==> (shorthand for = =>)
 	TOKEN_LEFT_ARROW       // <- (update operator and ENet send/receive)
-	TOKEN_ADDRESS_LITERAL  // @8080 or @host:port (ENet address literal)
+	TOKEN_AMPERSAND        // & (address operator)
+	TOKEN_ADDRESS_LITERAL  // &8080 or &host:port (ENet address literal)
 	TOKEN_PIPE             // |
 	TOKEN_PIPEPIPE         // ||
 	TOKEN_HASH             // #
@@ -694,40 +695,10 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_AT_PLUSPLUS, Value: "@++", Line: l.line, Column: tokenColumn}
 		}
 
-		// Check for address literals: @8080, @:8080, @localhost:8080, @192.168.1.100:7777
-		if l.peek() == ':' || (l.peek() >= '0' && l.peek() <= '9') || (l.peek() >= 'a' && l.peek() <= 'z') || (l.peek() >= 'A' && l.peek() <= 'Z') {
+		// Check for special keywords: @first, @last, @counter, @i
+		if (l.peek() >= 'a' && l.peek() <= 'z') || (l.peek() >= 'A' && l.peek() <= 'Z') {
 			start := l.pos
 			l.pos++ // skip @
-
-			// Parse hostname or IP address (optional, before colon)
-			// Can be: localhost, example.com, 192.168.1.100, etc.
-			if l.pos < len(l.input) && l.input[l.pos] != ':' {
-				// Parse hostname or IP (alphanumeric, dots, hyphens)
-				for l.pos < len(l.input) && (unicode.IsLetter(rune(l.input[l.pos])) || unicode.IsDigit(rune(l.input[l.pos])) || l.input[l.pos] == '.' || l.input[l.pos] == '-') {
-					if l.input[l.pos] == ':' {
-						break
-					}
-					l.pos++
-				}
-			}
-
-			// Parse port (required for address literals)
-			if l.pos < len(l.input) && (l.input[l.pos] == ':' || (l.input[l.pos] >= '0' && l.input[l.pos] <= '9')) {
-				if l.input[l.pos] == ':' {
-					l.pos++ // skip colon
-				}
-				// Parse port number
-				if l.pos < len(l.input) && l.input[l.pos] >= '0' && l.input[l.pos] <= '9' {
-					for l.pos < len(l.input) && l.input[l.pos] >= '0' && l.input[l.pos] <= '9' {
-						l.pos++
-					}
-					// This is an address literal
-					return Token{Type: TOKEN_ADDRESS_LITERAL, Value: l.input[start:l.pos], Line: l.line, Column: tokenColumn}
-				}
-			}
-
-			// Not an address literal, backtrack and check for special keywords
-			l.pos = start + 1
 			value := ""
 			for l.pos < len(l.input) && ((l.input[l.pos] >= 'a' && l.input[l.pos] <= 'z') || (l.input[l.pos] >= 'A' && l.input[l.pos] <= 'Z')) {
 				l.pos++
@@ -757,6 +728,9 @@ func (l *Lexer) NextToken() Token {
 				}
 				return Token{Type: TOKEN_AT_I, Value: value, Line: l.line, Column: tokenColumn}
 			}
+
+			// Unknown @ keyword, backtrack
+			l.pos = start + 1
 		}
 
 		l.pos++
@@ -786,13 +760,78 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_PIPE, Value: "|", Line: l.line, Column: tokenColumn}
 	case '&':
-		// Check for &b
+		// Check for &b (bitwise AND)
 		if l.peek() == 'b' {
 			l.pos += 2
 			return Token{Type: TOKEN_AMP_B, Value: "&b", Line: l.line, Column: tokenColumn}
 		}
+
+		// Check for address literals: &8080, &:8080, &localhost:8080, &192.168.1.100:7777
+		nextChar := l.peek()
+		if nextChar == ':' || (nextChar >= '0' && nextChar <= '9') || (nextChar >= 'a' && nextChar <= 'z') || (nextChar >= 'A' && nextChar <= 'Z') {
+			start := l.pos
+			l.pos++ // skip &
+
+			// Check if it's a port-only address or IP address (starts with digit)
+			if l.pos < len(l.input) && l.input[l.pos] >= '0' && l.input[l.pos] <= '9' {
+				// Could be &8080 or &192.168.1.100:3000
+				// Parse digits and dots (for IP addresses)
+				for l.pos < len(l.input) && (l.input[l.pos] >= '0' && l.input[l.pos] <= '9' || l.input[l.pos] == '.') {
+					l.pos++
+				}
+
+				// If followed by :port, parse the port
+				if l.pos < len(l.input) && l.input[l.pos] == ':' {
+					l.pos++ // skip :
+					if l.pos < len(l.input) && l.input[l.pos] >= '0' && l.input[l.pos] <= '9' {
+						for l.pos < len(l.input) && l.input[l.pos] >= '0' && l.input[l.pos] <= '9' {
+							l.pos++
+						}
+					}
+				}
+				return Token{Type: TOKEN_ADDRESS_LITERAL, Value: l.input[start:l.pos], Line: l.line, Column: tokenColumn}
+			}
+
+			// Check if it's :port format
+			if l.pos < len(l.input) && l.input[l.pos] == ':' {
+				l.pos++ // skip :
+				if l.pos < len(l.input) && l.input[l.pos] >= '0' && l.input[l.pos] <= '9' {
+					for l.pos < len(l.input) && l.input[l.pos] >= '0' && l.input[l.pos] <= '9' {
+						l.pos++
+					}
+					return Token{Type: TOKEN_ADDRESS_LITERAL, Value: l.input[start:l.pos], Line: l.line, Column: tokenColumn}
+				}
+			}
+
+			// Parse hostname or IP address
+			if l.pos < len(l.input) && (unicode.IsLetter(rune(l.input[l.pos])) || unicode.IsDigit(rune(l.input[l.pos]))) {
+				for l.pos < len(l.input) {
+					ch := l.input[l.pos]
+					if !unicode.IsLetter(rune(ch)) && !unicode.IsDigit(rune(ch)) && ch != '.' && ch != '-' {
+						break
+					}
+					l.pos++
+				}
+
+				// Must have :port after hostname
+				if l.pos < len(l.input) && l.input[l.pos] == ':' {
+					l.pos++ // skip :
+					if l.pos < len(l.input) && l.input[l.pos] >= '0' && l.input[l.pos] <= '9' {
+						for l.pos < len(l.input) && l.input[l.pos] >= '0' && l.input[l.pos] <= '9' {
+							l.pos++
+						}
+						return Token{Type: TOKEN_ADDRESS_LITERAL, Value: l.input[start:l.pos], Line: l.line, Column: tokenColumn}
+					}
+				}
+			}
+
+			// Not an address literal, backtrack to just after &
+			l.pos = start + 1
+			return Token{Type: TOKEN_AMPERSAND, Value: "&", Line: l.line, Column: tokenColumn}
+		}
+
 		l.pos++
-		return Token{Type: TOKEN_AMP, Value: "&", Line: l.line, Column: tokenColumn}
+		return Token{Type: TOKEN_AMPERSAND, Value: "&", Line: l.line, Column: tokenColumn}
 	case '^':
 		// Check for ^b
 		if l.peek() == 'b' {

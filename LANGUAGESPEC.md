@@ -158,8 +158,8 @@ runes = text.runes   // Map of Unicode code points {0: rune0, 1: rune1, ...}
 Network-style message passing for concurrency:
 
 ```flap
-@8080 <- "Hello"     // Send to channel
-msg = => @8080       // Receive from channel
+&8080 <- "Hello"     // Send to channel
+msg = => &8080       // Receive from channel
 ```
 
 ### 9. Fork-Based Process Model
@@ -652,15 +652,15 @@ Flap uses **ENet-style message passing** for concurrency:
 ### Send Messages
 
 ```flap
-@8080 <- "Hello"          // Send to port 8080
-@"host:9000" <- data      // Send to remote host
+&8080 <- "Hello"          // Send to port 8080
+&"host:9000" <- data      // Send to remote host
 ```
 
 ### Receive Messages
 
 ```flap
-msg = => @8080            // Receive from port 8080
-data = => @"server:9000"  // Receive from remote
+msg = => &8080            // Receive from port 8080
+data = => &"server:9000"  // Receive from remote
 ```
 
 ### Channel Patterns
@@ -669,16 +669,16 @@ data = => @"server:9000"  // Receive from remote
 // Worker pattern
 worker ==> {
     @ {
-        task = => @8080
+        task = => &8080
         result = process(task)
-        @8081 <- result
+        &8081 <- result
     }
 }
 
 // Pipeline pattern
-stage1 ==> @ { @8080 <- generate_data() }
-stage2 ==> @ { data = => @8080; @8081 <- transform(data) }
-stage3 ==> @ { result = => @8081; save(result) }
+stage1 ==> @ { &8080 <- generate_data() }
+stage2 ==> @ { data = => &8080; &8081 <- transform(data) }
+stage3 ==> @ { result = => &8081; save(result) }
 ```
 
 **Note:** ENet channels are compiled directly into machine code that uses ENet library calls.
@@ -1185,9 +1185,9 @@ println(f"Total: {total}")
 // Simple echo server
 server ==> {
     @ {
-        request = => @8080
+        request = => &8080
         println(f"Received: {request}")
-        @8080 <- f"Echo: {request}"
+        &8080 <- f"Echo: {request}"
     }
 }
 
@@ -1379,9 +1379,9 @@ Traditional approaches:
 
 **Design:**
 ```flap
-@8080 <- msg           // Send to local port
-@"host:9000" <- msg    // Send to remote host
-data = => @8080        // Receive from port
+&8080 <- msg           // Send to local port
+&"host:9000" <- msg    // Send to remote host
+data = => &8080        // Receive from port
 ```
 
 Clean, minimal, network-inspired.
