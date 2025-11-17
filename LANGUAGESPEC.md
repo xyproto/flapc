@@ -510,8 +510,15 @@ factorial = n => {
     result
 }
 
-// No-arg shorthand
-greet ==> println("Hello!")  // ==> is () =>
+// No-arg shorthand: ==> desugars to () =>
+greet ==> println("Hello!")
+// Equivalent to: greet = () => println("Hello!")
+
+hello ==> {
+    println("Hello")
+    println("World")
+}
+// Equivalent to: hello = () => { println("Hello"); println("World") }
 ```
 
 ### Lambda Expressions
@@ -885,14 +892,14 @@ println(Entity.count)    // 2
 
 ### Composition with `<>`
 
-Extend classes with behavior maps:
+Extend classes with behavior maps using the `<>` composition operator:
 
 ```flap
 // Define behavior map
 Serializable := {
     to_json: ==> {
         // Serialize instance to JSON string
-        keys := .keys()
+        keys := this.keys()
         @ i in 0..<keys.length {
             // Build JSON...
         }
@@ -902,7 +909,7 @@ Serializable := {
     }
 }
 
-// Extend class with behavior
+// Extend class with behavior using <>
 class User <> Serializable {
     init := (name, email) ==> {
         .name = name
@@ -914,7 +921,7 @@ user := User("Alice", "alice@example.com")
 json := user.to_json()
 ```
 
-Multiple behaviors:
+**Multiple composition** - chain `<>` operators:
 
 ```flap
 class Product <> Serializable <> Validatable <> Timestamped {
@@ -925,6 +932,8 @@ class Product <> Serializable <> Validatable <> Timestamped {
     }
 }
 ```
+
+**How `<>` works:** The `<>` operator merges behavior maps into the class. At runtime, all methods from the behavior maps are copied into the instance during construction, with later maps overriding earlier ones if there are conflicts.
 
 ### Method Semantics
 

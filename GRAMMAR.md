@@ -144,7 +144,7 @@ field_decl      = identifier "as" c_type [ "," ] ;
 
 class_decl      = "class" identifier [ extend_clause ] "{" { class_member } "}" ;
 
-extend_clause   = "<>" identifier ;
+extend_clause   = { "<>" identifier } ;
 
 class_member    = class_field_decl
                 | method_decl ;
@@ -252,6 +252,7 @@ primary_expr    = identifier
                 | lambda_expr
                 | enet_address
                 | instance_field
+                | "this"
                 | "(" expression ")"
                 | "??"
                 | unsafe_expr
@@ -760,10 +761,11 @@ Flap supports classes as syntactic sugar over maps and closures, providing a fam
 
 - **Maps as objects:** Objects are `map[uint64]float64` with conventions
 - **Closures as methods:** Methods are lambdas that close over instance data
-- **Composition over inheritance:** Use `<>` to extend with behavior maps
+- **Composition over inheritance:** Use `<>` to compose with behavior maps
 - **Dot notation:** `.field` inside methods for instance fields
 - **Minimal syntax:** Only one new keyword (`class`)
 - **Desugars to regular Flap:** Classes compile to maps and lambdas
+- **`this` keyword:** Reference to current instance
 
 ### Class Declaration
 
@@ -892,7 +894,7 @@ p := Point(10, 20)
 json := p.to_json()
 ```
 
-Multiple extensions:
+**Multiple composition** - chain `<>` operators:
 
 ```flap
 class User <> Serializable <> Validatable <> Timestamped {
@@ -1018,7 +1020,7 @@ c := a.add(b)
 The `<>` operator merges behavior maps into the class:
 
 ```ebnf
-class_decl = "class" identifier { "<>" identifier } "{" { class_member } "}" ;
+class_decl      = "class" identifier { "<>" identifier } "{" { class_member } "}" ;
 ```
 
 Semantically:
