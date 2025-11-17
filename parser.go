@@ -1435,6 +1435,72 @@ const (
 	BlockTypeStatement                  // {stmt; stmt; expr}
 )
 
+// parseMapLiteralBody parses the body of a map literal (assumes '{' already consumed)
+// Supports both identifier keys (hashed) and expression keys
+// Format: key: value, key2: value2, ...
+func (p *Parser) parseMapLiteralBody() *MapExpr {
+	keys := []Expression{}
+	values := []Expression{}
+
+	if p.current.Type != TOKEN_RBRACE {
+		// Parse first key
+		var key Expression
+		if p.current.Type == TOKEN_IDENT && p.peek.Type == TOKEN_COLON {
+			// String key: hash identifier to uint64
+			hashValue := hashStringKey(p.current.Value)
+			key = &NumberExpr{Value: float64(hashValue)}
+			p.nextToken() // move past identifier
+		} else {
+			// Numeric key or expression
+			key = p.parseExpression()
+			p.nextToken() // move past key
+		}
+
+		// Must have ':'
+		if p.current.Type != TOKEN_COLON {
+			p.error("expected ':' in map literal")
+		}
+		p.nextToken() // skip ':'
+
+		// Parse value
+		value := p.parseExpression()
+		keys = append(keys, key)
+		values = append(values, value)
+
+		// Parse additional key:value pairs
+		for p.peek.Type == TOKEN_COMMA {
+			p.nextToken() // skip current value
+			p.nextToken() // skip ','
+
+			// Parse key (string or numeric)
+			if p.current.Type == TOKEN_IDENT && p.peek.Type == TOKEN_COLON {
+				// String key: hash identifier to uint64
+				hashValue := hashStringKey(p.current.Value)
+				key = &NumberExpr{Value: float64(hashValue)}
+				p.nextToken() // move past identifier
+			} else {
+				// Numeric key or expression
+				key = p.parseExpression()
+				p.nextToken() // move past key
+			}
+
+			if p.current.Type != TOKEN_COLON {
+				p.error("expected ':' in map literal")
+			}
+			p.nextToken() // skip ':'
+
+			value := p.parseExpression()
+			keys = append(keys, key)
+			values = append(values, value)
+		}
+	}
+
+	// current should be on last value or on '{'
+	// peek should be '}'
+	p.nextToken() // move to '}'
+	return &MapExpr{Keys: keys, Values: values}
+}
+
 // disambiguateBlock determines block type according to GRAMMAR.md rules:
 // 1. Contains ':' before any arrows → Map literal
 // 2. Contains '->' or '~>' → Match block
@@ -2836,48 +2902,75 @@ func (p *Parser) parseRange() Expression {
 	return left
 }
 
+// parseLambdaBody parses the body of a lambda expression according to GRAMMAR.md:
+//
+// Lambda body can be:
+// 1. A block: { ... } (map, match, or statement block)
+// 2. An expression followed by optional match block: expr { ... }
+//
+// For blocks, we use block disambiguation to determine type:
+// - Contains ':' before arrows → map literal
+// - Contains '->' or '~>' → match block (guard match if no expr before {)
+// - Otherwise → statement block
 func (p *Parser) parseLambdaBody() Expression {
 	// Check if lambda body is a block { ... }
 	if p.current.Type == TOKEN_LBRACE {
+		// Disambiguate block type
+		blockType := p.disambiguateBlock()
+
 		p.nextToken() // skip '{'
 		p.skipNewlines()
 
-		// Parse statements until we hit '}'
-		var statements []Statement
-		for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
-			stmt := p.parseStatement()
-			if stmt != nil {
-				statements = append(statements, stmt)
+		switch blockType {
+		case BlockTypeMap:
+			// Parse as map literal
+			return p.parseMapLiteralBody()
+
+		case BlockTypeMatch:
+			// Parse as guard match block (no expression before {)
+			// Create a dummy true condition for guard matches
+			trueExpr := &NumberExpr{Value: 1.0}
+			return p.parseMatchBlock(trueExpr)
+
+		case BlockTypeStatement:
+			// Parse statements until we hit '}'
+			var statements []Statement
+			for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+				stmt := p.parseStatement()
+				if stmt != nil {
+					statements = append(statements, stmt)
+				}
+
+				// Need to advance to the next statement
+				// Skip newlines and semicolons between statements
+				if p.peek.Type == TOKEN_NEWLINE || p.peek.Type == TOKEN_SEMICOLON {
+					p.nextToken() // move to separator
+					p.skipNewlines()
+				} else if p.peek.Type == TOKEN_RBRACE || p.peek.Type == TOKEN_EOF {
+					// At end of block
+					p.nextToken() // move to '}'
+					break
+				} else {
+					// No separator found - might be at end
+					p.nextToken()
+					p.skipNewlines()
+				}
 			}
 
-			// Need to advance to the next statement
-			// Skip newlines and semicolons between statements
-			if p.peek.Type == TOKEN_NEWLINE || p.peek.Type == TOKEN_SEMICOLON {
-				p.nextToken() // move to separator
-				p.skipNewlines()
-			} else if p.peek.Type == TOKEN_RBRACE || p.peek.Type == TOKEN_EOF {
-				// At end of block
-				p.nextToken() // move to '}'
-				break
-			} else {
-				// No separator found - might be at end
-				p.nextToken()
-				p.skipNewlines()
+			if p.current.Type != TOKEN_RBRACE {
+				p.error("expected '}' at end of lambda block")
 			}
-		}
+			// Don't skip the '}' - let the caller handle it
 
-		if p.current.Type != TOKEN_RBRACE {
-			p.error("expected '}' at end of lambda block")
+			// Return a BlockExpr containing the statements
+			return &BlockExpr{Statements: statements}
 		}
-		// Don't skip the '}' - let the caller handle it
-
-		// Return a BlockExpr containing the statements
-		return &BlockExpr{Statements: statements}
 	}
 
 	// Otherwise, parse the body expression
 	expr := p.parseExpression()
 
+	// Check for value match: expr { pattern -> result }
 	if p.peek.Type == TOKEN_LBRACE {
 		p.nextToken() // move to '{'
 		p.nextToken() // skip '{'
