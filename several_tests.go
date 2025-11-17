@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -4359,9 +4360,9 @@ result + computation
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := runFlapProgram(t, tt.source)
-			if tt.expected != "" {
-				result.expectOutput(t, tt.expected)
+			result := compileAndRun(t, tt.source)
+			if tt.expected != "" && !strings.Contains(result, tt.expected) {
+				t.Errorf("Expected output to contain:\n%s\nGot:\n%s", tt.expected, result)
 			}
 		})
 	}

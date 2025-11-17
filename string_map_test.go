@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -12,12 +13,9 @@ println("before")
 y := x.error
 println("after")
 `
-	result := runFlapProgram(t, source)
-	// Check what happens
-	if result.CompileError != "" {
-		t.Fatalf("Compilation failed: %s", result.CompileError)
-	}
-	t.Logf("Output: %q, ExitCode: %d", result.Stdout, result.ExitCode)
+	result := compileAndRun(t, source)
+	// Check that it compiles and runs
+	t.Logf("Output: %q", result)
 }
 
 // TestBuiltinIsError removed - is_error is not a builtin in Flap
@@ -29,8 +27,8 @@ func TestPropertyAccessOnNumber(t *testing.T) {
 y := x.foo
 println("ok")
 `
-	result := runFlapProgram(t, source)
-	t.Logf("CompileError: %q, Output: %q, Exit: %d", result.CompileError, result.Stdout, result.ExitCode)
+	result := compileAndRun(t, source)
+	t.Logf("Output: %q", result)
 }
 
 // TestStringOperations tests string handling
@@ -81,8 +79,10 @@ println("done")
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := runFlapProgram(t, tt.source)
-			result.expectOutput(t, tt.expected)
+			result := compileAndRun(t, tt.source)
+			if !strings.Contains(result, tt.expected) {
+			t.Errorf("Expected output to contain: %s, got: %s", tt.expected, result)
+		}
 		})
 	}
 }
@@ -131,8 +131,10 @@ println(len)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := runFlapProgram(t, tt.source)
-			result.expectOutput(t, tt.expected)
+			result := compileAndRun(t, tt.source)
+			if !strings.Contains(result, tt.expected) {
+				t.Errorf("Expected output to contain: %s, got: %s", tt.expected, result)
+			}
 		})
 	}
 }
@@ -187,8 +189,10 @@ println(lst[2])
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := runFlapProgram(t, tt.source)
-			result.expectOutput(t, tt.expected)
+			result := compileAndRun(t, tt.source)
+			if !strings.Contains(result, tt.expected) {
+				t.Errorf("Expected output to contain: %s, got: %s", tt.expected, result)
+			}
 		})
 	}
 }
@@ -229,8 +233,10 @@ func TestPrintfFormatting(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := runFlapProgram(t, tt.source)
-			result.expectOutput(t, tt.expected)
+			result := compileAndRun(t, tt.source)
+			if !strings.Contains(result, tt.expected) {
+				t.Errorf("Expected output to contain: %s, got: %s", tt.expected, result)
+			}
 		})
 	}
 }

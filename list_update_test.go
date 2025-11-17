@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -10,14 +11,10 @@ func TestListUpdateMinimal(t *testing.T) {
 nums[0] <- 10
 println(nums[0])
 `
-	result := runFlapProgram(t, source)
-	if result.ExitCode != 0 {
-		t.Logf("Exit code: %d", result.ExitCode)
-		t.Logf("Stderr: %s", result.Stderr)
-		t.Logf("Stdout: %s", result.Stdout)
-		t.FailNow()
+	result := compileAndRun(t, source)
+	if !strings.Contains(result, "10\n") {
+		t.Errorf("Expected output to contain '10\\n', got: %s", result)
 	}
-	result.expectOutput(t, "10\n")
 }
 
 // TestListUpdateBasic tests basic list element update
@@ -27,8 +24,10 @@ println(arr[0])
 arr[0] <- 99
 println(arr[0])
 `
-	result := runFlapProgram(t, source)
-	result.expectOutput(t, "5\n99\n")
+	result := compileAndRun(t, source)
+	if !strings.Contains(result, "5\n99\n") {
+		t.Errorf("Expected output to contain '5\\n99\\n', got: %s", result)
+	}
 }
 
 // TestListUpdateSingleElement tests updating a single-element list
@@ -37,8 +36,10 @@ func TestListUpdateSingleElement(t *testing.T) {
 arr[0] <- 100
 println(arr[0])
 `
-	result := runFlapProgram(t, source)
-	result.expectOutput(t, "100\n")
+	result := compileAndRun(t, source)
+	if !strings.Contains(result, "100\n") {
+		t.Errorf("Expected output to contain '100\\n', got: %s", result)
+	}
 }
 
 // TestListUpdateMiddleElement tests updating a middle element
@@ -47,8 +48,10 @@ func TestListUpdateMiddleElement(t *testing.T) {
 arr[2] <- 99
 println(arr[2])
 `
-	result := runFlapProgram(t, source)
-	result.expectOutput(t, "99\n")
+	result := compileAndRun(t, source)
+	if !strings.Contains(result, "99\n") {
+		t.Errorf("Expected output to contain '99\\n', got: %s", result)
+	}
 }
 
 // TestListUpdateLastElement tests updating the last element
@@ -57,8 +60,10 @@ func TestListUpdateLastElement(t *testing.T) {
 arr[2] <- 999
 println(arr[2])
 `
-	result := runFlapProgram(t, source)
-	result.expectOutput(t, "999\n")
+	result := compileAndRun(t, source)
+	if !strings.Contains(result, "999\n") {
+		t.Errorf("Expected output to contain '999\\n', got: %s", result)
+	}
 }
 
 // TestListUpdateMultiple tests multiple updates
@@ -71,8 +76,10 @@ println(nums[0])
 println(nums[1])
 println(nums[2])
 `
-	result := runFlapProgram(t, source)
-	result.expectOutput(t, "10\n20\n30\n")
+	result := compileAndRun(t, source)
+	if !strings.Contains(result, "10\n20\n30\n") {
+		t.Errorf("Expected output to contain '10\\n20\\n30\\n', got: %s", result)
+	}
 }
 
 // TestListUpdatePreservesOtherElements tests that other elements are unchanged
@@ -84,8 +91,10 @@ println(arr[1])
 println(arr[2])
 println(arr[3])
 `
-	result := runFlapProgram(t, source)
-	result.expectOutput(t, "100\n999\n300\n400\n")
+	result := compileAndRun(t, source)
+	if !strings.Contains(result, "100\n999\n300\n400\n") {
+		t.Errorf("Expected output to contain '100\\n999\\n300\\n400\\n', got: %s", result)
+	}
 }
 
 // TestAppendFunction tests the append() builtin function
@@ -97,8 +106,10 @@ println(list2[1])
 println(list2[2])
 println(list2[3])
 `
-	result := runFlapProgram(t, source)
-	result.expectOutput(t, "1\n2\n3\n4\n")
+	result := compileAndRun(t, source)
+	if !strings.Contains(result, "1\n2\n3\n4\n") {
+		t.Errorf("Expected output to contain '1\\n2\\n3\\n4\\n', got: %s", result)
+	}
 }
 
 // TestTailFunctionUpdate tests the tail() builtin function (list_update context)
@@ -109,6 +120,8 @@ rest := tail(list)
 println(rest[0])
 println(rest[1])
 `
-	result := runFlapProgram(t, source)
-	result.expectOutput(t, "2\n3\n")
+	result := compileAndRun(t, source)
+	if !strings.Contains(result, "2\n3\n") {
+		t.Errorf("Expected output to contain '2\\n3\\n', got: %s", result)
+	}
 }

@@ -3376,6 +3376,18 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.Cvttsd2si("rax", "xmm0") // rax = int64(xmm0)
 			fc.out.NotReg("rax")            // rax = ~rax
 			fc.out.Cvtsi2sd("xmm0", "rax")  // xmm0 = float64(rax)
+		case "#":
+			// Length operator: return length of list/map/string
+			// xmm0 contains pointer to the map (as float64)
+			// Map format: first 8 bytes are the count of entries
+			fc.out.SubImmFromReg("rsp", StackSlotSize)
+			fc.out.MovXmmToMem("xmm0", "rsp", 0)
+			fc.out.MovMemToReg("rax", "rsp", 0)
+			fc.out.AddImmToReg("rsp", StackSlotSize)
+			// Load the count (first 8 bytes of the map)
+			fc.out.MovMemToReg("rax", "rax", 0)
+			// Convert count to float64
+			fc.out.Cvtsi2sd("xmm0", "rax")
 		case "^":
 			// Head operator: return first element of list
 			// xmm0 contains list pointer (as float64)

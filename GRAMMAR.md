@@ -232,7 +232,7 @@ multiplicative_expr = power_expr { ("*" | "/" | "%") power_expr } ;
 
 power_expr      = unary_expr { "**" unary_expr } ;
 
-unary_expr      = ( "-" | "!" | "~b" ) unary_expr
+unary_expr      = ( "-" | "!" | "~b" | "#" ) unary_expr
                 | postfix_expr ;
 
 postfix_expr    = primary_expr { postfix_op } ;
@@ -241,6 +241,7 @@ postfix_op      = "[" expression "]"
                 | "." ( identifier | integer )
                 | "(" [ argument_list ] ")"
                 | "!"
+                | "#"
                 | match_block ;
 
 primary_expr    = identifier
@@ -531,6 +532,7 @@ All bitwise operators use `b` suffix:
 <-    Send (ENet)
 =>    Receive (ENet, prefix)
 !     Move operator (postfix)
+#     Length operator (prefix or postfix)
 .     Field access
 []    Indexing
 ()    Function call
@@ -543,8 +545,8 @@ All bitwise operators use `b` suffix:
 
 From highest to lowest precedence:
 
-1. **Primary**: `()` `[]` `.` function call, postfix `!`
-2. **Unary**: `-` `!` `~b`
+1. **Primary**: `()` `[]` `.` function call, postfix `!`, postfix `#`
+2. **Unary**: `-` `!` `~b` `#`
 3. **Power**: `**`
 4. **Multiplicative**: `*` `/` `%`
 5. **Additive**: `+` `-`

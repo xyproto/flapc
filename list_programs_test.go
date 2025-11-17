@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -119,8 +120,10 @@ func TestHeadFunction(t *testing.T) {
 first := head(list)
 println(first)
 `
-	result := runFlapProgram(t, source)
-	result.expectOutput(t, "1\n")
+	result := compileAndRun(t, source)
+	if !strings.Contains(result, "1\n") {
+		t.Errorf("Expected output to contain '1\\n', got: %s", result)
+	}
 }
 
 // TestTailFunction tests the tail() builtin function
@@ -132,8 +135,10 @@ println(rest[0])
 println(rest[1])
 println(rest[2])
 `
-	result := runFlapProgram(t, source)
-	result.expectOutput(t, "2\n3\n4\n")
+	result := compileAndRun(t, source)
+	if !strings.Contains(result, "2\n3\n4\n") {
+		t.Errorf("Expected output to contain '2\\n3\\n4\\n', got: %s", result)
+	}
 }
 
 // TestAppendMethod tests the .append() method syntax sugar

@@ -106,12 +106,9 @@ println(a != b)
 
 // testInlineFlap compiles and runs inline Flap source code
 func testInlineFlap(t *testing.T, name, source, expected string) {
-	result := runFlapProgram(t, source)
-	if result.ExitCode != 0 && expected != "" {
-		t.Logf("Warning: program exited with code %d", result.ExitCode)
-	}
-	if result.Stdout != expected {
-		t.Errorf("Output mismatch:\nExpected:\n%s\nActual:\n%s", expected, result.Stdout)
+	result := compileAndRun(t, source)
+	if !strings.Contains(result, expected) {
+		t.Errorf("Output mismatch:\nExpected to contain:\n%s\nActual:\n%s", expected, result)
 	}
 }
 

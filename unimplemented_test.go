@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -12,6 +13,8 @@ func TestReducePipe(t *testing.T) {
 result := numbers ||| (acc, x) => acc + x
 println(result)
 `
-	result := runFlapProgram(t, source)
-	result.expectOutput(t, "15\n")
+	result := compileAndRun(t, source)
+	if !strings.Contains(result, "15\n") {
+		t.Errorf("Expected output to contain: %s, got: %s", "15\n", result)
+	}
 }

@@ -119,11 +119,9 @@ println("Hello")
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := runFlapProgram(t, tt.source)
-			if result.CompileError != "" {
-				t.Fatalf("Compilation failed: %s", result.CompileError)
-			}
-			// If it compiled, ENet syntax is working
+			// compileAndRun will fail the test if compilation fails
+			_ = compileAndRun(t, tt.source)
+			// If we got here, compilation succeeded
 			t.Logf("Successfully compiled ENet syntax test")
 		})
 	}

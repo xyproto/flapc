@@ -3094,6 +3094,13 @@ func (p *Parser) parseUnary() Expression {
 		return &UnaryExpr{Operator: "~b", Operand: operand}
 	}
 
+	// Handle prefix length operator: #xs
+	if p.current.Type == TOKEN_HASH {
+		p.nextToken() // skip '#'
+		operand := p.parseUnary()
+		return &UnaryExpr{Operator: "#", Operand: operand}
+	}
+
 	// Head (^) and tail (&) operators removed - use .head() and .tail() methods instead
 
 	// Unary minus handled in parsePrimary for simplicity
@@ -3225,6 +3232,10 @@ func (p *Parser) parsePostfix() Expression {
 			// Handle move operator: x! (transfers ownership)
 			p.nextToken() // skip to !
 			expr = &MoveExpr{Expr: expr}
+		} else if p.peek.Type == TOKEN_HASH {
+			// Handle postfix length operator: xs#
+			p.nextToken() // skip to #
+			expr = &UnaryExpr{Operator: "#", Operand: expr}
 		} else if p.peek.Type == TOKEN_AS {
 			// Handle type cast: expr as type
 			p.nextToken() // skip current expr

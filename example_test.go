@@ -117,7 +117,7 @@ printf("Sum: %v\n", result)
 func TestMatchExpressions(t *testing.T) {
 	code := `
 is_positive = x => {
-	| x > 0 => 1
+	| x > 0 -> 1
 	~> 0
 }
 
@@ -163,22 +163,58 @@ func TestLoopWithLabel(t *testing.T) {
 // TestQuickSort tests a more complex algorithm
 func TestQuickSort(t *testing.T) {
 	code := `
-quicksort = arr => {
-	| arr.length <= 1 -> arr
+// Concatenate two lists recursively
+concat = (left, right, i, result) => {
+	len_left = #left
+	| i >= len_left -> concat_right(right, 0, result)
+	~> concat(left, right, i + 1, result.append(left[i]))
+}
+
+concat_right = (right, j, acc) => {
+	| j >= #right -> acc
+	~> concat_right(right, j + 1, acc.append(right[j]))
+}
+
+// Partition helper - adds element to less or greater based on comparison
+add_to_partition = (elem, pivot, less, greater) => {
+	| elem < pivot -> [less.append(elem), greater]
+	~> [less, greater.append(elem)]
+}
+
+// Partition array recursively
+partition_helper = (arr, pivot, i, less, greater) => {
+	len_arr = #arr
+	| i >= len_arr -> [less, greater]
 	~> {
-		pivot = arr[0]
-		rest = []
-		// This is simplified - full implementation would need list operations
-		arr
+		elem = arr[i]
+		updated = add_to_partition(elem, pivot, less, greater)
+		partition_helper(arr, pivot, i + 1, updated[0], updated[1])
 	}
 }
 
-numbers = [3, 1, 4, 1, 5]
-printf("Original: %v\n", numbers[0])
+// QuickSort implementation
+quicksort = arr => {
+	len_arr = #arr
+	| len_arr <= 1 -> arr
+	~> {
+		pivot = arr[0]
+		partitioned = partition_helper(arr, pivot, 1, [], [])
+		less = partitioned[0]
+		greater = partitioned[1]
+		sorted_less = quicksort(less)
+		sorted_greater = quicksort(greater)
+		with_pivot = concat(sorted_less, [pivot], 0, [])
+		concat(with_pivot, sorted_greater, 0, [])
+	}
+}
+
+numbers = [3, 1, 4, 1, 5, 9, 2, 6]
+sorted = quicksort(numbers)
+printf("Sorted: %v %v %v %v %v %v %v %v\n", sorted[0], sorted[1], sorted[2], sorted[3], sorted[4], sorted[5], sorted[6], sorted[7])
 `
 	output := compileAndRun(t, code)
-	if !strings.Contains(output, "3") {
-		t.Errorf("Expected array output, got: %s", output)
+	if !strings.Contains(output, "1 1 2 3 4 5 6 9") {
+		t.Errorf("Expected '1 1 2 3 4 5 6 9' in sorted output, got: %s", output)
 	}
 }
 

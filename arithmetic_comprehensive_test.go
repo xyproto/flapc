@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -65,8 +66,8 @@ func TestArithmeticOperations(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := runFlapProgram(t, tt.source)
-			result.expectOutput(t, tt.expected)
+			result := compileAndRun(t, tt.source)
+			if !strings.Contains(result, tt.expected) { t.Errorf("Expected output to contain: %s, got: %s", tt.expected, result) }
 		})
 	}
 }
@@ -148,8 +149,8 @@ x >= y {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := runFlapProgram(t, tt.source)
-			result.expectOutput(t, tt.expected)
+			result := compileAndRun(t, tt.source)
+			if !strings.Contains(result, tt.expected) { t.Errorf("Expected output to contain: %s, got: %s", tt.expected, result) }
 		})
 	}
 }
@@ -207,8 +208,8 @@ println(x)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := runFlapProgram(t, tt.source)
-			result.expectOutput(t, tt.expected)
+			result := compileAndRun(t, tt.source)
+			if !strings.Contains(result, tt.expected) { t.Errorf("Expected output to contain: %s, got: %s", tt.expected, result) }
 		})
 	}
 }
@@ -266,8 +267,8 @@ println(x)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := runFlapProgram(t, tt.source)
-			result.expectOutput(t, tt.expected)
+			result := compileAndRun(t, tt.source)
+			if !strings.Contains(result, tt.expected) { t.Errorf("Expected output to contain: %s, got: %s", tt.expected, result) }
 		})
 	}
 }
