@@ -1515,13 +1515,15 @@ func (p *Parser) disambiguateBlock() BlockType {
 		lineStart: p.lexer.lineStart,
 	}
 
-	braceDepth := 1 // We're already inside the opening {
+	braceDepth := 1 // Start at 1 because we're already inside the opening {
 	foundColon := false
 	foundArrow := false
 
 	// Scan tokens within this block
 	for i := 0; i < 10000; i++ { // Safety limit
 		tok := tempLexer.NextToken()
+
+
 
 		if tok.Type == TOKEN_EOF {
 			break
@@ -1547,6 +1549,8 @@ func (p *Parser) disambiguateBlock() BlockType {
 			}
 		}
 	}
+
+
 
 	// Apply disambiguation rules in order
 	if foundColon && !foundArrow {
@@ -3669,70 +3673,58 @@ func (p *Parser) parsePrimary() Expression {
 		return &ListExpr{Elements: elements}
 
 	case TOKEN_LBRACE:
-		// Map literal: {key: value, key2: value2, ...}
-		// Supports both numeric keys and string identifier keys
-		// String identifiers are automatically hashed to uint64
+		// Disambiguate block type: map, match, or statement block
+		blockType := p.disambiguateBlock()
+
+
+
 		p.nextToken() // skip '{'
-		keys := []Expression{}
-		values := []Expression{}
+		p.skipNewlines()
 
-		if p.current.Type != TOKEN_RBRACE {
-			// Parse first key
-			var key Expression
-			if p.current.Type == TOKEN_IDENT && p.peek.Type == TOKEN_COLON {
-				// String key: hash identifier to uint64
-				hashValue := hashStringKey(p.current.Value)
-				key = &NumberExpr{Value: float64(hashValue)}
-				p.nextToken() // move past identifier
-			} else {
-				// Numeric key or expression
-				key = p.parseExpression()
-				p.nextToken() // move past key
-			}
+		switch blockType {
+		case BlockTypeMap:
+			// Parse as map literal
+			return p.parseMapLiteralBody()
 
-			// Must have ':'
-			if p.current.Type != TOKEN_COLON {
-				p.error("expected ':' in map literal")
-			}
-			p.nextToken() // skip ':'
+		case BlockTypeMatch:
+			// Parse as guard match block (no expression before {)
+			// Create a dummy true condition for guard matches
+			trueExpr := &NumberExpr{Value: 1.0}
+			return p.parseMatchBlock(trueExpr)
 
-			// Parse value
-			value := p.parseExpression()
-			keys = append(keys, key)
-			values = append(values, value)
+		case BlockTypeStatement:
+			// Parse as statement block
+			var statements []Statement
+			for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
+				stmt := p.parseStatement()
+				if stmt != nil {
+					statements = append(statements, stmt)
+				}
 
-			// Parse additional key:value pairs
-			for p.peek.Type == TOKEN_COMMA {
-				p.nextToken() // skip current value
-				p.nextToken() // skip ','
-
-				// Parse key (string or numeric)
-				if p.current.Type == TOKEN_IDENT && p.peek.Type == TOKEN_COLON {
-					// String key: hash identifier to uint64
-					hashValue := hashStringKey(p.current.Value)
-					key = &NumberExpr{Value: float64(hashValue)}
-					p.nextToken() // move past identifier
+				// Need to advance to the next statement
+				// Skip newlines and semicolons between statements
+				if p.peek.Type == TOKEN_NEWLINE || p.peek.Type == TOKEN_SEMICOLON {
+					p.nextToken() // move to separator
+					p.skipNewlines()
+				} else if p.peek.Type == TOKEN_RBRACE || p.peek.Type == TOKEN_EOF {
+					// At end of block
+					p.nextToken() // move to '}'
+					break
 				} else {
-					// Numeric key or expression
-					key = p.parseExpression()
-					p.nextToken() // move past key
+					// No separator found - might be at end
+					p.nextToken()
+					p.skipNewlines()
 				}
-
-				if p.current.Type != TOKEN_COLON {
-					p.error("expected ':' in map literal")
-				}
-				p.nextToken() // skip ':'
-
-				value := p.parseExpression()
-				keys = append(keys, key)
-				values = append(values, value)
 			}
-		}
 
-		// current should be on last value or on '{'
-		// peek should be '}'
-		p.nextToken() // move to '}'
-		return &MapExpr{Keys: keys, Values: values}
+			if p.current.Type != TOKEN_RBRACE {
+				p.error("expected '}' at end of block")
+			}
+			// Don't skip the '}' - let the caller handle it
+
+			// Return a BlockExpr containing the statements
+			return &BlockExpr{Statements: statements}
+		}
 
 	case TOKEN_AT_AT:
 		// Parallel loop expression: @@ i in ... { ... } | a,b | { ... }
