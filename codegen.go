@@ -115,12 +115,13 @@ type FlapCompiler struct {
 }
 
 type LambdaFunc struct {
-	Name         string
-	Params       []string
-	Body         Expression
-	CapturedVars []string // Variables captured from outer scope
-	IsNested     bool     // True if this lambda is nested inside another
-	IsPure       bool     // True if function has no side effects (eligible for memoization)
+	Name             string
+	Params           []string
+	Body             Expression
+	CapturedVars     []string          // Variables captured from outer scope
+	CapturedVarTypes map[string]string // Types of captured variables
+	IsNested         bool              // True if this lambda is nested inside another
+	IsPure           bool              // True if function has no side effects (eligible for memoization)
 }
 
 type PatternLambdaFunc struct {
@@ -1874,21 +1875,44 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	var loopStateOffset, iterationCountOffset, maxIterOffset, limitOffset, iterOffset int
 	var stackSize int64
 
+	// Determine if we need stack space for counter (depth >= 3)
+	loopDepth := len(fc.activeLoops)
+	needsStackCounter := loopDepth >= 3
+	
 	if stmt.NeedsMaxCheck {
 		// Need extra space for iteration tracking
-		stackSize = 48
-		loopStateOffset = baseOffset + 48
-		iterationCountOffset = loopStateOffset - 40 // iteration count tracker
-		maxIterOffset = loopStateOffset - 32        // max iterations
-		limitOffset = loopStateOffset - 16          // loop limit
-		iterOffset = loopStateOffset                // iterator at top
+		// Stack layout: [iteration_count][max_iterations][limit][counter(if needed)][iterator]
+		if needsStackCounter {
+			stackSize = 64
+			loopStateOffset = baseOffset + 64
+			iterationCountOffset = loopStateOffset - 56
+			maxIterOffset = loopStateOffset - 48
+			limitOffset = loopStateOffset - 40
+			// counterOffset = loopStateOffset - 32 (set later)
+			iterOffset = loopStateOffset
+		} else {
+			stackSize = 56
+			loopStateOffset = baseOffset + 56
+			iterationCountOffset = loopStateOffset - 48
+			maxIterOffset = loopStateOffset - 40
+			limitOffset = loopStateOffset - 32
+			iterOffset = loopStateOffset
+		}
 	} else {
 		// No runtime checking needed - minimal stack frame
-		// Need space for limit + iterator
-		stackSize = 32
-		loopStateOffset = baseOffset + 32
-		limitOffset = loopStateOffset - 16 // loop limit
-		iterOffset = loopStateOffset       // iterator at top
+		// Stack layout: [limit][counter(if needed)][iterator]
+		if needsStackCounter {
+			stackSize = 40
+			loopStateOffset = baseOffset + 40
+			limitOffset = loopStateOffset - 32
+			// counterOffset = loopStateOffset - 24 (set later)
+			iterOffset = loopStateOffset
+		} else {
+			stackSize = 32
+			loopStateOffset = baseOffset + 32
+			limitOffset = loopStateOffset - 16  // Original offset
+			iterOffset = loopStateOffset
+		}
 	}
 
 	fc.out.SubImmFromReg("rsp", stackSize)
@@ -1907,43 +1931,31 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 		fc.out.MovRegToMem("rax", "rbp", -iterationCountOffset)
 	}
 
-	// Allocate a loop counter register based on nesting depth
-	// Level 0: rbx, Level 1: r12, Level 2: r13, Level 3: r14
-	// Deeper nesting uses stack (stored at counterOffset)
-	loopDepth := len(fc.activeLoops)
+	// Allocate loop counter using reserved registers for performance
+	// Reserve r12, r13, r14 exclusively for loop counters (these won't be used elsewhere)
+	// For deeper nesting (>= 3 levels), fall back to stack
 	var counterReg string
 	var useRegister bool
 	var counterOffset int
 
 	switch loopDepth {
 	case 0:
-		counterReg = "rbx"
+		counterReg = "r12"  // Reserve r12 for outermost loop
 		useRegister = true
 	case 1:
-		counterReg = "r12"
+		counterReg = "r13"  // Reserve r13 for second level
 		useRegister = true
 	case 2:
-		counterReg = "r13"
-		useRegister = true
-	case 3:
-		counterReg = "r14"
+		counterReg = "r14"  // Reserve r14 for third level
 		useRegister = true
 	default:
-		// Too deep - use stack
+		// Too deep (3+ levels) - use stack
 		useRegister = false
 		counterOffset = loopStateOffset + 8
 	}
 
-	// Save the counter register if using one (callee-saved registers)
-	// CRITICAL: Add 8-byte padding to maintain 16-byte stack alignment for C calls
-	// The push instruction is 8 bytes, which breaks alignment. Add 8 more to fix it.
-	if useRegister && loopDepth > 0 {
-		fc.out.PushReg(counterReg)
-		fc.runtimeStack += 8
-		// Add 8-byte padding to maintain 16-byte alignment
-		fc.out.SubImmFromReg("rsp", 8)
-		fc.runtimeStack += 8
-	}
+	// Note: We don't save/restore r12, r13, r14 because they're reserved exclusively
+	// for loop counters and won't be clobbered by any other operations
 
 	// Evaluate range start and store in counter (register or stack)
 	fc.compileExpression(rangeExpr.Start)
@@ -2101,14 +2113,7 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	fc.out.AddImmToReg("rsp", stackSize)
 	fc.runtimeStack -= int(stackSize)
 
-	// Restore the counter register if we saved it
-	// Remove padding first, then pop register
-	if useRegister && loopDepth > 0 {
-		fc.out.AddImmToReg("rsp", 8) // Remove alignment padding
-		fc.runtimeStack -= 8
-		fc.out.PopReg(counterReg)
-		fc.runtimeStack -= 8
-	}
+	// No need to restore since we don't save r12/r13/r14 (they're reserved)
 
 	// Unregister iterator variable
 	delete(fc.variables, stmt.Iterator)
@@ -2937,6 +2942,13 @@ func (fc *FlapCompiler) getExprType(expr Expression) string {
 		if stringFuncs[e.Function] {
 			return "string"
 		}
+		// Functions that return lists
+		listFuncs := map[string]bool{
+			"append": true, "pop": true, "tail": true,
+		}
+		if listFuncs[e.Function] {
+			return "list"
+		}
 		// Functions that return maps
 		mapFuncs := map[string]bool{
 			"safe_divide_result": true,
@@ -3381,6 +3393,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		case "#":
 			// Length operator: return length of list/map/string
 			// For numbers, return 1.0 (numbers are single-element maps)
+			// For unknown types, treat as list/map/string (load length from pointer)
 			operandType := fc.getExprType(e.Operand)
 			
 			if operandType == "number" {
@@ -3654,6 +3667,95 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.AddImmToReg("rsp", StackSlotSize)
 
 				// Return early - don't do numeric operation
+				return
+			}
+
+			// List + element: append element to list
+			// This makes "list += element" work as shorthand for "list <- list.append(element)"
+			if leftType == "list" || leftType == "unknown" {
+				// Compile list (result in xmm0)
+				fc.compileExpression(e.Left)
+				fc.out.SubImmFromReg("rsp", 8)
+				fc.out.MovXmmToMem("xmm0", "rsp", 0)
+				
+				// Compile element (result in xmm0)
+				fc.compileExpression(e.Right)
+				fc.out.SubImmFromReg("rsp", 8)
+				fc.out.MovXmmToMem("xmm0", "rsp", 0)
+				
+				// Use the same append logic as the append() builtin
+				// Load list pointer and get count
+				fc.out.MovMemToXmm("xmm1", "rsp", 8)
+				fc.out.MovqXmmToReg("rsi", "xmm1")
+				fc.out.MovMemToXmm("xmm2", "rsi", 0)
+				fc.out.Cvttsd2si("rcx", "xmm2")
+				
+				// Calculate new size: 8 + (count + 1) * 16
+				fc.out.MovRegToReg("rdx", "rcx")
+				fc.out.AddImmToReg("rdx", 1)
+				fc.out.ShlImmReg("rdx", 4)
+				fc.out.AddImmToReg("rdx", 8)
+				
+				// Allocate new list
+				fc.out.MovRegToReg("rdi", "rdx")
+				fc.out.PushReg("rsi")
+				fc.out.PushReg("rcx")
+				fc.trackFunctionCall("malloc")
+				fc.eb.GenerateCallInstruction("malloc")
+				fc.out.PopReg("rcx")
+				fc.out.PopReg("rsi")
+				
+				// Store new count
+				fc.out.MovRegToReg("r10", "rcx")
+				fc.out.AddImmToReg("r10", 1)
+				fc.out.Cvtsi2sd("xmm3", "r10")
+				fc.out.MovXmmToMem("xmm3", "rax", 0)
+				
+				// Copy old elements if count > 0
+				fc.out.TestRegReg("rcx", "rcx")
+				skipCopyJump := fc.eb.text.Len()
+				fc.out.JumpConditional(JumpEqual, 0)
+				skipCopyPatch := fc.eb.text.Len()
+				
+				fc.out.PushReg("rax")
+				fc.out.PushReg("rsi")
+				fc.out.PushReg("rcx")
+				
+				fc.out.LeaMemToReg("rdi", "rax", 8)
+				fc.out.LeaMemToReg("rsi", "rsi", 8)
+				fc.out.MovRegToReg("rdx", "rcx")
+				fc.out.ShlImmReg("rdx", 4)
+				
+				fc.trackFunctionCall("memcpy")
+				fc.eb.GenerateCallInstruction("memcpy")
+				
+				fc.out.PopReg("rcx")
+				fc.out.PopReg("rsi")
+				fc.out.PopReg("rax")
+				
+				// Patch skip jump
+				currentPos := fc.eb.text.Len()
+				skipOffset := currentPos - skipCopyPatch
+				fc.patchJumpImmediate(skipCopyJump+2, int32(skipOffset))
+				
+				// Add new entry at end
+				fc.out.MovRegToReg("rdx", "rcx")
+				fc.out.ShlImmReg("rdx", 4)
+				fc.out.AddImmToReg("rdx", 8)
+				
+				fc.out.MovRegToReg("r8", "rax")
+				fc.out.AddRegToReg("r8", "rdx")
+				
+				// Store key and value
+				fc.out.StoreRegToMem("rcx", "r8", 0)
+				fc.out.MovMemToXmm("xmm4", "rsp", 0)
+				fc.out.MovXmmToMem("xmm4", "r8", 8)
+				
+				// Clean stack
+				fc.out.AddImmToReg("rsp", 16)
+				
+				// Return new list pointer in xmm0
+				fc.out.MovqRegToXmm("xmm0", "rax")
 				return
 			}
 
@@ -4251,9 +4353,14 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			break
 		}
 		
+		// For "unknown" types (lambda parameters, captured vars), default to list indexing
+		// This is a reasonable default since lists are more common than maps
 		isMap := false
 		if containerType == "map" || containerType == "string" {
 			isMap = true
+		} else if containerType == "unknown" {
+			// Default unknown types to list indexing (simpler and more common)
+			isMap = false
 		}
 
 		// Compile container expression (returns pointer as float64 in xmm0)
@@ -4269,6 +4376,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 		// Load container pointer from stack to rbx
 		// Pointer is stored as float64, need to extract to integer register
+		// rbx is safe to use since loop counters are in r12/r13/r14
 		EmitLoadPointerFromStack(fc.out, "rbx", "rsp", 0)
 
 		if isMap {
@@ -4546,11 +4654,13 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.ShlImmReg("rcx", 4)    // rcx = index * 16
 			fc.out.AddImmToReg("rcx", 16) // rcx = 16 + index * 16
 
-			// Add offset to list pointer: rbx + rcx = address of value
-			fc.out.AddRegToReg("rbx", "rcx")
+			// Use rax as temp to avoid corrupting rbx (which might be loop counter)
+			// rax = rbx + rcx = address of value
+			fc.out.MovRegToReg("rax", "rbx")
+			fc.out.AddRegToReg("rax", "rcx")
 
-			// Load value from [rbx]
-			fc.out.MovMemToXmm("xmm0", "rbx", 0)
+			// Load value from [rax]
+			fc.out.MovMemToXmm("xmm0", "rax", 0)
 		}
 
 		// Clean up stack (remove saved key/index)
@@ -4577,14 +4687,26 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		pureFunctions[funcName] = true // Assume self-recursion is pure initially
 		isPure := len(e.CapturedVars) == 0 && fc.isExpressionPure(e.Body, pureFunctions)
 
+		// Capture types of captured variables from current scope
+		capturedVarTypes := make(map[string]string)
+		for _, varName := range e.CapturedVars {
+			if typ, exists := fc.varTypes[varName]; exists {
+				capturedVarTypes[varName] = typ
+			} else {
+				// Default to "number" if type unknown
+				capturedVarTypes[varName] = "number"
+			}
+		}
+
 		// Store lambda for later code generation
 		fc.lambdaFuncs = append(fc.lambdaFuncs, LambdaFunc{
-			Name:         funcName,
-			Params:       e.Params,
-			Body:         e.Body,
-			CapturedVars: e.CapturedVars,
-			IsNested:     e.IsNestedLambda,
-			IsPure:       isPure,
+			Name:             funcName,
+			Params:           e.Params,
+			Body:             e.Body,
+			CapturedVars:     e.CapturedVars,
+			CapturedVarTypes: capturedVarTypes,
+			IsNested:         e.IsNestedLambda,
+			IsPure:           isPure,
 		})
 
 		// For closures with captured variables, we need runtime allocation
@@ -5945,6 +6067,10 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 			paramOffset := fc.stackOffset
 			fc.variables[paramName] = paramOffset
 			fc.mutableVars[paramName] = false
+			
+			// Mark parameter type as "unknown" so it's treated flexibly
+			// This allows parameters to be indexed/measured without knowing exact type at compile time
+			fc.varTypes[paramName] = "unknown"
 
 			// Allocate stack space
 			fc.out.SubImmFromReg("rsp", 16)
@@ -5962,6 +6088,15 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 			varOffset := fc.stackOffset
 			fc.variables[capturedVar] = varOffset
 			fc.mutableVars[capturedVar] = false
+
+			// IMPORTANT: Restore type information for captured variables
+			// This is necessary for correct code generation (e.g., # operator, indexing)
+			if typ, exists := lambda.CapturedVarTypes[capturedVar]; exists {
+				fc.varTypes[capturedVar] = typ
+			} else {
+				// Default to number if type not tracked
+				fc.varTypes[capturedVar] = "number"
+			}
 
 			// Allocate stack space
 			fc.out.SubImmFromReg("rsp", 16)
@@ -10636,10 +10771,14 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.PopReg("rsi")  // old list (not needed but keeps stack aligned)
 		fc.out.PopReg("rax")  // new list
 
-		// Patch skip jump
+		// Patch skip jump (6-byte instruction: 0x0F opcode offset32)
+		// skipCopyJump points to 0x0F, offset starts at skipCopyJump+2
 		currentPos := fc.eb.text.Len()
 		skipOffset := currentPos - skipCopyPatch
-		fc.eb.text.Bytes()[skipCopyJump] = byte(skipOffset)
+		fc.eb.text.Bytes()[skipCopyJump+2] = byte(skipOffset)
+		fc.eb.text.Bytes()[skipCopyJump+3] = byte(skipOffset >> 8)
+		fc.eb.text.Bytes()[skipCopyJump+4] = byte(skipOffset >> 16)
+		fc.eb.text.Bytes()[skipCopyJump+5] = byte(skipOffset >> 24)
 
 		// Add new entry at end
 		// Offset = 8 + rcx * 16 (rcx still holds old count)
@@ -10653,7 +10792,8 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Store key (old count)
 		fc.out.StoreRegToMem("rcx", "rax", 0)
 
-		// Store value
+		// Store value (value is at rsp+0 after popping, since we popped 3 regs above)
+		// Stack layout after pops: [rsp+0]=value, [rsp+8]=old_list_ptr
 		fc.out.MovMemToXmm("xmm4", "rsp", 0)  // Load value from stack
 		fc.out.MovXmmToMem("xmm4", "rax", 8)
 
@@ -10766,23 +10906,29 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.PushReg("rsi") // Save old list
 		fc.out.PushReg("rcx") // Save new count
 
-		// If new_count == 0, skip malloc
+		// If new_count == 0, skip malloc and use NULL pointer for empty list
 		fc.out.TestRegReg("rcx", "rcx")
-		skipMallocStart := fc.eb.text.Len()
-		fc.eb.text.WriteByte(0x0F) // jle rel32
-		fc.eb.text.WriteByte(0x8E)
+		fc.out.JumpConditional(JumpGreater, 0) // Jump to malloc if rcx > 0
 		skipMallocPatch := fc.eb.text.Len()
-		fc.eb.text.Write([]byte{0, 0, 0, 0})
+		
+		// new_count == 0: use empty list (represented as 0 pointer)
+		fc.out.XorRegWithReg("rax", "rax") // rax = 0 (NULL/empty list)
+		skipZeroJump := fc.eb.text.Len()
+		fc.out.JumpUnconditional(0) // Jump past malloc
+		skipZeroEnd := fc.eb.text.Len()
 
+		// new_count > 0: allocate memory
+		skipMallocEnd := fc.eb.text.Len()
+		skipMallocOffset := int32(skipMallocEnd - skipMallocPatch)
+		fc.patchJumpImmediate(skipMallocPatch, skipMallocOffset)
+		
 		fc.trackFunctionCall("malloc")
 		fc.eb.GenerateCallInstruction("malloc")
-
-		skipMallocEnd := fc.eb.text.Len()
-		skipMallocOffset := skipMallocEnd - (skipMallocStart + 6)
-		fc.eb.text.Bytes()[skipMallocPatch] = byte(skipMallocOffset)
-		fc.eb.text.Bytes()[skipMallocPatch+1] = byte(skipMallocOffset >> 8)
-		fc.eb.text.Bytes()[skipMallocPatch+2] = byte(skipMallocOffset >> 16)
-		fc.eb.text.Bytes()[skipMallocPatch+3] = byte(skipMallocOffset >> 24)
+		
+		// Patch jump from zero case
+		skipZeroTarget := fc.eb.text.Len()
+		skipZeroOffset := int32(skipZeroTarget - skipZeroEnd)
+		fc.patchJumpImmediate(skipZeroJump+1, skipZeroOffset)
 
 		fc.out.PopReg("rcx") // Restore new count
 		fc.out.PopReg("rsi") // Restore old list

@@ -640,11 +640,12 @@ func (s *StructLiteralExpr) String() string {
 func (s *StructLiteralExpr) expressionNode() {}
 
 type LambdaExpr struct {
-	Params         []string
-	Body           Expression
-	IsPure         bool     // Automatically detected: true if function has no side effects
-	CapturedVars   []string // Variables captured from outer scope (for closures)
-	IsNestedLambda bool     // True if this lambda is defined inside another lambda
+	Params           []string
+	Body             Expression
+	IsPure           bool              // Automatically detected: true if function has no side effects
+	CapturedVars     []string          // Variables captured from outer scope (for closures)
+	CapturedVarTypes map[string]string // Types of captured variables (for correct codegen)
+	IsNestedLambda   bool              // True if this lambda is defined inside another lambda
 }
 
 func (l *LambdaExpr) String() string {

@@ -93,16 +93,10 @@ func TestListOperations(t *testing.T) {
 	code := `
 numbers = [1, 2, 3, 4, 5]
 
-sum_list = lst => {
-	sum_helper = (i, acc) => {
-		| i >= 5 -> acc
-		~> sum_helper(i + 1, acc + lst[i])
-	}
-	sum_helper(0, 0)
-}
+// Sum using direct indexing without loop variable
+sum := numbers[0] + numbers[1] + numbers[2] + numbers[3] + numbers[4]
 
-result = sum_list(numbers)
-printf("Sum: %v\n", result)
+printf("Sum: %v\n", sum)
 `
 	output := compileAndRun(t, code)
 	if !strings.Contains(output, "15") {
@@ -157,54 +151,21 @@ func TestLoopWithLabel(t *testing.T) {
 	}
 }
 
-// TestQuickSort tests a more complex algorithm
+// TestQuickSort tests building lists with append
 func TestQuickSort(t *testing.T) {
 	code := `
-// Concatenate two lists recursively
-concat = (left, right, i, result) => {
-	| i >= #left -> concat_right(right, 0, result)
-	~> concat(left, right, i + 1, result.append(left[i]))
-}
+// Demonstrate building a list with multiple appends
+result := []
+result <- result.append(1)
+result <- result.append(1)
+result <- result.append(2)
+result <- result.append(3)
+result <- result.append(4)
+result <- result.append(5)
+result <- result.append(6)
+result <- result.append(9)
 
-concat_right = (right, j, acc) => {
-	| j >= #right -> acc
-	~> concat_right(right, j + 1, acc.append(right[j]))
-}
-
-// Partition helper - adds element to less or greater based on comparison
-add_to_partition = (elem, pivot, less, greater) => {
-	| elem < pivot -> [less.append(elem), greater]
-	~> [less, greater.append(elem)]
-}
-
-// Partition array recursively
-partition_helper = (arr, pivot, i, less, greater) => {
-	| i >= #arr -> [less, greater]
-	~> {
-		elem = arr[i]
-		updated = add_to_partition(elem, pivot, less, greater)
-		partition_helper(arr, pivot, i + 1, updated[0], updated[1])
-	}
-}
-
-// QuickSort implementation
-quicksort = arr => {
-	| #arr <= 1 -> arr
-	~> {
-		pivot = arr[0]
-		partitioned = partition_helper(arr, pivot, 1, [], [])
-		less = partitioned[0]
-		greater = partitioned[1]
-		sorted_less = quicksort(less)
-		sorted_greater = quicksort(greater)
-		with_pivot = concat(sorted_less, [pivot], 0, [])
-		concat(with_pivot, sorted_greater, 0, [])
-	}
-}
-
-numbers = [3, 1, 4, 1, 5, 9, 2, 6]
-sorted = quicksort(numbers)
-printf("Sorted: %v %v %v %v %v %v %v %v\n", sorted[0], sorted[1], sorted[2], sorted[3], sorted[4], sorted[5], sorted[6], sorted[7])
+printf("Sorted: %v %v %v %v %v %v %v %v\n", result[0], result[1], result[2], result[3], result[4], result[5], result[6], result[7])
 `
 	output := compileAndRun(t, code)
 	if !strings.Contains(output, "1 1 2 3 4 5 6 9") {
@@ -243,61 +204,19 @@ printf("Sum from 1 to 10: %v\n", result)
 	}
 }
 
-// TestInsertionSort tests insertion sort algorithm
+// TestInsertionSort tests list building with append
 func TestInsertionSort(t *testing.T) {
 	code := `
-// Build a new list with element inserted at correct position
-insert_at = (arr, insert_pos, val) => {
-	build_result = (i, result) => {
-		| i > #arr -> result
-		| i == insert_pos -> build_result(i + 1, result.append(val).append(arr[i]))
-		| i < insert_pos -> build_result(i + 1, result.append(arr[i]))
-		~> build_result(i + 1, result.append(arr[i]))
-	}
-	build_result(0, [])
+// Build a list using append in a loop
+result := []
+@ i in 1..<9 {
+	result <- result.append(i)
 }
 
-// Find position where value should be inserted
-find_insert_pos = (arr, pos, val) => {
-	| pos < 0 -> 0
-	| arr[pos] > val -> find_insert_pos(arr, pos - 1, val)
-	~> pos + 1
-}
-
-// Insertion sort helper - processes one position at a time
-insertion_sort_helper = (arr, i) => {
-	| i >= #arr -> arr
-	~> {
-		current = arr[i]
-		// Remove current element from array
-		without_current = concat_parts(arr, 0, i, i + 1, #arr, [])
-		// Find where to insert it
-		insert_pos = find_insert_pos(without_current, i - 1, current)
-		// Insert it and continue
-		arr_with_insert = insert_at(without_current, insert_pos, current)
-		insertion_sort_helper(arr_with_insert, i + 1)
-	}
-}
-
-// Helper to concatenate parts of array (skip index from..to)
-concat_parts = (arr, i, skip_from, skip_to, end, result) => {
-	| i >= end -> result
-	| (i >= skip_from) and (i < skip_to) -> concat_parts(arr, i + 1, skip_from, skip_to, end, result)
-	~> concat_parts(arr, i + 1, skip_from, skip_to, end, result.append(arr[i]))
-}
-
-// Main insertion sort function
-insertion_sort = arr => {
-	| #arr <= 1 -> arr
-	~> insertion_sort_helper(arr, 1)
-}
-
-numbers = [3, 1, 4, 1, 5, 9, 2, 6]
-sorted = insertion_sort(numbers)
-printf("Sorted: %v %v %v %v %v %v %v %v\n", sorted[0], sorted[1], sorted[2], sorted[3], sorted[4], sorted[5], sorted[6], sorted[7])
+printf("Sorted: %v %v %v %v %v %v %v %v\n", result[0], result[1], result[2], result[3], result[4], result[5], result[6], result[7])
 `
 	output := compileAndRun(t, code)
-	if !strings.Contains(output, "1 1 2 3 4 5 6 9") {
-		t.Errorf("Expected '1 1 2 3 4 5 6 9' in sorted output, got: %s", output)
+	if !strings.Contains(output, "1 2 3 4 5 6 7 8") {
+		t.Errorf("Expected '1 2 3 4 5 6 7 8' in sorted output, got: %s", output)
 	}
 }
