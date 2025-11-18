@@ -1,8 +1,43 @@
-# TODO - Flap 1.3.0 Roadmap
+# TODO - Flap 3.0 Roadmap
 
-**Status:** Planning phase
-**Target:** Major version with improved type system
-**Current:** Flap 1.2.0 (128/128 tests passing, production-ready)
+**Status:** Near completion
+**Target:** Major improvements to lambda handling and compiler robustness  
+**Current:** Most tests passing, 4 known issues remaining
+
+---
+
+## Known Issues (Must Fix for 3.0)
+
+### 1. pop() Function Segfaults
+**Status:** Critical bug  
+**Location:** codegen.go lines 11037-11224  
+**Issue:** The pop() builtin function segfaults when called  
+**Tests Affected:** TestPopMethod, TestPopFunction, TestPopEmptyList  
+**Likely Cause:** Complex malloc/memcpy logic with potential register clobbering or stack misalignment  
+**Action:** Debug pop() implementation, ensure proper stack alignment and register preservation
+
+### 2. Deeply Nested Loops (5+ levels) Fail
+**Status:** Bug in register/stack fallback  
+**Location:** codegen.go loop compilation  
+**Issue:** Loops nested 5 or more levels deep don't execute inner bodies  
+**Tests Affected:** TestDeeplyNestedLoops  
+**Current Behavior:**
+- 1-4 nested loops work correctly (use callee-saved registers)
+- 5+ nested loops should use stack but fail silently  
+**Likely Cause:** Stack-based counter fallback not working correctly when all callee-saved registers (r12, r13, r14, rbx) are exhausted  
+**Action:** Debug stack-based loop counter implementation in compileLoopStmt
+
+### 3. += Operator for List Append
+**Status:** Enhancement request  
+**Issue:** "result += 42" should append 42 to list (shorthand for "result <- result.append(42)")  
+**Current:** Must use explicit append or <-  
+**Action:** Add += operator handling for list append in parser and codegen
+
+### 4. Multiple Return Values  
+**Status:** Feature not implemented  
+**Issue:** Functions cannot return multiple values  
+**Workaround:** Return a list/map with multiple values  
+**Action:** See MULTIPLE_RETURNS_IMPLEMENTATION.md for design
 
 ---
 
