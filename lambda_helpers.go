@@ -15,6 +15,11 @@ func hasLocalVariables(expr Expression) bool {
 		case *BlockExpr:
 			for _, stmt := range ex.Statements {
 				if assign, ok := stmt.(*AssignStmt); ok {
+					// Allow lambda assignments (closures)
+					if _, isLambda := assign.Value.(*LambdaExpr); isLambda {
+						continue
+					}
+					// Disallow other local variable definitions
 					if !assign.IsUpdate && !assign.IsReuseMutable {
 						found = true
 						return
