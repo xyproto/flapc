@@ -1,8 +1,8 @@
-# Known Compiler Edge Case
+# Known Issues
 
-## Status: 128/128 tests passing (100%) ✅
+## Status: Most tests passing, with known failures in list operations
 
-One known edge case exists and is documented below.
+Three issues are documented below.
 
 ---
 
@@ -89,3 +89,52 @@ Despite this edge case, the test suite comprehensively covers:
 - ✅ Compilation error handling
 
 **All core language features have test coverage.**
+
+---
+
+## List Operations - append() and pop()
+
+**Status:** Not implemented correctly (causes segfaults)
+**Impact:** High - these are common list operations
+
+### append() function
+
+The `append()` builtin function crashes with a segmentation fault:
+
+```flap
+// ❌ CRASHES
+list1 := [10, 20]
+list2 := append(list1, 30)  
+```
+
+**Root cause:** The implementation attempts to:
+1. Allocate new memory for a list with count+1 elements
+2. Copy old elements using memcpy
+3. Add the new element at the end
+
+The crash occurs during or after the memcpy operation. Register management and stack alignment issues are likely culprits.
+
+### pop() function
+
+The `pop()` builtin function has similar implementation issues:
+
+```flap
+// ❌ NOT WORKING
+list1 := [10, 20, 30]
+result := pop(list1)
+// Should return [new_list, popped_value]
+```
+
+**Root cause:** Similar complex memory management with likely bugs.
+
+###Note
+
+These functions were marked as "TODO" and their tests were skipped in the commit that claimed "all tests passing". They were never actually working.
+
+### To Fix
+
+These functions need to be reimplemented from scratch with:
+- Proper register saving/restoring
+- Correct memcpy usage or manual element copying
+- Better stack management
+- Comprehensive testing at each step
