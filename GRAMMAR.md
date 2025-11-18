@@ -200,7 +200,7 @@ block           = "{" { statement { newline } } [ expression ] "}" ;
 
 expression      = pipe_expr ;
 
-pipe_expr       = reduce_expr { ( "|" | "||" | "|||" ) reduce_expr } ;
+pipe_expr       = reduce_expr { ( "|" | "||" ) reduce_expr } ;
 
 reduce_expr     = receive_expr ;
 
@@ -546,7 +546,6 @@ _     Tail operator (prefix) - get all but first element
 ~>    Default match arm
 |     Pipe operator
 ||    Parallel map
-|||   Reduce/fold
 <-    Send (ENet)
 =>    Receive (ENet, prefix)
 !     Move operator (postfix)
@@ -579,7 +578,7 @@ From highest to lowest precedence:
 13. **Or-bang**: `or!`
 14. **Send**: `<-`
 15. **Receive**: `=>`
-16. **Pipe/Reduce**: `|` `||` `|||`
+16. **Pipe**: `|` `||`
 17. **Match**: `{ }` (postfix)
 18. **Assignment**: `=` `:=` `<-` `==>` `+=` `-=` `*=` `/=` `%=` `**=`
 

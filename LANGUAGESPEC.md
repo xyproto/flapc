@@ -178,7 +178,6 @@ Parallel loops use `fork()` for true isolation:
 ```flap
 |    Pipe (transform)
 ||   Parallel map
-|||  Reduce/fold
 ```
 
 ### 11. Head and Tail Operators
@@ -737,18 +736,7 @@ results = [1, 2, 3] | x => x * 2
 results = [1, 2, 3] || x => expensive(x)
 ```
 
-### Reduce/Fold
 
-```flap
-// Sum
-total = [1, 2, 3, 4, 5] ||| (acc, x) => acc + x
-
-// Max
-max_val = [3, 7, 2, 9, 1] ||| (acc, x) => acc > x { -> acc ~> x }
-
-// String concatenation
-words = ["Hello", " ", "World"] ||| (acc, s) => acc + s
-```
 
 ## ENet Channels
 
@@ -1824,10 +1812,7 @@ doubled = numbers | x => x * 2
 // Filter: only even numbers
 evens = numbers | x => x % 2 == 0 { 1 -> x ~> [] }
 
-// Reduce: sum all numbers
-total = numbers ||| (acc, x) => acc + x
-
-println(f"Total: {total}")
+println(f"Evens: {evens}")
 ```
 
 ### Pattern Matching
@@ -1890,10 +1875,7 @@ data = [1, 2, 3, 4, 5, 6, 7, 8]
 // Process in parallel
 results = data || x => expensive_computation(x)
 
-// Sum results
-total = results ||| (acc, x) => acc + x
-
-println(f"Total: {total}")
+println(f"Results: {results}")
 ```
 
 ### Web Server (ENet)
