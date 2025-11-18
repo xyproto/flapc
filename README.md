@@ -4,7 +4,7 @@
 
 **Flap** is a systems programming language that compiles directly to native machine code (x86-64, ARM64, RISC-V) without LLVM, IR, or dependencies.
 
-**Version:** 3.0.0  
+**Version:** 3.0.0
 **Status:** Production-ready
 
 ## 🌟 What Makes Flap Novel
@@ -188,7 +188,7 @@ arena {
     // All allocations freed at block exit
     buffer := alloc(1024)
     entities := alloc(100 * entity_size)
-    
+
     // Work with memory...
 }  // Everything freed automatically
 ```
@@ -272,12 +272,12 @@ running := 1
     arena {
         // Per-frame memory freed automatically
         entities := alloc(entity_count * entity_size)
-        
+
         @@ i in 0..<entity_count {
             update_entity(entities, i)
         }
     }
-    
+
     sdl.SDL_RenderClear(renderer)
     render(renderer)
     sdl.SDL_RenderPresent(renderer)
@@ -373,20 +373,7 @@ go test         # ~2s
 - RISC-V backend (basic support)
 - Advanced optimizations
 
-## Contributing
+## General info
 
-See [TODO.md](TODO.md) for specific tasks. Pull requests welcome!
-
-## License
-
-BSD 3-Clause License. See [LICENSE](LICENSE) for details.
-
-## Links
-
-- **Repository**: https://github.com/xyproto/flapc
-- **Issues**: https://github.com/xyproto/flapc/issues
-- **CI/CD**: https://github.com/xyproto/flapc/actions
-
----
-
-**Flap: Direct compilation, unified types, minimal syntax.**
+* Version: 1.3.0
+* License: BSD-3

@@ -1515,14 +1515,13 @@ func (p *Parser) parseIndexedAssignment() Statement {
 		}
 
 		return &ExpressionStmt{Expr: writeCall}
-	} else {
-		// ARRAY UPDATE: arr[idx] <- value
-		// Create a direct map update statement
-		return &MapUpdateStmt{
-			MapName: ptrName,
-			Index:   indexExpr,
-			Value:   valueExpr,
-		}
+	}
+	// ARRAY UPDATE: arr[idx] <- value
+	// Create a direct map update statement
+	return &MapUpdateStmt{
+		MapName: ptrName,
+		Index:   indexExpr,
+		Value:   valueExpr,
 	}
 }
 
@@ -1961,10 +1960,9 @@ func (p *Parser) parseMatchClause() (*MatchClause, bool) {
 		// Otherwise, it's a value match - we'll need the condition from parseMatchBlock
 		if isGuard {
 			return &MatchClause{Guard: expr, Result: result}, false
-		} else {
-			// Store the value pattern in Guard for now - parseMatchBlock will convert it
-			return &MatchClause{Guard: expr, Result: result, IsValueMatch: true}, false
 		}
+		// Store the value pattern in Guard for now - parseMatchBlock will convert it
+		return &MatchClause{Guard: expr, Result: result, IsValueMatch: true}, false
 	}
 
 	// Bare expression clause (sugar for '-> expr')

@@ -1,8 +1,8 @@
-# TODO - Flap 3.0 Roadmap
+# TODO - Flap 1.3.0 Roadmap
 
-**Status:** Planning phase  
-**Target:** Major version with improved type system  
-**Current:** Flap 2.0 (128/128 tests passing, production-ready)
+**Status:** Planning phase
+**Target:** Major version with improved type system
+**Current:** Flap 1.2.0 (128/128 tests passing, production-ready)
 
 ---
 
@@ -62,7 +62,7 @@
 
 ---
 
-## Bug Fixes from 2.0
+## Bug Fixes from 1.2.0
 
 ### Match Expressions with String Literals
 
@@ -256,7 +256,7 @@ factorial := n => {
 
 ## Migration Guide
 
-### Flap 2.0 → 3.0
+### Flap 1.2.0 → 1.3.0
 
 **Actions:**
 1. Document all breaking changes
@@ -269,18 +269,18 @@ factorial := n => {
 
 ## Release Criteria
 
-**For Flap 3.0 Release:**
+**For Flap 1.3.0 Release:**
 - [ ] Type system redesign complete
-- [ ] All 2.0 tests passing with new system
+- [ ] All 1.2.0 tests passing with new system
 - [ ] Match+string bug fixed
 - [ ] Documentation updated
 - [ ] Migration guide ready
 - [ ] At least 2 platforms supported
-- [ ] Performance parity or better than 2.0
+- [ ] Performance parity or better than 1.2.0
 
 ---
 
-## Non-Goals (Out of Scope for 3.0)
+## Non-Goals (Out of Scope for 1.3.0)
 
 - Garbage collection (still manual memory management)
 - Object-oriented features (Flap is functional)

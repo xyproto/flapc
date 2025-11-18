@@ -1278,11 +1278,10 @@ func main() {
 				os.Exit(1)
 			}
 			return
-		} else {
-			// No .flap files - show help
-			RunCLI([]string{"help"}, targetPlatform, VerboseMode, QuietMode, *optTimeout, UpdateDepsFlag, SingleFlag, "")
-			return
 		}
+		// No .flap files - show help
+		RunCLI([]string{"help"}, targetPlatform, VerboseMode, QuietMode, *optTimeout, UpdateDepsFlag, SingleFlag, "")
+		return
 	}
 
 	if VerboseMode {
