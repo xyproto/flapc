@@ -54,10 +54,6 @@ type LoopInfo struct {
 	UpperBoundOffset int  // Stack offset for limit (range) or length (list)
 	ListPtrOffset    int  // Stack offset for list pointer (list loops only)
 	IsRangeLoop      bool // True for range loops, false for list loops
-	
-	// Register tracking
-	CounterReg  string // Register used for loop counter (if any)
-	UseRegister bool   // True if counter is in register, false if on stack
 }
 
 // Code Generator for Flap
@@ -109,8 +105,6 @@ type FlapCompiler struct {
 	firstMetaArenaMallocErrorJump int
 
 	regAlloc       *RegisterAllocator // Register allocator for optimized variable allocation
-	regTracker     *RegisterTracker   // Real-time register availability tracker
-	regSpiller     *RegisterSpiller   // Register spilling manager
 	wpoTimeout     float64            // Whole-program optimization timeout (non-global, thread-safe)
 	movedVars      map[string]bool    // Track variables that have been moved (use-after-move detection)
 	inUnsafeBlock  bool               // True when compiling inside an unsafe block (skip safety checks)
@@ -174,8 +168,6 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 		debug:               debugEnabled,
 		currentArena:        1, // Start at arena 1 (which is meta-arena[0], the global arena)
 		regAlloc:            NewRegisterAllocator(platform.Arch),
-		regTracker:          NewRegisterTracker(),
-		regSpiller:          NewRegisterSpiller(SpillToStack),
 		movedVars:           make(map[string]bool),
 		scopeDepth:          0,
 		scopedMoved:         []map[string]bool{make(map[string]bool)},
@@ -1507,8 +1499,6 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 		// Don't allocate if:
 		// - IsUpdate (i.e., <- operator)
 		// - IsReuseMutable (i.e., = updating existing mutable variable)
-		// Note: Lambdas with local variables are rejected at compile time,
-		// so we don't need a special check here
 		if !s.IsUpdate && !s.IsReuseMutable {
 			fc.out.SubImmFromReg("rsp", 16)
 			fc.runtimeStack += 16
@@ -1643,13 +1633,8 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 			fc.out.AddImmToReg("rsp", 8)
 
 			// Load index from stack and convert to integer in rcx
-			idxReg := fc.regTracker.AllocXMM("index_convert")
-			if idxReg == "" {
-				idxReg = "xmm2" // Fallback
-			}
-			fc.out.MovMemToXmm(idxReg, "rsp", 8)
-			fc.out.Cvttsd2si("rcx", idxReg) // rcx = integer index
-			fc.regTracker.FreeXMM(idxReg)
+			fc.out.MovMemToXmm("xmm2", "rsp", 8)
+			fc.out.Cvttsd2si("rcx", "xmm2") // rcx = integer index
 
 			// Calculate offset: 8 + (index * 16) + 8 = 16 + index * 16
 			// Memory layout: [count][key0][val0][key1][val1]...
@@ -1693,13 +1678,8 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 			fc.out.AddImmToReg("rsp", 8)
 
 			// Load index from stack and convert to integer in rcx
-			idxReg := fc.regTracker.AllocXMM("index_convert")
-			if idxReg == "" {
-				idxReg = "xmm2" // Fallback
-			}
-			fc.out.MovMemToXmm(idxReg, "rsp", 8) // index is 8 bytes below top
-			fc.out.Cvttsd2si("rcx", idxReg)      // rcx = integer index
-			fc.regTracker.FreeXMM(idxReg)
+			fc.out.MovMemToXmm("xmm2", "rsp", 8) // index is 8 bytes below top
+			fc.out.Cvttsd2si("rcx", "xmm2")      // rcx = integer index
 
 			// Calculate offset: 8 + (index * 16) + 8 = 16 + index * 16
 			// Keys and values alternate: [length][key0][val0][key1][val1]...
@@ -2055,20 +2035,31 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 		fc.out.MovRegToMem("rax", "rbp", -iterationCountOffset)
 	}
 
-	// Allocate loop counter using register tracker
+	// Allocate loop counter using reserved registers for performance
+	// Reserve r12, r13, r14 exclusively for loop counters (these won't be used elsewhere)
+	// For deeper nesting (>= 3 levels), fall back to stack
 	var counterReg string
 	var useRegister bool
 	var counterOffset int
 
-	// Try to allocate a callee-saved register for loop counter
-	// These survive function calls without save/restore
-	counterReg = fc.regTracker.AllocIntCalleeSaved(fmt.Sprintf("loop_counter_%d", loopDepth))
-	if counterReg != "" {
+	switch loopDepth {
+	case 0:
+		counterReg = "r12" // Reserve r12 for outermost loop
 		useRegister = true
-	} else {
-		// No registers available, use stack
+	case 1:
+		counterReg = "r13" // Reserve r13 for second level
+		useRegister = true
+	case 2:
+		counterReg = "r14" // Reserve r14 for third level
+		useRegister = true
+	default:
+		// Too deep (3+ levels) - use stack
+		useRegister = false
 		counterOffset = loopStateOffset + 8
 	}
+
+	// Note: We don't save/restore r12, r13, r14 because they're reserved exclusively
+	// for loop counters and won't be clobbered by any other operations
 
 	// Evaluate range start and store in counter (register or stack)
 	fc.compileExpression(rangeExpr.Start)
@@ -2109,8 +2100,6 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 		EndPatches:     []int{},
 		IteratorOffset: iterOffset,
 		IsRangeLoop:    true,
-		CounterReg:     counterReg,
-		UseRegister:    useRegister,
 	}
 	fc.activeLoops = append(fc.activeLoops, loopInfo)
 
@@ -2238,12 +2227,6 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	for _, patchPos := range fc.activeLoops[len(fc.activeLoops)-1].EndPatches {
 		endOffset := int32(loopEndPos - (patchPos + 4))
 		fc.patchJumpImmediate(patchPos, endOffset)
-	}
-
-	// Free loop counter register if it was allocated
-	currentLoop := &fc.activeLoops[len(fc.activeLoops)-1]
-	if currentLoop.UseRegister && currentLoop.CounterReg != "" {
-		fc.regTracker.FreeInt(currentLoop.CounterReg)
 	}
 
 	// Pop loop from active stack
@@ -3806,20 +3789,10 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 				// Use the same append logic as the append() builtin
 				// Load list pointer and get count
-				listReg := fc.regTracker.AllocXMM("append_list_ptr")
-				countReg := fc.regTracker.AllocXMM("append_count")
-				if listReg == "" {
-					listReg = "xmm1" // Fallback
-				}
-				if countReg == "" {
-					countReg = "xmm2" // Fallback
-				}
-				fc.out.MovMemToXmm(listReg, "rsp", 8)
-				fc.out.MovqXmmToReg("rsi", listReg)
-				fc.out.MovMemToXmm(countReg, "rsi", 0)
-				fc.out.Cvttsd2si("rcx", countReg)
-				fc.regTracker.FreeXMM(listReg)
-				fc.regTracker.FreeXMM(countReg)
+				fc.out.MovMemToXmm("xmm1", "rsp", 8)
+				fc.out.MovqXmmToReg("rsi", "xmm1")
+				fc.out.MovMemToXmm("xmm2", "rsi", 0)
+				fc.out.Cvttsd2si("rcx", "xmm2")
 
 				// Calculate new size: 8 + (count + 1) * 16
 				fc.out.MovRegToReg("rdx", "rcx")
@@ -3837,15 +3810,10 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.PopReg("rsi")
 
 				// Store new count
-				newCountReg := fc.regTracker.AllocXMM("append_new_count")
-				if newCountReg == "" {
-					newCountReg = "xmm3" // Fallback
-				}
 				fc.out.MovRegToReg("r10", "rcx")
 				fc.out.AddImmToReg("r10", 1)
-				fc.out.Cvtsi2sd(newCountReg, "r10")
-				fc.out.MovXmmToMem(newCountReg, "rax", 0)
-				fc.regTracker.FreeXMM(newCountReg)
+				fc.out.Cvtsi2sd("xmm3", "r10")
+				fc.out.MovXmmToMem("xmm3", "rax", 0)
 
 				// Copy old elements if count > 0
 				fc.out.TestRegReg("rcx", "rcx")
@@ -3883,14 +3851,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.AddRegToReg("r8", "rdx")
 
 				// Store key and value
-				valReg := fc.regTracker.AllocXMM("append_value")
-				if valReg == "" {
-					valReg = "xmm4" // Fallback
-				}
 				fc.out.StoreRegToMem("rcx", "r8", 0)
-				fc.out.MovMemToXmm(valReg, "rsp", 0)
-				fc.out.MovXmmToMem(valReg, "r8", 8)
-				fc.regTracker.FreeXMM(valReg)
+				fc.out.MovMemToXmm("xmm4", "rsp", 0)
+				fc.out.MovXmmToMem("xmm4", "r8", 8)
 
 				// Clean stack
 				fc.out.AddImmToReg("rsp", 16)
@@ -3962,21 +3925,16 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		}
 
 		// Default: numeric binary operation
-		// We must save the left operand to the STACK, not to a register,
-		// because compileExpression(e.Right) may call functions that clobber registers
-		
 		// Compile left into xmm0
 		fc.compileExpression(e.Left)
-		
-		// Save left operand to stack (function calls may clobber all XMM registers)
+		// Save left to stack (xmm2 may be clobbered by function calls in right expr)
 		fc.out.SubImmFromReg("rsp", 16)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
-		
 		// Compile right into xmm0
 		fc.compileExpression(e.Right)
-		
-		// Move right to xmm1, restore left from stack to xmm0
+		// Move right operand to xmm1
 		fc.out.MovRegToReg("xmm1", "xmm0")
+		// Restore left operand from stack to xmm0
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
 		fc.out.AddImmToReg("rsp", 16)
 		// Perform scalar floating-point operation
@@ -3998,13 +3956,8 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.Write(0xC1) // ModR/M: 11 000 001 (xmm0, xmm0, xmm1)
 		case "/":
 			// Check for division by zero (xmm1 == 0.0)
-			zeroReg := fc.regTracker.AllocXMM("div_zero_check")
-			if zeroReg == "" {
-				zeroReg = "xmm2" // Fallback
-			}
-			fc.out.XorpdXmm(zeroReg, zeroReg) // zero register = 0.0
-			fc.out.Ucomisd("xmm1", zeroReg)  // Compare divisor with 0
-			fc.regTracker.FreeXMM(zeroReg)
+			fc.out.XorpdXmm("xmm2", "xmm2") // xmm2 = 0.0
+			fc.out.Ucomisd("xmm1", "xmm2")  // Compare divisor with 0
 
 			// Jump to division if not zero
 			jumpPos := fc.eb.text.Len()
@@ -4040,13 +3993,8 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			// xmm0 = dividend (a), xmm1 = divisor (b)
 
 			// Check for modulo by zero (xmm1 == 0.0)
-			zeroReg := fc.regTracker.AllocXMM("mod_zero_check")
-			if zeroReg == "" {
-				zeroReg = "xmm4" // Fallback
-			}
-			fc.out.XorpdXmm(zeroReg, zeroReg) // zero register = 0.0
-			fc.out.Ucomisd("xmm1", zeroReg)  // Compare divisor with 0
-			fc.regTracker.FreeXMM(zeroReg)
+			fc.out.XorpdXmm("xmm4", "xmm4") // xmm4 = 0.0
+			fc.out.Ucomisd("xmm1", "xmm4")  // Compare divisor with 0
 
 			// Jump to modulo if not zero
 			jumpPos := fc.eb.text.Len()
@@ -4076,28 +4024,15 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			offset := int32(safePos - jumpEndPos)
 			fc.patchJumpImmediate(jumpPos+2, offset)
 
-			// Allocate temporary registers for modulo computation
-			tmpDividend := fc.regTracker.AllocXMM("mod_dividend")
-			tmpDivisor := fc.regTracker.AllocXMM("mod_divisor")
-			if tmpDividend == "" {
-				tmpDividend = "xmm2" // Fallback
-			}
-			if tmpDivisor == "" {
-				tmpDivisor = "xmm3" // Fallback
-			}
-			
-			fc.out.MovXmmToXmm(tmpDividend, "xmm0") // Save dividend
-			fc.out.MovXmmToXmm(tmpDivisor, "xmm1")  // Save divisor
-			fc.out.DivsdXmm("xmm0", "xmm1")         // xmm0 = a / b
+			fc.out.MovXmmToXmm("xmm2", "xmm0") // Save dividend in xmm2
+			fc.out.MovXmmToXmm("xmm3", "xmm1") // Save divisor in xmm3
+			fc.out.DivsdXmm("xmm0", "xmm1")    // xmm0 = a / b
 			// Floor: convert to int64 and back
-			fc.out.Cvttsd2si("rax", "xmm0")         // rax = floor(a / b) as int
-			fc.out.Cvtsi2sd("xmm0", "rax")          // xmm0 = floor(a / b) as float
-			fc.out.MulsdXmm("xmm0", tmpDivisor)     // xmm0 = floor(a / b) * b
-			fc.out.SubsdXmm(tmpDividend, "xmm0")    // tmpDividend = a - floor(a / b) * b
-			fc.out.MovXmmToXmm("xmm0", tmpDividend) // Result in xmm0
-			
-			fc.regTracker.FreeXMM(tmpDividend)
-			fc.regTracker.FreeXMM(tmpDivisor)
+			fc.out.Cvttsd2si("rax", "xmm0")    // rax = floor(a / b) as int
+			fc.out.Cvtsi2sd("xmm0", "rax")     // xmm0 = floor(a / b) as float
+			fc.out.MulsdXmm("xmm0", "xmm3")    // xmm0 = floor(a / b) * b
+			fc.out.SubsdXmm("xmm2", "xmm0")    // xmm2 = a - floor(a / b) * b
+			fc.out.MovXmmToXmm("xmm0", "xmm2") // Result in xmm0
 		case "<", "<=", ">", ">=", "==", "!=":
 			// Compare xmm0 with xmm1, sets flags
 			fc.out.Ucomisd("xmm0", "xmm1")
@@ -4123,19 +4058,15 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.Cvtsi2sd("xmm0", "rax")
 		case "and":
 			// Logical AND: returns 1.0 if both non-zero, else 0.0
-			zeroReg := fc.regTracker.AllocXMM("and_zero")
-			if zeroReg == "" {
-				zeroReg = "xmm2" // Fallback
-			}
 			// Compare xmm0 with 0
-			fc.out.XorpdXmm(zeroReg, zeroReg) // zero register = 0.0
-			fc.out.Ucomisd("xmm0", zeroReg)
+			fc.out.XorpdXmm("xmm2", "xmm2") // xmm2 = 0.0
+			fc.out.Ucomisd("xmm0", "xmm2")
 			// Set rax to 1 if xmm0 != 0
 			fc.out.MovImmToReg("rax", "0")
 			fc.out.MovImmToReg("rcx", "1")
 			fc.out.Cmovne("rax", "rcx") // rax = (xmm0 != 0) ? 1 : 0
 			// Compare xmm1 with 0
-			fc.out.Ucomisd("xmm1", zeroReg)
+			fc.out.Ucomisd("xmm1", "xmm2")
 			// Set rcx to 1 if xmm1 != 0
 			fc.out.MovImmToReg("rcx", "0")
 			fc.out.MovImmToReg("rdx", "1")
@@ -4144,22 +4075,17 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.AndRegWithReg("rax", "rcx")
 			// Convert to float64
 			fc.out.Cvtsi2sd("xmm0", "rax")
-			fc.regTracker.FreeXMM(zeroReg)
 		case "or":
 			// Logical OR: returns 1.0 if either non-zero, else 0.0
-			zeroReg := fc.regTracker.AllocXMM("or_zero")
-			if zeroReg == "" {
-				zeroReg = "xmm2" // Fallback
-			}
 			// Compare xmm0 with 0
-			fc.out.XorpdXmm(zeroReg, zeroReg) // zero register = 0.0
-			fc.out.Ucomisd("xmm0", zeroReg)
+			fc.out.XorpdXmm("xmm2", "xmm2") // xmm2 = 0.0
+			fc.out.Ucomisd("xmm0", "xmm2")
 			// Set rax to 1 if xmm0 != 0
 			fc.out.MovImmToReg("rax", "0")
 			fc.out.MovImmToReg("rcx", "1")
 			fc.out.Cmovne("rax", "rcx") // rax = (xmm0 != 0) ? 1 : 0
 			// Compare xmm1 with 0
-			fc.out.Ucomisd("xmm1", zeroReg)
+			fc.out.Ucomisd("xmm1", "xmm2")
 			// Set rcx to 1 if xmm1 != 0
 			fc.out.MovImmToReg("rcx", "0")
 			fc.out.MovImmToReg("rdx", "1")
@@ -4168,22 +4094,17 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.OrRegWithReg("rax", "rcx")
 			// Convert to float64
 			fc.out.Cvtsi2sd("xmm0", "rax")
-			fc.regTracker.FreeXMM(zeroReg)
 		case "xor":
 			// Logical XOR: returns 1.0 if exactly one non-zero, else 0.0
-			zeroReg := fc.regTracker.AllocXMM("xor_zero")
-			if zeroReg == "" {
-				zeroReg = "xmm2" // Fallback
-			}
 			// Compare xmm0 with 0
-			fc.out.XorpdXmm(zeroReg, zeroReg) // zero register = 0.0
-			fc.out.Ucomisd("xmm0", zeroReg)
+			fc.out.XorpdXmm("xmm2", "xmm2") // xmm2 = 0.0
+			fc.out.Ucomisd("xmm0", "xmm2")
 			// Set rax to 1 if xmm0 != 0
 			fc.out.MovImmToReg("rax", "0")
 			fc.out.MovImmToReg("rcx", "1")
 			fc.out.Cmovne("rax", "rcx") // rax = (xmm0 != 0) ? 1 : 0
 			// Compare xmm1 with 0
-			fc.out.Ucomisd("xmm1", zeroReg)
+			fc.out.Ucomisd("xmm1", "xmm2")
 			// Set rcx to 1 if xmm1 != 0
 			fc.out.MovImmToReg("rcx", "0")
 			fc.out.MovImmToReg("rdx", "1")
@@ -4192,7 +4113,6 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.XorRegWithReg("rax", "rcx")
 			// Convert to float64
 			fc.out.Cvtsi2sd("xmm0", "rax")
-			fc.regTracker.FreeXMM(zeroReg)
 		case "or!":
 			// Error unwrap with default: returns xmm0 if not NaN, else xmm1
 			// xmm0 = value, xmm1 = default
@@ -4938,10 +4858,10 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			}
 
 			// Return closure object pointer as float64 in xmm0
-			fc.out.SubImmFromReg("rsp", 16)
+			fc.out.SubImmFromReg("rsp", StackSlotSize)
 			fc.out.MovRegToMem("r12", "rsp", 0)
 			fc.out.MovMemToXmm("xmm0", "rsp", 0)
-			fc.out.AddImmToReg("rsp", 16)
+			fc.out.AddImmToReg("rsp", StackSlotSize)
 		} else {
 			// Simple lambda (no captures) - create static closure object
 			// Closure object format: [func_ptr (8 bytes), env_ptr (8 bytes)]
@@ -4959,10 +4879,10 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			// Offset 8 is already 0 (NULL environment) from the zeroed data
 
 			// Return closure object pointer as float64 in xmm0
-			fc.out.SubImmFromReg("rsp", 16)
+			fc.out.SubImmFromReg("rsp", StackSlotSize)
 			fc.out.MovRegToMem("r12", "rsp", 0)
 			fc.out.MovMemToXmm("xmm0", "rsp", 0)
-			fc.out.AddImmToReg("rsp", 16)
+			fc.out.AddImmToReg("rsp", StackSlotSize)
 		}
 
 	case *PatternLambdaExpr:
@@ -6208,12 +6128,6 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: generating lambda '%s' with body type %T\n", lambda.Name, lambda.Body)
 		}
-		
-		// Check for unsupported pattern: local variables in lambda
-		if hasLocalVariables(lambda.Body) {
-			compilerError("local variables in lambda bodies are not yet supported\nUse lambda parameters instead, or hoist variables outside the lambda\nExample: f = x => x + 1  (instead of: f = x => { y = x + 1; y })")
-		}
-		
 		// Record the offset of this lambda function in .text
 		offsetBefore := fc.eb.text.Len()
 		fc.lambdaOffsets[lambda.Name] = offsetBefore
@@ -6231,10 +6145,9 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 		paramCount := len(lambda.Params)
 		capturedCount := len(lambda.CapturedVars)
 		
-		// Frame: 8(rbx) + 8(align) + params*16 + captured*16 + 2048(temp space)
-		// Temp space: Large buffer for local variables and expression temporaries
-		// This accounts for: local variable definitions, nested arithmetic, function calls, etc.
-		frameSize := 16 + paramCount*16 + capturedCount*16 + 4096
+		// Frame: 8(rbx) + 8(align) + params*16 + captured*16 + 128(red zone safety)
+		// Red zone: 128 bytes below rsp for temporary expression evaluation
+		frameSize := 16 + paramCount*16 + capturedCount*16 + 128
 		// Ensure 16-byte alignment for external function calls
 		frameSize = (frameSize + 15) & ^15
 
@@ -8780,16 +8693,16 @@ func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
 	offset, _ := fc.variables[call.Function]
 	if fc.debug {
 		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG compileStoredFunctionCall: calling '%s' at offset %d, args=%d\n", call.Function, offset, len(call.Args))
+			fmt.Fprintf(os.Stderr, "DEBUG compileStoredFunctionCall: calling '%s' at offset %d\n", call.Function, offset)
 		}
 	}
 	fc.out.MovMemToXmm("xmm0", "rbp", -offset)
 
 	// Convert function pointer from float64 to integer in rax
-	fc.out.SubImmFromReg("rsp", 16)
+	fc.out.SubImmFromReg("rsp", StackSlotSize)
 	fc.out.MovXmmToMem("xmm0", "rsp", 0)
 	fc.out.MovMemToReg("rax", "rsp", 0)
-	fc.out.AddImmToReg("rsp", 16)
+	fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	// Load function pointer from closure object (offset 0)
 	fc.out.MovMemToReg("r11", "rax", 0)
@@ -9980,8 +9893,7 @@ func (fc *FlapCompiler) compileTailRecursiveCall(call *CallExpr) {
 }
 
 func (fc *FlapCompiler) compileRecursiveCall(call *CallExpr) {
-	// TEMPORARY: Disable tail call optimization to debug
-	if false && fc.inTailPosition {
+	if fc.inTailPosition {
 		fc.tailCallsOptimized++
 		fc.compileTailRecursiveCall(call)
 		return
@@ -10888,30 +10800,11 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Set rax = number of vector registers used
 		fc.out.MovImmToReg("rax", fmt.Sprintf("%d", xmmArgCount))
 
-		// Save allocated callee-saved registers before external call
-		allocatedCalleeSaved := fc.regTracker.GetAllocatedCalleeSavedRegs()
-		needsDummyPush := len(allocatedCalleeSaved)%2 != 0 // Maintain 16-byte alignment
-		
-		for _, reg := range allocatedCalleeSaved {
-			fc.out.PushReg(reg)
-		}
-		if needsDummyPush {
-			fc.out.PushReg("rax") // Dummy push for alignment
-		}
-
 		// Stack should be 16-byte aligned at this point because:
 		// - Function prologue ensures alignment
 		// - All stack allocations (loops, variables) use multiples of 16 bytes
 		fc.trackFunctionCall("printf")
 		fc.eb.GenerateCallInstruction("printf")
-
-		// Restore callee-saved registers after external call
-		if needsDummyPush {
-			fc.out.PopReg("rax") // Dummy pop
-		}
-		for i := len(allocatedCalleeSaved) - 1; i >= 0; i-- {
-			fc.out.PopReg(allocatedCalleeSaved[i])
-		}
 
 	case "exit":
 		fc.hasExplicitExit = true // Mark that program has explicit exit

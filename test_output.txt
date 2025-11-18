@@ -1,0 +1,831 @@
+=== RUN   TestArithmeticOperations
+=== RUN   TestArithmeticOperations/addition
+=== RUN   TestArithmeticOperations/subtraction
+=== RUN   TestArithmeticOperations/multiplication
+=== RUN   TestArithmeticOperations/division
+=== RUN   TestArithmeticOperations/power
+=== RUN   TestArithmeticOperations/modulo
+=== RUN   TestArithmeticOperations/negative
+=== RUN   TestArithmeticOperations/compound_expression
+=== RUN   TestArithmeticOperations/float_division
+=== RUN   TestArithmeticOperations/power_fractional
+--- PASS: TestArithmeticOperations (0.03s)
+    --- PASS: TestArithmeticOperations/addition (0.00s)
+    --- PASS: TestArithmeticOperations/subtraction (0.00s)
+    --- PASS: TestArithmeticOperations/multiplication (0.00s)
+    --- PASS: TestArithmeticOperations/division (0.00s)
+    --- PASS: TestArithmeticOperations/power (0.00s)
+    --- PASS: TestArithmeticOperations/modulo (0.00s)
+    --- PASS: TestArithmeticOperations/negative (0.00s)
+    --- PASS: TestArithmeticOperations/compound_expression (0.00s)
+    --- PASS: TestArithmeticOperations/float_division (0.00s)
+    --- PASS: TestArithmeticOperations/power_fractional (0.00s)
+=== RUN   TestComparisonOperations
+=== RUN   TestComparisonOperations/equal
+=== RUN   TestComparisonOperations/not_equal
+=== RUN   TestComparisonOperations/less_than
+=== RUN   TestComparisonOperations/greater_than
+=== RUN   TestComparisonOperations/less_or_equal
+=== RUN   TestComparisonOperations/greater_or_equal
+--- PASS: TestComparisonOperations (0.02s)
+    --- PASS: TestComparisonOperations/equal (0.00s)
+    --- PASS: TestComparisonOperations/not_equal (0.00s)
+    --- PASS: TestComparisonOperations/less_than (0.00s)
+    --- PASS: TestComparisonOperations/greater_than (0.00s)
+    --- PASS: TestComparisonOperations/less_or_equal (0.00s)
+    --- PASS: TestComparisonOperations/greater_or_equal (0.00s)
+=== RUN   TestLogicalOperations
+=== RUN   TestLogicalOperations/and_true
+=== RUN   TestLogicalOperations/and_false
+=== RUN   TestLogicalOperations/or_true
+=== RUN   TestLogicalOperations/or_false
+=== RUN   TestLogicalOperations/not_true
+=== RUN   TestLogicalOperations/not_false
+--- PASS: TestLogicalOperations (0.01s)
+    --- PASS: TestLogicalOperations/and_true (0.00s)
+    --- PASS: TestLogicalOperations/and_false (0.00s)
+    --- PASS: TestLogicalOperations/or_true (0.00s)
+    --- PASS: TestLogicalOperations/or_false (0.00s)
+    --- PASS: TestLogicalOperations/not_true (0.00s)
+    --- PASS: TestLogicalOperations/not_false (0.00s)
+=== RUN   TestBitwiseOperations
+=== RUN   TestBitwiseOperations/bitwise_and
+=== RUN   TestBitwiseOperations/bitwise_or
+=== RUN   TestBitwiseOperations/bitwise_xor
+=== RUN   TestBitwiseOperations/bitwise_not
+=== RUN   TestBitwiseOperations/shift_left
+=== RUN   TestBitwiseOperations/shift_right
+--- PASS: TestBitwiseOperations (0.01s)
+    --- PASS: TestBitwiseOperations/bitwise_and (0.00s)
+    --- PASS: TestBitwiseOperations/bitwise_or (0.00s)
+    --- PASS: TestBitwiseOperations/bitwise_xor (0.00s)
+    --- PASS: TestBitwiseOperations/bitwise_not (0.00s)
+    --- PASS: TestBitwiseOperations/shift_left (0.00s)
+    --- PASS: TestBitwiseOperations/shift_right (0.00s)
+=== RUN   TestAddX86RegToReg
+--- PASS: TestAddX86RegToReg (0.00s)
+=== RUN   TestAddX86ImmToReg
+--- PASS: TestAddX86ImmToReg (0.00s)
+=== RUN   TestAddARM64RegToReg
+--- PASS: TestAddARM64RegToReg (0.00s)
+=== RUN   TestAddRISCVRegToReg
+--- PASS: TestAddRISCVRegToReg (0.00s)
+=== RUN   TestSubX86RegFromReg
+--- PASS: TestSubX86RegFromReg (0.00s)
+=== RUN   TestSubARM64RegFromReg
+--- PASS: TestSubARM64RegFromReg (0.00s)
+=== RUN   TestSubRISCVRegFromReg
+--- PASS: TestSubRISCVRegFromReg (0.00s)
+=== RUN   TestJumpX86Equal
+--- PASS: TestJumpX86Equal (0.00s)
+=== RUN   TestJumpX86Unconditional
+--- PASS: TestJumpX86Unconditional (0.00s)
+=== RUN   TestJumpARM64Equal
+--- PASS: TestJumpARM64Equal (0.00s)
+=== RUN   TestJumpRISCVEqual
+--- PASS: TestJumpRISCVEqual (0.00s)
+=== RUN   TestARM64BasicCompilation
+=== RUN   TestARM64BasicCompilation/exit_zero
+    arm64_test.go:63: File type: Mach-O aarch64
+    arm64_test.go:71: Successfully compiled exit_zero: Mach-O aarch64
+=== RUN   TestARM64BasicCompilation/exit_code
+    arm64_test.go:63: File type: Mach-O aarch64
+    arm64_test.go:71: Successfully compiled exit_code: Mach-O aarch64
+--- PASS: TestARM64BasicCompilation (0.00s)
+    --- PASS: TestARM64BasicCompilation/exit_zero (0.00s)
+    --- PASS: TestARM64BasicCompilation/exit_code (0.00s)
+=== RUN   TestBasicPrograms
+=== RUN   TestBasicPrograms/hello_world
+=== RUN   TestBasicPrograms/simple_add
+=== RUN   TestBasicPrograms/simple_subtract
+=== RUN   TestBasicPrograms/simple_multiply
+=== RUN   TestBasicPrograms/simple_divide
+=== RUN   TestBasicPrograms/printf_basic
+=== RUN   TestBasicPrograms/fstring_basic
+=== RUN   TestBasicPrograms/compound_assignment
+=== RUN   TestBasicPrograms/comparison_operators
+--- PASS: TestBasicPrograms (0.02s)
+    --- PASS: TestBasicPrograms/hello_world (0.00s)
+    --- PASS: TestBasicPrograms/simple_add (0.00s)
+    --- PASS: TestBasicPrograms/simple_subtract (0.00s)
+    --- PASS: TestBasicPrograms/simple_multiply (0.00s)
+    --- PASS: TestBasicPrograms/simple_divide (0.00s)
+    --- PASS: TestBasicPrograms/printf_basic (0.00s)
+    --- PASS: TestBasicPrograms/fstring_basic (0.00s)
+    --- PASS: TestBasicPrograms/compound_assignment (0.00s)
+    --- PASS: TestBasicPrograms/comparison_operators (0.00s)
+=== RUN   TestExistingBasicPrograms
+=== RUN   TestExistingBasicPrograms/first
+    basic_programs_test.go:136: Source file testprograms/first.flap not found
+=== RUN   TestExistingBasicPrograms/hello
+    basic_programs_test.go:136: Source file testprograms/hello.flap not found
+=== RUN   TestExistingBasicPrograms/add
+    basic_programs_test.go:136: Source file testprograms/add.flap not found
+=== RUN   TestExistingBasicPrograms/subtract
+    basic_programs_test.go:136: Source file testprograms/subtract.flap not found
+=== RUN   TestExistingBasicPrograms/multiply
+    basic_programs_test.go:136: Source file testprograms/multiply.flap not found
+=== RUN   TestExistingBasicPrograms/divide
+    basic_programs_test.go:136: Source file testprograms/divide.flap not found
+=== RUN   TestExistingBasicPrograms/printf_demo
+    basic_programs_test.go:136: Source file testprograms/printf_demo.flap not found
+=== RUN   TestExistingBasicPrograms/simple_print
+    basic_programs_test.go:136: Source file testprograms/simple_print.flap not found
+=== RUN   TestExistingBasicPrograms/simple_printf
+    basic_programs_test.go:136: Source file testprograms/simple_printf.flap not found
+--- PASS: TestExistingBasicPrograms (0.00s)
+    --- SKIP: TestExistingBasicPrograms/first (0.00s)
+    --- SKIP: TestExistingBasicPrograms/hello (0.00s)
+    --- SKIP: TestExistingBasicPrograms/add (0.00s)
+    --- SKIP: TestExistingBasicPrograms/subtract (0.00s)
+    --- SKIP: TestExistingBasicPrograms/multiply (0.00s)
+    --- SKIP: TestExistingBasicPrograms/divide (0.00s)
+    --- SKIP: TestExistingBasicPrograms/printf_demo (0.00s)
+    --- SKIP: TestExistingBasicPrograms/simple_print (0.00s)
+    --- SKIP: TestExistingBasicPrograms/simple_printf (0.00s)
+=== RUN   TestCmpX86RegToReg
+--- PASS: TestCmpX86RegToReg (0.00s)
+=== RUN   TestCmpX86RegToImm8
+--- PASS: TestCmpX86RegToImm8 (0.00s)
+=== RUN   TestCmpX86RegToImm32
+--- PASS: TestCmpX86RegToImm32 (0.00s)
+=== RUN   TestCmpARM64RegToReg
+--- PASS: TestCmpARM64RegToReg (0.00s)
+=== RUN   TestCmpARM64RegToImm
+--- PASS: TestCmpARM64RegToImm (0.00s)
+=== RUN   TestCmpRISCVRegToReg
+--- PASS: TestCmpRISCVRegToReg (0.00s)
+=== RUN   TestBasicCompilation
+--- PASS: TestBasicCompilation (0.00s)
+=== RUN   TestArchitectures
+=== RUN   TestArchitectures/x86_64
+=== RUN   TestArchitectures/amd64
+=== RUN   TestArchitectures/aarch64
+=== RUN   TestArchitectures/arm64
+=== RUN   TestArchitectures/riscv64
+--- PASS: TestArchitectures (0.00s)
+    --- PASS: TestArchitectures/x86_64 (0.00s)
+    --- PASS: TestArchitectures/amd64 (0.00s)
+    --- PASS: TestArchitectures/aarch64 (0.00s)
+    --- PASS: TestArchitectures/arm64 (0.00s)
+    --- PASS: TestArchitectures/riscv64 (0.00s)
+=== RUN   TestDynamicLinking
+--- PASS: TestDynamicLinking (0.00s)
+=== RUN   TestELFSections
+--- PASS: TestELFSections (0.00s)
+=== RUN   TestPLTGOT
+--- PASS: TestPLTGOT (0.00s)
+=== RUN   TestExecutableGeneration
+    compiler_test.go:180: File type: ELF x86_64
+--- PASS: TestExecutableGeneration (0.00s)
+=== RUN   TestCTypeSize
+=== RUN   TestCTypeSize/void
+=== RUN   TestCTypeSize/int
+=== RUN   TestCTypeSize/uint
+=== RUN   TestCTypeSize/char
+=== RUN   TestCTypeSize/float
+=== RUN   TestCTypeSize/double
+=== RUN   TestCTypeSize/long
+=== RUN   TestCTypeSize/ulong
+=== RUN   TestCTypeSize/pointer
+--- PASS: TestCTypeSize (0.00s)
+    --- PASS: TestCTypeSize/void (0.00s)
+    --- PASS: TestCTypeSize/int (0.00s)
+    --- PASS: TestCTypeSize/uint (0.00s)
+    --- PASS: TestCTypeSize/char (0.00s)
+    --- PASS: TestCTypeSize/float (0.00s)
+    --- PASS: TestCTypeSize/double (0.00s)
+    --- PASS: TestCTypeSize/long (0.00s)
+    --- PASS: TestCTypeSize/ulong (0.00s)
+    --- PASS: TestCTypeSize/pointer (0.00s)
+=== RUN   TestCompilationErrors
+=== RUN   TestCompilationErrors/const_immutability
+DEBUG TYPE TRACKING: var=x, exprType=number, Value type=*main.NumberExpr
+=== RUN   TestCompilationErrors/lambda_bad_syntax
+[1;31merror: [0munexpected '->' in expression
+[1;34m  --> /tmp/flapc_error_test_3175391923.flap:2:0[0m
+  |
+2 | double = x -> x * 2
+  | 
+[1;31m1 error(s)[0m found
+
+--- PASS: TestCompilationErrors (0.00s)
+    --- PASS: TestCompilationErrors/const_immutability (0.00s)
+    --- PASS: TestCompilationErrors/lambda_bad_syntax (0.00s)
+=== RUN   TestCStructPrograms
+=== RUN   TestCStructPrograms/simple_cstruct
+=== RUN   TestCStructPrograms/packed_cstruct
+--- PASS: TestCStructPrograms (0.00s)
+    --- PASS: TestCStructPrograms/simple_cstruct (0.00s)
+    --- PASS: TestCStructPrograms/packed_cstruct (0.00s)
+=== RUN   TestExistingCStructPrograms
+=== RUN   TestExistingCStructPrograms/cstruct_test
+    cstruct_programs_test.go:67: Source file testprograms/cstruct_test.flap not found
+=== RUN   TestExistingCStructPrograms/cstruct_syntax_test
+    cstruct_programs_test.go:67: Source file testprograms/cstruct_syntax_test.flap not found
+=== RUN   TestExistingCStructPrograms/cstruct_helpers_test
+    cstruct_programs_test.go:67: Source file testprograms/cstruct_helpers_test.flap not found
+=== RUN   TestExistingCStructPrograms/cstruct_modifiers_test
+    cstruct_programs_test.go:67: Source file testprograms/cstruct_modifiers_test.flap not found
+=== RUN   TestExistingCStructPrograms/cstruct_arena_test
+    cstruct_programs_test.go:67: Source file testprograms/cstruct_arena_test.flap not found
+--- PASS: TestExistingCStructPrograms (0.00s)
+    --- SKIP: TestExistingCStructPrograms/cstruct_test (0.00s)
+    --- SKIP: TestExistingCStructPrograms/cstruct_syntax_test (0.00s)
+    --- SKIP: TestExistingCStructPrograms/cstruct_helpers_test (0.00s)
+    --- SKIP: TestExistingCStructPrograms/cstruct_modifiers_test (0.00s)
+    --- SKIP: TestExistingCStructPrograms/cstruct_arena_test (0.00s)
+=== RUN   TestDynamicELFStructure
+    dynamic_test.go:87: Warning: Failed to read dynamic symbols: no symbol section
+    dynamic_test.go:100: Note: No imported libraries found (this is expected without section headers)
+--- PASS: TestDynamicELFStructure (0.00s)
+=== RUN   TestRelocationAddresses
+--- PASS: TestRelocationAddresses (0.00s)
+=== RUN   TestPLTOffset
+=== RUN   TestPLTOffset/printf
+=== RUN   TestPLTOffset/exit
+=== RUN   TestPLTOffset/malloc
+--- PASS: TestPLTOffset (0.00s)
+    --- PASS: TestPLTOffset/printf (0.00s)
+    --- PASS: TestPLTOffset/exit (0.00s)
+    --- PASS: TestPLTOffset/malloc (0.00s)
+=== RUN   TestDynamicSectionUpdate
+--- PASS: TestDynamicSectionUpdate (0.00s)
+=== RUN   TestStringTableDeduplication
+--- PASS: TestStringTableDeduplication (0.00s)
+=== RUN   TestLDDOutput
+    dynamic_test.go:309: ldd output:
+        ldd: warning: you do not have execution permission for `/tmp/flapc_ldd_test466150932'
+        	linux-vdso.so.1 (0x00007f36f0a65000)
+        	libc.so.6 => /usr/lib/libc.so.6 (0x00007f36f0800000)
+        	/lib64/ld-linux-x86-64.so.2 => /usr/lib64/ld-linux-x86-64.so.2 (0x00007f36f0a67000)
+--- PASS: TestLDDOutput (0.00s)
+=== RUN   TestELFMagicNumber
+--- PASS: TestELFMagicNumber (0.00s)
+=== RUN   TestELFClass
+--- PASS: TestELFClass (0.00s)
+=== RUN   TestELFEndianness
+--- PASS: TestELFEndianness (0.00s)
+=== RUN   TestELFOSABI
+--- PASS: TestELFOSABI (0.00s)
+=== RUN   TestMinimalELFSize
+    elf_test.go:114: Minimal ELF size: 28896 bytes
+    elf_test.go:127: Size exceeds stretch goal by 24800 bytes (28896 > 4096)
+--- PASS: TestMinimalELFSize (0.00s)
+=== RUN   TestDynamicELFExecutable
+--- PASS: TestDynamicELFExecutable (0.00s)
+=== RUN   TestELFSegmentAlignment
+--- PASS: TestELFSegmentAlignment (0.00s)
+=== RUN   TestELFInterpSegment
+    elf_test.go:295: Interpreter: /lib64/ld-linux-x86-64.so.2
+--- PASS: TestELFInterpSegment (0.00s)
+=== RUN   TestELFDynamicSegment
+--- PASS: TestELFDynamicSegment (0.00s)
+=== RUN   TestELFType
+--- PASS: TestELFType (0.00s)
+=== RUN   TestELFMachine
+=== RUN   TestELFMachine/x86_64-linux
+=== RUN   TestELFMachine/amd64-linux
+=== RUN   TestELFMachine/aarch64-linux
+=== RUN   TestELFMachine/arm64-linux
+--- PASS: TestELFMachine (0.00s)
+    --- PASS: TestELFMachine/x86_64-linux (0.00s)
+    --- PASS: TestELFMachine/amd64-linux (0.00s)
+    --- PASS: TestELFMachine/aarch64-linux (0.00s)
+    --- PASS: TestELFMachine/arm64-linux (0.00s)
+=== RUN   TestELFPermissions
+--- PASS: TestELFPermissions (0.00s)
+=== RUN   TestEmitSyscall
+--- PASS: TestEmitSyscall (0.00s)
+=== RUN   TestEmitCallInstruction
+--- PASS: TestEmitCallInstruction (0.00s)
+=== RUN   TestBufferWrapper
+--- PASS: TestBufferWrapper (0.00s)
+=== RUN   TestLookup
+--- PASS: TestLookup (0.00s)
+=== RUN   TestARM64Syscall
+--- PASS: TestARM64Syscall (0.00s)
+=== RUN   TestPlatformStringConversion
+=== RUN   TestPlatformStringConversion/x86_64
+=== RUN   TestPlatformStringConversion/amd64
+=== RUN   TestPlatformStringConversion/aarch64
+=== RUN   TestPlatformStringConversion/arm64
+=== RUN   TestPlatformStringConversion/riscv64
+=== RUN   TestPlatformStringConversion/riscv
+=== RUN   TestPlatformStringConversion/rv64
+=== RUN   TestPlatformStringConversion/invalid
+--- PASS: TestPlatformStringConversion (0.00s)
+    --- PASS: TestPlatformStringConversion/x86_64 (0.00s)
+    --- PASS: TestPlatformStringConversion/amd64 (0.00s)
+    --- PASS: TestPlatformStringConversion/aarch64 (0.00s)
+    --- PASS: TestPlatformStringConversion/arm64 (0.00s)
+    --- PASS: TestPlatformStringConversion/riscv64 (0.00s)
+    --- PASS: TestPlatformStringConversion/riscv (0.00s)
+    --- PASS: TestPlatformStringConversion/rv64 (0.00s)
+    --- PASS: TestPlatformStringConversion/invalid (0.00s)
+=== RUN   TestPlatformToString
+--- PASS: TestPlatformToString (0.00s)
+=== RUN   TestEmitVectorMnemonics
+=== RUN   TestEmitVectorMnemonics/VMOVUPDLoad
+=== RUN   TestEmitVectorMnemonics/VMOVUPDStore
+=== RUN   TestEmitVectorMnemonics/VBROADCASTSDReg
+=== RUN   TestEmitVectorMnemonics/VBROADCASTSDMem
+=== RUN   TestEmitVectorMnemonics/VADDPD
+=== RUN   TestEmitVectorMnemonics/VMULPD
+=== RUN   TestEmitVectorMnemonics/VSUBPD
+=== RUN   TestEmitVectorMnemonics/VDIVPD
+=== RUN   TestEmitVectorMnemonics/VCMPPD
+--- PASS: TestEmitVectorMnemonics (0.00s)
+    --- PASS: TestEmitVectorMnemonics/VMOVUPDLoad (0.00s)
+    --- PASS: TestEmitVectorMnemonics/VMOVUPDStore (0.00s)
+    --- PASS: TestEmitVectorMnemonics/VBROADCASTSDReg (0.00s)
+    --- PASS: TestEmitVectorMnemonics/VBROADCASTSDMem (0.00s)
+    --- PASS: TestEmitVectorMnemonics/VADDPD (0.00s)
+    --- PASS: TestEmitVectorMnemonics/VMULPD (0.00s)
+    --- PASS: TestEmitVectorMnemonics/VSUBPD (0.00s)
+    --- PASS: TestEmitVectorMnemonics/VDIVPD (0.00s)
+    --- PASS: TestEmitVectorMnemonics/VCMPPD (0.00s)
+=== RUN   TestEmitVCMPPDInvalidPredicate
+--- PASS: TestEmitVCMPPDInvalidPredicate (0.00s)
+=== RUN   TestRodataSection
+--- PASS: TestRodataSection (0.00s)
+=== RUN   TestWriteRodata
+--- PASS: TestWriteRodata (0.00s)
+=== RUN   TestPrependBytes
+--- PASS: TestPrependBytes (0.00s)
+=== RUN   TestEmitNoAssembly
+--- PASS: TestEmitNoAssembly (0.00s)
+=== RUN   TestENetCompilation
+=== RUN   TestENetCompilation/enet_simple
+    enet_test.go:62: enet_simple: Full compilation and linking successful
+--- PASS: TestENetCompilation (0.00s)
+    --- PASS: TestENetCompilation/enet_simple (0.00s)
+=== RUN   TestENetSyntax
+=== RUN   TestENetSyntax/enet_basic
+    enet_test.go:125: Successfully compiled ENet syntax test
+--- PASS: TestENetSyntax (0.00s)
+    --- PASS: TestENetSyntax/enet_basic (0.00s)
+=== RUN   TestENetWithLibraryIfAvailable
+    enet_test.go:139: ENet library not installed (pkg-config --exists libenet failed)
+--- SKIP: TestENetWithLibraryIfAvailable (0.03s)
+=== RUN   TestHelloWorld
+--- PASS: TestHelloWorld (0.00s)
+=== RUN   TestFibonacci
+--- PASS: TestFibonacci (0.00s)
+=== RUN   Test99Bottles
+    example_test.go:46: Execution failed: signal: segmentation fault (core dumped)
+        Output: 
+--- FAIL: Test99Bottles (0.06s)
+=== RUN   TestCFunctionCall
+--- PASS: TestCFunctionCall (0.00s)
+=== RUN   TestFactorial
+--- PASS: TestFactorial (0.00s)
+=== RUN   TestExampleMapOperations
+--- PASS: TestExampleMapOperations (0.00s)
+=== RUN   TestListOperations
+--- PASS: TestListOperations (0.00s)
+=== RUN   TestMatchExpressions
+--- PASS: TestMatchExpressions (0.00s)
+=== RUN   TestNestedFunctions
+    example_test.go:135: Compilation failed: exit status 1
+        Output: DEBUG TYPE TRACKING: var=make_adder, exprType=unknown, Value type=*main.LambdaExpr
+        DEBUG TYPE TRACKING: var=add5, exprType=number, Value type=*main.CallExpr
+        DEBUG TYPE TRACKING: var=result, exprType=number, Value type=*main.CallExpr
+        Error: compilation failed: local variables in lambda bodies are not yet supported
+        Use lambda parameters instead, or hoist variables outside the lambda
+        Example: f = x => x + 1  (instead of: f = x => { y = x + 1; y })
+--- FAIL: TestNestedFunctions (0.00s)
+=== RUN   TestLoopWithLabel
+--- PASS: TestLoopWithLabel (0.00s)
+=== RUN   TestQuickSort
+--- PASS: TestQuickSort (0.00s)
+=== RUN   TestExampleStringOperations
+--- PASS: TestExampleStringOperations (0.00s)
+=== RUN   TestRecursiveSum
+    example_test.go:201: Execution failed: signal: segmentation fault (core dumped)
+        Output: 
+--- FAIL: TestRecursiveSum (0.05s)
+=== RUN   TestInsertionSort
+--- PASS: TestInsertionSort (0.00s)
+=== RUN   TestFlapHashMapBasicOperations
+--- PASS: TestFlapHashMapBasicOperations (0.00s)
+=== RUN   TestFlapHashMapUpdate
+--- PASS: TestFlapHashMapUpdate (0.00s)
+=== RUN   TestFlapHashMapDelete
+--- PASS: TestFlapHashMapDelete (0.00s)
+=== RUN   TestFlapHashMapCollision
+--- PASS: TestFlapHashMapCollision (0.00s)
+=== RUN   TestFlapHashMapResize
+--- PASS: TestFlapHashMapResize (0.00s)
+=== RUN   TestFlapHashMapKeys
+--- PASS: TestFlapHashMapKeys (0.00s)
+=== RUN   TestFlapHashMapValues
+--- PASS: TestFlapHashMapValues (0.00s)
+=== RUN   TestFlapHashMapEmpty
+--- PASS: TestFlapHashMapEmpty (0.00s)
+=== RUN   TestLambdaPrograms
+=== RUN   TestLambdaPrograms/simple_lambda
+=== RUN   TestLambdaPrograms/lambda_with_multiple_params
+=== RUN   TestLambdaPrograms/lambda_with_block
+=== RUN   TestLambdaPrograms/recursive_lambda
+--- PASS: TestLambdaPrograms (0.01s)
+    --- PASS: TestLambdaPrograms/simple_lambda (0.00s)
+    --- PASS: TestLambdaPrograms/lambda_with_multiple_params (0.00s)
+    --- PASS: TestLambdaPrograms/lambda_with_block (0.00s)
+    --- PASS: TestLambdaPrograms/recursive_lambda (0.00s)
+=== RUN   TestExistingLambdaPrograms
+=== RUN   TestExistingLambdaPrograms/lambda_test
+    lambda_programs_test.go:79: Source file testprograms/lambda_test.flap not found
+=== RUN   TestExistingLambdaPrograms/lambda_syntax_test
+    lambda_programs_test.go:79: Source file testprograms/lambda_syntax_test.flap not found
+=== RUN   TestExistingLambdaPrograms/lambda_calculator
+    lambda_programs_test.go:79: Source file testprograms/lambda_calculator.flap not found
+=== RUN   TestExistingLambdaPrograms/lambda_comprehensive
+    lambda_programs_test.go:79: Source file testprograms/lambda_comprehensive.flap not found
+=== RUN   TestExistingLambdaPrograms/lambda_direct_test
+    lambda_programs_test.go:79: Source file testprograms/lambda_direct_test.flap not found
+=== RUN   TestExistingLambdaPrograms/lambda_multi_arg_test
+    lambda_programs_test.go:79: Source file testprograms/lambda_multi_arg_test.flap not found
+=== RUN   TestExistingLambdaPrograms/lambda_multiple_test
+    lambda_programs_test.go:79: Source file testprograms/lambda_multiple_test.flap not found
+=== RUN   TestExistingLambdaPrograms/lambda_parse_test
+    lambda_programs_test.go:79: Source file testprograms/lambda_parse_test.flap not found
+=== RUN   TestExistingLambdaPrograms/lambda_store_test
+    lambda_programs_test.go:79: Source file testprograms/lambda_store_test.flap not found
+--- PASS: TestExistingLambdaPrograms (0.00s)
+    --- SKIP: TestExistingLambdaPrograms/lambda_test (0.00s)
+    --- SKIP: TestExistingLambdaPrograms/lambda_syntax_test (0.00s)
+    --- SKIP: TestExistingLambdaPrograms/lambda_calculator (0.00s)
+    --- SKIP: TestExistingLambdaPrograms/lambda_comprehensive (0.00s)
+    --- SKIP: TestExistingLambdaPrograms/lambda_direct_test (0.00s)
+    --- SKIP: TestExistingLambdaPrograms/lambda_multi_arg_test (0.00s)
+    --- SKIP: TestExistingLambdaPrograms/lambda_multiple_test (0.00s)
+    --- SKIP: TestExistingLambdaPrograms/lambda_parse_test (0.00s)
+    --- SKIP: TestExistingLambdaPrograms/lambda_store_test (0.00s)
+=== RUN   TestLeaSymbolToReg
+--- PASS: TestLeaSymbolToReg (0.00s)
+=== RUN   TestLeaImmToReg
+--- PASS: TestLeaImmToReg (0.00s)
+=== RUN   TestLeaARM64
+--- PASS: TestLeaARM64 (0.00s)
+=== RUN   TestLeaRISCV
+--- PASS: TestLeaRISCV (0.00s)
+=== RUN   TestMovVsLea
+--- PASS: TestMovVsLea (0.00s)
+=== RUN   TestListPrograms
+=== RUN   TestListPrograms/list_literal
+=== RUN   TestListPrograms/list_indexing
+=== RUN   TestListPrograms/list_update
+=== RUN   TestListPrograms/empty_list
+--- PASS: TestListPrograms (0.01s)
+    --- PASS: TestListPrograms/list_literal (0.00s)
+    --- PASS: TestListPrograms/list_indexing (0.00s)
+    --- PASS: TestListPrograms/list_update (0.00s)
+    --- PASS: TestListPrograms/empty_list (0.00s)
+=== RUN   TestExistingListPrograms
+=== RUN   TestExistingListPrograms/list_test
+    list_programs_test.go:80: Source file testprograms/list_test.flap not found
+=== RUN   TestExistingListPrograms/list_test2
+    list_programs_test.go:80: Source file testprograms/list_test2.flap not found
+=== RUN   TestExistingListPrograms/list_simple
+    list_programs_test.go:80: Source file testprograms/list_simple.flap not found
+=== RUN   TestExistingListPrograms/list_index_test
+    list_programs_test.go:80: Source file testprograms/list_index_test.flap not found
+=== RUN   TestExistingListPrograms/list_iter_test
+    list_programs_test.go:80: Source file testprograms/list_iter_test.flap not found
+=== RUN   TestExistingListPrograms/manual_list_test
+    list_programs_test.go:80: Source file testprograms/manual_list_test.flap not found
+=== RUN   TestExistingListPrograms/len_test
+    list_programs_test.go:80: Source file testprograms/len_test.flap not found
+=== RUN   TestExistingListPrograms/len_simple
+    list_programs_test.go:80: Source file testprograms/len_simple.flap not found
+=== RUN   TestExistingListPrograms/len_empty
+    list_programs_test.go:80: Source file testprograms/len_empty.flap not found
+--- PASS: TestExistingListPrograms (0.00s)
+    --- SKIP: TestExistingListPrograms/list_test (0.00s)
+    --- SKIP: TestExistingListPrograms/list_test2 (0.00s)
+    --- SKIP: TestExistingListPrograms/list_simple (0.00s)
+    --- SKIP: TestExistingListPrograms/list_index_test (0.00s)
+    --- SKIP: TestExistingListPrograms/list_iter_test (0.00s)
+    --- SKIP: TestExistingListPrograms/manual_list_test (0.00s)
+    --- SKIP: TestExistingListPrograms/len_test (0.00s)
+    --- SKIP: TestExistingListPrograms/len_simple (0.00s)
+    --- SKIP: TestExistingListPrograms/len_empty (0.00s)
+=== RUN   TestHeadFunction
+    list_programs_test.go:118: TODO: head() function needs debugging
+--- SKIP: TestHeadFunction (0.00s)
+=== RUN   TestTailFunction
+    list_programs_test.go:131: TODO: tail() function needs debugging
+--- SKIP: TestTailFunction (0.00s)
+=== RUN   TestAppendMethod
+--- PASS: TestAppendMethod (0.00s)
+=== RUN   TestAppendFunctionBasic
+--- PASS: TestAppendFunctionBasic (0.00s)
+=== RUN   TestPopMethod
+    basic_programs_test.go:109: Execution failed: signal: segmentation fault (core dumped)
+        Output: 
+--- FAIL: TestPopMethod (0.05s)
+=== RUN   TestPopFunction
+    basic_programs_test.go:109: Execution failed: signal: segmentation fault (core dumped)
+        Output: 
+--- FAIL: TestPopFunction (0.06s)
+=== RUN   TestPopEmptyList
+    basic_programs_test.go:109: Execution failed: signal: segmentation fault (core dumped)
+        Output: 
+--- FAIL: TestPopEmptyList (0.06s)
+=== RUN   TestAppendChaining
+--- PASS: TestAppendChaining (0.00s)
+=== RUN   TestListUpdateMinimal
+--- PASS: TestListUpdateMinimal (0.00s)
+=== RUN   TestListUpdateBasic
+--- PASS: TestListUpdateBasic (0.00s)
+=== RUN   TestListUpdateSingleElement
+--- PASS: TestListUpdateSingleElement (0.00s)
+=== RUN   TestListUpdateMiddleElement
+--- PASS: TestListUpdateMiddleElement (0.00s)
+=== RUN   TestListUpdateLastElement
+--- PASS: TestListUpdateLastElement (0.00s)
+=== RUN   TestListUpdateMultiple
+--- PASS: TestListUpdateMultiple (0.00s)
+=== RUN   TestListUpdatePreservesOtherElements
+--- PASS: TestListUpdatePreservesOtherElements (0.00s)
+=== RUN   TestAppendFunction
+--- PASS: TestAppendFunction (0.00s)
+=== RUN   TestTailFunctionUpdate
+    list_update_test.go:117: TODO: tail() function needs debugging
+--- SKIP: TestTailFunctionUpdate (0.00s)
+=== RUN   TestLoopPrograms
+=== RUN   TestLoopPrograms/simple_range_loop
+=== RUN   TestLoopPrograms/loop_with_arithmetic
+=== RUN   TestLoopPrograms/nested_loops
+=== RUN   TestLoopPrograms/loop_break
+=== RUN   TestLoopPrograms/list_iteration
+--- PASS: TestLoopPrograms (0.01s)
+    --- PASS: TestLoopPrograms/simple_range_loop (0.00s)
+    --- PASS: TestLoopPrograms/loop_with_arithmetic (0.00s)
+    --- PASS: TestLoopPrograms/nested_loops (0.00s)
+    --- PASS: TestLoopPrograms/loop_break (0.00s)
+    --- PASS: TestLoopPrograms/list_iteration (0.00s)
+=== RUN   TestExistingLoopPrograms
+=== RUN   TestExistingLoopPrograms/loop_test
+    loop_programs_test.go:94: Source file testprograms/loop_test.flap not found
+=== RUN   TestExistingLoopPrograms/loop_test2
+    loop_programs_test.go:94: Source file testprograms/loop_test2.flap not found
+=== RUN   TestExistingLoopPrograms/loop_simple_test
+    loop_programs_test.go:94: Source file testprograms/loop_simple_test.flap not found
+=== RUN   TestExistingLoopPrograms/loop_mult
+    loop_programs_test.go:94: Source file testprograms/loop_mult.flap not found
+=== RUN   TestExistingLoopPrograms/loop_with_arithmetic
+    loop_programs_test.go:94: Source file testprograms/loop_with_arithmetic.flap not found
+=== RUN   TestExistingLoopPrograms/loop_at_test
+    loop_programs_test.go:94: Source file testprograms/loop_at_test.flap not found
+=== RUN   TestExistingLoopPrograms/loop_break_test
+    loop_programs_test.go:94: Source file testprograms/loop_break_test.flap not found
+=== RUN   TestExistingLoopPrograms/nested_loop
+    loop_programs_test.go:94: Source file testprograms/nested_loop.flap not found
+--- PASS: TestExistingLoopPrograms (0.00s)
+    --- SKIP: TestExistingLoopPrograms/loop_test (0.00s)
+    --- SKIP: TestExistingLoopPrograms/loop_test2 (0.00s)
+    --- SKIP: TestExistingLoopPrograms/loop_simple_test (0.00s)
+    --- SKIP: TestExistingLoopPrograms/loop_mult (0.00s)
+    --- SKIP: TestExistingLoopPrograms/loop_with_arithmetic (0.00s)
+    --- SKIP: TestExistingLoopPrograms/loop_at_test (0.00s)
+    --- SKIP: TestExistingLoopPrograms/loop_break_test (0.00s)
+    --- SKIP: TestExistingLoopPrograms/nested_loop (0.00s)
+=== RUN   TestInclusiveRange
+--- PASS: TestInclusiveRange (0.00s)
+=== RUN   TestDeeplyNestedLoops
+    basic_programs_test.go:111: Output mismatch:
+        Expected to contain:
+        32
+        
+        Actual:
+        0
+    basic_programs_test.go:111: Output mismatch:
+        Expected to contain:
+        64
+        
+        Actual:
+        0
+--- FAIL: TestDeeplyNestedLoops (0.00s)
+=== RUN   TestMachOMagicNumber
+    macho_test.go:16: Mach-O tests only run on macOS
+--- SKIP: TestMachOMagicNumber (0.00s)
+=== RUN   TestMachOFileType
+    macho_test.go:44: Mach-O tests only run on macOS
+--- SKIP: TestMachOFileType (0.00s)
+=== RUN   TestMachOCPUTypes
+    macho_test.go:72: Mach-O tests only run on macOS
+--- SKIP: TestMachOCPUTypes (0.00s)
+=== RUN   TestMachOSegments
+    macho_test.go:114: Mach-O tests only run on macOS
+--- SKIP: TestMachOSegments (0.00s)
+=== RUN   TestMachOPageZero
+    macho_test.go:176: Mach-O tests only run on macOS
+--- SKIP: TestMachOPageZero (0.00s)
+=== RUN   TestMachOTextSegment
+    macho_test.go:240: Mach-O tests only run on macOS
+--- SKIP: TestMachOTextSegment (0.00s)
+=== RUN   TestMachOMinimalSize
+    macho_test.go:308: Mach-O tests only run on macOS
+--- SKIP: TestMachOMinimalSize (0.00s)
+=== RUN   TestMachOExecutable
+    macho_test.go:366: Mach-O execution tests only run on macOS
+--- SKIP: TestMachOExecutable (0.00s)
+=== RUN   TestMachOFileCommand
+    macho_test.go:460: Mach-O tests only run on macOS
+--- SKIP: TestMachOFileCommand (0.00s)
+=== RUN   TestMachOPermissions
+    macho_test.go:503: Mach-O tests only run on macOS
+--- SKIP: TestMachOPermissions (0.00s)
+=== RUN   TestBasicClass
+    oop_test.go:10: OOP features not yet fully implemented in 3.0
+--- SKIP: TestBasicClass (0.00s)
+=== RUN   TestClassWithMutableFields
+    oop_test.go:35: OOP features not yet fully implemented in 3.0
+--- SKIP: TestClassWithMutableFields (0.00s)
+=== RUN   TestClassComposition
+    oop_test.go:63: OOP features not yet fully implemented in 3.0
+--- SKIP: TestClassComposition (0.00s)
+=== RUN   TestClassInheritance
+    oop_test.go:96: OOP features not yet fully implemented in 3.0
+--- SKIP: TestClassInheritance (0.00s)
+=== RUN   TestDotNotation
+    oop_test.go:135: OOP features not yet fully implemented in 3.0
+--- SKIP: TestDotNotation (0.00s)
+=== RUN   TestMultipleComposition
+    oop_test.go:163: OOP features not yet fully implemented in 3.0
+--- SKIP: TestMultipleComposition (0.00s)
+=== RUN   TestParallelPrograms
+=== RUN   TestParallelPrograms/parallel_simple
+Info: Parallel loop detected: 2 threads for range [0, 4)
+      Work distribution: 2 items/thread
+      Emitting parallel execution assembly code
+      Note: V6 spawning 2 threads with barrier synchronization
+      Spawning thread 0 with range [0, 2)
+      Spawning thread 1 with range [2, 4)
+Info: Parallel loop detected: 2 threads for range [0, 4)
+      Work distribution: 2 items/thread
+      Emitting parallel execution assembly code
+      Note: V6 spawning 2 threads with barrier synchronization
+      Spawning thread 0 with range [0, 2)
+      Spawning thread 1 with range [2, 4)
+=== RUN   TestParallelPrograms/parallel_noop
+Info: Parallel loop detected: 2 threads for range [0, 10)
+      Work distribution: 5 items/thread
+      Emitting parallel execution assembly code
+      Note: V6 spawning 2 threads with barrier synchronization
+      Spawning thread 0 with range [0, 5)
+      Spawning thread 1 with range [5, 10)
+Info: Parallel loop detected: 2 threads for range [0, 10)
+      Work distribution: 5 items/thread
+      Emitting parallel execution assembly code
+      Note: V6 spawning 2 threads with barrier synchronization
+      Spawning thread 0 with range [0, 5)
+      Spawning thread 1 with range [5, 10)
+--- PASS: TestParallelPrograms (0.00s)
+    --- PASS: TestParallelPrograms/parallel_simple (0.00s)
+    --- PASS: TestParallelPrograms/parallel_noop (0.00s)
+=== RUN   TestExistingParallelPrograms
+=== RUN   TestExistingParallelPrograms/parallel_simple
+    parallel_programs_test.go:77: Source file testprograms/parallel_simple.flap not found
+=== RUN   TestExistingParallelPrograms/parallel_noop
+    parallel_programs_test.go:77: Source file testprograms/parallel_noop.flap not found
+=== RUN   TestExistingParallelPrograms/parallel_single
+    parallel_programs_test.go:77: Source file testprograms/parallel_single.flap not found
+=== RUN   TestExistingParallelPrograms/parallel_test
+    parallel_programs_test.go:77: Source file testprograms/parallel_test.flap not found
+=== RUN   TestExistingParallelPrograms/parallel_test_simple
+    parallel_programs_test.go:77: Source file testprograms/parallel_test_simple.flap not found
+=== RUN   TestExistingParallelPrograms/parallel_empty
+    parallel_programs_test.go:77: Source file testprograms/parallel_empty.flap not found
+=== RUN   TestExistingParallelPrograms/parallel_empty_range
+    parallel_programs_test.go:77: Source file testprograms/parallel_empty_range.flap not found
+--- PASS: TestExistingParallelPrograms (0.00s)
+    --- SKIP: TestExistingParallelPrograms/parallel_simple (0.00s)
+    --- SKIP: TestExistingParallelPrograms/parallel_noop (0.00s)
+    --- SKIP: TestExistingParallelPrograms/parallel_single (0.00s)
+    --- SKIP: TestExistingParallelPrograms/parallel_test (0.00s)
+    --- SKIP: TestExistingParallelPrograms/parallel_test_simple (0.00s)
+    --- SKIP: TestExistingParallelPrograms/parallel_empty (0.00s)
+    --- SKIP: TestExistingParallelPrograms/parallel_empty_range (0.00s)
+=== RUN   TestPrintfWithStringLiteral
+=== RUN   TestPrintfWithStringLiteral/simple_string
+=== RUN   TestPrintfWithStringLiteral/string_with_%s_format
+=== RUN   TestPrintfWithStringLiteral/number_with_%g_format
+=== RUN   TestPrintfWithStringLiteral/boolean_with_%b_format
+--- PASS: TestPrintfWithStringLiteral (0.01s)
+    --- PASS: TestPrintfWithStringLiteral/simple_string (0.00s)
+    --- PASS: TestPrintfWithStringLiteral/string_with_%s_format (0.00s)
+    --- PASS: TestPrintfWithStringLiteral/number_with_%g_format (0.00s)
+    --- PASS: TestPrintfWithStringLiteral/boolean_with_%b_format (0.00s)
+=== RUN   TestRandomSkipped
+    random_test.go:6: Random tests temporarily disabled
+--- SKIP: TestRandomSkipped (0.00s)
+=== RUN   TestRegisterAllocatorBasic
+--- PASS: TestRegisterAllocatorBasic (0.00s)
+=== RUN   TestRegisterAllocatorOverlapping
+--- PASS: TestRegisterAllocatorOverlapping (0.00s)
+=== RUN   TestRegisterAllocatorSpilling
+--- PASS: TestRegisterAllocatorSpilling (0.00s)
+=== RUN   TestRegisterAllocatorARM64
+--- PASS: TestRegisterAllocatorARM64 (0.00s)
+=== RUN   TestRegisterAllocatorRISCV
+--- PASS: TestRegisterAllocatorRISCV (0.00s)
+=== RUN   TestRegisterAllocatorReset
+--- PASS: TestRegisterAllocatorReset (0.00s)
+=== RUN   TestRegisterAllocatorLiveIntervals
+--- PASS: TestRegisterAllocatorLiveIntervals (0.00s)
+=== RUN   TestRegisterAllocatorUsedCalleeSaved
+--- PASS: TestRegisterAllocatorUsedCalleeSaved (0.00s)
+=== RUN   TestPCRelocationPatchingX86
+--- PASS: TestPCRelocationPatchingX86 (0.00s)
+=== RUN   TestPCRelocationPatchingARM64
+--- PASS: TestPCRelocationPatchingARM64 (0.00s)
+=== RUN   TestPCRelocationPatchingRISCV
+--- PASS: TestPCRelocationPatchingRISCV (0.00s)
+=== RUN   TestDivisionByZeroReturnsNaN
+--- PASS: TestDivisionByZeroReturnsNaN (0.00s)
+=== RUN   TestOrBangWithSuccess
+--- PASS: TestOrBangWithSuccess (0.00s)
+=== RUN   TestOrBangWithError
+--- PASS: TestOrBangWithError (0.00s)
+=== RUN   TestOrBangChaining
+--- PASS: TestOrBangChaining (0.00s)
+=== RUN   TestErrorPropertySimple
+--- PASS: TestErrorPropertySimple (0.00s)
+=== RUN   TestErrorPropertyLength
+--- PASS: TestErrorPropertyLength (0.00s)
+=== RUN   TestErrorPropertyBasic
+    result_type_test.go:84: TODO: Division by zero needs to encode error in result value
+--- SKIP: TestErrorPropertyBasic (0.00s)
+=== RUN   TestErrorFunction
+    result_type_test.go:100: TODO: error() function not yet implemented
+--- SKIP: TestErrorFunction (0.00s)
+=== RUN   TestErrorPropertyOnSuccess
+--- PASS: TestErrorPropertyOnSuccess (0.00s)
+=== RUN   TestSafeBufferBasicUsage
+--- PASS: TestSafeBufferBasicUsage (0.00s)
+=== RUN   TestSafeBufferPreventsWriteAfterCommit
+--- PASS: TestSafeBufferPreventsWriteAfterCommit (0.00s)
+=== RUN   TestSafeBufferReset
+--- PASS: TestSafeBufferReset (0.00s)
+=== RUN   TestScopedBuffer
+--- PASS: TestScopedBuffer (0.00s)
+=== RUN   TestScopedBufferReuse
+--- PASS: TestScopedBufferReuse (0.00s)
+=== RUN   TestScopedBufferMustCompleteBeforeRead
+--- PASS: TestScopedBufferMustCompleteBeforeRead (0.00s)
+=== RUN   TestErrorPropertyDebug
+    string_map_test.go:18: Output: "start\nbefore\nafter\n"
+--- PASS: TestErrorPropertyDebug (0.00s)
+=== RUN   TestPropertyAccessOnNumber
+    string_map_test.go:31: Output: "ok\n"
+--- PASS: TestPropertyAccessOnNumber (0.00s)
+=== RUN   TestStringOperations
+=== RUN   TestStringOperations/string_literal
+=== RUN   TestStringOperations/string_variable
+=== RUN   TestStringOperations/string_concatenation
+=== RUN   TestStringOperations/string_length
+=== RUN   TestStringOperations/empty_string
+--- PASS: TestStringOperations (0.01s)
+    --- PASS: TestStringOperations/string_literal (0.00s)
+    --- PASS: TestStringOperations/string_variable (0.00s)
+    --- PASS: TestStringOperations/string_concatenation (0.00s)
+    --- PASS: TestStringOperations/string_length (0.00s)
+    --- PASS: TestStringOperations/empty_string (0.00s)
+=== RUN   TestMapOperations
+=== RUN   TestMapOperations/map_create_access
+=== RUN   TestMapOperations/map_length
+=== RUN   TestMapOperations/map_update
+=== RUN   TestMapOperations/empty_map
+--- PASS: TestMapOperations (0.01s)
+    --- PASS: TestMapOperations/map_create_access (0.00s)
+    --- PASS: TestMapOperations/map_length (0.00s)
+    --- PASS: TestMapOperations/map_update (0.00s)
+    --- PASS: TestMapOperations/empty_map (0.00s)
+=== RUN   TestListOperationsComprehensive
+=== RUN   TestListOperationsComprehensive/list_create_access
+=== RUN   TestListOperationsComprehensive/list_length
+=== RUN   TestListOperationsComprehensive/empty_list
+=== RUN   TestListOperationsComprehensive/list_update
+--- PASS: TestListOperationsComprehensive (0.01s)
+    --- PASS: TestListOperationsComprehensive/list_create_access (0.00s)
+    --- PASS: TestListOperationsComprehensive/list_length (0.00s)
+    --- PASS: TestListOperationsComprehensive/empty_list (0.00s)
+    --- PASS: TestListOperationsComprehensive/list_update (0.00s)
+=== RUN   TestPrintfFormatting
+=== RUN   TestPrintfFormatting/printf_integer
+=== RUN   TestPrintfFormatting/printf_float
+=== RUN   TestPrintfFormatting/printf_string
+=== RUN   TestPrintfFormatting/printf_multiple
+=== RUN   TestPrintfFormatting/printf_boolean
+--- PASS: TestPrintfFormatting (0.01s)
+    --- PASS: TestPrintfFormatting/printf_integer (0.00s)
+    --- PASS: TestPrintfFormatting/printf_float (0.00s)
+    --- PASS: TestPrintfFormatting/printf_string (0.00s)
+    --- PASS: TestPrintfFormatting/printf_multiple (0.00s)
+    --- PASS: TestPrintfFormatting/printf_boolean (0.00s)
+FAIL
+exit status 1
+FAIL	github.com/xyproto/flapc	0.605s

@@ -1,0 +1,21 @@
+*** /dev/null
+--- /dev/null
+***************
+*** 3930,3939
+- Save left to stack (xmm2 may be clobbered by function calls in right expr)
+- 16)
+- "rsp", 0)
+- Compile right into xmm0
+- (e.Right)
+- Move right operand to xmm1
+- "xmm0")
+- Restore left operand from stack to xmm0
+- "rsp", 0)
+- 16)
+--- 3930,3935 -----
++ Save left to xmm2 register (avoids stack manipulation)
++ "xmm0")
++ Compile right into xmm0
++ (e.Right)
++ "xmm0")
++ "xmm2")

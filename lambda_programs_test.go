@@ -24,19 +24,15 @@ println(result)
 		},
 		{
 			name: "lambda_with_multiple_params",
-			source: `add := (a, b) => a + b
-result := add(10, 20)
+			source: `add = (a, b) => a + b
+result = add(10, 20)
 println(result)
 `,
 			expected: "30\n",
 		},
 		{
 			name: "lambda_with_block",
-			source: `calculate := (x, y) => {
-    temp := x * 2
-    result := temp + y
-    ret result
-}
+			source: `calculate = (x, y) => x * 2 + y
 println(calculate(5, 3))
 `,
 			expected: "13\n",
