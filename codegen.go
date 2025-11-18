@@ -6282,8 +6282,9 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 			fc.variables[paramName] = paramOffset
 			fc.mutableVars[paramName] = false
 
-			// Mark parameter type as "unknown" for flexible usage
-			fc.varTypes[paramName] = "unknown"
+			// Mark parameter type as "number" by default (all values are float64 in Flap)
+			// This prevents x + y from being interpreted as list append when x and y are parameters
+			fc.varTypes[paramName] = "number"
 
 			// Store parameter at fixed offset (no rsp modification!)
 			fc.out.MovXmmToMem(xmmRegs[i], "rbp", -paramOffset)
@@ -9980,8 +9981,7 @@ func (fc *FlapCompiler) compileTailRecursiveCall(call *CallExpr) {
 }
 
 func (fc *FlapCompiler) compileRecursiveCall(call *CallExpr) {
-	// TEMPORARY: Disable tail call optimization to debug
-	if false && fc.inTailPosition {
+	if fc.inTailPosition {
 		fc.tailCallsOptimized++
 		fc.compileTailRecursiveCall(call)
 		return
