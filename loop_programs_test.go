@@ -139,8 +139,8 @@ func TestInclusiveRange(t *testing.T) {
 
 // TestDeeplyNestedLoops tests loops with 5+ levels of nesting (uses stack-based counters)
 func TestDeeplyNestedLoops(t *testing.T) {
-// Test 5-level nesting (levels 0-2 use registers, 3-4 use stack)
-source5 := `sum := 0
+	// Test 5-level nesting (levels 0-2 use registers, 3-4 use stack)
+	source5 := `sum := 0
 @ a in 0..<2 {
     @ b in 0..<2 {
         @ c in 0..<2 {
@@ -154,10 +154,10 @@ source5 := `sum := 0
 }
 println(sum)
 `
-testInlineFlap(t, "5_level_nesting", source5, "32\n")
+	testInlineFlap(t, "5_level_nesting", source5, "32\n")
 
-// Test 6-level nesting (all stack-based beyond first 3)
-source6 := `count := 0
+	// Test 6-level nesting (all stack-based beyond first 3)
+	source6 := `count := 0
 @ a in 0..<2 {
     @ b in 0..<2 {
         @ c in 0..<2 {
@@ -173,5 +173,5 @@ source6 := `count := 0
 }
 println(count)
 `
-testInlineFlap(t, "6_level_nesting", source6, "64\n")
+	testInlineFlap(t, "6_level_nesting", source6, "64\n")
 }

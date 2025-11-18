@@ -176,7 +176,10 @@ type_cast       = "int8" | "int16" | "int32" | "int64"
 
 assignment      = identifier ("=" | ":=" | "<-" | "==>") expression
                 | identifier ("+=" | "-=" | "*=" | "/=" | "%=" | "**=") expression
-                | indexed_expr "<-" expression ;
+                | indexed_expr "<-" expression
+                | identifier_list ("=" | ":=" | "<-") expression ;  // Multiple assignment
+
+identifier_list = identifier { "," identifier } ;
 
 indexed_expr    = identifier "[" expression "]" ;
 
@@ -517,13 +520,31 @@ All bitwise operators use `b` suffix:
 <-    Update/reassignment (for mutable vars)
 ==>   No-arg lambda shorthand (alias for () =>)
 
-+=    Add and assign
++=    Add and assign (for lists: append element)
 -=    Subtract and assign
 *=    Multiply and assign
 /=    Divide and assign
 %=    Modulo and assign
 **=   Exponentiate and assign
 ```
+
+**Multiple Assignment (Tuple Unpacking):**
+
+```flap
+// Functions can return multiple values as a list
+a, b = some_function()  // Unpack first two elements
+x, y, z := [1, 2, 3]    // Unpack list literal
+
+// Practical example with pop()
+new_list, popped_value = pop(old_list)
+```
+
+When a function returns a list, multiple assignment unpacks the elements:
+- Right side must evaluate to a list/map
+- Left side specifies variable names separated by commas
+- Variables are assigned elements at indices 0, 1, 2, etc.
+- If list has fewer elements than variables, remaining variables get 0
+- If list has more elements, extra elements are ignored
 
 ### Collection Operators
 

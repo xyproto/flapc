@@ -390,6 +390,44 @@ config := { port: 8080 }
 config.port <- 9000  // Update map field
 ```
 
+### Multiple Assignment (Tuple Unpacking)
+
+Multiple variables can be assigned from a list in a single statement:
+
+```flap
+// Unpack function return (list)
+new_list, popped_value = pop([1, 2, 3])
+println(new_list)      // [1, 2]
+println(popped_value)  // 3
+
+// Unpack list literal
+x, y, z := [10, 20, 30]
+
+// Works with any list expression
+first, second = some_function()
+a, b, c = [1, 2, 3, 4, 5]  // a=1, b=2, c=3 (extras ignored)
+```
+
+**Rules:**
+- Right side must evaluate to a list/map
+- Variables are assigned elements at indices 0, 1, 2, etc.
+- If list has fewer elements, remaining variables get `0`
+- If list has more elements, extras are ignored
+- Can use `=`, `:=`, or `<-` (with mutable vars)
+
+**Common patterns:**
+```flap
+// Swap values
+a, b := 1, 2
+a, b <- [b, a]  // Swap using list literal
+
+// Split list
+head, rest = ^xs, _xs  // First element and remaining
+
+// Function with multiple returns
+quotient, remainder = divmod(17, 5)
+```
+
 ### Function Assignment Convention
 
 **Always use `=` for functions** unless the function variable needs reassignment:

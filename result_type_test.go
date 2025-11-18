@@ -79,7 +79,7 @@ println(len)
 	}
 }
 
-// TestErrorPropertyBasic tests .error property on Result types  
+// TestErrorPropertyBasic tests .error property on Result types
 func TestErrorPropertyBasic(t *testing.T) {
 	t.Skip("TODO: Division by zero needs to encode error in result value")
 	source := `result = 10 / 0

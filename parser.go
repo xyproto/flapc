@@ -1021,6 +1021,14 @@ func (p *Parser) parseStatement() Statement {
 
 	// Check for assignment (=, :=, ==>, <-, with optional type annotation, and compound assignments)
 	if p.current.Type == TOKEN_IDENT {
+		// Check for multiple assignment: a, b, c = expr
+		if p.peek.Type == TOKEN_COMMA {
+			// Could be multiple assignment or lambda params - lookahead
+			if stmt := p.tryParseMultipleAssignment(); stmt != nil {
+				return stmt
+			}
+		}
+
 		if p.peek.Type == TOKEN_EQUALS || p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_COLON_EQUALS || p.peek.Type == TOKEN_LEFT_ARROW || p.peek.Type == TOKEN_COLON ||
 			p.peek.Type == TOKEN_PLUS_EQUALS || p.peek.Type == TOKEN_MINUS_EQUALS ||
 			p.peek.Type == TOKEN_STAR_EQUALS || p.peek.Type == TOKEN_POWER_EQUALS || p.peek.Type == TOKEN_SLASH_EQUALS || p.peek.Type == TOKEN_MOD_EQUALS {
@@ -1343,6 +1351,69 @@ func (p *Parser) parseAssignment() *AssignStmt {
 	}
 
 	return &AssignStmt{Name: name, Value: value, Mutable: mutable, IsUpdate: isUpdate, Precision: precision}
+}
+
+func (p *Parser) tryParseMultipleAssignment() Statement {
+	// Try to parse: a, b, c = expr or a, b := expr
+	// Must NOT confuse with lambda params: (a, b) => ...
+	// Save lexer state in case this is not a multiple assignment
+	lexerState := p.lexer.save()
+	savedCurrent := p.current
+	savedPeek := p.peek
+
+	// Collect identifiers
+	names := []string{p.current.Value}
+	p.nextToken() // skip first identifier
+
+	for p.current.Type == TOKEN_COMMA {
+		p.nextToken() // skip ','
+		if p.current.Type != TOKEN_IDENT {
+			// Not a valid multiple assignment, restore state
+			p.lexer.restore(lexerState)
+			p.current = savedCurrent
+			p.peek = savedPeek
+			return nil
+		}
+		names = append(names, p.current.Value)
+		p.nextToken() // skip identifier
+	}
+
+	// Check if this is a lambda (=> follows the names)
+	if p.current.Type == TOKEN_FAT_ARROW || p.current.Type == TOKEN_ARROW {
+		// This is lambda params, not multiple assignment
+		p.lexer.restore(lexerState)
+		p.current = savedCurrent
+		p.peek = savedPeek
+		return nil
+	}
+
+	// Check for assignment operator
+	isUpdate := p.current.Type == TOKEN_LEFT_ARROW
+	mutable := p.current.Type == TOKEN_COLON_EQUALS || isUpdate
+	isAssign := p.current.Type == TOKEN_EQUALS || mutable
+
+	if !isAssign {
+		// Not an assignment, restore state
+		p.lexer.restore(lexerState)
+		p.current = savedCurrent
+		p.peek = savedPeek
+		return nil
+	}
+
+	p.nextToken() // skip assignment operator
+
+	// Parse the value expression
+	value := p.parseExpression()
+	if value == nil {
+		p.error("expected expression after assignment operator in multiple assignment")
+	}
+
+	return &MultipleAssignStmt{
+		Names:    names,
+		Value:    value,
+		Mutable:  mutable,
+		IsUpdate: isUpdate,
+	}
 }
 
 func (p *Parser) parseIndexedAssignment() Statement {

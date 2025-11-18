@@ -37,6 +37,26 @@ type AssignStmt struct {
 	Precision      string // Type annotation: "b64", "f32", etc. (empty if none)
 }
 
+type MultipleAssignStmt struct {
+	Names    []string   // Variable names (left side)
+	Value    Expression // Expression that should evaluate to a list (right side)
+	Mutable  bool       // true for := or <-, false for =
+	IsUpdate bool       // true for <-, false for = and :=
+}
+
+func (m *MultipleAssignStmt) String() string {
+	op := "="
+	if m.IsUpdate {
+		op = "<-"
+	} else if m.Mutable {
+		op = ":="
+	}
+	names := strings.Join(m.Names, ", ")
+	return names + " " + op + " " + m.Value.String()
+}
+
+func (m *MultipleAssignStmt) statementNode() {}
+
 func (a *AssignStmt) String() string {
 	op := "="
 	if a.IsUpdate {

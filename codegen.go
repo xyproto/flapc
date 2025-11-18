@@ -1136,6 +1136,43 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 				}
 			}
 		}
+	case *MultipleAssignStmt:
+		// Multiple assignment: a, b, c = expr
+		// Each variable needs stack space
+		for _, name := range s.Names {
+			_, exists := fc.variables[name]
+
+			if s.IsUpdate {
+				// Update operation (<-) requires existing mutable variables
+				if !exists {
+					return fmt.Errorf("cannot update undefined variable '%s'", name)
+				}
+				if !fc.mutableVars[name] {
+					return fmt.Errorf("cannot update immutable variable '%s' (use <- only for mutable variables)", name)
+				}
+			} else if s.Mutable {
+				if exists {
+					return fmt.Errorf("variable '%s' already defined", name)
+				}
+				fc.updateStackOffset(16)
+				offset := fc.stackOffset
+				fc.variables[name] = offset
+				fc.mutableVars[name] = true
+				// Type will be determined at runtime from list elements
+				fc.varTypes[name] = "unknown"
+			} else {
+				// Immutable assignment
+				if exists && fc.mutableVars[name] {
+					// Can't shadow mutable with immutable in multiple assignment
+					return fmt.Errorf("variable '%s' is mutable, cannot shadow in multiple assignment", name)
+				}
+				fc.updateStackOffset(16)
+				offset := fc.stackOffset
+				fc.variables[name] = offset
+				fc.mutableVars[name] = false
+				fc.varTypes[name] = "unknown"
+			}
+		}
 	case *LoopStmt:
 		baseOffset := fc.stackOffset
 
@@ -1476,6 +1513,71 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 			baseReg = "r11"
 		}
 		fc.out.MovXmmToMem("xmm0", baseReg, -offset)
+
+	case *MultipleAssignStmt:
+		// Multiple assignment: a, b, c = expr
+		// expr must evaluate to a list, we unpack elements to variables
+
+		// Allocate stack space for new variables (if not updating)
+		if !s.IsUpdate {
+			for _, name := range s.Names {
+				if !fc.mutableVars[name] || s.Mutable {
+					// New variable needs stack space
+					fc.out.SubImmFromReg("rsp", 16)
+					fc.runtimeStack += 16
+				}
+			}
+		}
+
+		// Compile the expression (should return a list pointer in xmm0)
+		fc.compileExpression(s.Value)
+
+		// Save list pointer to stack
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+		// Load list pointer to a register
+		fc.out.MovqXmmToReg("rsi", "xmm0") // rsi = list pointer
+
+		// Extract each element and assign to variables
+		for i, name := range s.Names {
+			offset := fc.variables[name]
+
+			// Calculate element offset: 8 + i*16 + 8 = 16 + i*16
+			elementOffset := 16 + i*16
+
+			// Load element at index i
+			// Check if list is non-null first (for safety)
+			fc.out.TestRegReg("rsi", "rsi")
+			skipLoad := fc.eb.text.Len()
+			fc.out.JumpConditional(JumpEqual, 0) // If null, skip to zero
+			skipLoadPatch := fc.eb.text.Len()
+
+			// List exists, load element
+			fc.out.MovMemToXmm("xmm0", "rsi", elementOffset)
+			skipAfterLoad := fc.eb.text.Len()
+			fc.out.JumpUnconditional(0)
+			skipAfterLoadPatch := fc.eb.text.Len()
+
+			// List is null or element doesn't exist, use 0
+			zeroPos := fc.eb.text.Len()
+			fc.patchJumpImmediate(skipLoad+2, int32(zeroPos-skipLoadPatch))
+			fc.out.XorpdXmm("xmm0", "xmm0")
+
+			// Patch skip-after-load jump
+			afterZeroPos := fc.eb.text.Len()
+			fc.patchJumpImmediate(skipAfterLoad+1, int32(afterZeroPos-skipAfterLoadPatch))
+
+			// Store to variable
+			baseReg := "rbp"
+			if fc.parentVariables != nil && fc.parentVariables[name] {
+				baseReg = "r11"
+			}
+			fc.out.MovXmmToMem("xmm0", baseReg, -offset)
+		}
+
+		// Clean up list pointer from stack
+		fc.out.AddImmToReg("rsp", 8)
 
 	case *MapUpdateStmt:
 		// List/map element update: arr[idx] <- value
@@ -1878,7 +1980,7 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	// Determine if we need stack space for counter (depth >= 3)
 	loopDepth := len(fc.activeLoops)
 	needsStackCounter := loopDepth >= 3
-	
+
 	if stmt.NeedsMaxCheck {
 		// Need extra space for iteration tracking
 		// Stack layout: [iteration_count][max_iterations][limit][counter(if needed)][iterator]
@@ -1910,7 +2012,7 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 		} else {
 			stackSize = 32
 			loopStateOffset = baseOffset + 32
-			limitOffset = loopStateOffset - 16  // Original offset
+			limitOffset = loopStateOffset - 16 // Original offset
 			iterOffset = loopStateOffset
 		}
 	}
@@ -1940,13 +2042,13 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 
 	switch loopDepth {
 	case 0:
-		counterReg = "r12"  // Reserve r12 for outermost loop
+		counterReg = "r12" // Reserve r12 for outermost loop
 		useRegister = true
 	case 1:
-		counterReg = "r13"  // Reserve r13 for second level
+		counterReg = "r13" // Reserve r13 for second level
 		useRegister = true
 	case 2:
-		counterReg = "r14"  // Reserve r14 for third level
+		counterReg = "r14" // Reserve r14 for third level
 		useRegister = true
 	default:
 		// Too deep (3+ levels) - use stack
@@ -3395,7 +3497,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			// For numbers, return 1.0 (numbers are single-element maps)
 			// For unknown types, treat as list/map/string (load length from pointer)
 			operandType := fc.getExprType(e.Operand)
-			
+
 			if operandType == "number" {
 				// It's a number, return 1.0
 				fc.out.MovImmToReg("rax", "1")
@@ -3406,7 +3508,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.MovXmmToMem("xmm0", "rsp", 0)
 				fc.out.MovMemToReg("rax", "rsp", 0)
 				fc.out.AddImmToReg("rsp", StackSlotSize)
-				
+
 				// Load the count from the map at offset 0
 				fc.out.MovMemToXmm("xmm0", "rax", 0)
 			}
@@ -3414,7 +3516,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			// Head operator: return first element of list/map
 			// For numbers, return the number itself
 			operandType := fc.getExprType(e.Operand)
-			
+
 			if operandType == "number" {
 				// It's a number, return it as-is (xmm0 already contains it)
 				// No-op
@@ -3424,7 +3526,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.MovXmmToMem("xmm0", "rsp", 0)
 				fc.out.MovMemToReg("rax", "rsp", 0)
 				fc.out.AddImmToReg("rsp", StackSlotSize)
-				
+
 				// Skip past length (8 bytes) + first key (8 bytes) to get to first value
 				fc.out.AddImmToReg("rax", 16)
 				fc.out.MovMemToXmm("xmm0", "rax", 0)
@@ -3433,7 +3535,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			// Tail operator: return list/map without first element
 			// For numbers, return [] (empty list, represented as 0.0)
 			operandType := fc.getExprType(e.Operand)
-			
+
 			if operandType == "number" {
 				// It's a number, return empty list (0.0)
 				fc.out.XorpdXmm("xmm0", "xmm0") // xmm0 = 0.0
@@ -3443,17 +3545,17 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.MovXmmToMem("xmm0", "rsp", 0)
 				fc.out.MovMemToReg("rax", "rsp", 0)
 				fc.out.AddImmToReg("rsp", StackSlotSize)
-				
+
 				// Load length from map at offset 0
 				fc.out.MovMemToXmm("xmm1", "rax", 0)
 				fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int(length)
-				
+
 				// Check if length is 0 or 1
 				fc.out.CmpRegToImm("rcx", 1)
-				
+
 				emptyJumpPos := fc.eb.text.Len()
 				fc.out.JumpConditional(JumpLessOrEqual, 0) // Placeholder
-				
+
 				// Length > 1: return pointer to rest of list (skip first element)
 				// Skip length (8) + first key (8) + first value (8) = 24 bytes
 				fc.out.AddImmToReg("rax", 24)
@@ -3461,21 +3563,21 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.MovRegToMem("rax", "rsp", 0)
 				fc.out.MovMemToXmm("xmm0", "rsp", 0)
 				fc.out.AddImmToReg("rsp", StackSlotSize)
-				
+
 				doneJumpPos := fc.eb.text.Len()
 				fc.out.JumpUnconditional(0) // Placeholder
-				
+
 				// Empty case: return 0.0
 				emptyTarget := fc.eb.text.Len()
 				fc.out.XorpdXmm("xmm0", "xmm0") // xmm0 = 0.0
-				
+
 				// Done
 				doneTarget := fc.eb.text.Len()
-				
+
 				// Patch jumps
 				emptyOffset := int32(emptyTarget - (emptyJumpPos + ConditionalJumpSize))
 				fc.patchJumpImmediate(emptyJumpPos+2, emptyOffset)
-				
+
 				doneOffset := int32(doneTarget - (doneJumpPos + UnconditionalJumpSize))
 				fc.patchJumpImmediate(doneJumpPos+1, doneOffset)
 			}
@@ -3677,25 +3779,25 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.compileExpression(e.Left)
 				fc.out.SubImmFromReg("rsp", 8)
 				fc.out.MovXmmToMem("xmm0", "rsp", 0)
-				
+
 				// Compile element (result in xmm0)
 				fc.compileExpression(e.Right)
 				fc.out.SubImmFromReg("rsp", 8)
 				fc.out.MovXmmToMem("xmm0", "rsp", 0)
-				
+
 				// Use the same append logic as the append() builtin
 				// Load list pointer and get count
 				fc.out.MovMemToXmm("xmm1", "rsp", 8)
 				fc.out.MovqXmmToReg("rsi", "xmm1")
 				fc.out.MovMemToXmm("xmm2", "rsi", 0)
 				fc.out.Cvttsd2si("rcx", "xmm2")
-				
+
 				// Calculate new size: 8 + (count + 1) * 16
 				fc.out.MovRegToReg("rdx", "rcx")
 				fc.out.AddImmToReg("rdx", 1)
 				fc.out.ShlImmReg("rdx", 4)
 				fc.out.AddImmToReg("rdx", 8)
-				
+
 				// Allocate new list
 				fc.out.MovRegToReg("rdi", "rdx")
 				fc.out.PushReg("rsi")
@@ -3704,56 +3806,56 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.eb.GenerateCallInstruction("malloc")
 				fc.out.PopReg("rcx")
 				fc.out.PopReg("rsi")
-				
+
 				// Store new count
 				fc.out.MovRegToReg("r10", "rcx")
 				fc.out.AddImmToReg("r10", 1)
 				fc.out.Cvtsi2sd("xmm3", "r10")
 				fc.out.MovXmmToMem("xmm3", "rax", 0)
-				
+
 				// Copy old elements if count > 0
 				fc.out.TestRegReg("rcx", "rcx")
 				skipCopyJump := fc.eb.text.Len()
 				fc.out.JumpConditional(JumpEqual, 0)
 				skipCopyPatch := fc.eb.text.Len()
-				
+
 				fc.out.PushReg("rax")
 				fc.out.PushReg("rsi")
 				fc.out.PushReg("rcx")
-				
+
 				fc.out.LeaMemToReg("rdi", "rax", 8)
 				fc.out.LeaMemToReg("rsi", "rsi", 8)
 				fc.out.MovRegToReg("rdx", "rcx")
 				fc.out.ShlImmReg("rdx", 4)
-				
+
 				fc.trackFunctionCall("memcpy")
 				fc.eb.GenerateCallInstruction("memcpy")
-				
+
 				fc.out.PopReg("rcx")
 				fc.out.PopReg("rsi")
 				fc.out.PopReg("rax")
-				
+
 				// Patch skip jump
 				currentPos := fc.eb.text.Len()
 				skipOffset := currentPos - skipCopyPatch
 				fc.patchJumpImmediate(skipCopyJump+2, int32(skipOffset))
-				
+
 				// Add new entry at end
 				fc.out.MovRegToReg("rdx", "rcx")
 				fc.out.ShlImmReg("rdx", 4)
 				fc.out.AddImmToReg("rdx", 8)
-				
+
 				fc.out.MovRegToReg("r8", "rax")
 				fc.out.AddRegToReg("r8", "rdx")
-				
+
 				// Store key and value
 				fc.out.StoreRegToMem("rcx", "r8", 0)
 				fc.out.MovMemToXmm("xmm4", "rsp", 0)
 				fc.out.MovXmmToMem("xmm4", "r8", 8)
-				
+
 				// Clean stack
 				fc.out.AddImmToReg("rsp", 16)
-				
+
 				// Return new list pointer in xmm0
 				fc.out.MovqRegToXmm("xmm0", "rax")
 				return
@@ -4346,13 +4448,13 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		// Determine if we're indexing a map/string or list
 		// Strings are map[uint64]float64, so use map indexing
 		containerType := fc.getExprType(e.List)
-		
+
 		// If indexing a number, return 0.0 (undefined property)
 		if containerType == "number" {
 			fc.out.XorpdXmm("xmm0", "xmm0") // xmm0 = 0.0
 			break
 		}
-		
+
 		// For "unknown" types (lambda parameters, captured vars), default to list indexing
 		// This is a reasonable default since lists are more common than maps
 		isMap := false
@@ -6067,7 +6169,7 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 			paramOffset := fc.stackOffset
 			fc.variables[paramName] = paramOffset
 			fc.mutableVars[paramName] = false
-			
+
 			// Mark parameter type as "unknown" so it's treated flexibly
 			// This allows parameters to be indexed/measured without knowing exact type at compile time
 			fc.varTypes[paramName] = "unknown"
@@ -10724,9 +10826,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Calculate new size: 8 + (count + 1) * 16
 		fc.out.MovRegToReg("rdx", "rcx")
-		fc.out.AddImmToReg("rdx", 1)  // rdx = count + 1
-		fc.out.ShlImmReg("rdx", 4)    // rdx = (count + 1) * 16
-		fc.out.AddImmToReg("rdx", 8)  // rdx = new size
+		fc.out.AddImmToReg("rdx", 1) // rdx = count + 1
+		fc.out.ShlImmReg("rdx", 4)   // rdx = (count + 1) * 16
+		fc.out.AddImmToReg("rdx", 8) // rdx = new size
 
 		// Allocate new list
 		fc.out.MovRegToReg("rdi", "rdx")
@@ -10757,19 +10859,19 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.PushReg("rsi")
 		fc.out.PushReg("rcx")
 
-		// Set up memcpy arguments  
-		fc.out.LeaMemToReg("rdi", "rax", 8)  // dest = new_list + 8
-		fc.out.LeaMemToReg("rsi", "rsi", 8)  // src = old_list + 8  
+		// Set up memcpy arguments
+		fc.out.LeaMemToReg("rdi", "rax", 8) // dest = new_list + 8
+		fc.out.LeaMemToReg("rsi", "rsi", 8) // src = old_list + 8
 		fc.out.MovRegToReg("rdx", "rcx")
-		fc.out.ShlImmReg("rdx", 4)           // size = old_count * 16
+		fc.out.ShlImmReg("rdx", 4) // size = old_count * 16
 
 		fc.trackFunctionCall("memcpy")
 		fc.eb.GenerateCallInstruction("memcpy")
 
 		// Restore saved values
-		fc.out.PopReg("rcx")  // old count
-		fc.out.PopReg("rsi")  // old list (not needed but keeps stack aligned)
-		fc.out.PopReg("rax")  // new list
+		fc.out.PopReg("rcx") // old count
+		fc.out.PopReg("rsi") // old list (not needed but keeps stack aligned)
+		fc.out.PopReg("rax") // new list
 
 		// Patch skip jump (6-byte instruction: 0x0F opcode offset32)
 		// skipCopyJump points to 0x0F, offset starts at skipCopyJump+2
@@ -10787,14 +10889,14 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.AddImmToReg("rdx", 8) // rdx = offset to new entry
 
 		// Calculate address of new entry: rax + rdx
-		fc.out.AddRegToReg("rax", "rdx")  // rax now points to new entry location
+		fc.out.AddRegToReg("rax", "rdx") // rax now points to new entry location
 
 		// Store key (old count)
 		fc.out.StoreRegToMem("rcx", "rax", 0)
 
 		// Store value (value is at rsp+0 after popping, since we popped 3 regs above)
 		// Stack layout after pops: [rsp+0]=value, [rsp+8]=old_list_ptr
-		fc.out.MovMemToXmm("xmm4", "rsp", 0)  // Load value from stack
+		fc.out.MovMemToXmm("xmm4", "rsp", 0) // Load value from stack
 		fc.out.MovXmmToMem("xmm4", "rax", 8)
 
 		// Restore rax to point to start of new list
@@ -10910,7 +11012,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.TestRegReg("rcx", "rcx")
 		fc.out.JumpConditional(JumpGreater, 0) // Jump to malloc if rcx > 0
 		skipMallocPatch := fc.eb.text.Len()
-		
+
 		// new_count == 0: use empty list (represented as 0 pointer)
 		fc.out.XorRegWithReg("rax", "rax") // rax = 0 (NULL/empty list)
 		skipZeroJump := fc.eb.text.Len()
@@ -10921,10 +11023,10 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		skipMallocEnd := fc.eb.text.Len()
 		skipMallocOffset := int32(skipMallocEnd - skipMallocPatch)
 		fc.patchJumpImmediate(skipMallocPatch, skipMallocOffset)
-		
+
 		fc.trackFunctionCall("malloc")
 		fc.eb.GenerateCallInstruction("malloc")
-		
+
 		// Patch jump from zero case
 		skipZeroTarget := fc.eb.text.Len()
 		skipZeroOffset := int32(skipZeroTarget - skipZeroEnd)
@@ -13703,7 +13805,6 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Return new list pointer in xmm0
 		fc.out.MovqRegToXmm("xmm0", "rax")
 		return
-
 
 	case "printa":
 		// printa() - Print value in rax register for debugging
