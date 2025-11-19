@@ -1,7 +1,0 @@
-// Test c.sin() with float arguments
-
-x := c.sin(0.0)
-printf("sin(0.0) = %v\n", x)
-
-y := c.sin(1.0)
-printf("sin(1.0) = %v\n", y)

@@ -52,9 +52,8 @@ const (
 	TOKEN_RBRACE          // }
 	TOKEN_LBRACKET        // [
 	TOKEN_RBRACKET        // ]
-	TOKEN_ARROW           // -> (lambda arrow)
+	TOKEN_ARROW           // -> (lambda arrow, can be inferred in assignment context)
 	TOKEN_FAT_ARROW       // => (match arm)
-	TOKEN_DOUBLE_ARROW    // ->> (shorthand for = ->)
 	TOKEN_LEFT_ARROW      // <- (update operator and ENet send/receive)
 	TOKEN_COLONCOLON      // :: (list append/cons operator)
 	TOKEN_AMPERSAND       // & (address operator)
@@ -487,12 +486,7 @@ func (l *Lexer) NextToken() Token {
 		}
 		return Token{Type: TOKEN_PLUS, Value: "+", Line: l.line, Column: tokenColumn}
 	case '-':
-		// Check for ->> (no-arg lambda shorthand)
-		if l.peek() == '>' && l.peekAhead(1) == '>' {
-			l.pos += 3
-			return Token{Type: TOKEN_DOUBLE_ARROW, Value: "->>", Line: l.line, Column: tokenColumn}
-		}
-		// Check for ->
+		// Check for -> (lambda arrow, can be inferred in assignment context)
 		if l.peek() == '>' {
 			l.pos += 2
 			return Token{Type: TOKEN_ARROW, Value: "->", Line: l.line, Column: tokenColumn}

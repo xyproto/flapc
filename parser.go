@@ -777,12 +777,7 @@ func (p *Parser) parseClassDecl() *ClassDecl {
 			// Parse lambda expression - need to handle different lambda forms
 			var lambda *LambdaExpr
 
-			if p.current.Type == TOKEN_DOUBLE_ARROW {
-				// No-argument lambda: ->> body
-				p.nextToken() // skip '->>'
-				body := p.parseLambdaBody()
-				lambda = &LambdaExpr{Params: []string{}, Body: body}
-			} else if p.current.Type == TOKEN_LPAREN {
+			if p.current.Type == TOKEN_LPAREN {
 				// Parenthesized lambda: (x, y) => body
 				expr := p.parseExpression()
 				var ok bool
@@ -1030,7 +1025,7 @@ func (p *Parser) parseStatement() Statement {
 			}
 		}
 
-		if p.peek.Type == TOKEN_EQUALS || p.peek.Type == TOKEN_DOUBLE_ARROW || p.peek.Type == TOKEN_COLON_EQUALS || p.peek.Type == TOKEN_LEFT_ARROW || p.peek.Type == TOKEN_COLON ||
+		if p.peek.Type == TOKEN_EQUALS || p.peek.Type == TOKEN_COLON_EQUALS || p.peek.Type == TOKEN_LEFT_ARROW || p.peek.Type == TOKEN_COLON ||
 			p.peek.Type == TOKEN_PLUS_EQUALS || p.peek.Type == TOKEN_MINUS_EQUALS ||
 			p.peek.Type == TOKEN_STAR_EQUALS || p.peek.Type == TOKEN_POWER_EQUALS || p.peek.Type == TOKEN_SLASH_EQUALS || p.peek.Type == TOKEN_MOD_EQUALS {
 			return p.parseAssignment()
@@ -1065,11 +1060,11 @@ func (p *Parser) tryParseNonParenLambda() Expression {
 		return nil
 	}
 
-	// Single param: x -> or x ->>
+	// Single param: x ->
 	firstParam := p.current.Value
-	if p.peek.Type == TOKEN_ARROW || p.peek.Type == TOKEN_DOUBLE_ARROW {
+	if p.peek.Type == TOKEN_ARROW {
 		p.nextToken() // skip param
-		p.nextToken() // skip '->' or '->>'
+		p.nextToken() // skip '->'
 		body := p.parseLambdaBody()
 		return &LambdaExpr{Params: []string{firstParam}, Body: body}
 	}
@@ -1098,10 +1093,10 @@ func (p *Parser) tryParseNonParenLambda() Expression {
 
 		params = append(params, p.current.Value)
 
-		if p.peek.Type == TOKEN_ARROW || p.peek.Type == TOKEN_DOUBLE_ARROW {
+		if p.peek.Type == TOKEN_ARROW {
 			// Found the arrow! This is a lambda
 			p.nextToken() // skip last param
-			p.nextToken() // skip '->' or '->>'
+			p.nextToken() // skip '->'
 			body := p.parseLambdaBody()
 			return &LambdaExpr{Params: params, Body: body}
 		}
@@ -1246,25 +1241,16 @@ func (p *Parser) parseAssignment() *AssignStmt {
 	// Determine assignment type
 	// := - mutable definition
 	// = - immutable definition
-	// ->> - immutable definition with lambda (shorthand for = ->)
 	// <- - update (requires existing mutable variable)
 	isUpdate := p.current.Type == TOKEN_LEFT_ARROW
 	mutable := p.current.Type == TOKEN_COLON_EQUALS || isUpdate
 
-	// Handle ->> as shorthand for = ->
-	isDoubleArrow := p.current.Type == TOKEN_DOUBLE_ARROW
-
-	p.nextToken() // skip '=' or ':=' or '<-' or '->>' or compound operator
+	p.nextToken() // skip '=' or ':=' or '<-' or compound operator
 
 	// Check for non-parenthesized lambda: x -> expr or x y -> expr
 	var value Expression
 
-	// If we have ->>, expect lambda parameters or body
-	if isDoubleArrow {
-		// For ->>, we parse the lambda body directly (no params before ->)
-		// Syntax: main ->> { body } is equivalent to main = -> { body }
-		value = &LambdaExpr{Params: []string{}, Body: p.parseLambdaBody()}
-	} else if p.current.Type == TOKEN_IDENT {
+	if p.current.Type == TOKEN_IDENT {
 		value = p.tryParseNonParenLambda()
 		if value == nil {
 			value = p.parseExpression()
@@ -1279,6 +1265,25 @@ func (p *Parser) parseAssignment() *AssignStmt {
 		p.nextToken() // skip '{'
 		p.skipNewlines()
 		value = p.parseMatchBlock(value)
+	}
+
+	// According to GRAMMAR.md:
+	// Zero-argument lambdas: When a statement block or match block is assigned directly
+	// without parameters, it should be inferred as a zero-arg lambda.
+	// This does NOT apply to map literals (they have : in them).
+	// 
+	// Examples:
+	//   main = { println("hello") }      // Inferred: main = -> { println("hello") }
+	//   handler = { | x > 0 => "pos" }   // Inferred: handler = -> { | x > 0 => "pos" }
+	//   config = { port: 8080 }          // NOT wrapped: map literal
+	switch v := value.(type) {
+	case *BlockExpr:
+		// Statement block -> wrap in zero-arg lambda
+		value = &LambdaExpr{Params: []string{}, Body: v}
+	case *MatchExpr:
+		// Match block -> wrap in zero-arg lambda
+		value = &LambdaExpr{Params: []string{}, Body: v}
+	// MapExpr is NOT wrapped - it's a literal value
 	}
 
 	// Check for multiple lambda dispatch: f = (x) -> x, (y) -> y + 1
@@ -3503,6 +3508,12 @@ func (p *Parser) parsePostfix() Expression {
 
 func (p *Parser) parsePrimary() Expression {
 	switch p.current.Type {
+	case TOKEN_ARROW:
+		// Explicit no-argument lambda: -> expr or -> { ... }
+		p.nextToken() // skip '->'
+		body := p.parseLambdaBody()
+		return &LambdaExpr{Params: []string{}, Body: body}
+
 	case TOKEN_MINUS:
 		// Unary minus: -expr
 		p.nextToken() // skip '-'
@@ -3514,12 +3525,6 @@ func (p *Parser) parsePrimary() Expression {
 		p.nextToken() // skip '#'
 		expr := p.parsePrimary()
 		return &LengthExpr{Operand: expr}
-
-	case TOKEN_DOUBLE_ARROW:
-		// No-argument lambda: ->> body
-		p.nextToken() // skip '->>'
-		body := p.parseLambdaBody()
-		return &LambdaExpr{Params: []string{}, Body: body}
 
 	case TOKEN_NUMBER:
 		val := p.parseNumberLiteral(p.current.Value)
@@ -3584,7 +3589,7 @@ func (p *Parser) parsePrimary() Expression {
 		// }
 
 		// Check for lambda: x -> expr or x, y -> expr
-		if p.peek.Type == TOKEN_ARROW || p.peek.Type == TOKEN_DOUBLE_ARROW {
+		if p.peek.Type == TOKEN_ARROW {
 			// Try to parse as non-parenthesized lambda
 			if lambda := p.tryParseNonParenLambda(); lambda != nil {
 				return lambda
@@ -3708,11 +3713,11 @@ func (p *Parser) parsePrimary() Expression {
 
 		p.nextToken() // skip '('
 
-		// Check for empty parameter list: () -> or () ->>
+		// Check for empty parameter list: () ->
 		if p.current.Type == TOKEN_RPAREN {
-			if p.peek.Type == TOKEN_ARROW || p.peek.Type == TOKEN_DOUBLE_ARROW {
+			if p.peek.Type == TOKEN_ARROW {
 				p.nextToken() // skip ')'
-				p.nextToken() // skip '->' or '->>'
+				p.nextToken() // skip '->'
 				body := p.parseLambdaBody()
 				return &LambdaExpr{Params: []string{}, Body: body}
 			}
@@ -3780,11 +3785,11 @@ func (p *Parser) parsePrimary() Expression {
 				return expr
 			}
 
-			// peek should be '->' or '->>'
-			if p.peek.Type == TOKEN_ARROW || p.peek.Type == TOKEN_DOUBLE_ARROW {
+			// peek should be '->'
+			if p.peek.Type == TOKEN_ARROW {
 				// It's a lambda!
 				p.nextToken() // skip ')'
-				p.nextToken() // skip '->' or '->>'
+				p.nextToken() // skip '->'
 				body := p.parseLambdaBody()
 				return &LambdaExpr{Params: params, Body: body}
 			}

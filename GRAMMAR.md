@@ -56,7 +56,7 @@ The grammar uses Extended Backus-Naur Form (EBNF):
 When the parser encounters `{`, it determines the block type by examining contents:
 
 ### Rule 1: Map Literal
-**Condition:** First element contains `:` (before any `->` or `~>`)
+**Condition:** First element contains `:` (before any `=>` or `~>`)
 
 ```flap
 config = { port: 8080, host: "localhost" }
@@ -155,7 +155,7 @@ class_member    = class_field_decl
 
 class_field_decl = identifier "." identifier "=" expression ;
 
-method_decl     = identifier ":=" lambda_expr ;
+method_decl     = identifier "=" lambda_expr ;
 
 c_type          = "int8" | "int16" | "int32" | "int64"
                 | "uint8" | "uint16" | "uint32" | "uint64"
@@ -178,7 +178,7 @@ type_cast       = "int8" | "int16" | "int32" | "int64"
                 | "number" | "string" | "list" | "address"
                 | "packed" | "aligned" ;
 
-assignment      = identifier ("=" | ":=" | "<-" | "->>" ) expression
+assignment      = identifier ("=" | ":=" | "<-") expression
                 | identifier ("+=" | "-=" | "*=" | "/=" | "%=" | "**=") expression
                 | indexed_expr "<-" expression
                 | identifier_list ("=" | ":=" | "<-") expression ;  // Multiple assignment
@@ -293,33 +293,62 @@ unsafe_expr     = "unsafe" "{" { statement { newline } } [ expression ] "}"
                   [ "{" { statement { newline } } [ expression ] "}" ] ;
 
 lambda_expr     = [ parameter_list ] "->" lambda_body
-                | "->>" lambda_body ;  // Shorthand for () ->
+                | block ;  // Inferred lambda with no parameters in assignment context
+
+parameter_list  = identifier { "," identifier }
+                | "(" [ identifier { "," identifier } ] ")" ;
 
 lambda_body     = block | expression [ match_block ] ;
 
-// Lambda body semantics:
-// 1. block: Statement block, map literal, or match block
-//    Block type determined by contents:
-//    - Contains `:` before arrows → map literal
-//    - Contains `=>` or `~>` → match block
-//    - Otherwise → statement block
+// Lambda Syntax Rules:
 //
-// 2. expression [ match_block ]: Value match
-//    Example: x -> x { 0 => "zero" ~> "other" }
-//    Expression is evaluated, result matched against patterns
+// Explicit lambda syntax (always works):
+//   x -> x * 2                        // One parameter
+//   (x, y) -> x + y                   // Multiple parameters (parens required)
+//   -> println("hi")                  // No parameters (explicit ->)
+//   x -> { temp = x * 2; temp }       // Block body
 //
-// Match block forms:
-//   Value match: expr { pattern => result }
-//   Guard match: { | condition => result }  (| at line start only)
+// Inferred lambda syntax (works ONLY in assignment context):
+//   main = { println("hello") }       // Inferred: main = -> { println("hello") }
+//   handler = { | x > 0 => "pos" }    // Inferred: handler = -> { | x > 0 => "pos" }
+//
+// When `->` can be omitted:
+//   1. In assignment context: `name = { ... }` or `name := { ... }`
+//   2. Right side is a block (not a map literal - map has `:` colons)
+//   3. Block contains statements or guard match (| at line start)
+//
+// When `->` is REQUIRED:
+//   1. Lambda has one or more parameters: `x -> x * 2`
+//   2. Lambda body is an expression (not a block): `-> 42`
+//   3. Lambda is NOT being assigned: `[1, 2, 3] | x -> x * 2`
+//   4. Lambda is a function argument: `map(data, x -> x * 2)`
+//
+// Parentheses rules:
+//   - Single parameter: `x -> x * 2` (no parens needed)
+//   - Multiple parameters: `(x, y) -> x + y` (parens required)
+//   - No parameters with explicit ->: `-> println("hi")` (no parens needed)
+//   - No parameters inferred from block: `main = { ... }` (no parens needed)
+//
+// Block type determination:
+//   { x: 10 }                         // Map literal (has `:` before any `=>`)
+//   { | x > 0 => "pos" }              // Guard match block (has `|` at line start)
+//   { temp = x * 2; temp }            // Statement block (no `:`, no `=>` or `~>`)
+//   x { 0 => "zero" ~> "other" }      // Value match (expression before `{`)
 //
 // Examples:
-//   x -> x { 0 => "zero" }           // Value match
-//   x -> { | x > 0 => "pos" }        // Guard match (| at start)
-//   x -> { temp = x * 2; temp }      // Statement block
-//   x -> data | transform            // Pipe operator (| not at start)
-
-parameter_list  = identifier [ "," identifier ]*
-                | "(" [ identifier [ "," identifier ]* ] ")" ;
+//   // Function definitions (inferred lambda)
+//   main = { println("Hello!") }
+//   process = { | x > 0 => "pos" | x < 0 => "neg" }
+//
+//   // Lambdas with parameters (explicit)
+//   square = x -> x * x
+//   add = (x, y) -> x + y
+//   map_fn = f -> data | f
+//
+//   // Method definitions in classes (always use `=`)
+//   class Point {
+//       distance = other -> sqrt((other.x - .x) ** 2 + (other.y - .y) ** 2)
+//   }
 
 argument_list   = expression { "," expression } ;
 
@@ -455,6 +484,8 @@ ret arena unsafe cstruct class as max this defer spawn import
 
 **Note:** In Flap 3.0, lambda definitions use `->` (thin arrow) and match arms use `=>` (fat arrow), similar to Rust syntax.
 
+**No-argument lambdas** can be written as `-> expr` or inferred from context in assignments: `name = { ... }`
+
 ### Contextual Keywords
 
 These are only keywords in specific contexts (e.g., after `as`):
@@ -524,7 +555,6 @@ All bitwise operators use `b` suffix:
 =     Immutable assignment (cannot reassign variable or modify value)
 :=    Mutable assignment (can reassign variable and modify value)
 <-    Update/reassignment (for mutable vars)
-->>   No-arg lambda shorthand (alias for () ->)
 
 +=    Add and assign (for lists: append element)
 -=    Subtract and assign
@@ -533,6 +563,24 @@ All bitwise operators use `b` suffix:
 %=    Modulo and assign
 **=   Exponentiate and assign
 ```
+
+**Arrow Operator Summary:**
+
+| Operator | Context | Meaning | Example |
+|----------|---------|---------|---------|
+| `->` | Lambda definition | Lambda arrow | `x -> x * 2` or `-> println("hi")` |
+| `=>` | Match block | Match arm | `x { 0 => "zero" ~> "other" }` |
+| `=` | Variable binding | Immutable assignment | `x = 42` (standard for functions) |
+| `:=` | Variable binding | Mutable assignment | `x := 42` (can reassign later) |
+| `<-` | Update/Send | Update mutable var OR send to ENet | `x <- 99` or `&8080 <- msg` |
+| `<=` | Comparison | Less than or equal | `x <= 10` |
+| `>=` | Comparison | Greater than or equal | `x >= 10` |
+
+**Important Conventions:**
+- **Functions/methods** should use `=` (immutable), not `:=`, since they rarely need reassignment
+- **Lambda syntax**: `->` always defines a lambda, `=>` always defines a match arm
+- **Update operator** `<-` is for updating existing mutable variables or sending to ENet channels
+- **Comparison** operators `<=` and `>=` are for comparisons, not assignment or arrows
 
 **Multiple Assignment (Tuple Unpacking):**
 
@@ -568,17 +616,17 @@ _     Tail operator (prefix) - get all but first element
 ### Other Operators
 
 ```
-->    Lambda arrow
+->    Lambda arrow (can be omitted in assignment context with blocks)
 =>    Match arm
 ~>    Default match arm
 |     Pipe operator
 ||    Parallel map
-<-    Send (ENet)
-<=    Receive (ENet, prefix)
+<-    Update/Send (update mutable var OR send to ENet)
+<=    Receive (ENet, prefix) OR less-than-or-equal comparison
 !     Move operator (postfix)
 .     Field access
 []    Indexing
-()    Function call
+()    Function call (parentheses optional for zero or one argument in some contexts)
 @     Loop
 &     ENet address (network endpoints)
 $     Address value (memory addresses)
@@ -607,7 +655,7 @@ From highest to lowest precedence:
 15. **Receive**: `<=`
 16. **Pipe**: `|` `||`
 17. **Match**: `{ }` (postfix)
-18. **Assignment**: `=` `:=` `<-` `->>` `+=` `-=` `*=` `/=` `%=` `**=`
+18. **Assignment**: `=` `:=` `<-` `+=` `-=` `*=` `/=` `%=` `**=`
 
 **Associativity:**
 - Left-associative: All binary operators except `**` and assignments
@@ -632,7 +680,7 @@ Flap minimizes parenthesis usage. Use parentheses only when:
 
 3. **Multiple lambda parameters:**
    ```flap
-   (x, y) => x + y  // Multiple params
+   (x, y) -> x + y  // Multiple params
    ```
 
 **Not needed:**
@@ -695,48 +743,43 @@ classify = x -> {
 =>   Match arm result
 ~>   Default match arm
 ->   Lambda or receive
-->>  No-arg lambda shorthand (desugars to () ->)
 ```
 
 Context determines meaning:
 
 ```flap
-f = x -> x + 1           // Lambda with one arg
-msg = <= &8080           // Receive from channel
-x { 0 => "zero" }        // Match arm
-x { ~> "default" }       // Default arm
-greet ->> println("Hi")  // No-arg lambda: () -> println("Hi")
+f = x -> x + 1             // Lambda with one arg
+msg <- &8080               // Receive from channel
+x { 0 => "zero" }          // Match arm
+x { ~> "default" }         // Default arm
+greet = { println("Hi") }  // No-arg lambda
 ```
 
-#### No-Argument Lambda Shorthand: `->>`
-
-The `->>` operator is syntactic sugar for defining functions with zero arguments:
+#### No-Argument Lambdas
 
 ```flap
-// These are equivalent:
-greet ->> println("Hello!")
-greet = () -> println("Hello!")
+// Inferred lambda (in assignment context):
+greet = { println("Hello!") }            // Inferred: greet = -> { println("Hello!") }
+worker = { @ { process_forever() } }     // Inferred: worker = -> { @ { process_forever() } }
+
+// Explicit no-argument lambda:
+greet = -> println("Hello!")             // Explicit ->
+handler = -> process_events()            // Explicit ->
 
 // With block body:
-worker ->> {
-    @ { process_forever() }
-}
-// Equivalent to:
-worker = () -> {
+worker = {                               // Inferred lambda
     @ { process_forever() }
 }
 
 // Common use cases:
-init ->> setup_resources()        // Initialization
-cleanup ->> release_all()          // Cleanup callback
-background ->> @ { poll_events() } // Background worker
-```
+init = { setup_resources() }             // Inferred (assignment context)
+cleanup = { release_all() }              // Inferred (assignment context)
+background = { @ { poll_events() } }     // Inferred (assignment context)
 
-**When to use `->>`:**
-- Functions that take no arguments
-- Callbacks and event handlers
-- Worker/background tasks
-- Initialization/cleanup routines
+// When explicit -> is needed:
+callbacks = [-> print("A"), -> print("B")]  // Not in assignment, need explicit ->
+process(-> get_data())                      // Function argument, need explicit ->
+```
 
 #### Loop Forms
 
@@ -1163,19 +1206,19 @@ Flap supports classes as syntactic sugar over maps and closures, providing a fam
 ```flap
 class Point {
     // Constructor (implicit)
-    init := (x, y) ->> {
+    init = (x, y) -> {
         .x = x
         .y = y
     }
 
     // Instance methods
-    distance := other -> {
+    distance = other -> {
         dx := other.x - .x
         dy := other.y - .y
         sqrt(dx * dx + dy * dy)
     }
 
-    move := (dx, dy) ->> {
+    move = (dx, dy) -> {
         .x <- .x + dx
         .y <- .y + dy
     }
@@ -1220,17 +1263,17 @@ Use `.field` inside class methods to access instance state:
 
 ```flap
 class Counter {
-    init := start ->> {
+    init = start -> {
         .count = start
         .history = []
     }
 
-    increment := ->> {
+    increment = () -> {
         .count <- .count + 1
         .history <- .history :: .count
     }
 
-    get := ->> .count
+    get = () -> .count
 }
 
 c := Counter(0)
@@ -1247,7 +1290,7 @@ class Entity {
     Entity.count = 0
     Entity.all = []
 
-    init := name ->> {
+    init = name -> {
         .name = name
         .id = Entity.count
         Entity.count <- Entity.count + 1
@@ -1265,17 +1308,17 @@ println(Entity.count)  // 2
 Extend classes with behavior maps using `<>`:
 
 ```flap
-Serializable := {
-    to_json: ->> {
+Serializable = {
+    to_json: {
         // Convert instance to JSON
     },
-    from_json: json -> {
+    from_json: json {
         // Parse JSON to instance
     }
 }
 
 class Point <> Serializable {
-    init := (x, y) ->> {
+    init = (x, y) -> {
         .x = x
         .y = y
     }
@@ -1288,7 +1331,10 @@ json := p.to_json()
 **Multiple composition** - chain `<>` operators:
 
 ```flap
-class User <> Serializable <> Validatable <> Timestamped {
+class User {
+    <> Serializable
+    <> Validatable
+    <> Timestamped
     init = name -> {
         .name = name
         .created_at = now()
@@ -1307,16 +1353,16 @@ Inside class methods:
 class Point {
     Point.origin = nil  // Class field
 
-    init := (x, y) ->> {
+    init = (x, y) -> {
         .x = x           // Instance field (this instance)
         .y = y
     }
 
-    distance_to_origin := ->> {
+    distance_to_origin = -> {
         .distance(Point.origin)  // Class field access
     }
 
-    distance := other -> {
+    distance = other -> {
         dx := other.x - .x       // Other instance field vs this instance field
         dy := other.y - .y
         sqrt(dx * dx + dy * dy)
@@ -1332,17 +1378,17 @@ Use underscore prefix for "private" methods (by convention):
 
 ```flap
 class Account {
-    init := balance ->> {
+    init = balance -> {
         .balance = balance
     }
 
-    _validate := amount -> {
-        amount > 0 && amount <= .balance
+    _validate = amount -> {
+        amount > 0 && amount <- .balance
     }
 
-    withdraw := amount -> {
+    withdraw = amount -> {
         ._ validate(amount) {
-            .balance <- .balance - amount
+            .balance -= - amount
             ret 0
         }
         ret -1  // Error
@@ -1361,7 +1407,7 @@ cstruct Vec2Data {
 }
 
 class Vec2 {
-    init := (x, y) ->> {
+    init = (x, y) -> {
         .data = call("malloc", Vec2Data.size as uint64)
         unsafe float64 {
             rax <- .data as ptr
@@ -1370,7 +1416,7 @@ class Vec2 {
         }
     }
 
-    magnitude := ->> {
+    magnitude = () -> {
         unsafe float64 {
             rax <- .data as ptr
             xmm0 <- [rax]
@@ -1389,13 +1435,13 @@ While Flap doesn't have operator overloading syntax, you can define methods with
 
 ```flap
 class Complex {
-    init := (real, imag) ->> {
+    init = (real, imag) -> {
         .real = real
         .imag = imag
     }
 
-    add := other -> Complex(.real + other.real, .imag + other.imag)
-    mul := other -> Complex(
+    add = other -> Complex(.real + other.real, .imag + other.imag)
+    mul = other -> Complex(
         .real * other.real - .imag * other.imag,
         .real * other.imag + .imag * other.real
     )
@@ -1417,12 +1463,14 @@ class_decl      = "class" identifier { "<>" identifier } "{" { class_member } "}
 Semantically:
 
 ```flap
-class Point <> Serializable <> Validatable {
+class Point {
+    <> Serializable
+    <> Validatable
     // members
 }
 
 // Desugars to:
-Point := (...) -> {
+Point = (...) -> {
     instance := {}
     // Merge Serializable methods
     @ key in Serializable { instance[key] <- Serializable[key] }
@@ -1461,19 +1509,22 @@ Flap deliberately avoids inheritance hierarchies. Use composition:
 
 ```flap
 // Instead of inheritance
-Drawable := {
-    draw: ->> println("Drawing...")
+Drawable = {
+    draw: { println("Drawing...") }
 }
 
 Movable := {
-    move: (dx, dy) ->> {
+    move: (dx, dy) -> {
         .x <- .x + dx
         .y <- .y + dy
     }
 }
 
-class Sprite <> Drawable <> Movable {
-    init := (x, y) ->> {
+class {
+    <> Sprite
+    <> Drawable
+    <> Movable
+    init = (x, y) -> {
         .x = x
         .y = y
     }
@@ -1517,20 +1568,6 @@ class Sprite <> Drawable <> Movable {
 - Single-pass parsing (no separate AST transformation)
 - Minimal memory allocation
 - Fast compilation (typically <100ms for small programs)
-
-## Grammar Extensions for Future Versions
-
-The grammar is designed to be extensible. Potential future additions:
-
-- **Type aliases:** `type Point = { x: float64, y: float64 }`
-- **Generics:** `f = <T>(x as T) => x`
-- **Macros:** `macro! name { ... }`
-- **Modules:** `import "module"`
-
-These extensions must preserve:
-1. Universal map type system
-2. Minimal syntax philosophy
-3. Direct code generation capability
 
 ---
 
