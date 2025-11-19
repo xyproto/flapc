@@ -1271,7 +1271,7 @@ func (p *Parser) parseAssignment() *AssignStmt {
 	// Zero-argument lambdas: When a statement block or match block is assigned directly
 	// without parameters, it should be inferred as a zero-arg lambda.
 	// This does NOT apply to map literals (they have : in them).
-	// 
+	//
 	// Examples:
 	//   main = { println("hello") }      // Inferred: main = -> { println("hello") }
 	//   handler = { | x > 0 => "pos" }   // Inferred: handler = -> { | x > 0 => "pos" }
@@ -1283,7 +1283,7 @@ func (p *Parser) parseAssignment() *AssignStmt {
 	case *MatchExpr:
 		// Match block -> wrap in zero-arg lambda
 		value = &LambdaExpr{Params: []string{}, Body: v}
-	// MapExpr is NOT wrapped - it's a literal value
+		// MapExpr is NOT wrapped - it's a literal value
 	}
 
 	// Check for multiple lambda dispatch: f = (x) -> x, (y) -> y + 1

@@ -15029,7 +15029,20 @@ func collectFunctionCalls(expr Expression, calls map[string]bool) {
 
 	switch e := expr.(type) {
 	case *CallExpr:
-		calls[e.Function] = true
+		// For C FFI calls, the parser strips "c." and sets IsCFFI=true
+		// We need to add the "c." prefix back for proper tracking
+		if e.IsCFFI {
+			calls["c."+e.Function] = true
+		} else {
+			calls[e.Function] = true
+		}
+		for _, arg := range e.Args {
+			collectFunctionCalls(arg, calls)
+		}
+	case *DirectCallExpr:
+		// Direct calls don't add to function calls - they're calling values, not named functions
+		// But we still need to recurse into the callee and args
+		collectFunctionCalls(e.Callee, calls)
 		for _, arg := range e.Args {
 			collectFunctionCalls(arg, calls)
 		}
@@ -15100,10 +15113,10 @@ func collectDefinedFunctions(program *Program) map[string]bool {
 
 	for _, stmt := range program.Statements {
 		if assign, ok := stmt.(*AssignStmt); ok {
-			// Check if the value is a lambda (function definition)
-			if _, isLambda := assign.Value.(*LambdaExpr); isLambda {
-				defined[assign.Name] = true
-			}
+			// Mark any variable as "defined" for the purpose of call checking
+			// This handles cases where a variable holds a lambda (like add5 = make_adder(5))
+			// and is later called (like add5(10))
+			defined[assign.Name] = true
 		}
 	}
 
@@ -15129,6 +15142,10 @@ func getUnknownFunctions(program *Program) []string {
 		"chan": true, "close": true,
 		// List methods
 		"append": true, "head": true, "tail": true, "pop": true,
+		// Error handling
+		"error": true, "is_nan": true,
+		// Internal functions (start with _)
+		"_error_code_extract": true,
 		// Debug
 		"printa": true,
 	}
@@ -15154,12 +15171,21 @@ func getUnknownFunctions(program *Program) []string {
 	var unknown []string
 	for funcName := range calls {
 		// Check if function is from a C import (has namespace prefix)
-		// e.g., "enet.enet_initialize" or "libc.malloc"
+		// e.g., "enet.enet_initialize", "libc.malloc", "c.sin", "sdl.SDL_Init"
 		isFromCImport := false
-		for ns := range cImports {
-			if len(funcName) > len(ns)+1 && funcName[:len(ns)+1] == ns+"." {
-				isFromCImport = true
-				break
+
+		// Check for standard "c." prefix (C FFI calls)
+		if len(funcName) > 2 && funcName[:2] == "c." {
+			isFromCImport = true
+		}
+
+		// Check for other C import namespaces
+		if !isFromCImport {
+			for ns := range cImports {
+				if len(funcName) > len(ns)+1 && funcName[:len(ns)+1] == ns+"." {
+					isFromCImport = true
+					break
+				}
 			}
 		}
 
@@ -15658,21 +15684,18 @@ func CompileFlapWithOptions(inputPath string, outputPath string, platform Platfo
 	// }
 
 	// Final check: verify all functions are defined (after all dependency resolution)
-	// TODO: Temporarily disabled - needs to properly handle fn syntax and external C functions
-	/*
-		finalUnknownFuncs := getUnknownFunctions(program)
-		if len(finalUnknownFuncs) > 0 {
-			// Sort for consistent error messages
-			sort.Strings(finalUnknownFuncs)
+	finalUnknownFuncs := getUnknownFunctions(program)
+	if len(finalUnknownFuncs) > 0 {
+		// Sort for consistent error messages
+		sort.Strings(finalUnknownFuncs)
 
-			// Report all undefined functions
-			if len(finalUnknownFuncs) == 1 {
-				return fmt.Errorf("undefined function: %s\nNote: Function must be defined before use or imported from a dependency", finalUnknownFuncs[0])
-			} else {
-				return fmt.Errorf("undefined functions: %s\nNote: Functions must be defined before use or imported from dependencies", strings.Join(finalUnknownFuncs, ", "))
-			}
+		// Report all undefined functions
+		if len(finalUnknownFuncs) == 1 {
+			return fmt.Errorf("undefined function: %s\nNote: Function must be defined before use or imported from a dependency", finalUnknownFuncs[0])
+		} else {
+			return fmt.Errorf("undefined functions: %s\nNote: Functions must be defined before use or imported from dependencies", strings.Join(finalUnknownFuncs, ", "))
 		}
-	*/
+	}
 
 	// Compile
 	compiler, err := NewFlapCompiler(platform)

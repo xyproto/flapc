@@ -78,3 +78,81 @@ printf("strlen(NULL) = %v\n", result1)
 	_ = compileTestCode(t, code)
 	// If we get here without compilation error, the test passes
 }
+
+// Confidence that this function is working: 90%
+// TestCStructWithCFFI tests using cstruct with C FFI
+func TestCStructWithCFFI(t *testing.T) {
+	code := `
+cstruct Point {
+    x as float64,
+    y as float64
+}
+
+// Test basic cstruct properties
+printf("Point size: %v\n", Point.size)
+printf("Point.x offset: %v\n", Point.x.offset)
+printf("Point.y offset: %v\n", Point.y.offset)
+
+// Allocate memory for a Point struct using C malloc
+ptr := c.malloc(Point.size)
+printf("Allocated %v bytes at address\n", Point.size)
+
+// Free the memory
+c.free(ptr)
+println("Memory freed successfully")
+`
+	output := compileAndRun(t, code)
+
+	if !strings.Contains(output, "Point size: 16") {
+		t.Errorf("Expected Point size: 16, got: %s", output)
+	}
+	if !strings.Contains(output, "Point.x offset: 0") {
+		t.Errorf("Expected Point.x offset: 0, got: %s", output)
+	}
+	if !strings.Contains(output, "Point.y offset: 8") {
+		t.Errorf("Expected Point.y offset: 8, got: %s", output)
+	}
+	if !strings.Contains(output, "Allocated 16 bytes") {
+		t.Errorf("Expected allocation message, got: %s", output)
+	}
+	if !strings.Contains(output, "Memory freed successfully") {
+		t.Errorf("Expected free confirmation, got: %s", output)
+	}
+}
+
+// Confidence that this function is working: 85%
+// TestCStructComplexFFI tests more complex cstruct + C FFI interactions
+func TestCStructComplexFFI(t *testing.T) {
+	code := `
+cstruct Vec2 {
+    x as float64,
+    y as float64
+}
+
+cstruct Vec3 {
+    x as float64,
+    y as float64,
+    z as float64
+}
+
+// Test Vec2 (16 bytes)
+println(Vec2.size)
+println(Vec2.x.offset)
+println(Vec2.y.offset)
+
+// Test Vec3 (24 bytes)
+println(Vec3.size)
+println(Vec3.z.offset)
+`
+	output := compileAndRun(t, code)
+
+	if !strings.Contains(output, "16\n0\n8\n") {
+		t.Errorf("Expected Vec2 size and offsets, got: %s", output)
+	}
+	if !strings.Contains(output, "24\n") {
+		t.Errorf("Expected Vec3 size, got: %s", output)
+	}
+	if !strings.Contains(output, "16\n") {
+		t.Errorf("Expected Vec3.z offset, got: %s", output)
+	}
+}
