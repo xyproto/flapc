@@ -162,3 +162,66 @@ println(x + y + z)
 		}
 	}
 }
+
+// Confidence that this function is working: 95%
+// TestUndefinedFunctionInBlock tests that undefined functions in blocks are caught
+func TestUndefinedFunctionInBlock(t *testing.T) {
+	code := `
+// Call undefined function in or! block
+x := 42 or! {
+    undefined_func()
+    exitln("error")
+}
+println(x)
+`
+	_, err := compileTestCodeAllowError(t, code)
+	if err == nil {
+		t.Error("Expected compilation error for undefined function in block, but got none")
+	} else if !strings.Contains(err.Error(), "undefined function") && !strings.Contains(err.Error(), "undefined_func") {
+		t.Errorf("Expected error about undefined function 'undefined_func', got: %v", err)
+	}
+}
+
+// Confidence that this function is working: 95%
+// TestUndefinedFunctionInLambda tests that undefined functions in lambdas are caught
+func TestUndefinedFunctionInLambda(t *testing.T) {
+	code := `
+// Call undefined function in lambda
+mapper = x -> {
+    result := not_defined(x)
+    result * 2
+}
+y := mapper(5)
+println(y)
+`
+	_, err := compileTestCodeAllowError(t, code)
+	if err == nil {
+		t.Error("Expected compilation error for undefined function in lambda, but got none")
+	} else if !strings.Contains(err.Error(), "undefined function") && !strings.Contains(err.Error(), "not_defined") {
+		t.Errorf("Expected error about undefined function 'not_defined', got: %v", err)
+	}
+}
+
+// Confidence that this function is working: 95%
+// TestUndefinedFunctionInMatch tests that undefined functions in match expressions are caught
+func TestUndefinedFunctionInMatch(t *testing.T) {
+	code := `
+// Call undefined function in match expression
+x := 5
+result = { | x > 10 => big_value() ~> medium_value() }
+println(result)
+`
+	_, err := compileTestCodeAllowError(t, code)
+	if err == nil {
+		t.Error("Expected compilation error for undefined functions in match, but got none")
+	} else {
+		errMsg := err.Error()
+		if !strings.Contains(errMsg, "undefined function") {
+			t.Errorf("Expected error about undefined functions, got: %v", err)
+		}
+		// Check that at least one of the undefined functions is mentioned
+		if !strings.Contains(errMsg, "big_value") && !strings.Contains(errMsg, "medium_value") {
+			t.Errorf("Expected error to mention undefined functions (big_value, medium_value), got: %v", err)
+		}
+	}
+}

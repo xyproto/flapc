@@ -32,7 +32,6 @@ println("Initializing SDL3...")
 // Use or! for railway-oriented error handling
 // Note: Blocks that return values are expressions (no exit needed - defer handles cleanup)
 sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
-    //snubblidubblifoo()
     exitf("SDL_Init failed: %s\n", sdl.SDL_GetError())
 }
 

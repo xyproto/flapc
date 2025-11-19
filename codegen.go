@@ -15022,6 +15022,8 @@ func (fc *FlapCompiler) callMallocAligned(sizeReg string, pushCount int) {
 }
 
 // collectFunctionCalls walks an expression and collects all function calls
+// Confidence that this function is working: 95%
+// Confidence that this function is working: 98%
 func collectFunctionCalls(expr Expression, calls map[string]bool) {
 	if expr == nil {
 		return
@@ -15049,6 +15051,10 @@ func collectFunctionCalls(expr Expression, calls map[string]bool) {
 	case *BinaryExpr:
 		collectFunctionCalls(e.Left, calls)
 		collectFunctionCalls(e.Right, calls)
+	case *UnaryExpr:
+		collectFunctionCalls(e.Operand, calls)
+	case *PostfixExpr:
+		collectFunctionCalls(e.Operand, calls)
 	case *PipeExpr:
 		collectFunctionCalls(e.Left, calls)
 		collectFunctionCalls(e.Right, calls)
@@ -15066,8 +15072,21 @@ func collectFunctionCalls(expr Expression, calls map[string]bool) {
 		if e.DefaultExpr != nil {
 			collectFunctionCalls(e.DefaultExpr, calls)
 		}
+	case *BlockExpr:
+		// BlockExpr contains statements - recurse into them
+		for _, stmt := range e.Statements {
+			collectFunctionCallsFromStmt(stmt, calls)
+		}
 	case *LambdaExpr:
 		collectFunctionCalls(e.Body, calls)
+	case *PatternLambdaExpr:
+		for _, clause := range e.Clauses {
+			collectFunctionCalls(clause.Body, calls)
+		}
+	case *MultiLambdaExpr:
+		for _, lambda := range e.Lambdas {
+			collectFunctionCalls(lambda.Body, calls)
+		}
 	case *RangeExpr:
 		collectFunctionCalls(e.Start, calls)
 		collectFunctionCalls(e.End, calls)
@@ -15083,8 +15102,64 @@ func collectFunctionCalls(expr Expression, calls map[string]bool) {
 	case *IndexExpr:
 		collectFunctionCalls(e.List, calls)
 		collectFunctionCalls(e.Index, calls)
+	case *SliceExpr:
+		collectFunctionCalls(e.List, calls)
+		if e.Start != nil {
+			collectFunctionCalls(e.Start, calls)
+		}
+		if e.End != nil {
+			collectFunctionCalls(e.End, calls)
+		}
 	case *LengthExpr:
 		collectFunctionCalls(e.Operand, calls)
+	case *CastExpr:
+		collectFunctionCalls(e.Expr, calls)
+	case *UnsafeExpr:
+		// UnsafeExpr contains architecture-specific statement blocks
+		for _, stmt := range e.X86_64Block {
+			collectFunctionCallsFromStmt(stmt, calls)
+		}
+		for _, stmt := range e.ARM64Block {
+			collectFunctionCallsFromStmt(stmt, calls)
+		}
+		for _, stmt := range e.RISCV64Block {
+			collectFunctionCallsFromStmt(stmt, calls)
+		}
+	case *ArenaExpr:
+		// ArenaExpr contains a statement block
+		for _, stmt := range e.Body {
+			collectFunctionCallsFromStmt(stmt, calls)
+		}
+	case *ParallelExpr:
+		collectFunctionCalls(e.List, calls)
+		collectFunctionCalls(e.Operation, calls)
+	case *BackgroundExpr:
+		collectFunctionCalls(e.Expr, calls)
+	case *LoopExpr:
+		collectFunctionCalls(e.Iterable, calls)
+		for _, stmt := range e.Body {
+			collectFunctionCallsFromStmt(stmt, calls)
+		}
+		if e.Reducer != nil {
+			collectFunctionCalls(e.Reducer, calls)
+		}
+	case *StructLiteralExpr:
+		for _, fieldExpr := range e.Fields {
+			collectFunctionCalls(fieldExpr, calls)
+		}
+	case *VectorExpr:
+		for _, comp := range e.Components {
+			collectFunctionCalls(comp, calls)
+		}
+	case *FStringExpr:
+		for _, part := range e.Parts {
+			collectFunctionCalls(part, calls)
+		}
+	case *InExpr:
+		collectFunctionCalls(e.Value, calls)
+		collectFunctionCalls(e.Container, calls)
+	case *MoveExpr:
+		collectFunctionCalls(e.Expr, calls)
 	}
 }
 
@@ -15107,6 +15182,7 @@ func collectFunctionCallsFromStmt(stmt Statement, calls map[string]bool) {
 	}
 }
 
+// Confidence that this function is working: 95%
 // collectDefinedFunctions returns a set of function names defined in a program
 func collectDefinedFunctions(program *Program) map[string]bool {
 	defined := make(map[string]bool)
@@ -15123,6 +15199,7 @@ func collectDefinedFunctions(program *Program) map[string]bool {
 	return defined
 }
 
+// Confidence that this function is working: 95%
 // getUnknownFunctions determines which functions are called but not defined
 func getUnknownFunctions(program *Program) []string {
 	// Builtin functions that are always available (implemented in compiler)
