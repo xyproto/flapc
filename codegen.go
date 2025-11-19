@@ -3575,6 +3575,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.MovMemToXmm("xmm0", "rax", 0)
 			}
 		case "_":
+			// Confidence that this function is working: 85%
 			// Tail operator: return list/map without first element
 			// For numbers, return [] (empty list, represented as 0.0)
 			operandType := fc.getExprType(e.Operand)
@@ -3583,46 +3584,114 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				// It's a number, return empty list (0.0)
 				fc.out.XorpdXmm("xmm0", "xmm0") // xmm0 = 0.0
 			} else {
-				// It's a map/list/string pointer
-				fc.out.SubImmFromReg("rsp", StackSlotSize)
-				fc.out.MovXmmToMem("xmm0", "rsp", 0)
-				fc.out.MovMemToReg("rax", "rsp", 0)
-				fc.out.AddImmToReg("rsp", StackSlotSize)
+				// It's a map/list - create new list without first element
+				// Use callee-saved registers like pop() does
+				fc.out.MovqXmmToReg("rbx", "xmm0") // rbx = input list pointer (callee-saved)
 
-				// Load length from map at offset 0
-				fc.out.MovMemToXmm("xmm1", "rax", 0)
-				fc.out.Cvttsd2si("rcx", "xmm1") // rcx = int(length)
+				// Load count from list [rbx+0]
+				fc.out.MovMemToXmm("xmm1", "rbx", 0)
+				fc.out.Cvttsd2si("r12", "xmm1") // r12 = count as int (callee-saved)
 
 				// Check if length is 0 or 1
-				fc.out.CmpRegToImm("rcx", 1)
+				fc.out.CmpRegToImm("r12", 1)
 
 				emptyJumpPos := fc.eb.text.Len()
-				fc.out.JumpConditional(JumpLessOrEqual, 0) // Placeholder
+				fc.out.JumpConditional(JumpLessOrEqual, 0) // Jump if count <= 1
 
-				// Length > 1: return pointer to rest of list (skip first element)
-				// Skip length (8) + first key (8) + first value (8) = 24 bytes
-				fc.out.AddImmToReg("rax", 24)
-				fc.out.SubImmFromReg("rsp", StackSlotSize)
-				fc.out.MovRegToMem("rax", "rsp", 0)
-				fc.out.MovMemToXmm("xmm0", "rsp", 0)
-				fc.out.AddImmToReg("rsp", StackSlotSize)
+				// Count > 1: Create new list with count-1 elements
+				// Calculate new count
+				fc.out.MovRegToReg("r13", "r12")
+				fc.out.SubImmFromReg("r13", 1) // r13 = new count (callee-saved)
+
+				// Calculate size: 8 + (new_count * 16)
+				fc.out.MovRegToReg("r14", "r13")
+				fc.out.ShlImmReg("r14", 4)      // r14 = new_count * 16
+				fc.out.AddImmToReg("r14", 8)    // r14 = new list size
+
+				// Allocate new list
+				fc.out.MovRegToReg("rdi", "r14")
+				fc.trackFunctionCall("malloc")
+				fc.eb.GenerateCallInstruction("malloc")
+				fc.out.MovRegToReg("r14", "rax") // r14 = new list pointer (callee-saved)
+
+				// Store new count in new list
+				fc.out.Cvtsi2sd("xmm2", "r13")
+				fc.out.MovXmmToMem("xmm2", "r14", 0)
+
+				// Check if we need to copy (new_count > 0)
+				fc.out.TestRegReg("r13", "r13")
+				skipCopy := fc.eb.text.Len()
+				fc.out.JumpConditional(JumpEqual, 0)
+				skipCopyPatch := fc.eb.text.Len()
+
+				// Use memcpy to copy (count-1) * 16 bytes from [rbx+24] to [r14+8]
+				// Push callee-saved registers
+				fc.out.PushReg("rbx")
+				fc.out.PushReg("r12")
+				fc.out.PushReg("r13")
+				fc.out.PushReg("r14")
+
+				fc.out.LeaMemToReg("rdi", "r14", 8)  // dest = new_list + 8
+				fc.out.LeaMemToReg("rsi", "rbx", 24) // src = input_list + 24 (skip count + first [key,val])
+				fc.out.MovRegToReg("rdx", "r13")
+				fc.out.ShlImmReg("rdx", 4) // size = new_count * 16
+
+				fc.trackFunctionCall("memcpy")
+				fc.eb.GenerateCallInstruction("memcpy")
+
+				// Restore callee-saved registers
+				fc.out.PopReg("r14")
+				fc.out.PopReg("r13")
+				fc.out.PopReg("r12")
+				fc.out.PopReg("rbx")
+
+				// Patch skip copy jump
+				currentPos := fc.eb.text.Len()
+				skipOffset := currentPos - skipCopyPatch
+				fc.eb.text.Bytes()[skipCopy+2] = byte(skipOffset)
+				fc.eb.text.Bytes()[skipCopy+3] = byte(skipOffset >> 8)
+				fc.eb.text.Bytes()[skipCopy+4] = byte(skipOffset >> 16)
+				fc.eb.text.Bytes()[skipCopy+5] = byte(skipOffset >> 24)
+
+				// Now renumber keys: [0][val0][1][val1][2][val2]...
+				// Loop through and update keys
+				// r15 = loop counter
+				fc.out.XorRegWithReg("r15", "r15") // r15 = 0
+
+				keyLoopStart := fc.eb.text.Len()
+				fc.out.CmpRegToReg("r15", "r13") // compare counter with new_count
+				keyLoopEnd := fc.eb.text.Len()
+				fc.out.JumpConditional(JumpGreaterOrEqual, 0)
+
+				// Write key at [r14 + 8 + r15*16]
+				fc.out.MovRegToReg("rax", "r15")
+				fc.out.ShlImmReg("rax", 4)       // rax = r15 * 16
+				fc.out.AddImmToReg("rax", 8)     // rax = 8 + r15 * 16
+				fc.out.AddRegToReg("rax", "r14") // rax = r14 + 8 + r15 * 16
+				fc.out.StoreRegToMem("r15", "rax", 0) // [rax] = r15 (the key)
+
+				fc.out.AddImmToReg("r15", 1) // r15++
+				loopOffset := int32(keyLoopStart - (fc.eb.text.Len() + 5))
+				fc.out.JumpUnconditional(loopOffset)
+
+				// Patch key loop end
+				keyLoopEndPos := fc.eb.text.Len()
+				fc.patchJumpImmediate(keyLoopEnd+2, int32(keyLoopEndPos-(keyLoopEnd+ConditionalJumpSize)))
+
+				// Return new list pointer in xmm0
+				fc.out.MovqRegToXmm("xmm0", "r14")
 
 				doneJumpPos := fc.eb.text.Len()
-				fc.out.JumpUnconditional(0) // Placeholder
+				fc.out.JumpUnconditional(0) // Jump over empty case
 
 				// Empty case: return 0.0
 				emptyTarget := fc.eb.text.Len()
+				fc.patchJumpImmediate(emptyJumpPos+2, int32(emptyTarget-(emptyJumpPos+ConditionalJumpSize)))
 				fc.out.XorpdXmm("xmm0", "xmm0") // xmm0 = 0.0
 
 				// Done
 				doneTarget := fc.eb.text.Len()
-
-				// Patch jumps
-				emptyOffset := int32(emptyTarget - (emptyJumpPos + ConditionalJumpSize))
-				fc.patchJumpImmediate(emptyJumpPos+2, emptyOffset)
-
-				doneOffset := int32(doneTarget - (doneJumpPos + UnconditionalJumpSize))
-				fc.patchJumpImmediate(doneJumpPos+1, doneOffset)
+				fc.patchJumpImmediate(doneJumpPos+1, int32(doneTarget-(doneJumpPos+UnconditionalJumpSize)))
 			}
 		case "$":
 			// Address value operator: treat value as memory address
