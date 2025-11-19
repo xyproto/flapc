@@ -1,23 +1,21 @@
-// pixel.flap - Draw a red pixel at the center of a 320x240 SDL3 window
-// Demonstrates SDL3 FFI for graphics programming
+// pixel.flap - SDL3 Graphics Demo
+// Demonstrates SDL3 FFI with proper event loop and rendering
 //
 // To compile and run:
 //   ./flapc pixel.flap -o pixel
 //   ./pixel
 //
 // Requires SDL3 library to be installed (pkg-config sdl3)
-// On headless systems, set: export SDL_VIDEODRIVER=dummy
 
 import sdl3 as sdl
 
 // Window dimensions
-width := 320
-height := 240
+width := 620
+height := 387
 
 // Initialize SDL3 with video subsystem
 printf("Initializing SDL3...\n")
 
-// Use SDL_INIT_VIDEO constant from SDL3 header
 init_result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
 
 init_result < 0 {
@@ -25,11 +23,10 @@ init_result < 0 {
     exit(1)
 }
 
-printf("Creating window...\n")
+printf("Creating window and renderer...\n")
 
-// Create window: SDL_CreateWindow(title, width, height, flags)
-// Use SDL_WINDOW_SHOWN constant from SDL3 header (or 0 for default)
-window := sdl.SDL_CreateWindow("Flap Pixel Demo", width, height, 0)
+// Create window
+window := sdl.SDL_CreateWindow("Flap SDL3 Demo", width, height, 0)
 
 window == 0 {
     printf("Failed to create window!\n")
@@ -37,10 +34,7 @@ window == 0 {
     exit(1)
 }
 
-printf("Creating renderer...\n")
-
-// Create renderer: SDL_CreateRenderer(window, driver_index)
-// Use -1 for first available driver
+// Create renderer
 renderer := sdl.SDL_CreateRenderer(window, 0)
 
 renderer == 0 {
@@ -50,44 +44,47 @@ renderer == 0 {
     exit(1)
 }
 
-printf("Drawing...\n")
+printf("Rendering for 2 seconds...\n")
 
-// Clear screen to black
-sdl.SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)
-sdl.SDL_RenderClear(renderer)
+// Get start time
+start_time := sdl.SDL_GetTicks()
 
 // Calculate center coordinates
 center_x := width / 2
 center_y := height / 2
+rect_size := 50
 
-// Set draw color to red (R=255, G=0, B=0, A=255)
-sdl.SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255)
+// Main rendering loop - run for approximately 2 seconds at ~60 FPS
+max_frames := 120  // 120 frames at 16ms each ≈ 2 seconds
 
-// Draw a 10x10 red square at center (easier to see than 1 pixel)
-// Draw horizontal and vertical lines to form a visible square
-y := center_y - 5
-@ y in (center_y - 5)..<(center_y + 5) max 20 {
-    @ x in (center_x - 5)..<(center_x + 5) max 20 {
-        sdl.SDL_RenderPoint(renderer, x, y)
+@ frame in 0..<max_frames max 200 {
+    // Check if we've exceeded time limit
+    elapsed := sdl.SDL_GetTicks() - start_time
+    elapsed > 2000 {
+        printf("2 seconds elapsed, stopping\n")
+        // Break not available, loop will complete naturally
     }
+    
+    // Clear screen to dark blue (R=0, G=0, B=50, A=255)
+    sdl.SDL_SetRenderDrawColor(renderer, 0, 0, 50, 255)
+    sdl.SDL_RenderClear(renderer)
+    
+    // Set color to red (R=255, G=0, B=0, A=255)
+    sdl.SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255)
+    
+    // Draw filled rectangle using multiple points
+    @ y in (center_y - rect_size)..<(center_y + rect_size) max 200 {
+        @ x in (center_x - rect_size)..<(center_x + rect_size) max 200 {
+            sdl.SDL_RenderPoint(renderer, x, y)
+        }
+    }
+    
+    // Present the rendered frame
+    sdl.SDL_RenderPresent(renderer)
+    
+    // Delay to maintain framerate (~60 FPS)
+    sdl.SDL_Delay(16)
 }
-
-// Present the rendered frame
-sdl.SDL_RenderPresent(renderer)
-
-printf("Red 10x10 square drawn at center (%v, %v)\n", center_x, center_y)
-printf("Window will stay open for 5 seconds (or until window is closed)...\n")
-
-// Simple event loop: keep window open until timeout or user closes it
-// We can't properly parse SDL_Event structure without struct support,
-// but SDL will handle window close events internally
-max_iterations := 500  // 500 * 10ms = 5 seconds
-
-@ i in 0..<max_iterations max 1000 {
-    sdl.SDL_Delay(10)  // 10ms delay per iteration
-}
-
-printf("Time's up!\n")
 
 printf("Cleaning up...\n")
 
