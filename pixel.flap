@@ -1,5 +1,5 @@
 // pixel.flap - SDL3 Graphics Demo
-// Demonstrates SDL3 FFI with proper event loop and rendering
+// Demonstrates SDL3 FFI with BMP image loading and display
 //
 // To compile and run:
 //   ./flapc pixel.flap -o pixel
@@ -20,17 +20,17 @@ printf("Initializing SDL3...\n")
 init_result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
 
 init_result == 0 {
-    printf("SDL_Init failed!\n")
+    printf("SDL_Init failed: %s\n", sdl.SDL_GetError())
     exit(1)
 }
 
 printf("Creating window and renderer...\n")
 
 // Create window
-window := sdl.SDL_CreateWindow("Flap SDL3 Demo", width, height, 0)
+window := sdl.SDL_CreateWindow("Hello World!", width, height, sdl.SDL_WINDOW_RESIZABLE)
 
 window == 0 {
-    printf("Failed to create window!\n")
+    printf("Failed to create window: %s\n", sdl.SDL_GetError())
     sdl.SDL_Quit()
     exit(1)
 }
@@ -39,57 +39,74 @@ window == 0 {
 renderer := sdl.SDL_CreateRenderer(window, 0)
 
 renderer == 0 {
-    printf("Failed to create renderer!\n")
+    printf("Failed to create renderer: %s\n", sdl.SDL_GetError())
     sdl.SDL_DestroyWindow(window)
     sdl.SDL_Quit()
     exit(1)
 }
 
+printf("Loading BMP image...\n")
+
+// Load BMP file
+file := sdl.SDL_IOFromFile("img/grumpy-cat.bmp", "rb")
+
+file == 0 {
+    printf("Error reading file: %s\n", sdl.SDL_GetError())
+    sdl.SDL_DestroyRenderer(renderer)
+    sdl.SDL_DestroyWindow(window)
+    sdl.SDL_Quit()
+    exit(1)
+}
+
+// Load BMP surface from file
+bmp := sdl.SDL_LoadBMP_IO(file, 1)
+
+bmp == 0 {
+    printf("Error creating surface: %s\n", sdl.SDL_GetError())
+    sdl.SDL_DestroyRenderer(renderer)
+    sdl.SDL_DestroyWindow(window)
+    sdl.SDL_Quit()
+    exit(1)
+}
+
+// Create texture from surface
+tex := sdl.SDL_CreateTextureFromSurface(renderer, bmp)
+
+tex == 0 {
+    printf("Error creating texture: %s\n", sdl.SDL_GetError())
+    sdl.SDL_DestroySurface(bmp)
+    sdl.SDL_DestroyRenderer(renderer)
+    sdl.SDL_DestroyWindow(window)
+    sdl.SDL_Quit()
+    exit(1)
+}
+
+// We no longer need the surface
+sdl.SDL_DestroySurface(bmp)
+
 printf("Rendering for 2 seconds...\n")
 
-// Get start time
-start_time := sdl.SDL_GetTicks()
+// Main rendering loop - run for approximately 2 seconds (20 frames * 100ms = 2s)
+max_frames := 20
 
-// Calculate center coordinates
-center_x := width / 2
-center_y := height / 2
-rect_size := 50
-
-// Main rendering loop - run for approximately 2 seconds at ~60 FPS
-max_frames := 120  // 120 frames at 16ms each ≈ 2 seconds
-
-@ frame in 0..<max_frames max 200 {
-    // Check if we've exceeded time limit
-    elapsed := sdl.SDL_GetTicks() - start_time
-    elapsed > 2000 {
-        printf("2 seconds elapsed, stopping\n")
-        // Break not available, loop will complete naturally
-    }
-    
-    // Clear screen to dark blue (R=0, G=0, B=50, A=255)
-    sdl.SDL_SetRenderDrawColor(renderer, 0, 0, 50, 255)
+@ frame in 0..<max_frames max 30 {
+    // Clear screen
     sdl.SDL_RenderClear(renderer)
     
-    // Set color to red (R=255, G=0, B=0, A=255)
-    sdl.SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255)
-    
-    // Draw filled rectangle using multiple points
-    @ y in (center_y - rect_size)..<(center_y + rect_size) max 200 {
-        @ x in (center_x - rect_size)..<(center_x + rect_size) max 200 {
-            sdl.SDL_RenderPoint(renderer, x, y)
-        }
-    }
+    // Render texture (fills entire window)
+    sdl.SDL_RenderTexture(renderer, tex, 0, 0)
     
     // Present the rendered frame
     sdl.SDL_RenderPresent(renderer)
     
-    // Delay to maintain framerate (~60 FPS)
-    sdl.SDL_Delay(16)
+    // Delay to maintain framerate
+    sdl.SDL_Delay(100)
 }
 
 printf("Cleaning up...\n")
 
 // Cleanup
+sdl.SDL_DestroyTexture(tex)
 sdl.SDL_DestroyRenderer(renderer)
 sdl.SDL_DestroyWindow(window)
 sdl.SDL_Quit()
