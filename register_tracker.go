@@ -8,25 +8,25 @@ import (
 // It tracks which registers are currently in use and provides safe allocation/deallocation
 type RegisterTracker struct {
 	// XMM register availability (xmm0-xmm15)
-	xmmInUse      [16]bool
-	xmmPurpose    [16]string // What each register is being used for (debugging)
-	
+	xmmInUse   [16]bool
+	xmmPurpose [16]string // What each register is being used for (debugging)
+
 	// Integer register availability
 	// rax, rcx, rdx, rsi, rdi, r8-r15
-	intInUse      map[string]bool
-	intPurpose    map[string]string
-	
+	intInUse   map[string]bool
+	intPurpose map[string]string
+
 	// Stack for nested register usage
-	xmmStack      []int  // Stack of allocated XMM registers
-	intStack      []string
-	
+	xmmStack []int // Stack of allocated XMM registers
+	intStack []string
+
 	// Reserved registers (never allocated automatically)
-	xmmReserved   [16]bool
-	intReserved   map[string]bool
-	
+	xmmReserved [16]bool
+	intReserved map[string]bool
+
 	// Statistics
-	maxXmmUsed    int
-	maxIntUsed    int
+	maxXmmUsed int
+	maxIntUsed int
 }
 
 // NewRegisterTracker creates a new register tracker
@@ -36,15 +36,15 @@ func NewRegisterTracker() *RegisterTracker {
 		intPurpose:  make(map[string]string),
 		intReserved: make(map[string]bool),
 	}
-	
+
 	// Reserve special-purpose registers
-	rt.ReserveInt("rsp")  // Stack pointer
-	rt.ReserveInt("rbp")  // Frame pointer
-	rt.ReserveInt("r15")  // Environment pointer (for closures)
-	
+	rt.ReserveInt("rsp") // Stack pointer
+	rt.ReserveInt("rbp") // Frame pointer
+	rt.ReserveInt("r15") // Environment pointer (for closures)
+
 	// Reserve XMM0 as primary result register
 	// (It can be used but must be explicitly requested)
-	
+
 	return rt
 }
 
@@ -60,7 +60,7 @@ func (rt *RegisterTracker) Clone() *RegisterTracker {
 		maxXmmUsed:  rt.maxXmmUsed,
 		maxIntUsed:  rt.maxIntUsed,
 	}
-	
+
 	for k, v := range rt.intInUse {
 		clone.intInUse[k] = v
 	}
@@ -70,7 +70,7 @@ func (rt *RegisterTracker) Clone() *RegisterTracker {
 	for k, v := range rt.intReserved {
 		clone.intReserved[k] = v
 	}
-	
+
 	return clone
 }
 
@@ -96,15 +96,15 @@ func (rt *RegisterTracker) AllocXMM(purpose string) string {
 			rt.xmmInUse[i] = true
 			rt.xmmPurpose[i] = purpose
 			rt.xmmStack = append(rt.xmmStack, i)
-			
+
 			if i > rt.maxXmmUsed {
 				rt.maxXmmUsed = i
 			}
-			
+
 			return fmt.Sprintf("xmm%d", i)
 		}
 	}
-	
+
 	return "" // No registers available
 }
 
@@ -114,19 +114,19 @@ func (rt *RegisterTracker) AllocSpecificXMM(index int, purpose string) bool {
 	if index < 0 || index >= 16 {
 		return false
 	}
-	
+
 	if rt.xmmInUse[index] || rt.xmmReserved[index] {
 		return false
 	}
-	
+
 	rt.xmmInUse[index] = true
 	rt.xmmPurpose[index] = purpose
 	rt.xmmStack = append(rt.xmmStack, index)
-	
+
 	if index > rt.maxXmmUsed {
 		rt.maxXmmUsed = index
 	}
-	
+
 	return true
 }
 
@@ -137,10 +137,10 @@ func (rt *RegisterTracker) FreeXMM(reg string) {
 	if err != nil || index < 0 || index >= 16 {
 		return
 	}
-	
+
 	rt.xmmInUse[index] = false
 	rt.xmmPurpose[index] = ""
-	
+
 	// Remove from stack
 	for i := len(rt.xmmStack) - 1; i >= 0; i-- {
 		if rt.xmmStack[i] == index {
@@ -154,22 +154,22 @@ func (rt *RegisterTracker) FreeXMM(reg string) {
 func (rt *RegisterTracker) AllocInt(purpose string) string {
 	// Prefer caller-saved registers for temporaries
 	callerSaved := []string{"rax", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11"}
-	
+
 	for _, reg := range callerSaved {
 		if !rt.intInUse[reg] && !rt.intReserved[reg] {
 			rt.intInUse[reg] = true
 			rt.intPurpose[reg] = purpose
 			rt.intStack = append(rt.intStack, reg)
-			
+
 			used := len(rt.intInUse)
 			if used > rt.maxIntUsed {
 				rt.maxIntUsed = used
 			}
-			
+
 			return reg
 		}
 	}
-	
+
 	// Try callee-saved if desperate
 	calleeSaved := []string{"rbx", "r12", "r13", "r14"}
 	for _, reg := range calleeSaved {
@@ -177,16 +177,16 @@ func (rt *RegisterTracker) AllocInt(purpose string) string {
 			rt.intInUse[reg] = true
 			rt.intPurpose[reg] = purpose
 			rt.intStack = append(rt.intStack, reg)
-			
+
 			used := len(rt.intInUse)
 			if used > rt.maxIntUsed {
 				rt.maxIntUsed = used
 			}
-			
+
 			return reg
 		}
 	}
-	
+
 	return "" // No registers available
 }
 
@@ -203,16 +203,16 @@ func (rt *RegisterTracker) AllocIntCalleeSaved(purpose string) string {
 			rt.intInUse[reg] = true
 			rt.intPurpose[reg] = purpose
 			rt.intStack = append(rt.intStack, reg)
-			
+
 			used := len(rt.intInUse)
 			if used > rt.maxIntUsed {
 				rt.maxIntUsed = used
 			}
-			
+
 			return reg
 		}
 	}
-	
+
 	// No callee-saved registers available - caller must use stack
 	return ""
 }
@@ -222,16 +222,16 @@ func (rt *RegisterTracker) AllocSpecificInt(reg string, purpose string) bool {
 	if rt.intInUse[reg] || rt.intReserved[reg] {
 		return false
 	}
-	
+
 	rt.intInUse[reg] = true
 	rt.intPurpose[reg] = purpose
 	rt.intStack = append(rt.intStack, reg)
-	
+
 	used := len(rt.intInUse)
 	if used > rt.maxIntUsed {
 		rt.maxIntUsed = used
 	}
-	
+
 	return true
 }
 
@@ -239,7 +239,7 @@ func (rt *RegisterTracker) AllocSpecificInt(reg string, purpose string) bool {
 func (rt *RegisterTracker) FreeInt(reg string) {
 	delete(rt.intInUse, reg)
 	delete(rt.intPurpose, reg)
-	
+
 	// Remove from stack
 	for i := len(rt.intStack) - 1; i >= 0; i-- {
 		if rt.intStack[i] == reg {
@@ -287,14 +287,14 @@ func (rt *RegisterTracker) SaveState() *RegisterTrackerState {
 		intInUse:   make(map[string]bool),
 		intPurpose: make(map[string]string),
 	}
-	
+
 	for k, v := range rt.intInUse {
 		state.intInUse[k] = v
 	}
 	for k, v := range rt.intPurpose {
 		state.intPurpose[k] = v
 	}
-	
+
 	return state
 }
 
@@ -304,7 +304,7 @@ func (rt *RegisterTracker) RestoreState(state *RegisterTrackerState) {
 	rt.xmmPurpose = state.xmmPurpose
 	rt.intInUse = make(map[string]bool)
 	rt.intPurpose = make(map[string]string)
-	
+
 	for k, v := range state.intInUse {
 		rt.intInUse[k] = v
 	}
@@ -321,12 +321,12 @@ func (rt *RegisterTracker) Reset() {
 			rt.xmmPurpose[i] = ""
 		}
 	}
-	
+
 	rt.intInUse = make(map[string]bool)
 	rt.intPurpose = make(map[string]string)
 	rt.xmmStack = nil
 	rt.intStack = nil
-	
+
 	// Restore reserved registers
 	for reg := range rt.intReserved {
 		rt.intInUse[reg] = true
@@ -347,7 +347,7 @@ func (rt *RegisterTracker) Debug() {
 			fmt.Printf("  xmm%d: %s%s\n", i, rt.xmmPurpose[i], reserved)
 		}
 	}
-	
+
 	fmt.Println("Integer Registers:")
 	for reg, inUse := range rt.intInUse {
 		if inUse {
@@ -358,7 +358,7 @@ func (rt *RegisterTracker) Debug() {
 			fmt.Printf("  %s: %s%s\n", reg, rt.intPurpose[reg], reserved)
 		}
 	}
-	
+
 	fmt.Printf("Max XMM used: %d, Max Int used: %d\n", rt.maxXmmUsed, rt.maxIntUsed)
 	fmt.Println("==============================")
 }
@@ -383,7 +383,7 @@ const (
 // RegisterSpiller manages register spilling when all registers are in use
 type RegisterSpiller struct {
 	strategy      SpillStrategy
-	spillSlots    int           // Number of stack slots used for spills
+	spillSlots    int            // Number of stack slots used for spills
 	spillMap      map[string]int // Register -> spill slot mapping
 	nextSpillSlot int
 }
@@ -403,12 +403,12 @@ func (rs *RegisterSpiller) SpillXMM(reg string) int {
 	if slot, exists := rs.spillMap[reg]; exists {
 		return slot
 	}
-	
+
 	slot := rs.nextSpillSlot
 	rs.spillMap[reg] = slot
 	rs.nextSpillSlot++
 	rs.spillSlots++
-	
+
 	return slot
 }
 
@@ -428,12 +428,12 @@ func (rs *RegisterSpiller) GetTotalSpillSpace() int {
 func (rt *RegisterTracker) GetAllocatedCalleeSavedRegs() []string {
 	var allocated []string
 	calleeSaved := []string{"rbx", "r12", "r13", "r14"}
-	
+
 	for _, reg := range calleeSaved {
 		if rt.IsIntInUse(reg) {
 			allocated = append(allocated, reg)
 		}
 	}
-	
+
 	return allocated
 }

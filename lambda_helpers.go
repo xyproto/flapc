@@ -4,13 +4,13 @@ package main
 // Used to detect unsupported lambda patterns and give clear error messages
 func hasLocalVariables(expr Expression) bool {
 	found := false
-	
+
 	var scan func(Expression)
 	scan = func(e Expression) {
 		if e == nil || found {
 			return
 		}
-		
+
 		switch ex := e.(type) {
 		case *BlockExpr:
 			for _, stmt := range ex.Statements {
@@ -26,7 +26,7 @@ func hasLocalVariables(expr Expression) bool {
 					}
 				}
 			}
-			
+
 		case *MatchExpr:
 			for _, clause := range ex.Clauses {
 				scan(clause.Result)
@@ -34,7 +34,7 @@ func hasLocalVariables(expr Expression) bool {
 			scan(ex.DefaultExpr)
 		}
 	}
-	
+
 	scan(expr)
 	return found
 }
