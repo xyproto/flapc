@@ -4,9 +4,6 @@
 
 **Flap** is a systems programming language that compiles directly to native machine code (x86-64, ARM64, RISC-V) without LLVM, IR, or dependencies.
 
-**Version:** 3.0.0
-**Status:** Production-ready
-
 ## 🌟 What Makes Flap Novel
 
 Flap is distinguished by these rare/unique design choices:
