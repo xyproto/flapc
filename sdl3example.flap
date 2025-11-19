@@ -17,28 +17,23 @@ height := 387
 printf("Initializing SDL3...\n")
 
 // SDL3 returns true (1) on success, false (0) on failure
-init_result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
-
-init_result == 0 {
+// Use or! for railway-oriented error handling
+sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
     printf("SDL_Init failed: %s\n", sdl.SDL_GetError())
     exit(1)
 }
 
 printf("Creating window and renderer...\n")
 
-// Create window
-window := sdl.SDL_CreateWindow("Hello World!", width, height, sdl.SDL_WINDOW_RESIZABLE)
-
-window == 0 {
+// Create window - or! checks for null pointer (0) and executes block if null
+window := sdl.SDL_CreateWindow("Hello World!", width, height, sdl.SDL_WINDOW_RESIZABLE) or! {
     printf("Failed to create window: %s\n", sdl.SDL_GetError())
     sdl.SDL_Quit()
     exit(1)
 }
 
-// Create renderer
-renderer := sdl.SDL_CreateRenderer(window, 0)
-
-renderer == 0 {
+// Create renderer - clean error handling with or!
+renderer := sdl.SDL_CreateRenderer(window, 0) or! {
     printf("Failed to create renderer: %s\n", sdl.SDL_GetError())
     sdl.SDL_DestroyWindow(window)
     sdl.SDL_Quit()
@@ -47,10 +42,8 @@ renderer == 0 {
 
 printf("Loading BMP image...\n")
 
-// Load BMP file
-file := sdl.SDL_IOFromFile("img/grumpy-cat.bmp", "rb")
-
-file == 0 {
+// Load BMP file - or! handles null file pointer
+file := sdl.SDL_IOFromFile("img/grumpy-cat.bmp", "rb") or! {
     printf("Error reading file: %s\n", sdl.SDL_GetError())
     sdl.SDL_DestroyRenderer(renderer)
     sdl.SDL_DestroyWindow(window)
@@ -59,9 +52,7 @@ file == 0 {
 }
 
 // Load BMP surface from file
-bmp := sdl.SDL_LoadBMP_IO(file, 1)
-
-bmp == 0 {
+bmp := sdl.SDL_LoadBMP_IO(file, 1) or! {
     printf("Error creating surface: %s\n", sdl.SDL_GetError())
     sdl.SDL_DestroyRenderer(renderer)
     sdl.SDL_DestroyWindow(window)
@@ -70,9 +61,7 @@ bmp == 0 {
 }
 
 // Create texture from surface
-tex := sdl.SDL_CreateTextureFromSurface(renderer, bmp)
-
-tex == 0 {
+tex := sdl.SDL_CreateTextureFromSurface(renderer, bmp) or! {
     printf("Error creating texture: %s\n", sdl.SDL_GetError())
     sdl.SDL_DestroySurface(bmp)
     sdl.SDL_DestroyRenderer(renderer)

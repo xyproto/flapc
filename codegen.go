@@ -3640,6 +3640,60 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		fc.inTailPosition = false
 		defer func() { fc.inTailPosition = savedTailPosition }()
 
+		// Special handling for or! operator (railway-oriented programming)
+		// or! requires conditional execution: only evaluate right side if left is error/null
+		if e.Operator == "or!" {
+			// Compile left expression into xmm0
+			fc.compileExpression(e.Left)
+			
+			// Check if xmm0 is NaN by comparing with itself
+			fc.out.Ucomisd("xmm0", "xmm0") // Compare xmm0 with itself
+			// If NaN, parity flag is set (PF=1)
+			// Jump to execute_default if parity (i.e., if value is NaN)
+			executeDefaultPos1 := fc.eb.text.Len()
+			fc.out.JumpConditional(JumpParity, 0) // jp (jump if parity/NaN)
+			
+			// Not NaN, now check if xmm0 == 0.0 (null pointer)
+			zeroReg := fc.regTracker.AllocXMM("or_bang_zero")
+			if zeroReg == "" {
+				zeroReg = "xmm2" // Fallback
+			}
+			fc.out.XorpdXmm(zeroReg, zeroReg)       // zero register = 0.0
+			fc.out.Ucomisd("xmm0", zeroReg)         // Compare xmm0 with 0.0
+			fc.regTracker.FreeXMM(zeroReg)
+			
+			// Jump to execute_default if equal (i.e., if value is 0/null)
+			executeDefaultPos2 := fc.eb.text.Len()
+			fc.out.JumpConditional(JumpEqual, 0) // je (jump if equal to 0)
+			
+			// Value is valid (not NaN and not 0), skip to end without evaluating right side
+			skipDefaultPos := fc.eb.text.Len()
+			fc.out.JumpUnconditional(0) // jmp (unconditional jump to end)
+			
+			// execute_default label: evaluate right expression (could be block or value)
+			executeDefaultLabel := fc.eb.text.Len()
+			fc.compileExpression(e.Right) // Result goes to xmm0
+			
+			// End label
+			endLabel := fc.eb.text.Len()
+			
+			// Patch the jumps
+			// Patch NaN check jump to execute_default
+			offset1 := int32(executeDefaultLabel - (executeDefaultPos1 + 6))
+			fc.patchJumpImmediate(executeDefaultPos1+2, offset1)
+			
+			// Patch zero check jump to execute_default
+			offset2 := int32(executeDefaultLabel - (executeDefaultPos2 + 6))
+			fc.patchJumpImmediate(executeDefaultPos2+2, offset2)
+			
+			// Patch skip jump to end
+			offset3 := int32(endLabel - (skipDefaultPos + 5))
+			fc.patchJumpImmediate(skipDefaultPos+1, offset3)
+			
+			// xmm0 now contains either original value (if not NaN/null) or result of right side
+			return
+		}
+
 		// Check for string/list/map operations with + operator
 		if e.Operator == "+" {
 			leftType := fc.getExprType(e.Left)
@@ -4218,21 +4272,10 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.Cvtsi2sd("xmm0", "rax")
 			fc.regTracker.FreeXMM(zeroReg)
 		case "or!":
-			// Error unwrap with default: returns xmm0 if not NaN, else xmm1
-			// xmm0 = value, xmm1 = default
-			// Check if xmm0 is NaN by comparing with itself
-			fc.out.Ucomisd("xmm0", "xmm0") // Compare xmm0 with itself
-			// If NaN, parity flag is set (PF=1)
-			// Jump if NOT parity (i.e., if value is valid, skip to end)
-			skipPos := fc.eb.text.Len()
-			fc.out.JumpConditional(JumpNotParity, 0) // jnp (jump if no parity/not NaN)
-			// NaN case: move default value from xmm1 to xmm0 using movsd
-			fc.out.Emit([]byte{0xf2, 0x0f, 0x10, 0xc1}) // movsd xmm0, xmm1
-			// Patch the jump
-			endPos := fc.eb.text.Len()
-			offset := int32(endPos - (skipPos + 6))
-			fc.patchJumpImmediate(skipPos+2, offset)
-			// xmm0 now contains either original value (if not NaN) or default (if NaN)
+			// Confidence that this function is working: 0%
+			// NOTE: or! is now handled specially before the operator switch (see above)
+			// This case should never be reached. If it is, there's a bug in the special handling.
+			compilerError("or! operator reached generic binary operation switch (should be handled specially)")
 		case "<<b":
 			// Shift left: convert to int64, shift, convert back
 			fc.out.Cvttsd2si("rax", "xmm0") // rax = int64(xmm0)
