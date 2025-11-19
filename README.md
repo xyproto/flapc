@@ -4,9 +4,9 @@
 
 **Flap** is a systems programming language that compiles directly to native machine code (x86-64, ARM64, RISC-V) without LLVM, IR, or dependencies.
 
-## An example program, using SDL3 to display an image
+## An example Flap program, using SDL3 to display an image
 
-```
+```go
 import sdl3 as sdl
 
 // Window dimensions
@@ -99,10 +99,10 @@ Everything IS `map[uint64]float64` — numbers, strings, lists, objects, functio
 AST → x86-64/ARM64/RISC-V in one pass. No IR, no LLVM. Sub-millisecond compilation. ~30k lines of Go.
 
 ### 3. **Context-Sensitive Blocks**
-`{...}` disambiguated by contents: `{x: 1}` = map, `{x -> y}` = match, `{x := 1}` = statements. No `match` keyword needed.
+`{...}` disambiguated by contents: `{x: 1}` = map, `{x => y}` = match, `{x := 1}` = statements. No `match` keyword needed.
 
 ### 4. **Minimal Keyword Design**
-`ret @` for loop control (numbered labels `@1`, `@2`), `@` for loops, `==>` for no-arg lambdas, named operators (`and`/`or`/`not`).
+`ret @` for loop control (numbered labels `@1`, `@2`), `@` for loops, `->>` for no-arg lambdas, named operators (`and`/`or`/`not`).
 
 ### 5. **Built-in Parallelism**
 `@@` for parallel loops with automatic barrier sync. Native atomic operations. No thread management.
@@ -153,8 +153,8 @@ flapc hello.flap
 
 ```flap
 // Factorial with tail-call optimization
-factorial = (n, acc) => n == 0 {
-    -> acc
+factorial = (n, acc) -> n == 0 {
+    => acc
     ~> factorial(n-1, n*acc)
 }
 
@@ -177,15 +177,15 @@ y++           // Increment (mutable vars only)
 ### Functions
 
 ```flap
-square = x => x * x
-add = (a, b) => a + b
-greet ==> println("Hello!")  // No-arg shorthand for () =>
+square = x -> x * x
+add = (a, b) -> a + b
+greet ->> println("Hello!")  // No-arg shorthand for () ->
 
 // Match expression
-classify = x => x { 0 -> "zero" | 1 -> "one" | ~> "many" }
+classify = x -> x { 0 => "zero" | 1 => "one" | ~> "many" }
 
 // Guard match
-sign = x => { | x < 0 -> "neg" | x > 0 -> "pos" | ~> "zero" }
+sign = x -> { | x < 0 => "neg" | x > 0 => "pos" | ~> "zero" }
 ```
 
 ### Loops with Numbered Labels
@@ -331,7 +331,7 @@ str := "hello" as cstr
 and  or  xor  not
 
 // List operators
-::     // Cons (prepend): 1 :: [2, 3] => [1, 2, 3]
+::     // Cons (prepend): 1 :: [2, 3] -> [1, 2, 3]
 #      // Length: #list
 ^      // Head: ^list (first element)
 _      // Tail: _list (all but first)
@@ -351,16 +351,16 @@ Flap uses a **Result type** for operations that can fail, using NaN-boxing to en
 
 ```flap
 // Division returns Result type (can fail with division by zero)
-safe_divide = (a, b) => {
-    | b == 0 -> error("dv0")  // Create error with code "dv0"
+safe_divide = (a, b) -> {
+    | b == 0 => error("dv0")  // Create error with code "dv0"
     ~> a / b
 }
 
 // Check for errors using .error property
 result = safe_divide(10, 2)
 result.error {
-    "" -> println("Success:", result)        // Empty string = no error
-    "dv0" -> println("Division by zero!")    // Error code
+    "" => println("Success:", result)        // Empty string = no error
+    "dv0" => println("Division by zero!")    // Error code
     ~> println("Other error:", result.error)
 }
 
@@ -417,8 +417,8 @@ running := 1
 ### Fibonacci Sequence
 
 ```flap
-fib = n => n < 2 {
-    -> n
+fib = n -> n < 2 {
+    => n
     ~> fib(n-1) + fib(n-2)
 }
 
@@ -430,7 +430,7 @@ fib = n => n < 2 {
 ### List Processing
 
 ```flap
-map = (list, fn) => {
+map = (list, fn) -> {
     result := []
     @ i in 0..<#list {
         result[i] <- fn(list[i])
@@ -439,7 +439,7 @@ map = (list, fn) => {
 }
 
 numbers := [1, 2, 3, 4, 5]
-doubled := map(numbers, x => x * 2)
+doubled := map(numbers, x -> x * 2)
 ```
 
 ## Performance Tips
