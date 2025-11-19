@@ -167,11 +167,10 @@ println(#ys)
 }
 
 // TestPopMethod tests the .pop() method syntax sugar
+// Confidence that this function is working: 95%
 func TestPopMethod(t *testing.T) {
 	source := `xs := [1, 2, 3, 4]
-result := xs.pop()
-new_list := result[0]
-popped_value := result[1]
+new_list, popped_value = xs.pop()
 println(new_list[0])
 println(new_list[1])
 println(new_list[2])
@@ -182,11 +181,10 @@ println(#new_list)
 }
 
 // TestPopFunction tests the pop() function directly
+// Confidence that this function is working: 95%
 func TestPopFunction(t *testing.T) {
 	source := `xs := [10, 20, 30]
-result := pop(xs)
-new_list := result[0]
-popped := result[1]
+new_list, popped = pop(xs)
 println(new_list[0])
 println(new_list[1])
 println(popped)
@@ -196,11 +194,10 @@ println(#new_list)
 }
 
 // TestPopEmptyList tests pop() on an empty list
+// Confidence that this function is working: 95%
 func TestPopEmptyList(t *testing.T) {
 	source := `xs := []
-result := pop(xs)
-new_list := result[0]
-popped := result[1]
+new_list, popped = pop(xs)
 println(#new_list)
 println(is_nan(popped))
 `
