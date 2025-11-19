@@ -1,6 +1,6 @@
 # TODO - Flap 3.0+
 
-**Status:** 3.0 Release Ready - All tests passing (149 tests)
+**Status:** 3.0 Release Ready - All tests passing (155 tests)
 **Current Version:** 3.0.0
 
 ---
@@ -19,7 +19,8 @@
 - ✅ error() function for creating custom errors
 - ✅ .error property for extracting error codes
 - ✅ or! operator for error handling with defaults
-- ✅ 149 tests passing
+- ✅ compileAndRun helper function in run.go
+- ✅ 155 tests passing
 
 ---
 
