@@ -253,6 +253,47 @@ _      // Tail: _list (all but first)
 ???    // Secure random: 0.0 <= ??? < 1.0
 ```
 
+### Result/Option Types and Error Handling
+
+Flap uses a **Result type** for operations that can fail, using NaN-boxing to encode errors efficiently:
+
+```flap
+// Division returns Result type (can fail with division by zero)
+safe_divide = (a, b) => {
+    | b == 0 -> error("dv0")  // Create error with code "dv0"
+    ~> a / b
+}
+
+// Check for errors using .error property
+result = safe_divide(10, 2)
+result.error {
+    "" -> println("Success:", result)        // Empty string = no error
+    "dv0" -> println("Division by zero!")    // Error code
+    ~> println("Other error:", result.error)
+}
+
+// Use or! operator for default values
+safe = safe_divide(10, 0) or! -1  // Returns -1 on error
+
+// Chain multiple or! for fallbacks
+x = parse(input) or! default_value or! 0
+```
+
+**Standard error codes:**
+- `"dv0"` - Division by zero
+- `"idx"` - Index out of bounds
+- `"key"` - Key not found
+- `"mem"` - Out of memory
+- `"arg"` - Invalid argument
+- `"io"` - I/O error
+
+**Built-in operations that return Results:**
+```flap
+x = 10 / 0      // Error: "dv0"
+y = list[99]    // Error: "idx" (out of bounds)
+z = map.missing // Error: "key" (key not found)
+```
+
 ## Example Programs
 
 ### Game Loop

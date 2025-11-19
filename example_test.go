@@ -273,16 +273,67 @@ x := (10 / 0) or! (20 / 0) or! 42
 printf("Chained fallback = %v\n", x)
 `
 	output := compileAndRun(t, code)
-	
+
 	if !strings.Contains(output, "21") {
 		t.Errorf("Expected '21' from 42/2, got: %s", output)
 	}
-	
+
 	if !strings.Contains(output, "-999") {
 		t.Errorf("Expected '-999' as error fallback, got: %s", output)
 	}
-	
+
 	if !strings.Contains(output, "42") {
 		t.Errorf("Expected '42' from chained fallback, got: %s", output)
+	}
+}
+
+// Confidence that this function is working: 90%
+// TestResultTypeWithOrBang demonstrates practical Result type usage with or! operator
+func TestResultTypeWithOrBang(t *testing.T) {
+	code := `
+// Safe division function using guard match
+safe_divide := (a, b) => {
+	| b == 0 -> 0 / 0  // Returns error NaN
+	~> a / b
+}
+
+// Test success case
+result1 := safe_divide(10, 2)
+printf("10 / 2 = %v\n", result1)
+
+// Test error case with or! operator for fallback
+result2 := safe_divide(10, 0)
+safe_result := result2 or! -1
+printf("10 / 0 with fallback = %v\n", safe_result)
+
+// Chained fallbacks
+x := safe_divide(5, 0) or! safe_divide(10, 0) or! 42
+printf("Chained fallback result = %v\n", x)
+
+// Practical example: parse with default
+parse_int := (s) => {
+	// Simplified - always returns success for demo
+	42
+}
+
+value := parse_int("abc") or! 0
+printf("Parsed value = %v\n", value)
+`
+	output := compileAndRun(t, code)
+
+	if !strings.Contains(output, "10 / 2 = 5") {
+		t.Errorf("Expected '10 / 2 = 5', got: %s", output)
+	}
+
+	if !strings.Contains(output, "10 / 0 with fallback = -1") {
+		t.Errorf("Expected '10 / 0 with fallback = -1', got: %s", output)
+	}
+
+	if !strings.Contains(output, "Chained fallback result = 42") {
+		t.Errorf("Expected 'Chained fallback result = 42', got: %s", output)
+	}
+
+	if !strings.Contains(output, "Parsed value = 42") {
+		t.Errorf("Expected 'Parsed value = 42', got: %s", output)
 	}
 }
