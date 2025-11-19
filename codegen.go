@@ -3645,51 +3645,51 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		if e.Operator == "or!" {
 			// Compile left expression into xmm0
 			fc.compileExpression(e.Left)
-			
+
 			// Check if xmm0 is NaN by comparing with itself
 			fc.out.Ucomisd("xmm0", "xmm0") // Compare xmm0 with itself
 			// If NaN, parity flag is set (PF=1)
 			// Jump to execute_default if parity (i.e., if value is NaN)
 			executeDefaultPos1 := fc.eb.text.Len()
 			fc.out.JumpConditional(JumpParity, 0) // jp (jump if parity/NaN)
-			
+
 			// Not NaN, now check if xmm0 == 0.0 (null pointer)
 			zeroReg := fc.regTracker.AllocXMM("or_bang_zero")
 			if zeroReg == "" {
 				zeroReg = "xmm2" // Fallback
 			}
-			fc.out.XorpdXmm(zeroReg, zeroReg)       // zero register = 0.0
-			fc.out.Ucomisd("xmm0", zeroReg)         // Compare xmm0 with 0.0
+			fc.out.XorpdXmm(zeroReg, zeroReg) // zero register = 0.0
+			fc.out.Ucomisd("xmm0", zeroReg)   // Compare xmm0 with 0.0
 			fc.regTracker.FreeXMM(zeroReg)
-			
+
 			// Jump to execute_default if equal (i.e., if value is 0/null)
 			executeDefaultPos2 := fc.eb.text.Len()
 			fc.out.JumpConditional(JumpEqual, 0) // je (jump if equal to 0)
-			
+
 			// Value is valid (not NaN and not 0), skip to end without evaluating right side
 			skipDefaultPos := fc.eb.text.Len()
 			fc.out.JumpUnconditional(0) // jmp (unconditional jump to end)
-			
+
 			// execute_default label: evaluate right expression (could be block or value)
 			executeDefaultLabel := fc.eb.text.Len()
 			fc.compileExpression(e.Right) // Result goes to xmm0
-			
+
 			// End label
 			endLabel := fc.eb.text.Len()
-			
+
 			// Patch the jumps
 			// Patch NaN check jump to execute_default
 			offset1 := int32(executeDefaultLabel - (executeDefaultPos1 + 6))
 			fc.patchJumpImmediate(executeDefaultPos1+2, offset1)
-			
+
 			// Patch zero check jump to execute_default
 			offset2 := int32(executeDefaultLabel - (executeDefaultPos2 + 6))
 			fc.patchJumpImmediate(executeDefaultPos2+2, offset2)
-			
+
 			// Patch skip jump to end
 			offset3 := int32(endLabel - (skipDefaultPos + 5))
 			fc.patchJumpImmediate(skipDefaultPos+1, offset3)
-			
+
 			// xmm0 now contains either original value (if not NaN/null) or result of right side
 			return
 		}

@@ -1650,7 +1650,7 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 		if len(parts) == 2 {
 			namespace := parts[0]
 			funcName := parts[1]
-			
+
 			// Check if this is a C library function call
 			if constants, ok := acg.cConstants[namespace]; ok {
 				// Check if function signature exists in C header
@@ -1668,7 +1668,7 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 			return fmt.Errorf("undefined namespace '%s' for function call", namespace)
 		}
 	}
-	
+
 	switch call.Function {
 	case "println":
 		return acg.compilePrintln(call)
@@ -1715,7 +1715,7 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 			}
 			return acg.compileDirectCall(directCall)
 		}
-		
+
 		// Check if it's a C function from the "c" namespace (implicit)
 		// This handles bare function names like sin(), cos(), etc. from libm
 		if constants, ok := acg.cConstants["c"]; ok {
@@ -1726,7 +1726,7 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 				return acg.compileCFunctionCall(call.Function, call.Args, sig)
 			}
 		}
-		
+
 		return fmt.Errorf("unsupported function for ARM64: %s", call.Function)
 	}
 }
@@ -2821,25 +2821,25 @@ func (acg *ARM64CodeGen) compileCFunctionCall(funcName string, args []Expression
 	// Integer/pointer args: x0-x7
 	// Float args: d0-d7
 	// Return value: x0 (integer/pointer) or d0 (float)
-	
+
 	// For simplicity, we'll assume:
 	// - All Flap values are float64 (our internal representation)
 	// - Pointer types need conversion from float64 bits to integer register
 	// - Integer types need fcvtzs conversion from float64 to int
 	// - Float types stay in float registers
-	
+
 	numParams := len(sig.Params)
 	numArgs := len(args)
-	
+
 	// Allow variadic functions (printf, etc.) to have more args than params
 	if numArgs < numParams {
 		return fmt.Errorf("%s requires at least %d arguments (got %d)", funcName, numParams, numArgs)
 	}
-	
+
 	if numArgs > 8 {
 		return fmt.Errorf("%s: too many arguments (max 8, got %d)", funcName, numArgs)
 	}
-	
+
 	// Determine which arguments are integers/pointers vs floats
 	argTypes := make([]string, numArgs)
 	for i := 0; i < numArgs; i++ {
@@ -2848,9 +2848,9 @@ func (acg *ARM64CodeGen) compileCFunctionCall(funcName string, args []Expression
 			paramType := sig.Params[i].Type
 			if isPointerType(paramType) {
 				argTypes[i] = "ptr"
-			} else if strings.Contains(paramType, "int") || strings.Contains(paramType, "long") || 
-					   strings.Contains(paramType, "short") || strings.Contains(paramType, "char") ||
-					   strings.Contains(paramType, "size") || strings.Contains(paramType, "bool") {
+			} else if strings.Contains(paramType, "int") || strings.Contains(paramType, "long") ||
+				strings.Contains(paramType, "short") || strings.Contains(paramType, "char") ||
+				strings.Contains(paramType, "size") || strings.Contains(paramType, "bool") {
 				argTypes[i] = "int"
 			} else if strings.Contains(paramType, "float") {
 				argTypes[i] = "float32"
@@ -2870,14 +2870,14 @@ func (acg *ARM64CodeGen) compileCFunctionCall(funcName string, args []Expression
 			}
 		}
 	}
-	
+
 	// Save arguments to stack first (evaluate all expressions)
 	stackSize := numArgs * 8
 	if stackSize > 0 {
 		if err := acg.out.SubImm64("sp", "sp", uint32(stackSize)); err != nil {
 			return err
 		}
-		
+
 		for i := 0; i < numArgs; i++ {
 			if err := acg.compileExpression(args[i]); err != nil {
 				return err
@@ -2889,27 +2889,27 @@ func (acg *ARM64CodeGen) compileCFunctionCall(funcName string, args []Expression
 			}
 		}
 	}
-	
+
 	// Load arguments into appropriate registers
 	intRegNum := 0
 	floatRegNum := 0
-	
+
 	for i := 0; i < numArgs; i++ {
 		argType := argTypes[i]
-		
+
 		// Load from stack into d0
 		offset := int32(i * 8)
 		if err := acg.out.LdrImm64Double("d0", "sp", offset); err != nil {
 			return err
 		}
-		
+
 		isIntArg := (argType == "int" || argType == "ptr")
-		
+
 		if isIntArg {
 			if intRegNum >= 8 {
 				return fmt.Errorf("%s: too many integer/pointer arguments", funcName)
 			}
-			
+
 			if argType == "ptr" {
 				// Pointer: transfer bits from d0 to xN
 				// fmov xN, d0
@@ -2935,7 +2935,7 @@ func (acg *ARM64CodeGen) compileCFunctionCall(funcName string, args []Expression
 			if floatRegNum >= 8 {
 				return fmt.Errorf("%s: too many float arguments", funcName)
 			}
-			
+
 			if floatRegNum != 0 {
 				// Move d0 to dN
 				// fmov dN, d0
@@ -2950,17 +2950,17 @@ func (acg *ARM64CodeGen) compileCFunctionCall(funcName string, args []Expression
 			floatRegNum++
 		}
 	}
-	
+
 	// Restore stack pointer
 	if stackSize > 0 {
 		if err := acg.out.AddImm64("sp", "sp", uint32(stackSize)); err != nil {
 			return err
 		}
 	}
-	
+
 	// Mark that we need dynamic linking
 	acg.eb.useDynamicLinking = true
-	
+
 	// Add function to needed functions list
 	found := false
 	for _, f := range acg.eb.neededFunctions {
@@ -2972,7 +2972,7 @@ func (acg *ARM64CodeGen) compileCFunctionCall(funcName string, args []Expression
 	if !found {
 		acg.eb.neededFunctions = append(acg.eb.neededFunctions, funcName)
 	}
-	
+
 	// Generate call to function stub
 	stubLabel := funcName + "$stub"
 	position := acg.eb.text.Len()
@@ -2980,10 +2980,10 @@ func (acg *ARM64CodeGen) compileCFunctionCall(funcName string, args []Expression
 		position:   position,
 		targetName: stubLabel,
 	})
-	
+
 	// Emit placeholder bl instruction
 	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x94}) // bl #0
-	
+
 	// Handle return value conversion
 	returnType := sig.ReturnType
 	if isPointerType(returnType) {
@@ -2991,14 +2991,14 @@ func (acg *ARM64CodeGen) compileCFunctionCall(funcName string, args []Expression
 		// fmov d0, x0
 		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x67, 0x9e})
 	} else if strings.Contains(returnType, "int") || strings.Contains(returnType, "long") ||
-			   strings.Contains(returnType, "short") || strings.Contains(returnType, "char") ||
-			   strings.Contains(returnType, "size") || strings.Contains(returnType, "bool") {
+		strings.Contains(returnType, "short") || strings.Contains(returnType, "char") ||
+		strings.Contains(returnType, "size") || strings.Contains(returnType, "bool") {
 		// Integer return: convert x0 to float64 in d0
 		// scvtf d0, x0
 		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
 	}
 	// else: float/double return already in d0
-	
+
 	return nil
 }
 
