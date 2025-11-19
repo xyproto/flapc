@@ -74,31 +74,31 @@ Blocks `{ ... }` are disambiguated by their contents:
 // Map literal: contains key: value
 config = { port: 8080, host: "localhost" }
 
-// Statement block: no -> or ~> arrows
-compute = x => {
+// Statement block: no => or ~> arrows
+compute = x -> {
     temp = x * 2
     result = temp + 10
     result  // last value returned
 }
 
-// Value match: expression before {, patterns with ->
-classify = x => x {
-    0 -> "zero"
-    5 -> "five"
+// Value match: expression before {, patterns with =>
+classify = x -> x {
+    0 => "zero"
+    5 => "five"
     ~> "other"
 }
 
 // Guard match: no expression before {, branches with | at line start
-classify = x => {
-    | x == 0 -> "zero"
-    | x > 0 -> "positive"
+classify = x -> {
+    | x == 0 => "zero"
+    | x > 0 => "positive"
     ~> "negative"
 }
 ```
 
 **Block disambiguation rules:**
 1. Contains `:` (before arrows) → Map literal
-2. Contains `->` or `~>` → Match block (value or guard)
+2. Contains `=>` or `~>` → Match block (value or guard)
 3. Otherwise → Statement block
 
 This unifies maps, pattern matching, guards, and function bodies into one syntax.
@@ -122,12 +122,12 @@ window := sdl.SDL_CreateWindow("Title", 640, 480, 0) or! {
 
 // Block in conditional
 value = condition {
-    1 -> {
+    1 => {
         println("Processing true case")
         process_true()
         42  // Block returns 42
     }
-    0 -> {
+    0 => {
         println("Processing false case")
         process_false()
         99  // Block returns 99
@@ -152,19 +152,19 @@ This design enables:
 
 ### 4. Unified Lambda Syntax
 
-All functions use `=>`. Define with `=` (immutable) not `:=` unless reassignment needed:
+All functions use `->`. Define with `=` (immutable) not `:=` unless reassignment needed:
 
 ```flap
 // Use = for functions (standard)
-square = x => x * 2
-add = (x, y) => x + y
-compute = x => { temp = x * 2; temp + 10 }
-classify = x => x { 0 -> "zero" ~> "other" }
-hello ==> println("Hello!")        // ==> shorthand for () =>
+square = x -> x * 2
+add = (x, y) -> x + y
+compute = x -> { temp = x * 2; temp + 10 }
+classify = x -> x { 0 => "zero" ~> "other" }
+hello ->> println("Hello!")        // ->> shorthand for () ->
 
 // Only use := if function will be reassigned
-handler := x => println(x)
-handler := x => println("DEBUG:", x)  // reassignment
+handler := x -> println(x)
+handler := x -> println("DEBUG:", x)  // reassignment
 ```
 
 **Convention:** Functions are immutable by default (`=`), only use `:=` when needed.
@@ -175,9 +175,9 @@ Avoid parentheses unless needed for precedence or grouping:
 
 ```flap
 // Good: no unnecessary parens
-x > 0 { -> "positive" ~> "negative" }
+x > 0 { => "positive" ~> "negative" }
 result = x + y * z
-classify = x => x { 0 -> "zero" ~> "other" }
+classify = x -> x { 0 => "zero" ~> "other" }
 
 // Only use when needed
 result = (x + y) * z              // precedence
@@ -207,7 +207,7 @@ Network-style message passing for concurrency:
 
 ```flap
 &8080 <- "Hello"     // Send to channel
-msg = => &8080       // Receive from channel
+msg = -> &8080       // Receive from channel
 ```
 
 ### 9. Fork-Based Process Model
@@ -277,8 +277,8 @@ p.x  // Direct memory offset access
 ### 14. Tail-Call Optimization Always On
 
 ```flap
-factorial = (n, acc) => n == 0 {
-    -> acc
+factorial = (n, acc) -> n == 0 {
+    => acc
     ~> factorial(n - 1, acc * n)    // Optimized to loop
 }
 ```
@@ -299,7 +299,7 @@ new_owner = old_owner!  // Transfer ownership
 
 ```flap
 result = risky_operation()
-result.error { != "" -> println("Error:", result.error) }
+result.error { != "" => println("Error:", result.error) }
 ```
 
 ### 18. Immutable-by-Default
@@ -481,12 +481,12 @@ quotient, remainder = divmod(17, 5)
 
 ```flap
 // Standard (use =)
-add = (x, y) => x + y
-factorial = n => n { 0 -> 1 ~> n * factorial(n-1) }
+add = (x, y) -> x + y
+factorial = n -> n { 0 => 1 ~> n * factorial(n-1) }
 
 // Only use := if reassigning
-handler := x => println(x)
-handler := x => println("DEBUG:", x)  // reassign
+handler := x -> println(x)
+handler := x -> println("DEBUG:", x)  // reassign
 ```
 
 ### Mutability Semantics
@@ -526,21 +526,21 @@ Evaluates expression, then matches its result against patterns:
 // Match on literal values
 x = 5
 result = x {
-    0 -> "zero"
-    5 -> "five"
-    10 -> "ten"
+    0 => "zero"
+    5 => "five"
+    10 => "ten"
     ~> "other"
 }
 
 // Match on boolean (1 = true, 0 = false)
 result = (x > 0) {
-    1 -> "positive"
-    0 -> "not positive"
+    1 => "positive"
+    0 => "not positive"
 }
 
 // Shorthand with default
 result = (x > 10) {
-    1 -> "large"
+    1 => "large"
     ~> "small"
 }
 ```
@@ -551,18 +551,18 @@ Each branch evaluates its own condition:
 
 ```flap
 // Guard branches with | at line start
-classify = x => {
-    | x == 0 -> "zero"
-    | x > 0 -> "positive"
-    | x < 0 -> "negative"
+classify = x -> {
+    | x == 0 => "zero"
+    | x > 0 => "positive"
+    | x < 0 => "negative"
     ~> "unknown"  // optional default
 }
 
 // Multiple conditions
-category = age => {
-    | age < 13 -> "child"
-    | age < 18 -> "teen"
-    | age < 65 -> "adult"
+category = age -> {
+    | age < 13 => "child"
+    | age < 18 => "teen"
+    | age < 65 => "adult"
     ~> "senior"
 }
 ```
@@ -572,7 +572,7 @@ Otherwise `|` is the pipe operator:
 
 ```flap
 // This is a guard (| at start)
-x => { | x > 0 -> "positive" }
+x -> { | x > 0 => "positive" }
 
 // This is a pipe operator (| not at start)
 result = data | transform | filter
@@ -589,22 +589,22 @@ result = data | transform | filter
 The compiler automatically optimizes tail calls to loops:
 
 ```flap
-// Explicit tail call with ->
-factorial = (n, acc) => n == 0 {
-    -> acc
+// Explicit tail call with =>
+factorial = (n, acc) -> n == 0 {
+    => acc
     ~> factorial(n - 1, acc * n)
 }
 
 // Tail call in default case
-sum_list = (list, acc) => list.length {
-    0 -> acc
+sum_list = (list, acc) -> list.length {
+    0 => acc
     ~> sum_list(list[1:], acc + list[0])
 }
 ```
 
 **Tail position rules:**
 - Last expression in function body
-- After `->` or `~>` in match arm
+- After `=>` or `~>` in match arm
 - In final expression of block
 
 ## Functions and Lambdas
@@ -615,13 +615,13 @@ Functions are defined using `=` (immutable by default):
 
 ```flap
 // Named function
-square = x => x * x
+square = x -> x * x
 
 // Multiple parameters
-add = (x, y) => x + y
+add = (x, y) -> x + y
 
 // With block body
-factorial = n => {
+factorial = n -> {
     result := 1
     @ i in 1..n {
         result *= i
@@ -629,20 +629,20 @@ factorial = n => {
     result
 }
 
-// No-argument shorthand: ==> desugars to () =>
-greet ==> println("Hello!")
-// Equivalent to: greet = () => println("Hello!")
+// No-argument shorthand: ->> desugars to () ->
+greet ->> println("Hello!")
+// Equivalent to: greet = () -> println("Hello!")
 
-hello ==> {
+hello ->> {
     println("Hello")
     println("World")
 }
-// Equivalent to: hello = () => { println("Hello"); println("World") }
+// Equivalent to: hello = () -> { println("Hello"); println("World") }
 
-// Common use cases for ==>
-worker ==> @ { process_forever() }     // Background worker
-init ==> setup_resources()             // Initialization function
-cleanup ==> release_all()              // Cleanup callback
+// Common use cases for ->>
+worker ->> @ { process_forever() }     // Background worker
+init ->> setup_resources()             // Initialization function
+cleanup ->> release_all()              // Cleanup callback
 ```
 
 ### Lambda Expressions
@@ -651,12 +651,12 @@ Lambdas use the same syntax:
 
 ```flap
 // Inline lambda
-[1, 2, 3] | x => x * 2
+[1, 2, 3] | x -> x * 2
 
 // Multi-line lambda
-process = data => {
-    cleaned = data | x => x.trim()
-    cleaned | x => x.length > 0
+process = data -> {
+    cleaned = data | x -> x.trim()
+    cleaned | x -> x.length > 0
 }
 ```
 
@@ -665,9 +665,9 @@ process = data => {
 Lambdas capture their environment:
 
 ```flap
-make_counter = start => {
+make_counter = start -> {
     count := start
-    => {
+    -> {
         count <- count + 1
         count
     }
@@ -683,9 +683,9 @@ counter()  // 2
 Functions can take and return functions:
 
 ```flap
-apply_twice = (f, x) => f(f(x))
+apply_twice = (f, x) -> f(f(x))
 
-increment = x => x + 1
+increment = x -> x + 1
 result = apply_twice(increment, 10)  // 12
 ```
 
@@ -752,7 +752,7 @@ Flap uses `ret @` with loop labels instead of `break`/`continue`:
 }
 
 // ret without @ returns from function
-compute = n => {
+compute = n -> {
     @ i in 0..<100 {
         i == n { ret i }  // Return from function with value
         i == 50 { ret @ } // Exit loop only, continue function
@@ -815,10 +815,10 @@ Use `||` for parallel iteration (each iteration in separate process):
 
 ```flap
 // Sequential map
-results = [1, 2, 3] | x => x * 2
+results = [1, 2, 3] | x -> x * 2
 
 // Parallel map
-results = [1, 2, 3] || x => expensive(x)
+results = [1, 2, 3] || x -> expensive(x)
 ```
 
 
@@ -837,26 +837,26 @@ Flap uses **ENet-style message passing** for concurrency:
 ### Receive Messages
 
 ```flap
-msg = => &8080            // Receive from port 8080
-data = => &"server:9000"  // Receive from remote
+msg = -> &8080            // Receive from port 8080
+data = -> &"server:9000"  // Receive from remote
 ```
 
 ### Channel Patterns
 
 ```flap
 // Worker pattern
-worker ==> {
+worker ->> {
     @ {
-        task = => &8080
+        task = -> &8080
         result = process(task)
         &8081 <- result
     }
 }
 
 // Pipeline pattern
-stage1 ==> @ { &8080 <- generate_data() }
-stage2 ==> @ { data = => &8080; &8081 <- transform(data) }
-stage3 ==> @ { result = => &8081; save(result) }
+stage1 ->> @ { &8080 <- generate_data() }
+stage2 ->> @ { data = -> &8080; &8081 <- transform(data) }
+stage3 ->> @ { result = -> &8081; save(result) }
 ```
 
 **Note:** ENet channels are compiled directly into machine code that uses ENet library calls.
@@ -879,18 +879,18 @@ Classes group data and methods together:
 
 ```flap
 class Point {
-    init := (x, y) ==> {
+    init := (x, y) ->> {
         .x = x
         .y = y
     }
 
-    distance := other => {
+    distance := other -> {
         dx := other.x - .x
         dy := other.y - .y
         sqrt(dx * dx + dy * dy)
     }
 
-    move := (dx, dy) ==> {
+    move := (dx, dy) ->> {
         .x <- .x + dx
         .y <- .y + dy
     }
@@ -912,20 +912,20 @@ A class declaration creates a constructor function:
 ```flap
 // This class:
 class Counter {
-    init := start ==> {
+    init := start ->> {
         .count = start
     }
 
-    increment := ==> {
+    increment := ->> {
         .count <- .count + 1
     }
 }
 
 // Desugars to this:
-Counter := start => {
+Counter := start -> {
     instance := {}
     instance["count"] = start
-    instance["increment"] = () => {
+    instance["increment"] = () -> {
         instance["count"] <- instance["count"] + 1
     }
     ret instance
@@ -938,16 +938,16 @@ Inside methods, `.field` accesses instance fields. The `. ` expression (dot foll
 
 ```flap
 class List {
-    init = () => {
+    init = () -> {
         .items = []
     }
 
-    add = item => {
+    add = item -> {
         .items <- .items :: item
         ret .   // Return this (self) for chaining
     }
 
-    size = () => .items.length
+    size = () -> .items.length
 }
 
 list = List().add(1).add(2).add(3)  // Method chaining via `. `
@@ -963,11 +963,11 @@ println(list.size())  // 3
 
 ```flap
 class Account {
-    init = balance => {
+    init = balance -> {
         .balance = balance
     }
 
-    withdraw = amount => {
+    withdraw = amount -> {
         amount > .balance {
             ret -1  // Insufficient funds
         }
@@ -975,11 +975,11 @@ class Account {
         ret 0
     }
 
-    deposit = amount => {
+    deposit = amount -> {
         .balance <- .balance + amount
     }
 
-    get_balance = () => .balance
+    get_balance = () -> .balance
 }
 
 acc = Account(100)
@@ -996,14 +996,14 @@ class Entity {
     Entity.count = 0
     Entity.all = []
 
-    init := name ==> {
+    init := name ->> {
         .name = name
         .id = Entity.count
         Entity.count <- Entity.count + 1
         Entity.all <- Entity.all :: instance
     }
 
-    get_total := ==> Entity.count
+    get_total := ->> Entity.count
 }
 
 e1 := Entity("Alice")
@@ -1019,21 +1019,21 @@ Extend classes with behavior maps using the `<>` composition operator:
 ```flap
 // Define behavior map
 Serializable := {
-    to_json: ==> {
+    to_json: ->> {
         // Serialize instance to JSON string
         keys := this.keys()
         @ i in 0..<keys.length {
             // Build JSON...
         }
     },
-    from_json: json => {
+    from_json: json -> {
         // Parse JSON and populate instance
     }
 }
 
 // Extend class with behavior using <>
 class User <> Serializable {
-    init := (name, email) ==> {
+    init := (name, email) ->> {
         .name = name
         .email = email
     }
@@ -1047,7 +1047,7 @@ json := user.to_json()
 
 ```flap
 class Product <> Serializable <> Validatable <> Timestamped {
-    init := (name, price) ==> {
+    init := (name, price) ->> {
         .name = name
         .price = price
         .created_at = now()
@@ -1063,12 +1063,12 @@ class Product <> Serializable <> Validatable <> Timestamped {
 
 ```flap
 class Box {
-    init := value ==> {
+    init := value ->> {
         .value = value
     }
 
-    get := ==> .value
-    set := v ==> { .value <- v }
+    get := ->> .value
+    set := v ->> { .value <- v }
 }
 
 b := Box(42)
@@ -1083,7 +1083,7 @@ class Math {
     Math.PI = 3.14159
 
     // Note: no init, Math is never instantiated
-    Math.circle_area = radius => Math.PI * radius * radius
+    Math.circle_area = radius -> Math.PI * radius * radius
 }
 
 area := Math.circle_area(10)
@@ -1095,23 +1095,23 @@ Use underscore prefix for "private" methods:
 
 ```flap
 class Parser {
-    init := input ==> {
+    init := input ->> {
         .input = input
         .pos = 0
     }
 
-    _peek := ==> {
+    _peek := ->> {
         .pos < .input.length {
             ret .input[.pos]
         }
         ret -1
     }
 
-    _advance := ==> {
+    _advance := ->> {
         .pos <- .pos + 1
     }
 
-    parse_number := ==> {
+    parse_number := ->> {
         result := 0
         @ ._ peek() >= 48 && ._peek() <= 57 {
             result <- result * 10 + (._peek() - 48)
@@ -1128,16 +1128,16 @@ Return `. ` (this) to enable chaining:
 
 ```flap
 class StringBuilder {
-    init = () => {
+    init = () -> {
         .parts = []
     }
 
-    append = str => {
+    append = str -> {
         .parts <- .parts :: str
         ret .  // Return this (self)
     }
 
-    build = () => {
+    build = () -> {
         result := ""
         @ part in .parts {
             result <- result + part
@@ -1167,7 +1167,7 @@ cstruct Vec3Data {
 }
 
 class Vec3 {
-    init := (x, y, z) ==> {
+    init := (x, y, z) ->> {
         .data = call("malloc", Vec3Data.size as uint64)
 
         unsafe float64 {
@@ -1178,7 +1178,7 @@ class Vec3 {
         }
     }
 
-    dot := other => {
+    dot := other -> {
         unsafe float64 {
             rax <- .data as ptr
             rbx <- other.data as ptr
@@ -1193,7 +1193,7 @@ class Vec3 {
         }
     }
 
-    free := ==> call("free", .data as ptr)
+    free := ->> call("free", .data as ptr)
 }
 
 v1 := Vec3(1, 2, 3)
@@ -1213,16 +1213,16 @@ Flap does not support classical inheritance. Use composition:
 
 // Do this:
 Animal := {
-    eat: ==> println("Eating..."),
-    sleep: ==> println("Sleeping...")
+    eat: ->> println("Eating..."),
+    sleep: ->> println("Sleeping...")
 }
 
 class Dog <> Animal {
-    init := name ==> {
+    init := name ->> {
         .name = name
     }
 
-    bark := ==> println("Woof!")
+    bark := ->> println("Woof!")
 }
 
 dog := Dog("Rex")
@@ -1249,15 +1249,15 @@ dog.bark()   // From Dog
 
 ```flap
 class Stack {
-    init = () => {
+    init = () -> {
         .items = []
     }
 
-    push = item => {
+    push = item -> {
         .items <- .items :: item
     }
 
-    pop = () => {
+    pop = () -> {
         .items.length == 0 {
             ret ??  // Empty
         }
@@ -1266,7 +1266,7 @@ class Stack {
         ret last
     }
 
-    is_empty = () => .items.length == 0
+    is_empty = () -> .items.length == 0
 }
 
 s = Stack()
@@ -1282,16 +1282,16 @@ println(s.pop())  // 3
 class Model {
     Model.table = ""
 
-    init := data ==> {
+    init := data ->> {
         .data = data
     }
 
-    save := ==> {
+    save := ->> {
         query := f"INSERT INTO {Model.table} VALUES (...)"
         // Execute query...
     }
 
-    delete := ==> {
+    delete := ->> {
         id := .data["id"]
         query := f"DELETE FROM {Model.table} WHERE id = {id}"
         // Execute query...
@@ -1301,7 +1301,7 @@ class Model {
 class User <> Model {
     Model.table = "users"
 
-    init := (name, email) ==> {
+    init := (name, email) ->> {
         .data = { name: name, email: email }
     }
 }
@@ -1425,7 +1425,7 @@ ptr := c_malloc(1024) or! 0
 Chain multiple C calls with `or!` for clean error handling:
 
 ```flap
-init_graphics = () => {
+init_graphics = () -> {
     // Each call handles its own error with or!
     sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
         println("SDL_Init failed!")
@@ -1544,7 +1544,7 @@ defer expression
 
 **Basic Example:**
 ```flap
-open_file = filename => {
+open_file = filename -> {
     file := c_fopen(filename, "r") or! {
         println("Failed to open:", filename)
         ret 0
@@ -1561,7 +1561,7 @@ open_file = filename => {
 
 **LIFO Execution Order:**
 ```flap
-process = () => {
+process = () -> {
     defer println("First")   // Executes last (3rd)
     defer println("Second")  // Executes second (2nd)
     defer println("Third")   // Executes first (1st)
@@ -1571,7 +1571,7 @@ process = () => {
 
 **With C FFI (SDL3 Example):**
 ```flap
-init_sdl = () => {
+init_sdl = () -> {
     sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
         println("SDL init failed")
         ret 0
@@ -1601,7 +1601,7 @@ init_sdl = () => {
 **Railway-Oriented Pattern:**
 ```flap
 // Combine defer with or! for clean error handling
-acquire_resources = () => {
+acquire_resources = () -> {
     db := connect_db() or! {
         println("DB connection failed")
         ret error("db")
@@ -1740,7 +1740,7 @@ eprintf("Error: invalid value %v\n", x)
 // Check result from error print
 result := eprintln("This is an error message")
 result.error {
-    "out" -> println("Successfully wrote to stderr")
+    "out" => println("Successfully wrote to stderr")
     ~> println("Unexpected error")
 }
 
@@ -1890,15 +1890,15 @@ y.error                 // Returns "dv0" (spaces stripped)
 
 // Typical usage
 result.error {
-    "" -> proceed(result)
+    "" => proceed(result)
     ~> handle_error(result.error)
 }
 
 // Match on specific errors
 result.error {
-    "" -> println("Success:", result)
-    "dv0" -> println("Division by zero")
-    "mem" -> println("Out of memory")
+    "" => println("Success:", result)
+    "dv0" => println("Division by zero")
+    "mem" => println("Out of memory")
     ~> println("Unknown error:", result.error)
 }
 ```
@@ -1951,18 +1951,18 @@ result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
 
 ```flap
 // Check and early return
-process = input => {
+process = input -> {
     step1 = validate(input)
-    step1.error { != "" -> step1 }  // Return error early
+    step1.error { != "" => step1 }  // Return error early
 
     step2 = transform(step1)
-    step2.error { != "" -> step2 }
+    step2.error { != "" => step2 }
 
     finalize(step2)
 }
 
 // Default values with or!
-compute = input => {
+compute = input -> {
     x = parse(input) or! 0     // Use 0 if parse fails
     y = divide(100, x) or! -1  // Use -1 if division fails
     y * 2
@@ -1975,7 +1975,7 @@ result = fetch_data()
     | validate or! error("typ") // Custom error
 
 // C FFI null pointer handling
-init_sdl = () => {
+init_sdl = () -> {
     // Initialize SDL
     sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
         println("Failed to initialize SDL!")
@@ -2001,7 +2001,7 @@ init_sdl = () => {
 }
 
 // Simpler pattern with defaults
-allocate_buffer = size => {
+allocate_buffer = size -> {
     ptr := c_malloc(size) or! 0
     ptr == 0 {
         ret error("mem")  // Out of memory
@@ -2016,16 +2016,16 @@ Use the `error` function to create error Results:
 
 ```flap
 // Create error with code
-validate = x => {
+validate = x -> {
     x < 0 { ret error("arg") }  // Negative argument
     x
 }
 
 // Or detect errors from operations
-divide = (a, b) => {
+divide = (a, b) -> {
     result = a / b
     result.error {
-        != "" -> result          // Propagate error
+        != "" => result          // Propagate error
         ~> result                // Return success
     }
 }
@@ -2037,19 +2037,19 @@ The compiler tracks whether a value is a Result type:
 
 ```flap
 // Compiler knows this returns Result
-divide = (a, b) => {
+divide = (a, b) -> {
     b == 0 { ret error("dv0") }
     a / b
 }
 
 // Compiler propagates Result type
-compute = x => {
+compute = x -> {
     y = divide(100, x)  // y has Result type
     y or! 0             // Handles potential error
 }
 
 // Compiler warns if Result not checked
-risky = x => {
+risky = x -> {
     y = divide(100, x)  // Warning: unchecked Result
     println(y)          // May print error value
 }
@@ -2114,8 +2114,8 @@ The `or!` operator:
 // Good: check errors
 result = fetch_data()
 result.error {
-    "" -> process(result)
-    "net" -> retry()
+    "" => process(result)
+    "net" => retry()
     ~> fail(result.error)
 }
 
@@ -2128,7 +2128,7 @@ result = fetch_data()  // May be error
 process(result)        // May process error value
 
 // Bad: vague error code
-validate = x => x < 0 { ret error("bad") }  // Use "arg" instead
+validate = x -> x < 0 { ret error("bad") }  // Use "arg" instead
 ```
 
 ## Compilation and Execution
@@ -2187,7 +2187,7 @@ println("Hello, World!")
 
 ```flap
 // Iterative
-factorial = n => {
+factorial = n -> {
     result := 1
     @ i in 1..n {
         result *= i
@@ -2196,8 +2196,8 @@ factorial = n => {
 }
 
 // Tail-recursive (optimized to loop)
-factorial = (n, acc) => n == 0 {
-    -> acc
+factorial = (n, acc) -> n == 0 {
+    => acc
     ~> factorial(n-1, n*acc)
 }
 
@@ -2210,11 +2210,11 @@ println(factorial(5, 1))  // 120
 ```flap
 @ i in 1..100 {
     result = i % 15 {
-        0 -> "FizzBuzz"
+        0 => "FizzBuzz"
         ~> i % 3 {
-            0 -> "Fizz"
+            0 => "Fizz"
             ~> i % 5 {
-                0 -> "Buzz"
+                0 => "Buzz"
                 ~> i
             }
         }
@@ -2230,10 +2230,10 @@ println(factorial(5, 1))  // 120
 numbers = [1, 2, 3, 4, 5]
 
 // Map: double each number
-doubled = numbers | x => x * 2
+doubled = numbers | x -> x * 2
 
 // Filter: only even numbers
-evens = numbers | x => x % 2 == 0 { 1 -> x ~> [] }
+evens = numbers | x -> x % 2 == 0 { 1 => x ~> [] }
 
 println(f"Evens: {evens}")
 ```
@@ -2242,27 +2242,27 @@ println(f"Evens: {evens}")
 
 ```flap
 // Value match
-classify_number = x => x {
-    0 -> "zero"
-    1 -> "one"
-    2 -> "two"
+classify_number = x -> x {
+    0 => "zero"
+    1 => "one"
+    2 => "two"
     ~> "many"
 }
 
 // Guard match
-classify_age = age => {
-    | age < 13 -> "child"
-    | age < 18 -> "teen"
-    | age < 65 -> "adult"
+classify_age = age -> {
+    | age < 13 => "child"
+    | age < 18 => "teen"
+    | age < 65 => "adult"
     ~> "senior"
 }
 
 // Nested match
-check_value = x => x {
-    0 -> "zero"
+check_value = x -> x {
+    0 => "zero"
     ~> x > 0 {
-        1 -> "positive"
-        0 -> "negative"
+        1 => "positive"
+        0 => "negative"
     }
 }
 ```
@@ -2271,10 +2271,10 @@ check_value = x => x {
 
 ```flap
 // Division with error handling
-safe_divide = (a, b) => {
+safe_divide = (a, b) -> {
     result = a / b
     result.error {
-        "" -> f"Result: {result}"
+        "" => f"Result: {result}"
         ~> f"Error: {result.error}"
     }
 }
@@ -2283,7 +2283,7 @@ println(safe_divide(10, 2))   // "Result: 5"
 println(safe_divide(10, 0))   // "Error: dv0"
 
 // With or! operator
-compute = (a, b) => {
+compute = (a, b) -> {
     x = a / b or! 1.0     // Default to 1.0 on error
     y = x * 2
     y
@@ -2296,7 +2296,7 @@ compute = (a, b) => {
 data = [1, 2, 3, 4, 5, 6, 7, 8]
 
 // Process in parallel
-results = data || x => expensive_computation(x)
+results = data || x -> expensive_computation(x)
 
 println(f"Results: {results}")
 ```
@@ -2305,26 +2305,26 @@ println(f"Results: {results}")
 
 ```flap
 // Simple echo server
-server ==> {
+server ->> {
     @ {
-        request = => &8080
+        request = -> &8080
         println(f"Received: {request}")
         &8080 <- f"Echo: {request}"
     }
 }
 
 // HTTP-like handler
-handle_request = req => {
+handle_request = req -> {
     method = req.method
     path = req.path
 
     method {
-        "GET" -> path {
-            "/" -> "Welcome!"
-            "/api" -> "{status: ok}"
+        "GET" => path {
+            "/" => "Welcome!"
+            "/api" => "{status: ok}"
             ~> "Not found"
         }
-        "POST" -> process_post(req)
+        "POST" => process_post(req)
         ~> "Method not allowed"
     }
 }
@@ -2343,7 +2343,7 @@ cstruct Buffer {
 }
 
 // Use C functions with or! for clean error handling
-create_buffer = size => {
+create_buffer = size -> {
     ptr := c_malloc(size) or! {
         println("Memory allocation failed!")
         ret Buffer(0, 0, 0)
@@ -2352,14 +2352,14 @@ create_buffer = size => {
 }
 
 // Simpler version with default
-create_buffer_safe = size => {
+create_buffer_safe = size -> {
     ptr := c_malloc(size) or! 0
     Buffer(ptr, 0, size)
 }
 
-write_buffer = (buf, data) => {
+write_buffer = (buf, data) -> {
     buf.size + 1 > buf.capacity {
-        1 -> buf  // Buffer full
+        1 => buf  // Buffer full
         ~> {
             c_memcpy(buf.data + buf.size, data, 1)
             buf.size <- buf.size + 1
@@ -2368,7 +2368,7 @@ write_buffer = (buf, data) => {
     }
 }
 
-free_buffer = buf => {
+free_buffer = buf -> {
     buf.data != 0 { c_free(buf.data) }
 }
 
@@ -2384,7 +2384,7 @@ free_buffer(buf)
 import sdl3 as sdl
 
 // Initialize with railway-oriented error handling
-init_sdl = () => {
+init_sdl = () -> {
     sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
         println("SDL_Init failed!")
         exit(1)
@@ -2407,7 +2407,7 @@ init_sdl = () => {
 }
 
 // Main rendering loop
-main = () => {
+main = () -> {
     [window, renderer] := init_sdl()
 
     @ frame in 0..<100 max 200 {
@@ -2437,7 +2437,7 @@ main()
 
 ```flap
 // Arena allocator pattern
-process_requests = requests => {
+process_requests = requests -> {
     arena {
         results := []
         @ req in requests {
@@ -2454,7 +2454,7 @@ process_requests = requests => {
 
 ```flap
 // Direct syscall (Linux x86_64)
-print_fast = msg => {
+print_fast = msg -> {
     len = msg.length
     unsafe {
         rax <- 1         // sys_write
@@ -2466,7 +2466,7 @@ print_fast = msg => {
 }
 
 // Atomic compare-and-swap
-cas = (ptr, old, new) => unsafe int32 {
+cas = (ptr, old, new) -> unsafe int32 {
     rax <- old
     lock cmpxchg [ptr], new
 } {
@@ -2564,7 +2564,7 @@ Traditional approaches:
 ```flap
 &8080 <- msg           // Send to local port
 &"host:9000" <- msg    // Send to remote host
-data = => &8080        // Receive from port
+data = -> &8080        // Receive from port
 ```
 
 Clean, minimal, network-inspired.
@@ -2603,7 +2603,7 @@ Many languages accumulate features:
 
 **Examples:**
 - One loop construct: `@`
-- One function syntax: `=>`
+- One function syntax: `->`
 - One block syntax: `{ }`
 - Disambiguate by contents, not syntax
 

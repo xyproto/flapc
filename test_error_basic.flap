@@ -6,7 +6,7 @@ println("After division by zero")
 // NaN != NaN so this should work
 y := x == x
 y {
-    0 -> println("x is NaN (error)")
-    1 -> println("x is not NaN")
+    0 => println("x is NaN (error)")
+    1 => println("x is not NaN")
     ~> println("unexpected")
 }

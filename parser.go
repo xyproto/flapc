@@ -777,9 +777,9 @@ func (p *Parser) parseClassDecl() *ClassDecl {
 			// Parse lambda expression - need to handle different lambda forms
 			var lambda *LambdaExpr
 
-			if p.current.Type == TOKEN_FAT_ARROW {
-				// No-argument lambda: ==> body
-				p.nextToken() // skip '==>'
+			if p.current.Type == TOKEN_DOUBLE_ARROW {
+				// No-argument lambda: ->> body
+				p.nextToken() // skip '->>'
 				body := p.parseLambdaBody()
 				lambda = &LambdaExpr{Params: []string{}, Body: body}
 			} else if p.current.Type == TOKEN_LPAREN {
@@ -1020,7 +1020,7 @@ func (p *Parser) parseStatement() Statement {
 		}
 	}
 
-	// Check for assignment (=, :=, ==>, <-, with optional type annotation, and compound assignments)
+	// Check for assignment (=, :=, ->>, <-, with optional type annotation, and compound assignments)
 	if p.current.Type == TOKEN_IDENT {
 		// Check for multiple assignment: a, b, c = expr
 		if p.peek.Type == TOKEN_COMMA {
@@ -1030,7 +1030,7 @@ func (p *Parser) parseStatement() Statement {
 			}
 		}
 
-		if p.peek.Type == TOKEN_EQUALS || p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_COLON_EQUALS || p.peek.Type == TOKEN_LEFT_ARROW || p.peek.Type == TOKEN_COLON ||
+		if p.peek.Type == TOKEN_EQUALS || p.peek.Type == TOKEN_DOUBLE_ARROW || p.peek.Type == TOKEN_COLON_EQUALS || p.peek.Type == TOKEN_LEFT_ARROW || p.peek.Type == TOKEN_COLON ||
 			p.peek.Type == TOKEN_PLUS_EQUALS || p.peek.Type == TOKEN_MINUS_EQUALS ||
 			p.peek.Type == TOKEN_STAR_EQUALS || p.peek.Type == TOKEN_POWER_EQUALS || p.peek.Type == TOKEN_SLASH_EQUALS || p.peek.Type == TOKEN_MOD_EQUALS {
 			return p.parseAssignment()
@@ -1065,17 +1065,17 @@ func (p *Parser) tryParseNonParenLambda() Expression {
 		return nil
 	}
 
-	// Single param: x => or x ==>
+	// Single param: x -> or x ->>
 	firstParam := p.current.Value
-	if p.peek.Type == TOKEN_FAT_ARROW {
+	if p.peek.Type == TOKEN_ARROW || p.peek.Type == TOKEN_DOUBLE_ARROW {
 		p.nextToken() // skip param
-		p.nextToken() // skip '=>' or '==>'
+		p.nextToken() // skip '->' or '->>'
 		body := p.parseLambdaBody()
 		return &LambdaExpr{Params: []string{firstParam}, Body: body}
 	}
 
-	// If we see -> it's not a lambda (it's a match arrow), just return nil
-	if p.peek.Type == TOKEN_ARROW {
+	// If we see => it's not a lambda (it's a match arrow), just return nil
+	if p.peek.Type == TOKEN_FAT_ARROW {
 		return nil
 	}
 
@@ -1098,22 +1098,22 @@ func (p *Parser) tryParseNonParenLambda() Expression {
 
 		params = append(params, p.current.Value)
 
-		if p.peek.Type == TOKEN_FAT_ARROW {
-			// Found the fat arrow! This is a lambda
+		if p.peek.Type == TOKEN_ARROW || p.peek.Type == TOKEN_DOUBLE_ARROW {
+			// Found the arrow! This is a lambda
 			p.nextToken() // skip last param
-			p.nextToken() // skip '=>' or '==>'
+			p.nextToken() // skip '->' or '->>'
 			body := p.parseLambdaBody()
 			return &LambdaExpr{Params: params, Body: body}
 		}
 
-		// If we see -> it's not a lambda, just return nil
-		if p.peek.Type == TOKEN_ARROW {
+		// If we see => it's not a lambda, just return nil
+		if p.peek.Type == TOKEN_FAT_ARROW {
 			return nil
 		}
 	}
 
 	// We have multiple identifiers separated by commas but no arrow following
-	p.error(fmt.Sprintf("expected '=>' after lambda parameters (%s), got %v", strings.Join(params, ", "), p.peek.Type))
+	p.error(fmt.Sprintf("expected '->' after lambda parameters (%s), got %v", strings.Join(params, ", "), p.peek.Type))
 	return nil
 }
 
@@ -1246,23 +1246,23 @@ func (p *Parser) parseAssignment() *AssignStmt {
 	// Determine assignment type
 	// := - mutable definition
 	// = - immutable definition
-	// ==> - immutable definition with lambda (shorthand for = =>)
+	// ->> - immutable definition with lambda (shorthand for = ->)
 	// <- - update (requires existing mutable variable)
 	isUpdate := p.current.Type == TOKEN_LEFT_ARROW
 	mutable := p.current.Type == TOKEN_COLON_EQUALS || isUpdate
 
-	// Handle ==> as shorthand for = =>
-	isEqualsArrow := p.current.Type == TOKEN_FAT_ARROW
+	// Handle ->> as shorthand for = ->
+	isDoubleArrow := p.current.Type == TOKEN_DOUBLE_ARROW
 
-	p.nextToken() // skip '=' or ':=' or '<-' or '==>' or compound operator
+	p.nextToken() // skip '=' or ':=' or '<-' or '->>' or compound operator
 
 	// Check for non-parenthesized lambda: x -> expr or x y -> expr
 	var value Expression
 
-	// If we have ==>, expect lambda parameters or body
-	if isEqualsArrow {
-		// For ==>, we parse the lambda body directly (no params before =>)
-		// Syntax: main ==> { body } is equivalent to main = => { body }
+	// If we have ->>, expect lambda parameters or body
+	if isDoubleArrow {
+		// For ->>, we parse the lambda body directly (no params before ->)
+		// Syntax: main ->> { body } is equivalent to main = -> { body }
 		value = &LambdaExpr{Params: []string{}, Body: p.parseLambdaBody()}
 	} else if p.current.Type == TOKEN_IDENT {
 		value = p.tryParseNonParenLambda()
@@ -1646,7 +1646,7 @@ func (p *Parser) disambiguateBlock() BlockType {
 			if tok.Type == TOKEN_COLON && !foundArrow {
 				// Found ':' before any arrows → map literal
 				foundColon = true
-			} else if tok.Type == TOKEN_ARROW || tok.Type == TOKEN_DEFAULT_ARROW {
+			} else if tok.Type == TOKEN_FAT_ARROW || tok.Type == TOKEN_DEFAULT_ARROW {
 				// Found arrow → match block
 				foundArrow = true
 				break
@@ -1664,7 +1664,7 @@ func (p *Parser) disambiguateBlock() BlockType {
 	return BlockTypeStatement
 }
 
-// blockContainsMatchArrows scans ahead to check if the block contains -> or ~> arrows
+// blockContainsMatchArrows scans ahead to check if the block contains => or ~> arrows
 // Returns true if any match arrows are found, false otherwise
 func (p *Parser) blockContainsMatchArrows() bool {
 	// Create a new lexer from the same source at the current position
@@ -1702,7 +1702,7 @@ func (p *Parser) blockContainsMatchArrows() bool {
 				// We've exited the block
 				break
 			}
-		} else if braceDepth == 0 && (tempParser.current.Type == TOKEN_ARROW || tempParser.current.Type == TOKEN_DEFAULT_ARROW) {
+		} else if braceDepth == 0 && (tempParser.current.Type == TOKEN_FAT_ARROW || tempParser.current.Type == TOKEN_DEFAULT_ARROW) {
 			// Found an arrow at the top level of the block
 			foundArrow = true
 			break
@@ -1767,8 +1767,8 @@ func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
 			}
 
 			// Check for explicit arrow (not allowed in simple mode)
-			if p.current.Type == TOKEN_ARROW {
-				p.error("mix of simple statements and pattern matching not supported - use explicit '->' syntax")
+			if p.current.Type == TOKEN_FAT_ARROW {
+				p.error("mix of simple statements and pattern matching not supported - use explicit '=>' syntax")
 			}
 
 			// Parse as statement/expression
@@ -1891,16 +1891,16 @@ func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
 // parseMatchClause parses a single match clause:
 //
 // Forms:
-// 1. Guardless: -> result
-// 2. Value pattern: value -> result
-// 3. Guard: | condition -> result   (| only when at line start)
+// 1. Guardless: => result
+// 2. Value pattern: value => result
+// 3. Guard: | condition => result   (| only when at line start)
 //
 // Returns (clause, isBareExpression)
 // where isBareExpression means no explicit arrow was used
 func (p *Parser) parseMatchClause() (*MatchClause, bool) {
-	// Guardless clause starting with '->' (explicit)
-	if p.current.Type == TOKEN_ARROW {
-		p.nextToken() // skip '->'
+	// Guardless clause starting with '=>' (explicit)
+	if p.current.Type == TOKEN_FAT_ARROW {
+		p.nextToken() // skip '=>'
 		p.skipNewlines()
 		result := p.parseMatchTarget()
 		p.skipNewlines()
@@ -1921,7 +1921,7 @@ func (p *Parser) parseMatchClause() (*MatchClause, bool) {
 		(p.current.Type == TOKEN_IDENT && (p.peek.Type == TOKEN_LEFT_ARROW || p.peek.Type == TOKEN_EQUALS))
 
 	if isStatementToken {
-		// Treat as guardless clause (implicit '->'), not a bare clause
+		// Treat as guardless clause (implicit '=>'), not a bare clause
 		result := p.parseMatchTarget()
 		p.skipNewlines()
 		return &MatchClause{Result: result}, false
@@ -1952,8 +1952,8 @@ func (p *Parser) parseMatchClause() (*MatchClause, bool) {
 	}
 	p.skipNewlines()
 
-	if p.current.Type == TOKEN_ARROW {
-		p.nextToken() // skip '->'
+	if p.current.Type == TOKEN_FAT_ARROW {
+		p.nextToken() // skip '=>'
 		p.skipNewlines()
 		result := p.parseMatchTarget()
 		p.skipNewlines()
@@ -1967,7 +1967,7 @@ func (p *Parser) parseMatchClause() (*MatchClause, bool) {
 		return &MatchClause{Guard: expr, Result: result, IsValueMatch: true}, false
 	}
 
-	// Bare expression clause (sugar for '-> expr')
+	// Bare expression clause (sugar for '=> expr')
 	return &MatchClause{Result: expr}, true
 }
 
@@ -2850,11 +2850,11 @@ func (p *Parser) parseOnePatternClause() *PatternClause {
 	}
 	p.nextToken() // skip ')'
 
-	if p.current.Type != TOKEN_FAT_ARROW {
+	if p.current.Type != TOKEN_ARROW {
 		// Not a pattern clause
 		return nil
 	}
-	p.nextToken() // skip '=>'
+	p.nextToken() // skip '->'
 
 	body := p.parseLambdaBody()
 
@@ -3515,9 +3515,9 @@ func (p *Parser) parsePrimary() Expression {
 		expr := p.parsePrimary()
 		return &LengthExpr{Operand: expr}
 
-	case TOKEN_FAT_ARROW:
-		// No-argument lambda: ==> body
-		p.nextToken() // skip '==>'
+	case TOKEN_DOUBLE_ARROW:
+		// No-argument lambda: ->> body
+		p.nextToken() // skip '->>'
 		body := p.parseLambdaBody()
 		return &LambdaExpr{Params: []string{}, Body: body}
 
@@ -3583,16 +3583,16 @@ func (p *Parser) parsePrimary() Expression {
 		// 	return p.parseStructLiteral(name)
 		// }
 
-		// Check for lambda: x => expr or x, y => expr
-		if p.peek.Type == TOKEN_FAT_ARROW {
+		// Check for lambda: x -> expr or x, y -> expr
+		if p.peek.Type == TOKEN_ARROW || p.peek.Type == TOKEN_DOUBLE_ARROW {
 			// Try to parse as non-parenthesized lambda
 			if lambda := p.tryParseNonParenLambda(); lambda != nil {
 				return lambda
 			}
 		}
 
-		// If we see -> it's not a lambda error (it's a match arrow), continue parsing
-		// The -> will be handled correctly in match clause parsing
+		// If we see => it's not a lambda error (it's a match arrow), continue parsing
+		// The => will be handled correctly in match clause parsing
 
 		// Dot notation is now handled entirely in parsePostfix
 		// This includes both field access (obj.field) and namespaced calls (namespace.func())
@@ -3708,11 +3708,11 @@ func (p *Parser) parsePrimary() Expression {
 
 		p.nextToken() // skip '('
 
-		// Check for empty parameter list: () =>, () ==>, or () ->
+		// Check for empty parameter list: () -> or () ->>
 		if p.current.Type == TOKEN_RPAREN {
-			if p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_ARROW {
+			if p.peek.Type == TOKEN_ARROW || p.peek.Type == TOKEN_DOUBLE_ARROW {
 				p.nextToken() // skip ')'
-				p.nextToken() // skip '=>', '==>', or '->'
+				p.nextToken() // skip '->' or '->>'
 				body := p.parseLambdaBody()
 				return &LambdaExpr{Params: []string{}, Body: body}
 			}
@@ -3780,11 +3780,11 @@ func (p *Parser) parsePrimary() Expression {
 				return expr
 			}
 
-			// peek should be '=>', '==>', or '->'
-			if p.peek.Type == TOKEN_FAT_ARROW || p.peek.Type == TOKEN_ARROW {
+			// peek should be '->' or '->>'
+			if p.peek.Type == TOKEN_ARROW || p.peek.Type == TOKEN_DOUBLE_ARROW {
 				// It's a lambda!
 				p.nextToken() // skip ')'
-				p.nextToken() // skip '=>', '==>', or '->'
+				p.nextToken() // skip '->' or '->>'
 				body := p.parseLambdaBody()
 				return &LambdaExpr{Params: params, Body: body}
 			}

@@ -36,44 +36,44 @@ const (
 	TOKEN_COLON
 	TOKEN_SEMICOLON
 	TOKEN_NEWLINE
-	TOKEN_LT               // <
-	TOKEN_GT               // >
-	TOKEN_LE               // <= (less than or equal - comparison operator)
-	TOKEN_GE               // >=
-	TOKEN_EQ               // ==
-	TOKEN_NE               // !=
-	TOKEN_TILDE            // ~
-	TOKEN_DEFAULT_ARROW    // ~>
-	TOKEN_AT               // @
-	TOKEN_AT_AT            // @@ (parallel loop with all cores)
-	TOKEN_AT_PLUSPLUS      // @++
-	TOKEN_IN               // in keyword
-	TOKEN_LBRACE           // {
-	TOKEN_RBRACE           // }
-	TOKEN_LBRACKET         // [
-	TOKEN_RBRACKET         // ]
-	TOKEN_ARROW            // ->
-	TOKEN_FAT_ARROW        // =>
-	TOKEN_EQUALS_FAT_ARROW // ==> (shorthand for = =>)
-	TOKEN_LEFT_ARROW       // <- (update operator and ENet send/receive)
-	TOKEN_COLONCOLON       // :: (list append/cons operator)
-	TOKEN_AMPERSAND        // & (address operator)
-	TOKEN_ADDRESS_LITERAL  // &8080 or &host:port (ENet address literal)
-	TOKEN_PIPE             // |
-	TOKEN_PIPEPIPE         // ||
-	TOKEN_HASH             // #
-	TOKEN_AND              // and keyword
-	TOKEN_OR               // or keyword
-	TOKEN_NOT              // not keyword
-	TOKEN_XOR              // xor keyword
-	TOKEN_INCREMENT        // ++
-	TOKEN_DECREMENT        // --
-	TOKEN_FMA              // *+ (fused multiply-add)
-	TOKEN_BANG             // ! (move operator - transfers ownership)
-	TOKEN_OR_BANG          // or! (error handling / railway-oriented programming)
-	TOKEN_AND_BANG         // and! (success handler)
-	TOKEN_ERR_QUESTION     // err? (check if expression is error)
-	TOKEN_VAL_QUESTION     // val? (check if expression has value)
+	TOKEN_LT              // <
+	TOKEN_GT              // >
+	TOKEN_LE              // <= (less than or equal - comparison operator)
+	TOKEN_GE              // >=
+	TOKEN_EQ              // ==
+	TOKEN_NE              // !=
+	TOKEN_TILDE           // ~
+	TOKEN_DEFAULT_ARROW   // ~>
+	TOKEN_AT              // @
+	TOKEN_AT_AT           // @@ (parallel loop with all cores)
+	TOKEN_AT_PLUSPLUS     // @++
+	TOKEN_IN              // in keyword
+	TOKEN_LBRACE          // {
+	TOKEN_RBRACE          // }
+	TOKEN_LBRACKET        // [
+	TOKEN_RBRACKET        // ]
+	TOKEN_ARROW           // -> (lambda arrow)
+	TOKEN_FAT_ARROW       // => (match arm)
+	TOKEN_DOUBLE_ARROW    // ->> (shorthand for = ->)
+	TOKEN_LEFT_ARROW      // <- (update operator and ENet send/receive)
+	TOKEN_COLONCOLON      // :: (list append/cons operator)
+	TOKEN_AMPERSAND       // & (address operator)
+	TOKEN_ADDRESS_LITERAL // &8080 or &host:port (ENet address literal)
+	TOKEN_PIPE            // |
+	TOKEN_PIPEPIPE        // ||
+	TOKEN_HASH            // #
+	TOKEN_AND             // and keyword
+	TOKEN_OR              // or keyword
+	TOKEN_NOT             // not keyword
+	TOKEN_XOR             // xor keyword
+	TOKEN_INCREMENT       // ++
+	TOKEN_DECREMENT       // --
+	TOKEN_FMA             // *+ (fused multiply-add)
+	TOKEN_BANG            // ! (move operator - transfers ownership)
+	TOKEN_OR_BANG         // or! (error handling / railway-oriented programming)
+	TOKEN_AND_BANG        // and! (success handler)
+	TOKEN_ERR_QUESTION    // err? (check if expression is error)
+	TOKEN_VAL_QUESTION    // val? (check if expression has value)
 	// TOKEN_ME and TOKEN_CME removed - recursive calls now use mandatory max
 	TOKEN_RET        // ret keyword (return value from function/lambda)
 	TOKEN_ERR        // err keyword (return error from function/lambda)
@@ -487,6 +487,11 @@ func (l *Lexer) NextToken() Token {
 		}
 		return Token{Type: TOKEN_PLUS, Value: "+", Line: l.line, Column: tokenColumn}
 	case '-':
+		// Check for ->> (no-arg lambda shorthand)
+		if l.peek() == '>' && l.peekAhead(1) == '>' {
+			l.pos += 3
+			return Token{Type: TOKEN_DOUBLE_ARROW, Value: "->>", Line: l.line, Column: tokenColumn}
+		}
 		// Check for ->
 		if l.peek() == '>' {
 			l.pos += 2
@@ -558,12 +563,6 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_COLON, Value: ":", Line: l.line, Column: tokenColumn}
 	case '=':
-		// Check for ==> (legacy syntax, now treated as =>)
-		if l.peek() == '=' && l.peekAhead(1) == '>' {
-			l.pos += 3
-			// Return FAT_ARROW instead of EQUALS_FAT_ARROW (unified syntax)
-			return Token{Type: TOKEN_FAT_ARROW, Value: "=>", Line: l.line, Column: tokenColumn}
-		}
 		// Check for =>
 		if l.peek() == '>' {
 			l.pos += 2

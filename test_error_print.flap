@@ -6,8 +6,8 @@ eprint("\n")
 // Test that they return Result type with error code "prnt"
 res := eprintln("Testing result type")
 res.error {
-    "prnt" -> println("eprintln returned Result with error code 'prnt' as expected")
-    "" -> println("ERROR: eprintln should return 'prnt' error code")
+    "prnt" => println("eprintln returned Result with error code 'prnt' as expected")
+    "" => println("ERROR: eprintln should return 'prnt' error code")
     ~> println("ERROR: unexpected error code:", res.error)
 }
 

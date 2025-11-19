@@ -136,8 +136,8 @@ println("Done!")
 //   defer c_cleanup()
 //   arena {
 //       data := [1, 2, 3, 4, 5]  // Allocated in arena
-//       processed := data | x => x * 2
-//       result := processed | x => x + 1
+//       processed := data | x -> x * 2
+//       result := processed | x -> x + 1
 //       // All Flap allocations freed here (arena)
 //   }
 //   // C cleanup happens here (defer)

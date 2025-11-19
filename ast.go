@@ -701,7 +701,7 @@ type WildcardPattern struct{}
 func (wp *WildcardPattern) String() string { return "_" }
 func (wp *WildcardPattern) patternNode()   {}
 
-// PatternClause represents one pattern case: (pattern1, pattern2, ...) => body
+// PatternClause represents one pattern case: (pattern1, pattern2, ...) -> body
 type PatternClause struct {
 	Patterns []Pattern
 	Body     Expression
@@ -712,11 +712,11 @@ func (pc *PatternClause) String() string {
 	for i, p := range pc.Patterns {
 		pats[i] = p.String()
 	}
-	return "(" + strings.Join(pats, ", ") + ") => " + pc.Body.String()
+	return "(" + strings.Join(pats, ", ") + ") -> " + pc.Body.String()
 }
 
 // PatternLambdaExpr: lambda with pattern matching on parameters
-// Example: factorial := (0) => 1 | (n) => n * factorial(n-1)
+// Example: factorial := (0) -> 1 | (n) -> n * factorial(n-1)
 type PatternLambdaExpr struct {
 	Clauses        []*PatternClause
 	IsPure         bool

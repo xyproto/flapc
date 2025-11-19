@@ -86,7 +86,7 @@ func TestComparisonOperations(t *testing.T) {
 			source: `x := 5
 y := 5
 x == y {
-    -> println("equal")
+    => println("equal")
     ~> println("not equal")
 }
 `,
@@ -97,7 +97,7 @@ x == y {
 			source: `x := 5
 y := 3
 x != y {
-    -> println("not equal")
+    => println("not equal")
     ~> println("equal")
 }
 `,
@@ -108,7 +108,7 @@ x != y {
 			source: `x := 3
 y := 5
 x < y {
-    -> println("less")
+    => println("less")
     ~> println("not less")
 }
 `,
@@ -119,7 +119,7 @@ x < y {
 			source: `x := 10
 y := 5
 x > y {
-    -> println("greater")
+    => println("greater")
     ~> println("not greater")
 }
 `,
@@ -130,7 +130,7 @@ x > y {
 			source: `x := 5
 y := 5
 x <= y {
-    -> println("le")
+    => println("le")
     ~> println("not le")
 }
 `,
@@ -141,7 +141,7 @@ x <= y {
 			source: `x := 7
 y := 5
 x >= y {
-    -> println("ge")
+    => println("ge")
     ~> println("not ge")
 }
 `,

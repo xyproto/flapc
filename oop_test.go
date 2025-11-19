@@ -10,12 +10,12 @@ func TestBasicClass(t *testing.T) {
 	t.Skip("OOP features not yet fully implemented in 3.0")
 	code := `
 class Point {
-    init = (x, y) => {
+    init = (x, y) -> {
         .x = x
         .y = y
     }
     
-    distance_from_origin = () => {
+    distance_from_origin = () -> {
         sqrt(.x * .x + .y * .y)
     }
 }
@@ -35,15 +35,15 @@ func TestClassWithMutableFields(t *testing.T) {
 	t.Skip("OOP features not yet fully implemented in 3.0")
 	code := `
 class Counter {
-    init = start => {
+    init = start -> {
         .count := start
     }
     
-    increment = () => {
+    increment = () -> {
         .count <- .count + 1
     }
     
-    get = () => .count
+    get = () -> .count
 }
 
 c = Counter(10)
@@ -64,7 +64,7 @@ func TestClassComposition(t *testing.T) {
 	code := `
 // Behavior map for printing
 Printable = {
-    to_string = () => {
+    to_string = () -> {
         result := "{"
         @ key in keys(.) {
             result <- result :: f"{key}: {.[key]} "
@@ -75,7 +75,7 @@ Printable = {
 
 // Class with composition
 class Person <> Printable {
-    init = (name, age) => {
+    init = (name, age) -> {
         .name = name
         .age = age
     }
@@ -96,22 +96,22 @@ func TestClassInheritance(t *testing.T) {
 	t.Skip("OOP features not yet fully implemented in 3.0")
 	code := `
 class Animal {
-    init = name => {
+    init = name -> {
         .name = name
     }
     
-    speak = () => {
+    speak = () -> {
         println(f"{.name} makes a sound")
     }
 }
 
 class Dog <> Animal {
-    init = name => {
+    init = name -> {
         .name = name
         .species = "dog"
     }
     
-    bark = () => {
+    bark = () -> {
         println(f"{.name} barks!")
     }
 }
@@ -135,16 +135,16 @@ func TestDotNotation(t *testing.T) {
 	t.Skip("OOP features not yet fully implemented in 3.0")
 	code := `
 class Box {
-    init = value => {
+    init = value -> {
         .value = value
     }
     
-    double = () => {
+    double = () -> {
         .value <- .value * 2
         ret .  // Return this
     }
     
-    get = () => .value
+    get = () -> .value
 }
 
 b = Box(5)
@@ -163,7 +163,7 @@ func TestMultipleComposition(t *testing.T) {
 	t.Skip("OOP features not yet fully implemented in 3.0")
 	code := `
 Comparable = {
-    equals = other => {
+    equals = other -> {
         @ key in keys(.) {
             .[key] != other[key] { ret 0 }
         }
@@ -172,7 +172,7 @@ Comparable = {
 }
 
 Serializable = {
-    to_json = () => {
+    to_json = () -> {
         result := "{"
         @ key in keys(.) {
             result <- result :: f'"{key}": "{.[key]}", '
@@ -182,7 +182,7 @@ Serializable = {
 }
 
 class Data <> Comparable <> Serializable {
-    init = (a, b) => {
+    init = (a, b) -> {
         .a = a
         .b = b
     }

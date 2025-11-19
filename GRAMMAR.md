@@ -64,7 +64,7 @@ settings = { "key": value, "other": 42 }
 ```
 
 ### Rule 2: Match Block
-**Condition:** Contains `->` or `~>` in the block's scope
+**Condition:** Contains `=>` or `~>` in the block's scope
 
 There are TWO forms:
 
@@ -74,15 +74,15 @@ Evaluates expression, then matches its result against patterns:
 ```flap
 // Match on literal values
 x {
-    0 -> "zero"
-    5 -> "five"
+    0 => "zero"
+    5 => "five"
     ~> "other"
 }
 
 // Boolean match
 x > 0 {
-    1 -> "positive"    // true = 1
-    0 -> "zero"        // false = 0
+    1 => "positive"    // true = 1
+    0 => "zero"        // false = 0
 }
 ```
 
@@ -92,9 +92,9 @@ Each branch evaluates its own condition independently:
 ```flap
 // Guard branches with | at line start
 {
-    | x == 0 -> "zero"
-    | x > 0 -> "positive"
-    | x < 0 -> "negative"
+    | x == 0 => "zero"
+    | x > 0 => "positive"
+    | x < 0 => "negative"
     ~> "unknown"  // optional default
 }
 ```
@@ -103,10 +103,10 @@ Each branch evaluates its own condition independently:
 Otherwise `|` is the pipe operator: `data | transform | filter`
 
 ### Rule 3: Statement Block
-**Condition:** No `->` or `~>` in scope, not a map
+**Condition:** No `=>` or `~>` in scope, not a map
 
 ```flap
-compute = x => {
+compute = x -> {
     temp = x * 2
     result = temp + 10
     result    // Last expression returned
@@ -115,7 +115,7 @@ compute = x => {
 
 **Disambiguation order:**
 1. Check for `:` → Map literal
-2. Check for `->` or `~>` → Match block
+2. Check for `=>` or `~>` → Match block
 3. Otherwise → Statement block
 
 **Match block type:**
@@ -178,7 +178,7 @@ type_cast       = "int8" | "int16" | "int32" | "int64"
                 | "number" | "string" | "list" | "address"
                 | "packed" | "aligned" ;
 
-assignment      = identifier ("=" | ":=" | "<-" | "==>") expression
+assignment      = identifier ("=" | ":=" | "<-" | "->>" ) expression
                 | identifier ("+=" | "-=" | "*=" | "/=" | "%=" | "**=") expression
                 | indexed_expr "<-" expression
                 | identifier_list ("=" | ":=" | "<-") expression ;  // Multiple assignment
@@ -193,9 +193,9 @@ match_block     = "{" ( default_arm
                       | match_clause { match_clause } [ default_arm ]
                       | guard_clause { guard_clause } [ default_arm ] ) "}" ;
 
-match_clause    = expression [ "->" match_target ] ;
+match_clause    = expression [ "=>" match_target ] ;
 
-guard_clause    = "|" expression "->" match_target ;  // | must be at start of line
+guard_clause    = "|" expression "=>" match_target ;  // | must be at start of line
 
 default_arm     = "~>" match_target ;
 
@@ -211,7 +211,7 @@ pipe_expr       = reduce_expr { ( "|" | "||" ) reduce_expr } ;
 
 reduce_expr     = receive_expr ;
 
-receive_expr    = "=>" pipe_expr | or_bang_expr ;
+receive_expr    = "<=" pipe_expr | or_bang_expr ;
 
 or_bang_expr    = send_expr { "or!" send_expr } ;
 
@@ -292,8 +292,8 @@ unsafe_expr     = "unsafe" "{" { statement { newline } } [ expression ] "}"
                   [ "{" { statement { newline } } [ expression ] "}" ]
                   [ "{" { statement { newline } } [ expression ] "}" ] ;
 
-lambda_expr     = [ parameter_list ] "=>" lambda_body
-                | "==>" lambda_body ;  // Shorthand for () =>
+lambda_expr     = [ parameter_list ] "->" lambda_body
+                | "->>" lambda_body ;  // Shorthand for () ->
 
 lambda_body     = block | expression [ match_block ] ;
 
@@ -301,22 +301,22 @@ lambda_body     = block | expression [ match_block ] ;
 // 1. block: Statement block, map literal, or match block
 //    Block type determined by contents:
 //    - Contains `:` before arrows → map literal
-//    - Contains `->` or `~>` → match block
+//    - Contains `=>` or `~>` → match block
 //    - Otherwise → statement block
 //
 // 2. expression [ match_block ]: Value match
-//    Example: x => x { 0 -> "zero" ~> "other" }
+//    Example: x -> x { 0 => "zero" ~> "other" }
 //    Expression is evaluated, result matched against patterns
 //
 // Match block forms:
-//   Value match: expr { pattern -> result }
-//   Guard match: { | condition -> result }  (| at line start only)
+//   Value match: expr { pattern => result }
+//   Guard match: { | condition => result }  (| at line start only)
 //
 // Examples:
-//   x => x { 0 -> "zero" }           // Value match
-//   x => { | x > 0 -> "pos" }        // Guard match (| at start)
-//   x => { temp = x * 2; temp }      // Statement block
-//   x => data | transform            // Pipe operator (| not at start)
+//   x -> x { 0 => "zero" }           // Value match
+//   x -> { | x > 0 => "pos" }        // Guard match (| at start)
+//   x -> { temp = x * 2; temp }      // Statement block
+//   x -> data | transform            // Pipe operator (| not at start)
 
 parameter_list  = identifier [ "," identifier ]*
                 | "(" [ identifier [ "," identifier ]* ] ")" ;
@@ -453,6 +453,8 @@ No multi-line comments.
 ret arena unsafe cstruct class as max this defer spawn import
 ```
 
+**Note:** In Flap 3.0, lambda definitions use `->` (thin arrow) and match arms use `=>` (fat arrow), similar to Rust syntax.
+
 ### Contextual Keywords
 
 These are only keywords in specific contexts (e.g., after `as`):
@@ -522,7 +524,7 @@ All bitwise operators use `b` suffix:
 =     Immutable assignment (cannot reassign variable or modify value)
 :=    Mutable assignment (can reassign variable and modify value)
 <-    Update/reassignment (for mutable vars)
-==>   No-arg lambda shorthand (alias for () =>)
+->>   No-arg lambda shorthand (alias for () ->)
 
 +=    Add and assign (for lists: append element)
 -=    Subtract and assign
@@ -566,13 +568,13 @@ _     Tail operator (prefix) - get all but first element
 ### Other Operators
 
 ```
-=>    Lambda arrow
-->    Match arm
+->    Lambda arrow
+=>    Match arm
 ~>    Default match arm
 |     Pipe operator
 ||    Parallel map
 <-    Send (ENet)
-=>    Receive (ENet, prefix)
+<=    Receive (ENet, prefix)
 !     Move operator (postfix)
 .     Field access
 []    Indexing
@@ -602,10 +604,10 @@ From highest to lowest precedence:
 12. **Logical OR**: `||`
 13. **Or-bang**: `or!`
 14. **Send**: `<-`
-15. **Receive**: `=>`
+15. **Receive**: `<=`
 16. **Pipe**: `|` `||`
 17. **Match**: `{ }` (postfix)
-18. **Assignment**: `=` `:=` `<-` `==>` `+=` `-=` `*=` `/=` `%=` `**=`
+18. **Assignment**: `=` `:=` `<-` `->>` `+=` `-=` `*=` `/=` `%=` `**=`
 
 **Associativity:**
 - Left-associative: All binary operators except `**` and assignments
@@ -636,13 +638,13 @@ Flap minimizes parenthesis usage. Use parentheses only when:
 **Not needed:**
 ```flap
 // Good: no unnecessary parens
-x > 0 { -> "positive" ~> "negative" }
+x > 0 { => "positive" ~> "negative" }
 result = x + y * z
-classify = x => x { 0 -> "zero" ~> "other" }
+classify = x -> x { 0 => "zero" ~> "other" }
 
 // Bad: unnecessary parens
-result = x > 0 { -> ("positive") ~> ("negative") }
-compute = (x) => (x * 2)
+result = x > 0 { => ("positive") ~> ("negative") }
+compute = (x) -> (x * 2)
 ```
 
 ### Statement Termination
@@ -678,9 +680,9 @@ The `|` character is context-dependent:
 result = data | transform | filter
 
 // Guard marker (| at line start)
-classify = x => {
-    | x > 0 -> "positive"
-    | x < 0 -> "negative"
+classify = x -> {
+    | x > 0 => "positive"
+    | x < 0 => "negative"
     ~> "zero"
 }
 ```
@@ -690,47 +692,47 @@ classify = x => {
 #### Arrow Disambiguation
 
 ```flap
-->   Match arm result
+=>   Match arm result
 ~>   Default match arm
-=>   Lambda or receive
-==>  No-arg lambda shorthand (desugars to () =>)
+->   Lambda or receive
+->>  No-arg lambda shorthand (desugars to () ->)
 ```
 
 Context determines meaning:
 
 ```flap
-f = x => x + 1           // Lambda with one arg
-msg = => &8080           // Receive from channel
-x { 0 -> "zero" }        // Match arm
+f = x -> x + 1           // Lambda with one arg
+msg = <= &8080           // Receive from channel
+x { 0 => "zero" }        // Match arm
 x { ~> "default" }       // Default arm
-greet ==> println("Hi")  // No-arg lambda: () => println("Hi")
+greet ->> println("Hi")  // No-arg lambda: () -> println("Hi")
 ```
 
-#### No-Argument Lambda Shorthand: `==>`
+#### No-Argument Lambda Shorthand: `->>`
 
-The `==>` operator is syntactic sugar for defining functions with zero arguments:
+The `->>` operator is syntactic sugar for defining functions with zero arguments:
 
 ```flap
 // These are equivalent:
-greet ==> println("Hello!")
-greet = () => println("Hello!")
+greet ->> println("Hello!")
+greet = () -> println("Hello!")
 
 // With block body:
-worker ==> {
+worker ->> {
     @ { process_forever() }
 }
 // Equivalent to:
-worker = () => {
+worker = () -> {
     @ { process_forever() }
 }
 
 // Common use cases:
-init ==> setup_resources()        // Initialization
-cleanup ==> release_all()          // Cleanup callback
-background ==> @ { poll_events() } // Background worker
+init ->> setup_resources()        // Initialization
+cleanup ->> release_all()          // Cleanup callback
+background ->> @ { poll_events() } // Background worker
 ```
 
-**When to use `==>`:**
+**When to use `->>`:**
 - Functions that take no arguments
 - Callbacks and event handlers
 - Worker/background tasks
@@ -775,7 +777,7 @@ Instead of `break`/`continue` keywords, Flap uses `ret @` with automatically num
 }
 
 // ret without @ returns from function (not loop)
-compute = n => {
+compute = n -> {
     @ i in 0..<100 {
         i == n { ret i }  // Return from function
         i == 50 { ret @ } // Exit loop only, continue function
@@ -812,7 +814,7 @@ defer_statement = "defer" expression ;
 **Examples:**
 ```flap
 // Resource cleanup with defer
-init_resources = () => {
+init_resources = () -> {
     file := open("data.txt") or! {
         println("Failed to open file")
         ret 0
@@ -997,7 +999,7 @@ y.error                 // Returns "dv0" (spaces stripped)
 
 // Typical usage
 result.error {
-    "" -> proceed(result)
+    "" => proceed(result)
     ~> handle_error(result.error)
 }
 ```
@@ -1050,18 +1052,18 @@ ptr := c_malloc(1024) or! 0  // Returns 0 if allocation failed
 
 ```flap
 // Check and early return
-process = input => {
+process = input -> {
     step1 = validate(input)
-    step1.error { != "" -> step1 }  // Return error
+    step1.error { != "" => step1 }  // Return error
 
     step2 = transform(step1)
-    step2.error { != "" -> step2 }
+    step2.error { != "" => step2 }
 
     finalize(step2)
 }
 
 // Default values with or!
-compute = input => {
+compute = input -> {
     x = parse(input) or! 0
     y = divide(100, x) or! -1
     y * 2
@@ -1070,9 +1072,9 @@ compute = input => {
 // Match on error code
 result = risky()
 result.error {
-    "" -> println("Success:", result)
-    "dv0" -> println("Division by zero")
-    "mem" -> println("Out of memory")
+    "" => println("Success:", result)
+    "dv0" => println("Division by zero")
+    "mem" => println("Out of memory")
     ~> println("Unknown error:", result.error)
 }
 ```
@@ -1095,13 +1097,13 @@ The compiler tracks whether a value is a Result type:
 
 ```flap
 // Compiler knows this returns Result
-divide = (a, b) => {
+divide = (a, b) -> {
     b == 0 { ret error("dv0") }
     a / b
 }
 
 // Compiler propagates Result type
-compute = x => {
+compute = x -> {
     y = divide(100, x)  // y has Result type
     y or! 0             // Handles potential error
 }
@@ -1161,19 +1163,19 @@ Flap supports classes as syntactic sugar over maps and closures, providing a fam
 ```flap
 class Point {
     // Constructor (implicit)
-    init := (x, y) ==> {
+    init := (x, y) ->> {
         .x = x
         .y = y
     }
 
     // Instance methods
-    distance := other => {
+    distance := other -> {
         dx := other.x - .x
         dy := other.y - .y
         sqrt(dx * dx + dy * dy)
     }
 
-    move := (dx, dy) ==> {
+    move := (dx, dy) ->> {
         .x <- .x + dx
         .y <- .y + dy
     }
@@ -1192,18 +1194,18 @@ Classes desugar to regular Flap code:
 
 ```flap
 // class Point { ... } becomes:
-Point := (x, y) => {
+Point := (x, y) -> {
     instance := {}
     instance["x"] = x
     instance["y"] = y
 
-    instance["distance"] = other => {
+    instance["distance"] = other -> {
         dx := other["x"] - instance["x"]
         dy := other["y"] - instance["y"]
         sqrt(dx * dx + dy * dy)
     }
 
-    instance["move"] = (dx, dy) => {
+    instance["move"] = (dx, dy) -> {
         instance["x"] <- instance["x"] + dx
         instance["y"] <- instance["y"] + dy
     }
@@ -1218,17 +1220,17 @@ Use `.field` inside class methods to access instance state:
 
 ```flap
 class Counter {
-    init := start ==> {
+    init := start ->> {
         .count = start
         .history = []
     }
 
-    increment := ==> {
+    increment := ->> {
         .count <- .count + 1
         .history <- .history :: .count
     }
 
-    get := ==> .count
+    get := ->> .count
 }
 
 c := Counter(0)
@@ -1245,7 +1247,7 @@ class Entity {
     Entity.count = 0
     Entity.all = []
 
-    init := name ==> {
+    init := name ->> {
         .name = name
         .id = Entity.count
         Entity.count <- Entity.count + 1
@@ -1264,16 +1266,16 @@ Extend classes with behavior maps using `<>`:
 
 ```flap
 Serializable := {
-    to_json: ==> {
+    to_json: ->> {
         // Convert instance to JSON
     },
-    from_json: json => {
+    from_json: json -> {
         // Parse JSON to instance
     }
 }
 
 class Point <> Serializable {
-    init := (x, y) ==> {
+    init := (x, y) ->> {
         .x = x
         .y = y
     }
@@ -1287,7 +1289,7 @@ json := p.to_json()
 
 ```flap
 class User <> Serializable <> Validatable <> Timestamped {
-    init = name => {
+    init = name -> {
         .name = name
         .created_at = now()
     }
@@ -1305,16 +1307,16 @@ Inside class methods:
 class Point {
     Point.origin = nil  // Class field
 
-    init := (x, y) ==> {
+    init := (x, y) ->> {
         .x = x           // Instance field (this instance)
         .y = y
     }
 
-    distance_to_origin := ==> {
+    distance_to_origin := ->> {
         .distance(Point.origin)  // Class field access
     }
 
-    distance := other => {
+    distance := other -> {
         dx := other.x - .x       // Other instance field vs this instance field
         dy := other.y - .y
         sqrt(dx * dx + dy * dy)
@@ -1330,15 +1332,15 @@ Use underscore prefix for "private" methods (by convention):
 
 ```flap
 class Account {
-    init := balance ==> {
+    init := balance ->> {
         .balance = balance
     }
 
-    _validate := amount => {
+    _validate := amount -> {
         amount > 0 && amount <= .balance
     }
 
-    withdraw := amount => {
+    withdraw := amount -> {
         ._ validate(amount) {
             .balance <- .balance - amount
             ret 0
@@ -1359,7 +1361,7 @@ cstruct Vec2Data {
 }
 
 class Vec2 {
-    init := (x, y) ==> {
+    init := (x, y) ->> {
         .data = call("malloc", Vec2Data.size as uint64)
         unsafe float64 {
             rax <- .data as ptr
@@ -1368,7 +1370,7 @@ class Vec2 {
         }
     }
 
-    magnitude := ==> {
+    magnitude := ->> {
         unsafe float64 {
             rax <- .data as ptr
             xmm0 <- [rax]
@@ -1376,7 +1378,7 @@ class Vec2 {
             xmm0 <- xmm0 * xmm0
             xmm1 <- xmm1 * xmm1
             xmm0 <- xmm0 + xmm1
-        } | result => sqrt(result)
+        } | result -> sqrt(result)
     }
 }
 ```
@@ -1387,13 +1389,13 @@ While Flap doesn't have operator overloading syntax, you can define methods with
 
 ```flap
 class Complex {
-    init := (real, imag) ==> {
+    init := (real, imag) ->> {
         .real = real
         .imag = imag
     }
 
-    add := other => Complex(.real + other.real, .imag + other.imag)
-    mul := other => Complex(
+    add := other -> Complex(.real + other.real, .imag + other.imag)
+    mul := other -> Complex(
         .real * other.real - .imag * other.imag,
         .real * other.imag + .imag * other.real
     )
@@ -1420,7 +1422,7 @@ class Point <> Serializable <> Validatable {
 }
 
 // Desugars to:
-Point := (...) => {
+Point := (...) -> {
     instance := {}
     // Merge Serializable methods
     @ key in Serializable { instance[key] <- Serializable[key] }
@@ -1438,16 +1440,16 @@ Methods that return `. ` (this) enable chaining:
 
 ```flap
 class Builder {
-    init = () => {
+    init = () -> {
         .parts = []
     }
 
-    add = part => {
+    add = part -> {
         .parts <- .parts :: part
         ret .  // Return this (self)
     }
 
-    build = () => .parts
+    build = () -> .parts
 }
 
 result = Builder().add("A").add("B").add("C").build()
@@ -1460,18 +1462,18 @@ Flap deliberately avoids inheritance hierarchies. Use composition:
 ```flap
 // Instead of inheritance
 Drawable := {
-    draw: ==> println("Drawing...")
+    draw: ->> println("Drawing...")
 }
 
 Movable := {
-    move: (dx, dy) ==> {
+    move: (dx, dy) ->> {
         .x <- .x + dx
         .y <- .y + dy
     }
 }
 
 class Sprite <> Drawable <> Movable {
-    init := (x, y) ==> {
+    init := (x, y) ->> {
         .x = x
         .y = y
     }

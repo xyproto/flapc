@@ -266,8 +266,8 @@ println(x)
 		},
 		{
 			name: "lambda_bad_syntax",
-			code: `// This should fail - using -> instead of =>
-double = x -> x * 2
+			code: `// This should fail - using => instead of ->
+double = x => x * 2
 println(double(5))
 `,
 			errorContains: "error",

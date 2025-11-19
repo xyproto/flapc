@@ -17,9 +17,9 @@ func TestHelloWorld(t *testing.T) {
 // TestFibonacci tests a recursive fibonacci implementation
 func TestFibonacci(t *testing.T) {
 	code := `
-fib = n => {
-	| n == 0 -> 0
-	| n == 1 -> 1
+fib = n -> {
+	| n == 0 => 0
+	| n == 1 => 1
 	~> fib(n - 1) + fib(n - 2)
 }
 
@@ -35,8 +35,8 @@ printf("fib(10) = %v\n", result)
 // Test99Bottles tests a simple counting program (inspired by 99 bottles)
 func Test99Bottles(t *testing.T) {
 	code := `
-countdown = (n, acc) => {
-	| n == 0 -> acc
+countdown = (n, acc) -> {
+	| n == 0 => acc
 	~> countdown(n - 1, acc + n)
 }
 
@@ -54,7 +54,7 @@ func TestCFunctionCall(t *testing.T) {
 	code := `
 // Simple calculation that would benefit from C stdlib
 x = -42
-result = { | x < 0 -> -x ~> x }  // abs implementation
+result = { | x < 0 => -x ~> x }  // abs implementation
 printf("abs(%v) = %v\n", x, result)
 `
 	output := compileAndRun(t, code)
@@ -107,8 +107,8 @@ printf("Sum: %v\n", sum)
 // TestMatchExpressions tests simple conditionals
 func TestMatchExpressions(t *testing.T) {
 	code := `
-is_positive = x => {
-	| x > 0 -> 1
+is_positive = x -> {
+	| x > 0 => 1
 	~> 0
 }
 
@@ -123,8 +123,8 @@ printf("%v %v\n", is_positive(0), is_positive(42))
 // TestNestedFunctions tests nested function definitions
 func TestNestedFunctions(t *testing.T) {
 	code := `
-make_adder = x => {
-	add_x = y => x + y
+make_adder = x -> {
+	add_x = y -> x + y
 	add_x
 }
 
@@ -190,8 +190,8 @@ println(message)
 // TestRecursiveSum tests simple recursion
 func TestRecursiveSum(t *testing.T) {
 	code := `
-sum_to = n => {
-	| n == 0 -> 0
+sum_to = n -> {
+	| n == 0 => 0
 	~> n + sum_to(n - 1)
 }
 
@@ -224,14 +224,14 @@ printf("Sorted: %v %v %v %v %v %v %v %v\n", result[0], result[1], result[2], res
 // TestSwitch tests a switch-like conditional
 func TestSwitch(t *testing.T) {
 	code := `
-day_of_week = n => n {
-	1 -> "Monday"
-	2 -> "Tuesday"
-	3 -> "Wednesday"
-	4 -> "Thursday"
-	5 -> "Friday"
-	6 -> "Saturday"
-	7 -> "Sunday"
+day_of_week = n -> n {
+	1 => "Monday"
+	2 => "Tuesday"
+	3 => "Wednesday"
+	4 => "Thursday"
+	5 => "Friday"
+	6 => "Saturday"
+	7 => "Sunday"
 	~> "Unknown"
 }
 
@@ -263,7 +263,7 @@ printf("Sum: %v\n", sum)
 // TestResultTypeDivision demonstrates error handling with the Result type
 func TestResultTypeDivision(t *testing.T) {
 	code := `
-divide := x => 42 / x
+divide := x -> 42 / x
 result1 := divide(2)
 printf("42 / 2 = %v\n", result1)
 result2 := divide(0)
@@ -292,8 +292,8 @@ printf("Chained fallback = %v\n", x)
 func TestResultTypeWithOrBang(t *testing.T) {
 	code := `
 // Safe division function using guard match
-safe_divide := (a, b) => {
-	| b == 0 -> 0 / 0  // Returns error NaN
+safe_divide := (a, b) -> {
+	| b == 0 => 0 / 0  // Returns error NaN
 	~> a / b
 }
 
@@ -311,7 +311,7 @@ x := safe_divide(5, 0) or! safe_divide(10, 0) or! 42
 printf("Chained fallback result = %v\n", x)
 
 // Practical example: parse with default
-parse_int := (s) => {
+parse_int := (s) -> {
 	// Simplified - always returns success for demo
 	42
 }

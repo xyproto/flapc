@@ -15,7 +15,7 @@ import (
 // Programs that are expected to fail compilation
 var compileExpectations = map[string]string{
 	"const":                  "cannot update immutable variable",
-	"lambda_bad_syntax_test": "lambda definitions must use '=>'",
+	"lambda_bad_syntax_test": "lambda definitions must use '->'",
 	"parallel_sum":           "parallel loop expressions with reducers not yet implemented",
 	"snakegame":              "loop expressions (@ i in ... { expr }) not yet implemented",
 }

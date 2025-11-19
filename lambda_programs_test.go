@@ -16,7 +16,7 @@ func TestLambdaPrograms(t *testing.T) {
 	}{
 		{
 			name: "simple_lambda",
-			source: `square := x => x * x
+			source: `square := x -> x * x
 result := square(5)
 println(result)
 `,
@@ -24,7 +24,7 @@ println(result)
 		},
 		{
 			name: "lambda_with_multiple_params",
-			source: `add = (a, b) => a + b
+			source: `add = (a, b) -> a + b
 result = add(10, 20)
 println(result)
 `,
@@ -32,15 +32,15 @@ println(result)
 		},
 		{
 			name: "lambda_with_block",
-			source: `calculate = (x, y) => x * 2 + y
+			source: `calculate = (x, y) -> x * 2 + y
 println(calculate(5, 3))
 `,
 			expected: "13\n",
 		},
 		{
 			name: "recursive_lambda",
-			source: `factorial := (n, acc) => n == 0 {
-    -> acc
+			source: `factorial := (n, acc) -> n == 0 {
+    => acc
     ~> factorial(n-1, n*acc) max 100
 }
 println(factorial(5, 1))

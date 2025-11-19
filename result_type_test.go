@@ -84,7 +84,7 @@ func TestErrorPropertyBasic(t *testing.T) {
 	source := `result := 10 / 0
 code := result.error
 code {
-    "" -> println("no error")
+    "" => println("no error")
     ~> println(f"error: {code}")
 }
 `
@@ -111,7 +111,7 @@ func TestErrorPropertyOnSuccess(t *testing.T) {
 	source := `result := 10 / 2
 code := result.error
 code {
-    "" -> println("success")
+    "" => println("success")
     ~> println(f"error: {code}")
 }
 `
