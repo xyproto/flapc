@@ -73,3 +73,5 @@ wpo_test
 
 *.backup
 *.bak
+
+sdl3example
