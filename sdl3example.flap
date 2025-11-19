@@ -1,11 +1,22 @@
-// pixel.flap - SDL3 Graphics Demo
-// Demonstrates SDL3 FFI with BMP image loading and display
+// sdl3example.flap - SDL3 Graphics Demo with Railway-Oriented Error Handling
+// 
+// This example demonstrates:
+//   1. SDL3 C FFI integration
+//   2. Railway-oriented programming with or! operator
+//   3. BMP image loading and display
+//   4. Proper resource cleanup
+//
+// The or! operator checks for null pointers (0) from C functions and
+// executes the error handling block if the pointer is null.
+// This provides clean, composable error handling without nested if statements.
 //
 // To compile and run:
-//   ./flapc pixel.flap -o pixel
-//   ./pixel
+//   ./flapc sdl3example.flap -o sdl3example
+//   ./sdl3example
 //
-// Requires SDL3 library to be installed (pkg-config sdl3)
+// Requires:
+//   - SDL3 library installed (pkg-config sdl3)
+//   - img/grumpy-cat.bmp file in the working directory
 
 import sdl3 as sdl
 
@@ -101,3 +112,27 @@ sdl.SDL_DestroyWindow(window)
 sdl.SDL_Quit()
 
 printf("Done!\n")
+
+// NOTE: Arena Allocators and C FFI
+//
+// Flap's arena allocator is designed for Flap-managed memory (lists, maps, strings).
+// It cannot manage C library pointers like SDL windows, renderers, or textures.
+//
+// Why?
+//   - C libraries expect their own allocation/deallocation functions
+//   - Arena memory is bulk-freed at scope exit, breaking C library invariants
+//   - SDL_DestroyWindow, SDL_DestroyRenderer, etc. must be called in proper order
+//
+// Best practices for C FFI:
+//   1. Use or! for railway-oriented null pointer checking (as shown above)
+//   2. Clean up C resources in reverse order of allocation
+//   3. Use arenas for Flap data structures within your program
+//   4. Consider creating wrapper functions that handle cleanup automatically
+//
+// Example of arena usage with Flap data (not shown in this example):
+//   arena {
+//       data := [1, 2, 3, 4, 5]  // Allocated in arena
+//       processed := data | x => x * 2
+//       result := processed | x => x + 1
+//       // All Flap allocations freed automatically here
+//   }

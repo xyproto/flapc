@@ -944,15 +944,22 @@ ptr := c_malloc(1024) or! 0  // Returns 0 if allocation failed
 
 **Semantics:**
 1. Evaluate left operand
-2. Check if error (type byte 0xE0) or null (value is 0 for pointer types)
-3. If error/null and right side is a block: execute block
-4. If error/null and right side is an expression: return right operand
-5. Otherwise: return left operand value
+2. Check if NaN (error value) OR if value equals 0.0 (null pointer)
+3. If NaN or null:
+   - And right side is a block: execute block, result in xmm0
+   - And right side is an expression: evaluate right side, result in xmm0
+4. Otherwise (value is valid): keep left operand value in xmm0
+5. Right side is NOT evaluated unless left is NaN/null (lazy/short-circuit evaluation)
+
+**Error Checking:**
+- **NaN check**: Compares value with itself using UCOMISD (NaN != NaN)
+- **Null check**: Compares value with 0.0 using UCOMISD
 
 **When checking for null (C FFI pointers):**
-- The compiler recognizes pointer-returning C functions
-- `or!` treats 0 (null pointer) as a failure case
+- All values are float64, so pointer 0 is encoded as 0.0
+- `or!` treats 0.0 (null pointer) as a failure case
 - Enables railway-oriented programming for C interop
+- Works with any C function that returns pointers
 
 **Precedence:** Lower than logical OR, higher than send operator
 

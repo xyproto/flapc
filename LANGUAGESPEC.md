@@ -1342,11 +1342,12 @@ ptr := c_malloc(1024) or! 0
 ```
 
 **Semantics:**
-- C functions returning pointers are tracked by the compiler
-- `or!` checks if the returned value is 0 (null pointer)
-- If null and right side is a block: executes the block (typically cleanup + exit)
-- If null and right side is an expression: returns the expression value
-- If not null: returns the pointer value
+- `or!` checks for both NaN (error values) and 0 (null pointers)
+- If the left side is NaN or 0:
+  - If right side is a block: executes the block (lazy evaluation)
+  - If right side is an expression: evaluates and returns it
+- If the left side is valid (not NaN, not 0): returns the left value
+- Right side is NOT evaluated unless left side is error/null (short-circuit evaluation)
 
 ### Railway-Oriented C Interop
 
