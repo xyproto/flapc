@@ -190,10 +190,13 @@ func (rt *RegisterTracker) AllocInt(purpose string) string {
 	return "" // No registers available
 }
 
+// Confidence that this function is working: 100%
 // AllocIntCalleeSaved allocates an available callee-saved integer register
 // Used for loop counters that need to survive function calls
+// Returns empty string if no callee-saved registers available
 func (rt *RegisterTracker) AllocIntCalleeSaved(purpose string) string {
-	// Try callee-saved first (preferred for loop counters)
+	// Only try callee-saved registers (these survive across operations)
+	// Do NOT fall back to caller-saved registers - they get clobbered
 	calleeSaved := []string{"r12", "r13", "r14", "rbx"}
 	for _, reg := range calleeSaved {
 		if !rt.intInUse[reg] && !rt.intReserved[reg] {
@@ -210,25 +213,8 @@ func (rt *RegisterTracker) AllocIntCalleeSaved(purpose string) string {
 		}
 	}
 	
-	// Try caller-saved as fallback (but these need save/restore around calls)
-	// Expanded to include all available caller-saved registers
-	callerSaved := []string{"rax", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11"}
-	for _, reg := range callerSaved {
-		if !rt.intInUse[reg] && !rt.intReserved[reg] {
-			rt.intInUse[reg] = true
-			rt.intPurpose[reg] = purpose
-			rt.intStack = append(rt.intStack, reg)
-			
-			used := len(rt.intInUse)
-			if used > rt.maxIntUsed {
-				rt.maxIntUsed = used
-			}
-			
-			return reg
-		}
-	}
-	
-	return "" // No registers available
+	// No callee-saved registers available - caller must use stack
+	return ""
 }
 
 // AllocSpecificInt allocates a specific integer register

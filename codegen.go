@@ -2010,6 +2010,11 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	if counterReg != "" {
 		useRegister = true
 	}
+	
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG compileRangeLoop: depth=%d, counterReg='%s', useRegister=%v\n",
+			loopDepth, counterReg, useRegister)
+	}
 
 	// NOW allocate stack space based on whether we got a register
 	// Allocate stack space for loop state
