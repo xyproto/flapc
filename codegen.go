@@ -1074,6 +1074,7 @@ func (fc *FlapCompiler) updateStackOffset(delta int) {
 	}
 }
 
+// Confidence that this function is working: 95%
 func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 	switch s := stmt.(type) {
 	case *AssignStmt:
