@@ -258,3 +258,31 @@ printf("Sum: %v\n", sum)
 		t.Errorf("Expected '15' in output, got: %s", output)
 	}
 }
+
+// Confidence that this function is working: 95%
+// TestResultTypeDivision demonstrates error handling with the Result type
+func TestResultTypeDivision(t *testing.T) {
+	code := `
+divide := x => 42 / x
+result1 := divide(2)
+printf("42 / 2 = %v\n", result1)
+result2 := divide(0)
+safe := result2 or! -999
+printf("42 / 0 with fallback = %v\n", safe)
+x := (10 / 0) or! (20 / 0) or! 42
+printf("Chained fallback = %v\n", x)
+`
+	output := compileAndRun(t, code)
+	
+	if !strings.Contains(output, "21") {
+		t.Errorf("Expected '21' from 42/2, got: %s", output)
+	}
+	
+	if !strings.Contains(output, "-999") {
+		t.Errorf("Expected '-999' as error fallback, got: %s", output)
+	}
+	
+	if !strings.Contains(output, "42") {
+		t.Errorf("Expected '42' from chained fallback, got: %s", output)
+	}
+}

@@ -10532,23 +10532,23 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Check if xmm0 is NaN (error) or normal value (success)
 		fc.out.Ucomisd("xmm0", "xmm0") // Compare with itself - sets PF=1 if NaN
-		
+
 		// Jump if not NaN (parity flag not set)
 		notNaNPos := fc.eb.text.Len()
 		fc.out.JumpConditional(JumpNotParity, 0) // jnp - jump if not parity (not NaN)
-		
+
 		// NaN path: extract error code from mantissa (low 32 bits)
-		fc.out.MovqXmmToReg("rax", "xmm0")        // Move float bits to GPR
-		fc.out.Emit([]byte{0x48, 0x25})           // and rax, immediate32
+		fc.out.MovqXmmToReg("rax", "xmm0")          // Move float bits to GPR
+		fc.out.Emit([]byte{0x48, 0x25})             // and rax, immediate32
 		fc.out.Emit([]byte{0xff, 0xff, 0xff, 0xff}) // mask = 0xFFFFFFFF
-		
+
 		// Convert 4-byte code to Flap string
 		// We need to create a string with up to 3 characters (strip null bytes)
 		// For simplicity, always create 3-char string (most error codes are 3 chars)
-		
+
 		// Save error code in rbx
 		fc.out.MovRegToReg("rbx", "rax")
-		
+
 		// Allocate string memory (need 8 bytes count + 3*16 bytes entries = 56 bytes)
 		// Use malloc for simplicity
 		fc.out.Emit([]byte{0x48, 0xc7, 0xc7, 0x38, 0x00, 0x00, 0x00}) // mov rdi, 56
@@ -10556,53 +10556,53 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.eb.GenerateCallInstruction("malloc")
 		// rax now points to allocated memory
 		fc.out.MovRegToReg("rsi", "rax")
-		
+
 		// rsi now points to our string
 		// Write count = 3.0
-		fc.out.Emit([]byte{0x48, 0xb8})                 // mov rax, immediate64
+		fc.out.Emit([]byte{0x48, 0xb8})                                     // mov rax, immediate64
 		fc.out.Emit([]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x40}) // 3.0
 		fc.out.MovRegToMem("rax", "rsi", 0)
-		
+
 		// Extract and write each character as map entry
 		// Entry 0: key=0, value=char0
-		fc.out.XorRegWithReg("rax", "rax")             // key = 0
+		fc.out.XorRegWithReg("rax", "rax") // key = 0
 		fc.out.MovRegToMem("rax", "rsi", 8)
 		fc.out.MovRegToReg("rax", "rbx")
-		fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x18})    // shr rax, 24 (get first char)
+		fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x18}) // shr rax, 24 (get first char)
 		fc.out.Cvtsi2sd("xmm1", "rax")
 		fc.out.MovXmmToMem("xmm1", "rsi", 16)
-		
+
 		// Entry 1: key=1, value=char1
 		fc.out.Emit([]byte{0x48, 0xc7, 0xc0, 0x01, 0x00, 0x00, 0x00}) // mov rax, 1
 		fc.out.MovRegToMem("rax", "rsi", 24)
 		fc.out.MovRegToReg("rax", "rbx")
-		fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x10})    // shr rax, 16
-		fc.out.Emit([]byte{0x48, 0x25})                 // and rax, 0xFF
+		fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x10}) // shr rax, 16
+		fc.out.Emit([]byte{0x48, 0x25})             // and rax, 0xFF
 		fc.out.Emit([]byte{0xff, 0x00, 0x00, 0x00})
 		fc.out.Cvtsi2sd("xmm1", "rax")
 		fc.out.MovXmmToMem("xmm1", "rsi", 32)
-		
+
 		// Entry 2: key=2, value=char2
 		fc.out.Emit([]byte{0x48, 0xc7, 0xc0, 0x02, 0x00, 0x00, 0x00}) // mov rax, 2
 		fc.out.MovRegToMem("rax", "rsi", 40)
 		fc.out.MovRegToReg("rax", "rbx")
-		fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x08})    // shr rax, 8
-		fc.out.Emit([]byte{0x48, 0x25})                 // and rax, 0xFF
+		fc.out.Emit([]byte{0x48, 0xc1, 0xe8, 0x08}) // shr rax, 8
+		fc.out.Emit([]byte{0x48, 0x25})             // and rax, 0xFF
 		fc.out.Emit([]byte{0xff, 0x00, 0x00, 0x00})
 		fc.out.Cvtsi2sd("xmm1", "rax")
 		fc.out.MovXmmToMem("xmm1", "rsi", 48)
-		
+
 		// Return pointer to string in xmm0
 		fc.out.MovqRegToXmm("xmm0", "rsi")
-		
+
 		// Jump over non-NaN path
 		donePos := fc.eb.text.Len()
 		fc.out.JumpUnconditional(0)
-		
+
 		// Not NaN path: return empty string
 		notNaNTarget := fc.eb.text.Len()
 		fc.patchJumpImmediate(notNaNPos+2, int32(notNaNTarget-(notNaNPos+6)))
-		
+
 		// Create empty string
 		labelName := fmt.Sprintf("empty_str_%d", fc.stringCounter)
 		fc.stringCounter++
@@ -10614,7 +10614,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.eb.Define(labelName, string(mapData))
 		fc.out.LeaSymbolToReg("rax", labelName)
 		fc.out.MovqRegToXmm("xmm0", "rax")
-		
+
 		// Done
 		doneTarget := fc.eb.text.Len()
 		fc.patchJumpImmediate(donePos+1, int32(doneTarget-(donePos+5)))
@@ -11535,39 +11535,39 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		if len(call.Args) != 1 {
 			compilerError("error() requires exactly 1 argument (error code string)")
 		}
-		
+
 		// Evaluate argument - should be a string
 		fc.compileExpression(call.Args[0])
 		// xmm0 now contains pointer to string
-		
+
 		// Move pointer to rax
 		fc.out.MovqXmmToReg("rax", "xmm0")
-		
+
 		// Load first character (index 0) from string
 		// String format: [count][key0][val0][key1][val1]...
 		// First char is at offset 16 (skip 8-byte count + 8-byte key)
-		fc.out.MovMemToXmm("xmm1", "rax", 16) // Load first char as float
-		fc.out.Cvttsd2si("rbx", "xmm1")       // Convert to int, store in rbx
+		fc.out.MovMemToXmm("xmm1", "rax", 16)       // Load first char as float
+		fc.out.Cvttsd2si("rbx", "xmm1")             // Convert to int, store in rbx
 		fc.out.Emit([]byte{0x48, 0xc1, 0xe3, 0x18}) // shl rbx, 24 (move to high byte)
-		
+
 		// Load second character (index 1) if exists
-		fc.out.MovMemToXmm("xmm1", "rax", 32) // Load second char as float
-		fc.out.Cvttsd2si("rcx", "xmm1")        // Convert to int
+		fc.out.MovMemToXmm("xmm1", "rax", 32)       // Load second char as float
+		fc.out.Cvttsd2si("rcx", "xmm1")             // Convert to int
 		fc.out.Emit([]byte{0x48, 0xc1, 0xe1, 0x10}) // shl rcx, 16
 		fc.out.Emit([]byte{0x48, 0x09, 0xcb})       // or rbx, rcx
-		
+
 		// Load third character (index 2) if exists
-		fc.out.MovMemToXmm("xmm1", "rax", 48) // Load third char as float
-		fc.out.Cvttsd2si("rcx", "xmm1")        // Convert to int
+		fc.out.MovMemToXmm("xmm1", "rax", 48)       // Load third char as float
+		fc.out.Cvttsd2si("rcx", "xmm1")             // Convert to int
 		fc.out.Emit([]byte{0x48, 0xc1, 0xe1, 0x08}) // shl rcx, 8
 		fc.out.Emit([]byte{0x48, 0x09, 0xcb})       // or rbx, rcx
-		
+
 		// rbx now contains error code as 32-bit value in correct byte order
 		// Create error NaN: 0x7FF8_0000_0000_0000 | error_code
 		fc.out.Emit([]byte{0x48, 0xb8})                                     // mov rax, immediate64
 		fc.out.Emit([]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf8, 0x7f}) // Quiet NaN base
 		fc.out.Emit([]byte{0x48, 0x09, 0xd8})                               // or rax, rbx
-		
+
 		// Move to xmm0
 		fc.out.SubImmFromReg("rsp", 8)
 		fc.out.MovRegToMem("rax", "rsp", 0)
