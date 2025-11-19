@@ -1,0 +1,15 @@
+// Test eprint, eprintln, eprintf functions
+eprintln("This goes to stderr with newline")
+eprint("This goes to stderr without newline")
+eprint("\n")
+
+// Test that they return Result type with error code "prnt"
+res := eprintln("Testing result type")
+res.error {
+    "prnt" -> println("eprintln returned Result with error code 'prnt' as expected")
+    "" -> println("ERROR: eprintln should return 'prnt' error code")
+    ~> println("ERROR: unexpected error code:", res.error)
+}
+
+// Note: Cannot test qprint, qprintln, qprintf, exitf here as they exit the program
+println("All eprint tests passed!")

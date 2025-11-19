@@ -59,16 +59,16 @@ println("completed")
 			wantExit:   0,
 		},
 		{
-			name:       "qprintln exits",
-			code:       `qprintln("fatal error")`,
+			name:       "exitln exits",
+			code:       `exitln("fatal error")`,
 			wantStdout: "",
 			wantStderr: "fatal error\n",
 			wantExit:   1,
 		},
 		{
-			name: "qprintln does not continue",
+			name: "exitln does not continue",
 			code: `
-qprintln("error")
+exitln("error")
 println("should not see this")
 `,
 			wantStdout: "",
@@ -117,8 +117,8 @@ func TestEprintFormatted(t *testing.T) {
 			wantStderr: "error: value\n",
 		},
 		{
-			name:       "qprintf simple",
-			code:       `qprintf("fatal\n")`,
+			name:       "exitf simple",
+			code:       `exitf("fatal\n")`,
 			wantStderr: "fatal\n",
 		},
 	}

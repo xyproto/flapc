@@ -1145,10 +1145,8 @@ func main() {
 	var outputFilenameLongFlag = flag.String("output", defaultOutputFilename, "output executable filename")
 	var versionShort = flag.Bool("V", false, "print version information and exit")
 	var version = flag.Bool("version", false, "print version information and exit")
-	var verbose = flag.Bool("v", false, "verbose mode (show detailed compilation info)")
-	var verboseLong = flag.Bool("verbose", false, "verbose mode (show detailed compilation info)")
-	var quiet = flag.Bool("q", false, "quiet mode (suppress optimization summary)")
-	var quietLong = flag.Bool("quiet", false, "quiet mode (suppress optimization summary)")
+	var verbose = flag.Bool("v", false, "verbose mode (show build messages and detailed compilation info)")
+	var verboseLong = flag.Bool("verbose", false, "verbose mode (show build messages and detailed compilation info)")
 	var updateDeps = flag.Bool("u", false, "update all dependency repositories from Git")
 	var updateDepsLong = flag.Bool("update-deps", false, "update all dependency repositories from Git")
 	var codeFlag = flag.String("c", "", "execute Flap code from command line")
@@ -1171,7 +1169,8 @@ func main() {
 
 	// Set global verbosity flag (use whichever was specified)
 	VerboseMode = *verbose || *verboseLong
-	QuietMode = *quiet || *quietLong
+	// Quiet mode is the default (UNIX style) - only show output if verbose
+	QuietMode = !VerboseMode
 
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG main: VerboseMode enabled\n")

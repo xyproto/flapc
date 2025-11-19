@@ -1452,7 +1452,7 @@ func (fc *FlapCompiler) isExpressionPure(expr Expression, pureFunctions map[stri
 		impureBuiltins := map[string]bool{
 			"println": true, "printf": true, "exit": true,
 			"eprint": true, "eprintln": true, "eprintf": true,
-			"qprint": true, "qprintln": true, "qprintf": true, "exitf": true,
+			"exitln": true, "exitf": true,
 			"syscall": true, "alloc": true, "free": true,
 		}
 		if impureBuiltins[e.Function] {
@@ -10283,6 +10283,23 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 				}
 			}
 
+			// Confidence that this function is working: 90%
+			// Check for null pointer literals: 0, [], {}, or explicit casts
+			isNullPointer := false
+			if numExpr, ok := innerExpr.(*NumberExpr); ok {
+				if numExpr.Value == 0 {
+					isNullPointer = true
+				}
+			} else if listExpr, ok := innerExpr.(*ListExpr); ok {
+				if len(listExpr.Elements) == 0 {
+					isNullPointer = true
+				}
+			} else if mapExpr, ok := innerExpr.(*MapExpr); ok {
+				if len(mapExpr.Keys) == 0 {
+					isNullPointer = true
+				}
+			}
+
 			// Set C context for string literals
 			isStringLiteral := false
 			if _, ok := innerExpr.(*StringExpr); ok {
@@ -10290,8 +10307,14 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 				fc.cContext = true
 			}
 
-			// Compile the inner expression (result in xmm0 for Flap values, rax for C strings)
-			fc.compileExpression(innerExpr)
+			// If this is a null pointer literal and we need a pointer type, just set rax to 0
+			if isNullPointer && (castType == "ptr" || castType == "pointer" || castType == "cstr" || castType == "cstring") {
+				// Zero register for null pointer
+				fc.out.XorRegToReg("rax", "rax")
+			} else {
+				// Compile the inner expression (result in xmm0 for Flap values, rax for C strings)
+				fc.compileExpression(innerExpr)
+			}
 
 			// Reset C context after compilation
 			if isStringLiteral {
@@ -10300,13 +10323,21 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 
 			// Store argument on stack based on its type
 			if isFloatParam || castType == "float" || castType == "double" {
-				// Keep as float64 in xmm0, store directly
-				fc.out.MovXmmToMem("xmm0", "rsp", i*8)
+				if isNullPointer {
+					// Store 0.0 for null pointer in float context
+					fc.out.XorpdXmm("xmm0", "xmm0")
+					fc.out.MovXmmToMem("xmm0", "rsp", i*8)
+				} else {
+					// Keep as float64 in xmm0, store directly
+					fc.out.MovXmmToMem("xmm0", "rsp", i*8)
+				}
 			} else {
 				// Convert to integer or pointer
 				switch castType {
 				case "cstr", "cstring":
-					if isStringLiteral {
+					if isNullPointer {
+						// Already set rax to 0 above
+					} else if isStringLiteral {
 						// String literal was compiled as C string - rax already contains the pointer
 						// No conversion needed, just store it
 					} else {
@@ -10326,20 +10357,36 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 					}
 
 				case "ptr", "pointer":
-					// Pointer type - convert float64 to integer pointer
-					fc.out.Cvttsd2si("rax", "xmm0")
+					if isNullPointer {
+						// Already set rax to 0 above
+					} else {
+						// Pointer type - convert float64 to integer pointer
+						fc.out.Cvttsd2si("rax", "xmm0")
+					}
 
 				case "int", "i32", "int32":
-					// Signed 32-bit integer
-					fc.out.Cvttsd2si("rax", "xmm0")
+					if isNullPointer {
+						// Already set rax to 0 above
+					} else {
+						// Signed 32-bit integer
+						fc.out.Cvttsd2si("rax", "xmm0")
+					}
 
 				case "uint32", "u32":
-					// Unsigned 32-bit integer
-					fc.out.Cvttsd2si("rax", "xmm0")
+					if isNullPointer {
+						// Already set rax to 0 above
+					} else {
+						// Unsigned 32-bit integer
+						fc.out.Cvttsd2si("rax", "xmm0")
+					}
 
 				default:
-					// Default: convert float64 to integer
-					fc.out.Cvttsd2si("rax", "xmm0")
+					if isNullPointer {
+						// Already set rax to 0 above
+					} else {
+						// Default: convert float64 to integer
+						fc.out.Cvttsd2si("rax", "xmm0")
+					}
 				}
 
 				// Store on stack at offset i*8
@@ -11241,12 +11288,12 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.createErrorResult("out")
 		return
 
-	case "qprint", "qprintln", "qprintf", "exitf":
+	case "exitln", "exitf":
 		// Confidence that this function is working: 85%
 		// Quick exit print functions - print to stderr and exit with code 1
-		// exitf is an alias for qprintf
-		isNewline := call.Function == "qprintln"
-		isFormatted := call.Function == "qprintf" || call.Function == "exitf"
+		// exitln prints with newline, exitf is formatted output
+		isNewline := call.Function == "exitln"
+		isFormatted := call.Function == "exitf"
 
 		// Same logic as eprint* but followed by exit(1)
 		if isFormatted {
@@ -11268,7 +11315,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			}
 		} else if isNewline {
 			if len(call.Args) == 0 {
-				newlineLabel := fmt.Sprintf("qprintln_newline_%d", fc.stringCounter)
+				newlineLabel := fmt.Sprintf("exitln_newline_%d", fc.stringCounter)
 				fc.stringCounter++
 				fc.eb.Define(newlineLabel, "\n")
 
@@ -11297,7 +11344,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 					fc.out.MovRegToReg("rdi", "rsp")
 					fc.out.MovImmToReg("rsi", "32")
-					fmtLabel := fmt.Sprintf("qprintln_fmt_%d", fc.stringCounter)
+					fmtLabel := fmt.Sprintf("exitln_fmt_%d", fc.stringCounter)
 					fc.stringCounter++
 					fc.eb.Define(fmtLabel, "%g\n\x00")
 					fc.out.LeaSymbolToReg("rdx", fmtLabel)
@@ -11335,7 +11382,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 					fc.out.MovRegToReg("rdi", "rsp")
 					fc.out.MovImmToReg("rsi", "32")
-					fmtLabel := fmt.Sprintf("qprint_fmt_%d", fc.stringCounter)
+					fmtLabel := fmt.Sprintf("exitf_fmt_%d", fc.stringCounter)
 					fc.stringCounter++
 					fc.eb.Define(fmtLabel, "%g\x00")
 					fc.out.LeaSymbolToReg("rdx", fmtLabel)
@@ -15071,7 +15118,7 @@ func getUnknownFunctions(program *Program) []string {
 		"getpid": true, "me": true,
 		"println": true,                                    // println is a builtin optimization, not a dependency
 		"eprint":  true, "eprintln": true, "eprintf": true, // stderr printing with Result return
-		"qprint": true, "qprintln": true, "qprintf": true, // stderr printing with exit(1)
+		"exitln": true, "exitf": true, // stderr printing with exit(1)
 		// Math functions (hardware instructions)
 		"sqrt": true, "sin": true, "cos": true, "tan": true,
 		"asin": true, "acos": true, "atan": true, "atan2": true,
