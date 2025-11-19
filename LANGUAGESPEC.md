@@ -1265,7 +1265,7 @@ user.save()
 
 ## C FFI
 
-Flap can call C functions directly using DWARF debug information:
+Flap can call C functions directly using DWARF debug information and automatic header parsing:
 
 ### Calling C Functions
 
@@ -1277,7 +1277,36 @@ c_free(result)
 // With type casts
 size = buffer_size as int32
 ptr = c_malloc(size)
+
+// Import C library namespaces
+import sdl3 as sdl
+
+// Access constants from C headers
+flags := sdl.SDL_INIT_VIDEO
+window := sdl.SDL_CreateWindow("Title", 640, 480, flags)
 ```
+
+### Header Parsing and Constants
+
+Flap automatically parses C header files using pkg-config and DWARF information:
+
+```flap
+import sdl3 as sdl  // Parses SDL3 headers, extracts constants and function signatures
+
+// Constants are available with the namespace prefix
+init_flags := sdl.SDL_INIT_VIDEO | sdl.SDL_INIT_AUDIO
+window_flags := sdl.SDL_WINDOW_RESIZABLE | sdl.SDL_WINDOW_FULLSCREEN
+
+// Function signatures are type-checked at compile time
+window := sdl.SDL_CreateWindow("Title", 640, 480, window_flags)
+```
+
+**How it works:**
+1. `import sdl3 as sdl` triggers header parsing
+2. Compiler uses `pkg-config --cflags sdl3` to find header paths
+3. Parses main header file for `#define` constants and function signatures
+4. Constants become available as `sdl.CONSTANT_NAME`
+5. Functions are linked and type-checked
 
 ### Type Mapping
 
@@ -1288,12 +1317,75 @@ ptr = c_malloc(size)
 | `ptr as cstr` | `char*` |
 | `ptr as ptr` | `void*` |
 
+### Null Pointer Handling with `or!`
+
+C functions that return pointers return 0 (null) on failure. Use `or!` for clean error handling:
+
+```flap
+// Old style: manual null check
+window := sdl.SDL_CreateWindow("Title", 640, 480, 0)
+window == 0 {
+    println("Failed to create window!")
+    sdl.SDL_Quit()
+    exit(1)
+}
+
+// New style: or! with block
+window := sdl.SDL_CreateWindow("Title", 640, 480, 0) or! {
+    println("Failed to create window!")
+    sdl.SDL_Quit()
+    exit(1)
+}
+
+// Or with default value
+ptr := c_malloc(1024) or! 0
+```
+
+**Semantics:**
+- C functions returning pointers are tracked by the compiler
+- `or!` checks if the returned value is 0 (null pointer)
+- If null and right side is a block: executes the block (typically cleanup + exit)
+- If null and right side is an expression: returns the expression value
+- If not null: returns the pointer value
+
+### Railway-Oriented C Interop
+
+Chain multiple C calls with `or!` for clean error handling:
+
+```flap
+init_graphics = () => {
+    // Each call handles its own error with or!
+    sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
+        println("SDL_Init failed!")
+        exit(1)
+    }
+    
+    window := sdl.SDL_CreateWindow("Title", 640, 480, 0) or! {
+        println("Create window failed!")
+        sdl.SDL_Quit()
+        exit(1)
+    }
+    
+    renderer := sdl.SDL_CreateRenderer(window, 0) or! {
+        println("Create renderer failed!")
+        sdl.SDL_DestroyWindow(window)
+        sdl.SDL_Quit()
+        exit(1)
+    }
+    
+    ret [window, renderer]
+}
+```
+
 ### C Library Linking
 
 The compiler links with `-lc` by default. Additional libraries:
 
 ```bash
 flapc program.flap -o program -L/path/to/libs -lmylib
+
+# SDL3 example
+flapc sdl_demo.flap -o sdl_demo $(pkg-config --libs sdl3)
 ```
 
 ## CStruct
@@ -1582,20 +1674,45 @@ result.error {
 
 ### The `or!` Operator
 
-The `or!` operator provides a default value when the left side is an error:
+The `or!` operator provides a default value or executes a block when the left side is an error or null:
 
 ```flap
+// Handle errors
 x = 10 / 0              // Error result
 safe = x or! 99         // Returns 99 (error case)
 
 y = 10 / 2              // Success result (value 5)
 safe2 = y or! 99        // Returns 5 (success case)
+
+// Handle null pointers from C FFI
+window := sdl.SDL_CreateWindow("Title", 640, 480, 0) or! {
+    println("Failed to create window!")
+    sdl.SDL_Quit()
+    exit(1)
+}
+
+// Inline null check with default
+ptr := c_malloc(1024) or! 0  // Returns 0 if allocation failed
+
+// Railway-oriented programming pattern
+result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
+    println("SDL_Init failed!")
+    exit(1)
+}
 ```
 
 **Semantics:**
 1. Evaluate left operand
-2. Check type byte: if 0xE0 (error), return right operand
-3. Otherwise, return left operand value
+2. Check if error (type byte 0xE0) or null (value is 0 for pointer types)
+3. If error/null and right side is a block: execute block
+4. If error/null and right side is an expression: return right operand
+5. Otherwise: return left operand value
+
+**When checking for null (C FFI pointers):**
+- The compiler recognizes pointer-returning C functions
+- `or!` treats 0 (null pointer) as a failure case
+- Enables railway-oriented programming for C interop
+- Blocks can contain cleanup code and exits
 
 **Precedence:** Lower than logical OR, higher than send operator
 
@@ -1625,6 +1742,41 @@ result = fetch_data()
     | parse or! []              // Default to empty list
     | transform
     | validate or! error("typ") // Custom error
+
+// C FFI null pointer handling
+init_sdl = () => {
+    // Initialize SDL
+    sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
+        println("Failed to initialize SDL!")
+        exit(1)
+    }
+    
+    // Create window with error handling
+    window := sdl.SDL_CreateWindow("Title", 640, 480, 0) or! {
+        println("Failed to create window!")
+        sdl.SDL_Quit()
+        exit(1)
+    }
+    
+    // Create renderer with error handling
+    renderer := sdl.SDL_CreateRenderer(window, 0) or! {
+        println("Failed to create renderer!")
+        sdl.SDL_DestroyWindow(window)
+        sdl.SDL_Quit()
+        exit(1)
+    }
+    
+    ret [window, renderer]
+}
+
+// Simpler pattern with defaults
+allocate_buffer = size => {
+    ptr := c_malloc(size) or! 0
+    ptr == 0 {
+        ret error("mem")  // Out of memory
+    }
+    ret ptr
+}
 ```
 
 ### Creating Custom Errors
@@ -1959,13 +2111,19 @@ cstruct Buffer {
     capacity as int32
 }
 
-// Use C functions
+// Use C functions with or! for clean error handling
 create_buffer = size => {
-    ptr = c_malloc(size)
-    ptr == 0 {
-        1 -> Buffer(0, 0, 0)  // Failed
-        ~> Buffer(ptr, 0, size)
+    ptr := c_malloc(size) or! {
+        println("Memory allocation failed!")
+        ret Buffer(0, 0, 0)
     }
+    Buffer(ptr, 0, size)
+}
+
+// Simpler version with default
+create_buffer_safe = size => {
+    ptr := c_malloc(size) or! 0
+    Buffer(ptr, 0, size)
 }
 
 write_buffer = (buf, data) => {
@@ -1987,6 +2145,61 @@ free_buffer = buf => {
 buf := create_buffer(1024)
 buf := write_buffer(buf, 65)  // Write 'A'
 free_buffer(buf)
+```
+
+### SDL3 Graphics Example
+
+```flap
+import sdl3 as sdl
+
+// Initialize with railway-oriented error handling
+init_sdl = () => {
+    sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
+        println("SDL_Init failed!")
+        exit(1)
+    }
+    
+    window := sdl.SDL_CreateWindow("Demo", 640, 480, 0) or! {
+        println("Failed to create window!")
+        sdl.SDL_Quit()
+        exit(1)
+    }
+    
+    renderer := sdl.SDL_CreateRenderer(window, 0) or! {
+        println("Failed to create renderer!")
+        sdl.SDL_DestroyWindow(window)
+        sdl.SDL_Quit()
+        exit(1)
+    }
+    
+    ret [window, renderer]
+}
+
+// Main rendering loop
+main = () => {
+    [window, renderer] := init_sdl()
+    
+    @ frame in 0..<100 max 200 {
+        // Clear screen to black
+        sdl.SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)
+        sdl.SDL_RenderClear(renderer)
+        
+        // Draw a red rectangle
+        sdl.SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255)
+        sdl.SDL_RenderFillRect(renderer, 100, 100, 200, 150)
+        
+        // Present
+        sdl.SDL_RenderPresent(renderer)
+        sdl.SDL_Delay(16)  // ~60 FPS
+    }
+    
+    // Cleanup
+    sdl.SDL_DestroyRenderer(renderer)
+    sdl.SDL_DestroyWindow(window)
+    sdl.SDL_Quit()
+}
+
+main()
 ```
 
 ### Advanced: Custom Allocator

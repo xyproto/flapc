@@ -578,7 +578,7 @@ _     Tail operator (prefix) - get all but first element
 &     ENet address (network endpoints)
 $     Address value (memory addresses)
 ??    Random number
-or!   Error default operator (returns right side if left is error)
+or!   Error/null handler (executes right side if left is error or null pointer)
 ```
 
 ## Operator Precedence
@@ -921,20 +921,38 @@ result.error {
 
 ### The `or!` Operator
 
-The `or!` operator provides a default value when the left side is an error:
+The `or!` operator provides a default value or executes a block when the left side is an error or null:
 
 ```flap
+// Handle errors
 x = 10 / 0              // Error result
 safe = x or! 99         // Returns 99 (error case)
 
 y = 10 / 2              // Success result (value 5)
 safe2 = y or! 99        // Returns 5 (success case)
+
+// Handle null pointers from C FFI
+window := sdl.SDL_CreateWindow("Title", 640, 480, 0) or! {
+    println("Failed to create window!")
+    sdl.SDL_Quit()
+    exit(1)
+}
+
+// Inline null check with default
+ptr := c_malloc(1024) or! 0  // Returns 0 if allocation failed
 ```
 
 **Semantics:**
 1. Evaluate left operand
-2. Check type byte: if 0xE0 (error), return right operand
-3. Otherwise, return left operand value
+2. Check if error (type byte 0xE0) or null (value is 0 for pointer types)
+3. If error/null and right side is a block: execute block
+4. If error/null and right side is an expression: return right operand
+5. Otherwise: return left operand value
+
+**When checking for null (C FFI pointers):**
+- The compiler recognizes pointer-returning C functions
+- `or!` treats 0 (null pointer) as a failure case
+- Enables railway-oriented programming for C interop
 
 **Precedence:** Lower than logical OR, higher than send operator
 
