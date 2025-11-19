@@ -1,7 +1,7 @@
 # Flap Compiler Development Guide
 
-**Version:** 2.0  
-**Last Updated:** November 17, 2025
+**Version:** 3.0.0  
+**Last Updated:** November 19, 2025
 
 This document covers development insights, lessons learned, and implementation details for contributors.
 

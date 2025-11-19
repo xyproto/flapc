@@ -372,5 +372,5 @@ go test         # ~2s
 
 ## General info
 
-* Version: 1.3.0
+* Version: 3.0.0
 * License: BSD-3
