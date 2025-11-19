@@ -135,9 +135,12 @@ statement       = assignment
                 | parallel_statement
                 | cstruct_decl
                 | class_decl
-                | return_statement ;
+                | return_statement
+                | defer_statement ;
 
 return_statement = "ret" [ "@" [ integer ] ] [ expression ] ;
+
+defer_statement  = "defer" expression ;
 
 cstruct_decl    = "cstruct" identifier "{" { field_decl } "}" ;
 
@@ -795,6 +798,86 @@ Loops with unknown bounds or modified counters require `max`:
 @ msg in read_channel() max inf {
     process(msg)
 }
+```
+
+#### Defer Statement
+
+The `defer` keyword schedules an expression to execute when the current scope exits (function return, block exit, or error). Deferred expressions execute in **LIFO (Last In, First Out)** order.
+
+**Syntax:**
+```ebnf
+defer_statement = "defer" expression ;
+```
+
+**Examples:**
+```flap
+// Resource cleanup with defer
+init_resources = () => {
+    file := open("data.txt") or! {
+        println("Failed to open file")
+        ret 0
+    }
+    defer close(file)  // Always closes when function returns
+
+    buffer := c_malloc(1024) or! {
+        println("Out of memory")
+        ret 0
+    }
+    defer c_free(buffer)  // Frees before file closes (LIFO)
+
+    process(file, buffer)
+    ret 1
+}
+
+// C FFI with defer (SDL3 example)
+sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
+    println("SDL init failed")
+    ret 1
+}
+defer sdl.SDL_Quit()  // Always called on return
+
+window := sdl.SDL_CreateWindow("Title", 640, 480, 0) or! {
+    println("Window creation failed")
+    ret 1  // SDL_Quit still called via defer
+}
+defer sdl.SDL_DestroyWindow(window)  // Executes before SDL_Quit
+
+// More resources...
+```
+
+**Execution Order:**
+Deferred calls execute in reverse order of declaration (LIFO):
+```flap
+defer println("1")  // Executes third
+defer println("2")  // Executes second
+defer println("3")  // Executes first
+// Output: 3, 2, 1
+```
+
+**When Defer Executes:**
+- On function return (`ret`)
+- On block exit (normal completion)
+- On early return from error handling
+- On loop exit with `ret @`
+
+**Best Practices:**
+1. Use `defer` immediately after resource acquisition
+2. Combine with `or!` for railway-oriented error handling
+3. Rely on LIFO order for proper cleanup sequence
+4. Use `defer` for C FFI resources (files, sockets, SDL objects)
+5. Return from error blocks instead of `exit()` - defer ensures cleanup
+
+**Common Pattern:**
+```flap
+// Railway-oriented with defer
+resource := acquire() or! {
+    println("Acquisition failed")
+    ret error("acq")
+}
+defer cleanup(resource)
+
+// Work with resource...
+// cleanup always happens, even on error
 ```
 
 #### Address Operator

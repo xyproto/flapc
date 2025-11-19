@@ -1,7 +1,7 @@
 # Flap Language Specification
 
-**Version:** 3.0.0  
-**Date:** 2025-11-17  
+**Version:** 3.0.0
+**Date:** 2025-11-17
 **Status:** Canonical Language Reference for Flap 3.0 Release
 
 This document describes the complete semantics, behavior, and design philosophy of the Flap programming language. For the formal grammar, see [GRAMMAR.md](GRAMMAR.md).
@@ -102,6 +102,53 @@ classify = x => {
 3. Otherwise → Statement block
 
 This unifies maps, pattern matching, guards, and function bodies into one syntax.
+
+**Blocks as Expressions:**
+
+All blocks that return a value are valid expressions. The value of a block is the value of its last expression:
+
+```flap
+// Block as expression in assignment
+result = {
+    temp = compute()
+    temp * 2 + 10
+}
+
+// Block as error handler with or!
+window := sdl.SDL_CreateWindow("Title", 640, 480, 0) or! {
+    println("Window creation failed")
+    ret 1  // Block returns 1 as error code
+}
+
+// Block in conditional
+value = condition {
+    1 -> {
+        println("Processing true case")
+        process_true()
+        42  // Block returns 42
+    }
+    0 -> {
+        println("Processing false case")
+        process_false()
+        99  // Block returns 99
+    }
+}
+
+// Nested blocks
+result = {
+    x = {
+        compute_inner()
+        inner_value
+    }
+    x * 2
+}
+```
+
+This design enables:
+- Clean error handling without explicit returns
+- Railway-oriented programming with `or!`
+- Composable computation blocks
+- Consistent semantics across all contexts
 
 ### 4. Unified Lambda Syntax
 
@@ -770,7 +817,7 @@ Use `||` for parallel iteration (each iteration in separate process):
 // Sequential map
 results = [1, 2, 3] | x => x * 2
 
-// Parallel map  
+// Parallel map
 results = [1, 2, 3] || x => expensive(x)
 ```
 
@@ -836,13 +883,13 @@ class Point {
         .x = x
         .y = y
     }
-    
+
     distance := other => {
         dx := other.x - .x
         dy := other.y - .y
         sqrt(dx * dx + dy * dy)
     }
-    
+
     move := (dx, dy) ==> {
         .x <- .x + dx
         .y <- .y + dy
@@ -868,7 +915,7 @@ class Counter {
     init := start ==> {
         .count = start
     }
-    
+
     increment := ==> {
         .count <- .count + 1
     }
@@ -894,12 +941,12 @@ class List {
     init = () => {
         .items = []
     }
-    
+
     add = item => {
         .items <- .items :: item
         ret .   // Return this (self) for chaining
     }
-    
+
     size = () => .items.length
 }
 
@@ -919,7 +966,7 @@ class Account {
     init = balance => {
         .balance = balance
     }
-    
+
     withdraw = amount => {
         amount > .balance {
             ret -1  // Insufficient funds
@@ -927,11 +974,11 @@ class Account {
         .balance <- .balance - amount
         ret 0
     }
-    
+
     deposit = amount => {
         .balance <- .balance + amount
     }
-    
+
     get_balance = () => .balance
 }
 
@@ -948,14 +995,14 @@ Class fields are shared across all instances:
 class Entity {
     Entity.count = 0
     Entity.all = []
-    
+
     init := name ==> {
         .name = name
         .id = Entity.count
         Entity.count <- Entity.count + 1
         Entity.all <- Entity.all :: instance
     }
-    
+
     get_total := ==> Entity.count
 }
 
@@ -1019,7 +1066,7 @@ class Box {
     init := value ==> {
         .value = value
     }
-    
+
     get := ==> .value
     set := v ==> { .value <- v }
 }
@@ -1034,7 +1081,7 @@ println(getter())  // 42
 ```flap
 class Math {
     Math.PI = 3.14159
-    
+
     // Note: no init, Math is never instantiated
     Math.circle_area = radius => Math.PI * radius * radius
 }
@@ -1052,18 +1099,18 @@ class Parser {
         .input = input
         .pos = 0
     }
-    
+
     _peek := ==> {
         .pos < .input.length {
             ret .input[.pos]
         }
         ret -1
     }
-    
+
     _advance := ==> {
         .pos <- .pos + 1
     }
-    
+
     parse_number := ==> {
         result := 0
         @ ._ peek() >= 48 && ._peek() <= 57 {
@@ -1084,12 +1131,12 @@ class StringBuilder {
     init = () => {
         .parts = []
     }
-    
+
     append = str => {
         .parts <- .parts :: str
         ret .  // Return this (self)
     }
-    
+
     build = () => {
         result := ""
         @ part in .parts {
@@ -1122,7 +1169,7 @@ cstruct Vec3Data {
 class Vec3 {
     init := (x, y, z) ==> {
         .data = call("malloc", Vec3Data.size as uint64)
-        
+
         unsafe float64 {
             rax <- .data as ptr
             [rax] <- x
@@ -1130,7 +1177,7 @@ class Vec3 {
             [rax + 16] <- z
         }
     }
-    
+
     dot := other => {
         unsafe float64 {
             rax <- .data as ptr
@@ -1145,7 +1192,7 @@ class Vec3 {
             xmm0 <- xmm0 + xmm1
         }
     }
-    
+
     free := ==> call("free", .data as ptr)
 }
 
@@ -1174,7 +1221,7 @@ class Dog <> Animal {
     init := name ==> {
         .name = name
     }
-    
+
     bark := ==> println("Woof!")
 }
 
@@ -1205,11 +1252,11 @@ class Stack {
     init = () => {
         .items = []
     }
-    
+
     push = item => {
         .items <- .items :: item
     }
-    
+
     pop = () => {
         .items.length == 0 {
             ret ??  // Empty
@@ -1218,7 +1265,7 @@ class Stack {
         .items <- .items[0..<(.items.length - 1)]
         ret last
     }
-    
+
     is_empty = () => .items.length == 0
 }
 
@@ -1234,16 +1281,16 @@ println(s.pop())  // 3
 ```flap
 class Model {
     Model.table = ""
-    
+
     init := data ==> {
         .data = data
     }
-    
+
     save := ==> {
         query := f"INSERT INTO {Model.table} VALUES (...)"
         // Execute query...
     }
-    
+
     delete := ==> {
         id := .data["id"]
         query := f"DELETE FROM {Model.table} WHERE id = {id}"
@@ -1253,7 +1300,7 @@ class Model {
 
 class User <> Model {
     Model.table = "users"
-    
+
     init := (name, email) ==> {
         .data = { name: name, email: email }
     }
@@ -1360,20 +1407,20 @@ init_graphics = () => {
         println("SDL_Init failed!")
         exit(1)
     }
-    
+
     window := sdl.SDL_CreateWindow("Title", 640, 480, 0) or! {
         println("Create window failed!")
         sdl.SDL_Quit()
         exit(1)
     }
-    
+
     renderer := sdl.SDL_CreateRenderer(window, 0) or! {
         println("Create renderer failed!")
         sdl.SDL_DestroyWindow(window)
         sdl.SDL_Quit()
         exit(1)
     }
-    
+
     ret [window, renderer]
 }
 ```
@@ -1455,6 +1502,110 @@ result = arena {
 - Request handlers
 - Temporary buffers
 - Batch processing
+
+### Defer for Resource Management
+
+The `defer` statement schedules cleanup code to execute when the current scope exits, enabling automatic resource management similar to Go's defer or C++'s RAII.
+
+**Syntax:**
+```flap
+defer expression
+```
+
+**Execution Guarantees:**
+- Deferred expressions execute when scope exits (return, block end, error)
+- Execution order is LIFO (Last In, First Out)
+- Always executes, even on early returns or errors
+- Multiple defers in same scope form a cleanup stack
+
+**Basic Example:**
+```flap
+open_file = filename => {
+    file := c_fopen(filename, "r") or! {
+        println("Failed to open:", filename)
+        ret 0
+    }
+    defer c_fclose(file)  // Always closes, even on error
+
+    // Read and process file...
+    data := read_all(file)
+
+    ret data
+    // c_fclose(file) executes here automatically
+}
+```
+
+**LIFO Execution Order:**
+```flap
+process = () => {
+    defer println("First")   // Executes last (3rd)
+    defer println("Second")  // Executes second (2nd)
+    defer println("Third")   // Executes first (1st)
+}
+// Output: Third, Second, First
+```
+
+**With C FFI (SDL3 Example):**
+```flap
+init_sdl = () => {
+    sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
+        println("SDL init failed")
+        ret 0
+    }
+    defer sdl.SDL_Quit()  // Cleanup registered immediately
+
+    window := sdl.SDL_CreateWindow("App", 640, 480, 0) or! {
+        println("Window creation failed")
+        ret 0  // SDL_Quit still called via defer
+    }
+    defer sdl.SDL_DestroyWindow(window)  // Will execute before SDL_Quit
+
+    renderer := sdl.SDL_CreateRenderer(window, 0) or! {
+        println("Renderer creation failed")
+        ret 0  // Both SDL_DestroyWindow and SDL_Quit called
+    }
+    defer sdl.SDL_DestroyRenderer(renderer)  // Will execute first
+
+    // Use SDL resources...
+    render_frame(renderer)
+
+    ret 1
+    // Cleanup order: renderer, window, SDL_Quit
+}
+```
+
+**Railway-Oriented Pattern:**
+```flap
+// Combine defer with or! for clean error handling
+acquire_resources = () => {
+    db := connect_db() or! {
+        println("DB connection failed")
+        ret error("db")
+    }
+    defer disconnect_db(db)
+
+    cache := init_cache() or! {
+        println("Cache init failed")
+        ret error("cache")
+    }
+    defer cleanup_cache(cache)
+
+    // Work with resources...
+    // All cleanup happens automatically
+}
+```
+
+**Best Practices:**
+1. **Register immediately after acquisition:** `resource := acquire(); defer cleanup(resource)`
+2. **Use with or! operator:** Error blocks can return early, defer ensures cleanup
+3. **Avoid exit():** Use `ret` instead so defers execute
+4. **LIFO cleanup order:** Register defers in acquisition order, they'll clean up in reverse
+5. **C FFI resources:** Perfect for file handles, sockets, SDL objects, etc.
+
+**When NOT to use defer:**
+- For Flap data structures (use arena allocators instead)
+- When cleanup must happen immediately, not at scope exit
+- When cleanup order must be explicit (just call cleanup functions directly)
 
 ### Move Semantics
 
@@ -1724,10 +1875,10 @@ result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
 process = input => {
     step1 = validate(input)
     step1.error { != "" -> step1 }  // Return error early
-    
+
     step2 = transform(step1)
     step2.error { != "" -> step2 }
-    
+
     finalize(step2)
 }
 
@@ -1751,14 +1902,14 @@ init_sdl = () => {
         println("Failed to initialize SDL!")
         exit(1)
     }
-    
+
     // Create window with error handling
     window := sdl.SDL_CreateWindow("Title", 640, 480, 0) or! {
         println("Failed to create window!")
         sdl.SDL_Quit()
         exit(1)
     }
-    
+
     // Create renderer with error handling
     renderer := sdl.SDL_CreateRenderer(window, 0) or! {
         println("Failed to create renderer!")
@@ -1766,7 +1917,7 @@ init_sdl = () => {
         sdl.SDL_Quit()
         exit(1)
     }
-    
+
     ret [window, renderer]
 }
 
@@ -1794,7 +1945,7 @@ validate = x => {
 // Or detect errors from operations
 divide = (a, b) => {
     result = a / b
-    result.error { 
+    result.error {
         != "" -> result          // Propagate error
         ~> result                // Return success
     }
@@ -2087,7 +2238,7 @@ server ==> {
 handle_request = req => {
     method = req.method
     path = req.path
-    
+
     method {
         "GET" -> path {
             "/" -> "Welcome!"
@@ -2159,41 +2310,41 @@ init_sdl = () => {
         println("SDL_Init failed!")
         exit(1)
     }
-    
+
     window := sdl.SDL_CreateWindow("Demo", 640, 480, 0) or! {
         println("Failed to create window!")
         sdl.SDL_Quit()
         exit(1)
     }
-    
+
     renderer := sdl.SDL_CreateRenderer(window, 0) or! {
         println("Failed to create renderer!")
         sdl.SDL_DestroyWindow(window)
         sdl.SDL_Quit()
         exit(1)
     }
-    
+
     ret [window, renderer]
 }
 
 // Main rendering loop
 main = () => {
     [window, renderer] := init_sdl()
-    
+
     @ frame in 0..<100 max 200 {
         // Clear screen to black
         sdl.SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)
         sdl.SDL_RenderClear(renderer)
-        
+
         // Draw a red rectangle
         sdl.SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255)
         sdl.SDL_RenderFillRect(renderer, 100, 100, 200, 150)
-        
+
         // Present
         sdl.SDL_RenderPresent(renderer)
         sdl.SDL_Delay(16)  // ~60 FPS
     }
-    
+
     // Cleanup
     sdl.SDL_DestroyRenderer(renderer)
     sdl.SDL_DestroyWindow(window)
