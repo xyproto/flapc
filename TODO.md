@@ -1,105 +1,74 @@
-# TODO - Flap 3.0+
+# TODO - Flap 3.0
 
-**Status:** 3.0 Release Ready - All tests passing (155 tests)
+**Status:** 3.0 Released - All Core Tests Passing
 **Current Version:** 3.0.0
 
 ---
 
-## ✅ Completed for 3.0
+## Known Limitations (Documented)
 
-- ✅ All core language features working
-- ✅ pop() function with multiple returns
-- ✅ Deeply nested loops (5+ levels)
-- ✅ += operator for lists and numbers
-- ✅ Array indexing with SIMD optimization
-- ✅ Register tracking to prevent clobbering
-- ✅ Closures (lambda assignments)
-- ✅ Multiple return values (a, b = [1, 2])
-- ✅ Result type with NaN-boxing error encoding
-- ✅ error() function for creating custom errors
-- ✅ .error property for extracting error codes
-- ✅ or! operator for error handling with defaults
-- ✅ compileAndRun helper function in run.go
-- ✅ 155 tests passing
+### Tail Operator
+- ⚠️ Tail operator `_list` has known issues
+- Head operator `^list` works correctly
+- Tests for tail() function are skipped
+- Marked for post-3.0 fixes
+
+### Lambda Local Variables
+- ⚠️ Local variables in lambda bodies not yet supported
+- This is a deliberate design choice to simplify lambda frame management
+- Workaround: Use lambda parameters or expression-only bodies
+- Example: `f = x -> x + 1` ✅ works
+- Example: `f = x -> { y := x + 1; y }` ❌ doesn't work yet
+- Lambda assignments (closures) are allowed: `inner = y -> x + y` ✅
+
+### Memory Management
+- Currently using malloc for dynamic allocations
+- Arena allocator infrastructure exists but not fully integrated
+- TODOs in codegen.go mark locations that should use arena allocation
+- All tests pass with current malloc-based approach
 
 ---
 
-## Future Enhancements (Post-3.0)
+## Post-3.0 Enhancements
 
-### Type System Enhancement
+### Priority 1 - Core Improvements
+- Fix tail operator `_list` to return correct results
+- Complete arena allocator integration (replace malloc calls in codegen.go)
+- Add local variable support in lambda bodies
+
+### Priority 2 - Language Features  
+- Pattern destructuring in match clauses
+- More operator overloading
+- Full tail call optimization for mutual recursion
+
+### Priority 3 - Type System
 - Add type byte prefix to all values for runtime type checking
 - Enable type introspection (typeof, is_string, etc.)
 - Better error messages with type information
 
-### Language Features
-- Implicit match blocks in function bodies (if desired)
-- More operator overloading
-- Pattern destructuring in match clauses
-
-### Performance Optimizations
-- Full tail call optimization for mutual recursion
+### Priority 4 - Performance
 - Better constant folding and dead code elimination
 - More aggressive register allocation
 - SIMD optimizations for arithmetic operations
 
-### Tooling
+### Priority 5 - Tooling
 - Debugger support (DWARF debug info)
 - Better error messages with column numbers and suggestions
 - Package manager for dependencies
 - Language server protocol (LSP) implementation
 
-### Platform Support
+### Priority 6 - Platform Support
 - Windows native support (PE/COFF format)
 - WebAssembly target
 - Better ARM64 and RISC-V support
 
-### Standard Library
+### Priority 7 - Standard Library
 - String manipulation functions
 - File I/O operations
 - JSON parsing/generation
 - HTTP client/server
 - Regular expressions
 - Math library (beyond basic arithmetic)
-
-### Testing
-- Fuzz testing
-- Property-based tests
-- Stress tests for memory management
-- Cross-platform compatibility tests
-
----
-
-## Recent Improvements (Session 2025-11-19)
-
-- ✅ Added `run.go` with `compileAndRun` helper function for tests
-- ✅ Fixed DEBUG TYPE TRACKING output to respect debug flag
-- ✅ Added confidence comments to modified functions
-- ✅ Cleaned up temporary test files
-- ✅ All 155 tests passing consistently
-- ✅ Build system working flawlessly
-- ✅ Clarified lambda syntax: removed `->>` token, infer no-arg lambdas from context
-- ✅ Updated GRAMMAR.md with clear lambda syntax rules
-- ✅ `->` for lambdas, `=>` for match arms (Rust-like consistency)
-- ✅ Parentheses optional for single-parameter lambdas: `x -> x * 2`
-- ✅ Inferred zero-argument lambdas in assignment: `main = { ... }`
-- ✅ Explicit zero-argument lambdas: `greet = -> println("hi")`
-
-## Known Limitations
-
-### Lambda Local Variables
-- ⚠️ Local variables in lambda bodies not yet supported
-- Workaround: Use lambda parameters or expression-only bodies
-- Example: `f = x => x + 1` ✅ works
-- Example: `f = x => { y = x + 1; y }` ❌ doesn't work
-- Lambda assignments (closures) are allowed: `inner = y => x + y` ✅
-- This is a deliberate design choice to simplify lambda frame management
-- Full support would require complex stack frame analysis
-
-### Head/Tail Operators
-- ⚠️ Tail operator `_list` currently returns incorrect results
-- Head operator `^list` works correctly
-- Tests for head()/tail() functions are skipped (use operators instead)
-- This is a known issue marked for future fixes
 
 ---
 
@@ -108,5 +77,6 @@
 - **Direct machine code generation**: AST → x86-64/ARM64/RISCV64 (no IR)
 - **SIMD optimizations**: AVX-512/SSE2 for map operations
 - **Register allocation**: Smart allocation with callee-saved registers
-- **Arena allocator**: Scope-based memory management
+- **Arena allocator**: Infrastructure in place, integration in progress
 - **Tail call optimization**: Automatic for recursive functions
+- **Result type**: NaN-boxing for efficient error handling
