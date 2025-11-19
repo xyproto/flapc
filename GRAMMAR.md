@@ -1,14 +1,14 @@
 # Flap Grammar Specification
 
-**Version:** 3.0.0  
-**Date:** 2025-11-17  
+**Version:** 3.0.0
+**Date:** 2025-11-17
 **Status:** Canonical Grammar Reference for Flap 3.0 Release
 
 This document defines the complete formal grammar of the Flap programming language using Extended Backus-Naur Form (EBNF).
 
 ## ⚠️ CRITICAL: The Universal Type
 
-Flap has exactly ONE type: `map[uint64]float64`
+Flap has exactly ONE type: `map[uint64]float64`, an ordered map.
 
 Not "represented as" or "backed by" — every value IS this map:
 
@@ -18,6 +18,7 @@ Not "represented as" or "backed by" — every value IS this map:
 [1, 2, 3]       // {0: 1.0, 1: 2.0, 2: 3.0}
 {x: 10}         // {hash("x"): 10.0}
 []              // {}
+{}              // {}
 ```
 
 There are NO special types, NO primitives, NO exceptions.
@@ -72,7 +73,7 @@ Evaluates expression, then matches its result against patterns:
 
 ```flap
 // Match on literal values
-x { 
+x {
     0 -> "zero"
     5 -> "five"
     ~> "other"
@@ -288,7 +289,7 @@ unsafe_expr     = "unsafe" "{" { statement { newline } } [ expression ] "}"
                   [ "{" { statement { newline } } [ expression ] "}" ]
                   [ "{" { statement { newline } } [ expression ] "}" ] ;
 
-lambda_expr     = [ parameter_list ] "=>" lambda_body 
+lambda_expr     = [ parameter_list ] "=>" lambda_body
                 | "==>" lambda_body ;  // Shorthand for () =>
 
 lambda_body     = block | expression [ match_block ] ;
@@ -748,7 +749,7 @@ Instead of `break`/`continue` keywords, Flap uses `ret @` with automatically num
 
 **Loop Numbering:** Loops are numbered from outermost to innermost:
 - `@1` = outermost loop
-- `@2` = second level (nested inside @1)  
+- `@2` = second level (nested inside @1)
 - `@3` = third level (nested inside @2)
 - `@` = current/innermost loop
 
@@ -944,10 +945,10 @@ safe2 = y or! 99        // Returns 5 (success case)
 process = input => {
     step1 = validate(input)
     step1.error { != "" -> step1 }  // Return error
-    
+
     step2 = transform(step1)
     step2.error { != "" -> step2 }
-    
+
     finalize(step2)
 }
 
@@ -1056,14 +1057,14 @@ class Point {
         .x = x
         .y = y
     }
-    
+
     // Instance methods
     distance := other => {
         dx := other.x - .x
         dy := other.y - .y
         sqrt(dx * dx + dy * dy)
     }
-    
+
     move := (dx, dy) ==> {
         .x <- .x + dx
         .y <- .y + dy
@@ -1087,18 +1088,18 @@ Point := (x, y) => {
     instance := {}
     instance["x"] = x
     instance["y"] = y
-    
+
     instance["distance"] = other => {
         dx := other["x"] - instance["x"]
         dy := other["y"] - instance["y"]
         sqrt(dx * dx + dy * dy)
     }
-    
+
     instance["move"] = (dx, dy) => {
         instance["x"] <- instance["x"] + dx
         instance["y"] <- instance["y"] + dy
     }
-    
+
     ret instance
 }
 ```
@@ -1113,12 +1114,12 @@ class Counter {
         .count = start
         .history = []
     }
-    
+
     increment := ==> {
         .count <- .count + 1
         .history <- .history :: .count
     }
-    
+
     get := ==> .count
 }
 
@@ -1135,7 +1136,7 @@ Use `ClassName.field` for class-level state:
 class Entity {
     Entity.count = 0
     Entity.all = []
-    
+
     init := name ==> {
         .name = name
         .id = Entity.count
@@ -1195,16 +1196,16 @@ Inside class methods:
 ```flap
 class Point {
     Point.origin = nil  // Class field
-    
+
     init := (x, y) ==> {
         .x = x           // Instance field (this instance)
         .y = y
     }
-    
+
     distance_to_origin := ==> {
         .distance(Point.origin)  // Class field access
     }
-    
+
     distance := other => {
         dx := other.x - .x       // Other instance field vs this instance field
         dy := other.y - .y
@@ -1224,11 +1225,11 @@ class Account {
     init := balance ==> {
         .balance = balance
     }
-    
+
     _validate := amount => {
         amount > 0 && amount <= .balance
     }
-    
+
     withdraw := amount => {
         ._ validate(amount) {
             .balance <- .balance - amount
@@ -1258,7 +1259,7 @@ class Vec2 {
             [rax + 8] <- y
         }
     }
-    
+
     magnitude := ==> {
         unsafe float64 {
             rax <- .data as ptr
@@ -1282,7 +1283,7 @@ class Complex {
         .real = real
         .imag = imag
     }
-    
+
     add := other => Complex(.real + other.real, .imag + other.imag)
     mul := other => Complex(
         .real * other.real - .imag * other.imag,
@@ -1332,12 +1333,12 @@ class Builder {
     init = () => {
         .parts = []
     }
-    
+
     add = part => {
         .parts <- .parts :: part
         ret .  // Return this (self)
     }
-    
+
     build = () => .parts
 }
 

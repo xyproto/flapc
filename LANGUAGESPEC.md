@@ -1484,55 +1484,54 @@ abs(x)
 
 ### Result Type Design
 
-Flap uses a **Result type** for operations that can fail. A Result is still `map[uint64]float64`, but with special semantic meaning tracked by the compiler.
+Flap uses **NaN-boxing** to encode errors within float64 values. This elegant approach, inspired by ENet's use of bit patterns for encoding flags and types, keeps everything as `map[uint64]float64` while enabling robust error handling.
 
-**Byte Layout:**
+**Encoding Scheme:**
+- **Success values:** Regular float64 (standard IEEE 754 representation)
+- **Error values:** Quiet NaN with 32-bit error code encoded in the mantissa
+
+**Error NaN Format:**
 ```
-[type_byte][length_or_code][data...][[0x00]
+IEEE 754 Double (64 bits):
+[Sign][Exponent (11)][Mantissa (52)]
+
+Error encoding:
+[0][11111111111][1][000][0...0][cccccccccccccccccccccccccccccccc]
+    ^^^^^^^^^^^  ^              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    All 1s = NaN |              32-bit error code (4 ASCII chars)
+                 Quiet NaN bit
+
+Hex representation: 0x7FF8_0000_[CODE]_[CODE]
+Example ("dv0\0"): 0x7FF8_0000_6476_3000
 ```
 
-**Type Bytes:**
-```
-0x01 - Flap Number (success)
-0x02 - Flap String (success)
-0x03 - Flap List (success)
-0x04 - Flap Map (success)
-0x05 - Flap Address (success)
-0xE0 - Error (failure, followed by 4-char error code)
-0x10-0x1B - C types (int8, int16, ..., ptr, cstr)
-```
-
-**Success case:**
-- Type byte indicates the Flap or C type
-- Length field (uint64) indicates number of key-value pairs
-- Key-value pairs follow (each pair is uint64 key, float64 value)
-- Terminated with 0x00 byte
-
-**Error case:**
-- Type byte is 0xE0
-- Followed by 4-byte error code (ASCII, space-padded)
-- Terminated with 0x00 byte
+**Key Properties:**
+- Errors are distinguishable from all valid floats (including ±Inf, regular NaN)
+- Error checking is a single NaN test: `x != x` or `UCOMISD`
+- Error codes are human-readable 4-char ASCII strings
+- Zero runtime overhead for success cases
+- Compatible with all IEEE 754 compliant hardware
 
 ### Standard Error Codes
 
-Error codes are 4 bytes, space-padded if shorter:
+Error codes are exactly 4 bytes (null-padded if shorter), encoded as 32-bit integers:
 
 ```
-"dv0 " - Division by zero
-"idx " - Index out of bounds
-"key " - Key not found
-"typ " - Type mismatch
-"nil " - Null pointer
-"mem " - Out of memory
-"arg " - Invalid argument
-"io  " - I/O error
-"net " - Network error
-"prs " - Parse error
-"ovf " - Overflow
-"udf " - Undefined
+"dv0\0" (0x64763000) - Division by zero
+"idx\0" (0x69647800) - Index out of bounds
+"key\0" (0x6B657900) - Key not found
+"typ\0" (0x74797000) - Type mismatch
+"nil\0" (0x6E696C00) - Null pointer
+"mem\0" (0x6D656D00) - Out of memory
+"arg\0" (0x61726700) - Invalid argument
+"io\0\0" (0x696F0000) - I/O error
+"net\0" (0x6E657400) - Network error
+"prs\0" (0x70727300) - Parse error
+"ovf\0" (0x6F766600) - Overflow
+"udf\0" (0x75646600) - Undefined
 ```
 
-**Note:** The `.error` accessor strips trailing spaces on access.
+**Note:** The `.error` accessor extracts the code and converts it to a Flap string, stripping null bytes.
 
 ### Operations That Return Results
 
@@ -1677,27 +1676,30 @@ See [TYPE_TRACKING.md](TYPE_TRACKING.md) for implementation details.
 
 ### Result Type Memory Layout
 
-**Success value (number 42):**
+**Success value (number 42.0):**
 ```
-Bytes: 01 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 40 45 00 00 00 00 00 00 00 00
-       ↑  ↑----- length=1 ----↑  ↑------- key=0 -------↑  ↑------- value=42.0 ------↑  ↑ term
-       type=01 (number)
+IEEE 754: 0x4045000000000000 (standard float64 encoding)
+Binary:   [0][10000000100][0101000000000000...] (exp=1028, mantissa=5*2^48)
 ```
 
-**Error value (division by zero):**
+**Error value (division by zero "dv0"):**
 ```
-Bytes: E0 64 76 30 20 00
-       ↑  ↑----- "dv0 " -----↑  ↑ term
-       type=E0 (error)
+Hex:      0x7FF8000064763000
+Binary:   [0][11111111111][1][000][0...0][01100100 01110110 00110000 00000000]
+          ^  ^^^^^^^^^^^  ^              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+          |  NaN exponent |              "dv0\0" = 0x64763000
+          +  Quiet bit    +
+          Sign=0          Reserved bits (future use)
 ```
 
 ### `.error` Implementation
 
 The `.error` accessor:
-1. Checks type byte (first byte of value)
-2. If 0xE0: extract next 4 bytes as error code string
-3. Strip trailing spaces from error code
-4. Return error code string
+1. Checks if value is NaN: `UCOMISD xmm0, xmm0` (sets parity flag if NaN)
+2. If not NaN: returns empty string ""
+3. If NaN: extracts low 32 bits of mantissa as error code
+4. Converts 4-byte code to Flap string (strips null bytes)
+5. Returns error code string
 5. Otherwise: return empty string ""
 
 ### `or!` Implementation

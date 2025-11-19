@@ -15,6 +15,10 @@
 - ✅ Register tracking to prevent clobbering
 - ✅ Closures (lambda assignments)
 - ✅ Multiple return values (a, b = [1, 2])
+- ✅ Result type with NaN-boxing error encoding
+- ✅ error() function for creating custom errors
+- ✅ .error property for extracting error codes
+- ✅ or! operator for error handling with defaults
 - ✅ 149 tests passing
 
 ---

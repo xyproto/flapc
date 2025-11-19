@@ -81,9 +81,8 @@ println(len)
 
 // TestErrorPropertyBasic tests .error property on Result types
 func TestErrorPropertyBasic(t *testing.T) {
-	t.Skip("TODO: Division by zero needs to encode error in result value")
-	source := `result = 10 / 0
-code = result.error
+	source := `result := 10 / 0
+code := result.error
 code {
     "" -> println("no error")
     ~> println(f"error: {code}")
@@ -97,9 +96,8 @@ code {
 
 // TestErrorFunction tests creating errors with error() function
 func TestErrorFunction(t *testing.T) {
-	t.Skip("TODO: error() function not yet implemented")
-	source := `err = call("error", "arg")
-code = err.error
+	source := `x := error("arg")
+code := x.error
 println(code)
 `
 	result := compileAndRun(t, source)
