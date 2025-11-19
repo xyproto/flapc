@@ -1135,7 +1135,9 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 
 				// Track type if we can determine it from the expression
 				exprType := fc.getExprType(s.Value)
-				fmt.Fprintf(os.Stderr, "DEBUG TYPE TRACKING: var=%s, exprType=%s, Value type=%T\n", s.Name, exprType, s.Value)
+				if fc.debug {
+					fmt.Fprintf(os.Stderr, "DEBUG TYPE TRACKING: var=%s, exprType=%s, Value type=%T\n", s.Name, exprType, s.Value)
+				}
 				if exprType != "number" && exprType != "unknown" {
 					fc.varTypes[s.Name] = exprType
 					if VerboseMode {
