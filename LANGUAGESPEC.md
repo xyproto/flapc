@@ -1317,13 +1317,18 @@ Flap can call C functions directly using DWARF debug information and automatic h
 ### Calling C Functions
 
 ```flap
-// Automatically parsed from C headers via DWARF
-result = c_malloc(1024)
-c_free(result)
+// Standard C library functions (automatically available)
+result = c.malloc(1024)
+c.free(result)
+
+// C math functions
+x := c.sin(0.0)     // Returns 0
+y := c.cos(0.0)     // Returns 1
+z := c.sqrt(16.0)   // Returns 4
 
 // With type casts
 size = buffer_size as int32
-ptr = c_malloc(size)
+ptr = c.malloc(size)
 
 // Import C library namespaces
 import sdl3 as sdl
@@ -1363,6 +1368,25 @@ window := sdl.SDL_CreateWindow("Title", 640, 480, window_flags)
 | `x as float64` | `double` |
 | `ptr as cstr` | `char*` |
 | `ptr as ptr` | `void*` |
+
+### Null Pointer Literals
+
+When calling C functions, you can use any of these as null pointer (0):
+
+```flap
+// All of these represent null pointer when used in C FFI context
+c.some_function(0)           // Number literal 0
+c.some_function([])          // Empty list
+c.some_function({})          // Empty map
+c.some_function(0 as ptr)    // Explicit cast
+c.some_function([] as ptr)   // Empty list cast
+c.some_function({} as ptr)   // Empty map cast
+```
+
+This makes Flap's null pointer representation flexible and intuitive:
+- `0` is the traditional null pointer value
+- `[]` and `{}` represent "empty" or "nothing", which conceptually maps to null
+- Explicit casts make the intent clear in code
 
 ### Null Pointer Handling with `or!`
 
@@ -1690,9 +1714,8 @@ eprint(x)           // Print without newline to stderr, returns Result
 eprintf(fmt, ...)   // Formatted print to stderr, returns Result
 
 // Quick exit error printing - Print to stderr and exit(1)
-qprintln(x)         // Print with newline to stderr and exit(1)
-qprint(x)           // Print without newline to stderr and exit(1)
-qprintf(fmt, ...)   // Formatted print to stderr and exit(1)
+exitln(x)           // Print with newline to stderr and exit(1)
+exitf(fmt, ...)     // Formatted print to stderr and exit(1)
 ```
 
 **Error Print Functions (`eprint`, `eprintln`, `eprintf`):**
@@ -1701,7 +1724,7 @@ qprintf(fmt, ...)   // Formatted print to stderr and exit(1)
 - Useful for logging and error messages
 - Can be chained with `.error` accessor or `or!` operator
 
-**Quick Exit Functions (`qprint`, `qprintln`, `qprintf`):**
+**Quick Exit Functions (`exitln`, `exitf`):**
 - Print to stderr and immediately exit with code 1
 - Never return (equivalent to eprint + exit(1))
 - Useful for fatal error messages and early termination
@@ -1723,8 +1746,13 @@ result.error {
 
 // Quick exit on fatal error
 x < 0 {
-    qprintln("Fatal: negative value not allowed")
+    exitln("Fatal: negative value not allowed")
     // Never reaches here - program exits
+}
+
+// Formatted quick exit
+age < 0 {
+    exitf("Fatal: invalid age %v\n", age)
 }
 
 // Equivalent to:
