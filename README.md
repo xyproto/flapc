@@ -102,7 +102,7 @@ AST → x86-64/ARM64/RISC-V in one pass. No IR, no LLVM. Sub-millisecond compila
 `{...}` disambiguated by contents: `{x: 1}` = map, `{x => y}` = match, `{x := 1}` = statements. No `match` keyword needed.
 
 ### 4. **Minimal Keyword Design**
-`ret @` for loop control (numbered labels `@1`, `@2`), `@` for loops, `->>` for no-arg lambdas, named operators (`and`/`or`/`not`).
+`ret @` for loop control (numbered labels `@1`, `@2`), `@` for loops, `->` for lambdas (inferred when obvious), named operators (`and`/`or`/`not`).
 
 ### 5. **Built-in Parallelism**
 `@@` for parallel loops with automatic barrier sync. Native atomic operations. No thread management.
@@ -179,7 +179,8 @@ y++           // Increment (mutable vars only)
 ```flap
 square = x -> x * x
 add = (a, b) -> a + b
-greet ->> println("Hello!")  // No-arg shorthand for () ->
+greet = { println("Hello!") }  // No-arg lambda (inferred from block)
+greet2 = -> println("Hello!")  // No-arg lambda (explicit ->)
 
 // Match expression
 classify = x -> x { 0 => "zero" | 1 => "one" | ~> "many" }

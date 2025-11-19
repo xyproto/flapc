@@ -77,6 +77,12 @@
 - ✅ Cleaned up temporary test files
 - ✅ All 155 tests passing consistently
 - ✅ Build system working flawlessly
+- ✅ Clarified lambda syntax: removed `->>` token, infer no-arg lambdas from context
+- ✅ Updated GRAMMAR.md with clear lambda syntax rules
+- ✅ `->` for lambdas, `=>` for match arms (Rust-like consistency)
+- ✅ Parentheses optional for single-parameter lambdas: `x -> x * 2`
+- ✅ Inferred zero-argument lambdas in assignment: `main = { ... }`
+- ✅ Explicit zero-argument lambdas: `greet = -> println("hi")`
 
 ## Known Limitations
 
