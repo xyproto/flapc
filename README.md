@@ -2,7 +2,7 @@
 
 [![Go CI](https://github.com/xyproto/flapc/actions/workflows/ci.yml/badge.svg)](https://github.com/xyproto/flapc/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause) [![Go Report Card](https://goreportcard.com/badge/github.com/xyproto/flapc)](https://goreportcard.com/report/github.com/xyproto/flapc)
 
-**Flap** is a systems programming language that compiles directly to native machine code (x86-64, ARM64, RISC-V) without LLVM, IR, or dependencies.
+**Flap** is a systems programming language that compiles directly to native machine code without LLVM, IR, or dependencies.
 
 ## An example Flap program, using SDL3 to display an image
 
