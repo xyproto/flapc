@@ -220,3 +220,41 @@ printf("Sorted: %v %v %v %v %v %v %v %v\n", result[0], result[1], result[2], res
 		t.Errorf("Expected '1 2 3 4 5 6 7 8' in sorted output, got: %s", output)
 	}
 }
+
+// TestSwitch tests a switch-like conditional
+func TestSwitch(t *testing.T) {
+	code := `
+day_of_week = n => n {
+	1 -> "Monday"
+	2 -> "Tuesday"
+	3 -> "Wednesday"
+	4 -> "Thursday"
+	5 -> "Friday"
+	6 -> "Saturday"
+	7 -> "Sunday"
+	~> "Unknown"
+}
+
+result = day_of_week(2)
+printf("Day 2: %s\n", result)
+`
+	output := compileAndRun(t, code)
+	if !strings.Contains(output, "Tuesday") {
+		t.Errorf("Expected 'Tuesday' in output, got: %s", output)
+	}
+}
+
+// TestForInLoop tests a simple for-in loop
+func TestForInLoop(t *testing.T) {
+	code := `
+sum := 0
+@ i in 1..<6 {
+	sum += i
+}
+printf("Sum: %v\n", sum)
+`
+	output := compileAndRun(t, code)
+	if !strings.Contains(output, "15") {
+		t.Errorf("Expected '15' in output, got: %s", output)
+	}
+}
