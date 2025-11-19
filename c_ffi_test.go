@@ -17,12 +17,12 @@ result2 := c.sin(1.0)
 printf("sin(1.0) ≈ %v\n", result2)
 `
 	output := compileAndRun(t, code)
-	
+
 	// sin(0) should be approximately 0
 	if !strings.Contains(output, "sin(0.0) = 0") {
 		t.Errorf("Expected 'sin(0.0) = 0', got: %s", output)
 	}
-	
+
 	// sin(1.0) should be approximately 0.84147
 	if !strings.Contains(output, "sin(1.0)") {
 		t.Errorf("Expected 'sin(1.0)' in output, got: %s", output)
@@ -37,7 +37,7 @@ result := c.cos(0.0)
 printf("cos(0.0) = %v\n", result)
 `
 	output := compileAndRun(t, code)
-	
+
 	// cos(0) should be 1
 	if !strings.Contains(output, "cos(0.0) = 1") {
 		t.Errorf("Expected 'cos(0.0) = 1', got: %s", output)
@@ -57,7 +57,7 @@ z = {}
 printf("x=%v y=%v z=%v\n", x, y, z)
 `
 	output := compileAndRun(t, code)
-	
+
 	// Should print the values
 	if !strings.Contains(output, "x=0") {
 		t.Errorf("Expected x=0, got: %s", output)
