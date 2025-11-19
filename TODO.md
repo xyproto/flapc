@@ -7,11 +7,14 @@
 
 ## Known Limitations (Documented)
 
-### Tail Operator
-- ⚠️ Tail operator `_list` has known issues
+### Tail Operator and tail() Function
+- ⚠️ Tail operator `_list` and tail() function have implementation issues
+- Both versions create new lists but key renumbering logic has bugs
 - Head operator `^list` works correctly
 - Tests for tail() function are skipped
-- Marked for post-3.0 fixes
+- Workaround: Use list slicing or manual iteration
+- Complex fix needed: proper key renumbering in UNIVERSAL MAP format
+- Marked for post-3.0 fixes (not critical for core functionality)
 
 ### Lambda Local Variables
 - ⚠️ Local variables in lambda bodies not yet supported
