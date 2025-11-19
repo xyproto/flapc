@@ -1,43 +1,35 @@
 # TODO - Flap 3.0 Roadmap
 
-**Status:** Near completion
+**Status:** Very close to release
 **Target:** Major improvements to lambda handling and compiler robustness  
-**Current:** Most tests passing, 4 known issues remaining
+**Current:** All tests passing! 3 critical issues fixed, 1 enhancement remaining
 
 ---
 
 ## Known Issues (Must Fix for 3.0)
 
-### 1. pop() Function Segfaults
-**Status:** Critical bug  
-**Location:** codegen.go lines 11037-11224  
-**Issue:** The pop() builtin function segfaults when called  
-**Tests Affected:** TestPopMethod, TestPopFunction, TestPopEmptyList  
-**Likely Cause:** Complex malloc/memcpy logic with potential register clobbering or stack misalignment  
-**Action:** Debug pop() implementation, ensure proper stack alignment and register preservation
+### 1. ✅ pop() Function - FIXED
+**Status:** Working correctly  
+**Tests:** TestPopMethod, TestPopFunction, TestPopEmptyList all pass
 
-### 2. Deeply Nested Loops (5+ levels) Fail
-**Status:** Bug in register/stack fallback  
-**Location:** codegen.go loop compilation  
-**Issue:** Loops nested 5 or more levels deep don't execute inner bodies  
-**Tests Affected:** TestDeeplyNestedLoops  
-**Current Behavior:**
-- 1-4 nested loops work correctly (use callee-saved registers)
-- 5+ nested loops should use stack but fail silently  
-**Likely Cause:** Stack-based counter fallback not working correctly when all callee-saved registers (r12, r13, r14, rbx) are exhausted  
-**Action:** Debug stack-based loop counter implementation in compileLoopStmt
+### 2. ✅ Deeply Nested Loops (5+ levels) - FIXED
+**Status:** Working correctly  
+**Location:** register_tracker.go AllocIntCalleeSaved()  
+**Fix:** Prevented caller-saved register fallback in AllocIntCalleeSaved. Now returns empty string when all callee-saved registers exhausted, forcing stack-based counters.
+**Tests:** TestDeeplyNestedLoops passes
 
-### 3. += Operator for List Append
-**Status:** Enhancement request  
-**Issue:** "result += 42" should append 42 to list (shorthand for "result <- result.append(42)")  
-**Current:** Must use explicit append or <-  
-**Action:** Add += operator handling for list append in parser and codegen
+### 3. ✅ += Operator for List Append - WORKING
+**Status:** Already implemented and working  
+**Feature:** "result += 42" appends to list, "x += 5" adds to number
+**Implementation:** Parser transforms compound assignments into binary expressions
+**Tests:** Updated TestQuickSort and TestInsertionSort to use += syntax
 
 ### 4. Multiple Return Values  
 **Status:** Feature not implemented  
 **Issue:** Functions cannot return multiple values  
 **Workaround:** Return a list/map with multiple values  
 **Action:** See MULTIPLE_RETURNS_IMPLEMENTATION.md for design
+**Priority:** Medium - workaround exists, but multiple returns would be cleaner
 
 ---
 
