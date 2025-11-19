@@ -16,9 +16,10 @@ height := 387
 // Initialize SDL3 with video subsystem
 printf("Initializing SDL3...\n")
 
+// SDL3 returns true (1) on success, false (0) on failure
 init_result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
 
-init_result < 0 {
+init_result == 0 {
     printf("SDL_Init failed!\n")
     exit(1)
 }
