@@ -1,0 +1,13 @@
+import sdl3 as sdl
+
+printf("Testing SDL_Delay...\n")
+printf("Calling SDL_Init...\n")
+result := sdl.SDL_Init(0x00000020)
+printf("SDL_Init returned: %v\n", result)
+
+printf("About to delay for 3000ms...\n")
+sdl.SDL_Delay(3000)
+printf("Delay finished!\n")
+
+sdl.SDL_Quit()
+printf("Done\n")

@@ -10100,6 +10100,7 @@ func (fc *FlapCompiler) compileRecursiveCall(call *CallExpr) {
 	// Result is in xmm0
 }
 
+// Confidence that this function is working: 85%
 func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, args []Expression) {
 	// Generate C FFI call
 	// Strategy for v1.1.0:
@@ -10144,6 +10145,44 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 				funcSig = sig
 				if VerboseMode {
 					fmt.Fprintf(os.Stderr, "Found signature for %s: %d params, return=%s\n",
+						funcName, len(sig.Params), sig.ReturnType)
+				}
+			}
+		}
+	}
+
+	// Special case for c. namespace (libName is empty): try to find signature in common C libraries
+	if funcSig == nil && libName == "" {
+		// Try to find the function in any loaded C library constants
+		for alias, constants := range fc.cConstants {
+			if sig, found := constants.Functions[funcName]; found {
+				funcSig = sig
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Found signature for %s in library %s: %d params, return=%s\n",
+						funcName, alias, len(sig.Params), sig.ReturnType)
+				}
+				break
+			}
+		}
+
+		// If still not found, use hardcoded signatures for common math functions
+		if funcSig == nil {
+			mathFunctions := map[string]*CFunctionSignature{
+				"sin":   {ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}},
+				"cos":   {ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}},
+				"tan":   {ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}},
+				"sqrt":  {ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}},
+				"pow":   {ReturnType: "double", Params: []CFunctionParam{{Type: "double"}, {Type: "double"}}},
+				"exp":   {ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}},
+				"log":   {ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}},
+				"floor": {ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}},
+				"ceil":  {ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}},
+				"fabs":  {ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}},
+			}
+			if sig, ok := mathFunctions[funcName]; ok {
+				funcSig = sig
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Using hardcoded math signature for %s: %d params, return=%s\n",
 						funcName, len(sig.Params), sig.ReturnType)
 				}
 			}
@@ -10338,8 +10377,15 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 
 		if returnType == "float" || returnType == "double" {
 			// Result is already in xmm0 as double - no conversion needed
+		} else if returnType == "void" {
+			// Void return - set xmm0 to 0
+			fc.out.XorpdXmm("xmm0", "xmm0")
+		} else if isPointerType(returnType) {
+			// Pointer type - keep raw integer value but convert to float64 for Flap
+			// (Flap internally represents everything as float64)
+			fc.out.Cvtsi2sd("xmm0", "rax")
 		} else {
-			// Convert integer result in rax to float64 for Flap
+			// Integer result in rax - convert to float64 for Flap
 			fc.out.Cvtsi2sd("xmm0", "rax")
 		}
 	} else {
@@ -10355,8 +10401,15 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 
 		if returnType == "float" || returnType == "double" {
 			// Result is already in xmm0 as double - no conversion needed
+		} else if returnType == "void" {
+			// Void return - set xmm0 to 0
+			fc.out.XorpdXmm("xmm0", "xmm0")
+		} else if isPointerType(returnType) {
+			// Pointer type - keep raw integer value but convert to float64 for Flap
+			// (Flap internally represents everything as float64)
+			fc.out.Cvtsi2sd("xmm0", "rax")
 		} else {
-			// Convert integer result in rax to float64 for Flap
+			// Integer result in rax - convert to float64 for Flap
 			fc.out.Cvtsi2sd("xmm0", "rax")
 		}
 	}

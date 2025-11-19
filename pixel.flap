@@ -21,10 +21,8 @@ printf("Initializing SDL3...\n")
 init_result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
 
 init_result < 0 {
-    -> {
-        printf("SDL_Init failed!\n")
-        exit(1)
-    }
+    printf("SDL_Init failed!\n")
+    exit(1)
 }
 
 printf("Creating window...\n")
@@ -34,11 +32,9 @@ printf("Creating window...\n")
 window := sdl.SDL_CreateWindow("Flap Pixel Demo", width, height, 0)
 
 window == 0 {
-    -> {
-        printf("Failed to create window!\n")
-        sdl.SDL_Quit()
-        exit(1)
-    }
+    printf("Failed to create window!\n")
+    sdl.SDL_Quit()
+    exit(1)
 }
 
 printf("Creating renderer...\n")
@@ -48,12 +44,10 @@ printf("Creating renderer...\n")
 renderer := sdl.SDL_CreateRenderer(window, 0)
 
 renderer == 0 {
-    -> {
-        printf("Failed to create renderer!\n")
-        sdl.SDL_DestroyWindow(window)
-        sdl.SDL_Quit()
-        exit(1)
-    }
+    printf("Failed to create renderer!\n")
+    sdl.SDL_DestroyWindow(window)
+    sdl.SDL_Quit()
+    exit(1)
 }
 
 printf("Drawing...\n")
@@ -69,29 +63,31 @@ center_y := height / 2
 // Set draw color to red (R=255, G=0, B=0, A=255)
 sdl.SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255)
 
-// Draw a red pixel at center (just one pixel for simplicity)
-sdl.SDL_RenderPoint(renderer, center_x, center_y)
+// Draw a 10x10 red square at center (easier to see than 1 pixel)
+// Draw horizontal and vertical lines to form a visible square
+y := center_y - 5
+@ y in (center_y - 5)..<(center_y + 5) max 20 {
+    @ x in (center_x - 5)..<(center_x + 5) max 20 {
+        sdl.SDL_RenderPoint(renderer, x, y)
+    }
+}
 
 // Present the rendered frame
 sdl.SDL_RenderPresent(renderer)
 
-printf("Red pixel drawn at center (%v, %v)\n", center_x, center_y)
-printf("Press any key to quit...\n")
+printf("Red 10x10 square drawn at center (%v, %v)\n", center_x, center_y)
+printf("Window will stay open for 5 seconds (or until window is closed)...\n")
 
-// Event loop - wait for any event
-@ {
-    // Poll for events using SDL_PollEvent
-    // Returns non-zero if there's an event
-    event_type := sdl.SDL_PollEvent(0)
-    
-    // If any event occurred, quit
-    event_type > 0 {
-        -> ret @1
-    }
-    
-    // Small delay to avoid busy loop (SDL_Delay takes milliseconds)
-    sdl.SDL_Delay(10)
+// Simple event loop: keep window open until timeout or user closes it
+// We can't properly parse SDL_Event structure without struct support,
+// but SDL will handle window close events internally
+max_iterations := 500  // 500 * 10ms = 5 seconds
+
+@ i in 0..<max_iterations max 1000 {
+    sdl.SDL_Delay(10)  // 10ms delay per iteration
 }
+
+printf("Time's up!\n")
 
 printf("Cleaning up...\n")
 

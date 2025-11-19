@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 	"unsafe"
 )
 
@@ -1641,7 +1642,33 @@ func (acg *ARM64CodeGen) compileParallelExpr(expr *ParallelExpr) error {
 }
 
 // compileCall compiles a function call
+// Confidence that this function is working: 75%
 func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
+	// Check if this is a namespaced call (e.g., sdl.SDL_Init, c.sin)
+	if strings.Contains(call.Function, ".") {
+		parts := strings.SplitN(call.Function, ".", 2)
+		if len(parts) == 2 {
+			namespace := parts[0]
+			funcName := parts[1]
+			
+			// Check if this is a C library function call
+			if constants, ok := acg.cConstants[namespace]; ok {
+				// Check if function signature exists in C header
+				if sig, found := constants.Functions[funcName]; found {
+					if VerboseMode {
+						fmt.Fprintf(os.Stderr, "Calling C function %s.%s with signature: %s %s(...)\n",
+							namespace, funcName, sig.ReturnType, funcName)
+					}
+					// Compile as external C function call
+					return acg.compileCFunctionCall(funcName, call.Args, sig)
+				}
+				return fmt.Errorf("undefined C function '%s.%s'", namespace, funcName)
+			}
+			// Not a C import - might be a method call or other namespaced access
+			return fmt.Errorf("undefined namespace '%s' for function call", namespace)
+		}
+	}
+	
 	switch call.Function {
 	case "println":
 		return acg.compilePrintln(call)
@@ -1659,10 +1686,6 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 			return fmt.Errorf("'me' keyword can only be used inside a lambda")
 		}
 		return acg.compileTailCall(call)
-	case "sin", "cos", "tan", "asin", "acos", "atan", "sinh", "cosh", "tanh", "exp", "log", "log10", "sqrt", "ceil", "floor", "fabs", "round", "abs":
-		return acg.compileMathFunction(call)
-	case "pow", "atan2":
-		return acg.compilePowFunction(call)
 	case "call":
 		return acg.compileFFICall(call)
 	case "alloc":
@@ -1692,6 +1715,18 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 			}
 			return acg.compileDirectCall(directCall)
 		}
+		
+		// Check if it's a C function from the "c" namespace (implicit)
+		// This handles bare function names like sin(), cos(), etc. from libm
+		if constants, ok := acg.cConstants["c"]; ok {
+			if sig, found := constants.Functions[call.Function]; found {
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Calling implicit C function c.%s\n", call.Function)
+				}
+				return acg.compileCFunctionCall(call.Function, call.Args, sig)
+			}
+		}
+		
 		return fmt.Errorf("unsupported function for ARM64: %s", call.Function)
 	}
 }
@@ -2776,6 +2811,194 @@ func (acg *ARM64CodeGen) compilePowFunction(call *CallExpr) error {
 	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x94}) // bl #0
 
 	// Result is returned in d0
+	return nil
+}
+
+// Confidence that this function is working: 70%
+// compileCFunctionCall compiles a call to a C library function using signature information
+func (acg *ARM64CodeGen) compileCFunctionCall(funcName string, args []Expression, sig *CFunctionSignature) error {
+	// ARM64 calling convention:
+	// Integer/pointer args: x0-x7
+	// Float args: d0-d7
+	// Return value: x0 (integer/pointer) or d0 (float)
+	
+	// For simplicity, we'll assume:
+	// - All Flap values are float64 (our internal representation)
+	// - Pointer types need conversion from float64 bits to integer register
+	// - Integer types need fcvtzs conversion from float64 to int
+	// - Float types stay in float registers
+	
+	numParams := len(sig.Params)
+	numArgs := len(args)
+	
+	// Allow variadic functions (printf, etc.) to have more args than params
+	if numArgs < numParams {
+		return fmt.Errorf("%s requires at least %d arguments (got %d)", funcName, numParams, numArgs)
+	}
+	
+	if numArgs > 8 {
+		return fmt.Errorf("%s: too many arguments (max 8, got %d)", funcName, numArgs)
+	}
+	
+	// Determine which arguments are integers/pointers vs floats
+	argTypes := make([]string, numArgs)
+	for i := 0; i < numArgs; i++ {
+		if i < numParams {
+			// Use signature information
+			paramType := sig.Params[i].Type
+			if isPointerType(paramType) {
+				argTypes[i] = "ptr"
+			} else if strings.Contains(paramType, "int") || strings.Contains(paramType, "long") || 
+					   strings.Contains(paramType, "short") || strings.Contains(paramType, "char") ||
+					   strings.Contains(paramType, "size") || strings.Contains(paramType, "bool") {
+				argTypes[i] = "int"
+			} else if strings.Contains(paramType, "float") {
+				argTypes[i] = "float32"
+			} else if strings.Contains(paramType, "double") {
+				argTypes[i] = "float64"
+			} else {
+				// Unknown type - assume int for safety
+				argTypes[i] = "int"
+			}
+		} else {
+			// Variadic argument - check for explicit cast
+			if castExpr, ok := args[i].(*CastExpr); ok {
+				argTypes[i] = castExpr.Type
+			} else {
+				// Default to float64 for variadic args
+				argTypes[i] = "float64"
+			}
+		}
+	}
+	
+	// Save arguments to stack first (evaluate all expressions)
+	stackSize := numArgs * 8
+	if stackSize > 0 {
+		if err := acg.out.SubImm64("sp", "sp", uint32(stackSize)); err != nil {
+			return err
+		}
+		
+		for i := 0; i < numArgs; i++ {
+			if err := acg.compileExpression(args[i]); err != nil {
+				return err
+			}
+			// Store d0 at [sp, #(i*8)]
+			offset := int32(i * 8)
+			if err := acg.out.StrImm64Double("d0", "sp", offset); err != nil {
+				return err
+			}
+		}
+	}
+	
+	// Load arguments into appropriate registers
+	intRegNum := 0
+	floatRegNum := 0
+	
+	for i := 0; i < numArgs; i++ {
+		argType := argTypes[i]
+		
+		// Load from stack into d0
+		offset := int32(i * 8)
+		if err := acg.out.LdrImm64Double("d0", "sp", offset); err != nil {
+			return err
+		}
+		
+		isIntArg := (argType == "int" || argType == "ptr")
+		
+		if isIntArg {
+			if intRegNum >= 8 {
+				return fmt.Errorf("%s: too many integer/pointer arguments", funcName)
+			}
+			
+			if argType == "ptr" {
+				// Pointer: transfer bits from d0 to xN
+				// fmov xN, d0
+				acg.out.out.writer.WriteBytes([]byte{
+					byte(intRegNum),
+					0x00,
+					0x67,
+					0x9e,
+				})
+			} else {
+				// Integer: convert float64 to int64
+				// fcvtzs xN, d0
+				acg.out.out.writer.WriteBytes([]byte{
+					byte(intRegNum),
+					0x00,
+					0x78,
+					0x9e,
+				})
+			}
+			intRegNum++
+		} else {
+			// Float argument
+			if floatRegNum >= 8 {
+				return fmt.Errorf("%s: too many float arguments", funcName)
+			}
+			
+			if floatRegNum != 0 {
+				// Move d0 to dN
+				// fmov dN, d0
+				acg.out.out.writer.WriteBytes([]byte{
+					byte(floatRegNum),
+					0x40,
+					0x60,
+					0x1e,
+				})
+			}
+			// else: first float arg already in d0
+			floatRegNum++
+		}
+	}
+	
+	// Restore stack pointer
+	if stackSize > 0 {
+		if err := acg.out.AddImm64("sp", "sp", uint32(stackSize)); err != nil {
+			return err
+		}
+	}
+	
+	// Mark that we need dynamic linking
+	acg.eb.useDynamicLinking = true
+	
+	// Add function to needed functions list
+	found := false
+	for _, f := range acg.eb.neededFunctions {
+		if f == funcName {
+			found = true
+			break
+		}
+	}
+	if !found {
+		acg.eb.neededFunctions = append(acg.eb.neededFunctions, funcName)
+	}
+	
+	// Generate call to function stub
+	stubLabel := funcName + "$stub"
+	position := acg.eb.text.Len()
+	acg.eb.callPatches = append(acg.eb.callPatches, CallPatch{
+		position:   position,
+		targetName: stubLabel,
+	})
+	
+	// Emit placeholder bl instruction
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x94}) // bl #0
+	
+	// Handle return value conversion
+	returnType := sig.ReturnType
+	if isPointerType(returnType) {
+		// Pointer return: convert x0 to float64 bits in d0
+		// fmov d0, x0
+		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x67, 0x9e})
+	} else if strings.Contains(returnType, "int") || strings.Contains(returnType, "long") ||
+			   strings.Contains(returnType, "short") || strings.Contains(returnType, "char") ||
+			   strings.Contains(returnType, "size") || strings.Contains(returnType, "bool") {
+		// Integer return: convert x0 to float64 in d0
+		// scvtf d0, x0
+		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
+	}
+	// else: float/double return already in d0
+	
 	return nil
 }
 
