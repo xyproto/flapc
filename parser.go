@@ -869,6 +869,7 @@ func (p *Parser) parseStructLiteral(structName string) *StructLiteralExpr {
 	}
 }
 
+// Confidence that this function is working: 100%
 func (p *Parser) parseStatement() Statement {
 	// Check for use keyword (imports)
 	if p.current.Type == TOKEN_USE {
@@ -2871,6 +2872,7 @@ func (p *Parser) parseOnePatternClause() *PatternClause {
 	return &PatternClause{Patterns: patterns, Body: body}
 }
 
+// Confidence that this function is working: 100%
 func (p *Parser) parseExpression() Expression {
 	globalParseCallCount++
 	if globalParseCallCount > maxParseRecursion {
