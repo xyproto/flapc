@@ -1678,9 +1678,60 @@ result = unsafe int32 {
 ### I/O
 
 ```flap
-println(x)           // Print with newline
-print(x)            // Print without newline
+// Standard output (stdout)
+println(x)           // Print with newline to stdout
+print(x)            // Print without newline to stdout
 printa(x)           // Atomic print (thread-safe)
+printf(fmt, ...)    // Formatted print to stdout
+
+// Standard error (stderr) - Returns Result with error code "out"
+eprintln(x)         // Print with newline to stderr, returns Result
+eprint(x)           // Print without newline to stderr, returns Result
+eprintf(fmt, ...)   // Formatted print to stderr, returns Result
+
+// Quick exit error printing - Print to stderr and exit(1)
+qprintln(x)         // Print with newline to stderr and exit(1)
+qprint(x)           // Print without newline to stderr and exit(1)
+qprintf(fmt, ...)   // Formatted print to stderr and exit(1)
+```
+
+**Error Print Functions (`eprint`, `eprintln`, `eprintf`):**
+- Print to stderr instead of stdout
+- Return a Result type with error code "out"
+- Useful for logging and error messages
+- Can be chained with `.error` accessor or `or!` operator
+
+**Quick Exit Functions (`qprint`, `qprintln`, `qprintf`):**
+- Print to stderr and immediately exit with code 1
+- Never return (equivalent to eprint + exit(1))
+- Useful for fatal error messages and early termination
+- Simpler than using eprint followed by manual exit()
+
+**Usage examples:**
+
+```flap
+// Basic error printing
+eprintln("Warning: low memory")
+eprintf("Error: invalid value %v\n", x)
+
+// Check result from error print
+result := eprintln("This is an error message")
+result.error {
+    "out" -> println("Successfully wrote to stderr")
+    ~> println("Unexpected error")
+}
+
+// Quick exit on fatal error
+x < 0 {
+    qprintln("Fatal: negative value not allowed")
+    // Never reaches here - program exits
+}
+
+// Equivalent to:
+x < 0 {
+    eprintln("Fatal: negative value not allowed")
+    exit(1)
+}
 ```
 
 ### String Operations

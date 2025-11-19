@@ -126,8 +126,17 @@ func cmdBuild(ctx *CommandContext, args []string) error {
 		outputPath = strings.TrimSuffix(filepath.Base(inputFile), ".flap")
 	}
 
+	// When a specific file is given (not -s flag explicitly passed), enable single-file mode
+	// This ensures flapc doesn't look for other .flap files in the same directory
+	oldSingleFlag := SingleFlag
+	if !ctx.SingleFile {
+		// Only set SingleFlag if not already set via command line
+		SingleFlag = true
+		defer func() { SingleFlag = oldSingleFlag }()
+	}
+
 	if ctx.Verbose {
-		fmt.Fprintf(os.Stderr, "Building %s -> %s\n", inputFile, outputPath)
+		fmt.Fprintf(os.Stderr, "Building %s -> %s (single-file mode: %v)\n", inputFile, outputPath, SingleFlag)
 	}
 
 	// Compile
@@ -163,8 +172,15 @@ func cmdRun(ctx *CommandContext, args []string) error {
 	baseName := strings.TrimSuffix(filepath.Base(inputFile), ".flap")
 	tmpExec := filepath.Join(tmpDir, fmt.Sprintf("flapc_run_%s_%d", baseName, os.Getpid()))
 
+	// Enable single-file mode when running a specific file
+	oldSingleFlag := SingleFlag
+	if !ctx.SingleFile {
+		SingleFlag = true
+		defer func() { SingleFlag = oldSingleFlag }()
+	}
+
 	if ctx.Verbose {
-		fmt.Fprintf(os.Stderr, "Compiling %s -> %s\n", inputFile, tmpExec)
+		fmt.Fprintf(os.Stderr, "Compiling %s -> %s (single-file mode)\n", inputFile, tmpExec)
 	}
 
 	// Compile
@@ -211,6 +227,11 @@ func cmdRunShebang(ctx *CommandContext, scriptPath string, scriptArgs []string) 
 	baseName := strings.TrimSuffix(filepath.Base(scriptPath), ".flap")
 	tmpExec := filepath.Join(tmpDir, fmt.Sprintf("flapc_shebang_%s_%d", baseName, os.Getpid()))
 
+	// Enable single-file mode for shebang scripts
+	oldSingleFlag := SingleFlag
+	SingleFlag = true
+	defer func() { SingleFlag = oldSingleFlag }()
+
 	// Compile (quietly unless verbose mode)
 	err := CompileFlapWithOptions(scriptPath, tmpExec, ctx.Platform, ctx.OptTimeout)
 	if err != nil {
@@ -251,12 +272,18 @@ func cmdBuildDir(ctx *CommandContext, dirPath string) error {
 		fmt.Fprintf(os.Stderr, "Found %d .flap file(s) in %s\n", len(matches), dirPath)
 	}
 
+	// When compiling a directory, don't enable single-file mode
+	// This allows files in the same directory to share definitions
+	oldSingleFlag := SingleFlag
+	SingleFlag = false
+	defer func() { SingleFlag = oldSingleFlag }()
+
 	// Compile each file
 	for _, file := range matches {
 		outputPath := strings.TrimSuffix(filepath.Base(file), ".flap")
 
 		if ctx.Verbose {
-			fmt.Fprintf(os.Stderr, "Building %s -> %s\n", file, outputPath)
+			fmt.Fprintf(os.Stderr, "Building %s -> %s (directory mode)\n", file, outputPath)
 		}
 
 		err := CompileFlapWithOptions(file, outputPath, ctx.Platform, ctx.OptTimeout)

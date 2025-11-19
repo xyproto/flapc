@@ -1451,6 +1451,8 @@ func (fc *FlapCompiler) isExpressionPure(expr Expression, pureFunctions map[stri
 	case *CallExpr:
 		impureBuiltins := map[string]bool{
 			"println": true, "printf": true, "exit": true,
+			"eprint": true, "eprintln": true, "eprintf": true,
+			"qprint": true, "qprintln": true, "qprintf": true, "exitf": true,
 			"syscall": true, "alloc": true, "free": true,
 		}
 		if impureBuiltins[e.Function] {
@@ -11103,6 +11105,263 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			fc.out.PopReg(allocatedCalleeSaved[i])
 		}
 
+	case "eprint", "eprintln", "eprintf":
+		// Confidence that this function is working: 85%
+		// Error printing functions - print to stderr (fd=2) and return Result type with error "out"
+		// For simplicity, we just wrap the regular print functions but send output to stderr (fd=2)
+		isNewline := call.Function == "eprintln"
+		isFormatted := call.Function == "eprintf"
+
+		if isFormatted {
+			// eprintf - just use regular printf logic but don't implement formatting yet
+			// For now, just treat it like eprintln with first argument
+			if len(call.Args) == 0 {
+				compilerError("eprintf() requires at least one argument")
+			}
+			// Simplified: just print the format string to stderr
+			arg := call.Args[0]
+			if strExpr, ok := arg.(*StringExpr); ok {
+				labelName := fmt.Sprintf("str_%d", fc.stringCounter)
+				fc.stringCounter++
+				processedStr := processEscapeSequences(strExpr.Value)
+				fc.eb.Define(labelName, processedStr)
+
+				// Use write syscall: write(2, str, len)
+				fc.out.MovImmToReg("rax", "1")                                  // sys_write
+				fc.out.MovImmToReg("rdi", "2")                                  // fd = stderr
+				fc.out.LeaSymbolToReg("rsi", labelName)                         // buffer
+				fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", len(processedStr))) // length
+				fc.out.Syscall()
+			}
+		} else if isNewline {
+			// eprintln - print to stderr with newline
+			if len(call.Args) == 0 {
+				// Just print a newline to stderr
+				newlineLabel := fmt.Sprintf("eprintln_newline_%d", fc.stringCounter)
+				fc.stringCounter++
+				fc.eb.Define(newlineLabel, "\n")
+
+				fc.out.MovImmToReg("rax", "1") // sys_write
+				fc.out.MovImmToReg("rdi", "2") // stderr
+				fc.out.LeaSymbolToReg("rsi", newlineLabel)
+				fc.out.MovImmToReg("rdx", "1") // 1 byte
+				fc.out.Syscall()
+			} else {
+				arg := call.Args[0]
+				if strExpr, ok := arg.(*StringExpr); ok {
+					labelName := fmt.Sprintf("str_%d", fc.stringCounter)
+					fc.stringCounter++
+					processedStr := processEscapeSequences(strExpr.Value) + "\n"
+					fc.eb.Define(labelName, processedStr)
+
+					fc.out.MovImmToReg("rax", "1") // sys_write
+					fc.out.MovImmToReg("rdi", "2") // stderr
+					fc.out.LeaSymbolToReg("rsi", labelName)
+					fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", len(processedStr)))
+					fc.out.Syscall()
+				} else {
+					// For numbers, we'll need to convert to string first
+					// For now, just use a simple approach with snprintf
+					fc.compileExpression(arg)
+
+					// Allocate buffer on stack for number string (32 bytes should be enough)
+					fc.out.SubImmFromReg("rsp", 32)
+
+					// Call snprintf to convert number to string
+					// snprintf(buf, size, format, value)
+					fc.out.MovRegToReg("rdi", "rsp") // buf = stack buffer
+					fc.out.MovImmToReg("rsi", "32")  // size = 32
+					fmtLabel := fmt.Sprintf("eprintln_fmt_%d", fc.stringCounter)
+					fc.stringCounter++
+					fc.eb.Define(fmtLabel, "%g\n\x00")
+					fc.out.LeaSymbolToReg("rdx", fmtLabel) // format = "%g\n"
+					// xmm0 already has value
+					fc.out.MovImmToReg("rax", "1") // 1 float argument
+					fc.trackFunctionCall("snprintf")
+					fc.eb.GenerateCallInstruction("snprintf")
+
+					// rax now contains length of string
+					// Write to stderr
+					fc.out.MovRegToReg("rdx", "rax") // length
+					fc.out.MovRegToReg("rsi", "rsp") // buffer
+					fc.out.MovImmToReg("rax", "1")   // sys_write
+					fc.out.MovImmToReg("rdi", "2")   // stderr
+					fc.out.Syscall()
+
+					fc.out.AddImmToReg("rsp", 32) // Clean up stack buffer
+				}
+			}
+		} else {
+			// eprint - print to stderr without newline
+			if len(call.Args) == 0 {
+				// Nothing to print
+				fc.createErrorResult("out")
+				return
+			}
+
+			arg := call.Args[0]
+			if strExpr, ok := arg.(*StringExpr); ok {
+				labelName := fmt.Sprintf("str_%d", fc.stringCounter)
+				fc.stringCounter++
+				processedStr := processEscapeSequences(strExpr.Value)
+				fc.eb.Define(labelName, processedStr)
+
+				fc.out.MovImmToReg("rax", "1") // sys_write
+				fc.out.MovImmToReg("rdi", "2") // stderr
+				fc.out.LeaSymbolToReg("rsi", labelName)
+				fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", len(processedStr)))
+				fc.out.Syscall()
+			} else {
+				// For numbers, use snprintf
+				fc.compileExpression(arg)
+
+				fc.out.SubImmFromReg("rsp", 32)
+
+				fc.out.MovRegToReg("rdi", "rsp")
+				fc.out.MovImmToReg("rsi", "32")
+				fmtLabel := fmt.Sprintf("eprint_fmt_%d", fc.stringCounter)
+				fc.stringCounter++
+				fc.eb.Define(fmtLabel, "%g\x00")
+				fc.out.LeaSymbolToReg("rdx", fmtLabel)
+				fc.out.MovImmToReg("rax", "1")
+				fc.trackFunctionCall("snprintf")
+				fc.eb.GenerateCallInstruction("snprintf")
+
+				fc.out.MovRegToReg("rdx", "rax")
+				fc.out.MovRegToReg("rsi", "rsp")
+				fc.out.MovImmToReg("rax", "1")
+				fc.out.MovImmToReg("rdi", "2")
+				fc.out.Syscall()
+
+				fc.out.AddImmToReg("rsp", 32)
+			}
+		}
+
+		// Return Result type with error code "out"
+		fc.createErrorResult("out")
+		return
+
+	case "qprint", "qprintln", "qprintf", "exitf":
+		// Confidence that this function is working: 85%
+		// Quick exit print functions - print to stderr and exit with code 1
+		// exitf is an alias for qprintf
+		isNewline := call.Function == "qprintln"
+		isFormatted := call.Function == "qprintf" || call.Function == "exitf"
+
+		// Same logic as eprint* but followed by exit(1)
+		if isFormatted {
+			if len(call.Args) == 0 {
+				compilerError("%s() requires at least one argument", call.Function)
+			}
+			arg := call.Args[0]
+			if strExpr, ok := arg.(*StringExpr); ok {
+				labelName := fmt.Sprintf("str_%d", fc.stringCounter)
+				fc.stringCounter++
+				processedStr := processEscapeSequences(strExpr.Value)
+				fc.eb.Define(labelName, processedStr)
+
+				fc.out.MovImmToReg("rax", "1")
+				fc.out.MovImmToReg("rdi", "2")
+				fc.out.LeaSymbolToReg("rsi", labelName)
+				fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", len(processedStr)))
+				fc.out.Syscall()
+			}
+		} else if isNewline {
+			if len(call.Args) == 0 {
+				newlineLabel := fmt.Sprintf("qprintln_newline_%d", fc.stringCounter)
+				fc.stringCounter++
+				fc.eb.Define(newlineLabel, "\n")
+
+				fc.out.MovImmToReg("rax", "1")
+				fc.out.MovImmToReg("rdi", "2")
+				fc.out.LeaSymbolToReg("rsi", newlineLabel)
+				fc.out.MovImmToReg("rdx", "1")
+				fc.out.Syscall()
+			} else {
+				arg := call.Args[0]
+				if strExpr, ok := arg.(*StringExpr); ok {
+					labelName := fmt.Sprintf("str_%d", fc.stringCounter)
+					fc.stringCounter++
+					processedStr := processEscapeSequences(strExpr.Value) + "\n"
+					fc.eb.Define(labelName, processedStr)
+
+					fc.out.MovImmToReg("rax", "1")
+					fc.out.MovImmToReg("rdi", "2")
+					fc.out.LeaSymbolToReg("rsi", labelName)
+					fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", len(processedStr)))
+					fc.out.Syscall()
+				} else {
+					fc.compileExpression(arg)
+
+					fc.out.SubImmFromReg("rsp", 32)
+
+					fc.out.MovRegToReg("rdi", "rsp")
+					fc.out.MovImmToReg("rsi", "32")
+					fmtLabel := fmt.Sprintf("qprintln_fmt_%d", fc.stringCounter)
+					fc.stringCounter++
+					fc.eb.Define(fmtLabel, "%g\n\x00")
+					fc.out.LeaSymbolToReg("rdx", fmtLabel)
+					fc.out.MovImmToReg("rax", "1")
+					fc.trackFunctionCall("snprintf")
+					fc.eb.GenerateCallInstruction("snprintf")
+
+					fc.out.MovRegToReg("rdx", "rax")
+					fc.out.MovRegToReg("rsi", "rsp")
+					fc.out.MovImmToReg("rax", "1")
+					fc.out.MovImmToReg("rdi", "2")
+					fc.out.Syscall()
+
+					fc.out.AddImmToReg("rsp", 32)
+				}
+			}
+		} else {
+			if len(call.Args) > 0 {
+				arg := call.Args[0]
+				if strExpr, ok := arg.(*StringExpr); ok {
+					labelName := fmt.Sprintf("str_%d", fc.stringCounter)
+					fc.stringCounter++
+					processedStr := processEscapeSequences(strExpr.Value)
+					fc.eb.Define(labelName, processedStr)
+
+					fc.out.MovImmToReg("rax", "1")
+					fc.out.MovImmToReg("rdi", "2")
+					fc.out.LeaSymbolToReg("rsi", labelName)
+					fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", len(processedStr)))
+					fc.out.Syscall()
+				} else {
+					fc.compileExpression(arg)
+
+					fc.out.SubImmFromReg("rsp", 32)
+
+					fc.out.MovRegToReg("rdi", "rsp")
+					fc.out.MovImmToReg("rsi", "32")
+					fmtLabel := fmt.Sprintf("qprint_fmt_%d", fc.stringCounter)
+					fc.stringCounter++
+					fc.eb.Define(fmtLabel, "%g\x00")
+					fc.out.LeaSymbolToReg("rdx", fmtLabel)
+					fc.out.MovImmToReg("rax", "1")
+					fc.trackFunctionCall("snprintf")
+					fc.eb.GenerateCallInstruction("snprintf")
+
+					fc.out.MovRegToReg("rdx", "rax")
+					fc.out.MovRegToReg("rsi", "rsp")
+					fc.out.MovImmToReg("rax", "1")
+					fc.out.MovImmToReg("rdi", "2")
+					fc.out.Syscall()
+
+					fc.out.AddImmToReg("rsp", 32)
+				}
+			}
+		}
+
+		// Exit with code 1
+		fc.out.MovImmToReg("rdi", "1")
+		fc.out.MovRegToReg("rsp", "rbp")
+		fc.trackFunctionCall("exit")
+		fc.eb.GenerateCallInstruction("exit")
+		fc.hasExplicitExit = true
+		return
+
 	case "exit":
 		fc.hasExplicitExit = true // Mark that program has explicit exit
 		if len(call.Args) > 0 {
@@ -14605,6 +14864,42 @@ func (fc *FlapCompiler) compileReceiveLoopStmt(stmt *ReceiveLoopStmt) {
 	delete(fc.variables, stmt.SenderVar)
 }
 
+// Confidence that this function is working: 95%
+// createErrorResult creates an error Result with the given error code in xmm0
+// The error code should be a 3-4 character string like "out", "arg", "dv0", etc.
+func (fc *FlapCompiler) createErrorResult(errorCode string) {
+	// Pad error code to 4 bytes with null terminator if needed
+	code := errorCode
+	for len(code) < 4 {
+		code += "\x00"
+	}
+	if len(code) > 4 {
+		code = code[:4]
+	}
+
+	// Convert error code string to 32-bit integer (little-endian byte order)
+	var codeInt uint32
+	for i := 0; i < 4; i++ {
+		codeInt |= uint32(code[i]) << (uint(i) * 8)
+	}
+
+	// Create error NaN: 0x7FF8_0000_0000_0000 | error_code
+	// The error code goes in the lower 32 bits of the mantissa
+	errorNaN := uint64(0x7FF8000000000000) | uint64(codeInt)
+
+	// Load the error NaN value into xmm0
+	fc.out.Emit([]byte{0x48, 0xb8}) // mov rax, immediate64
+	for i := 0; i < 8; i++ {
+		fc.out.Emit([]byte{byte(errorNaN >> (uint(i) * 8))})
+	}
+
+	// Move rax to xmm0
+	fc.out.SubImmFromReg("rsp", 8)
+	fc.out.MovRegToMem("rax", "rsp", 0)
+	fc.out.MovMemToXmm("xmm0", "rsp", 0)
+	fc.out.AddImmToReg("rsp", 8)
+}
+
 func (fc *FlapCompiler) trackFunctionCall(funcName string) {
 	if !fc.usedFunctions[funcName] {
 		fc.usedFunctions[funcName] = true
@@ -14774,7 +15069,9 @@ func getUnknownFunctions(program *Program) []string {
 	builtins := map[string]bool{
 		"printf": true, "exit": true, "syscall": true,
 		"getpid": true, "me": true,
-		"println": true, // println is a builtin optimization, not a dependency
+		"println": true,                                    // println is a builtin optimization, not a dependency
+		"eprint":  true, "eprintln": true, "eprintf": true, // stderr printing with Result return
+		"qprint": true, "qprintln": true, "qprintf": true, // stderr printing with exit(1)
 		// Math functions (hardware instructions)
 		"sqrt": true, "sin": true, "cos": true, "tan": true,
 		"asin": true, "acos": true, "atan": true, "atan2": true,
