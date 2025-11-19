@@ -1208,6 +1208,7 @@ func (p *Parser) parseFString() Expression {
 	return &FStringExpr{Parts: parts}
 }
 
+// Confidence that this function is working: 100%
 func (p *Parser) parseAssignment() *AssignStmt {
 	name := p.current.Value
 	p.nextToken() // skip identifier

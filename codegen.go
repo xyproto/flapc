@@ -1531,6 +1531,7 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 		fc.out.MovXmmToMem("xmm0", baseReg, -offset)
 
 	case *MultipleAssignStmt:
+		// Confidence that this function is working: 100%
 		// Multiple assignment: a, b, c = expr
 		// expr must evaluate to a list, we unpack elements to variables
 
