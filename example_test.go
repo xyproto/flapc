@@ -151,19 +151,19 @@ func TestLoopWithLabel(t *testing.T) {
 	}
 }
 
-// TestQuickSort tests building lists with append
+// TestQuickSort tests building lists with append operator
 func TestQuickSort(t *testing.T) {
 	code := `
-// Demonstrate building a list with multiple appends
+// Demonstrate building a list with += append operator
 result := []
-result <- result.append(1)
-result <- result.append(1)
-result <- result.append(2)
-result <- result.append(3)
-result <- result.append(4)
-result <- result.append(5)
-result <- result.append(6)
-result <- result.append(9)
+result += 1
+result += 1
+result += 2
+result += 3
+result += 4
+result += 5
+result += 6
+result += 9
 
 printf("Sorted: %v %v %v %v %v %v %v %v\n", result[0], result[1], result[2], result[3], result[4], result[5], result[6], result[7])
 `
@@ -204,13 +204,13 @@ printf("Sum from 1 to 10: %v\n", result)
 	}
 }
 
-// TestInsertionSort tests list building with append
+// TestInsertionSort tests list building with append operator
 func TestInsertionSort(t *testing.T) {
 	code := `
-// Build a list using append in a loop
+// Build a list using += append operator in a loop
 result := []
 @ i in 1..<9 {
-	result <- result.append(i)
+	result += i
 }
 
 printf("Sorted: %v %v %v %v %v %v %v %v\n", result[0], result[1], result[2], result[3], result[4], result[5], result[6], result[7])
