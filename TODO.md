@@ -326,3 +326,24 @@ factorial := n => {
 ---
 
 **Note:** This is a living document. Items will be prioritized and scheduled as development progresses.
+
+## Current Status (2025-11-19)
+
+### Completed
+- ✅ pop() function fully implemented and tested
+- ✅ Multiple return values working correctly
+- ✅ 1-4 level nested loops working with register allocation
+
+### In Progress  
+- ⚠️ 5+ level nested loops (depth >= 4) not executing inner loop body
+  - Issue: Stack-based loop counter (used when depth >= 4) not working correctly
+  - 4 callee-saved registers (r12, r13, r14, rbx) work fine for depths 0-3
+  - Stack fallback for depth 4+ has offset calculation or access issue
+  - Stack allocation updated in both collectSymbols and compileRangeLoop
+  - Inner loop body never executes, suggesting initial comparison fails
+  - Needs assembly-level debugging to identify exact issue
+  
+### Next Steps
+1. Debug 5+ nested loops with assembly output
+2. Add += operator for list append (result += 42)
+3. Consider += for numbers as well (x += 1 instead of x <- x + 1)

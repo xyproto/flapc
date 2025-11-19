@@ -1196,12 +1196,18 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 			}
 		}
 
+		// Confidence that this function is working: 90%
 		_, isRange := s.Iterable.(*RangeExpr)
 		if isRange {
 			if s.NeedsMaxCheck {
-				fc.updateStackOffset(48)
+				// Stack: [iteration_count][max_iterations][limit][iterator]
+				// Need to account for possible stack-based counter (depth >= 4)
+				// Allocate maximum space needed (with counter)
+				fc.updateStackOffset(40)
 			} else {
-				fc.updateStackOffset(32)
+				// Stack: [limit][counter(if needed)][iterator]
+				// Allocate maximum space needed (with stack counter)
+				fc.updateStackOffset(40)
 			}
 		} else {
 			fc.updateStackOffset(64)
@@ -2015,23 +2021,27 @@ func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 
 	if stmt.NeedsMaxCheck {
 		// Need extra space for iteration tracking
-		// Stack layout: [iteration_count][max_iterations][limit][counter(if no reg)][iterator]
+		// Stack layout (each field is 8 bytes):
+		// [iteration_count][max_iterations][limit][counter(if no reg)][iterator]
+		// Offsets are from rbp going downward (higher offset = lower address)
 		if useRegister {
 			// Using register for counter, no stack space needed for it
-			stackSize = 56
-			loopStateOffset = baseOffset + 56
-			iterationCountOffset = loopStateOffset - 48
-			maxIterOffset = loopStateOffset - 40
-			limitOffset = loopStateOffset - 32
+			// Layout: [iteration_count][max_iterations][limit][iterator]
+			stackSize = 32 
+			loopStateOffset = baseOffset + 32
+			iterationCountOffset = loopStateOffset - 24
+			maxIterOffset = loopStateOffset - 16
+			limitOffset = loopStateOffset - 8
 			iterOffset = loopStateOffset
 		} else {
 			// Using stack for counter
-			stackSize = 64
-			loopStateOffset = baseOffset + 64
-			iterationCountOffset = loopStateOffset - 56
-			maxIterOffset = loopStateOffset - 48
-			limitOffset = loopStateOffset - 40
-			counterOffset = loopStateOffset - 32
+			// Layout: [iteration_count][max_iterations][limit][counter][iterator]
+			stackSize = 40
+			loopStateOffset = baseOffset + 40
+			iterationCountOffset = loopStateOffset - 32
+			maxIterOffset = loopStateOffset - 24
+			limitOffset = loopStateOffset - 16
+			counterOffset = loopStateOffset - 8
 			iterOffset = loopStateOffset
 		}
 	} else {
