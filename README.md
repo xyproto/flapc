@@ -24,7 +24,7 @@ AST → x86-64/ARM64/RISC-V in one pass. No IR, no LLVM. Sub-millisecond compila
 `@@` for parallel loops with automatic barrier sync. Native atomic operations. No thread management.
 
 ### 6. **Zero-Cost C FFI**
-Direct C library calls: `c.malloc()`, `import sdl3`. CStruct for C-compatible layouts.
+Direct C library calls: `c.malloc()`, `import sdl3 as sdl`. Automatic header parsing extracts constants: `sdl.SDL_INIT_VIDEO`. CStruct for C-compatible layouts.
 
 ### 7. **Immutable by Default**
 `x = 42` is immutable, `x := 42` is mutable. Functions use `=` not `:=`.
@@ -137,7 +137,7 @@ f := ~b x       // NOT
 
 ### C FFI
 
-Direct calls to C libraries:
+Direct calls to C libraries with automatic constant extraction:
 
 ```flap
 // Standard C library
@@ -148,7 +148,8 @@ c.free(ptr)
 // SDL3 for graphics
 import sdl3 as sdl
 
-sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
+// Constants from SDL3 headers are automatically available
+sdl.SDL_Init(sdl.SDL_INIT_VIDEO)  // SDL_INIT_VIDEO = 32
 window := sdl.SDL_CreateWindow("Game", 800, 600, 0)
 renderer := sdl.SDL_CreateRenderer(window, 0)
 
@@ -159,6 +160,13 @@ renderer := sdl.SDL_CreateRenderer(window, 0)
     sdl.SDL_Delay(16)
 }
 ```
+
+**Automatic Constant Discovery:**
+When you `import sdl3 as sdl`, Flapc automatically:
+- Parses SDL3 header files using pkg-config
+- Extracts `#define` constants (SDL_INIT_VIDEO, SDL_WINDOW_SHOWN, etc.)
+- Makes them available via namespace syntax: `sdl.SDL_INIT_VIDEO`
+- No manual constant definitions needed!
 
 ### CStruct - C-Compatible Structures
 
