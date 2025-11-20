@@ -487,7 +487,7 @@ go test         # ~2s
 
 ## Current Status
 
-### ✅ Production Ready (v3.0)
+### Ready (v1.4.0)
 - Universal `map[uint64]float64` type system
 - Direct x86-64 machine code generation
 - Tail-call optimization
@@ -506,5 +506,5 @@ go test         # ~2s
 
 ## General info
 
-* Version: 3.0.0
+* Version: 1.4.0
 * License: BSD-3

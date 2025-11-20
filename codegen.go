@@ -15830,9 +15830,8 @@ func CompileFlapWithOptions(inputPath string, outputPath string, platform Platfo
 		// Report all undefined functions
 		if len(finalUnknownFuncs) == 1 {
 			return fmt.Errorf("undefined function: %s\nNote: Function must be defined before use or imported from a dependency", finalUnknownFuncs[0])
-		} else {
-			return fmt.Errorf("undefined functions: %s\nNote: Functions must be defined before use or imported from dependencies", strings.Join(finalUnknownFuncs, ", "))
 		}
+		return fmt.Errorf("undefined functions: %s\nNote: Functions must be defined before use or imported from dependencies", strings.Join(finalUnknownFuncs, ", "))
 	}
 
 	// Compile

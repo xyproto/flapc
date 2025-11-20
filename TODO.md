@@ -1,6 +1,6 @@
 # TODO - Flap Compiler (Flapc)
 
-**Status:** Version 3.0 - Production Ready
+**Status:** Version 1.4.0 - Ready
 **All Core Tests:** ✅ Passing (155+ tests)
 **Build:** ✅ Working
 **Platforms:** x86-64, ARM64, RISC-V64
@@ -16,7 +16,7 @@
 - Tests for tail() function are skipped
 - Workaround: Use list slicing or manual iteration
 - Complex fix needed: proper key renumbering in UNIVERSAL MAP format
-- Marked for post-3.0 fixes (not critical for core functionality)
+- Marked for post-1.4.0 fixes (not critical for core functionality)
 
 ### Lambda Local Variables
 - ⚠️ Local variables in lambda bodies not yet supported
@@ -34,14 +34,14 @@
 
 ---
 
-## Post-3.0 Enhancements
+## Post-1.4.0 Enhancements
 
 ### Priority 1 - Core Improvements
 - Fix tail operator `_list` to return correct results
 - Complete arena allocator integration (replace malloc calls in codegen.go)
 - Add local variable support in lambda bodies
 
-### Priority 2 - Language Features  
+### Priority 2 - Language Features
 - Pattern destructuring in match clauses
 - More operator overloading
 - Full tail call optimization for mutual recursion
