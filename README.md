@@ -248,7 +248,7 @@ renderer := sdl.SDL_CreateRenderer(window, 0)
 
 **Automatic Constant Discovery:**
 When you `import sdl3 as sdl`, Flapc automatically:
-- Parses SDL3 header files using pkg-config
+- Finds SDL3 header files using `pkg-config`, and parses them.
 - Extracts `#define` constants (SDL_INIT_VIDEO, SDL_WINDOW_SHOWN, etc.)
 - Makes them available via namespace syntax: `sdl.SDL_INIT_VIDEO`
 - No manual constant definitions needed!
