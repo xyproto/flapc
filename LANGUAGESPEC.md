@@ -170,7 +170,7 @@ handler := x -> println(x)
 handler <- x -> println("DEBUG:", x)  // reassignment with <-
 ```
 
-**Convention:** 
+**Convention:**
 - Functions are immutable by default (`=`), only use `:=` when needed
 - `->` is always for lambda definitions
 - `=>` is always for match arms
@@ -190,7 +190,7 @@ main = { println("Running") }     // Inferred: main = () -> { ... }
 
 // Only use when needed
 result = (x + y) * z              // precedence
-cond = (x > 0 && y < 10) { ... }  // complex condition grouping
+cond = (x > 0 and y < 10) { ... }  // complex condition grouping
 add = (x, y) -> x + y             // multiple lambda parameters
 ```
 
@@ -1123,7 +1123,7 @@ class Parser {
 
     parse_number = () -> {
         result := 0
-        @ ._peek() >= 48 && ._peek() <= 57 {
+        @ ._peek() >= 48 and ._peek() <= 57 {
             result <- result * 10 + (._peek() - 48)
             ._advance()
         }
@@ -2637,7 +2637,7 @@ if (x | FLAG)  // Bitwise OR - easy to confuse with ||
 
 ```flap
 x &b FLAG     // Clearly bitwise
-x && y        // Clearly logical
+x and y       // Clearly logical
 x | transform // Clearly pipe
 x |b mask     // Clearly bitwise
 ```

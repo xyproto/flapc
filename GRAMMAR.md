@@ -217,9 +217,11 @@ or_bang_expr    = send_expr { "or!" send_expr } ;
 
 send_expr       = or_expr { "<-" or_expr } ;
 
-or_expr         = and_expr { "||" and_expr } ;
+or_expr         = and_expr { "or" and_expr } ;
 
-and_expr        = comparison_expr { "&&" comparison_expr } ;
+xor_expr        = and_expr { "xor" and_expr } ;
+
+and_expr        = comparison_expr { "and" comparison_expr } ;
 
 comparison_expr = bitwise_or_expr { comparison_op bitwise_or_expr } ;
 
