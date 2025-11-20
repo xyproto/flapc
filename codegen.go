@@ -3601,27 +3601,27 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				// Count > 1: Build new list from scratch
 				// Calculate allocation size BEFORE malloc (old_count - 1) * 16 + 8
 				fc.out.MovRegToReg("rdi", "r12")
-				fc.out.SubImmFromReg("rdi", 1)  // rdi = old_count - 1
-				fc.out.ShlImmReg("rdi", 4)      // rdi = (old_count - 1) * 16
-				fc.out.AddImmToReg("rdi", 8)    // rdi = (old_count - 1) * 16 + 8
+				fc.out.SubImmFromReg("rdi", 1) // rdi = old_count - 1
+				fc.out.ShlImmReg("rdi", 4)     // rdi = (old_count - 1) * 16
+				fc.out.AddImmToReg("rdi", 8)   // rdi = (old_count - 1) * 16 + 8
 
 				// Save rbx (original list) and r12 (original count) before malloc
-				fc.out.PushReg("rbx")  // original list
-				fc.out.PushReg("r12")  // original count
+				fc.out.PushReg("rbx") // original list
+				fc.out.PushReg("r12") // original count
 
 				fc.trackFunctionCall("malloc")
 				fc.eb.GenerateCallInstruction("malloc")
 
 				// Restore registers
-				fc.out.PopReg("r12")   // original count
-				fc.out.PopReg("rbx")   // original list
+				fc.out.PopReg("r12") // original count
+				fc.out.PopReg("rbx") // original list
 
 				fc.out.MovRegToReg("r14", "rax") // r14 = new list pointer
 
 				// Calculate and store new count AFTER malloc
 				fc.out.MovRegToReg("r10", "r12")
-				fc.out.SubImmFromReg("r10", 1)  // r10 = old_count - 1 = new_count
-				fc.out.Cvtsi2sd("xmm2", "r10")  // xmm2 = new_count as float
+				fc.out.SubImmFromReg("r10", 1)       // r10 = old_count - 1 = new_count
+				fc.out.Cvtsi2sd("xmm2", "r10")       // xmm2 = new_count as float
 				fc.out.MovXmmToMem("xmm2", "r14", 0) // Store at [r14+0]
 
 				// Loop to copy elements from original list to new list
@@ -3632,7 +3632,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.XorRegWithReg("r15", "r15") // r15 = loop counter = 0
 
 				loopStart := fc.eb.text.Len()
-				
+
 				// Check if r15 >= r10 (counter >= new_count)
 				fc.out.CmpRegToReg("r15", "r10")
 				loopEndJump := fc.eb.text.Len()
@@ -3640,8 +3640,8 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 				// Calculate destination offset: 8 + r15 * 16
 				fc.out.MovRegToReg("rax", "r15")
-				fc.out.ShlImmReg("rax", 4)       // rax = r15 * 16
-				fc.out.AddImmToReg("rax", 8)     // rax = 8 + r15 * 16
+				fc.out.ShlImmReg("rax", 4)   // rax = r15 * 16
+				fc.out.AddImmToReg("rax", 8) // rax = 8 + r15 * 16
 
 				// Write key (r15) at [r14 + rax]
 				fc.out.AddRegToReg("rax", "r14") // rax = address of key
@@ -3669,18 +3669,18 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 				// Return new list pointer in xmm0
 				fc.out.MovqRegToXmm("xmm0", "r14")
-				
+
 				// Jump over empty case to end
 				doneJumpPos := fc.eb.text.Len()
 				fc.out.JumpUnconditional(0)
 				doneJumpPatch := fc.eb.text.Len()
 
-				// Empty case: return 0.0  
+				// Empty case: return 0.0
 				// This code is ONLY reached if we jumped at the beginning (count <= 1)
 				emptyTarget := fc.eb.text.Len()
 				fc.patchJumpImmediate(emptyJumpPos+2, int32(emptyTarget-(emptyJumpPos+ConditionalJumpSize)))
 				fc.out.XorpdXmm("xmm0", "xmm0") // xmm0 = 0.0
-				
+
 				// Done - both paths end here
 				doneTarget := fc.eb.text.Len()
 				fc.patchJumpImmediate(doneJumpPos+1, int32(doneTarget-doneJumpPatch))
