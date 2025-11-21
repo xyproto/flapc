@@ -1,0 +1,201 @@
+=== RUN   TestArithmeticOperations
+=== RUN   TestArithmeticOperations/addition
+=== RUN   TestArithmeticOperations/subtraction
+=== RUN   TestArithmeticOperations/multiplication
+=== RUN   TestArithmeticOperations/division
+=== RUN   TestArithmeticOperations/power
+=== RUN   TestArithmeticOperations/modulo
+=== RUN   TestArithmeticOperations/negative
+=== RUN   TestArithmeticOperations/compound_expression
+=== RUN   TestArithmeticOperations/float_division
+=== RUN   TestArithmeticOperations/power_fractional
+--- PASS: TestArithmeticOperations (0.03s)
+    --- PASS: TestArithmeticOperations/addition (0.00s)
+    --- PASS: TestArithmeticOperations/subtraction (0.00s)
+    --- PASS: TestArithmeticOperations/multiplication (0.00s)
+    --- PASS: TestArithmeticOperations/division (0.00s)
+    --- PASS: TestArithmeticOperations/power (0.00s)
+    --- PASS: TestArithmeticOperations/modulo (0.00s)
+    --- PASS: TestArithmeticOperations/negative (0.00s)
+    --- PASS: TestArithmeticOperations/compound_expression (0.00s)
+    --- PASS: TestArithmeticOperations/float_division (0.00s)
+    --- PASS: TestArithmeticOperations/power_fractional (0.00s)
+=== RUN   TestComparisonOperations
+=== RUN   TestComparisonOperations/equal
+=== RUN   TestComparisonOperations/not_equal
+=== RUN   TestComparisonOperations/less_than
+=== RUN   TestComparisonOperations/greater_than
+=== RUN   TestComparisonOperations/less_or_equal
+=== RUN   TestComparisonOperations/greater_or_equal
+--- PASS: TestComparisonOperations (0.02s)
+    --- PASS: TestComparisonOperations/equal (0.00s)
+    --- PASS: TestComparisonOperations/not_equal (0.00s)
+    --- PASS: TestComparisonOperations/less_than (0.00s)
+    --- PASS: TestComparisonOperations/greater_than (0.00s)
+    --- PASS: TestComparisonOperations/less_or_equal (0.00s)
+    --- PASS: TestComparisonOperations/greater_or_equal (0.00s)
+=== RUN   TestLogicalOperations
+=== RUN   TestLogicalOperations/and_true
+=== RUN   TestLogicalOperations/and_false
+=== RUN   TestLogicalOperations/or_true
+=== RUN   TestLogicalOperations/or_false
+=== RUN   TestLogicalOperations/not_true
+=== RUN   TestLogicalOperations/not_false
+--- PASS: TestLogicalOperations (0.02s)
+    --- PASS: TestLogicalOperations/and_true (0.00s)
+    --- PASS: TestLogicalOperations/and_false (0.00s)
+    --- PASS: TestLogicalOperations/or_true (0.00s)
+    --- PASS: TestLogicalOperations/or_false (0.00s)
+    --- PASS: TestLogicalOperations/not_true (0.00s)
+    --- PASS: TestLogicalOperations/not_false (0.00s)
+=== RUN   TestBitwiseOperations
+=== RUN   TestBitwiseOperations/bitwise_and
+=== RUN   TestBitwiseOperations/bitwise_or
+=== RUN   TestBitwiseOperations/bitwise_xor
+=== RUN   TestBitwiseOperations/bitwise_not
+=== RUN   TestBitwiseOperations/shift_left
+=== RUN   TestBitwiseOperations/shift_right
+--- PASS: TestBitwiseOperations (0.02s)
+    --- PASS: TestBitwiseOperations/bitwise_and (0.00s)
+    --- PASS: TestBitwiseOperations/bitwise_or (0.00s)
+    --- PASS: TestBitwiseOperations/bitwise_xor (0.00s)
+    --- PASS: TestBitwiseOperations/bitwise_not (0.00s)
+    --- PASS: TestBitwiseOperations/shift_left (0.00s)
+    --- PASS: TestBitwiseOperations/shift_right (0.00s)
+=== RUN   TestAddX86RegToReg
+--- PASS: TestAddX86RegToReg (0.00s)
+=== RUN   TestAddX86ImmToReg
+--- PASS: TestAddX86ImmToReg (0.00s)
+=== RUN   TestAddARM64RegToReg
+--- PASS: TestAddARM64RegToReg (0.00s)
+=== RUN   TestAddRISCVRegToReg
+--- PASS: TestAddRISCVRegToReg (0.00s)
+=== RUN   TestSubX86RegFromReg
+--- PASS: TestSubX86RegFromReg (0.00s)
+=== RUN   TestSubARM64RegFromReg
+--- PASS: TestSubARM64RegFromReg (0.00s)
+=== RUN   TestSubRISCVRegFromReg
+--- PASS: TestSubRISCVRegFromReg (0.00s)
+=== RUN   TestJumpX86Equal
+--- PASS: TestJumpX86Equal (0.00s)
+=== RUN   TestJumpX86Unconditional
+--- PASS: TestJumpX86Unconditional (0.00s)
+=== RUN   TestJumpARM64Equal
+--- PASS: TestJumpARM64Equal (0.00s)
+=== RUN   TestJumpRISCVEqual
+--- PASS: TestJumpRISCVEqual (0.00s)
+=== RUN   TestARM64BasicCompilation
+=== RUN   TestARM64BasicCompilation/exit_zero
+    arm64_test.go:63: File type: Mach-O aarch64
+    arm64_test.go:71: Successfully compiled exit_zero: Mach-O aarch64
+=== RUN   TestARM64BasicCompilation/exit_code
+    arm64_test.go:63: File type: Mach-O aarch64
+    arm64_test.go:71: Successfully compiled exit_code: Mach-O aarch64
+--- PASS: TestARM64BasicCompilation (0.00s)
+    --- PASS: TestARM64BasicCompilation/exit_zero (0.00s)
+    --- PASS: TestARM64BasicCompilation/exit_code (0.00s)
+=== RUN   TestBasicPrograms
+=== RUN   TestBasicPrograms/hello_world
+=== RUN   TestBasicPrograms/simple_add
+=== RUN   TestBasicPrograms/simple_subtract
+=== RUN   TestBasicPrograms/simple_multiply
+=== RUN   TestBasicPrograms/simple_divide
+=== RUN   TestBasicPrograms/printf_basic
+=== RUN   TestBasicPrograms/fstring_basic
+=== RUN   TestBasicPrograms/compound_assignment
+=== RUN   TestBasicPrograms/comparison_operators
+--- PASS: TestBasicPrograms (0.03s)
+    --- PASS: TestBasicPrograms/hello_world (0.00s)
+    --- PASS: TestBasicPrograms/simple_add (0.00s)
+    --- PASS: TestBasicPrograms/simple_subtract (0.00s)
+    --- PASS: TestBasicPrograms/simple_multiply (0.00s)
+    --- PASS: TestBasicPrograms/simple_divide (0.00s)
+    --- PASS: TestBasicPrograms/printf_basic (0.00s)
+    --- PASS: TestBasicPrograms/fstring_basic (0.00s)
+    --- PASS: TestBasicPrograms/compound_assignment (0.00s)
+    --- PASS: TestBasicPrograms/comparison_operators (0.00s)
+=== RUN   TestExistingBasicPrograms
+=== RUN   TestExistingBasicPrograms/first
+    basic_programs_test.go:136: Source file testprograms/first.flap not found
+=== RUN   TestExistingBasicPrograms/hello
+    basic_programs_test.go:136: Source file testprograms/hello.flap not found
+=== RUN   TestExistingBasicPrograms/add
+    basic_programs_test.go:136: Source file testprograms/add.flap not found
+=== RUN   TestExistingBasicPrograms/subtract
+    basic_programs_test.go:136: Source file testprograms/subtract.flap not found
+=== RUN   TestExistingBasicPrograms/multiply
+    basic_programs_test.go:136: Source file testprograms/multiply.flap not found
+=== RUN   TestExistingBasicPrograms/divide
+    basic_programs_test.go:136: Source file testprograms/divide.flap not found
+=== RUN   TestExistingBasicPrograms/printf_demo
+    basic_programs_test.go:136: Source file testprograms/printf_demo.flap not found
+=== RUN   TestExistingBasicPrograms/simple_print
+    basic_programs_test.go:136: Source file testprograms/simple_print.flap not found
+=== RUN   TestExistingBasicPrograms/simple_printf
+    basic_programs_test.go:136: Source file testprograms/simple_printf.flap not found
+--- PASS: TestExistingBasicPrograms (0.00s)
+    --- SKIP: TestExistingBasicPrograms/first (0.00s)
+    --- SKIP: TestExistingBasicPrograms/hello (0.00s)
+    --- SKIP: TestExistingBasicPrograms/add (0.00s)
+    --- SKIP: TestExistingBasicPrograms/subtract (0.00s)
+    --- SKIP: TestExistingBasicPrograms/multiply (0.00s)
+    --- SKIP: TestExistingBasicPrograms/divide (0.00s)
+    --- SKIP: TestExistingBasicPrograms/printf_demo (0.00s)
+    --- SKIP: TestExistingBasicPrograms/simple_print (0.00s)
+    --- SKIP: TestExistingBasicPrograms/simple_printf (0.00s)
+=== RUN   TestCFunctionSin
+--- PASS: TestCFunctionSin (0.01s)
+=== RUN   TestCFunctionCos
+--- PASS: TestCFunctionCos (0.01s)
+=== RUN   TestNullPointerLiterals
+--- PASS: TestNullPointerLiterals (0.00s)
+=== RUN   TestCFunctionWithNullPointer
+--- PASS: TestCFunctionWithNullPointer (0.00s)
+=== RUN   TestCStructWithCFFI
+--- PASS: TestCStructWithCFFI (0.01s)
+=== RUN   TestCStructComplexFFI
+--- PASS: TestCStructComplexFFI (0.00s)
+=== RUN   TestCmpX86RegToReg
+--- PASS: TestCmpX86RegToReg (0.00s)
+=== RUN   TestCmpX86RegToImm8
+--- PASS: TestCmpX86RegToImm8 (0.00s)
+=== RUN   TestCmpX86RegToImm32
+--- PASS: TestCmpX86RegToImm32 (0.00s)
+=== RUN   TestCmpARM64RegToReg
+--- PASS: TestCmpARM64RegToReg (0.00s)
+=== RUN   TestCmpARM64RegToImm
+--- PASS: TestCmpARM64RegToImm (0.00s)
+=== RUN   TestCmpRISCVRegToReg
+--- PASS: TestCmpRISCVRegToReg (0.00s)
+=== RUN   TestBasicCompilation
+--- PASS: TestBasicCompilation (0.00s)
+=== RUN   TestArchitectures
+=== RUN   TestArchitectures/x86_64
+=== RUN   TestArchitectures/amd64
+=== RUN   TestArchitectures/aarch64
+=== RUN   TestArchitectures/arm64
+=== RUN   TestArchitectures/riscv64
+--- PASS: TestArchitectures (0.00s)
+    --- PASS: TestArchitectures/x86_64 (0.00s)
+    --- PASS: TestArchitectures/amd64 (0.00s)
+    --- PASS: TestArchitectures/aarch64 (0.00s)
+    --- PASS: TestArchitectures/arm64 (0.00s)
+    --- PASS: TestArchitectures/riscv64 (0.00s)
+=== RUN   TestDynamicLinking
+--- PASS: TestDynamicLinking (0.00s)
+=== RUN   TestELFSections
+--- PASS: TestELFSections (0.00s)
+=== RUN   TestPLTGOT
+--- PASS: TestPLTGOT (0.00s)
+=== RUN   TestExecutableGeneration
+    compiler_test.go:180: File type: ELF x86_64
+--- PASS: TestExecutableGeneration (0.00s)
+=== RUN   TestCTypeSize
+=== RUN   TestCTypeSize/void
+=== RUN   TestCTypeSize/int
+=== RUN   TestCTypeSize/uint
+=== RUN   TestCTypeSize/char
+=== RUN   TestCTypeSize/float
+=== RUN   TestCTypeSize/double
+=== RUN   TestCTypeSize/long
+=== RUN   TestCTypeSize/ulong

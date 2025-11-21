@@ -1244,6 +1244,10 @@ func main() {
 	}
 
 	targetPlatform := Platform{Arch: targetArch, OS: targetOS}
+	
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Target platform: %s-%s\n", targetArch.String(), targetOS.String())
+	}
 
 	// Use whichever output flag was specified (prefer short form if both given)
 	outputFilename := *outputFilenameFlag

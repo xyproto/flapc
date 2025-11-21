@@ -76,6 +76,7 @@ type FlapCompiler struct {
 	cImports             map[string]string            // Track C imports: alias -> library name
 	cLibHandles          map[string]string            // Track library handles: library -> handle var name
 	cConstants           map[string]*CHeaderConstants // Track C constants: alias -> constants
+	cFunctionLibs        map[string]string            // Track which library each C function belongs to: function -> library
 	stringCounter        int                          // Counter for unique string labels
 	stackOffset          int                          // Current stack offset for variables (logical)
 	maxStackOffset       int                          // Maximum stack offset reached (for frame allocation)
@@ -166,6 +167,7 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 		cImports:            make(map[string]string),
 		cLibHandles:         make(map[string]string),
 		cConstants:          make(map[string]*CHeaderConstants),
+		cFunctionLibs:       make(map[string]string),
 		lambdaOffsets:       make(map[string]int),
 		loopBaseOffsets:     make(map[int]int),
 		cacheEnabledLambdas: make(map[string]bool),
@@ -581,7 +583,15 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	// Runtime helpers are generated in writeELF() after the second lambda pass
 
 	// Write executable in appropriate format based on target OS
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Target format: OS=%v, IsPE=%v, IsMachO=%v, IsELF=%v\n",
+			fc.eb.target.OS(), fc.eb.target.IsPE(), fc.eb.target.IsMachO(), fc.eb.target.IsELF())
+	}
+	
 	if fc.eb.target.IsPE() {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Writing PE executable to %s\n", outputPath)
+		}
 		return fc.writePE(program, outputPath)
 	} else if fc.eb.target.IsMachO() {
 		// MachO is handled in ARM64 codegen path above
@@ -589,6 +599,9 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	}
 
 	// Default: Write ELF using existing infrastructure
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Writing ELF executable to %s\n", outputPath)
+	}
 	return fc.writeELF(program, outputPath)
 }
 
@@ -9771,6 +9784,11 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 
 	// Track function usage for PLT generation and call order patching
 	fc.trackFunctionCall(funcName)
+	
+	// Track which library this function belongs to (for Windows DLL imports)
+	if libName != "" {
+		fc.cFunctionLibs[funcName] = libName
+	}
 
 	// Marshal arguments according to calling convention (System V AMD64 or Microsoft x64)
 	// System V AMD64 ABI (Linux/Unix):

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -11,7 +12,7 @@ import (
 // This file handles the generation of PE (Portable Executable) files
 // for Windows systems on x86_64 architecture.
 
-// Confidence that this function is working: 70%
+// Confidence that this function is working: 80%
 func (fc *FlapCompiler) writePE(program *Program, outputPath string) error {
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "-> Generating Windows PE executable\n")
@@ -20,10 +21,13 @@ func (fc *FlapCompiler) writePE(program *Program, outputPath string) error {
 	// For Windows PE, we need to handle imports differently than ELF
 	// Windows uses import tables instead of PLT/GOT
 
-	// Build list of required imports from C runtime (msvcrt.dll)
-	requiredImports := []string{"printf", "exit", "malloc", "free", "realloc", "strlen", "pow", "fflush"}
-
-	// Add all functions from usedFunctions
+	// Build library -> functions map for imports
+	libraries := make(map[string][]string)
+	
+	// Standard C runtime functions (msvcrt.dll)
+	msvcrtFuncs := []string{"printf", "exit", "malloc", "free", "realloc", "strlen", "pow", "fflush", "sin", "cos", "sqrt", "fopen", "fclose", "fwrite", "fread", "memcpy", "memset"}
+	
+	// Add all functions from usedFunctions, organized by library
 	lambdaSet := make(map[string]bool)
 	for _, lambda := range fc.lambdaFuncs {
 		lambdaSet[lambda.Name] = true
@@ -38,24 +42,70 @@ func (fc *FlapCompiler) writePE(program *Program, outputPath string) error {
 		if strings.HasPrefix(funcName, "_flap") || strings.HasPrefix(funcName, "flap_") {
 			continue
 		}
-		requiredImports = append(requiredImports, funcName)
+		
+		// Check if this function belongs to a specific library
+		if libName, ok := fc.cFunctionLibs[funcName]; ok {
+			// Map library name to DLL name
+			dllName := mapLibraryToDLL(libName)
+			libraries[dllName] = append(libraries[dllName], funcName)
+		} else {
+			// Default to msvcrt.dll for C standard library functions
+			libraries["msvcrt.dll"] = append(libraries["msvcrt.dll"], funcName)
+		}
+	}
+	
+	// Always include minimal msvcrt.dll functions
+	if len(libraries["msvcrt.dll"]) == 0 {
+		libraries["msvcrt.dll"] = msvcrtFuncs
+	}
+	
+	// Sort function names within each library for deterministic output
+	for dllName := range libraries {
+		funcs := libraries[dllName]
+		sort.Strings(funcs)
+		libraries[dllName] = funcs
 	}
 
 	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "Required Windows imports: %v\n", requiredImports)
+		fmt.Fprintf(os.Stderr, "Windows imports by library:\n")
+		for dll, funcs := range libraries {
+			fmt.Fprintf(os.Stderr, "  %s: %v\n", dll, funcs)
+		}
 	}
 
-	// For now, use the simple PE writer without full import table support
-	// This is a minimal PE that will need Wine or Windows to run
-	// Runtime helpers will need to be added similarly to ELF
-	if err := fc.eb.WritePE(outputPath); err != nil {
+	// Write the PE file with proper import tables
+	if err := fc.eb.WritePEWithLibraries(outputPath, libraries); err != nil {
 		return fmt.Errorf("failed to write PE file: %v", err)
 	}
 
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "PE executable written to %s\n", outputPath)
-		fmt.Fprintf(os.Stderr, "Note: Full import table support is work in progress\n")
 	}
 
 	return nil
+}
+
+// mapLibraryToDLL maps a library name (like "sdl3") to its Windows DLL name (like "SDL3.dll")
+func mapLibraryToDLL(libName string) string {
+	// Common library name mappings
+	dllMap := map[string]string{
+		"sdl3":    "SDL3.dll",
+		"sdl2":    "SDL2.dll",
+		"raylib":  "raylib.dll",
+		"sqlite3": "sqlite3.dll",
+		"opengl":  "opengl32.dll",
+		"glu":     "glu32.dll",
+		"glfw":    "glfw3.dll",
+		"curl":    "libcurl.dll",
+		"png":     "libpng.dll",
+		"jpeg":    "libjpeg.dll",
+		"zlib":    "zlib1.dll",
+	}
+	
+	if dll, ok := dllMap[libName]; ok {
+		return dll
+	}
+	
+	// Default: add .dll extension
+	return libName + ".dll"
 }

@@ -431,6 +431,170 @@ func (eb *ExecutableBuilder) WritePEWithImports(outputPath string, imports []str
 	return eb.WritePE(outputPath)
 }
 
+// Confidence that this function is working: 80%
+// WritePEWithLibraries writes a PE file with the given library imports
+func (eb *ExecutableBuilder) WritePEWithLibraries(outputPath string, libraries map[string][]string) error {
+	if len(libraries) == 0 {
+		// No imports, use default msvcrt.dll
+		libraries = map[string][]string{
+			"msvcrt.dll": {"printf", "exit", "malloc", "free", "realloc", "strlen", "memcpy", "memset", "pow", "fflush"},
+		}
+	}
+	
+	return eb.writePEWithLibraries(outputPath, libraries)
+}
+
+// Confidence that this function is working: 75%
+func (eb *ExecutableBuilder) writePEWithLibraries(outputPath string, libraries map[string][]string) error {
+	// Write rodata and data content to buffers first
+	// IMPORTANT: We must iterate in a consistent order so addresses match!
+	rodataSymbols := eb.RodataSection()
+	dataSymbols := eb.DataSection()
+
+	// Create sorted slices of symbol names for consistent ordering
+	rodataNames := make([]string, 0, len(rodataSymbols))
+	for name := range rodataSymbols {
+		rodataNames = append(rodataNames, name)
+	}
+	sort.Strings(rodataNames)
+
+	dataNames := make([]string, 0, len(dataSymbols))
+	for name := range dataSymbols {
+		dataNames = append(dataNames, name)
+	}
+	sort.Strings(dataNames)
+
+	// Write rodata in sorted order
+	for _, name := range rodataNames {
+		eb.WriteRodata([]byte(rodataSymbols[name]))
+	}
+	// Write data in sorted order
+	for _, name := range dataNames {
+		eb.data.Write([]byte(dataSymbols[name]))
+	}
+
+	codeSize := uint32(eb.text.Len())
+	dataSize := uint32(eb.rodata.Len() + eb.data.Len())
+
+	// Align sizes to file alignment
+	codeSize = alignTo(codeSize, peFileAlign)
+	dataSize = alignTo(dataSize, peFileAlign)
+
+	// Calculate section positions
+	headerSize := uint32(dosHeaderSize + dosStubSize + peSignatureSize + coffHeaderSize +
+		optionalHeaderSize + 3*peSectionHeaderSize)
+	headerSize = alignTo(headerSize, peFileAlign)
+
+	textRawAddr := uint32(headerSize)
+	textVirtualAddr := uint32(0x1000) // First section after headers
+
+	dataRawAddr := textRawAddr + codeSize
+	dataVirtualAddr := textVirtualAddr + alignTo(codeSize, peSectionAlign)
+
+	// Build import data
+	idataVirtualAddr := dataVirtualAddr + alignTo(dataSize, peSectionAlign)
+	importData, iatMap, err := BuildPEImportData(libraries, idataVirtualAddr)
+	if err != nil {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Warning: Failed to build import data: %v\n", err)
+		}
+		importData = []byte{} // Empty import section
+	}
+
+	idataSize := uint32(len(importData))
+	idataRawSize := alignTo(idataSize, peFileAlign)
+	idataRawAddr := dataRawAddr + dataSize
+
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Import section: size=%d, RVA=0x%x\n", idataSize, idataVirtualAddr)
+		fmt.Fprintf(os.Stderr, "IAT mapping: %d functions\n", len(iatMap))
+	}
+
+	// Entry point is at start of .text section
+	entryPointRVA := textVirtualAddr
+
+	// Write PE header with import directory info
+	if err := eb.WritePEHeaderWithImports(entryPointRVA, codeSize, dataSize, idataSize, idataVirtualAddr); err != nil {
+		return err
+	}
+
+	// Write section headers
+	eb.WritePESectionHeader(".text", codeSize, textVirtualAddr, codeSize, textRawAddr,
+		scnCntCode|scnMemExecute|scnMemRead)
+	eb.WritePESectionHeader(".data", dataSize, dataVirtualAddr, dataSize, dataRawAddr,
+		scnCntInitData|scnMemRead|scnMemWrite)
+	eb.WritePESectionHeader(".idata", idataSize, idataVirtualAddr, idataRawSize, idataRawAddr,
+		scnCntInitData|scnMemRead) // Import section
+
+	// Pad headers to file alignment
+	currentPos := uint32(dosHeaderSize + dosStubSize + peSignatureSize + coffHeaderSize +
+		optionalHeaderSize + 3*peSectionHeaderSize)
+	padding := int(headerSize - currentPos)
+	if padding > 0 {
+		eb.ELFWriter().WriteN(0, padding)
+	}
+
+	// Assign addresses to all data symbols (strings, constants)
+	// For PE, the .data section contains both rodata and data
+	// IMPORTANT: Must use the same sorted order as when we wrote the data!
+	rodataAddr := peImageBase + uint64(dataVirtualAddr)
+	currentAddr := rodataAddr
+
+	// First, rodata symbols (read-only) in sorted order
+	for _, symbol := range rodataNames {
+		value := rodataSymbols[symbol]
+		eb.DefineAddr(symbol, currentAddr)
+		currentAddr += uint64(len(value))
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "PE rodata: %s at 0x%x\n", symbol, eb.consts[symbol].addr)
+		}
+	}
+
+	// Then, data symbols (writable, like cpu_has_avx512) in sorted order
+	for _, symbol := range dataNames {
+		value := dataSymbols[symbol]
+		eb.DefineAddr(symbol, currentAddr)
+		currentAddr += uint64(len(value))
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "PE data: %s at 0x%x\n", symbol, eb.consts[symbol].addr)
+		}
+	}
+
+	// Patch calls to use IAT (Import Address Table)
+	eb.PatchPECallsToIAT(iatMap, uint64(textVirtualAddr), uint64(idataVirtualAddr), peImageBase)
+
+	// Patch PC-relative relocations (LEA instructions for data access)
+	textAddrFull := peImageBase + uint64(textVirtualAddr)
+	eb.PatchPCRelocations(textAddrFull, rodataAddr, eb.rodata.Len())
+
+	// Write sections
+	// .text section
+	eb.ELFWriter().WriteBytes(eb.text.Bytes())
+	if pad := int(codeSize) - eb.text.Len(); pad > 0 {
+		eb.ELFWriter().WriteN(0, pad)
+	}
+
+	// .data section (combine rodata and data)
+	eb.ELFWriter().WriteBytes(eb.rodata.Bytes())
+	eb.ELFWriter().WriteBytes(eb.data.Bytes())
+	if pad := int(dataSize) - eb.rodata.Len() - eb.data.Len(); pad > 0 {
+		eb.ELFWriter().WriteN(0, pad)
+	}
+
+	// .idata section (imports)
+	eb.ELFWriter().WriteBytes(importData)
+	if pad := int(idataRawSize) - len(importData); pad > 0 {
+		eb.ELFWriter().WriteN(0, pad)
+	}
+
+	// Write to file
+	if err := os.WriteFile(outputPath, eb.elf.Bytes(), 0755); err != nil {
+		return fmt.Errorf("failed to write PE file: %v", err)
+	}
+
+	return nil
+}
+
 // Confidence that this function is working: 70%
 // BuildPEImportData builds the complete import section data for PE files
 // Returns: import data, IAT RVA map (funcName -> RVA), error
@@ -441,6 +605,10 @@ func BuildPEImportData(libraries map[string][]string, idataRVA uint32) ([]byte, 
 	// 3. Import Address Tables (IAT) - one per DLL, same structure as ILT (loader fills this)
 	// 4. Hint/Name Table - hint (uint16) + name (null-terminated string) for each function
 	// 5. DLL names - null-terminated strings
+
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "BuildPEImportData: libraries = %v\n", libraries)
+	}
 
 	if len(libraries) == 0 {
 		return nil, nil, fmt.Errorf("no libraries to import")
@@ -465,8 +633,16 @@ func BuildPEImportData(libraries map[string][]string, idataRVA uint32) ([]byte, 
 	}
 	libsData := make([]libData, 0, numLibs)
 
+	// Sort library names for deterministic output
+	libNames := make([]string, 0, len(libraries))
+	for libName := range libraries {
+		libNames = append(libNames, libName)
+	}
+	sort.Strings(libNames)
+	
 	// First pass: calculate all offsets
-	for libName, funcs := range libraries {
+	for _, libName := range libNames {
+		funcs := libraries[libName]
 		ld := libData{
 			name:      libName,
 			functions: funcs,
@@ -484,12 +660,12 @@ func BuildPEImportData(libraries map[string][]string, idataRVA uint32) ([]byte, 
 		libsData = append(libsData, ld)
 	}
 
-	// Hint/Name table offset
-	hintsBaseOffset := currentOffset
-
 	// Calculate hint/name entries
 	for i := range libsData {
 		libsData[i].hintsOffset = currentOffset
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: %s hintsOffset = 0x%x (currentOffset before hints)\n", libsData[i].name, currentOffset)
+		}
 		for _, funcName := range libsData[i].functions {
 			// 2 bytes (hint) + function name + null terminator
 			// Align to 2-byte boundary
@@ -497,7 +673,13 @@ func BuildPEImportData(libraries map[string][]string, idataRVA uint32) ([]byte, 
 			if entrySize%2 != 0 {
 				entrySize++
 			}
+			if VerboseMode && i == len(libsData)-1 { // Last library
+				fmt.Fprintf(os.Stderr, "DEBUG:   %s: len=%d, entrySize=%d, nextOffset=0x%x\n", funcName, len(funcName), entrySize, currentOffset+uint32(entrySize))
+			}
 			currentOffset += uint32(entrySize)
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: %s hints end at 0x%x\n", libsData[i].name, currentOffset)
 		}
 	}
 
@@ -519,13 +701,20 @@ func BuildPEImportData(libraries map[string][]string, idataRVA uint32) ([]byte, 
 	// Null terminator for IDT
 	binary.Write(&buf, binary.LittleEndian, [20]byte{})
 
-	// Write ILTs and IATs for each library
-	hintOffset := hintsBaseOffset
-	for _, ld := range libsData {
-		// Write ILT
-		for _, funcName := range ld.functions {
+	// Write ILTs and IATs for each library (interleaved: ILT then IAT for each library)
+	for libIdx, ld := range libsData {
+		// Write ILT for this library
+		hintOffset := ld.hintsOffset // Start at this library's hint offset
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Writing ILT for %s, starting hintOffset=0x%x\n", ld.name, hintOffset)
+		}
+		for funcIdx, funcName := range ld.functions {
 			// RVA to hint/name entry (bit 63 clear = import by name)
 			binary.Write(&buf, binary.LittleEndian, uint64(idataRVA+hintOffset))
+			
+			if VerboseMode && libIdx == 1 && funcIdx < 3 { // msvcrt, first 3 functions
+				fmt.Fprintf(os.Stderr, "DEBUG:   ILT[%d] %s -> hint RVA 0x%x\n", funcIdx, funcName, idataRVA+hintOffset)
+			}
 
 			// Calculate hint/name entry size for next iteration
 			entrySize := 2 + len(funcName) + 1
@@ -536,19 +725,26 @@ func BuildPEImportData(libraries map[string][]string, idataRVA uint32) ([]byte, 
 		}
 		// Null terminator for ILT
 		binary.Write(&buf, binary.LittleEndian, uint64(0))
-	}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Finished ILT for %s\n", ld.name)
+		}
 
-	// Write IATs (same as ILTs initially, loader will fill them)
-	for _, ld := range libsData {
+		// Write IAT for this library (same as ILT initially, loader will fill it)
+		hintOffset = ld.hintsOffset // Reset to this library's hint offset
 		iatBase := idataRVA + ld.iatOffset
-		funcIndex := 0
-		// Use this library's hint offset
-		hintOffset = ld.hintsOffset
+		
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Writing IAT for %s (offset=0x%x, iatBase=0x%x, functions=%v)\n", ld.name, ld.iatOffset, iatBase, ld.functions)
+			fmt.Fprintf(os.Stderr, "DEBUG: Starting hintOffset=0x%x\n", hintOffset)
+		}
 
-		for _, funcName := range ld.functions {
+		for funcIndex, funcName := range ld.functions {
 			// Store IAT RVA for this function
 			iatRVA := iatBase + uint32(funcIndex*8)
 			iatMap[funcName] = iatRVA
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG:   %s -> IAT RVA=0x%x, hint RVA=0x%x\n", funcName, iatRVA, idataRVA+hintOffset)
+			}
 
 			// RVA to hint/name entry
 			binary.Write(&buf, binary.LittleEndian, uint64(idataRVA+hintOffset))
@@ -558,15 +754,18 @@ func BuildPEImportData(libraries map[string][]string, idataRVA uint32) ([]byte, 
 				entrySize++
 			}
 			hintOffset += uint32(entrySize)
-			funcIndex++
 		}
 		// Null terminator for IAT
 		binary.Write(&buf, binary.LittleEndian, uint64(0))
 	}
 
 	// Write Hint/Name Table
-	for _, ld := range libsData {
+	for libIdx, ld := range libsData {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Writing hints for %s starting at buf offset 0x%x\n", ld.name, buf.Len())
+		}
 		for _, funcName := range ld.functions {
+			beforeLen := buf.Len()
 			// Hint (ordinal, we use 0)
 			binary.Write(&buf, binary.LittleEndian, uint16(0))
 			// Function name
@@ -576,6 +775,13 @@ func BuildPEImportData(libraries map[string][]string, idataRVA uint32) ([]byte, 
 			if (2+len(funcName)+1)%2 != 0 {
 				buf.WriteByte(0)
 			}
+			afterLen := buf.Len()
+			if VerboseMode && libIdx == 0 && (funcName == "SDL_RenderTexture" || funcName == "SDL_RenderPresent" || funcName == "SDL_RenderClear") {
+				fmt.Fprintf(os.Stderr, "DEBUG:   %s: wrote %d bytes (buf %d -> %d)\n", funcName, afterLen-beforeLen, beforeLen, afterLen)
+			}
+		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Finished hints for %s at buf offset 0x%x\n", ld.name, buf.Len())
 		}
 	}
 
