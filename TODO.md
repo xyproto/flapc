@@ -4,9 +4,9 @@
 - [x] Windows/Wine PE execution working with proper Microsoft x64 calling convention (RCX,RDX,R8,R9 + shadow space). Printf works correctly, exit codes work, basic tests run under Wine.
 - [x] Fix PE import table generation (ILT+IAT pairs must be interleaved per library).
 - [x] Update remaining C FFI call sites to use platform-specific calling convention helpers - Already implemented in compileCFunctionCall
+- [x] Fix exitf() - Now uses syscall directly to stderr. Works correctly on Linux.
+- [ ] Fix tail (_) operator - Currently produces garbage values. See TAIL.md for details. The algorithm for copying and re-indexing list elements needs fixing. DEFERRED - focus on other features first.
 - [ ] SDL3 + Windows/Wine support - Deferred. See TAIL.md for details. Wine's msvcrt doesn't support __acrt_iob_func, and DXGI support is limited. Focus on Linux target first.
-- [ ] Fix exitf() - Currently segfaults on Linux with simple format strings. The implementation is incomplete. Consider simplifying to just call eprintf() + exit() instead of reimplementing fprintf logic.
-- [ ] Fix tail (_) operator - Currently produces garbage values. See TAIL.md for details. The algorithm for copying and re-indexing list elements needs fixing.
 
 ## Features
 - [ ] Add back the "import" feature, for being able to import directly from git repos with .flap source code files.
