@@ -585,11 +585,10 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 		// MachO is handled in ARM64 codegen path above
 		return fmt.Errorf("MachO should be handled by ARM64 code generator")
 	}
-	
+
 	// Default: Write ELF using existing infrastructure
 	return fc.writeELF(program, outputPath)
 }
-
 
 // collectSymbols performs the first pass: collect all variable declarations
 // without generating any code. This allows forward references.
@@ -8292,7 +8291,7 @@ func (fc *FlapCompiler) cleanupAllArenas() {
 	fc.out.MovRegToReg("rax", "r8")
 	fc.out.ShlRegByImm("rax", 3) // offset = index * 8
 	fc.out.AddRegToReg("rax", "rbx")
-	
+
 	// Use proper calling convention for first argument
 	firstArgReg := "rdi" // System V AMD64 (Linux/Unix)
 	if fc.eb.target.OS() == OSWindows {
@@ -8302,11 +8301,11 @@ func (fc *FlapCompiler) cleanupAllArenas() {
 
 	// Allocate shadow space for Windows
 	shadowSpace := fc.allocateShadowSpace()
-	
+
 	// Free the arena
 	fc.trackFunctionCall("free")
 	fc.eb.GenerateCallInstruction("free")
-	
+
 	// Deallocate shadow space
 	fc.deallocateShadowSpace(shadowSpace)
 
@@ -8320,13 +8319,13 @@ func (fc *FlapCompiler) cleanupAllArenas() {
 	fc.patchJumpImmediate(skipCleanupEnd+2, int32(cleanupDone-(skipCleanupEnd+ConditionalJumpSize)))
 
 	fc.out.MovRegToReg(firstArgReg, "rbx") // meta-arena pointer (reuse firstArgReg from above)
-	
+
 	// Allocate shadow space for Windows
 	shadowSpace2 := fc.allocateShadowSpace()
-	
+
 	fc.trackFunctionCall("free")
 	fc.eb.GenerateCallInstruction("free")
-	
+
 	// Deallocate shadow space
 	fc.deallocateShadowSpace(shadowSpace2)
 
@@ -9782,7 +9781,7 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 
 	var intArgRegs []string
 	var floatArgRegs []string
-	
+
 	if fc.eb.target.OS() == OSWindows {
 		// Windows x64 calling convention
 		intArgRegs = []string{"rcx", "rdx", "r8", "r9"}
@@ -10075,13 +10074,13 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 
 		// Allocate shadow space for Windows x64 calling convention
 		shadowSpace := fc.allocateShadowSpace()
-		
+
 		// Generate PLT call
 		fc.eb.GenerateCallInstruction(funcName)
 
 		// Deallocate shadow space
 		fc.deallocateShadowSpace(shadowSpace)
-		
+
 		// Clean up stack arguments after call
 		if stackArgCount > 0 {
 			fc.out.AddImmToReg("rsp", int64(stackArgCount*8))
@@ -10110,12 +10109,12 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 		// No arguments - just call the function
 		// Allocate shadow space for Windows x64 calling convention
 		shadowSpace := fc.allocateShadowSpace()
-		
+
 		fc.eb.GenerateCallInstruction(funcName)
 
 		// Deallocate shadow space
 		fc.deallocateShadowSpace(shadowSpace)
-		
+
 		// Handle return value based on signature
 		var returnType string
 		if funcSig != nil {

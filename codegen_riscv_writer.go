@@ -1,8 +1,8 @@
 package main
 
 import (
-"fmt"
-"os"
+	"fmt"
+	"os"
 )
 
 // codegen_riscv_writer.go - ELF executable generation for RISC-V64 Linux

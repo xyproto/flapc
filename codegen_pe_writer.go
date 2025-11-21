@@ -1,9 +1,9 @@
 package main
 
 import (
-"fmt"
-"os"
-"strings"
+	"fmt"
+	"os"
+	"strings"
 )
 
 // codegen_pe_writer.go - PE executable generation for x86_64 Windows
