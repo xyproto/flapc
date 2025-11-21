@@ -1,4 +1,2 @@
-main = {
-    println("Hello from Windows/Wine!")
-    42
-}
+println("Hello from Windows!")
+println("Built with Flapc")
