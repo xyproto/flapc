@@ -1,0 +1,4 @@
+// Test C function that returns int
+result := c.printf("Test\n")
+println("printf returned:")
+println(result as number)

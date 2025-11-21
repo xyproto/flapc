@@ -73,3 +73,14 @@ C function calls on Windows x64 are returning garbage values. The issue affects 
 - Compare generated assembly with working C code compiled with MinGW
 - Consider using objdump to examine the actual call sequence
 
+
+**Update after investigation:**
+- Linux C FFI works correctly (`c.printf("A")` returns 1)
+- Windows generated assembly looks correct (proper IAT calls, stack alignment)
+- DLL loading verified with WINEDEBUG
+- Issue appears to be Windows-specific calling convention subtlety
+- Suggested fix: Compare with MinGW-generated assembly, check if Wine's msvcrt has quirks
+
+For now, Windows PE generation works for native Flap code and built-in functions.
+SDL3 support on Windows is blocked by this C FFI return value issue.
+

@@ -1,0 +1,2 @@
+x := c.printf("A")
+println(x as number)

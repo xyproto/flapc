@@ -1,0 +1,6 @@
+import sdl3 as sdl
+
+// Try to get the last SDL error (should be null initially)
+error_ptr := sdl.SDL_GetError()
+println("SDL_GetError returned:")
+println(error_ptr as number)
