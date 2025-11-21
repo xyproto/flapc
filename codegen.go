@@ -554,14 +554,16 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	// Even if there's an exit() call in the code, it might be conditional
 	// If an unconditional exit() is called, it will never return, so this code is harmless
 	// If we've used printf or other libc functions, call exit() to ensure proper cleanup
-	// Otherwise use direct syscall for minimal programs
-	if fc.usedFunctions["printf"] || fc.usedFunctions["exit"] || len(fc.usedFunctions) > 0 {
+	// Otherwise use direct syscall for minimal programs (except on Windows where syscalls don't exist)
+	if fc.usedFunctions["printf"] || fc.usedFunctions["exit"] || len(fc.usedFunctions) > 0 || fc.eb.target.OS() == OSWindows {
 		// Use libc's exit() for proper cleanup (flushes buffers)
-		fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
+		// Use platform-appropriate register for first integer argument
+		exitReg := fc.getIntArgReg(0)
+		fc.out.XorRegWithReg(exitReg, exitReg) // exit code 0
 		fc.trackFunctionCall("exit")
 		fc.eb.GenerateCallInstruction("exit")
 	} else {
-		// Use direct syscall for minimal programs without libc dependencies
+		// Use direct syscall for minimal programs without libc dependencies (Linux only)
 		fc.out.MovImmToReg("rax", "60")    // syscall number for exit
 		fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
 		fc.eb.Emit("syscall")              // invoke syscall directly
