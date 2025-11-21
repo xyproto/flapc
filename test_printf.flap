@@ -1,0 +1,3 @@
+// Test printf on Windows
+printf("Hello from printf\n")
+println("Hello from println")

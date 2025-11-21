@@ -1178,7 +1178,7 @@ cstruct Vec3Data {
 
 class Vec3 {
     init = (x, y, z) -> {
-        .data = call("malloc", Vec3Data.size as uint64)
+        .data = c.malloc(Vec3Data.size as uint64)
 
         unsafe float64 {
             rax <- .data as ptr
@@ -1203,7 +1203,7 @@ class Vec3 {
         }
     }
 
-    free = () -> call("free", .data as ptr)
+    free = () -> c.free(.data as ptr)
 }
 
 v1 := Vec3(1, 2, 3)
@@ -1419,7 +1419,7 @@ window := sdl.SDL_CreateWindow("Title", 640, 480, 0) or! {
 }
 
 // Or with default value
-ptr := c_malloc(1024) or! 0
+ptr := c.malloc(1024) or! 0
 ```
 
 **Semantics:**
@@ -1521,7 +1521,15 @@ CStructs have C-compatible memory layout:
 
 ### Arena Allocators
 
-Scoped memory management without GC:
+Flap uses **arena allocators** for memory management. There is NO `malloc`, `free`, `realloc`, or `calloc` as builtin functions.
+
+If you need direct C memory management, use the C FFI:
+```flap
+ptr := c.malloc(1024)
+defer c.free(ptr)
+```
+
+Scoped memory management with arenas:
 
 ```flap
 result = arena {
@@ -1536,6 +1544,8 @@ result = arena {
 - Request handlers
 - Temporary buffers
 - Batch processing
+
+**Important:** The Flap compiler uses arenas internally. Users should use `allocate()` within `arena {}` blocks, or explicitly use `c.malloc`/`c.free`/`c.realloc`/`c.calloc` via the C FFI when needed.
 
 ### Defer for Resource Management
 
@@ -1555,17 +1565,17 @@ defer expression
 **Basic Example:**
 ```flap
 open_file = filename => {
-    file := c_fopen(filename, "r") or! {
+    file := c.fopen(filename, "r") or! {
         println("Failed to open:", filename)
         ret 0
     }
-    defer c_fclose(file)  // Always closes, even on error
+    defer c.fclose(file)  // Always closes, even on error
 
     // Read and process file...
     data := read_all(file)
 
     ret data
-    // c_fclose(file) executes here automatically
+    // c.fclose(file) executes here automatically
 }
 ```
 
@@ -1651,13 +1661,15 @@ new_owner = large_data!  // Move, don't copy
 // large_data now invalid
 ```
 
-### Manual Memory
+### Manual Memory (C FFI)
+
+Flap does NOT provide `malloc`/`free` as builtins. Use C FFI:
 
 ```flap
 unsafe ptr {
-    ptr = malloc(1024)
+    ptr = c.malloc(1024)
     // Use ptr
-    free(ptr)
+    c.free(ptr)
 }
 ```
 
@@ -1933,7 +1945,7 @@ window := sdl.SDL_CreateWindow("Title", 640, 480, 0) or! {
 }
 
 // Inline null check with default
-ptr := c_malloc(1024) or! 0  // Returns 0 if allocation failed
+ptr := c.malloc(1024) or! 0  // Returns 0 if allocation failed
 
 // Railway-oriented programming pattern
 result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
@@ -2012,7 +2024,7 @@ init_sdl = () => {
 
 // Simpler pattern with defaults
 allocate_buffer = size => {
-    ptr := c_malloc(size) or! 0
+    ptr := c.malloc(size) or! 0
     ptr == 0 {
         ret error("mem")  // Out of memory
     }
@@ -2354,7 +2366,7 @@ cstruct Buffer {
 
 // Use C functions with or! for clean error handling
 create_buffer = size => {
-    ptr := c_malloc(size) or! {
+    ptr := c.malloc(size) or! {
         println("Memory allocation failed!")
         ret Buffer(0, 0, 0)
     }
@@ -2363,7 +2375,7 @@ create_buffer = size => {
 
 // Simpler version with default
 create_buffer_safe = size => {
-    ptr := c_malloc(size) or! 0
+    ptr := c.malloc(size) or! 0
     Buffer(ptr, 0, size)
 }
 
@@ -2379,7 +2391,7 @@ write_buffer = (buf, data) => {
 }
 
 free_buffer = buf => {
-    buf.data != 0 { c_free(buf.data) }
+    buf.data != 0 { c.free(buf.data) }
 }
 
 // Usage

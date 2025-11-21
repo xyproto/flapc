@@ -504,6 +504,26 @@ int32 = 100      // OK - variable named int32
 x = y as int32   // OK - int32 as type cast
 ```
 
+## Memory Management
+
+**CRITICAL:** Flap does NOT provide `malloc`, `free`, `realloc`, or `calloc` as builtin functions.
+
+**Memory allocation options:**
+1. **Arena allocators** (recommended): Use `allocate()` within `arena {}` blocks
+2. **C FFI** (when needed): Explicitly call `c.malloc`, `c.free`, `c.realloc`, `c.calloc`
+
+```flap
+// Recommended: arena allocator
+result = arena {
+    data = allocate(1024)
+    process(data)
+}
+
+// Alternative: explicit C FFI
+ptr := c.malloc(1024)
+defer c.free(ptr)
+```
+
 ## Operators
 
 ### Arithmetic Operators

@@ -1,0 +1,4 @@
+// Test c.malloc only
+println("Before malloc")
+ptr := c.malloc(64)
+println("After malloc")

@@ -9863,6 +9863,11 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 				"floor": {ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}},
 				"ceil":  {ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}},
 				"fabs":  {ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}},
+				// Memory management functions
+				"malloc":  {ReturnType: "void*", Params: []CFunctionParam{{Type: "size_t"}}},
+				"free":    {ReturnType: "void", Params: []CFunctionParam{{Type: "void*"}}},
+				"realloc": {ReturnType: "void*", Params: []CFunctionParam{{Type: "void*"}, {Type: "size_t"}}},
+				"calloc":  {ReturnType: "void*", Params: []CFunctionParam{{Type: "size_t"}, {Type: "size_t"}}},
 				// Note: printf is variadic and can't be fully described here,
 				// but we can at least mark the format string as const char*
 				"printf": {ReturnType: "int", Params: []CFunctionParam{{Type: "const char*"}}},
