@@ -321,6 +321,38 @@ func (eb *ExecutableBuilder) WritePE(outputPath string) error {
 		eb.ELFWriter().WriteN(0, padding)
 	}
 
+	// Assign addresses to all data symbols (strings, constants)
+	// For PE, the .data section contains both rodata and data
+	rodataAddr := peImageBase + uint64(dataVirtualAddr)
+	currentAddr := rodataAddr
+	
+	// First, rodata symbols (read-only)
+	rodataSymbols := eb.RodataSection()
+	for symbol, value := range rodataSymbols {
+		eb.DefineAddr(symbol, currentAddr)
+		currentAddr += uint64(len(value))
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "PE rodata: %s at 0x%x\n", symbol, eb.consts[symbol].addr)
+		}
+	}
+	
+	// Then, data symbols (writable, like cpu_has_avx512)
+	dataSymbols := eb.DataSection()
+	for symbol, value := range dataSymbols {
+		eb.DefineAddr(symbol, currentAddr)
+		currentAddr += uint64(len(value))
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "PE data: %s at 0x%x\n", symbol, eb.consts[symbol].addr)
+		}
+	}
+
+	// Patch calls to use IAT (Import Address Table)
+	eb.PatchPECallsToIAT(iatMap, uint64(textVirtualAddr), uint64(idataVirtualAddr), peImageBase)
+
+	// Patch PC-relative relocations (LEA instructions for data access)
+	textAddrFull := peImageBase + uint64(textVirtualAddr)
+	eb.PatchPCRelocations(textAddrFull, rodataAddr, eb.rodata.Len())
+
 	// Write sections
 	// .text section
 	eb.ELFWriter().WriteBytes(eb.text.Bytes())
@@ -536,6 +568,88 @@ func (eb *ExecutableBuilder) WritePERelocations() ([]byte, error) {
 	// and create relocation entries for them
 	
 	return []byte{}, nil
+}
+
+// Confidence that this function is working: 80%
+// PatchPECallsToIAT patches call instructions to use the Import Address Table (IAT)
+// On Windows, we use indirect calls through the IAT instead of PLT stubs
+func (eb *ExecutableBuilder) PatchPECallsToIAT(iatMap map[string]uint32, textVirtualAddr, idataVirtualAddr, imageBase uint64) {
+	textBytes := eb.text.Bytes()
+	
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Patching %d calls to use IAT\n", len(eb.callPatches))
+	}
+	
+	for _, patch := range eb.callPatches {
+		// Extract the function name (remove $stub suffix if present)
+		funcName := patch.targetName
+		if len(funcName) > 5 && funcName[len(funcName)-5:] == "$stub" {
+			funcName = funcName[:len(funcName)-5]
+		}
+		
+		// Check if this is an internal function label
+		if targetOffset := eb.LabelOffset(funcName); targetOffset >= 0 {
+			// Internal function - use direct relative call
+			ripAddr := uint64(patch.position) + 4
+			targetAddr := uint64(targetOffset)
+			displacement := int64(targetAddr) - int64(ripAddr)
+			
+			if displacement >= -0x80000000 && displacement <= 0x7FFFFFFF {
+				disp32 := uint32(displacement)
+				textBytes[patch.position] = byte(disp32 & 0xFF)
+				textBytes[patch.position+1] = byte((disp32 >> 8) & 0xFF)
+				textBytes[patch.position+2] = byte((disp32 >> 16) & 0xFF)
+				textBytes[patch.position+3] = byte((disp32 >> 24) & 0xFF)
+				
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "  Patched internal call to %s: displacement=%d\n", funcName, displacement)
+				}
+			}
+			continue
+		}
+		
+		// Look up the function in the IAT
+		iatRVA, ok := iatMap[funcName]
+		if !ok {
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "  Warning: Function %s not found in IAT\n", funcName)
+			}
+			continue
+		}
+		
+		// For Windows x86-64, we need to replace the CALL rel32 (0xE8 XX XX XX XX)
+		// with CALL [RIP+disp32] (0xFF 0x15 XX XX XX XX)
+		// This is an indirect call through the IAT
+		
+		// Calculate the RIP-relative offset to the IAT entry
+		// The instruction is 6 bytes: FF 15 XX XX XX XX
+		// RIP points to the byte after the instruction when accessing memory
+		callPos := patch.position - 1 // Position of the 0xE8 byte
+		ripAddr := uint64(callPos) + 6 // RIP after the new 6-byte instruction
+		iatAddr := iatRVA // IAT is at idataVirtualAddr + offset, but iatRVA is already the full RVA
+		
+		displacement := int64(iatAddr) - int64(ripAddr)
+		
+		if displacement < -0x80000000 || displacement > 0x7FFFFFFF {
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "  Warning: IAT displacement too large for %s: %d\n", funcName, displacement)
+			}
+			continue
+		}
+		
+		// Replace CALL rel32 with CALL [RIP+disp32]
+		disp32 := uint32(displacement)
+		textBytes[callPos] = 0xFF   // CALL r/m64
+		textBytes[callPos+1] = 0x15 // ModR/M: RIP-relative addressing
+		textBytes[callPos+2] = byte(disp32 & 0xFF)
+		textBytes[callPos+3] = byte((disp32 >> 8) & 0xFF)
+		textBytes[callPos+4] = byte((disp32 >> 16) & 0xFF)
+		textBytes[callPos+5] = byte((disp32 >> 24) & 0xFF)
+		
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "  Patched IAT call to %s: IAT RVA=0x%x, displacement=%d\n", funcName, iatRVA, displacement)
+		}
+	}
 }
 
 // Helper function to write import descriptor
