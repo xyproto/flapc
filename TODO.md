@@ -1,8 +1,7 @@
 # TODO for the Flap Compiler (flapc)
 
 ## High Priority
-- [x] Basic Windows/Wine PE execution working with proper Microsoft x64 calling convention (RCX,RDX,R8,R9 + shadow space). Tests run under Wine with 3-second timeout.
-- [ ] Fix Windows printf output: PE executables compile and run but printf output doesn't appear in Wine. Investigation needed: stdout redirection or buffer flushing.
+- [x] Windows/Wine PE execution working with proper Microsoft x64 calling convention (RCX,RDX,R8,R9 + shadow space). Printf works correctly, exit codes work, tests run under Wine with 3-second timeout.
 - [ ] Update remaining C FFI call sites to use platform-specific calling convention helpers (getIntArgReg, allocateShadowSpace)
 
 ## Features
