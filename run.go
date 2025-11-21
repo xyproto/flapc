@@ -75,6 +75,6 @@ func compileAndRunWindows(t *testing.T, code string) string {
 	runOutput, err := runCmd.CombinedOutput()
 	// Note: timeout command may return exit code 124 on timeout, which is expected
 	// Wine also may produce stderr output, so we just capture combined output
-	
+
 	return string(runOutput)
 }

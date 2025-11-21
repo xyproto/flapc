@@ -23,10 +23,10 @@ func (fc *FlapCompiler) writePE(program *Program, outputPath string) error {
 
 	// Build library -> functions map for imports
 	libraries := make(map[string][]string)
-	
+
 	// Standard C runtime functions (msvcrt.dll)
 	msvcrtFuncs := []string{"printf", "fprintf", "stderr", "exit", "malloc", "free", "realloc", "strlen", "pow", "fflush", "sin", "cos", "sqrt", "fopen", "fclose", "fwrite", "fread", "memcpy", "memset"}
-	
+
 	// Add all functions from usedFunctions, organized by library
 	lambdaSet := make(map[string]bool)
 	for _, lambda := range fc.lambdaFuncs {
@@ -42,7 +42,7 @@ func (fc *FlapCompiler) writePE(program *Program, outputPath string) error {
 		if strings.HasPrefix(funcName, "_flap") || strings.HasPrefix(funcName, "flap_") {
 			continue
 		}
-		
+
 		// Check if this function belongs to a specific library
 		if libName, ok := fc.cFunctionLibs[funcName]; ok {
 			// Map library name to DLL name
@@ -53,12 +53,12 @@ func (fc *FlapCompiler) writePE(program *Program, outputPath string) error {
 			libraries["msvcrt.dll"] = append(libraries["msvcrt.dll"], funcName)
 		}
 	}
-	
+
 	// Always include minimal msvcrt.dll functions
 	if len(libraries["msvcrt.dll"]) == 0 {
 		libraries["msvcrt.dll"] = msvcrtFuncs
 	}
-	
+
 	// Sort function names within each library for deterministic output
 	for dllName := range libraries {
 		funcs := libraries[dllName]
@@ -101,11 +101,11 @@ func mapLibraryToDLL(libName string) string {
 		"jpeg":    "libjpeg.dll",
 		"zlib":    "zlib1.dll",
 	}
-	
+
 	if dll, ok := dllMap[libName]; ok {
 		return dll
 	}
-	
+
 	// Default: add .dll extension
 	return libName + ".dll"
 }

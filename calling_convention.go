@@ -14,23 +14,23 @@ package main
 type CallingConvention interface {
 	// GetIntegerArgReg returns the register for integer argument at given index
 	GetIntegerArgReg(index int) string
-	
+
 	// GetFloatArgReg returns the register for float argument at given index
 	GetFloatArgReg(index int) string
-	
+
 	// GetReturnReg returns the register for return value
 	GetIntegerReturnReg() string
 	GetFloatReturnReg() string
-	
+
 	// GetCallerSavedRegs returns registers that the caller must save before a call
 	GetCallerSavedRegs() []string
-	
+
 	// GetCalleeSavedRegs returns registers that the callee must save/restore
 	GetCalleeSavedRegs() []string
-	
+
 	// GetShadowSpaceSize returns the size of shadow space required (Windows: 32, others: 0)
 	GetShadowSpaceSize() int
-	
+
 	// GetStackAlignment returns the required stack alignment (usually 16 bytes)
 	GetStackAlignment() int
 }
@@ -147,10 +147,10 @@ func GetCallingConvention(target Target) CallingConvention {
 
 // CallSiteManager helps manage register state around function calls
 type CallSiteManager struct {
-	cc          CallingConvention
-	savedRegs   []string           // Registers we need to save
-	savedOffsets map[string]int    // Stack offsets for saved registers
-	stackSpace  int                // Total stack space allocated
+	cc           CallingConvention
+	savedRegs    []string       // Registers we need to save
+	savedOffsets map[string]int // Stack offsets for saved registers
+	stackSpace   int            // Total stack space allocated
 }
 
 // NewCallSiteManager creates a manager for a function call site
@@ -172,32 +172,32 @@ func (csm *CallSiteManager) PrepareCall(fc *FlapCompiler, liveRegs []string) int
 	for _, reg := range callerSaved {
 		callerSavedMap[reg] = true
 	}
-	
+
 	// Find live registers that are caller-saved
 	for _, reg := range liveRegs {
 		if callerSavedMap[reg] {
 			csm.savedRegs = append(csm.savedRegs, reg)
 		}
 	}
-	
+
 	// Calculate stack space needed: saved registers + shadow space
 	shadowSpace := csm.cc.GetShadowSpaceSize()
 	registerSpace := len(csm.savedRegs) * 8
 	totalSpace := shadowSpace + registerSpace
-	
+
 	// Align to stack alignment
 	alignment := csm.cc.GetStackAlignment()
 	if totalSpace%alignment != 0 {
 		totalSpace = ((totalSpace / alignment) + 1) * alignment
 	}
-	
+
 	csm.stackSpace = totalSpace
-	
+
 	// Allocate stack space
 	if totalSpace > 0 {
 		fc.out.SubImmFromReg("rsp", int64(totalSpace))
 	}
-	
+
 	// Save registers
 	offset := shadowSpace
 	for _, reg := range csm.savedRegs {
@@ -209,7 +209,7 @@ func (csm *CallSiteManager) PrepareCall(fc *FlapCompiler, liveRegs []string) int
 		}
 		offset += 8
 	}
-	
+
 	return totalSpace
 }
 
@@ -224,7 +224,7 @@ func (csm *CallSiteManager) RestoreAfterCall(fc *FlapCompiler) {
 			fc.out.MovMemToReg(reg, "rsp", offset)
 		}
 	}
-	
+
 	// Deallocate stack space
 	if csm.stackSpace > 0 {
 		fc.out.AddImmToReg("rsp", int64(csm.stackSpace))

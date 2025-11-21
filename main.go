@@ -1237,7 +1237,7 @@ func main() {
 	})
 
 	// Auto-detect Windows target from .exe extension if no explicit target/OS was provided
-	autoDetectWindows := !targetExplicitlyProvided && !osExplicitlyProvided && 
+	autoDetectWindows := !targetExplicitlyProvided && !osExplicitlyProvided &&
 		outputFlagProvided && strings.HasSuffix(strings.ToLower(outputFilename), ".exe")
 
 	// If --target is specified, parse it; otherwise use --arch and --os
@@ -1281,7 +1281,7 @@ func main() {
 		if autoDetectWindows {
 			targetOS = OSWindows
 			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "Auto-detected Windows target from .exe output filename (outputFilename=%s, outputFlagProvided=%v)\n", 
+				fmt.Fprintf(os.Stderr, "Auto-detected Windows target from .exe output filename (outputFilename=%s, outputFlagProvided=%v)\n",
 					outputFilename, outputFlagProvided)
 			}
 		} else {
@@ -1298,7 +1298,7 @@ func main() {
 	}
 
 	targetPlatform := Platform{Arch: targetArch, OS: targetOS}
-	
+
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "Target platform: %s-%s\n", targetArch.String(), targetOS.String())
 	}

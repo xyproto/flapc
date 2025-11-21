@@ -587,7 +587,7 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 		fmt.Fprintf(os.Stderr, "Target format: OS=%v, IsPE=%v, IsMachO=%v, IsELF=%v\n",
 			fc.eb.target.OS(), fc.eb.target.IsPE(), fc.eb.target.IsMachO(), fc.eb.target.IsELF())
 	}
-	
+
 	if fc.eb.target.IsPE() {
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "Writing PE executable to %s\n", outputPath)
@@ -3180,12 +3180,12 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 				// Calculate destination offset: 8 + r15 * 16
 				fc.out.MovRegToReg("rax", "r15")
-				fc.out.ShlImmReg("rax", 4)   // rax = r15 * 16
-				fc.out.AddImmToReg("rax", 8) // rax = 8 + r15 * 16
+				fc.out.ShlImmReg("rax", 4)       // rax = r15 * 16
+				fc.out.AddImmToReg("rax", 8)     // rax = 8 + r15 * 16
 				fc.out.AddRegToReg("rax", "r14") // rax = address of key in new list
 
 				// Write key (r15 as float) at [rax]
-				fc.out.Cvtsi2sd("xmm3", "r15")     // xmm3 = r15 as double
+				fc.out.Cvtsi2sd("xmm3", "r15") // xmm3 = r15 as double
 				fc.out.MovXmmToMem("xmm3", "rax", 0)
 
 				// Calculate source offset for value: 8 + (r15+1) * 16 + 8
@@ -9785,7 +9785,7 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 
 	// Track function usage for PLT generation and call order patching
 	fc.trackFunctionCall(funcName)
-	
+
 	// Track which library this function belongs to (for Windows DLL imports)
 	if libName != "" {
 		fc.cFunctionLibs[funcName] = libName
@@ -9959,7 +9959,7 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 		fc.out.PushReg("rbx")
 		// Save the base stack pointer for storing arguments (after we've allocated space)
 		fc.out.LeaMemToReg("rbx", "rsp", 8) // rbx = rsp + 8 (account for pushed rbx)
-		
+
 		for i := range args {
 			info := &argInfos[i]
 			castType := info.castType
@@ -10076,7 +10076,7 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 				fc.out.MovRegToMem("rax", "rbx", i*8)
 			}
 		}
-		
+
 		// Restore rsp to the argument base
 		// rbx points to the start of arguments (rsp + 8 when we saved it)
 		// So we need to set rsp = rbx - 8
@@ -10088,14 +10088,14 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 		// Microsoft x64 vs System V AMD64 have different conventions:
 		// - Microsoft x64: Parameter slots consumed sequentially (param N uses slot N regardless of type)
 		// - System V AMD64: Int and float registers tracked separately
-		
+
 		// Build a list of stack arguments that overflow registers
 		type stackArg struct {
 			offset int
 			value  int
 		}
 		var stackArgs []stackArg
-		
+
 		isWindows := fc.eb.target.OS() == OSWindows
 		stackArgCount := 0
 
@@ -10123,7 +10123,7 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 			// System V AMD64: Track int and float registers separately
 			intRegIdx := 0
 			floatRegIdx := 0
-			
+
 			for i := 0; i < len(args); i++ {
 				isFloatParam := argInfos[i].isFloatParam
 
@@ -10193,9 +10193,17 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 		} else if isPointerType(returnType) {
 			// Pointer type - keep raw integer value but convert to float64 for Flap
 			// (Flap internally represents everything as float64)
+			// On Windows, pointers are 64-bit and returned in RAX correctly
 			fc.out.Cvtsi2sd("xmm0", "rax")
 		} else {
 			// Integer result in rax - convert to float64 for Flap
+			// On Windows: bool returns are 1 byte (AL), int returns are 4 bytes (EAX)
+			// Always zero-extend to 64-bit RAX to avoid garbage in upper bits
+			if fc.eb.target.OS() == OSWindows {
+				// For safety, always zero-extend from AL (handles both bool and int)
+				// movzx eax, al (zero-extend 8-bit AL to 32-bit EAX, which auto-extends to RAX in x64)
+				fc.out.MovzxRegReg("eax", "al")
+			}
 			fc.out.Cvtsi2sd("xmm0", "rax")
 		}
 	} else {
@@ -10222,9 +10230,16 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 		} else if isPointerType(returnType) {
 			// Pointer type - keep raw integer value but convert to float64 for Flap
 			// (Flap internally represents everything as float64)
+			// On Windows, pointers are 64-bit and returned in RAX correctly
 			fc.out.Cvtsi2sd("xmm0", "rax")
 		} else {
 			// Integer result in rax - convert to float64 for Flap
+			// On Windows, 32-bit return values are in EAX, upper 32 bits undefined
+			// Zero-extend to avoid garbage in conversion
+			if fc.eb.target.OS() == OSWindows {
+				// mov eax, eax (zero-extends EAX to RAX)
+				fc.out.MovRegToReg("eax", "eax")
+			}
 			fc.out.Cvtsi2sd("xmm0", "rax")
 		}
 	}
@@ -11149,7 +11164,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 				formatReg = "rsi"
 				intRegs = []string{"rdx", "rcx", "r8", "r9"}
 				xmmRegs = []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"}
-				
+
 				// Get stderr for Linux
 				fc.out.LeaSymbolToReg("r11", "stderr")
 				fc.out.MovMemToReg("rdi", "r11", 0)
@@ -14129,13 +14144,13 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Use arena {} blocks for automatic memory management,
 		// or use c.free() via C FFI if you need manual control.
 		compilerError("free() is not a builtin function. Use arena {} blocks, or c.free() via C FFI")
-	
+
 	case "realloc":
 		// REMOVED: realloc() is not a builtin function.
 		// Use arena {} blocks with allocate() for automatic memory management,
 		// or use c.realloc() via C FFI if you need manual control.
 		compilerError("realloc() is not a builtin function. Use arena {} blocks, or c.realloc() via C FFI")
-	
+
 	case "calloc":
 		// REMOVED: calloc() is not a builtin function.
 		// Use arena {} blocks with allocate() for automatic memory management,

@@ -34,6 +34,12 @@ var x86_64Registers = map[string]Register{
 	"edx": {Name: "edx", Size: 32, Encoding: 2},
 	"ebx": {Name: "ebx", Size: 32, Encoding: 3},
 
+	// 8-bit registers (low byte)
+	"al": {Name: "al", Size: 8, Encoding: 0},
+	"cl": {Name: "cl", Size: 8, Encoding: 1},
+	"dl": {Name: "dl", Size: 8, Encoding: 2},
+	"bl": {Name: "bl", Size: 8, Encoding: 3},
+
 	// AVX-512 ZMM registers (512-bit, 8x float64)
 	"zmm0":  {Name: "zmm0", Size: 512, Encoding: 0},
 	"zmm1":  {Name: "zmm1", Size: 512, Encoding: 1},

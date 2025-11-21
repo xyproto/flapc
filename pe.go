@@ -440,7 +440,7 @@ func (eb *ExecutableBuilder) WritePEWithLibraries(outputPath string, libraries m
 			"msvcrt.dll": {"printf", "exit", "malloc", "free", "realloc", "strlen", "memcpy", "memset", "pow", "fflush"},
 		}
 	}
-	
+
 	return eb.writePEWithLibraries(outputPath, libraries)
 }
 
@@ -639,7 +639,7 @@ func BuildPEImportData(libraries map[string][]string, idataRVA uint32) ([]byte, 
 		libNames = append(libNames, libName)
 	}
 	sort.Strings(libNames)
-	
+
 	// First pass: calculate all offsets
 	for _, libName := range libNames {
 		funcs := libraries[libName]
@@ -711,7 +711,7 @@ func BuildPEImportData(libraries map[string][]string, idataRVA uint32) ([]byte, 
 		for funcIdx, funcName := range ld.functions {
 			// RVA to hint/name entry (bit 63 clear = import by name)
 			binary.Write(&buf, binary.LittleEndian, uint64(idataRVA+hintOffset))
-			
+
 			if VerboseMode && libIdx == 1 && funcIdx < 3 { // msvcrt, first 3 functions
 				fmt.Fprintf(os.Stderr, "DEBUG:   ILT[%d] %s -> hint RVA 0x%x\n", funcIdx, funcName, idataRVA+hintOffset)
 			}
@@ -732,7 +732,7 @@ func BuildPEImportData(libraries map[string][]string, idataRVA uint32) ([]byte, 
 		// Write IAT for this library (same as ILT initially, loader will fill it)
 		hintOffset = ld.hintsOffset // Reset to this library's hint offset
 		iatBase := idataRVA + ld.iatOffset
-		
+
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "DEBUG: Writing IAT for %s (offset=0x%x, iatBase=0x%x, functions=%v)\n", ld.name, ld.iatOffset, iatBase, ld.functions)
 			fmt.Fprintf(os.Stderr, "DEBUG: Starting hintOffset=0x%x\n", hintOffset)
@@ -861,9 +861,9 @@ func (eb *ExecutableBuilder) PatchPECallsToIAT(iatMap map[string]uint32, textVir
 		// The instruction is 6 bytes: FF 15 XX XX XX XX
 		// patch.position points to the displacement (after FF 15)
 		// RIP points to the byte after the instruction when accessing memory
-		dispPos := patch.position                             // Position of displacement
-		ripRVA := textVirtualAddr + uint64(dispPos) + 4       // RIP RVA after reading the displacement
-		iatAddrRVA := uint64(iatRVA)                          // IAT RVA (relative to image base)
+		dispPos := patch.position                       // Position of displacement
+		ripRVA := textVirtualAddr + uint64(dispPos) + 4 // RIP RVA after reading the displacement
+		iatAddrRVA := uint64(iatRVA)                    // IAT RVA (relative to image base)
 
 		displacement := int64(iatAddrRVA) - int64(ripRVA)
 
