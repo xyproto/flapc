@@ -9849,9 +9849,10 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 			}
 		}
 
-		// If still not found, use hardcoded signatures for common math functions
+		// If still not found, use hardcoded signatures for common C functions
 		if funcSig == nil {
-			mathFunctions := map[string]*CFunctionSignature{
+			commonFunctions := map[string]*CFunctionSignature{
+				// Math functions
 				"sin":   {ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}},
 				"cos":   {ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}},
 				"tan":   {ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}},
@@ -9862,11 +9863,14 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 				"floor": {ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}},
 				"ceil":  {ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}},
 				"fabs":  {ReturnType: "double", Params: []CFunctionParam{{Type: "double"}}},
+				// Note: printf is variadic and can't be fully described here,
+				// but we can at least mark the format string as const char*
+				"printf": {ReturnType: "int", Params: []CFunctionParam{{Type: "const char*"}}},
 			}
-			if sig, ok := mathFunctions[funcName]; ok {
+			if sig, ok := commonFunctions[funcName]; ok {
 				funcSig = sig
 				if VerboseMode {
-					fmt.Fprintf(os.Stderr, "Using hardcoded math signature for %s: %d params, return=%s\n",
+					fmt.Fprintf(os.Stderr, "Using hardcoded signature for %s: %d params, return=%s\n",
 						funcName, len(sig.Params), sig.ReturnType)
 				}
 			}
@@ -9878,49 +9882,82 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 		argStackOffset := len(args) * 8
 		fc.out.SubImmFromReg("rsp", int64(argStackOffset))
 
-		// Compile each argument and store on stack
-		for i, arg := range args {
-			// Determine the parameter type from signature or cast
-			var paramType string
-			var castType string
-			innerExpr := arg
+		// First pass: Determine type information for each argument
+		type argInfo struct {
+			castType     string
+			innerExpr    Expression
+			isFloatParam bool
+		}
+		argInfos := make([]argInfo, len(args))
 
+		for i, arg := range args {
+			info := &argInfos[i]
+			info.innerExpr = arg
+
+			// Check for explicit cast
 			if castExpr, ok := arg.(*CastExpr); ok {
-				// Explicit cast provided
-				castType = castExpr.Type
-				innerExpr = castExpr.Expr
+				info.castType = castExpr.Type
+				info.innerExpr = castExpr.Expr
 			}
 
 			// Determine actual parameter type from signature
+			var paramType string
 			if funcSig != nil && i < len(funcSig.Params) {
 				paramType = funcSig.Params[i].Type
 			}
 
 			// Decide whether this parameter should be treated as float or int
-			isFloatParam := false
 			if paramType == "float" || paramType == "double" {
-				isFloatParam = true
+				info.isFloatParam = true
 			}
 
-			// If no signature, fall back to cast type or defaults
-			if castType == "" {
+			// If no explicit cast, infer the cast type
+			if info.castType == "" {
 				exprType := fc.getExprType(arg)
 				if exprType == "string" {
-					castType = "cstr"
-				} else if isFloatParam {
-					castType = "float"
+					info.castType = "cstr"
+				} else if info.isFloatParam {
+					info.castType = "double"
 				} else if paramType != "" {
 					if isPointerType(paramType) {
-						castType = "pointer"
+						info.castType = "pointer"
 					} else if strings.Contains(paramType, "char") && strings.Contains(paramType, "*") {
-						castType = "cstr"
+						info.castType = "cstr"
 					} else {
-						castType = "int"
+						info.castType = "int"
 					}
 				} else {
-					castType = "int" // Default to int if no info available
+					// No signature info - infer from expression type
+					// For variadic functions like printf, default to double for numbers
+					if exprType == "number" {
+						info.castType = "double"
+					} else if exprType == "list" || exprType == "map" {
+						info.castType = "pointer"
+					} else {
+						info.castType = "int"
+					}
 				}
 			}
+
+			// Update isFloatParam based on final castType
+			// This ensures register allocation uses the correct type
+			if info.castType == "float" || info.castType == "double" {
+				info.isFloatParam = true
+			} else {
+				info.isFloatParam = false
+			}
+		}
+
+		// Second pass: Compile each argument and store on stack
+		// Save rbx (callee-saved) so we can use it to track argument base
+		fc.out.PushReg("rbx")
+		// Save the base stack pointer for storing arguments (after we've allocated space)
+		fc.out.LeaMemToReg("rbx", "rsp", 8) // rbx = rsp + 8 (account for pushed rbx)
+		
+		for i := range args {
+			info := &argInfos[i]
+			castType := info.castType
+			innerExpr := info.innerExpr
 
 			// Confidence that this function is working: 90%
 			// Check for null pointer literals: 0, [], {}, or explicit casts
@@ -9961,14 +9998,15 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 			}
 
 			// Store argument on stack based on its type
-			if isFloatParam || castType == "float" || castType == "double" {
+			// Use rbx as base (saved at start of arg compilation)
+			if info.isFloatParam || castType == "float" || castType == "double" {
 				if isNullPointer {
 					// Store 0.0 for null pointer in float context
 					fc.out.XorpdXmm("xmm0", "xmm0")
-					fc.out.MovXmmToMem("xmm0", "rsp", i*8)
+					fc.out.MovXmmToMem("xmm0", "rbx", i*8)
 				} else {
 					// Keep as float64 in xmm0, store directly
-					fc.out.MovXmmToMem("xmm0", "rsp", i*8)
+					fc.out.MovXmmToMem("xmm0", "rbx", i*8)
 				}
 			} else {
 				// Convert to integer or pointer
@@ -10028,52 +10066,81 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 					}
 				}
 
-				// Store on stack at offset i*8
-				fc.out.MovRegToMem("rax", "rsp", i*8)
+				// Store on stack at offset i*8 from rbx (saved base)
+				fc.out.MovRegToMem("rax", "rbx", i*8)
 			}
 		}
+		
+		// Restore rsp to the argument base
+		// rbx points to the start of arguments (rsp + 8 when we saved it)
+		// So we need to set rsp = rbx - 8
+		fc.out.LeaMemToReg("rsp", "rbx", -8)
+		// Restore rbx
+		fc.out.PopReg("rbx")
 
 		// Load arguments from stack into ABI registers
-		// Track int and float register usage separately
-		intRegIdx := 0
-		floatRegIdx := 0
-		stackArgCount := 0
-
+		// Microsoft x64 vs System V AMD64 have different conventions:
+		// - Microsoft x64: Parameter slots consumed sequentially (param N uses slot N regardless of type)
+		// - System V AMD64: Int and float registers tracked separately
+		
 		// Build a list of stack arguments that overflow registers
 		type stackArg struct {
 			offset int
 			value  int
 		}
 		var stackArgs []stackArg
+		
+		isWindows := fc.eb.target.OS() == OSWindows
+		stackArgCount := 0
 
-		// First pass: determine which arguments go in registers vs stack
-		for i := 0; i < len(args); i++ {
-			var paramType string
-			if funcSig != nil && i < len(funcSig.Params) {
-				paramType = funcSig.Params[i].Type
-			}
+		if isWindows {
+			// Microsoft x64: Sequential parameter slots
+			for i := 0; i < len(args); i++ {
+				isFloatParam := argInfos[i].isFloatParam
 
-			isFloatParam := (paramType == "float" || paramType == "double")
-
-			if isFloatParam {
-				if floatRegIdx < len(floatArgRegs) {
-					// Load into float register
-					fc.out.MovMemToXmm(floatArgRegs[floatRegIdx], "rsp", i*8)
-					floatRegIdx++
+				// For Windows, parameter N goes in slot N (first 4 slots)
+				if i < 4 {
+					if isFloatParam {
+						// Load into XMM register for this slot
+						fc.out.MovMemToXmm(floatArgRegs[i], "rsp", i*8)
+					} else {
+						// Load into integer register for this slot
+						fc.out.MovMemToReg(intArgRegs[i], "rsp", i*8)
+					}
 				} else {
-					// Goes on stack
+					// Parameters 5+ go on stack
 					stackArgs = append(stackArgs, stackArg{offset: i * 8, value: stackArgCount})
 					stackArgCount++
 				}
-			} else {
-				if intRegIdx < len(intArgRegs) {
-					// Load into int register
-					fc.out.MovMemToReg(intArgRegs[intRegIdx], "rsp", i*8)
-					intRegIdx++
+			}
+		} else {
+			// System V AMD64: Track int and float registers separately
+			intRegIdx := 0
+			floatRegIdx := 0
+			
+			for i := 0; i < len(args); i++ {
+				isFloatParam := argInfos[i].isFloatParam
+
+				if isFloatParam {
+					if floatRegIdx < len(floatArgRegs) {
+						// Load into float register
+						fc.out.MovMemToXmm(floatArgRegs[floatRegIdx], "rsp", i*8)
+						floatRegIdx++
+					} else {
+						// Goes on stack
+						stackArgs = append(stackArgs, stackArg{offset: i * 8, value: stackArgCount})
+						stackArgCount++
+					}
 				} else {
-					// Goes on stack
-					stackArgs = append(stackArgs, stackArg{offset: i * 8, value: stackArgCount})
-					stackArgCount++
+					if intRegIdx < len(intArgRegs) {
+						// Load into int register
+						fc.out.MovMemToReg(intArgRegs[intRegIdx], "rsp", i*8)
+						intRegIdx++
+					} else {
+						// Goes on stack
+						stackArgs = append(stackArgs, stackArg{offset: i * 8, value: stackArgCount})
+						stackArgCount++
+					}
 				}
 			}
 		}
@@ -10659,9 +10726,23 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			compilerError("printf() supports max 8 arguments (got %d)", numArgs)
 		}
 
-		// x86-64 ABI: integers/pointers in rsi,rdx,rcx,r8,r9; floats in xmm0-7
-		intRegs := []string{"rsi", "rdx", "rcx", "r8", "r9"}
-		xmmRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"}
+		// Calling convention for printf (variadic function):
+		// System V (Linux/Unix): format in rdi, args in rsi,rdx,rcx,r8,r9 (int) or xmm0-7 (float)
+		// Windows x64: format in rcx, args in rdx,r8,r9 + stack (int), xmm1-3 (float)
+		//              IMPORTANT: For variadic functions on Windows, float args must ALSO be in integer registers!
+		var intRegs []string
+		var xmmRegs []string
+		var formatReg string
+
+		if fc.eb.target.OS() == OSWindows {
+			formatReg = "rcx"
+			intRegs = []string{"rdx", "r8", "r9"} // Only 3 additional int regs (first is format string)
+			xmmRegs = []string{"xmm1", "xmm2", "xmm3"}
+		} else {
+			formatReg = "rdi"
+			intRegs = []string{"rsi", "rdx", "rcx", "r8", "r9"}
+			xmmRegs = []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"}
+		}
 
 		intArgCount := 0
 		xmmArgCount := 0
@@ -10778,10 +10859,26 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			fc.out.AddImmToReg("rsp", int64(numFloatArgs*16))
 		}
 
-		// Load format string to rdi
-		fc.out.LeaSymbolToReg("rdi", labelName)
+		// Windows x64 variadic calling convention requires float args to be DUPLICATED in integer registers
+		// This is a critical requirement for printf and other variadic functions
+		if fc.eb.target.OS() == OSWindows {
+			// Copy each xmm register to its corresponding integer register
+			// xmm1 -> rdx, xmm2 -> r8, xmm3 -> r9
+			if xmmArgCount >= 1 {
+				fc.out.MovqXmmToReg("rdx", "xmm1")
+			}
+			if xmmArgCount >= 2 {
+				fc.out.MovqXmmToReg("r8", "xmm2")
+			}
+			if xmmArgCount >= 3 {
+				fc.out.MovqXmmToReg("r9", "xmm3")
+			}
+		}
 
-		// Set rax = number of vector registers used
+		// Load format string to first argument register (rdi on Linux, rcx on Windows)
+		fc.out.LeaSymbolToReg(formatReg, labelName)
+
+		// Set rax = number of vector registers used (System V ABI requirement, ignored on Windows)
 		fc.out.MovImmToReg("rax", fmt.Sprintf("%d", xmmArgCount))
 
 		// Save allocated callee-saved registers before external call
