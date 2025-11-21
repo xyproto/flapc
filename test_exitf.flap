@@ -1,0 +1,2 @@
+// Test exitf
+exitf("Error: %v\n", 42.0)

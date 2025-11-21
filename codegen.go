@@ -11130,45 +11130,29 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 				compilerError("exitf() supports max 8 arguments (got %d)", numArgs)
 			}
 
-			// Set up calling convention for fprintf (stderr, format, args...)
-			var stderrReg, formatReg, stderrTempReg string
+			// For Windows, use printf instead of fprintf(stderr) to avoid stderr import issues
+			// For Linux, use fprintf(stderr) for proper stderr output
+			var formatReg string
 			var intRegs []string
 			var xmmRegs []string
+			useStderr := fc.eb.target.OS() != OSWindows
 
 			if fc.eb.target.OS() == OSWindows {
-				// Windows: fprintf(stderr, format, ...)
-				// rcx = stderr, rdx = format, r8/r9 = first two args
-				stderrReg = "rcx"
-				formatReg = "rdx"
-				stderrTempReg = "r11" // Temporary storage for stderr to avoid clobbering
-				intRegs = []string{"r8", "r9"}
-				xmmRegs = []string{"xmm2", "xmm3"}
+				// Windows: printf(format, ...) - simpler, no stderr needed
+				// rcx = format, rdx/r8/r9 = args
+				formatReg = "rcx"
+				intRegs = []string{"rdx", "r8", "r9"}
+				xmmRegs = []string{"xmm1", "xmm2", "xmm3"}
 			} else {
 				// Linux: fprintf(stderr, format, ...)
 				// rdi = stderr, rsi = format, rdx/rcx/r8/r9 = args
-				stderrReg = "rdi"
 				formatReg = "rsi"
-				stderrTempReg = "r11"
 				intRegs = []string{"rdx", "rcx", "r8", "r9"}
 				xmmRegs = []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"}
-			}
-
-			// Get stderr FIRST and store in temporary register
-			if fc.eb.target.OS() == OSWindows {
-				// Windows: Use __acrt_iob_func(2) to get stderr
-				// Allocate shadow space (32 bytes = 4 registers * 8 bytes)
-				fc.out.SubImmFromReg("rsp", 32)
-				fc.out.MovImmToReg("rcx", "2") // 2 = stderr
-				fc.trackFunctionCall("__acrt_iob_func")
-				fc.eb.GenerateCallInstruction("__acrt_iob_func")
-				// Result in rax, move to temp register
-				fc.out.MovRegToReg(stderrTempReg, "rax")
-				// Clean up shadow space
-				fc.out.AddImmToReg("rsp", 32)
-			} else {
-				// Linux: Access stderr global variable
-				fc.out.LeaSymbolToReg(stderrTempReg, "stderr")
-				fc.out.MovMemToReg(stderrTempReg, stderrTempReg, 0)
+				
+				// Get stderr for Linux
+				fc.out.LeaSymbolToReg("r11", "stderr")
+				fc.out.MovMemToReg("rdi", "r11", 0)
 			}
 
 			intArgCount := 0
@@ -11286,9 +11270,6 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			// Load format string
 			fc.out.LeaSymbolToReg(formatReg, labelName)
 
-			// Move stderr from temp register to its final position
-			fc.out.MovRegToReg(stderrReg, stderrTempReg)
-
 			// Set rax for variadic functions (Linux)
 			if fc.eb.target.OS() != OSWindows {
 				fc.out.MovImmToReg("rax", fmt.Sprintf("%d", xmmArgCount))
@@ -11310,9 +11291,14 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 				fc.out.SubImmFromReg("rsp", 32)
 			}
 
-			// Call fprintf
-			fc.trackFunctionCall("fprintf")
-			fc.eb.GenerateCallInstruction("fprintf")
+			// Call fprintf (Linux) or printf (Windows)
+			if useStderr {
+				fc.trackFunctionCall("fprintf")
+				fc.eb.GenerateCallInstruction("fprintf")
+			} else {
+				fc.trackFunctionCall("printf")
+				fc.eb.GenerateCallInstruction("printf")
+			}
 
 			// Clean up shadow space on Windows
 			if fc.eb.target.OS() == OSWindows {

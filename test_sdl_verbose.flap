@@ -1,0 +1,6 @@
+import sdl3 as sdl
+
+println("About to call SDL_Init")
+result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
+println("SDL_Init returned")
+println(result as number)
