@@ -317,9 +317,10 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.eb.DefineWritable("_flap_default_arena_buffer", strings.Repeat("\x00", 65536))
 
 	// Predeclare arena symbols if arenas are used (always true now)
-	fc.eb.Define("_flap_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")
-	fc.eb.Define("_flap_arena_meta_cap", "\x00\x00\x00\x00\x00\x00\x00\x00")
-	fc.eb.Define("_flap_arena_meta_len", "\x00\x00\x00\x00\x00\x00\x00\x00")
+	// These MUST be writable since they're modified at runtime
+	fc.eb.DefineWritable("_flap_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")
+	fc.eb.DefineWritable("_flap_arena_meta_cap", "\x00\x00\x00\x00\x00\x00\x00\x00")
+	fc.eb.DefineWritable("_flap_arena_meta_len", "\x00\x00\x00\x00\x00\x00\x00\x00")
 	fc.eb.Define("_arena_null_error", "ERROR: Arena alloc returned NULL\n")
 	fc.eb.Define("_count_mismatch_error", "ERROR: Count write/read mismatch!\n")
 
@@ -8885,11 +8886,23 @@ func (fc *FlapCompiler) cleanupAllArenas() {
 	fc.out.MovRegToReg("rax", "r8")
 	fc.out.ShlRegByImm("rax", 3) // offset = index * 8
 	fc.out.AddRegToReg("rax", "rbx")
-	fc.out.MovMemToReg("rdi", "rax", 0) // rdi = arena_ptrs[r8]
+	
+	// Use proper calling convention for first argument
+	firstArgReg := "rdi" // System V AMD64 (Linux/Unix)
+	if fc.eb.target.OS() == OSWindows {
+		firstArgReg = "rcx" // Microsoft x64 (Windows)
+	}
+	fc.out.MovMemToReg(firstArgReg, "rax", 0) // first_arg = arena_ptrs[r8]
 
+	// Allocate shadow space for Windows
+	shadowSpace := fc.allocateShadowSpace()
+	
 	// Free the arena
 	fc.trackFunctionCall("free")
 	fc.eb.GenerateCallInstruction("free")
+	
+	// Deallocate shadow space
+	fc.deallocateShadowSpace(shadowSpace)
 
 	// Increment index
 	fc.out.AddImmToReg("r8", 1)
@@ -8900,9 +8913,16 @@ func (fc *FlapCompiler) cleanupAllArenas() {
 	cleanupDone := fc.eb.text.Len()
 	fc.patchJumpImmediate(skipCleanupEnd+2, int32(cleanupDone-(skipCleanupEnd+ConditionalJumpSize)))
 
-	fc.out.MovRegToReg("rdi", "rbx") // meta-arena pointer
+	fc.out.MovRegToReg(firstArgReg, "rbx") // meta-arena pointer (reuse firstArgReg from above)
+	
+	// Allocate shadow space for Windows
+	shadowSpace2 := fc.allocateShadowSpace()
+	
 	fc.trackFunctionCall("free")
 	fc.eb.GenerateCallInstruction("free")
+	
+	// Deallocate shadow space
+	fc.deallocateShadowSpace(shadowSpace2)
 
 	// skip_cleanup:
 	skipCleanup := fc.eb.text.Len()
@@ -10345,13 +10365,27 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 	// Track function usage for PLT generation and call order patching
 	fc.trackFunctionCall(funcName)
 
-	// Marshal arguments according to System V AMD64 ABI:
-	// Integer/pointer args: rdi, rsi, rdx, rcx, r8, r9, then stack
-	// Float args: xmm0-xmm7, then stack
+	// Marshal arguments according to calling convention (System V AMD64 or Microsoft x64)
+	// System V AMD64 ABI (Linux/Unix):
+	//   Integer/pointer args: rdi, rsi, rdx, rcx, r8, r9, then stack
+	//   Float args: xmm0-xmm7, then stack
+	// Microsoft x64 ABI (Windows):
+	//   First 4 args (int or float): RCX, RDX, R8, R9 (or XMM0-3 for floats)
+	//   Additional args on stack
+	//   32 bytes of shadow space required
 
-	// System V AMD64 ABI register sequences
-	intArgRegs := []string{"rdi", "rsi", "rdx", "rcx", "r8", "r9"}
-	floatArgRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"}
+	var intArgRegs []string
+	var floatArgRegs []string
+	
+	if fc.eb.target.OS() == OSWindows {
+		// Windows x64 calling convention
+		intArgRegs = []string{"rcx", "rdx", "r8", "r9"}
+		floatArgRegs = []string{"xmm0", "xmm1", "xmm2", "xmm3"}
+	} else {
+		// System V AMD64 ABI (Linux/Unix)
+		intArgRegs = []string{"rdi", "rsi", "rdx", "rcx", "r8", "r9"}
+		floatArgRegs = []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"}
+	}
 
 	// Look up function signature from DWARF if available
 	// Need to find the alias for this library name (reverse lookup)
@@ -10633,9 +10667,15 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 			fc.out.AddImmToReg("rsp", int64(argStackOffset))
 		}
 
+		// Allocate shadow space for Windows x64 calling convention
+		shadowSpace := fc.allocateShadowSpace()
+		
 		// Generate PLT call
 		fc.eb.GenerateCallInstruction(funcName)
 
+		// Deallocate shadow space
+		fc.deallocateShadowSpace(shadowSpace)
+		
 		// Clean up stack arguments after call
 		if stackArgCount > 0 {
 			fc.out.AddImmToReg("rsp", int64(stackArgCount*8))
@@ -10662,9 +10702,14 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 		}
 	} else {
 		// No arguments - just call the function
-		// No stack adjustment needed - RSP is already at (16n - 8) from main() prologue
+		// Allocate shadow space for Windows x64 calling convention
+		shadowSpace := fc.allocateShadowSpace()
+		
 		fc.eb.GenerateCallInstruction(funcName)
 
+		// Deallocate shadow space
+		fc.deallocateShadowSpace(shadowSpace)
+		
 		// Handle return value based on signature
 		var returnType string
 		if funcSig != nil {

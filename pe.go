@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"os"
+	"sort"
 )
 
 // PE (Portable Executable) format constants for Windows x86_64
@@ -32,7 +33,7 @@ const (
 	scnCntInitData = 0x00000040
 )
 
-// Confidence that this function is working: 75%
+// Confidence that this function is working: 85%
 func (eb *ExecutableBuilder) WritePEHeaderWithImports(entryPointRVA uint32, codeSize, dataSize, idataSize, idataRVA uint32) error {
 	w := eb.ELFWriter() // Reuse the writer
 	
@@ -91,9 +92,9 @@ func (eb *ExecutableBuilder) WritePEHeaderWithImports(entryPointRVA uint32, code
 	writeU16(0)          // Minor subsystem version
 	writeU32(0)          // Win32 version value (reserved)
 
-	// Calculate image size (aligned to section alignment)
-	imageSize := alignTo(dosHeaderSize+dosStubSize+peSignatureSize+coffHeaderSize+
-		optionalHeaderSize+3*peSectionHeaderSize+codeSize+dataSize+idataSize, peSectionAlign)
+	// Calculate image size: end of last section (idata RVA + idata size), aligned to section alignment
+	// SizeOfImage must be the size of the image in memory, not on disk
+	imageSize := alignTo(idataRVA+idataSize, peSectionAlign)
 	writeU32(imageSize) // Size of image
 
 	headersSize := alignTo(dosHeaderSize+dosStubSize+peSignatureSize+coffHeaderSize+
@@ -182,9 +183,11 @@ func (eb *ExecutableBuilder) WritePEHeader(entryPointRVA uint32, codeSize, dataS
 	writeU16(0)          // Minor subsystem version
 	writeU32(0)          // Win32 version value (reserved)
 
-	// Calculate image size (aligned to section alignment)
-	imageSize := alignTo(dosHeaderSize+dosStubSize+peSignatureSize+coffHeaderSize+
-		optionalHeaderSize+3*peSectionHeaderSize+codeSize+dataSize, peSectionAlign)
+	// Calculate image size: end of last section, aligned to section alignment
+	// For this version without imports, last section is .data at textVirtualAddr + alignTo(codeSize) + dataSize
+	textVirtualAddr := uint32(0x1000)
+	dataVirtualAddr := textVirtualAddr + alignTo(codeSize, peSectionAlign)
+	imageSize := alignTo(dataVirtualAddr+dataSize, peSectionAlign)
 	writeU32(imageSize) // Size of image
 
 	headersSize := alignTo(dosHeaderSize+dosStubSize+peSignatureSize+coffHeaderSize+
@@ -261,13 +264,30 @@ func (eb *ExecutableBuilder) WritePE(outputPath string) error {
 	}
 	
 	// Write rodata and data content to buffers first
+	// IMPORTANT: We must iterate in a consistent order so addresses match!
 	rodataSymbols := eb.RodataSection()
-	for _, value := range rodataSymbols {
-		eb.WriteRodata([]byte(value))
-	}
 	dataSymbols := eb.DataSection()
-	for _, value := range dataSymbols {
-		eb.data.Write([]byte(value))
+	
+	// Create sorted slices of symbol names for consistent ordering
+	rodataNames := make([]string, 0, len(rodataSymbols))
+	for name := range rodataSymbols {
+		rodataNames = append(rodataNames, name)
+	}
+	sort.Strings(rodataNames)
+	
+	dataNames := make([]string, 0, len(dataSymbols))
+	for name := range dataSymbols {
+		dataNames = append(dataNames, name)
+	}
+	sort.Strings(dataNames)
+	
+	// Write rodata in sorted order
+	for _, name := range rodataNames {
+		eb.WriteRodata([]byte(rodataSymbols[name]))
+	}
+	// Write data in sorted order
+	for _, name := range dataNames {
+		eb.data.Write([]byte(dataSymbols[name]))
 	}
 	
 	codeSize := uint32(eb.text.Len())
@@ -333,11 +353,13 @@ func (eb *ExecutableBuilder) WritePE(outputPath string) error {
 
 	// Assign addresses to all data symbols (strings, constants)
 	// For PE, the .data section contains both rodata and data
+	// IMPORTANT: Must use the same sorted order as when we wrote the data!
 	rodataAddr := peImageBase + uint64(dataVirtualAddr)
 	currentAddr := rodataAddr
 	
-	// First, rodata symbols (read-only)
-	for symbol, value := range rodataSymbols {
+	// First, rodata symbols (read-only) in sorted order
+	for _, symbol := range rodataNames {
+		value := rodataSymbols[symbol]
 		eb.DefineAddr(symbol, currentAddr)
 		currentAddr += uint64(len(value))
 		if VerboseMode {
@@ -345,8 +367,9 @@ func (eb *ExecutableBuilder) WritePE(outputPath string) error {
 		}
 	}
 	
-	// Then, data symbols (writable, like cpu_has_avx512)
-	for symbol, value := range dataSymbols {
+	// Then, data symbols (writable, like cpu_has_avx512) in sorted order
+	for _, symbol := range dataNames {
+		value := dataSymbols[symbol]
 		eb.DefineAddr(symbol, currentAddr)
 		currentAddr += uint64(len(value))
 		if VerboseMode {
@@ -633,10 +656,10 @@ func (eb *ExecutableBuilder) PatchPECallsToIAT(iatMap map[string]uint32, textVir
 		// The instruction is 6 bytes: FF 15 XX XX XX XX
 		// RIP points to the byte after the instruction when accessing memory
 		callPos := patch.position - 1 // Position of the 0xE8 byte
-		ripAddr := uint64(callPos) + 6 // RIP after the new 6-byte instruction
-		iatAddr := iatRVA // IAT is at idataVirtualAddr + offset, but iatRVA is already the full RVA
+		ripRVA := textVirtualAddr + uint64(callPos) + 6 // RIP RVA after the new 6-byte instruction
+		iatAddrRVA := uint64(iatRVA) // IAT RVA (relative to image base)
 		
-		displacement := int64(iatAddr) - int64(ripAddr)
+		displacement := int64(iatAddrRVA) - int64(ripRVA)
 		
 		if displacement < -0x80000000 || displacement > 0x7FFFFFFF {
 			if VerboseMode {

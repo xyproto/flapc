@@ -1,0 +1,4 @@
+main = {
+    c.printf("Hello World\n")
+    c.exit(0)
+}
