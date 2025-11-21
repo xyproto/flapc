@@ -63,7 +63,13 @@
 - Language server protocol (LSP) implementation
 
 ### Priority 6 - Platform Support
-- Windows native support (PE/COFF format)
+- ⚠️ Windows/Wine PE support (IN PROGRESS)
+  - Basic PE64 format generation ✅
+  - PE files recognized by Wine ✅  
+  - Import tables needed for DLL linking (msvcrt.dll, kernel32.dll)
+  - Need to generate Import Directory Table
+  - Need to generate Import Address Table (IAT)
+  - Need to patch function calls to use IAT
 - WebAssembly target
 - Better ARM64 and RISC-V support
 

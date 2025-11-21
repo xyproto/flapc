@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"os"
@@ -30,6 +31,97 @@ const (
 	scnCntCode    = 0x00000020
 	scnCntInitData = 0x00000040
 )
+
+// Confidence that this function is working: 75%
+func (eb *ExecutableBuilder) WritePEHeaderWithImports(entryPointRVA uint32, codeSize, dataSize, idataSize, idataRVA uint32) error {
+	w := eb.ELFWriter() // Reuse the writer
+	
+	// Helper functions to write multi-byte values
+	writeU16 := func(v uint16) {
+		w.WriteBytes([]byte{byte(v), byte(v >> 8)})
+	}
+	writeU32 := func(v uint32) {
+		w.WriteBytes([]byte{byte(v), byte(v >> 8), byte(v >> 16), byte(v >> 24)})
+	}
+
+	// === DOS Header (64 bytes) ===
+	writeU16(0x5A4D) // "MZ" signature
+	w.WriteN(0, 58)  // Zero bytes 2-59
+	// At offset 0x3C (60), write the PE header offset
+	peHeaderOffset := uint32(dosHeaderSize + dosStubSize)
+	writeU32(peHeaderOffset) // PE header offset
+
+	// === DOS Stub (simple one that just prints "This program cannot be run in DOS mode") ===
+	// For simplicity, we'll just pad with zeros (minimal stub)
+	stubMsg := []byte("This program requires Windows.\r\n$")
+	w.WriteBytes(stubMsg)
+	w.WriteN(0, dosStubSize-len(stubMsg))
+
+	// === PE Signature ===
+	writeU32(0x00004550) // "PE\0\0"
+
+	// === COFF File Header (20 bytes) ===
+	writeU16(0x8664)     // Machine: AMD64
+	writeU16(3)          // Number of sections (.text, .data, .idata)
+	writeU32(0)          // TimeDateStamp (0 for reproducibility)
+	writeU32(0)          // Pointer to symbol table (deprecated)
+	writeU32(0)          // Number of symbols (deprecated)
+	writeU16(optionalHeaderSize) // Size of optional header
+	writeU16(0x0022)     // Characteristics: EXECUTABLE_IMAGE | LARGE_ADDRESS_AWARE
+
+	// === Optional Header (PE32+) ===
+	writeU16(0x020B)     // Magic: PE32+ (64-bit)
+	w.Write(1)           // Major linker version
+	w.Write(0)           // Minor linker version
+	writeU32(codeSize)   // Size of code
+	writeU32(dataSize)   // Size of initialized data
+	writeU32(0)          // Size of uninitialized data
+	writeU32(entryPointRVA) // Entry point RVA
+	writeU32(0x1000)     // Base of code
+
+	// PE32+ specific fields
+	w.Write8u(peImageBase) // Image base
+	writeU32(peSectionAlign) // Section alignment
+	writeU32(peFileAlign)    // File alignment
+	writeU16(6)          // Major OS version
+	writeU16(0)          // Minor OS version
+	writeU16(0)          // Major image version
+	writeU16(0)          // Minor image version
+	writeU16(6)          // Major subsystem version
+	writeU16(0)          // Minor subsystem version
+	writeU32(0)          // Win32 version value (reserved)
+
+	// Calculate image size (aligned to section alignment)
+	imageSize := alignTo(dosHeaderSize+dosStubSize+peSignatureSize+coffHeaderSize+
+		optionalHeaderSize+3*peSectionHeaderSize+codeSize+dataSize+idataSize, peSectionAlign)
+	writeU32(imageSize) // Size of image
+
+	headersSize := alignTo(dosHeaderSize+dosStubSize+peSignatureSize+coffHeaderSize+
+		optionalHeaderSize+3*peSectionHeaderSize, peFileAlign)
+	writeU32(headersSize) // Size of headers
+
+	writeU32(0)          // Checksum
+	writeU16(3)          // Subsystem: CUI (Console)
+	writeU16(0x8160)     // DLL characteristics: NX compatible, dynamic base, terminal server aware
+	w.Write8u(0x100000)  // Size of stack reserve
+	w.Write8u(0x1000)    // Size of stack commit
+	w.Write8u(0x100000)  // Size of heap reserve
+	w.Write8u(0x1000)    // Size of heap commit
+	writeU32(0)          // Loader flags
+	writeU32(16)         // Number of data directories
+
+	// Data directories (16 entries, each 8 bytes: RVA + Size)
+	for i := 0; i < 16; i++ {
+		if i == 1 { // Import directory
+			writeU32(idataRVA)   // Import RVA
+			writeU32(idataSize)  // Import size
+		} else {
+			w.Write8u(0)
+		}
+	}
+
+	return nil
+}
 
 // Confidence that this function is working: 75%
 func (eb *ExecutableBuilder) WritePEHeader(entryPointRVA uint32, codeSize, dataSize uint32) error {
@@ -154,11 +246,20 @@ func (eb *ExecutableBuilder) WritePESectionHeader(name string, virtualSize, virt
 	writeU32(characteristics)
 }
 
-// Confidence that this function is working: 70%
+// Confidence that this function is working: 75%
 func (eb *ExecutableBuilder) WritePE(outputPath string) error {
 	// For Windows, we need to generate import tables for C runtime
-	// For now, we'll create a minimal PE that links to msvcrt.dll
-
+	// Build import directory for msvcrt.dll (C runtime)
+	
+	// Standard C runtime functions needed by Flap programs
+	libraries := map[string][]string{
+		"msvcrt.dll": {
+			"printf", "exit", "malloc", "free", "realloc",
+			"strlen", "memcpy", "memset", "pow", "fflush",
+			"sin", "cos", "sqrt", "fopen", "fclose", "fwrite", "fread",
+		},
+	}
+	
 	codeSize := uint32(eb.text.Len())
 	dataSize := uint32(eb.rodata.Len() + eb.data.Len())
 
@@ -177,14 +278,30 @@ func (eb *ExecutableBuilder) WritePE(outputPath string) error {
 	dataRawAddr := textRawAddr + codeSize
 	dataVirtualAddr := textVirtualAddr + alignTo(codeSize, peSectionAlign)
 
-	idataRawAddr := dataRawAddr + dataSize
+	// Build import data
 	idataVirtualAddr := dataVirtualAddr + alignTo(dataSize, peSectionAlign)
+	importData, iatMap, err := BuildPEImportData(libraries, idataVirtualAddr)
+	if err != nil {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Warning: Failed to build import data: %v\n", err)
+		}
+		importData = []byte{} // Empty import section
+	}
+	
+	idataSize := uint32(len(importData))
+	idataRawSize := alignTo(idataSize, peFileAlign)
+	idataRawAddr := dataRawAddr + dataSize
+
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Import section: size=%d, RVA=0x%x\n", idataSize, idataVirtualAddr)
+		fmt.Fprintf(os.Stderr, "IAT mapping: %d functions\n", len(iatMap))
+	}
 
 	// Entry point is at start of .text section
 	entryPointRVA := textVirtualAddr
 
-	// Write PE header
-	if err := eb.WritePEHeader(entryPointRVA, codeSize, dataSize); err != nil {
+	// Write PE header with import directory info
+	if err := eb.WritePEHeaderWithImports(entryPointRVA, codeSize, dataSize, idataSize, idataVirtualAddr); err != nil {
 		return err
 	}
 
@@ -193,8 +310,8 @@ func (eb *ExecutableBuilder) WritePE(outputPath string) error {
 		scnCntCode|scnMemExecute|scnMemRead)
 	eb.WritePESectionHeader(".data", dataSize, dataVirtualAddr, dataSize, dataRawAddr,
 		scnCntInitData|scnMemRead|scnMemWrite)
-	eb.WritePESectionHeader(".idata", 0, idataVirtualAddr, 0, idataRawAddr,
-		scnCntInitData|scnMemRead) // Import section (minimal for now)
+	eb.WritePESectionHeader(".idata", idataSize, idataVirtualAddr, idataRawSize, idataRawAddr,
+		scnCntInitData|scnMemRead) // Import section
 
 	// Pad headers to file alignment
 	currentPos := uint32(dosHeaderSize + dosStubSize + peSignatureSize + coffHeaderSize +
@@ -215,6 +332,12 @@ func (eb *ExecutableBuilder) WritePE(outputPath string) error {
 	eb.ELFWriter().WriteBytes(eb.rodata.Bytes())
 	eb.ELFWriter().WriteBytes(eb.data.Bytes())
 	if pad := int(dataSize) - eb.rodata.Len() - eb.data.Len(); pad > 0 {
+		eb.ELFWriter().WriteN(0, pad)
+	}
+
+	// .idata section (imports)
+	eb.ELFWriter().WriteBytes(importData)
+	if pad := int(idataRawSize) - len(importData); pad > 0 {
 		eb.ELFWriter().WriteN(0, pad)
 	}
 
@@ -245,34 +368,161 @@ func (eb *ExecutableBuilder) WritePEWithImports(outputPath string, imports []str
 	return eb.WritePE(outputPath)
 }
 
-// Confidence that this function is working: 85%
-// WritePEImportDirectory writes the import directory table for PE files
-func (eb *ExecutableBuilder) WritePEImportDirectory(libraries map[string][]string) ([]byte, error) {
-	// libraries maps DLL name to list of function names
-	// Returns the import directory data to be placed in .idata section
+// Confidence that this function is working: 70%
+// BuildPEImportData builds the complete import section data for PE files
+// Returns: import data, IAT RVA map (funcName -> RVA), error
+func BuildPEImportData(libraries map[string][]string, idataRVA uint32) ([]byte, map[string]uint32, error) {
+	// Structure of .idata section:
+	// 1. Import Directory Table (IDT) - array of IMAGE_IMPORT_DESCRIPTOR (20 bytes each), null-terminated
+	// 2. Import Lookup Tables (ILT) - one per DLL, array of RVAs to hint/name entries
+	// 3. Import Address Tables (IAT) - one per DLL, same structure as ILT (loader fills this)
+	// 4. Hint/Name Table - hint (uint16) + name (null-terminated string) for each function
+	// 5. DLL names - null-terminated strings
 	
-	buf := make([]byte, 0, 4096)
-	
-	// For each library, we need:
-	// - Import Directory Entry (20 bytes)
-	// - Import Lookup Table (ILT)
-	// - Import Address Table (IAT) 
-	// - Hint/Name table
-	// - Library name string
-	
-	// TODO: Implement full import table generation
-	// This is complex and requires:
-	// 1. Calculate all offsets
-	// 2. Build ILT and IAT
-	// 3. Build hint/name entries
-	// 4. Write library names
-	// 5. Null-terminate directory
-	
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "Building PE import directory for %d libraries\n", len(libraries))
+	if len(libraries) == 0 {
+		return nil, nil, fmt.Errorf("no libraries to import")
 	}
 	
-	return buf, nil
+	var buf bytes.Buffer
+	iatMap := make(map[string]uint32)
+	
+	// Calculate offsets
+	numLibs := len(libraries)
+	idtSize := (numLibs + 1) * 20 // +1 for null terminator
+	currentOffset := uint32(idtSize)
+	
+	// Storage for each library's data
+	type libData struct {
+		name      string
+		functions []string
+		iltOffset uint32
+		iatOffset uint32
+		nameOffset uint32
+		hintsOffset uint32
+	}
+	libsData := make([]libData, 0, numLibs)
+	
+	// First pass: calculate all offsets
+	for libName, funcs := range libraries {
+		ld := libData{
+			name:      libName,
+			functions: funcs,
+		}
+		
+		// ILT offset
+		ld.iltOffset = currentOffset
+		iltSize := uint32((len(funcs) + 1) * 8) // 8 bytes per entry (64-bit), +1 for null
+		currentOffset += iltSize
+		
+		// IAT offset (same size as ILT)
+		ld.iatOffset = currentOffset
+		currentOffset += iltSize
+		
+		libsData = append(libsData, ld)
+	}
+	
+	// Hint/Name table offset
+	hintsBaseOffset := currentOffset
+	
+	// Calculate hint/name entries
+	for i := range libsData {
+		libsData[i].hintsOffset = currentOffset
+		for _, funcName := range libsData[i].functions {
+			// 2 bytes (hint) + function name + null terminator
+			// Align to 2-byte boundary
+			entrySize := 2 + len(funcName) + 1
+			if entrySize%2 != 0 {
+				entrySize++
+			}
+			currentOffset += uint32(entrySize)
+		}
+	}
+	
+	// DLL names offset
+	for i := range libsData {
+		libsData[i].nameOffset = currentOffset
+		currentOffset += uint32(len(libsData[i].name) + 1) // +1 for null terminator
+	}
+	
+	// Write Import Directory Table
+	for _, ld := range libsData {
+		// IMAGE_IMPORT_DESCRIPTOR
+		binary.Write(&buf, binary.LittleEndian, idataRVA+ld.iltOffset) // OriginalFirstThunk (ILT RVA)
+		binary.Write(&buf, binary.LittleEndian, uint32(0))              // TimeDateStamp
+		binary.Write(&buf, binary.LittleEndian, uint32(0))              // ForwarderChain
+		binary.Write(&buf, binary.LittleEndian, idataRVA+ld.nameOffset) // Name RVA
+		binary.Write(&buf, binary.LittleEndian, idataRVA+ld.iatOffset) // FirstThunk (IAT RVA)
+	}
+	// Null terminator for IDT
+	binary.Write(&buf, binary.LittleEndian, [20]byte{})
+	
+	// Write ILTs and IATs for each library
+	hintOffset := hintsBaseOffset
+	for _, ld := range libsData {
+		// Write ILT
+		for _, funcName := range ld.functions {
+			// RVA to hint/name entry (bit 63 clear = import by name)
+			binary.Write(&buf, binary.LittleEndian, uint64(idataRVA+hintOffset))
+			
+			// Calculate hint/name entry size for next iteration
+			entrySize := 2 + len(funcName) + 1
+			if entrySize%2 != 0 {
+				entrySize++
+			}
+			hintOffset += uint32(entrySize)
+		}
+		// Null terminator for ILT
+		binary.Write(&buf, binary.LittleEndian, uint64(0))
+	}
+	
+	// Write IATs (same as ILTs initially, loader will fill them)
+	for _, ld := range libsData {
+		iatBase := idataRVA + ld.iatOffset
+		funcIndex := 0
+		// Use this library's hint offset
+		hintOffset = ld.hintsOffset
+		
+		for _, funcName := range ld.functions {
+			// Store IAT RVA for this function
+			iatRVA := iatBase + uint32(funcIndex*8)
+			iatMap[funcName] = iatRVA
+			
+			// RVA to hint/name entry
+			binary.Write(&buf, binary.LittleEndian, uint64(idataRVA+hintOffset))
+			
+			entrySize := 2 + len(funcName) + 1
+			if entrySize%2 != 0 {
+				entrySize++
+			}
+			hintOffset += uint32(entrySize)
+			funcIndex++
+		}
+		// Null terminator for IAT
+		binary.Write(&buf, binary.LittleEndian, uint64(0))
+	}
+	
+	// Write Hint/Name Table
+	for _, ld := range libsData {
+		for _, funcName := range ld.functions {
+			// Hint (ordinal, we use 0)
+			binary.Write(&buf, binary.LittleEndian, uint16(0))
+			// Function name
+			buf.WriteString(funcName)
+			buf.WriteByte(0) // Null terminator
+			// Align to 2-byte boundary
+			if (2+len(funcName)+1)%2 != 0 {
+				buf.WriteByte(0)
+			}
+		}
+	}
+	
+	// Write DLL names
+	for _, ld := range libsData {
+		buf.WriteString(ld.name)
+		buf.WriteByte(0) // Null terminator
+	}
+	
+	return buf.Bytes(), iatMap, nil
 }
 
 // Confidence that this function is working: 50%
