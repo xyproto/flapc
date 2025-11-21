@@ -14133,39 +14133,28 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.Cvtsi2sd("xmm0", "rax")
 
 	case "malloc":
-		// malloc(size) - Allocate memory and return pointer
-		if len(call.Args) != 1 {
-			compilerError("malloc() requires exactly 1 argument (size)")
-		}
-
-		// Compile size argument
-		fc.compileExpression(call.Args[0])
-		fc.out.Cvttsd2si("rdi", "xmm0") // rdi = size in bytes
-
-		// Call malloc
-		fc.trackFunctionCall("malloc")
-		fc.eb.GenerateCallInstruction("malloc")
-
-		// Convert pointer to float64 for Flap
-		fc.out.Cvtsi2sd("xmm0", "rax")
+		// REMOVED: malloc() is not a builtin function.
+		// Use arena {} blocks with allocate() for automatic memory management,
+		// or use c.malloc() via C FFI if you need manual control.
+		compilerError("malloc() is not a builtin function. Use arena {} with allocate(), or c.malloc() via C FFI")
 
 	case "free":
-		// free(ptr) - Free allocated memory
-		if len(call.Args) != 1 {
-			compilerError("free() requires exactly 1 argument (ptr)")
-		}
-
-		// Compile pointer argument
-		fc.compileExpression(call.Args[0])
-		fc.out.Cvttsd2si("rdi", "xmm0") // rdi = pointer
-
-		// Call free
-		fc.trackFunctionCall("free")
-		fc.eb.GenerateCallInstruction("free")
-
-		// Return 0
-		fc.out.XorRegWithReg("rax", "rax")
-		fc.out.Cvtsi2sd("xmm0", "rax")
+		// REMOVED: free() is not a builtin function.
+		// Use arena {} blocks for automatic memory management,
+		// or use c.free() via C FFI if you need manual control.
+		compilerError("free() is not a builtin function. Use arena {} blocks, or c.free() via C FFI")
+	
+	case "realloc":
+		// REMOVED: realloc() is not a builtin function.
+		// Use arena {} blocks with allocate() for automatic memory management,
+		// or use c.realloc() via C FFI if you need manual control.
+		compilerError("realloc() is not a builtin function. Use arena {} blocks, or c.realloc() via C FFI")
+	
+	case "calloc":
+		// REMOVED: calloc() is not a builtin function.
+		// Use arena {} blocks with allocate() for automatic memory management,
+		// or use c.calloc() via C FFI if you need manual control.
+		compilerError("calloc() is not a builtin function. Use arena {} blocks, or c.calloc() via C FFI")
 
 	case "store":
 		// store(ptr, offset, value) - Store value to memory at ptr + offset*8
@@ -14312,187 +14301,14 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.AddImmToReg("rsp", 8)
 
 	case "head":
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG: Matched head() builtin case!\n")
-		}
-		// head(list) - Get first element of list (returns NaN if empty)
-		if len(call.Args) != 1 {
-			compilerError("head() requires exactly 1 argument (list)")
-		}
-
-		// Compile list argument
-		fc.compileExpression(call.Args[0]) // list -> xmm0
-
-		// Convert to pointer
-		fc.out.MovqXmmToReg("rax", "xmm0") // rax = list pointer
-
-		// Check if list is empty (count = 0)
-		fc.out.MovMemToXmm("xmm1", "rax", 0) // xmm1 = count (first field)
-		fc.out.XorpdXmm("xmm2", "xmm2")      // xmm2 = 0.0
-		fc.out.Ucomisd("xmm1", "xmm2")       // Compare count with 0
-
-		// Use conditional move instead of jumps
-		// Load value at index 0 into xmm3
-		// Map layout: [count][key0][val0][key1][val1]...
-		// val0 is at offset 16 (8 bytes for count + 8 bytes for key0)
-		fc.out.MovMemToXmm("xmm3", "rax", 16) // xmm3 = value at index 0
-
-		// Create NaN in xmm0
-		fc.out.XorpdXmm("xmm0", "xmm0") // xmm0 = 0.0
-		fc.out.DivsdXmm("xmm0", "xmm0") // xmm0 = NaN
-
-		// Use cmove to select: if count == 0, keep NaN, else use value
-		// Convert xmms to integer registers for conditional move
-		fc.out.MovqXmmToReg("rax", "xmm0") // rax = NaN (as bits)
-		fc.out.MovqXmmToReg("rcx", "xmm3") // rcx = value (as bits)
-		fc.out.Cmovne("rax", "rcx")        // if count != 0, rax = value
-		fc.out.MovqRegToXmm("xmm0", "rax") // xmm0 = result
-		return
+		// REMOVED: head() is not a builtin function. Use the ^ operator instead.
+		// Example: ^list or list^ instead of head(list)
+		compilerError("head() is not a builtin function. Use the ^ operator instead: ^list or list^")
 
 	case "tail":
-		// tail(list) - Get list without first element
-		// Returns new list with keys shifted down: [1,2,3] -> [0,1]
-		// Implemented inline to avoid external dependencies
-		if len(call.Args) != 1 {
-			compilerError("tail() requires exactly 1 argument (list)")
-		}
-
-		// Compile list argument
-		fc.compileExpression(call.Args[0]) // list -> xmm0
-		fc.out.MovqXmmToReg("rsi", "xmm0") // rsi = old list pointer
-
-		// Get count
-		fc.out.MovMemToXmm("xmm1", "rsi", 0) // xmm1 = count
-		fc.out.Cvttsd2si("rcx", "xmm1")      // rcx = count as int
-
-		// Check if empty or single element
-		fc.out.CmpRegToImm("rcx", 1)
-
-		// If count <= 1, return empty list (pointer = 0)
-		fc.out.XorpdXmm("xmm0", "xmm0") // xmm0 = 0.0 (empty list)
-		fc.out.MovImmToReg("rax", "0")
-		fc.out.MovImmToReg("r10", "0")
-		fc.out.Cmovbe("rax", "r10") // rax = 0 if count <= 1
-
-		// Otherwise, need to create new list
-		// New count = old count - 1
-		fc.out.SubImmFromReg("rcx", 1) // rcx = new count
-
-		// Calculate new size: 8 + new_count * 16
-		fc.out.MovRegToReg("rdx", "rcx")
-		fc.out.ShlImmReg("rdx", 4)   // rdx = new_count * 16
-		fc.out.AddImmToReg("rdx", 8) // rdx = new size
-
-		// Only allocate if count was > 1
-		fc.out.MovRegToReg("rdi", "rdx")
-		fc.out.PushReg("rsi") // Save old list
-		fc.out.PushReg("rcx") // Save new count
-
-		// Conditional call to malloc
-		fc.out.TestRegReg("rcx", "rcx")
-		skipMallocStart := fc.eb.text.Len()
-		fc.eb.text.WriteByte(0x0F) // jle rel32 (jump if rcx <= 0)
-		fc.eb.text.WriteByte(0x8E)
-		skipMallocPatch := fc.eb.text.Len()
-		fc.eb.text.Write([]byte{0, 0, 0, 0})
-
-		fc.trackFunctionCall("malloc")
-		fc.eb.GenerateCallInstruction("malloc")
-
-		skipMallocEnd := fc.eb.text.Len()
-		skipOffset := skipMallocEnd - (skipMallocStart + 6)
-		fc.eb.text.Bytes()[skipMallocPatch] = byte(skipOffset)
-		fc.eb.text.Bytes()[skipMallocPatch+1] = byte(skipOffset >> 8)
-		fc.eb.text.Bytes()[skipMallocPatch+2] = byte(skipOffset >> 16)
-		fc.eb.text.Bytes()[skipMallocPatch+3] = byte(skipOffset >> 24)
-
-		fc.out.PopReg("rcx") // Restore new count
-		fc.out.PopReg("rsi") // Restore old list
-
-		// rax = new list (or 0), rsi = old list, rcx = new count
-
-		// Store new count
-		fc.out.Cvtsi2sd("xmm2", "rcx")
-		fc.out.MovXmmToMem("xmm2", "rax", 0)
-
-		// Copy entries from old list, shifting keys down by 1
-		// Source: old_list + 8 + 16 (skip count and first entry)
-		// Dest: new_list + 8
-		// Count: new_count * 16 bytes
-		fc.out.LeaMemToReg("rdi", "rax", 8)  // rdi = dest + 8
-		fc.out.LeaMemToReg("rsi", "rsi", 24) // rsi = src + 8 + 16 (skip first entry)
-		fc.out.MovRegToReg("rdx", "rcx")
-		fc.out.ShlImmReg("rdx", 4) // rdx = new_count * 16
-
-		fc.out.PushReg("rax") // Save new list
-		fc.out.PushReg("rcx") // Save new count
-
-		// Only copy if new_count > 0
-		fc.out.TestRegReg("rcx", "rcx")
-		skipCopyStart := fc.eb.text.Len()
-		fc.eb.text.WriteByte(0x0F) // jle rel32
-		fc.eb.text.WriteByte(0x8E)
-		skipCopyPatch := fc.eb.text.Len()
-		fc.eb.text.Write([]byte{0, 0, 0, 0})
-
-		fc.trackFunctionCall("memcpy")
-		fc.eb.GenerateCallInstruction("memcpy")
-
-		skipCopyEnd := fc.eb.text.Len()
-		skipCopyOffset := skipCopyEnd - (skipCopyStart + 6)
-		fc.eb.text.Bytes()[skipCopyPatch] = byte(skipCopyOffset)
-		fc.eb.text.Bytes()[skipCopyPatch+1] = byte(skipCopyOffset >> 8)
-		fc.eb.text.Bytes()[skipCopyPatch+2] = byte(skipCopyOffset >> 16)
-		fc.eb.text.Bytes()[skipCopyPatch+3] = byte(skipCopyOffset >> 24)
-
-		fc.out.PopReg("rcx") // Restore new count
-		fc.out.PopReg("rax") // Restore new list
-
-		// Now need to shift all keys down by 1
-		// Loop through entries and decrement each key
-		fc.out.TestRegReg("rcx", "rcx")
-		fc.out.MovImmToReg("rdx", "0") // rdx = index
-
-		// Loop: for i in 0..new_count { new_list[8 + i*16] -= 1 }
-		keyFixStart := fc.eb.text.Len()
-		fc.out.CmpRegToReg("rdx", "rcx")
-		keyFixLoopEnd := fc.eb.text.Len()
-		fc.eb.text.WriteByte(0x0F) // jge rel32
-		fc.eb.text.WriteByte(0x8D)
-		keyFixPatch := fc.eb.text.Len()
-		fc.eb.text.Write([]byte{0, 0, 0, 0})
-
-		// Calculate offset: 8 + rdx * 16
-		fc.out.MovRegToReg("r8", "rdx")
-		fc.out.ShlImmReg("r8", 4)
-		fc.out.AddImmToReg("r8", 8)
-
-		// Load key, decrement, store back
-		fc.out.MovMemToReg("r9", "rax", 0)
-		fc.out.AddRegToReg("rax", "r8")
-		fc.out.MovMemToReg("r9", "rax", 0) // r9 = key
-		fc.out.SubImmFromReg("r9", 1)      // r9--
-		fc.out.MovRegToMem("r9", "rax", 0) // Store back
-		fc.out.SubRegFromReg("rax", "r8")  // rax back to start
-
-		fc.out.AddImmToReg("rdx", 1) // rdx++
-		jmpKeyFix := keyFixStart - (fc.eb.text.Len() + 5)
-		fc.eb.text.WriteByte(0xE9) // jmp rel32
-		fc.eb.text.Write([]byte{
-			byte(jmpKeyFix), byte(jmpKeyFix >> 8),
-			byte(jmpKeyFix >> 16), byte(jmpKeyFix >> 24),
-		})
-
-		keyFixEndActual := fc.eb.text.Len()
-		keyFixEndOffset := keyFixEndActual - (keyFixLoopEnd + 6)
-		fc.eb.text.Bytes()[keyFixPatch] = byte(keyFixEndOffset)
-		fc.eb.text.Bytes()[keyFixPatch+1] = byte(keyFixEndOffset >> 8)
-		fc.eb.text.Bytes()[keyFixPatch+2] = byte(keyFixEndOffset >> 16)
-		fc.eb.text.Bytes()[keyFixPatch+3] = byte(keyFixEndOffset >> 24)
-
-		// Return new list pointer in xmm0
-		fc.out.MovqRegToXmm("xmm0", "rax")
-		return
+		// REMOVED: tail() is not a builtin function. Use the _ operator instead.
+		// Example: _list or list_ instead of tail(list)
+		compilerError("tail() is not a builtin function. Use the _ operator instead: _list or list_")
 
 	case "printa":
 		// printa() - Print value in rax register for debugging

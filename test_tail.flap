@@ -1,5 +1,0 @@
-list := [1, 2, 3, 4]
-rest := _list
-println(rest[0])
-println(rest[1])
-println(rest[2])
