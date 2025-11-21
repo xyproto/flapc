@@ -1,0 +1,4 @@
+list := [100, 200]
+rest := _list
+// Try to access the pointer value itself
+println(rest as number)

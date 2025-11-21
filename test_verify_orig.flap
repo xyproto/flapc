@@ -1,0 +1,8 @@
+list := [100, 200]
+println("Original[0]:")
+println(list[0])
+println("Original[1]:")
+println(list[1])
+rest := _list
+println("Tail[0]:")
+println(rest[0])

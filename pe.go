@@ -826,9 +826,11 @@ func (eb *ExecutableBuilder) PatchPECallsToIAT(iatMap map[string]uint32, textVir
 
 		// Check if this is an internal function label
 		if targetOffset := eb.LabelOffset(funcName); targetOffset >= 0 {
-			// Internal function - use direct relative call
-			ripAddr := uint64(patch.position) + 4
-			targetAddr := uint64(targetOffset)
+			// Internal function - patch the call displacement
+			// For Windows, calls are indirect (FF 15), so we compute RIP-relative to the function
+			// RIP points to next instruction after reading the displacement
+			ripAddr := uint64(patch.position) + 4 // RIP after displacement
+			targetAddr := uint64(targetOffset)    // Target function offset in .text
 			displacement := int64(targetAddr) - int64(ripAddr)
 
 			if displacement >= -0x80000000 && displacement <= 0x7FFFFFFF {
@@ -839,7 +841,11 @@ func (eb *ExecutableBuilder) PatchPECallsToIAT(iatMap map[string]uint32, textVir
 				textBytes[patch.position+3] = byte((disp32 >> 24) & 0xFF)
 
 				if VerboseMode {
-					fmt.Fprintf(os.Stderr, "  Patched internal call to %s: displacement=%d\n", funcName, displacement)
+					fmt.Fprintf(os.Stderr, "  Patched internal call to %s: offset=%d, displacement=%d\n", funcName, targetOffset, displacement)
+				}
+			} else {
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "  Warning: Displacement too large for internal call to %s: %d\n", funcName, displacement)
 				}
 			}
 			continue

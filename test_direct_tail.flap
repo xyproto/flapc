@@ -1,0 +1,6 @@
+// Instead of using tail operator, manually create what it should produce
+original := [100, 200, 300]
+// Tail should be [200, 300]
+manual_tail := [200, 300]
+println(manual_tail[0])
+println(manual_tail[1])

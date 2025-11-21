@@ -1,0 +1,6 @@
+import sdl3 as sdl
+
+// This should call flap_string_to_cstr internally
+result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
+printf("Result: %d\n", result)
+sdl.SDL_Quit()
