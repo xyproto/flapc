@@ -1198,10 +1198,46 @@ func main() {
 	// Set global WPO timeout
 	WPOTimeout = *optTimeout
 
+	// Use whichever output flag was specified (prefer short form if both given)
+	outputFilename := *outputFilenameFlag
+	outputFlagProvided := false
+	// Check if user explicitly provided -o or --output flag
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "o" || f.Name == "output" {
+			outputFlagProvided = true
+		}
+	})
+	if *outputFilenameLongFlag != defaultOutputFilename {
+		outputFilename = *outputFilenameLongFlag
+	}
+	if *outputFilenameFlag != defaultOutputFilename {
+		outputFilename = *outputFilenameFlag
+	}
+
 	// Parse target platform
 	var targetArch Arch
 	var targetOS OS
 	var err error
+
+	// Track if target/arch/os were explicitly provided
+	targetExplicitlyProvided := false
+	archExplicitlyProvided := false
+	osExplicitlyProvided := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "target" {
+			targetExplicitlyProvided = true
+		}
+		if f.Name == "arch" {
+			archExplicitlyProvided = true
+		}
+		if f.Name == "os" {
+			osExplicitlyProvided = true
+		}
+	})
+
+	// Auto-detect Windows target from .exe extension if no explicit target/OS was provided
+	autoDetectWindows := !targetExplicitlyProvided && !osExplicitlyProvided && 
+		outputFlagProvided && strings.HasSuffix(strings.ToLower(outputFilename), ".exe")
 
 	// If --target is specified, parse it; otherwise use --arch and --os
 	if *targetFlag != "" {
@@ -1230,16 +1266,33 @@ func main() {
 		}
 	} else {
 		// Use separate --arch and --os flags
-		targetArch, err = ParseArch(*archFlag)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: Invalid --arch '%s': %v\n", *archFlag, err)
-			os.Exit(1)
+		if !archExplicitlyProvided && autoDetectWindows {
+			// Use default arch when auto-detecting Windows
+			targetArch, _ = ParseArch(defaultArchStr)
+		} else {
+			targetArch, err = ParseArch(*archFlag)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: Invalid --arch '%s': %v\n", *archFlag, err)
+				os.Exit(1)
+			}
 		}
 
-		targetOS, err = ParseOS(*osFlag)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: Invalid --os '%s': %v\n", *osFlag, err)
-			os.Exit(1)
+		if autoDetectWindows {
+			targetOS = OSWindows
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Auto-detected Windows target from .exe output filename (outputFilename=%s, outputFlagProvided=%v)\n", 
+					outputFilename, outputFlagProvided)
+			}
+		} else {
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG: Not auto-detecting Windows: targetExplicit=%v osExplicit=%v outputProvided=%v hasSuffix=%v\n",
+					targetExplicitlyProvided, osExplicitlyProvided, outputFlagProvided, strings.HasSuffix(strings.ToLower(outputFilename), ".exe"))
+			}
+			targetOS, err = ParseOS(*osFlag)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: Invalid --os '%s': %v\n", *osFlag, err)
+				os.Exit(1)
+			}
 		}
 	}
 
@@ -1247,22 +1300,6 @@ func main() {
 	
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "Target platform: %s-%s\n", targetArch.String(), targetOS.String())
-	}
-
-	// Use whichever output flag was specified (prefer short form if both given)
-	outputFilename := *outputFilenameFlag
-	outputFlagProvided := false
-	// Check if user explicitly provided -o or --output flag
-	flag.Visit(func(f *flag.Flag) {
-		if f.Name == "o" || f.Name == "output" {
-			outputFlagProvided = true
-		}
-	})
-	if *outputFilenameLongFlag != defaultOutputFilename {
-		outputFilename = *outputFilenameLongFlag
-	}
-	if *outputFilenameFlag != defaultOutputFilename {
-		outputFilename = *outputFilenameFlag
 	}
 
 	// Get input files from remaining arguments

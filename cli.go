@@ -100,6 +100,7 @@ func RunCLI(args []string, platform Platform, verbose, quiet bool, optTimeout fl
 }
 
 // cmdBuild compiles a Flap source file to an executable
+// Confidence that this function is working: 85%
 func cmdBuild(ctx *CommandContext, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: flapc build <file.flap> [-o output]")
@@ -119,6 +120,15 @@ func cmdBuild(ctx *CommandContext, args []string) error {
 	// If not in args, use context output path (from main -o flag)
 	if outputPath == "" && ctx.OutputPath != "" {
 		outputPath = ctx.OutputPath
+	}
+
+	// Auto-detect Windows target from .exe extension if outputPath was specified
+	if outputPath != "" && strings.HasSuffix(strings.ToLower(outputPath), ".exe") && ctx.Platform.OS != OSWindows {
+		// Output ends with .exe but target isn't Windows - auto-detect
+		ctx.Platform.OS = OSWindows
+		if ctx.Verbose {
+			fmt.Fprintf(os.Stderr, "Auto-detected Windows target from .exe output filename\n")
+		}
 	}
 
 	// If still no output path specified, use input filename without extension
