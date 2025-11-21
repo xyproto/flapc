@@ -2,6 +2,7 @@
 
 ## High Priority
 - [x] Windows/Wine PE execution working with proper Microsoft x64 calling convention (RCX,RDX,R8,R9 + shadow space). Printf works correctly, exit codes work, tests run under Wine with 3-second timeout.
+- [x] Fix PE import table generation (ILT+IAT pairs must be interleaved per library). SDL3 example now works with Wine.
 - [ ] Update remaining C FFI call sites to use platform-specific calling convention helpers (getIntArgReg, allocateShadowSpace)
 
 ## Features
