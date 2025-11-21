@@ -115,7 +115,6 @@ func TestExistingListPrograms(t *testing.T) {
 
 // TestHeadFunction tests the head() builtin function
 func TestHeadFunction(t *testing.T) {
-	t.Skip("TODO: head() function needs debugging")
 	source := `list := [1, 2, 3, 4]
 first := head(list)
 println(first)
@@ -128,7 +127,6 @@ println(first)
 
 // TestTailFunction tests the tail() builtin function
 func TestTailFunction(t *testing.T) {
-	t.Skip("TODO: tail() function needs debugging")
 	source := `list := [1, 2, 3, 4]
 rest := tail(list)
 println(rest[0])

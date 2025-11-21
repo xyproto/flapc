@@ -114,7 +114,6 @@ println(list2[3])
 
 // TestTailFunctionUpdate tests the tail() builtin function (list_update context)
 func TestTailFunctionUpdate(t *testing.T) {
-	t.Skip("TODO: tail() function needs debugging")
 	source := `list := [1, 2, 3, 4]
 rest := tail(list)
 println(rest[0])
