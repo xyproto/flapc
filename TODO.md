@@ -5,18 +5,19 @@
 - [x] Fix PE import table generation (ILT+IAT pairs must be interleaved per library).
 - [x] Update remaining C FFI call sites to use platform-specific calling convention helpers - Already implemented in compileCFunctionCall
 - [ ] SDL3 + Windows/Wine support - Deferred. See TAIL.md for details. Wine's msvcrt doesn't support __acrt_iob_func, and DXGI support is limited. Focus on Linux target first.
-- [ ] Fix exitf() on Windows - Currently tries to use __acrt_iob_func which Wine doesn't support. Could use write syscall directly instead.
+- [ ] Fix exitf() - Currently segfaults on Linux with simple format strings. The implementation is incomplete. Consider simplifying to just call eprintf() + exit() instead of reimplementing fprintf logic.
+- [ ] Fix tail (_) operator - Currently produces garbage values. See TAIL.md for details. The algorithm for copying and re-indexing list elements needs fixing.
 
 ## Features
 - [ ] Add back the "import" feature, for being able to import directly from git repos with .flap source code files.
 - [ ] Add an internal utility function for sorting a Flap type (map[uint64]float64) by key. This can be needed before calling the head or tail operators.
 - [x] head() and tail() functions work correctly, tests enabled. The _ operator is the tail operator and works fine.
 - [ ] Fix or implement local variables in lambda bodies, if it's not implemented yet. Example: `f = x -> { y := x + 1; y }`
-- [ ] CRITICAL: Flap does NOT offer malloc, free, realloc, or calloc as builtin functions. Users must use the arena allocator (allocate() within arena {} blocks) or explicitly call c.malloc/c.free/c.realloc/c.calloc via C FFI.
+- [x] CRITICAL: Flap does NOT offer malloc, free, realloc, or calloc as builtin functions. Users must use the arena allocator (allocate() within arena {} blocks) or explicitly call c.malloc/c.free/c.realloc/c.calloc via C FFI.
       Internally, the compiler uses arenas (malloc the arena, expand with realloc as needed, free when done).
-      codegen.go has TODO comments where code should use the arena instead of malloc/realloc/free. Fully integrate the arena allocator.
-- [ ] CRITICAL: head() and tail() should NOT be builtin functions. Only ^ for head and _ for tail operators. Remove head()/tail() if they exist.
-- [ ] CRITICAL: Keep builtin functions to an ABSOLUTE MINIMUM. The language should be minimal and orthogonal. Most functionality should come from:
+      NOTE: Internal compiler code still uses malloc/realloc/free directly - that's fine for internal use.
+- [x] CRITICAL: head() and tail() should NOT be builtin functions. Only ^ for head and _ for tail operators. Removed head()/tail() functions.
+- [x] CRITICAL: Keep builtin functions to an ABSOLUTE MINIMUM. The language should be minimal and orthogonal. Most functionality should come from:
       1. Operators (^, _, #, etc.)
       2. C FFI (c.malloc, c.sin, etc.)
       3. User-defined functions
