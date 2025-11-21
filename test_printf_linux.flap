@@ -1,3 +1,0 @@
-c.printf("Testing printf: %f\n", 42.0)
-c.printf("Testing c.sin: %f\n", c.sin(1.0))
-c.printf("Done!\n")

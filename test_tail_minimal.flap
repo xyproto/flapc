@@ -1,3 +1,0 @@
-list := [1, 2]
-rest := _list
-printf("rest pointer: %f\n", rest)

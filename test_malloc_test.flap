@@ -1,8 +1,0 @@
-// Test if malloc is working
-list := [100, 200]
-println("Original list:")
-println(list[0])
-println(list[1])
-rest := _list
-println("Tail result:")
-println(#rest)

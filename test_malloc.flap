@@ -1,5 +1,0 @@
-// Test c.malloc and c.free
-ptr := c.malloc(64)
-println("Allocated memory")
-c.free(ptr)
-println("Freed memory")

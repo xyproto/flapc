@@ -1,5 +1,0 @@
-// Test printf return value more carefully
-retval := c.printf("Hello\n")
-// Cast to integer explicitly
-println("Return value as number:")
-println(retval as number)

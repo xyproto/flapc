@@ -1,4 +1,0 @@
-import sdl3 as sdl
-
-println("SDL_INIT_VIDEO constant:")
-println(sdl.SDL_INIT_VIDEO as number)

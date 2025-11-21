@@ -1,4 +1,0 @@
-list := [100, 200, 300]
-rest := tail(list)
-println(rest[0])
-println(rest[1])

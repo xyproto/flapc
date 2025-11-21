@@ -1,5 +1,0 @@
-// First test that malloc is working at all by creating a list dynamically
-x := 10
-list := [x, 20, 30]
-printf("list[0] = %f\n", list[0])
-printf("#list = %f\n", #list)

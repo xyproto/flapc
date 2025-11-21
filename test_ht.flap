@@ -1,5 +1,0 @@
-list := [10, 20, 30]
-head := ^list
-tail := _list
-println(head)
-println(#tail)

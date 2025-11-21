@@ -1,2 +1,0 @@
-x := c.sin(1.0)
-println(x)

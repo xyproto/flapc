@@ -1,4 +1,0 @@
-list := [100, 200]
-rest := _list
-println(#rest)
-println(rest[0])

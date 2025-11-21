@@ -1,4 +1,0 @@
-list := [10, 20, 30]
-println(list[0])
-println(list[1])
-println(list[2])

@@ -1,4 +1,0 @@
-list := [1, 2, 3, 4]
-println(#list)
-rest := _list
-println(#rest)

@@ -1,5 +1,0 @@
-// Test pointer storage and retrieval
-ptr := c.malloc(64)
-printf("Pointer value: %f\n", ptr)
-c.free(ptr as ptr)
-println("Freed")

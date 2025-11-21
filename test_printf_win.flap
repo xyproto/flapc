@@ -1,2 +1,0 @@
-// Simple test for Windows printf
-println("Hello from Windows!")

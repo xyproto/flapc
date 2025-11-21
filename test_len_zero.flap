@@ -1,2 +1,0 @@
-zero := 0.0
-printf("Length of 0: %f\n", #zero)

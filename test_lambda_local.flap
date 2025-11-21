@@ -1,3 +1,0 @@
-f = x -> { y := x + 1; y }
-result = f(41)
-println(result)

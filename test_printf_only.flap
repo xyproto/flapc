@@ -1,1 +1,0 @@
-c.printf("Value: %f\n", 42.0)

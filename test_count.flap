@@ -1,3 +1,0 @@
-list := [1, 2, 3, 4]
-printf("count = %f\n", #list)
-printf("list[0] = %f\n", list[0])
