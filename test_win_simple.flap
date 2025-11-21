@@ -1,0 +1,3 @@
+// Simple Windows test
+
+printf("Hello Windows!\n")

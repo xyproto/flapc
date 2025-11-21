@@ -1,0 +1,3 @@
+list := [1, 2, 3, 4]
+printf("Direct: list[0] = %f\n", list[0])
+printf("Direct: #list = %f\n", #list)

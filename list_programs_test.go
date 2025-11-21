@@ -113,10 +113,10 @@ func TestExistingListPrograms(t *testing.T) {
 	}
 }
 
-// TestHeadFunction tests the head() builtin function
-func TestHeadFunction(t *testing.T) {
+// TestHeadOperator tests the ^ (head) operator
+func TestHeadOperator(t *testing.T) {
 	source := `list := [1, 2, 3, 4]
-first := head(list)
+first := ^list
 println(first)
 `
 	result := compileAndRun(t, source)
@@ -125,10 +125,10 @@ println(first)
 	}
 }
 
-// TestTailFunction tests the tail() builtin function
-func TestTailFunction(t *testing.T) {
+// TestTailOperator tests the _ (tail) operator
+func TestTailOperator(t *testing.T) {
 	source := `list := [1, 2, 3, 4]
-rest := tail(list)
+rest := _list
 println(rest[0])
 println(rest[1])
 println(rest[2])

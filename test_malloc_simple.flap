@@ -1,0 +1,2 @@
+ptr := malloc(100)
+printf("Allocated pointer: %f\n", ptr)

@@ -504,13 +504,14 @@ int32 = 100      // OK - variable named int32
 x = y as int32   // OK - int32 as type cast
 ```
 
-## Memory Management
+## Memory Management and Builtins
 
-**CRITICAL:** Flap does NOT provide `malloc`, `free`, `realloc`, or `calloc` as builtin functions.
+**CRITICAL DESIGN PRINCIPLE:** Flap keeps builtin functions to an ABSOLUTE MINIMUM.
 
-**Memory allocation options:**
-1. **Arena allocators** (recommended): Use `allocate()` within `arena {}` blocks
-2. **C FFI** (when needed): Explicitly call `c.malloc`, `c.free`, `c.realloc`, `c.calloc`
+**Memory allocation:**
+- NO `malloc`, `free`, `realloc`, or `calloc` as builtins
+- Use arena allocators: `allocate()` within `arena {}` blocks (recommended)
+- Or use C FFI: `c.malloc`, `c.free`, `c.realloc`, `c.calloc` (explicit)
 
 ```flap
 // Recommended: arena allocator
@@ -523,6 +524,28 @@ result = arena {
 ptr := c.malloc(1024)
 defer c.free(ptr)
 ```
+
+**List operations:**
+- NO `head()` or `tail()` functions as builtins
+- Use operators: `^xs` for head, `_xs` for tail
+- Only `#` length operator (also works as prefix/postfix)
+
+**Why minimal builtins?**
+1. **Simplicity:** Less to learn and remember
+2. **Orthogonality:** One concept, one way
+3. **Extensibility:** Users can define their own functions
+4. **Predictability:** No hidden magic
+
+**What IS builtin:**
+- Operators: `^`, `_`, `#`, arithmetic, logic, bitwise
+- Control flow: `@`, match blocks, `ret`
+- Core I/O: `print`, `println`, `printf` (and error/exit variants)
+- Keywords: `arena`, `unsafe`, `cstruct`, `class`, `defer`, etc.
+
+**Everything else via:**
+1. **Operators** for common operations
+2. **C FFI** for system functionality (`c.sin`, `c.malloc`, etc.)
+3. **User-defined functions** for application logic
 
 ## Operators
 

@@ -112,10 +112,10 @@ println(list2[3])
 	}
 }
 
-// TestTailFunctionUpdate tests the tail() builtin function (list_update context)
-func TestTailFunctionUpdate(t *testing.T) {
+// TestTailOperatorUpdate tests the _ (tail) operator (list_update context)
+func TestTailOperatorUpdate(t *testing.T) {
 	source := `list := [1, 2, 3, 4]
-rest := tail(list)
+rest := _list
 println(rest[0])
 println(rest[1])
 `

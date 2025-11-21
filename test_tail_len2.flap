@@ -1,0 +1,4 @@
+list := [10, 20]
+printf("Original: [%f, %f], len=%f\n", list[0], list[1], #list)
+rest := _list
+printf("Tail ptr=%f, len=%f\n", rest, #rest)

@@ -1,0 +1,4 @@
+// Test exitf formatting
+
+x := 42
+exitf("The value is: %d\n", x)

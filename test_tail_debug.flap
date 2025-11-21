@@ -1,0 +1,7 @@
+list := [10, 20, 30, 40]
+println(#list)
+tail := _list
+println(#tail)
+println(tail[0])
+println(tail[1])
+println(tail[2])

@@ -1519,33 +1519,53 @@ CStructs have C-compatible memory layout:
 - **Stack**: Function local variables, temporaries
 - **Heap**: Dynamically allocated data (lists, maps, large objects)
 
-### Arena Allocators
+### Arena Allocators and Minimal Builtins
 
-Flap uses **arena allocators** for memory management. There is NO `malloc`, `free`, `realloc`, or `calloc` as builtin functions.
+**CRITICAL DESIGN PRINCIPLE:** Flap keeps builtin functions to an ABSOLUTE MINIMUM.
 
-If you need direct C memory management, use the C FFI:
-```flap
-ptr := c.malloc(1024)
-defer c.free(ptr)
-```
-
-Scoped memory management with arenas:
+**Memory management:**
+- NO `malloc`, `free`, `realloc`, or `calloc` as builtins
+- Use arena allocators (recommended): `allocate()` within `arena {}` blocks
+- Or use C FFI (explicit): `c.malloc`, `c.free`, `c.realloc`, `c.calloc`
 
 ```flap
+// Recommended: arena allocator
 result = arena {
     data = allocate(1024)
     process(data)
     final_value
 }
 // All arena memory freed here
+
+// Alternative: explicit C FFI
+ptr := c.malloc(1024)
+defer c.free(ptr)
 ```
 
-**Use cases:**
-- Request handlers
-- Temporary buffers
-- Batch processing
+**List operations:**
+- NO `head()` or `tail()` functions as builtins
+- Use operators: `^xs` for head, `_xs` for tail
+- Only `#` length operator (prefix or postfix)
 
-**Important:** The Flap compiler uses arenas internally. Users should use `allocate()` within `arena {}` blocks, or explicitly use `c.malloc`/`c.free`/`c.realloc`/`c.calloc` via the C FFI when needed.
+**Why minimal builtins?**
+1. **Simplicity:** Less to learn, fewer concepts
+2. **Orthogonality:** One way to do each thing
+3. **Extensibility:** Users define their own functions
+4. **Predictability:** No hidden behavior
+5. **Transparency:** Everything explicit
+
+**What IS builtin:**
+- **Operators:** `^`, `_`, `#`, arithmetic, logic, bitwise, etc.
+- **Control flow:** `@` loops, match blocks, `ret`, `defer`
+- **Core I/O:** `print`, `println`, `printf`, `eprint`, `eprintln`, `eprintf`, `exitln`, `exitf`
+- **Keywords:** `arena`, `unsafe`, `cstruct`, `class`, `import`, etc.
+
+**Everything else via:**
+1. **Operators** for common operations (`^xs` not `head(xs)`)
+2. **C FFI** for system functions (`c.sin` not `sin`, `c.malloc` not `malloc`)
+3. **User-defined functions** for application logic
+
+This keeps the language core minimal and forces clarity at call sites.
 
 ### Defer for Resource Management
 

@@ -3182,10 +3182,11 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.MovRegToReg("rax", "r15")
 				fc.out.ShlImmReg("rax", 4)   // rax = r15 * 16
 				fc.out.AddImmToReg("rax", 8) // rax = 8 + r15 * 16
+				fc.out.AddRegToReg("rax", "r14") // rax = address of key in new list
 
-				// Write key (r15) at [r14 + rax]
-				fc.out.AddRegToReg("rax", "r14") // rax = address of key
-				fc.out.StoreRegToMem("r15", "rax", 0)
+				// Write key (r15 as float) at [rax]
+				fc.out.Cvtsi2sd("xmm3", "r15")     // xmm3 = r15 as double
+				fc.out.MovXmmToMem("xmm3", "rax", 0)
 
 				// Calculate source offset for value: 8 + (r15+1) * 16 + 8
 				//   = 8 + r15*16 + 16 + 8 = r15*16 + 32
@@ -3194,9 +3195,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.AddImmToReg("rdx", 32)    // rdx = r15*16 + 32
 				fc.out.AddRegToReg("rdx", "rbx") // rdx = address of source value
 
-				// Copy value from [rdx] to [rax + 8]
-				fc.out.MovMemToReg("rcx", "rdx", 0)
-				fc.out.MovRegToMem("rcx", "rax", 8)
+				// Copy value (as double) from [rdx] to [rax + 8]
+				fc.out.MovMemToXmm("xmm4", "rdx", 0)
+				fc.out.MovXmmToMem("xmm4", "rax", 8)
 
 				// Increment counter and loop
 				fc.out.AddImmToReg("r15", 1)
@@ -11048,30 +11049,296 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		return
 
 	case "exitln", "exitf":
-		// Confidence that this function is working: 85%
+		// Confidence that this function is working: 75%
 		// Quick exit print functions - print to stderr and exit with code 1
 		// exitln prints with newline, exitf is formatted output
 		isNewline := call.Function == "exitln"
 		isFormatted := call.Function == "exitf"
 
-		// Same logic as eprint* but followed by exit(1)
+		// exitf: Use fprintf with format string processing (like printf)
 		if isFormatted {
 			if len(call.Args) == 0 {
-				compilerError("%s() requires at least one argument", call.Function)
+				compilerError("exitf() requires at least a format string")
 			}
-			arg := call.Args[0]
-			if strExpr, ok := arg.(*StringExpr); ok {
-				labelName := fmt.Sprintf("str_%d", fc.stringCounter)
-				fc.stringCounter++
-				processedStr := processEscapeSequences(strExpr.Value)
-				fc.eb.Define(labelName, processedStr)
 
-				fc.out.MovImmToReg("rax", "1")
-				fc.out.MovImmToReg("rdi", "2")
-				fc.out.LeaSymbolToReg("rsi", labelName)
-				fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", len(processedStr)))
-				fc.out.Syscall()
+			// First argument must be a string (format string)
+			formatArg := call.Args[0]
+			strExpr, ok := formatArg.(*StringExpr)
+			if !ok {
+				compilerError("exitf() first argument must be a string literal (got %T)", formatArg)
 			}
+
+			// Process format string (same as printf)
+			processedFormat := processEscapeSequences(strExpr.Value)
+			boolPositions := make(map[int]bool)
+			stringPositions := make(map[int]bool)
+			integerPositions := make(map[int]bool)
+
+			argPos := 0
+			var result strings.Builder
+			runes := []rune(processedFormat)
+			i := 0
+			for i < len(runes) {
+				if runes[i] == '%' && i+1 < len(runes) {
+					next := runes[i+1]
+					if next == '%' {
+						result.WriteString("%%")
+						i += 2
+						continue
+					} else if next == 'v' {
+						result.WriteString("%.15g")
+						argPos++
+						i += 2
+						continue
+					} else if next == 'b' {
+						result.WriteString("%s")
+						boolPositions[argPos] = true
+						argPos++
+						i += 2
+						continue
+					} else if next == 's' {
+						stringPositions[argPos] = true
+						argPos++
+					} else if next == 'l' && i+2 < len(runes) && (runes[i+2] == 'd' || runes[i+2] == 'i' || runes[i+2] == 'u') {
+						integerPositions[argPos] = true
+						argPos++
+					} else if next == 'd' || next == 'i' || next == 'u' || next == 'x' || next == 'X' || next == 'o' {
+						integerPositions[argPos] = true
+						argPos++
+					} else if next == 'f' || next == 'g' {
+						argPos++
+					}
+				}
+				result.WriteRune(runes[i])
+				i++
+			}
+			resultStr := result.String()
+
+			// Create "yes" and "no" string labels for %b
+			yesLabel := fmt.Sprintf("bool_yes_%d", fc.stringCounter)
+			noLabel := fmt.Sprintf("bool_no_%d", fc.stringCounter)
+			fc.eb.Define(yesLabel, "yes\x00")
+			fc.eb.Define(noLabel, "no\x00")
+
+			// Create label for processed format string
+			labelName := fmt.Sprintf("str_%d", fc.stringCounter)
+			fc.stringCounter++
+			fc.eb.Define(labelName, resultStr+"\x00")
+
+			numArgs := len(call.Args) - 1
+			if numArgs > 8 {
+				compilerError("exitf() supports max 8 arguments (got %d)", numArgs)
+			}
+
+			// Set up calling convention for fprintf (stderr, format, args...)
+			var stderrReg, formatReg, stderrTempReg string
+			var intRegs []string
+			var xmmRegs []string
+
+			if fc.eb.target.OS() == OSWindows {
+				// Windows: fprintf(stderr, format, ...)
+				// rcx = stderr, rdx = format, r8/r9 = first two args
+				stderrReg = "rcx"
+				formatReg = "rdx"
+				stderrTempReg = "r11" // Temporary storage for stderr to avoid clobbering
+				intRegs = []string{"r8", "r9"}
+				xmmRegs = []string{"xmm2", "xmm3"}
+			} else {
+				// Linux: fprintf(stderr, format, ...)
+				// rdi = stderr, rsi = format, rdx/rcx/r8/r9 = args
+				stderrReg = "rdi"
+				formatReg = "rsi"
+				stderrTempReg = "r11"
+				intRegs = []string{"rdx", "rcx", "r8", "r9"}
+				xmmRegs = []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7"}
+			}
+
+			// Get stderr FIRST and store in temporary register
+			if fc.eb.target.OS() == OSWindows {
+				// Windows: Use __acrt_iob_func(2) to get stderr
+				// Allocate shadow space (32 bytes = 4 registers * 8 bytes)
+				fc.out.SubImmFromReg("rsp", 32)
+				fc.out.MovImmToReg("rcx", "2") // 2 = stderr
+				fc.trackFunctionCall("__acrt_iob_func")
+				fc.eb.GenerateCallInstruction("__acrt_iob_func")
+				// Result in rax, move to temp register
+				fc.out.MovRegToReg(stderrTempReg, "rax")
+				// Clean up shadow space
+				fc.out.AddImmToReg("rsp", 32)
+			} else {
+				// Linux: Access stderr global variable
+				fc.out.LeaSymbolToReg(stderrTempReg, "stderr")
+				fc.out.MovMemToReg(stderrTempReg, stderrTempReg, 0)
+			}
+
+			intArgCount := 0
+			xmmArgCount := 0
+
+			// Evaluate all arguments
+			for i := 1; i < len(call.Args); i++ {
+				argIdx := i - 1
+
+				// String literal for %s
+				if stringPositions[argIdx] {
+					if strExpr, ok := call.Args[i].(*StringExpr); ok {
+						labelName := fmt.Sprintf("str_%d", fc.stringCounter)
+						fc.stringCounter++
+						fc.eb.Define(labelName, strExpr.Value+"\x00")
+						if intArgCount < len(intRegs) {
+							fc.out.LeaSymbolToReg(intRegs[intArgCount], labelName)
+							intArgCount++
+						}
+						continue
+					}
+				}
+
+				// Integer format with cast
+				if integerPositions[argIdx] {
+					if castExpr, ok := call.Args[i].(*CastExpr); ok && castExpr.Type == "number" {
+						fc.compileExpression(castExpr.Expr)
+						fc.out.Cvttsd2si("rax", "xmm0")
+						if intArgCount < len(intRegs) && intRegs[intArgCount] != "rax" {
+							fc.out.MovRegToReg(intRegs[intArgCount], "rax")
+						}
+						intArgCount++
+						continue
+					}
+				}
+
+				fc.compileExpression(call.Args[i])
+
+				if boolPositions[argIdx] {
+					// %b: Convert float to yes/no string
+					fc.out.XorRegWithReg("rax", "rax")
+					fc.out.Cvtsi2sd("xmm1", "rax")
+					fc.out.Ucomisd("xmm0", "xmm1")
+
+					fc.labelCounter++
+					yesJump := fc.eb.text.Len()
+					fc.out.JumpConditional(JumpNotEqual, 0)
+					yesJumpEnd := fc.eb.text.Len()
+
+					fc.out.LeaSymbolToReg(intRegs[intArgCount], noLabel)
+					noJump := fc.eb.text.Len()
+					fc.out.JumpUnconditional(0)
+					noJumpEnd := fc.eb.text.Len()
+
+					yesPos := fc.eb.text.Len()
+					fc.patchJumpImmediate(yesJump+2, int32(yesPos-yesJumpEnd))
+					fc.out.LeaSymbolToReg(intRegs[intArgCount], yesLabel)
+
+					endPos := fc.eb.text.Len()
+					fc.patchJumpImmediate(noJump+1, int32(endPos-noJumpEnd))
+
+					intArgCount++
+				} else if stringPositions[argIdx] {
+					// %s: Flap string -> C string
+					fc.out.CallSymbol("flap_string_to_cstr")
+					if intArgCount < len(intRegs) {
+						fc.out.MovRegToReg(intRegs[intArgCount], "rax")
+					}
+					intArgCount++
+				} else if integerPositions[argIdx] {
+					// Integer format
+					fc.out.Cvttsd2si("rax", "xmm0")
+					if intArgCount < len(intRegs) && intRegs[intArgCount] != "rax" {
+						fc.out.MovRegToReg(intRegs[intArgCount], "rax")
+					}
+					intArgCount++
+				} else {
+					// Float argument
+					fc.out.SubImmFromReg("rsp", 16)
+					fc.out.MovXmmToMem("xmm0", "rsp", 0)
+				}
+			}
+
+			// Load float arguments from stack
+			numFloatArgs := 0
+			for i := 0; i < numArgs; i++ {
+				if !boolPositions[i] && !stringPositions[i] && !integerPositions[i] {
+					numFloatArgs++
+				}
+			}
+
+			for i := 0; i < numArgs; i++ {
+				if !boolPositions[i] && !stringPositions[i] && !integerPositions[i] {
+					if xmmArgCount < len(xmmRegs) {
+						offset := (numFloatArgs - xmmArgCount - 1) * 16
+						fc.out.MovMemToXmm(xmmRegs[xmmArgCount], "rsp", offset)
+						xmmArgCount++
+					}
+				}
+			}
+			if numFloatArgs > 0 {
+				fc.out.AddImmToReg("rsp", int64(numFloatArgs*16))
+			}
+
+			// Windows: Duplicate float args in integer registers
+			if fc.eb.target.OS() == OSWindows {
+				if xmmArgCount >= 1 && len(intRegs) >= 1 {
+					fc.out.MovqXmmToReg(intRegs[0], xmmRegs[0])
+				}
+				if xmmArgCount >= 2 && len(intRegs) >= 2 {
+					fc.out.MovqXmmToReg(intRegs[1], xmmRegs[1])
+				}
+			}
+
+			// Load format string
+			fc.out.LeaSymbolToReg(formatReg, labelName)
+
+			// Move stderr from temp register to its final position
+			fc.out.MovRegToReg(stderrReg, stderrTempReg)
+
+			// Set rax for variadic functions (Linux)
+			if fc.eb.target.OS() != OSWindows {
+				fc.out.MovImmToReg("rax", fmt.Sprintf("%d", xmmArgCount))
+			}
+
+			// Save allocated callee-saved registers
+			allocatedCalleeSaved := fc.regTracker.GetAllocatedCalleeSavedRegs()
+			needsDummyPush := len(allocatedCalleeSaved)%2 != 0
+
+			for _, reg := range allocatedCalleeSaved {
+				fc.out.PushReg(reg)
+			}
+			if needsDummyPush {
+				fc.out.PushReg("rax")
+			}
+
+			// Allocate shadow space on Windows
+			if fc.eb.target.OS() == OSWindows {
+				fc.out.SubImmFromReg("rsp", 32)
+			}
+
+			// Call fprintf
+			fc.trackFunctionCall("fprintf")
+			fc.eb.GenerateCallInstruction("fprintf")
+
+			// Clean up shadow space on Windows
+			if fc.eb.target.OS() == OSWindows {
+				fc.out.AddImmToReg("rsp", 32)
+			}
+
+			// Restore callee-saved registers
+			if needsDummyPush {
+				fc.out.PopReg("rax")
+			}
+			for i := len(allocatedCalleeSaved) - 1; i >= 0; i-- {
+				fc.out.PopReg(allocatedCalleeSaved[i])
+			}
+
+			// Exit with code 1
+			if fc.eb.target.OS() == OSWindows {
+				// Windows: exit code in rcx
+				fc.out.MovImmToReg("rcx", "1")
+				fc.out.SubImmFromReg("rsp", 32) // Shadow space
+			} else {
+				// Linux: exit code in rdi
+				fc.out.MovImmToReg("rdi", "1")
+			}
+			fc.trackFunctionCall("exit")
+			fc.eb.GenerateCallInstruction("exit")
+
 		} else if isNewline {
 			if len(call.Args) == 0 {
 				newlineLabel := fmt.Sprintf("exitln_newline_%d", fc.stringCounter)

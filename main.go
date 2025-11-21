@@ -839,10 +839,11 @@ func (eb *ExecutableBuilder) GenerateCallInstruction(funcName string) error {
 		fmt.Fprint(os.Stderr, funcName+"@plt:")
 	}
 
-	// Strip leading underscore for Mach-O compatibility, but NOT for internal Flap runtime functions
-	// Internal functions (starting with _flap) should keep their underscore
+	// Strip leading underscore for Mach-O compatibility, but NOT for:
+	// - Internal Flap runtime functions (starting with _flap)
+	// - Functions starting with double underscore (like __acrt_iob_func on Windows)
 	targetName := funcName
-	if strings.HasPrefix(funcName, "_") && !strings.HasPrefix(funcName, "_flap") {
+	if strings.HasPrefix(funcName, "_") && !strings.HasPrefix(funcName, "_flap") && !strings.HasPrefix(funcName, "__") {
 		targetName = funcName[1:] // Remove underscore for external C functions
 	}
 
