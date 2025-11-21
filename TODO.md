@@ -42,3 +42,34 @@
 Tips:
 * Use good techniques for dealing with complexity.
 * It's okay if things take time to implement, but take a step back if stuck.
+
+## Critical: Windows x64 C FFI Return Values
+
+C function calls on Windows x64 are returning garbage values. The issue affects all C FFI calls (printf, SDL3 functions, etc.). The functions execute without crashing, but return values are incorrect.
+
+**Symptoms:**
+- `c.printf("Hello\n")` returns garbage instead of 6
+- `sdl.SDL_Init(flags)` returns garbage instead of bool
+- Output: binary data like `e0 52 14` or `60 bc 6f`
+
+**What works:**
+- Calls execute without crashing
+- SDL3.dll loads correctly (confirmed with WINEDEBUG=+loaddll)
+- IAT (Import Address Table) is structured correctly
+- Constants and string arguments work fine
+
+**Possible causes:**
+1. Stack alignment issue (Windows requires 16-byte alignment)
+2. Shadow space allocation problem
+3. Register clobbering during call setup
+4. Incorrect cvtsi2sd usage (signed vs unsigned)
+5. Missing XMM register volatile save/restore
+6. RAX contains wrong value before conversion
+
+**Next steps:**
+- Check stack alignment before C FFI calls
+- Verify shadow space (32 bytes) is correctly allocated/deallocated
+- Test with explicit register dumps
+- Compare generated assembly with working C code compiled with MinGW
+- Consider using objdump to examine the actual call sequence
+
