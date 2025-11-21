@@ -102,7 +102,7 @@ func (eb *ExecutableBuilder) WritePEHeaderWithImports(entryPointRVA uint32, code
 
 	writeU32(0)          // Checksum
 	writeU16(3)          // Subsystem: CUI (Console)
-	writeU16(0x8160)     // DLL characteristics: NX compatible, dynamic base, terminal server aware
+	writeU16(0x8120)     // DLL characteristics: NX compatible, terminal server aware (no dynamic base)
 	w.Write8u(0x100000)  // Size of stack reserve
 	w.Write8u(0x1000)    // Size of stack commit
 	w.Write8u(0x100000)  // Size of heap reserve
@@ -193,7 +193,7 @@ func (eb *ExecutableBuilder) WritePEHeader(entryPointRVA uint32, codeSize, dataS
 
 	writeU32(0)          // Checksum
 	writeU16(3)          // Subsystem: CUI (Console)
-	writeU16(0x8160)     // DLL characteristics: NX compatible, dynamic base, terminal server aware
+	writeU16(0x8120)     // DLL characteristics: NX compatible, terminal server aware (no dynamic base)
 	w.Write8u(0x100000)  // Size of stack reserve
 	w.Write8u(0x1000)    // Size of stack commit
 	w.Write8u(0x100000)  // Size of heap reserve

@@ -208,6 +208,67 @@ func (fc *FlapCompiler) addSemanticError(message string, suggestions ...string) 
 	fc.errors.AddError(err)
 }
 
+// Confidence that this function is working: 95%
+// getIntArgReg returns the register name for the nth integer/pointer argument (0-based)
+// based on the target platform's calling convention
+func (fc *FlapCompiler) getIntArgReg(argIndex int) string {
+	if fc.eb.target.OS() == OSWindows {
+		// Microsoft x64 calling convention: RCX, RDX, R8, R9
+		switch argIndex {
+		case 0:
+			return "rcx"
+		case 1:
+			return "rdx"
+		case 2:
+			return "r8"
+		case 3:
+			return "r9"
+		default:
+			// Args 5+ go on stack (at [rsp+32+n*8])
+			return ""
+		}
+	} else {
+		// System V ABI (Linux, macOS, FreeBSD): RDI, RSI, RDX, RCX, R8, R9
+		switch argIndex {
+		case 0:
+			return "rdi"
+		case 1:
+			return "rsi"
+		case 2:
+			return "rdx"
+		case 3:
+			return "rcx"
+		case 4:
+			return "r8"
+		case 5:
+			return "r9"
+		default:
+			// Args 7+ go on stack
+			return ""
+		}
+	}
+}
+
+// Confidence that this function is working: 90%
+// allocateShadowSpace allocates the required shadow space for Windows x64 calling convention
+// Returns the amount of space allocated (32 for Windows, 0 for other platforms)
+func (fc *FlapCompiler) allocateShadowSpace() int {
+	if fc.eb.target.OS() == OSWindows {
+		// Windows requires 32 bytes of "shadow space" for the called function
+		fc.out.SubImmFromReg("rsp", 32)
+		return 32
+	}
+	return 0
+}
+
+// Confidence that this function is working: 90%
+// deallocateShadowSpace removes the shadow space after a function call
+func (fc *FlapCompiler) deallocateShadowSpace(shadowSpace int) {
+	if shadowSpace > 0 {
+		fc.out.AddImmToReg("rsp", int64(shadowSpace))
+	}
+}
+
 func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	// Clear moved variables tracking for this compilation
 	fc.movedVars = make(map[string]bool)
@@ -10897,9 +10958,11 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			fc.stringCounter++
 			fc.eb.Define(newlineLabel, "\n\x00")
 
-			fc.out.LeaSymbolToReg("rdi", newlineLabel)
+			shadowSpace := fc.allocateShadowSpace()
+			fc.out.LeaSymbolToReg(fc.getIntArgReg(0), newlineLabel)
 			fc.trackFunctionCall("printf")
 			fc.eb.GenerateCallInstruction("printf")
+			fc.deallocateShadowSpace(shadowSpace)
 			return
 		}
 
@@ -10916,10 +10979,12 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			fc.stringCounter++
 			fc.eb.Define(fmtLabel, "%s\n\x00")
 
-			fc.out.LeaSymbolToReg("rdi", fmtLabel)
-			fc.out.LeaSymbolToReg("rsi", labelName)
+			shadowSpace := fc.allocateShadowSpace()
+			fc.out.LeaSymbolToReg(fc.getIntArgReg(0), fmtLabel)
+			fc.out.LeaSymbolToReg(fc.getIntArgReg(1), labelName)
 			fc.trackFunctionCall("printf")
 			fc.eb.GenerateCallInstruction("printf")
+			fc.deallocateShadowSpace(shadowSpace)
 			return
 		} else if argType == "string" {
 			// String variable - call _flap_string_println helper
@@ -10927,15 +10992,18 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			fc.compileExpression(arg)
 			// xmm0 contains string pointer
 
-			// Convert to integer pointer in rdi
+			// Convert to integer pointer in first arg register
+			argReg := fc.getIntArgReg(0)
 			fc.out.SubImmFromReg("rsp", 8)
 			fc.out.MovXmmToMem("xmm0", "rsp", 0)
-			fc.out.MovMemToReg("rdi", "rsp", 0)
+			fc.out.MovMemToReg(argReg, "rsp", 0)
 			fc.out.AddImmToReg("rsp", 8)
 
 			// Call helper function
+			shadowSpace := fc.allocateShadowSpace()
 			fc.trackFunctionCall("_flap_string_println")
 			fc.eb.GenerateCallInstruction("_flap_string_println")
+			fc.deallocateShadowSpace(shadowSpace)
 			return
 		} else if argType == "list" || argType == "map" {
 			// Print list/map - iterate and use printf for each element
