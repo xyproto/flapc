@@ -1,16 +1,10 @@
 # TODO - Flap Compiler (Flapc)
 
-**Status:** Version 1.4.0 - Ready
-**All Core Tests:** ✅ Passing (155+ tests)
-**Build:** ✅ Working
-**Platforms:** x86-64, ARM64, RISC-V64
+- [ ] Add back the "import" feature, for being able to import directly from git repos with .flap source code files.
+- [ ] Add an internal utility function for sorting a Flap type (map[uint64]float64) by key. This can be needed before calling the head or tail operators.
+- [ ] Rename the tail operator from `_` to `¤` and then implement/fix it, and then enable the tests.
+- [ ]
 
----
-
-## Known Limitations (Documented)
-
-### Tail Operator and tail() Function
-- ⚠️ Tail operator `_list` and tail() function have implementation issues
 - Both versions create new lists but key renumbering logic has bugs
 - Head operator `^list` works correctly
 - Tests for tail() function are skipped
@@ -63,13 +57,7 @@
 - Language server protocol (LSP) implementation
 
 ### Priority 6 - Platform Support
-- ⚠️ Windows/Wine PE support (IN PROGRESS)
-  - Basic PE64 format generation ✅
-  - PE files recognized by Wine ✅  
-  - Import tables needed for DLL linking (msvcrt.dll, kernel32.dll)
-  - Need to generate Import Directory Table
-  - Need to generate Import Address Table (IAT)
-  - Need to patch function calls to use IAT
+- Windows native support (PE/COFF format)
 - WebAssembly target
 - Better ARM64 and RISC-V support
 
