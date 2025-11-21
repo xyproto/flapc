@@ -1,7 +1,8 @@
 # TODO for the Flap Compiler (flapc)
 
 ## High Priority
-- [ ] Fix Windows/Wine PE execution: PE files are generated correctly with proper Microsoft x64 calling convention (RCX,RDX,R8,R9 + shadow space), but Wine loader returns STATUS_INVALID_IMAGE_FORMAT (c000007b). Investigation needed: import table structure, section alignments, or Wine-specific requirements. PE structure validates correctly with objdump.
+- [x] Basic Windows/Wine PE execution working with proper Microsoft x64 calling convention (RCX,RDX,R8,R9 + shadow space). Tests run under Wine with 3-second timeout.
+- [ ] Fix Windows printf output: PE executables compile and run but printf output doesn't appear in Wine. Investigation needed: stdout redirection or buffer flushing.
 - [ ] Update remaining C FFI call sites to use platform-specific calling convention helpers (getIntArgReg, allocateShadowSpace)
 
 ## Features

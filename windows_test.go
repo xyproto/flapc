@@ -8,26 +8,21 @@ import (
 // Test basic Windows/Wine execution
 func TestWindowsBasic(t *testing.T) {
 	code := `
-main = {
-    c.exit(42)
-}
+c.exit(42)
 `
 	// Just test that compilation works and execution doesn't crash
 	_ = compileAndRunWindows(t, code)
 }
 
-// Test Windows printf (if working)
+// Test Windows printf
 func TestWindowsPrintf(t *testing.T) {
 	code := `
-main = {
-    c.printf("Hello from Windows\n")
-    c.exit(0)
-}
+c.printf("Hello from Windows\n")
+c.exit(0)
 `
 	output := compileAndRunWindows(t, code)
-	// Wine may not capture stdout properly, so this test may not see output
-	// Just check it doesn't crash
-	if strings.Contains(output, "FATAL") || strings.Contains(output, "Segmentation fault") {
-		t.Fatalf("Program crashed: %s", output)
+	// Check that printf output is captured
+	if !strings.Contains(output, "Hello from Windows") {
+		t.Errorf("Expected 'Hello from Windows' in output, got: %s", output)
 	}
 }

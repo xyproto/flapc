@@ -847,18 +847,32 @@ func (eb *ExecutableBuilder) GenerateCallInstruction(funcName string) error {
 	}
 
 	// Register the call patch for later resolution
-	// position should point to placeholder start (after 0xE8), so we record position+1
+	// For x86-64 Linux/Unix: position points to displacement after 0xE8 (position + 1)
+	// For x86-64 Windows: position points to displacement after 0xFF 0x15 (position + 2)
 	position := eb.text.Len()
+	dispPosition := position + 1
+	if eb.target.Arch() == ArchX86_64 && eb.target.OS() == OSWindows {
+		dispPosition = position + 2 // Skip FF 15 prefix
+	}
 	eb.callPatches = append(eb.callPatches, CallPatch{
-		position:   position + 1,
+		position:   dispPosition,
 		targetName: targetName + "$stub",
 	})
 
 	// Generate architecture-specific call instruction with placeholder
 	switch eb.target.Arch() {
 	case ArchX86_64:
-		w.Write(0xE8)               // CALL rel32
-		w.WriteUnsigned(0x12345678) // Placeholder - will be patched
+		// On Windows, we need to emit a 6-byte CALL [RIP+disp32] instruction (0xFF 0x15 + 4 bytes)
+		// to allow patching to IAT without overwriting adjacent code
+		// On other platforms, emit a 5-byte CALL rel32 (0xE8 + 4 bytes)
+		if eb.target.OS() == OSWindows {
+			w.Write(0xFF)               // CALL r/m64 (indirect)
+			w.Write(0x15)               // ModR/M: [RIP + disp32]
+			w.WriteUnsigned(0x12345678) // Placeholder - will be patched to IAT RVA
+		} else {
+			w.Write(0xE8)               // CALL rel32
+			w.WriteUnsigned(0x12345678) // Placeholder - will be patched
+		}
 	case ArchARM64:
 		w.WriteUnsigned(0x94000000) // BL placeholder
 	case ArchRiscv64:

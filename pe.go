@@ -648,16 +648,16 @@ func (eb *ExecutableBuilder) PatchPECallsToIAT(iatMap map[string]uint32, textVir
 			continue
 		}
 
-		// For Windows x86-64, we need to replace the CALL rel32 (0xE8 XX XX XX XX)
-		// with CALL [RIP+disp32] (0xFF 0x15 XX XX XX XX)
-		// This is an indirect call through the IAT
+		// For Windows x86-64, the instruction is already emitted as CALL [RIP+disp32] (0xFF 0x15 XX XX XX XX)
+		// We just need to patch the displacement to point to the IAT entry
 
 		// Calculate the RIP-relative offset to the IAT entry
 		// The instruction is 6 bytes: FF 15 XX XX XX XX
+		// patch.position points to the displacement (after FF 15)
 		// RIP points to the byte after the instruction when accessing memory
-		callPos := patch.position - 1                   // Position of the 0xE8 byte
-		ripRVA := textVirtualAddr + uint64(callPos) + 6 // RIP RVA after the new 6-byte instruction
-		iatAddrRVA := uint64(iatRVA)                    // IAT RVA (relative to image base)
+		dispPos := patch.position                             // Position of displacement
+		ripRVA := textVirtualAddr + uint64(dispPos) + 4       // RIP RVA after reading the displacement
+		iatAddrRVA := uint64(iatRVA)                          // IAT RVA (relative to image base)
 
 		displacement := int64(iatAddrRVA) - int64(ripRVA)
 
@@ -668,14 +668,12 @@ func (eb *ExecutableBuilder) PatchPECallsToIAT(iatMap map[string]uint32, textVir
 			continue
 		}
 
-		// Replace CALL rel32 with CALL [RIP+disp32]
+		// Patch the displacement bytes (instruction opcode is already correct)
 		disp32 := uint32(displacement)
-		textBytes[callPos] = 0xFF   // CALL r/m64
-		textBytes[callPos+1] = 0x15 // ModR/M: RIP-relative addressing
-		textBytes[callPos+2] = byte(disp32 & 0xFF)
-		textBytes[callPos+3] = byte((disp32 >> 8) & 0xFF)
-		textBytes[callPos+4] = byte((disp32 >> 16) & 0xFF)
-		textBytes[callPos+5] = byte((disp32 >> 24) & 0xFF)
+		textBytes[dispPos] = byte(disp32 & 0xFF)
+		textBytes[dispPos+1] = byte((disp32 >> 8) & 0xFF)
+		textBytes[dispPos+2] = byte((disp32 >> 16) & 0xFF)
+		textBytes[dispPos+3] = byte((disp32 >> 24) & 0xFF)
 
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "  Patched IAT call to %s: IAT RVA=0x%x, displacement=%d\n", funcName, iatRVA, displacement)
