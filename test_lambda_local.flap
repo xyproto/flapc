@@ -1,0 +1,7 @@
+f = x -> {
+    y := x + 1
+    z := y * 2
+    z
+}
+result = f(5)
+println(result)  // Should print 12

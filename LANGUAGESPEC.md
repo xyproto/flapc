@@ -1,8 +1,8 @@
 # Flap Language Specification
 
-**Version:** 1.4.0
-**Date:** 2025-11-17
-**Status:** Canonical Language Reference for the Flap 1.4.0 Release
+**Version:** 1.5.0
+**Date:** 2025-11-21
+**Status:** Canonical Language Reference for the Flap 1.5.0 Release
 
 This document describes the complete semantics, behavior, and design philosophy of the Flap programming language. For the formal grammar, see [GRAMMAR.md](GRAMMAR.md).
 
@@ -2773,7 +2773,7 @@ Trade-off: Less safe than Rust, simpler to use.
 
 ### Can I use Flap in production?
 
-Flap 1.4.0 is ready for:
+Flap 1.5.0 is ready for:
 - Personal projects
 - Internal tools
 - Experiments

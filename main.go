@@ -16,7 +16,7 @@ import (
 
 // A tiny compiler for x86_64, aarch64, and riscv64 for Linux, macOS, FreeBSD
 
-const versionString = "flapc 1.4.0"
+const versionString = "flapc 1.5.0"
 
 // Architecture type
 type Arch int

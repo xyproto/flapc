@@ -1,0 +1,22 @@
+// Simple Flap program demonstrating basic features
+
+// Original data
+data = [1, 2, 3, 4, 5]
+println("Numbers:")
+@ x in data { println(x) }
+
+// Compute sum using loop
+sum := 0
+@ x in data {
+    sum <- sum + x
+}
+println("Sum:")
+println(sum)
+
+// Compute product
+product := 1
+@ x in data {
+    product <- product * x
+}
+println("Product:")
+println(product)
