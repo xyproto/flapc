@@ -260,6 +260,16 @@ func (eb *ExecutableBuilder) WritePE(outputPath string) error {
 		},
 	}
 	
+	// Write rodata and data content to buffers first
+	rodataSymbols := eb.RodataSection()
+	for _, value := range rodataSymbols {
+		eb.WriteRodata([]byte(value))
+	}
+	dataSymbols := eb.DataSection()
+	for _, value := range dataSymbols {
+		eb.data.Write([]byte(value))
+	}
+	
 	codeSize := uint32(eb.text.Len())
 	dataSize := uint32(eb.rodata.Len() + eb.data.Len())
 
@@ -327,7 +337,6 @@ func (eb *ExecutableBuilder) WritePE(outputPath string) error {
 	currentAddr := rodataAddr
 	
 	// First, rodata symbols (read-only)
-	rodataSymbols := eb.RodataSection()
 	for symbol, value := range rodataSymbols {
 		eb.DefineAddr(symbol, currentAddr)
 		currentAddr += uint64(len(value))
@@ -337,7 +346,6 @@ func (eb *ExecutableBuilder) WritePE(outputPath string) error {
 	}
 	
 	// Then, data symbols (writable, like cpu_has_avx512)
-	dataSymbols := eb.DataSection()
 	for symbol, value := range dataSymbols {
 		eb.DefineAddr(symbol, currentAddr)
 		currentAddr += uint64(len(value))
