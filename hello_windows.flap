@@ -1,0 +1,4 @@
+main = {
+    println("Hello from Windows/Wine!")
+    42
+}

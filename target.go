@@ -16,6 +16,7 @@ type Target interface {
 	// Binary format detection
 	IsMachO() bool // Returns true if target uses Mach-O format
 	IsELF() bool   // Returns true if target uses ELF format
+	IsPE() bool    // Returns true if target uses PE format
 }
 
 // TargetImpl is the concrete implementation of Target
@@ -67,6 +68,11 @@ func (t *TargetImpl) IsMachO() bool {
 // IsELF returns true if this target uses ELF format
 func (t *TargetImpl) IsELF() bool {
 	return t.os == OSLinux || t.os == OSFreeBSD
+}
+
+// IsPE returns true if this target uses PE format
+func (t *TargetImpl) IsPE() bool {
+	return t.os == OSWindows
 }
 
 // GetDefaultTarget returns the target for the current runtime

@@ -64,6 +64,7 @@ const (
 	OSLinux OS = iota
 	OSDarwin
 	OSFreeBSD
+	OSWindows
 )
 
 func (o OS) String() string {
@@ -74,6 +75,8 @@ func (o OS) String() string {
 		return "darwin"
 	case OSFreeBSD:
 		return "freebsd"
+	case OSWindows:
+		return "windows"
 	default:
 		return "unknown"
 	}
@@ -88,8 +91,10 @@ func ParseOS(s string) (OS, error) {
 		return OSDarwin, nil
 	case "freebsd":
 		return OSFreeBSD, nil
+	case "windows", "win", "wine":
+		return OSWindows, nil
 	default:
-		return 0, fmt.Errorf("unsupported OS: %s (supported: linux, darwin, freebsd)", s)
+		return 0, fmt.Errorf("unsupported OS: %s (supported: linux, darwin, freebsd, windows)", s)
 	}
 }
 
@@ -1257,7 +1262,12 @@ func main() {
 		if firstArg == "build" || firstArg == "run" || firstArg == "help" ||
 			(strings.HasSuffix(firstArg, ".flap") && *codeFlag == "") {
 			// Use new CLI system
-			err := RunCLI(inputFiles, targetPlatform, VerboseMode, QuietMode, *optTimeout, UpdateDepsFlag, SingleFlag, outputFilename)
+			// Only pass outputFilename if user explicitly provided it
+			cliOutputPath := ""
+			if outputFlagProvided {
+				cliOutputPath = outputFilename
+			}
+			err := RunCLI(inputFiles, targetPlatform, VerboseMode, QuietMode, *optTimeout, UpdateDepsFlag, SingleFlag, cliOutputPath)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
@@ -1271,7 +1281,11 @@ func main() {
 		matches, err := filepath.Glob("*.flap")
 		if err == nil && len(matches) > 0 {
 			// Use new CLI system to build directory
-			err := RunCLI([]string{"."}, targetPlatform, VerboseMode, QuietMode, *optTimeout, UpdateDepsFlag, SingleFlag, outputFilename)
+			cliOutputPath := ""
+			if outputFlagProvided {
+				cliOutputPath = outputFilename
+			}
+			err := RunCLI([]string{"."}, targetPlatform, VerboseMode, QuietMode, *optTimeout, UpdateDepsFlag, SingleFlag, cliOutputPath)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)

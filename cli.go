@@ -124,6 +124,10 @@ func cmdBuild(ctx *CommandContext, args []string) error {
 	// If still no output path specified, use input filename without extension
 	if outputPath == "" {
 		outputPath = strings.TrimSuffix(filepath.Base(inputFile), ".flap")
+		// Add .exe extension for Windows targets
+		if ctx.Platform.OS == OSWindows {
+			outputPath += ".exe"
+		}
 	}
 
 	// When a specific file is given (not -s flag explicitly passed), enable single-file mode
