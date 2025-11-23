@@ -3159,9 +3159,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.eb.GenerateCallInstruction("malloc")
 
 				// Restore registers
-				fc.out.PopReg("r8")   // new count
-				fc.out.PopReg("rcx")  // old count
-				fc.out.PopReg("rbx")  // old list
+				fc.out.PopReg("r8")  // new count
+				fc.out.PopReg("rcx") // old count
+				fc.out.PopReg("rbx") // old list
 
 				fc.out.MovRegToReg("r9", "rax") // r9 = new list pointer
 
@@ -3183,9 +3183,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 				// Calculate new_list key address: r9 + 8 + i*16
 				fc.out.MovRegToReg("rax", "r10")
-				fc.out.ShlImmReg("rax", 4)       // rax = i * 16
-				fc.out.AddImmToReg("rax", 8)     // rax = 8 + i * 16
-				fc.out.AddRegToReg("rax", "r9")  // rax = r9 + 8 + i*16 (new key address)
+				fc.out.ShlImmReg("rax", 4)      // rax = i * 16
+				fc.out.AddImmToReg("rax", 8)    // rax = 8 + i * 16
+				fc.out.AddRegToReg("rax", "r9") // rax = r9 + 8 + i*16 (new key address)
 
 				// Write key = i (as uint64)
 				fc.out.MovRegToMem("r10", "rax", 0)
@@ -3222,7 +3222,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				// Empty case: return 0.0
 				emptyTarget := fc.eb.text.Len()
 				fc.patchJumpImmediate(emptyJumpPos+2, int32(emptyTarget-(emptyJumpPos+ConditionalJumpSize)))
-				fc.out.AddImmToReg("rsp", 8) // Clean up stack
+				fc.out.AddImmToReg("rsp", 8)    // Clean up stack
 				fc.out.XorpdXmm("xmm0", "xmm0") // xmm0 = 0.0
 
 				// Done
@@ -11085,7 +11085,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			if !ok {
 				compilerError("exitf() first argument must be a string literal (got %T)", formatArg)
 			}
-			
+
 			// For now, exitf just prints the format string to stderr using syscall
 			// TODO: Add full printf-style formatting support
 			labelName := fmt.Sprintf("str_%d", fc.stringCounter)
@@ -11099,7 +11099,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			fc.out.LeaSymbolToReg("rsi", labelName)                         // buffer
 			fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", len(processedStr))) // length
 			fc.out.Syscall()
-			
+
 			// Exit with code 1
 			fc.out.MovImmToReg("rdi", "1")
 			fc.trackFunctionCall("exit")
