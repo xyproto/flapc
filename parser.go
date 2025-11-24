@@ -1066,7 +1066,7 @@ func (p *Parser) tryParseNonParenLambda() Expression {
 		p.nextToken() // skip param
 		p.nextToken() // skip '->'
 		body := p.parseLambdaBody()
-		return &LambdaExpr{Params: []string{firstParam}, Body: body}
+		return &LambdaExpr{Params: []string{firstParam}, VariadicParam: "", Body: body}
 	}
 
 	// If we see => it's not a lambda (it's a match arrow), just return nil
@@ -1098,7 +1098,7 @@ func (p *Parser) tryParseNonParenLambda() Expression {
 			p.nextToken() // skip last param
 			p.nextToken() // skip '->'
 			body := p.parseLambdaBody()
-			return &LambdaExpr{Params: params, Body: body}
+			return &LambdaExpr{Params: params, VariadicParam: "", Body: body}
 		}
 
 		// If we see => it's not a lambda, just return nil
@@ -1279,10 +1279,10 @@ func (p *Parser) parseAssignment() *AssignStmt {
 	switch v := value.(type) {
 	case *BlockExpr:
 		// Statement block -> wrap in zero-arg lambda
-		value = &LambdaExpr{Params: []string{}, Body: v}
+		value = &LambdaExpr{Params: []string{}, VariadicParam: "", Body: v}
 	case *MatchExpr:
 		// Match block -> wrap in zero-arg lambda
-		value = &LambdaExpr{Params: []string{}, Body: v}
+		value = &LambdaExpr{Params: []string{}, VariadicParam: "", Body: v}
 		// MapExpr is NOT wrapped - it's a literal value
 	}
 
@@ -2648,8 +2648,9 @@ func (p *Parser) parseLoopStatement() Statement {
 
 			// Create lambda expression for reducer
 			reducer = &LambdaExpr{
-				Params: params,
-				Body:   reducerBody,
+				Params:        params,
+				VariadicParam: "",
+				Body:          reducerBody,
 			}
 		}
 
@@ -3512,7 +3513,7 @@ func (p *Parser) parsePrimary() Expression {
 		// Explicit no-argument lambda: -> expr or -> { ... }
 		p.nextToken() // skip '->'
 		body := p.parseLambdaBody()
-		return &LambdaExpr{Params: []string{}, Body: body}
+		return &LambdaExpr{Params: []string{}, VariadicParam: "", Body: body}
 
 	case TOKEN_MINUS:
 		// Unary minus: -expr
@@ -3719,7 +3720,7 @@ func (p *Parser) parsePrimary() Expression {
 				p.nextToken() // skip ')'
 				p.nextToken() // skip '->'
 				body := p.parseLambdaBody()
-				return &LambdaExpr{Params: []string{}, Body: body}
+				return &LambdaExpr{Params: []string{}, VariadicParam: "", Body: body}
 			}
 			// Empty parens without arrow is an error, but skip for now
 			p.nextToken()
@@ -3734,10 +3735,19 @@ func (p *Parser) parsePrimary() Expression {
 
 			// Try to parse as lambda parameter list
 			params := []string{p.current.Value}
+			variadicParam := ""
 			p.nextToken() // skip first ident
 
-			// Skip optional type annotation: as Type
-			if p.current.Type == TOKEN_AS {
+			// Check for variadic marker on first parameter
+			if p.current.Type == TOKEN_ELLIPSIS {
+				// First parameter is variadic (e.g., (args...) -> ...)
+				variadicParam = params[0]
+				params = []string{} // No regular params, only variadic
+				p.nextToken()       // skip '...'
+			}
+
+			// Skip optional type annotation: as Type (if not variadic)
+			if variadicParam == "" && p.current.Type == TOKEN_AS {
 				p.nextToken() // skip 'as'
 				if p.current.Type != TOKEN_IDENT {
 					// Not a valid lambda, restore and parse as expression
@@ -3749,22 +3759,10 @@ func (p *Parser) parsePrimary() Expression {
 				p.nextToken() // skip type name
 			}
 
-			// Check if we have more parameters
-			for p.current.Type == TOKEN_COMMA {
-				p.nextToken() // skip ','
-				if p.current.Type != TOKEN_IDENT {
-					// Not a valid lambda, restore and parse as expression
-					p.restoreState(lambdaState)
-					expr := p.parseExpression()
-					p.nextToken() // skip ')'
-					return expr
-				}
-				params = append(params, p.current.Value)
-				p.nextToken() // skip param
-
-				// Skip optional type annotation
-				if p.current.Type == TOKEN_AS {
-					p.nextToken() // skip 'as'
+			// Check if we have more parameters (only if first param wasn't variadic)
+			if variadicParam == "" {
+				for p.current.Type == TOKEN_COMMA {
+					p.nextToken() // skip ','
 					if p.current.Type != TOKEN_IDENT {
 						// Not a valid lambda, restore and parse as expression
 						p.restoreState(lambdaState)
@@ -3772,7 +3770,32 @@ func (p *Parser) parsePrimary() Expression {
 						p.nextToken() // skip ')'
 						return expr
 					}
-					p.nextToken() // skip type name
+					paramName := p.current.Value
+					p.nextToken() // skip param
+
+					// Check for variadic marker on this parameter
+					if p.current.Type == TOKEN_ELLIPSIS {
+						// This parameter is variadic (must be last)
+						variadicParam = paramName
+						p.nextToken() // skip '...'
+						// No more parameters allowed after variadic
+						break
+					}
+
+					params = append(params, paramName)
+
+					// Skip optional type annotation
+					if p.current.Type == TOKEN_AS {
+						p.nextToken() // skip 'as'
+						if p.current.Type != TOKEN_IDENT {
+							// Not a valid lambda, restore and parse as expression
+							p.restoreState(lambdaState)
+							expr := p.parseExpression()
+							p.nextToken() // skip ')'
+							return expr
+						}
+						p.nextToken() // skip type name
+					}
 				}
 			}
 
@@ -3791,7 +3814,7 @@ func (p *Parser) parsePrimary() Expression {
 				p.nextToken() // skip ')'
 				p.nextToken() // skip '->'
 				body := p.parseLambdaBody()
-				return &LambdaExpr{Params: params, Body: body}
+				return &LambdaExpr{Params: params, VariadicParam: variadicParam, Body: body}
 			}
 
 			// Not a lambda after all, restore and parse as expression
@@ -4200,8 +4223,9 @@ func (p *Parser) parseLoopExpr() Expression {
 
 		// Create lambda expression for reducer
 		reducer = &LambdaExpr{
-			Params: params,
-			Body:   reducerBody,
+			Params:        params,
+			VariadicParam: "",
+			Body:          reducerBody,
 		}
 	}
 

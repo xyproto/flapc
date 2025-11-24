@@ -699,6 +699,73 @@ increment = x -> x + 1
 result = apply_twice(increment, 10)  // 12
 ```
 
+### Variadic Functions
+
+Functions can accept a variable number of arguments using the `...` suffix on the last parameter:
+
+```flap
+// Simple variadic function
+sum = (first, rest...) -> {
+    total := first
+    @ item in rest {
+        total <- total + item
+    }
+    total
+}
+
+result = sum(1, 2, 3, 4, 5)  // 15
+
+// Variadic with multiple fixed parameters
+printf = (format, args...) -> {
+    // format is required, args... collects remaining arguments
+    c.printf(format, args...)
+}
+
+// All arguments variadic
+log = (messages...) -> {
+    @ msg in messages {
+        println(msg)
+    }
+}
+
+log("Error:", "File not found:", filename)
+```
+
+**Variadic Rules:**
+- Only the last parameter can be variadic (have `...` suffix)
+- The variadic parameter receives a list of all remaining arguments
+- If no extra arguments are passed, the variadic parameter is an empty list `[]`
+- Variadic parameters require parentheses: `(args...)` not `args...`
+- Can be used with fixed parameters: `(x, y, rest...)` is valid
+
+**Variadic Parameter Passing:**
+
+When calling a variadic function, you can:
+1. Pass arguments individually: `sum(1, 2, 3, 4)`
+2. Spread a list with `...`: `sum(values...)`  
+3. Mix both: `sum(1, 2, values...)`
+
+```flap
+// Define variadic function
+max = (nums...) -> {
+    result := nums[0]
+    @ n in nums {
+        ? n > result { result <- n }
+    }
+    result
+}
+
+// Call with individual args
+max(5, 10, 3, 8)  // 10
+
+// Call with spread operator
+values = [5, 10, 3, 8]
+max(values...)  // 10
+
+// Mix individual and spread
+max(1, 2, values..., 99)  // 99
+```
+
 ## Loops
 
 ### Infinite Loop

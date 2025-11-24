@@ -297,8 +297,15 @@ unsafe_expr     = "unsafe" "{" { statement { newline } } [ expression ] "}"
 lambda_expr     = [ parameter_list ] "->" lambda_body
                 | block ;  // Inferred lambda with no parameters in assignment context
 
-parameter_list  = identifier { "," identifier }
-                | "(" [ identifier { "," identifier } ] ")" ;
+parameter_list  = variadic_params
+                | identifier { "," identifier }
+                | "(" [ param_decl_list ] ")" ;
+
+param_decl_list = param_decl { "," param_decl } ;
+
+param_decl      = identifier [ "..." ] ;
+
+variadic_params = "(" identifier { "," identifier } "," identifier "..." ")" ;
 
 lambda_body     = block | expression [ match_block ] ;
 
@@ -307,6 +314,7 @@ lambda_body     = block | expression [ match_block ] ;
 // Explicit lambda syntax (always works):
 //   x -> x * 2                        // One parameter
 //   (x, y) -> x + y                   // Multiple parameters (parens required)
+//   (x, y, rest...) -> sum(rest)      // Variadic parameters (last param with ...)
 //   -> println("hi")                  // No parameters (explicit ->)
 //   x -> { temp = x * 2; temp }       // Block body
 //
@@ -1613,6 +1621,25 @@ class {
 - Single-pass parsing (no separate AST transformation)
 - Minimal memory allocation
 - Fast compilation (typically <100ms for small programs)
+
+## Implementation Guidelines
+
+**Memory Management:**
+- **ALWAYS use arena allocation** instead of malloc/free when possible
+- The arena allocator (`flap_arena_alloc`) provides fast bump allocation with automatic growth
+- Arena memory is freed in bulk, avoiding fragmentation
+- Only use malloc for external C library compatibility
+
+**Register Management:**
+- The compiler has a sophisticated register allocator (`RegisterAllocator` in register_allocator.go)
+- Real-time register tracking via `RegisterTracker` (register_tracker.go)
+- Register spilling when needed via `RegisterSpiller` (register_allocator.go)
+- Use these systems instead of ad-hoc register assignment
+
+**Code Generation:**
+- Target-independent IR through `Out` abstraction layer
+- Backend-specific optimizations in arm64_backend.go, riscv64_backend.go, x86_64_codegen.go
+- SIMD operations for parallel loops (AVX-512 on x86_64)
 
 ---
 

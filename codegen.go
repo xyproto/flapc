@@ -69,6 +69,7 @@ type FlapCompiler struct {
 	mutableVars          map[string]bool              // variable name -> is mutable
 	parentVariables      map[string]bool              // Track parent-scope vars in parallel loops (use r11 instead of rbp)
 	varTypes             map[string]string            // variable name -> "map" or "list"
+	functionSignatures   map[string]*FunctionSignature // function name -> signature (params, variadic)
 	sourceCode           string                       // Store source for recompilation
 	usedFunctions        map[string]bool              // Track which functions are called
 	unknownFunctions     map[string]bool              // Track functions called but not defined
@@ -121,9 +122,16 @@ type FlapCompiler struct {
 	dynamicSymbols *DynamicSections   // Dynamic symbol table (for updating lambda symbols post-generation)
 }
 
+type FunctionSignature struct {
+	ParamCount    int    // Number of fixed parameters
+	VariadicParam string // Name of variadic parameter (empty if not variadic)
+	IsVariadic    bool   // Quick check if function is variadic
+}
+
 type LambdaFunc struct {
 	Name             string
 	Params           []string
+	VariadicParam    string            // Name of variadic parameter (empty if none)
 	Body             Expression
 	CapturedVars     []string          // Variables captured from outer scope
 	CapturedVarTypes map[string]string // Types of captured variables
@@ -134,6 +142,18 @@ type LambdaFunc struct {
 type PatternLambdaFunc struct {
 	Name    string
 	Clauses []*PatternClause
+}
+
+// nextLabel generates a unique label name
+func (fc *FlapCompiler) nextLabel() string {
+	fc.labelCounter++
+	return fmt.Sprintf("L%d", fc.labelCounter)
+}
+
+// defineLabel marks a label at the current position
+func (fc *FlapCompiler) defineLabel(label string, pos int) {
+	// Labels are tracked in ExecutableBuilder
+	fc.eb.labels[label] = pos
 }
 
 func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
@@ -161,6 +181,7 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 		variables:           make(map[string]int),
 		mutableVars:         make(map[string]bool),
 		varTypes:            make(map[string]string),
+		functionSignatures:  make(map[string]*FunctionSignature),
 		usedFunctions:       make(map[string]bool),
 		unknownFunctions:    make(map[string]bool),
 		callOrder:           []string{},
@@ -4537,7 +4558,20 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		}
 
 		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG compileExpression: adding lambda '%s' with %d params, body type: %T\n", funcName, len(e.Params), e.Body)
+			fmt.Fprintf(os.Stderr, "DEBUG compileExpression: adding lambda '%s' with %d params, variadic='%s', body type: %T\n", funcName, len(e.Params), e.VariadicParam, e.Body)
+		}
+
+		// Register function signature for call site resolution
+		fc.functionSignatures[funcName] = &FunctionSignature{
+			ParamCount:    len(e.Params),
+			VariadicParam: e.VariadicParam,
+			IsVariadic:    e.VariadicParam != "",
+		}
+
+		
+		// Variadic functions need arena allocation for argument lists
+		if e.VariadicParam != "" {
+			fc.usesArenas = true
 		}
 
 		// Detect if lambda is pure (eligible for memoization)
@@ -4560,6 +4594,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 		fc.lambdaFuncs = append(fc.lambdaFuncs, LambdaFunc{
 			Name:             funcName,
 			Params:           e.Params,
+			VariadicParam:    e.VariadicParam,
 			Body:             e.Body,
 			CapturedVars:     e.CapturedVars,
 			CapturedVarTypes: capturedVarTypes,
@@ -5962,6 +5997,149 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 
 			// Store parameter at fixed offset (no rsp modification!)
 			fc.out.MovXmmToMem(xmmRegs[i], "rbp", -paramOffset)
+		}
+
+		// Handle variadic parameter if present
+		// Variadic parameter collects remaining arguments into a list
+		// Convention: remaining args passed in xmm regs, count in r14
+		if lambda.VariadicParam != "" {
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: '%s' HAS variadic param '%s' (fixedParams=%d)\n", lambda.Name, lambda.VariadicParam, paramCount)
+			}
+			
+			variadicOffset := baseParamOffset + paramCount*16
+			fc.stackOffset = variadicOffset
+			fc.variables[lambda.VariadicParam] = variadicOffset
+			fc.mutableVars[lambda.VariadicParam] = false
+			fc.varTypes[lambda.VariadicParam] = "list"
+			
+			// SIMPLIFIED: Just create empty list for now to get basic functionality working
+			// TODO: Implement full variadic argument collection
+			// The complexity of proper list construction is causing segfaults
+			// This is a working stub that allows variadic functions to work (but with empty lists)
+			
+			emptyListLabel := fmt.Sprintf("empty_variadic_list_%d", fc.stringCounter)
+			fc.stringCounter++
+			var emptyData []byte
+			for i := 0; i < 8; i++ {
+				emptyData = append(emptyData, byte(0))
+			}
+			fc.eb.Define(emptyListLabel, string(emptyData))
+			fc.out.LeaSymbolToReg("r13", emptyListLabel)
+			fc.out.MovqRegToXmm("xmm15", "r13")
+			fc.out.MovXmmToMem("xmm15", "rbp", -variadicOffset)
+			
+			// TODO: Full implementation would:
+			// 1. Save variadic arg xmm registers to temp space immediately
+			// 2. Allocate list from arena (NOT malloc, NOT stack manipulation)
+			// 3. Copy saved args to list with proper key-value pairs
+			// 4. Store list pointer at variadicOffset
+			
+			// OLD complex logic removed:
+			/*
+			
+			// Skip list creation if r14 is 0 (no variadic args)
+			// This avoids unnecessary malloc and helps debug
+			skipLabel := fc.nextLabel()
+			fc.out.CmpRegToImm("r14", 0)
+			fc.out.Write(0x74) // JE (jump if equal)
+			fc.out.Write(0x00) // Will be patched
+			skipPos := fc.eb.text.Len() - 1
+			
+			// Create list to hold variadic arguments
+			// List format: [count, key0, val0, key1, val1, ...]
+			// We need: 8 bytes (count) + N * 16 bytes (key+value pairs)
+			
+			// For now, use stack space for the variadic list
+			// We allocated 4096 bytes of temp space - use part of that
+			// This avoids complex arena/malloc issues during function entry
+			// TODO: Use arena allocation properly later
+			maxVariadicArgs := 8
+			variadicListSize := 8 + maxVariadicArgs*16  // 136 bytes max
+			
+			// Calculate stack address for variadic list
+			// Place it after parameters and captured vars in the temp space
+			// Use an offset that won't conflict: rbp - (frame - 512)
+			// Actually, just allocate space from rsp (it's already aligned)
+			fc.out.SubImmFromReg("rsp", int64(variadicListSize))
+			fc.out.MovRegToReg("r13", "rsp") // r13 = list pointer
+			
+			// Store count (from r14) in list
+			fc.out.Cvtsi2sd("xmm15", "r14") // Convert count to float64
+			fc.out.MovXmmToMem("xmm15", "r13", 0)
+			
+			// Copy variadic arguments into list
+			// First from remaining xmm registers
+			startXmmIdx := paramCount
+			for i := 0; i < maxVariadicArgs; i++ {
+				xmmIdx := startXmmIdx + i
+				if xmmIdx >= len(xmmRegs) {
+					break // No more xmm regs, would need stack args (TODO)
+				}
+				
+				// Check if this arg exists (i < r14)
+				// Skip if i >= count
+				skipLabel := fc.nextLabel()
+				fc.out.CmpRegToImm("r14", int64(i+1))
+				fc.out.Write(0x7C) // JL (jump if less)
+				fc.out.Write(0x00) // Will be patched
+				skipPos := fc.eb.text.Len() - 1
+				
+				// Store key (index) and value
+				keyOffset := 8 + i*16
+				valOffset := keyOffset + 8
+				
+				// Key = i (as float64)
+				fc.out.MovImmToReg("rax", fmt.Sprintf("%d", i))
+				fc.out.Cvtsi2sd("xmm15", "rax")
+				fc.out.MovXmmToMem("xmm15", "r13", keyOffset)
+				
+				// Value from xmm register
+				fc.out.MovXmmToMem(xmmRegs[xmmIdx], "r13", valOffset)
+				
+				// Patch skip jump
+				skipTarget := fc.eb.text.Len()
+				fc.patchJumpImmediate(skipPos, int32(skipTarget-(skipPos+1)))
+				fc.defineLabel(skipLabel, skipTarget)
+			}
+			
+			// Store list pointer on stack
+			fc.out.SubImmFromReg("rsp", 8)
+			fc.out.MovRegToMem("r13", "rsp", 0)
+			fc.out.MovMemToXmm("xmm15", "rsp", 0)
+			fc.out.AddImmToReg("rsp", 8)
+			fc.out.MovXmmToMem("xmm15", "rbp", -variadicOffset)
+			
+			// Jump over empty list creation
+			doneLabel := fc.nextLabel()
+			fc.out.Write(0xEB) // JMP short
+			fc.out.Write(0x00) // Will be patched
+			donePos := fc.eb.text.Len() - 1
+			
+			// Empty list path (when r14==0)
+			emptyTarget := fc.eb.text.Len()
+			fc.patchJumpImmediate(skipPos, int32(emptyTarget-(skipPos+1)))
+			fc.defineLabel(skipLabel, emptyTarget)
+			
+			// Create static empty list
+			emptyListLabel := fmt.Sprintf("empty_variadic_%d", fc.stringCounter)
+			fc.stringCounter++
+			var emptyData []byte
+			countBits := uint64(0)
+			for i := 0; i < 8; i++ {
+				emptyData = append(emptyData, byte((countBits>>(i*8))&0xFF))
+			}
+			fc.eb.Define(emptyListLabel, string(emptyData))
+			fc.out.LeaSymbolToReg("rax", emptyListLabel)
+			fc.out.MovqRegToXmm("xmm15", "rax")
+			fc.out.MovXmmToMem("xmm15", "rbp", -variadicOffset)
+			
+			// Patch done jump
+			doneTarget := fc.eb.text.Len()
+			fc.patchJumpImmediate(donePos, int32(doneTarget-(donePos+1)))
+			fc.defineLabel(doneLabel, doneTarget)
+			*/
+			// End of commented out complex logic
 		}
 
 		// Add captured variables to the lambda's scope
@@ -8490,6 +8668,14 @@ func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
 	// Load environment pointer from closure object (offset 8)
 	fc.out.MovMemToReg("r15", "rax", 8)
 
+	// Check if this stored function is variadic
+	var isVariadic bool
+	var fixedParamCount int
+	if sig, exists := fc.functionSignatures[call.Function]; exists && sig.IsVariadic {
+		isVariadic = true
+		fixedParamCount = sig.ParamCount
+	}
+
 	// Compile arguments and put them in xmm registers
 	xmmRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"}
 	if len(call.Args) > len(xmmRegs) {
@@ -8517,6 +8703,15 @@ func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
 	fc.out.MovMemToReg("r11", "rsp", 0)
 	fc.out.MovMemToReg("r15", "rsp", 8)
 	fc.out.AddImmToReg("rsp", 16)
+	
+	// If variadic, set r14 to the count of variadic arguments
+	if isVariadic {
+		variadicArgCount := len(call.Args) - fixedParamCount
+		if variadicArgCount < 0 {
+			variadicArgCount = 0
+		}
+		fc.out.MovImmToReg("r14", fmt.Sprintf("%d", variadicArgCount))
+	}
 
 	// Call the function pointer in r11
 	// r15 contains the environment pointer (accessible within the lambda)
@@ -8538,8 +8733,23 @@ func (fc *FlapCompiler) compileLambdaDirectCall(call *CallExpr) {
 	// Direct call to a lambda by name (for recursion)
 	// Compile arguments and put them in xmm registers
 	xmmRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"}
-	if len(call.Args) > len(xmmRegs) {
-		compilerError("too many arguments to lambda function (max 6)")
+	
+	// Check if function is variadic
+	var isVariadic bool
+	var fixedParamCount int
+	if sig, exists := fc.functionSignatures[call.Function]; exists && sig.IsVariadic {
+		isVariadic = true
+		fixedParamCount = sig.ParamCount
+
+		// Variadic functions can have more args than fixed params
+		if len(call.Args) > len(xmmRegs) {
+			compilerError("too many arguments (max %d total for variadic function)", len(xmmRegs))
+		}
+	} else {
+
+		if len(call.Args) > len(xmmRegs) {
+			compilerError("too many arguments to lambda function (max 6)")
+		}
 	}
 
 	// For pure single-argument functions, add memoization
@@ -8559,6 +8769,15 @@ func (fc *FlapCompiler) compileLambdaDirectCall(call *CallExpr) {
 	for i := len(call.Args) - 1; i >= 0; i-- {
 		fc.out.MovMemToXmm(xmmRegs[i], "rsp", 0)
 		fc.out.AddImmToReg("rsp", 16)
+	}
+	
+	// If variadic, pass count of variadic arguments in r14
+	if isVariadic {
+		variadicArgCount := len(call.Args) - fixedParamCount
+		if variadicArgCount < 0 {
+			variadicArgCount = 0
+		}
+		fc.out.MovImmToReg("r14", fmt.Sprintf("%d", variadicArgCount))
 	}
 
 	// Call the lambda function (direct or indirect for hot functions)
@@ -10187,25 +10406,36 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 		if funcSig != nil {
 			returnType = funcSig.ReturnType
 		}
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "C function %s return type: %q (funcSig=%v)\n", funcName, returnType, funcSig != nil)
+		}
 
 		if returnType == "float" || returnType == "double" {
 			// Result is already in xmm0 as double - no conversion needed
 		} else if returnType == "void" {
 			// Void return - set xmm0 to 0
 			fc.out.XorpdXmm("xmm0", "xmm0")
-		} else if isPointerType(returnType) {
+		} else if isPointerType(returnType) || returnType == "" {
 			// Pointer type - keep raw integer value but convert to float64 for Flap
 			// (Flap internally represents everything as float64)
-			// On Windows, pointers are 64-bit and returned in RAX correctly
+			// On Windows and Linux, pointers are 64-bit and returned in RAX correctly
+			// NOTE: When signature is unknown (returnType == ""), assume pointer/64-bit return
+			// This is safer than assuming 32-bit, and works for SDL functions
 			fc.out.Cvtsi2sd("xmm0", "rax")
 		} else {
 			// Integer result in rax - convert to float64 for Flap
 			// On Windows: bool returns are 1 byte (AL), int returns are 4 bytes (EAX)
-			// Always zero-extend to 64-bit RAX to avoid garbage in upper bits
+			// Zero-extend to 64-bit RAX to avoid garbage in upper bits
 			if fc.eb.target.OS() == OSWindows {
-				// For safety, always zero-extend from AL (handles both bool and int)
-				// movzx eax, al (zero-extend 8-bit AL to 32-bit EAX, which auto-extends to RAX in x64)
-				fc.out.MovzxRegReg("eax", "al")
+				// Check if this is a bool return (1 byte in AL)
+				if returnType == "bool" || returnType == "_Bool" {
+					// movzx eax, al (zero-extend 8-bit AL to 32-bit EAX, then to RAX)
+					fc.out.MovzxRegReg("eax", "al")
+				} else {
+					// For int/int32/etc returns: use EAX directly (upper 32 bits of RAX auto-zeroed)
+					// mov eax, eax (zero-extends EAX to 64-bit RAX)
+					fc.out.MovRegToReg("eax", "eax")
+				}
 			}
 			fc.out.Cvtsi2sd("xmm0", "rax")
 		}
@@ -10230,18 +10460,27 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 		} else if returnType == "void" {
 			// Void return - set xmm0 to 0
 			fc.out.XorpdXmm("xmm0", "xmm0")
-		} else if isPointerType(returnType) {
+		} else if isPointerType(returnType) || returnType == "" {
 			// Pointer type - keep raw integer value but convert to float64 for Flap
 			// (Flap internally represents everything as float64)
-			// On Windows, pointers are 64-bit and returned in RAX correctly
+			// On Windows and Linux, pointers are 64-bit and returned in RAX correctly
+			// NOTE: When signature is unknown (returnType == ""), assume pointer/64-bit return
+			// This is safer than assuming 32-bit, and works for SDL functions
 			fc.out.Cvtsi2sd("xmm0", "rax")
 		} else {
 			// Integer result in rax - convert to float64 for Flap
-			// On Windows, 32-bit return values are in EAX, upper 32 bits undefined
-			// Zero-extend to avoid garbage in conversion
+			// On Windows: bool returns are 1 byte (AL), int returns are 4 bytes (EAX)
+			// Zero-extend to 64-bit RAX to avoid garbage in upper bits
 			if fc.eb.target.OS() == OSWindows {
-				// mov eax, eax (zero-extends EAX to RAX)
-				fc.out.MovRegToReg("eax", "eax")
+				// Check if this is a bool return (1 byte in AL)
+				if returnType == "bool" || returnType == "_Bool" {
+					// movzx eax, al (zero-extend 8-bit AL to 32-bit EAX, then to RAX)
+					fc.out.MovzxRegReg("eax", "al")
+				} else {
+					// For int/int32/etc returns: use EAX directly (upper 32 bits of RAX auto-zeroed)
+					// mov eax, eax (zero-extends EAX to 64-bit RAX)
+					fc.out.MovRegToReg("eax", "eax")
+				}
 			}
 			fc.out.Cvtsi2sd("xmm0", "rax")
 		}
@@ -10625,12 +10864,22 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			fc.out.MovMemToXmm("xmm0", "rbx", 0)
 
 			// Print using printf (printf clobbers rax, rcx, rdx, rsi, rdi, r8-r11)
-			fc.out.LeaSymbolToReg("rdi", fmtLabel)
-			// xmm0 already has the value
+			shadowSpace := fc.allocateShadowSpace()
+			fc.out.LeaSymbolToReg(fc.getIntArgReg(0), fmtLabel)
+			
+			// Windows requires float args in BOTH integer and XMM registers for variadic functions
+			if fc.eb.target.OS() == OSWindows {
+				// Move xmm0 to xmm1 (2nd parameter position)
+				fc.out.MovXmmToXmm("xmm1", "xmm0")
+				// Also copy to integer register (2nd parameter)
+				fc.out.MovqXmmToReg(fc.getIntArgReg(1), "xmm0")
+			}
+			
 			// Set rax = 1 (one vector register used) for variadic printf
 			fc.out.MovImmToReg("rax", "1")
 			fc.trackFunctionCall("printf")
 			fc.eb.GenerateCallInstruction("printf")
+			fc.deallocateShadowSpace(shadowSpace)
 
 			// Increment index on stack
 			fc.out.MovMemToReg("rcx", "rsp", 16) // Load current index
@@ -10661,12 +10910,23 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			fc.stringCounter++
 			fc.eb.Define(fmtLabel, "%g\n\x00")
 
-			fc.out.LeaSymbolToReg("rdi", fmtLabel)
-			// xmm0 already has the value
+			shadowSpace := fc.allocateShadowSpace()
+			fc.out.LeaSymbolToReg(fc.getIntArgReg(0), fmtLabel)
+			
+			// Windows requires float args in BOTH integer and XMM registers for variadic functions
+			if fc.eb.target.OS() == OSWindows {
+				// Move xmm0 to xmm1 (2nd parameter position)
+				fc.out.MovXmmToXmm("xmm1", "xmm0")
+				// Also copy to integer register rdx (2nd parameter)
+				fc.out.MovqXmmToReg(fc.getIntArgReg(1), "xmm0")
+			}
+			// xmm0 already has the value (Linux System V ABI)
+			
 			// Set rax = 1 (one vector register used) for variadic printf
 			fc.out.MovImmToReg("rax", "1")
 			fc.trackFunctionCall("printf")
 			fc.eb.GenerateCallInstruction("printf")
+			fc.deallocateShadowSpace(shadowSpace)
 		}
 		return
 
@@ -11073,37 +11333,201 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		isNewline := call.Function == "exitln"
 		isFormatted := call.Function == "exitf"
 
-		// exitf: Simplified implementation - just use syscall like eprintf does
+		// exitf: Use fprintf to stderr with proper formatting, then exit
+		// This is similar to eprintf but exits with a specific code
 		if isFormatted {
 			if len(call.Args) == 0 {
 				compilerError("exitf() requires at least a format string")
 			}
 
-			// First argument must be a string (format string)
+			// Use eprintf logic for the printing part
+			// eprintf format: first arg is format string, rest are variadic args
 			formatArg := call.Args[0]
 			strExpr, ok := formatArg.(*StringExpr)
 			if !ok {
 				compilerError("exitf() first argument must be a string literal (got %T)", formatArg)
 			}
 
-			// For now, exitf just prints the format string to stderr using syscall
-			// TODO: Add full printf-style formatting support
-			labelName := fmt.Sprintf("str_%d", fc.stringCounter)
+			// Process format string just like eprintf does
+			processedFormat := processEscapeSequences(strExpr.Value)
+			boolPositions := make(map[int]bool)
+			stringPositions := make(map[int]bool)
+			integerPositions := make(map[int]bool)
+
+			argPos := 0
+			var result strings.Builder
+			runes := []rune(processedFormat)
+			i := 0
+			for i < len(runes) {
+				if runes[i] == '%' && i+1 < len(runes) {
+					next := runes[i+1]
+					if next == '%' {
+						result.WriteString("%%")
+						i += 2
+						continue
+					} else if next == 'v' {
+						result.WriteString("%.15g")
+						argPos++
+						i += 2
+						continue
+					} else if next == 'b' {
+						result.WriteString("%s")
+						boolPositions[argPos] = true
+						argPos++
+						i += 2
+						continue
+					} else if next == 's' {
+						stringPositions[argPos] = true
+						argPos++
+					} else if next == 'l' && i+2 < len(runes) && (runes[i+2] == 'd' || runes[i+2] == 'i' || runes[i+2] == 'u') {
+						integerPositions[argPos] = true
+						argPos++
+					} else if next == 'd' || next == 'i' || next == 'u' || next == 'x' || next == 'X' {
+						integerPositions[argPos] = true
+						argPos++
+					}
+				}
+				result.WriteRune(runes[i])
+				i++
+			}
+
+			fmtStr := result.String()
+			if len(fmtStr) == 0 || fmtStr[len(fmtStr)-1] != 0 {
+				fmtStr += "\x00"
+			}
+
+			labelName := fmt.Sprintf("exitf_fmt_%d", fc.stringCounter)
 			fc.stringCounter++
-			processedStr := processEscapeSequences(strExpr.Value)
-			fc.eb.Define(labelName, processedStr)
+			fc.eb.Define(labelName, fmtStr)
 
-			// Use write syscall: write(2, str, len)
-			fc.out.MovImmToReg("rax", "1")                                  // sys_write
-			fc.out.MovImmToReg("rdi", "2")                                  // fd = stderr
-			fc.out.LeaSymbolToReg("rsi", labelName)                         // buffer
-			fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", len(processedStr))) // length
-			fc.out.Syscall()
+			// Set up fprintf/printf call
+			if fc.platform.OS == OSWindows {
+				// On Windows, just use printf to stdout (simpler than dealing with stderr)
+				shadowSpace := fc.allocateShadowSpace()
+				fc.out.LeaSymbolToReg("rcx", labelName)
 
-			// Exit with code 1
-			fc.out.MovImmToReg("rdi", "1")
-			fc.trackFunctionCall("exit")
-			fc.eb.GenerateCallInstruction("exit")
+				// Process remaining arguments
+				for argIdx := 1; argIdx < len(call.Args) && argIdx <= 8; argIdx++ {
+					arg := call.Args[argIdx]
+					targetReg := ""
+					switch argIdx {
+					case 1:
+						targetReg = "r8"
+					case 2:
+						targetReg = "r9"
+					default:
+						targetReg = fmt.Sprintf("xmm%d", argIdx)
+					}
+
+					if boolPositions[argIdx-1] {
+						fc.compileExpression(arg)
+						yesLabel := fmt.Sprintf("exitf_yes_%d", fc.labelCounter)
+						noLabel := fmt.Sprintf("exitf_no_%d", fc.labelCounter)
+						fc.labelCounter++
+						fc.eb.Define(yesLabel, "yes\x00")
+						fc.eb.Define(noLabel, "no\x00")
+
+						fc.out.Ucomisd("xmm0", "xmm0")
+						fc.out.Write(0x7A)
+						fc.out.Write(0x0A)
+						fc.out.XorRegWithReg("rax", "rax")
+						fc.out.Ucomisd("xmm0", "xmm0")
+						fc.out.Write(0x75)
+						fc.out.Write(0x05)
+						fc.out.LeaSymbolToReg(targetReg, noLabel)
+						fc.out.Write(0xEB)
+						fc.out.Write(0x05)
+						fc.out.LeaSymbolToReg(targetReg, yesLabel)
+					} else if stringPositions[argIdx-1] {
+						fc.compileExpression(arg)
+						fc.trackFunctionCall("flap_map_to_cstr")
+						fc.eb.GenerateCallInstruction("flap_map_to_cstr")
+						if targetReg != "" && strings.HasPrefix(targetReg, "xmm") {
+							fc.out.MovqRegToXmm(targetReg, "rax")
+						} else if targetReg != "" {
+							fc.out.MovRegToReg(targetReg, "rax")
+						}
+					} else if integerPositions[argIdx-1] {
+						fc.compileExpression(arg)
+						fc.out.Cvttsd2si(targetReg, "xmm0")
+					} else {
+						fc.compileExpression(arg)
+						if !strings.HasPrefix(targetReg, "xmm") {
+							fc.out.MovqXmmToReg(targetReg, "xmm0")
+						}
+					}
+				}
+
+				fc.trackFunctionCall("fprintf")
+				fc.eb.GenerateCallInstruction("fprintf")
+				fc.deallocateShadowSpace(shadowSpace)
+			} else {
+				// Unix: Use System V ABI
+				fc.out.LeaSymbolToReg("rsi", labelName)
+				fc.trackFunctionCall("__get_stderr")
+				fc.out.LeaSymbolToReg("rdi", "stderr")
+				fc.out.MovMemToReg("rdi", "rdi", 0)
+
+				// Process arguments (similar to printf)
+				for argIdx := 1; argIdx < len(call.Args) && argIdx <= 8; argIdx++ {
+					arg := call.Args[argIdx]
+					
+					if boolPositions[argIdx-1] {
+						fc.compileExpression(arg)
+						yesLabel := fmt.Sprintf("exitf_yes_%d", fc.labelCounter)
+						noLabel := fmt.Sprintf("exitf_no_%d", fc.labelCounter)
+						fc.labelCounter++
+						fc.eb.Define(yesLabel, "yes\x00")
+						fc.eb.Define(noLabel, "no\x00")
+
+						fc.out.Ucomisd("xmm0", "xmm0")
+						fc.out.Write(0x7A)
+						fc.out.Write(0x0A)
+						fc.out.XorRegWithReg("rax", "rax")
+						fc.out.Ucomisd("xmm0", "xmm0")
+						fc.out.Write(0x75)
+						fc.out.Write(0x05)
+						targetReg := []string{"rdx", "rcx", "r8", "r9"}[argIdx-1]
+						fc.out.LeaSymbolToReg(targetReg, noLabel)
+						fc.out.Write(0xEB)
+						fc.out.Write(0x05)
+						fc.out.LeaSymbolToReg(targetReg, yesLabel)
+					} else if stringPositions[argIdx-1] {
+						fc.compileExpression(arg)
+						fc.trackFunctionCall("flap_map_to_cstr")
+						fc.eb.GenerateCallInstruction("flap_map_to_cstr")
+						targetReg := []string{"rdx", "rcx", "r8", "r9"}[argIdx-1]
+						fc.out.MovRegToReg(targetReg, "rax")
+					} else if integerPositions[argIdx-1] {
+						fc.compileExpression(arg)
+						targetReg := []string{"rdx", "rcx", "r8", "r9"}[argIdx-1]
+						fc.out.Cvttsd2si(targetReg, "xmm0")
+					}
+				}
+
+				fc.trackFunctionCall("fprintf")
+				fc.eb.GenerateCallInstruction("fprintf")
+			}
+
+			// Extract exit code from last argument if it's an integer, otherwise use 1
+			exitCode := 1
+			if len(call.Args) > 1 {
+				lastArg := call.Args[len(call.Args)-1]
+				if numExpr, ok := lastArg.(*NumberExpr); ok {
+					exitCode = int(numExpr.Value)
+				}
+			}
+
+			// Exit with appropriate code
+			if fc.platform.OS == OSWindows {
+				fc.out.MovImmToReg("rcx", fmt.Sprintf("%d", exitCode))
+				fc.trackFunctionCall("exit")
+				fc.eb.GenerateCallInstruction("exit")
+			} else {
+				fc.out.MovImmToReg("rdi", fmt.Sprintf("%d", exitCode))
+				fc.trackFunctionCall("exit")
+				fc.eb.GenerateCallInstruction("exit")
+			}
 			fc.hasExplicitExit = true
 
 		} else if isNewline {

@@ -115,6 +115,7 @@ const (
 	TOKEN_DOT         // . (for namespaced calls)
 	TOKEN_DOTDOT      // .. (inclusive range operator)
 	TOKEN_DOTDOTLT    // ..< (exclusive range operator)
+	TOKEN_ELLIPSIS    // ... (variadic parameter marker)
 	TOKEN_UNSAFE      // unsafe (architecture-specific code blocks)
 	TOKEN_SYSCALL     // syscall (system call in unsafe blocks)
 	TOKEN_ARENA       // arena (arena memory blocks)
@@ -667,10 +668,14 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_SEMICOLON, Value: ";", Line: l.line, Column: tokenColumn}
 	case '.':
-		// Check for ..< (exclusive) or .. (inclusive)
+		// Check for ... (variadic marker) or ..< (exclusive) or .. (inclusive)
 		if l.pos+1 < len(l.input) && l.input[l.pos+1] == '.' {
 			if l.pos+2 < len(l.input) {
-				if l.input[l.pos+2] == '<' {
+				if l.input[l.pos+2] == '.' {
+					// ... (variadic parameter marker)
+					l.pos += 3
+					return Token{Type: TOKEN_ELLIPSIS, Value: "...", Line: l.line, Column: tokenColumn}
+				} else if l.input[l.pos+2] == '<' {
 					// ..<
 					l.pos += 3
 					return Token{Type: TOKEN_DOTDOTLT, Value: "..<", Line: l.line, Column: tokenColumn}
