@@ -11392,13 +11392,14 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			}
 
 			fmtStr := result.String()
-			if len(fmtStr) == 0 || fmtStr[len(fmtStr)-1] != 0 {
-				fmtStr += "\x00"
+			fmtStrWithNull := fmtStr
+			if len(fmtStrWithNull) == 0 || fmtStrWithNull[len(fmtStrWithNull)-1] != 0 {
+				fmtStrWithNull += "\x00"
 			}
 
 			labelName := fmt.Sprintf("exitf_fmt_%d", fc.stringCounter)
 			fc.stringCounter++
-			fc.eb.Define(labelName, fmtStr)
+			fc.eb.Define(labelName, fmtStrWithNull)
 
 			// Set up fprintf/printf call
 			if fc.platform.OS == OSWindows {
@@ -11462,51 +11463,49 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 				fc.eb.GenerateCallInstruction("fprintf")
 				fc.deallocateShadowSpace(shadowSpace)
 			} else {
-				// Unix: Use System V ABI
-				fc.out.LeaSymbolToReg("rsi", labelName)
-				fc.trackFunctionCall("__get_stderr")
-				fc.out.LeaSymbolToReg("rdi", "stderr")
-				fc.out.MovMemToReg("rdi", "rdi", 0)
-
-				// Process arguments (similar to printf)
-				for argIdx := 1; argIdx < len(call.Args) && argIdx <= 8; argIdx++ {
-					arg := call.Args[argIdx]
+				// Unix: For simple case with no extra args, just write to stderr (fd=2) using syscall
+				// This avoids the complexity of fprintf and stderr FILE* handling
+				if len(call.Args) == 1 {
+					// Simple case: just a format string with no placeholders
+					// Write directly to stderr using write syscall (don't include null terminator)
+					strLen := len(fmtStr)
+					fc.out.MovImmToReg("rax", "1") // sys_write
+					fc.out.MovImmToReg("rdi", "2") // stderr (fd 2)
+					fc.out.LeaSymbolToReg("rsi", labelName)
+					fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", strLen))
+					fc.out.Syscall()
+				} else {
+					// Complex case with arguments: use fprintf (less common for exitf)
+					// FIXME: This path needs proper stderr handling
+					fc.out.LeaSymbolToReg("rsi", labelName)
+					// Use dprintf to write to fd 2 directly instead of fprintf
+					fc.out.MovImmToReg("rdi", "2") // stderr fd
 					
-					if boolPositions[argIdx-1] {
-						fc.compileExpression(arg)
-						yesLabel := fmt.Sprintf("exitf_yes_%d", fc.labelCounter)
-						noLabel := fmt.Sprintf("exitf_no_%d", fc.labelCounter)
-						fc.labelCounter++
-						fc.eb.Define(yesLabel, "yes\x00")
-						fc.eb.Define(noLabel, "no\x00")
-
-						fc.out.Ucomisd("xmm0", "xmm0")
-						fc.out.Write(0x7A)
-						fc.out.Write(0x0A)
-						fc.out.XorRegWithReg("rax", "rax")
-						fc.out.Ucomisd("xmm0", "xmm0")
-						fc.out.Write(0x75)
-						fc.out.Write(0x05)
-						targetReg := []string{"rdx", "rcx", "r8", "r9"}[argIdx-1]
-						fc.out.LeaSymbolToReg(targetReg, noLabel)
-						fc.out.Write(0xEB)
-						fc.out.Write(0x05)
-						fc.out.LeaSymbolToReg(targetReg, yesLabel)
-					} else if stringPositions[argIdx-1] {
-						fc.compileExpression(arg)
-						fc.trackFunctionCall("flap_map_to_cstr")
-						fc.eb.GenerateCallInstruction("flap_map_to_cstr")
-						targetReg := []string{"rdx", "rcx", "r8", "r9"}[argIdx-1]
-						fc.out.MovRegToReg(targetReg, "rax")
-					} else if integerPositions[argIdx-1] {
-						fc.compileExpression(arg)
-						targetReg := []string{"rdx", "rcx", "r8", "r9"}[argIdx-1]
-						fc.out.Cvttsd2si(targetReg, "xmm0")
+					// Process arguments
+					for argIdx := 1; argIdx < len(call.Args) && argIdx <= 8; argIdx++ {
+						arg := call.Args[argIdx]
+						targetRegs := []string{"rdx", "rcx", "r8", "r9", "xmm0", "xmm1", "xmm2", "xmm3"}
+						if argIdx-1 >= len(targetRegs) {
+							break
+						}
+						targetReg := targetRegs[argIdx-1]
+						
+						if stringPositions[argIdx-1] {
+							fc.compileExpression(arg)
+							fc.trackFunctionCall("flap_map_to_cstr")
+							fc.eb.GenerateCallInstruction("flap_map_to_cstr")
+							fc.out.MovRegToReg(targetReg, "rax")
+						} else {
+							fc.compileExpression(arg)
+							if !strings.HasPrefix(targetReg, "xmm") {
+								fc.out.MovqXmmToReg(targetReg, "xmm0")
+							}
+						}
 					}
+					
+					fc.trackFunctionCall("dprintf")
+					fc.eb.GenerateCallInstruction("dprintf")
 				}
-
-				fc.trackFunctionCall("fprintf")
-				fc.eb.GenerateCallInstruction("fprintf")
 			}
 
 			// Extract exit code from last argument if it's an integer, otherwise use 1
