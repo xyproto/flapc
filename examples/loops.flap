@@ -1,0 +1,24 @@
+// loops.flap - Loop examples
+// Demonstrates different loop types in Flap
+// Compile: flapc loops.flap -o loops
+
+// Counted loop
+println("Counted loop (1 to 5):")
+@ i in 1..<6 {
+    println(i)
+}
+
+// Iterate over list
+println("\nIterate over list:")
+colors = ["red", "green", "blue"]
+@ color in colors {
+    printf("Color: %s\n", color)
+}
+
+// Accumulation with mutable variable
+println("\nSum 1 to 100:")
+sum := 0.0
+@ i in 1..<101 {
+    sum <- sum + i
+}
+println(sum)

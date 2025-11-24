@@ -1,0 +1,5 @@
+// hello.flap - Simple Hello World in Flap
+// Compile: flapc hello.flap -o hello
+// Run: ./hello
+
+println("Hello, World!")

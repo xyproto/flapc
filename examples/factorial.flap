@@ -1,0 +1,16 @@
+// factorial.flap - Recursive factorial calculator
+// Demonstrates recursion and pattern matching
+// Compile: flapc factorial.flap -o factorial
+
+// Recursive factorial using guard match
+factorial = n -> {
+    | n <= 1 => 1
+    ~> n * factorial(n - 1)
+}
+
+// Calculate factorials from 1 to 10
+println("Factorials:")
+@ i in 1..<11 {
+    result = factorial(i)
+    printf("%d! = %.0f\n", i, result)
+}

@@ -1,0 +1,29 @@
+// cffi.flap - C Foreign Function Interface examples
+// Demonstrates calling C library functions from Flap
+// Compile: flapc cffi.flap -o cffi
+
+import math as c
+
+// Using C math functions
+println("Math functions from C:")
+
+x = 16.0
+sqrt_result = c.sqrt(x)
+printf("sqrt(%.0f) = %f\n", x, sqrt_result)
+
+angle = 0.5
+sin_result = c.sin(angle)
+cos_result = c.cos(angle)
+printf("sin(%.1f) = %f\n", angle, sin_result)
+printf("cos(%.1f) = %f\n", angle, cos_result)
+
+// Power function
+base = 2.0
+exp = 10.0
+pow_result = c.pow(base, exp)
+printf("%.0f^%.0f = %.0f\n", base, exp, pow_result)
+
+// Logarithms
+val = 100.0
+log_result = c.log10(val)
+printf("log10(%.0f) = %f\n", val, log_result)
