@@ -64,44 +64,44 @@ type LoopInfo struct {
 type FlapCompiler struct {
 	eb                   *ExecutableBuilder
 	out                  *Out
-	platform             Platform                     // Target platform (arch + OS)
-	variables            map[string]int               // variable name -> stack offset
-	mutableVars          map[string]bool              // variable name -> is mutable
-	parentVariables      map[string]bool              // Track parent-scope vars in parallel loops (use r11 instead of rbp)
-	varTypes             map[string]string            // variable name -> "map" or "list"
+	platform             Platform                      // Target platform (arch + OS)
+	variables            map[string]int                // variable name -> stack offset
+	mutableVars          map[string]bool               // variable name -> is mutable
+	parentVariables      map[string]bool               // Track parent-scope vars in parallel loops (use r11 instead of rbp)
+	varTypes             map[string]string             // variable name -> "map" or "list"
 	functionSignatures   map[string]*FunctionSignature // function name -> signature (params, variadic)
-	sourceCode           string                       // Store source for recompilation
-	usedFunctions        map[string]bool              // Track which functions are called
-	unknownFunctions     map[string]bool              // Track functions called but not defined
-	callOrder            []string                     // Track order of function calls
-	cImports             map[string]string            // Track C imports: alias -> library name
-	cLibHandles          map[string]string            // Track library handles: library -> handle var name
-	cConstants           map[string]*CHeaderConstants // Track C constants: alias -> constants
-	cFunctionLibs        map[string]string            // Track which library each C function belongs to: function -> library
-	stringCounter        int                          // Counter for unique string labels
-	stackOffset          int                          // Current stack offset for variables (logical)
-	maxStackOffset       int                          // Maximum stack offset reached (for frame allocation)
-	runtimeStack         int                          // Actual runtime stack usage (updated during compilation)
-	loopBaseOffsets      map[int]int                  // Loop label -> stackOffset before loop body (for state calculation)
-	labelCounter         int                          // Counter for unique labels (if/else, loops, etc)
-	lambdaCounter        int                          // Counter for unique lambda function names
-	activeLoops          []LoopInfo                   // Stack of active loops (for @N jump resolution)
-	lambdaFuncs          []LambdaFunc                 // List of lambda functions to generate
-	patternLambdaFuncs   []PatternLambdaFunc          // List of pattern lambda functions to generate
-	lambdaOffsets        map[string]int               // Lambda name -> offset in .text
-	currentLambda        *LambdaFunc                  // Currently compiling lambda (for "me" self-reference)
-	lambdaBodyStart      int                          // Offset where lambda body starts (for tail recursion)
-	hasExplicitExit      bool                         // Track if program contains explicit exit() call
-	debug                bool                         // Enable debug output (set via DEBUG env var)
-	cContext             bool                         // When true, compile expressions for C FFI (affects strings, pointers, ints)
-	currentArena         int                          // Current arena index (starts at 1 for global arena = meta-arena[0])
-	usesArenas           bool                         // Track if program uses any arena blocks
-	cacheEnabledLambdas  map[string]bool              // Track which lambdas use cme
-	deferredExprs        [][]Expression               // Stack of deferred expressions per scope (LIFO order)
-	memoCaches           map[string]bool              // Track memoization caches that need storage allocation
-	currentAssignName    string                       // Name of variable being assigned (for lambda naming)
-	inTailPosition       bool                         // True when compiling expression in tail position
-	hotFunctions         map[string]bool              // Track hot-reloadable functions
+	sourceCode           string                        // Store source for recompilation
+	usedFunctions        map[string]bool               // Track which functions are called
+	unknownFunctions     map[string]bool               // Track functions called but not defined
+	callOrder            []string                      // Track order of function calls
+	cImports             map[string]string             // Track C imports: alias -> library name
+	cLibHandles          map[string]string             // Track library handles: library -> handle var name
+	cConstants           map[string]*CHeaderConstants  // Track C constants: alias -> constants
+	cFunctionLibs        map[string]string             // Track which library each C function belongs to: function -> library
+	stringCounter        int                           // Counter for unique string labels
+	stackOffset          int                           // Current stack offset for variables (logical)
+	maxStackOffset       int                           // Maximum stack offset reached (for frame allocation)
+	runtimeStack         int                           // Actual runtime stack usage (updated during compilation)
+	loopBaseOffsets      map[int]int                   // Loop label -> stackOffset before loop body (for state calculation)
+	labelCounter         int                           // Counter for unique labels (if/else, loops, etc)
+	lambdaCounter        int                           // Counter for unique lambda function names
+	activeLoops          []LoopInfo                    // Stack of active loops (for @N jump resolution)
+	lambdaFuncs          []LambdaFunc                  // List of lambda functions to generate
+	patternLambdaFuncs   []PatternLambdaFunc           // List of pattern lambda functions to generate
+	lambdaOffsets        map[string]int                // Lambda name -> offset in .text
+	currentLambda        *LambdaFunc                   // Currently compiling lambda (for "me" self-reference)
+	lambdaBodyStart      int                           // Offset where lambda body starts (for tail recursion)
+	hasExplicitExit      bool                          // Track if program contains explicit exit() call
+	debug                bool                          // Enable debug output (set via DEBUG env var)
+	cContext             bool                          // When true, compile expressions for C FFI (affects strings, pointers, ints)
+	currentArena         int                           // Current arena index (starts at 1 for global arena = meta-arena[0])
+	usesArenas           bool                          // Track if program uses any arena blocks
+	cacheEnabledLambdas  map[string]bool               // Track which lambdas use cme
+	deferredExprs        [][]Expression                // Stack of deferred expressions per scope (LIFO order)
+	memoCaches           map[string]bool               // Track memoization caches that need storage allocation
+	currentAssignName    string                        // Name of variable being assigned (for lambda naming)
+	inTailPosition       bool                          // True when compiling expression in tail position
+	hotFunctions         map[string]bool               // Track hot-reloadable functions
 	hotFunctionTable     map[string]int
 	hotTableRodataOffset int
 	tailCallsOptimized   int // Count of tail calls optimized
@@ -131,7 +131,7 @@ type FunctionSignature struct {
 type LambdaFunc struct {
 	Name             string
 	Params           []string
-	VariadicParam    string            // Name of variadic parameter (empty if none)
+	VariadicParam    string // Name of variadic parameter (empty if none)
 	Body             Expression
 	CapturedVars     []string          // Variables captured from outer scope
 	CapturedVarTypes map[string]string // Types of captured variables
@@ -4568,7 +4568,6 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			IsVariadic:    e.VariadicParam != "",
 		}
 
-		
 		// Variadic functions need arena allocation for argument lists
 		if e.VariadicParam != "" {
 			fc.usesArenas = true
@@ -6024,54 +6023,54 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 			if VerboseMode {
 				fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: '%s' HAS variadic param '%s' (fixedParams=%d)\n", lambda.Name, lambda.VariadicParam, paramCount)
 			}
-			
+
 			variadicOffset := baseParamOffset + paramCount*16
 			fc.stackOffset = variadicOffset
 			fc.variables[lambda.VariadicParam] = variadicOffset
 			fc.mutableVars[lambda.VariadicParam] = false
 			fc.varTypes[lambda.VariadicParam] = "list"
-			
+
 			// Build list from variadic arguments
 			// r14 contains the count of variadic arguments
 			// Variadic args are in xmm registers starting at xmmRegs[paramCount]
-			
+
 			// Skip if no variadic args (r14 == 0)
 			skipLabel := fc.nextLabel()
 			fc.out.CmpRegToImm("r14", 0)
 			fc.out.Write(0x74) // JE (jump if equal)
 			fc.out.Write(0x00) // Will be patched
 			skipPos := fc.eb.text.Len() - 1
-			
+
 			// Calculate list size: 8 (count) + r14 * 16 (key+value pairs)
 			// size = 8 + r14 * 16 = 8 + r14 << 4
 			fc.out.MovRegToReg("rax", "r14")
 			fc.out.ShlRegByImm("rax", 4) // rax = r14 * 16
 			fc.out.AddImmToReg("rax", 8) // rax = 8 + r14 * 16
-			
+
 			// Allocate from arena: flap_arena_alloc(arena_ptr, size)
 			// Save r14 (we need it after the call)
 			fc.out.PushReg("r14")
-			
+
 			// rdi = arena_ptr (first meta-arena)
 			fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
 			fc.out.MovMemToReg("rdi", "rdi", 0) // Load first arena pointer
-			
+
 			// rsi = size (already in rax)
 			fc.out.MovRegToReg("rsi", "rax")
-			
+
 			// Call arena allocator
 			fc.trackFunctionCall("flap_arena_alloc")
 			fc.out.CallSymbol("flap_arena_alloc")
-			
+
 			// rax now contains pointer to allocated list
 			// Restore r14
 			fc.out.PopReg("r14")
-			
+
 			// Store count in list (first 8 bytes)
 			fc.out.MovRegToReg("rcx", "r14")
 			fc.out.Cvtsi2sd("xmm15", "rcx")
 			fc.out.MovXmmToMem("xmm15", "rax", 0)
-			
+
 			// Copy variadic arguments from saved xmm locations to list
 			// The xmm registers were saved at offset savedXmmOffset earlier
 			// Arguments are at xmmRegs[paramCount] through xmmRegs[paramCount + r14 - 1]
@@ -6079,55 +6078,55 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 			if maxVariadic > 6 {
 				maxVariadic = 6
 			}
-			
+
 			for i := 0; i < maxVariadic; i++ {
 				xmmIdx := paramCount + i
 				if xmmIdx >= 6 {
 					break
 				}
-				
+
 				// Check if this arg exists (i < r14)
 				checkLabel := fc.nextLabel()
 				fc.out.CmpRegToImm("r14", int64(i+1))
 				fc.out.Write(0x7C) // JL (jump if r14 < i+1, meaning this arg doesn't exist)
 				fc.out.Write(0x00) // Will be patched
 				checkPos := fc.eb.text.Len() - 1
-				
+
 				// This arg exists - load from saved location and store in list
 				keyOffset := 8 + i*16
 				valOffset := keyOffset + 8
-				
+
 				// Key = i (as float64)
 				fc.out.MovImmToReg("rcx", fmt.Sprintf("%d", i))
 				fc.out.Cvtsi2sd("xmm15", "rcx")
 				fc.out.MovXmmToMem("xmm15", "rax", keyOffset)
-				
+
 				// Value from saved xmm register location
 				savedOffset := savedXmmOffset + xmmIdx*16
 				fc.out.MovMemToXmm("xmm15", "rbp", -savedOffset)
 				fc.out.MovXmmToMem("xmm15", "rax", valOffset)
-				
+
 				// Patch the check jump to here (skip storing this arg)
 				checkTarget := fc.eb.text.Len()
 				fc.patchJumpImmediate(checkPos, int32(checkTarget-(checkPos+1)))
 				fc.defineLabel(checkLabel, checkTarget)
 			}
-			
+
 			// Store list pointer in variadic parameter location
 			fc.out.MovqRegToXmm("xmm15", "rax")
 			fc.out.MovXmmToMem("xmm15", "rbp", -variadicOffset)
-			
+
 			// Jump over empty list creation
 			hasArgsLabel := fc.nextLabel()
 			fc.out.Write(0xEB) // JMP short
 			fc.out.Write(0x00) // Will be patched
 			hasArgsPos := fc.eb.text.Len() - 1
-			
+
 			// Empty list path (when r14==0)
 			skipTarget := fc.eb.text.Len()
 			fc.patchJumpImmediate(skipPos, int32(skipTarget-(skipPos+1)))
 			fc.defineLabel(skipLabel, skipTarget)
-			
+
 			// Create static empty list
 			emptyListLabel := fmt.Sprintf("variadic_empty_%d", fc.stringCounter)
 			fc.stringCounter++
@@ -6136,7 +6135,7 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 			fc.out.LeaSymbolToReg("r13", emptyListLabel)
 			fc.out.MovqRegToXmm("xmm15", "r13")
 			fc.out.MovXmmToMem("xmm15", "rbp", -variadicOffset)
-			
+
 			// Patch has-args jump
 			hasArgsTarget := fc.eb.text.Len()
 			fc.patchJumpImmediate(hasArgsPos, int32(hasArgsTarget-(hasArgsPos+1)))
@@ -8704,7 +8703,7 @@ func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
 	fc.out.MovMemToReg("r11", "rsp", 0)
 	fc.out.MovMemToReg("r15", "rsp", 8)
 	fc.out.AddImmToReg("rsp", 16)
-	
+
 	// If variadic, set r14 to the count of variadic arguments
 	if isVariadic {
 		variadicArgCount := len(call.Args) - fixedParamCount
@@ -8734,7 +8733,7 @@ func (fc *FlapCompiler) compileLambdaDirectCall(call *CallExpr) {
 	// Direct call to a lambda by name (for recursion)
 	// Compile arguments and put them in xmm registers
 	xmmRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"}
-	
+
 	// Check if function is variadic
 	var isVariadic bool
 	var fixedParamCount int
@@ -8771,7 +8770,7 @@ func (fc *FlapCompiler) compileLambdaDirectCall(call *CallExpr) {
 		fc.out.MovMemToXmm(xmmRegs[i], "rsp", 0)
 		fc.out.AddImmToReg("rsp", 16)
 	}
-	
+
 	// If variadic, pass count of variadic arguments in r14
 	if isVariadic {
 		variadicArgCount := len(call.Args) - fixedParamCount
@@ -10867,7 +10866,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			// Print using printf (printf clobbers rax, rcx, rdx, rsi, rdi, r8-r11)
 			shadowSpace := fc.allocateShadowSpace()
 			fc.out.LeaSymbolToReg(fc.getIntArgReg(0), fmtLabel)
-			
+
 			// Windows requires float args in BOTH integer and XMM registers for variadic functions
 			if fc.eb.target.OS() == OSWindows {
 				// Move xmm0 to xmm1 (2nd parameter position)
@@ -10875,7 +10874,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 				// Also copy to integer register (2nd parameter)
 				fc.out.MovqXmmToReg(fc.getIntArgReg(1), "xmm0")
 			}
-			
+
 			// Set rax = 1 (one vector register used) for variadic printf
 			fc.out.MovImmToReg("rax", "1")
 			fc.trackFunctionCall("printf")
@@ -10913,7 +10912,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 			shadowSpace := fc.allocateShadowSpace()
 			fc.out.LeaSymbolToReg(fc.getIntArgReg(0), fmtLabel)
-			
+
 			// Windows requires float args in BOTH integer and XMM registers for variadic functions
 			if fc.eb.target.OS() == OSWindows {
 				// Move xmm0 to xmm1 (2nd parameter position)
@@ -10922,7 +10921,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 				fc.out.MovqXmmToReg(fc.getIntArgReg(1), "xmm0")
 			}
 			// xmm0 already has the value (Linux System V ABI)
-			
+
 			// Set rax = 1 (one vector register used) for variadic printf
 			fc.out.MovImmToReg("rax", "1")
 			fc.trackFunctionCall("printf")
@@ -11481,7 +11480,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 					fc.out.LeaSymbolToReg("rsi", labelName)
 					// Use dprintf to write to fd 2 directly instead of fprintf
 					fc.out.MovImmToReg("rdi", "2") // stderr fd
-					
+
 					// Process arguments
 					for argIdx := 1; argIdx < len(call.Args) && argIdx <= 8; argIdx++ {
 						arg := call.Args[argIdx]
@@ -11490,7 +11489,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 							break
 						}
 						targetReg := targetRegs[argIdx-1]
-						
+
 						if stringPositions[argIdx-1] {
 							fc.compileExpression(arg)
 							fc.trackFunctionCall("flap_map_to_cstr")
@@ -11503,7 +11502,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 							}
 						}
 					}
-					
+
 					fc.trackFunctionCall("dprintf")
 					fc.eb.GenerateCallInstruction("dprintf")
 				}

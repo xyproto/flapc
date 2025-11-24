@@ -100,7 +100,7 @@ println("Done!")
 
 	// Just verify it compiles - Wine with SDL3 may not work in all environments
 	result := compileAndRunWindows(t, source)
-	
+
 	// At minimum, check that compilation succeeded and created an .exe
 	// Wine output may vary, so we're lenient on runtime checks
 	t.Logf("Windows SDL3 compilation output: %s", result)
@@ -226,11 +226,11 @@ func TestSDL3ExampleCompiles(t *testing.T) {
 			tmpDir := t.TempDir()
 			srcFile := tmpDir + "/test.flap"
 			exePath := tmpDir + "/test"
-			
+
 			if err := os.WriteFile(srcFile, []byte(source), 0644); err != nil {
 				t.Fatalf("Failed to write source: %v", err)
 			}
-			
+
 			cmd = exec.Command("./flapc", "-o", exePath, srcFile)
 			output, err := cmd.CombinedOutput()
 			if err != nil {
@@ -253,11 +253,11 @@ func TestSDL3ExampleCompiles(t *testing.T) {
 		tmpDir := t.TempDir()
 		srcFile := tmpDir + "/test.flap"
 		exePath := tmpDir + "/test.exe"
-		
+
 		if err := os.WriteFile(srcFile, []byte(source), 0644); err != nil {
 			t.Fatalf("Failed to write source: %v", err)
 		}
-		
+
 		cmd := exec.Command("./flapc", "-target", "amd64-windows", "-o", exePath, srcFile)
 		output, err := cmd.CombinedOutput()
 		if err != nil {

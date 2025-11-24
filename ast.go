@@ -661,7 +661,7 @@ func (s *StructLiteralExpr) expressionNode() {}
 
 type LambdaExpr struct {
 	Params           []string
-	VariadicParam    string            // Name of variadic parameter (if any), empty if none
+	VariadicParam    string // Name of variadic parameter (if any), empty if none
 	Body             Expression
 	IsPure           bool              // Automatically detected: true if function has no side effects
 	CapturedVars     []string          // Variables captured from outer scope (for closures)

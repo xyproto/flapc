@@ -1,4 +1,0 @@
-main = {
-    c.printf("Hello\n")
-    c.exit(42)
-}
