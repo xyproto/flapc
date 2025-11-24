@@ -523,8 +523,8 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	}
 
 	// currentArena is already set to 1 in NewFlapCompiler (representing meta-arena[0])
-	// Arena initialization is disabled for now - TODO: fix arena allocation for lists
-	// fc.initializeMetaArenaAndGlobalArena()
+	// Arena initialization is needed for variadic function lists
+	fc.initializeMetaArenaAndGlobalArena()
 
 	// Function prologue - set up stack frame for main code
 	fc.out.PushReg("rbp")
@@ -6031,9 +6031,104 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 			fc.mutableVars[lambda.VariadicParam] = false
 			fc.varTypes[lambda.VariadicParam] = "list"
 			
-			// For now: Use empty list (argument collection deferred)
-			// The xmm register saving infrastructure is in place and working
-			// TODO: Complete list building from saved xmm values
+			// Build list from variadic arguments
+			// r14 contains the count of variadic arguments
+			// Variadic args are in xmm registers starting at xmmRegs[paramCount]
+			
+			// Skip if no variadic args (r14 == 0)
+			skipLabel := fc.nextLabel()
+			fc.out.CmpRegToImm("r14", 0)
+			fc.out.Write(0x74) // JE (jump if equal)
+			fc.out.Write(0x00) // Will be patched
+			skipPos := fc.eb.text.Len() - 1
+			
+			// Calculate list size: 8 (count) + r14 * 16 (key+value pairs)
+			// size = 8 + r14 * 16 = 8 + r14 << 4
+			fc.out.MovRegToReg("rax", "r14")
+			fc.out.ShlRegByImm("rax", 4) // rax = r14 * 16
+			fc.out.AddImmToReg("rax", 8) // rax = 8 + r14 * 16
+			
+			// Allocate from arena: flap_arena_alloc(arena_ptr, size)
+			// Save r14 (we need it after the call)
+			fc.out.PushReg("r14")
+			
+			// rdi = arena_ptr (first meta-arena)
+			fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
+			fc.out.MovMemToReg("rdi", "rdi", 0) // Load first arena pointer
+			
+			// rsi = size (already in rax)
+			fc.out.MovRegToReg("rsi", "rax")
+			
+			// Call arena allocator
+			fc.trackFunctionCall("flap_arena_alloc")
+			fc.out.CallSymbol("flap_arena_alloc")
+			
+			// rax now contains pointer to allocated list
+			// Restore r14
+			fc.out.PopReg("r14")
+			
+			// Store count in list (first 8 bytes)
+			fc.out.MovRegToReg("rcx", "r14")
+			fc.out.Cvtsi2sd("xmm15", "rcx")
+			fc.out.MovXmmToMem("xmm15", "rax", 0)
+			
+			// Copy variadic arguments from saved xmm locations to list
+			// The xmm registers were saved at offset savedXmmOffset earlier
+			// Arguments are at xmmRegs[paramCount] through xmmRegs[paramCount + r14 - 1]
+			maxVariadic := 6 - paramCount
+			if maxVariadic > 6 {
+				maxVariadic = 6
+			}
+			
+			for i := 0; i < maxVariadic; i++ {
+				xmmIdx := paramCount + i
+				if xmmIdx >= 6 {
+					break
+				}
+				
+				// Check if this arg exists (i < r14)
+				checkLabel := fc.nextLabel()
+				fc.out.CmpRegToImm("r14", int64(i+1))
+				fc.out.Write(0x7C) // JL (jump if r14 < i+1, meaning this arg doesn't exist)
+				fc.out.Write(0x00) // Will be patched
+				checkPos := fc.eb.text.Len() - 1
+				
+				// This arg exists - load from saved location and store in list
+				keyOffset := 8 + i*16
+				valOffset := keyOffset + 8
+				
+				// Key = i (as float64)
+				fc.out.MovImmToReg("rcx", fmt.Sprintf("%d", i))
+				fc.out.Cvtsi2sd("xmm15", "rcx")
+				fc.out.MovXmmToMem("xmm15", "rax", keyOffset)
+				
+				// Value from saved xmm register location
+				savedOffset := savedXmmOffset + xmmIdx*16
+				fc.out.MovMemToXmm("xmm15", "rbp", -savedOffset)
+				fc.out.MovXmmToMem("xmm15", "rax", valOffset)
+				
+				// Patch the check jump to here (skip storing this arg)
+				checkTarget := fc.eb.text.Len()
+				fc.patchJumpImmediate(checkPos, int32(checkTarget-(checkPos+1)))
+				fc.defineLabel(checkLabel, checkTarget)
+			}
+			
+			// Store list pointer in variadic parameter location
+			fc.out.MovqRegToXmm("xmm15", "rax")
+			fc.out.MovXmmToMem("xmm15", "rbp", -variadicOffset)
+			
+			// Jump over empty list creation
+			hasArgsLabel := fc.nextLabel()
+			fc.out.Write(0xEB) // JMP short
+			fc.out.Write(0x00) // Will be patched
+			hasArgsPos := fc.eb.text.Len() - 1
+			
+			// Empty list path (when r14==0)
+			skipTarget := fc.eb.text.Len()
+			fc.patchJumpImmediate(skipPos, int32(skipTarget-(skipPos+1)))
+			fc.defineLabel(skipLabel, skipTarget)
+			
+			// Create static empty list
 			emptyListLabel := fmt.Sprintf("variadic_empty_%d", fc.stringCounter)
 			fc.stringCounter++
 			emptyData := make([]byte, 8)
@@ -6042,111 +6137,10 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 			fc.out.MovqRegToXmm("xmm15", "r13")
 			fc.out.MovXmmToMem("xmm15", "rbp", -variadicOffset)
 			
-			// OLD complex logic removed:
-			/*
-			
-			// Skip list creation if r14 is 0 (no variadic args)
-			// This avoids unnecessary malloc and helps debug
-			skipLabel := fc.nextLabel()
-			fc.out.CmpRegToImm("r14", 0)
-			fc.out.Write(0x74) // JE (jump if equal)
-			fc.out.Write(0x00) // Will be patched
-			skipPos := fc.eb.text.Len() - 1
-			
-			// Create list to hold variadic arguments
-			// List format: [count, key0, val0, key1, val1, ...]
-			// We need: 8 bytes (count) + N * 16 bytes (key+value pairs)
-			
-			// For now, use stack space for the variadic list
-			// We allocated 4096 bytes of temp space - use part of that
-			// This avoids complex arena/malloc issues during function entry
-			// TODO: Use arena allocation properly later
-			maxVariadicArgs := 8
-			variadicListSize := 8 + maxVariadicArgs*16  // 136 bytes max
-			
-			// Calculate stack address for variadic list
-			// Place it after parameters and captured vars in the temp space
-			// Use an offset that won't conflict: rbp - (frame - 512)
-			// Actually, just allocate space from rsp (it's already aligned)
-			fc.out.SubImmFromReg("rsp", int64(variadicListSize))
-			fc.out.MovRegToReg("r13", "rsp") // r13 = list pointer
-			
-			// Store count (from r14) in list
-			fc.out.Cvtsi2sd("xmm15", "r14") // Convert count to float64
-			fc.out.MovXmmToMem("xmm15", "r13", 0)
-			
-			// Copy variadic arguments into list
-			// First from remaining xmm registers
-			startXmmIdx := paramCount
-			for i := 0; i < maxVariadicArgs; i++ {
-				xmmIdx := startXmmIdx + i
-				if xmmIdx >= len(xmmRegs) {
-					break // No more xmm regs, would need stack args (TODO)
-				}
-				
-				// Check if this arg exists (i < r14)
-				// Skip if i >= count
-				skipLabel := fc.nextLabel()
-				fc.out.CmpRegToImm("r14", int64(i+1))
-				fc.out.Write(0x7C) // JL (jump if less)
-				fc.out.Write(0x00) // Will be patched
-				skipPos := fc.eb.text.Len() - 1
-				
-				// Store key (index) and value
-				keyOffset := 8 + i*16
-				valOffset := keyOffset + 8
-				
-				// Key = i (as float64)
-				fc.out.MovImmToReg("rax", fmt.Sprintf("%d", i))
-				fc.out.Cvtsi2sd("xmm15", "rax")
-				fc.out.MovXmmToMem("xmm15", "r13", keyOffset)
-				
-				// Value from xmm register
-				fc.out.MovXmmToMem(xmmRegs[xmmIdx], "r13", valOffset)
-				
-				// Patch skip jump
-				skipTarget := fc.eb.text.Len()
-				fc.patchJumpImmediate(skipPos, int32(skipTarget-(skipPos+1)))
-				fc.defineLabel(skipLabel, skipTarget)
-			}
-			
-			// Store list pointer on stack
-			fc.out.SubImmFromReg("rsp", 8)
-			fc.out.MovRegToMem("r13", "rsp", 0)
-			fc.out.MovMemToXmm("xmm15", "rsp", 0)
-			fc.out.AddImmToReg("rsp", 8)
-			fc.out.MovXmmToMem("xmm15", "rbp", -variadicOffset)
-			
-			// Jump over empty list creation
-			doneLabel := fc.nextLabel()
-			fc.out.Write(0xEB) // JMP short
-			fc.out.Write(0x00) // Will be patched
-			donePos := fc.eb.text.Len() - 1
-			
-			// Empty list path (when r14==0)
-			emptyTarget := fc.eb.text.Len()
-			fc.patchJumpImmediate(skipPos, int32(emptyTarget-(skipPos+1)))
-			fc.defineLabel(skipLabel, emptyTarget)
-			
-			// Create static empty list
-			emptyListLabel := fmt.Sprintf("empty_variadic_%d", fc.stringCounter)
-			fc.stringCounter++
-			var emptyData []byte
-			countBits := uint64(0)
-			for i := 0; i < 8; i++ {
-				emptyData = append(emptyData, byte((countBits>>(i*8))&0xFF))
-			}
-			fc.eb.Define(emptyListLabel, string(emptyData))
-			fc.out.LeaSymbolToReg("rax", emptyListLabel)
-			fc.out.MovqRegToXmm("xmm15", "rax")
-			fc.out.MovXmmToMem("xmm15", "rbp", -variadicOffset)
-			
-			// Patch done jump
-			doneTarget := fc.eb.text.Len()
-			fc.patchJumpImmediate(donePos, int32(doneTarget-(donePos+1)))
-			fc.defineLabel(doneLabel, doneTarget)
-			*/
-			// End of commented out complex logic
+			// Patch has-args jump
+			hasArgsTarget := fc.eb.text.Len()
+			fc.patchJumpImmediate(hasArgsPos, int32(hasArgsTarget-(hasArgsPos+1)))
+			fc.defineLabel(hasArgsLabel, hasArgsTarget)
 		}
 
 		// Add captured variables to the lambda's scope

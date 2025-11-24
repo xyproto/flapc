@@ -92,15 +92,16 @@ This release focuses on making Flapc production-ready with:
 **Estimated:** 8-10 hours
 
 ### 7. Testing & CI
+- [x] SDL3 headless tests for CI
+- [x] Cross-platform Windows/Linux tests
 - [ ] GitHub Actions CI setup
-- [ ] Automated cross-platform testing
 - [ ] Benchmark suite
 - [ ] Fuzzing tests
 - [ ] Code coverage reporting
 
-**Status:** Manual testing works well
+**Status:** SDL3 tests ready for CI, manual testing works well
 **Priority:** LOW
-**Estimated:** 4-6 hours
+**Estimated:** 2-3 hours remaining
 
 ## Known Issues to Fix
 
@@ -111,7 +112,7 @@ This release focuses on making Flapc production-ready with:
 
 ### Minor
 - [ ] Local variables in lambda bodies (workaround exists)
-- [ ] SDL3 on Wine/Wayland (Wine limitation)
+- [x] SDL3 on Wine/Wayland (Wine limitation - tests work with dummy driver)
 
 ## Testing Checklist
 
