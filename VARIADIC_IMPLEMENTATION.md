@@ -1,6 +1,6 @@
 # Variadic Functions Implementation
 
-## Status: Mostly Working - List Construction Needs Work
+## Status: Infrastructure Complete - Argument Collection TODO
 
 ### Completed:
 1. ✅ Updated GRAMMAR.md with variadic parameter syntax
@@ -91,8 +91,43 @@ printf = (fmt, args...) -> {
 }
 ```
 
-## Next Steps:
-1. Implement codegen for variadic parameter collection (pack remaining args into list)
-2. Implement codegen for spread operator (unpack list into args)
-3. Update stdlib.flap to use variadic syntax for printf, exitf, etc.
-4. Write comprehensive tests
+## Next Steps to Complete Full Implementation:
+
+1. **Complete variadic argument collection:**
+   - Save xmm register arguments immediately on function entry (before any operations)
+   - Allocate list from arena (NOT malloc or stack manipulation)
+   - Copy saved arguments to list with proper key-value pairs
+   - Tested approach that crashed: direct memory operations during prologue
+   - Recommended: Save args first, then build list after frame is stable
+
+2. **Implement spread operator (`...`) for call sites:**
+   - Parse `func(values...)` syntax
+   - Unpack list elements into individual arguments
+   - Handle mixed: `func(1, 2, list..., 3)
+
+`
+
+3. **Create standard library (stdlib.flap):**
+   - Implement printf, eprintf, exitf as variadic Flap functions
+   - Use c.printf internally with proper argument unpacking
+   - Auto-include stdlib when these functions are used
+
+4. **Write comprehensive tests:**
+   - Test variadic with 0, 1, 2, many arguments
+   - Test with fixed + variadic parameters
+   - Test spread operator
+   - Test nested variadic calls
+
+## Implementation Notes:
+
+The segfault during list construction was caused by:
+- Stack manipulation (SubImmFromReg on rsp) after frame allocation
+- Using registers that contained arguments before saving them
+- Complex operations during function entry before stack stabilization
+
+The working approach should be:
+1. Function prologue allocates full frame once
+2. Save xmm argument registers to temp space immediately
+3. Set up regular parameters from saved values
+4. Build variadic list from saved values (using LEA from rbp offsets)
+5. No stack pointer modification after prologue

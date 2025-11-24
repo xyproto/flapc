@@ -4,9 +4,21 @@
 - [x] Windows/Wine PE execution working with proper Microsoft x64 calling convention (RCX,RDX,R8,R9 + shadow space). Printf works correctly, exit codes work, basic tests run under Wine.
 - [x] Fix PE import table generation (ILT+IAT pairs must be interleaved per library).
 - [x] Update remaining C FFI call sites to use platform-specific calling convention helpers - Already implemented in compileCFunctionCall
-- [x] Fix exitf() - Now uses syscall directly to stderr. Works correctly on Linux.
+- [x] Fix exitf() - Now uses syscall directly to stderr (fd 2) instead of fprintf. All tests pass.
+- [x] PE64 (PE32+) generation working - Can produce .exe files that Wine recognizes and executes
+- [x] Variadic function infrastructure - Grammar, lexer, parser, signature tracking, r14 calling convention. Ready for argument collection implementation.
 - [ ] Fix tail (_) operator - Currently produces garbage values. See TAIL.md for details. The algorithm for copying and re-indexing list elements needs fixing. DEFERRED - focus on other features first.
-- [ ] SDL3 + Windows/Wine support - Deferred. See TAIL.md for details. Wine's msvcrt doesn't support __acrt_iob_func, and DXGI support is limited. Focus on Linux target first.
+- [ ] SDL3 + Windows/Wine GUI support - SDL_Init works, but SDL_CreateWindow fails under Wine in Wayland (Hyprland). This is a Wine/graphics environment limitation, not a flapc bug. PE generation and basic C FFI work correctly. Testing native Windows SDL3 would require actual Windows hardware/VM.
+
+## Variadic Functions (In Progress)
+- [x] Grammar and lexer support for `...` syntax
+- [x] Parser handles variadic parameters in lambdas
+- [x] Function signature tracking and call-site detection
+- [x] r14 register convention for passing variadic count
+- [ ] Complete argument collection from xmm registers into list
+- [ ] Implement spread operator `func(list...)` at call sites
+- [ ] Create stdlib.flap with variadic printf, eprintf, exitf
+- See VARIADIC_IMPLEMENTATION.md for detailed status
 
 ## Features
 - [ ] Add back the "import" feature, for being able to import directly from git repos with .flap source code files.
