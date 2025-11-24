@@ -1,0 +1,10 @@
+import sdl3 as sdl
+
+println("Testing SDL3 initialization...")
+printf("SDL_INIT_VIDEO = %d\n", sdl.SDL_INIT_VIDEO)
+
+result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
+printf("SDL_Init returned: %d\n", result)
+
+sdl.SDL_Quit()
+println("Done")

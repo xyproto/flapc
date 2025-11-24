@@ -1,0 +1,19 @@
+import sdl3 as sdl
+
+println("Testing SDL3 window creation...")
+
+result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
+printf("SDL_Init returned: %d\n", result)
+
+printf("Creating window with dimensions: %d x %d\n", 640, 480)
+printf("SDL_WINDOW_RESIZABLE = %d\n", sdl.SDL_WINDOW_RESIZABLE)
+
+window := sdl.SDL_CreateWindow("Test Window", 640, 480, sdl.SDL_WINDOW_RESIZABLE)
+printf("SDL_CreateWindow returned: %d\n", window)
+
+// Check for error
+error_msg := sdl.SDL_GetError()
+printf("SDL_GetError: %s\n", error_msg)
+
+sdl.SDL_Quit()
+println("Done")

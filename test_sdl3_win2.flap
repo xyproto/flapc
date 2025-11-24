@@ -1,0 +1,15 @@
+import sdl3 as sdl
+
+println("Testing SDL3 window creation...")
+
+result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
+printf("SDL_Init returned: %d\n", result)
+
+println("Creating window...")
+
+window := sdl.SDL_CreateWindow("Test", 640, 480, 0)
+printf("Window pointer: %d\n", window)
+
+println("Quitting SDL...")
+sdl.SDL_Quit()
+println("Done")
