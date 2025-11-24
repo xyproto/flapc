@@ -55,44 +55,25 @@ Tips:
 * Use good techniques for dealing with complexity.
 * It's okay if things take time to implement, but take a step back if stuck.
 
-## Critical: Windows x64 C FFI Return Values
+## ✅ RESOLVED: Windows x64 C FFI Return Values
 
-C function calls on Windows x64 are returning garbage values. The issue affects all C FFI calls (printf, SDL3 functions, etc.). The functions execute without crashing, but return values are incorrect.
+**Status: WORKING** (as of 2025-11-24)
 
-**Symptoms:**
-- `c.printf("Hello\n")` returns garbage instead of 6
-- `sdl.SDL_Init(flags)` returns garbage instead of bool
-- Output: binary data like `e0 52 14` or `60 bc 6f`
+C function calls on Windows x64 now work correctly, including return values.
 
-**What works:**
-- Calls execute without crashing
-- SDL3.dll loads correctly (confirmed with WINEDEBUG=+loaddll)
-- IAT (Import Address Table) is structured correctly
-- Constants and string arguments work fine
+**Verified working:**
+- ✅ `c.printf("Hello\n")` correctly returns 6
+- ✅ `c.sqrt(16.0)` correctly returns 4.0  
+- ✅ `c.sin(0.5)` correctly returns 0.479426
+- ✅ Math functions work correctly
+- ✅ I/O functions work correctly
+- ✅ Return values are correct (not garbage)
 
-**Possible causes:**
-1. Stack alignment issue (Windows requires 16-byte alignment)
-2. Shadow space allocation problem
-3. Register clobbering during call setup
-4. Incorrect cvtsi2sd usage (signed vs unsigned)
-5. Missing XMM register volatile save/restore
-6. RAX contains wrong value before conversion
+**What was fixed:**
+- Proper Windows x64 calling convention (RCX,RDX,R8,R9 + shadow space)
+- Correct PE import table generation (ILT+IAT pairs)
+- Stack alignment before C FFI calls
+- Shadow space allocation/deallocation
 
-**Next steps:**
-- Check stack alignment before C FFI calls
-- Verify shadow space (32 bytes) is correctly allocated/deallocated
-- Test with explicit register dumps
-- Compare generated assembly with working C code compiled with MinGW
-- Consider using objdump to examine the actual call sequence
-
-
-**Update after investigation:**
-- Linux C FFI works correctly (`c.printf("A")` returns 1)
-- Windows generated assembly looks correct (proper IAT calls, stack alignment)
-- DLL loading verified with WINEDEBUG
-- Issue appears to be Windows-specific calling convention subtlety
-- Suggested fix: Compare with MinGW-generated assembly, check if Wine's msvcrt has quirks
-
-For now, Windows PE generation works for native Flap code and built-in functions.
-SDL3 support on Windows is blocked by this C FFI return value issue.
+Windows PE generation now fully functional for both native Flap code AND C FFI.
 
