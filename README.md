@@ -6,6 +6,23 @@
 
 Flap is a minimalist systems programming language that compiles directly to machine code. It features a revolutionary universal type system based on `map[uint64]float64`, automatic memory management with arena allocators, and seamless C FFI for graphics, games, and systems programming.
 
+### ✨ Automatic Memoization for Pure Functions
+
+Flap automatically detects and memoizes pure single-argument functions, making recursive algorithms blazingly fast with zero effort:
+
+```flap
+// Fibonacci - automatically memoized!
+fib = n -> {
+    | n == 0 => 0
+    | n == 1 => 1
+    _ => fib(n - 1) + fib(n - 2)
+}
+
+println(fib(35))  // Instant: 9227465 (< 0.001s)
+```
+
+The compiler detects that `fib` is pure (no side effects) and automatically caches results. No annotations, no manual cache management—just write clean recursive code and let Flap optimize it for you.
+
 ---
 
 ## Quick Start: Game Programming with SDL3

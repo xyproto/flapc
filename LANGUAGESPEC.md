@@ -237,31 +237,31 @@ Parallel loops use `fork()` for true isolation:
 ||   Parallel map
 ```
 
-### 11. Head and Tail Operators
+### 11. List Access Functions
 
 ```flap
-^    Head (prefix) - get first element
-_    Tail (prefix) - get all but first
-#    Length (prefix or postfix)
+head(xs)   // Get first element
+tail(xs)   // Get all but first element
+#xs        // Length (prefix or postfix)
 ```
 
 **Semantics:**
 ```flap
 // Lists and maps
 xs = [1, 2, 3]
-^xs          // 1.0 (first element)
-_xs          // [2, 3] (remaining elements)
+head(xs)     // 1.0 (first element)
+tail(xs)     // [2, 3] (remaining elements)
 #xs          // 3.0 (length)
 
 // Numbers (single-element maps)
 n = 42
-^n           // 42.0 (the number itself)
-_n           // [] (empty - no remaining elements)
+head(n)      // 42.0 (the number itself)
+tail(n)      // [] (empty - no remaining elements)
 #n           // 1.0 (map has one entry)
 
 // Empty collections
-^[]          // [] (no head)
-_[]          // [] (no tail)
+head([])     // [] (no head)
+tail([])     // [] (no tail)
 #[]          // 0.0 (empty)
 ```
 
@@ -479,7 +479,7 @@ a, b := 1, 2
 a, b <- [b, a]  // Swap using list literal
 
 // Split list
-head, rest = ^xs, _xs  // First element and remaining
+first, rest = head(xs), tail(xs)  // First element and remaining
 
 // Function with multiple returns
 quotient, remainder = divmod(17, 5)
@@ -1610,9 +1610,8 @@ defer c.free(ptr)
 ```
 
 **List operations:**
-- NO `head()` or `tail()` functions as builtins
-- Use operators: `^xs` for head, `_xs` for tail
-- Only `#` length operator (prefix or postfix)
+- Use builtin functions: `head(xs)` for first element, `tail(xs)` for remaining elements
+- Use `#` length operator (prefix or postfix)
 
 **Why minimal builtins?**
 1. **Simplicity:** Less to learn, fewer concepts
@@ -1622,15 +1621,17 @@ defer c.free(ptr)
 5. **Transparency:** Everything explicit
 
 **What IS builtin:**
-- **Operators:** `^`, `_`, `#`, arithmetic, logic, bitwise, etc.
+- **Operators:** `#`, arithmetic, logic, bitwise, etc.
 - **Control flow:** `@` loops, match blocks, `ret`, `defer`
 - **Core I/O:** `print`, `println`, `printf`, `eprint`, `eprintln`, `eprintf`, `exitln`, `exitf`
+- **List operations:** `head()`, `tail()`
 - **Keywords:** `arena`, `unsafe`, `cstruct`, `class`, `import`, etc.
 
 **Everything else via:**
-1. **Operators** for common operations (`^xs` not `head(xs)`)
-2. **C FFI** for system functions (`c.sin` not `sin`, `c.malloc` not `malloc`)
-3. **User-defined functions** for application logic
+1. **Operators** for common operations (`#xs` for length)
+2. **Builtin functions** for core operations (`head(xs)`, `tail(xs)`)
+3. **C FFI** for system functions (`c.sin` not `sin`, `c.malloc` not `malloc`)
+4. **User-defined functions** for application logic
 
 This keeps the language core minimal and forces clarity at call sites.
 

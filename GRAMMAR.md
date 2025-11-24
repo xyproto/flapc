@@ -197,7 +197,7 @@ match_clause    = expression [ "=>" match_target ] ;
 
 guard_clause    = "|" expression "=>" match_target ;  // | must be at start of line
 
-default_arm     = "~>" match_target ;
+default_arm     = ( "~>" | "_" "=>" ) match_target ;
 
 match_target    = jump_target | expression ;
 
@@ -241,9 +241,9 @@ additive_expr   = multiplicative_expr { ("+" | "-") multiplicative_expr } ;
 
 multiplicative_expr = power_expr { ("*" | "/" | "%") power_expr } ;
 
-power_expr      = unary_expr { "**" unary_expr } ;
+power_expr      = unary_expr { ( "**" | "^" ) unary_expr } ;
 
-unary_expr      = ( "-" | "!" | "~b" | "#" | "^" | "_" ) unary_expr
+unary_expr      = ( "-" | "!" | "~b" | "#" ) unary_expr
                 | postfix_expr ;
 
 postfix_expr    = primary_expr { postfix_op } ;
@@ -534,9 +534,8 @@ defer c.free(ptr)
 ```
 
 **List operations:**
-- NO `head()` or `tail()` functions as builtins
-- Use operators: `^xs` for head, `_xs` for tail
-- Only `#` length operator (also works as prefix/postfix)
+- Use builtin functions: `head(xs)` for first element, `tail(xs)` for remaining elements
+- Use `#` length operator (prefix or postfix)
 
 **Why minimal builtins?**
 1. **Simplicity:** Less to learn and remember
@@ -545,15 +544,17 @@ defer c.free(ptr)
 4. **Predictability:** No hidden magic
 
 **What IS builtin:**
-- Operators: `^`, `_`, `#`, arithmetic, logic, bitwise
+- Operators: `#`, arithmetic, logic, bitwise
 - Control flow: `@`, match blocks, `ret`
 - Core I/O: `print`, `println`, `printf` (and error/exit variants)
+- List operations: `head()`, `tail()`
 - Keywords: `arena`, `unsafe`, `cstruct`, `class`, `defer`, etc.
 
 **Everything else via:**
-1. **Operators** for common operations
-2. **C FFI** for system functionality (`c.sin`, `c.malloc`, etc.)
-3. **User-defined functions** for application logic
+1. **Operators** for common operations (`#xs` for length)
+2. **Builtin functions** for core operations (`head(xs)`, `tail(xs)`)
+3. **C FFI** for system functionality (`c.sin`, `c.malloc`, etc.)
+4. **User-defined functions** for application logic
 
 ## Operators
 
@@ -566,6 +567,7 @@ defer c.free(ptr)
 /    Division
 %    Modulo
 **   Exponentiation
+^    Exponentiation (alias for **)
 ```
 
 ### Comparison Operators
@@ -623,6 +625,8 @@ All bitwise operators use `b` suffix:
 |----------|---------|---------|---------|
 | `->` | Lambda definition | Lambda arrow | `x -> x * 2` or `-> println("hi")` |
 | `=>` | Match block | Match arm | `x { 0 => "zero" ~> "other" }` |
+| `~>` | Match block | Default match arm | `x { 0 => "zero" ~> "other" }` |
+| `_ =>` | Match block | Default match arm (alias for ~>) | `x { 0 => "zero" _ => "other" }` |
 | `=` | Variable binding | Immutable assignment | `x = 42` (standard for functions) |
 | `:=` | Variable binding | Mutable assignment | `x := 42` (can reassign later) |
 | `<-` | Update/Send | Update mutable var OR send to ENet | `x <- 99` or `&8080 <- msg` |
@@ -656,15 +660,8 @@ When a function returns a list, multiple assignment unpacks the elements:
 ### Collection Operators
 
 ```
-^     Head operator (prefix) - get first element
-_     Tail operator (prefix) - get all but first element
 #     Length operator (prefix or postfix)
 ```
-
-**Head/Tail Semantics:**
-- **Numbers**: `^num` returns `num`, `_num` returns `[]`
-- **Lists/Maps**: `^xs` returns first element, `_xs` returns remaining elements
-- **Empty**: `^[]` and `_[]` return `[]`
 
 ### Other Operators
 
@@ -692,7 +689,7 @@ or!   Error/null handler (executes right side if left is error or null pointer)
 From highest to lowest precedence:
 
 1. **Primary**: `()` `[]` `.` function call, postfix `!`, postfix `#`
-2. **Unary**: `-` `!` `~b` `#` `^` `_`
+2. **Unary**: `-` `!` `~b` `#`
 3. **Power**: `**`
 4. **Multiplicative**: `*` `/` `%`
 5. **Additive**: `+` `-`
