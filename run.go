@@ -31,8 +31,9 @@ func compileAndRun(t *testing.T, code string) string {
 		t.Fatalf("Compilation failed: %v\nOutput: %s", err, compileOutput)
 	}
 
-	// Run
+	// Run - inherit environment variables for SDL_VIDEODRIVER etc
 	cmd = exec.Command(exePath)
+	cmd.Env = os.Environ()
 	runOutput, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Execution failed: %v\nOutput: %s", err, runOutput)

@@ -1,3 +1,0 @@
-println("Hello from Windows!")
-c_val := c.sin(1.0)
-printf("sin(1.0) = %f\n", c_val)

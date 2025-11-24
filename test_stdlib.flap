@@ -1,0 +1,40 @@
+// Test list utility functions
+nums = [1, 2, 3, 4, 5]
+
+// Test list_sum
+list_sum = lst -> {
+    total := 0.0
+    @ item in lst {
+        total <- total + item
+    }
+    total
+}
+
+sum = list_sum(nums)
+println("Sum:")
+println(sum)
+
+// Test list_max
+list_max = lst -> {
+    max := lst[0]
+    @ item in lst {
+        | item > max => { max <- item }
+        | _ => {}
+    }
+    max
+}
+
+maximum = list_max(nums)
+println("Max:")
+println(maximum)
+
+// Test abs
+abs = x -> {
+    | x < 0 => -x
+    | _ => x
+}
+
+neg = -42.0
+positive = abs(neg)
+println("Abs of -42:")
+println(positive)
