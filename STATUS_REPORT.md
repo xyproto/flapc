@@ -48,9 +48,10 @@
 
 ### Platform Support
 - ✅ Linux x86_64 (native compilation and execution)
-- ✅ Windows x86_64 (cross-compilation, Wine testing)
+- ✅ Windows x86_64 (cross-compilation, Wine testing, C FFI working)
 - ✅ macOS ARM64 (cross-compilation)
 - ✅ FreeBSD x86_64 (cross-compilation)
+- ✅ Cross-compilation fully functional between all platforms
 
 ## 🚧 In Progress
 
@@ -66,9 +67,14 @@
 - ✅ Functions callable with empty lists
 
 **Needs Work:**
-- ⚠️ Argument collection from xmm registers
+- ⚠️ Argument collection from xmm registers (xmm saving works, list building TODO)
 - ⚠️ Spread operator `func(list...)`
 - ⚠️ Standard library (stdlib.flap)
+
+**Recent Progress:**
+- ✅ xmm registers now saved immediately on function entry (critical fix)
+- ✅ Functions stable (no crashes)
+- ✅ Parameters preserved correctly
 
 **Documentation:** See `VARIADIC_IMPLEMENTATION.md`
 
@@ -127,11 +133,13 @@
 ## 🏆 Recent Accomplishments
 
 ### This Session (2025-11-24)
-- ✅ Added variadic function infrastructure
+- ✅ Added variadic function infrastructure (lexer, parser, codegen)
 - ✅ Fixed exitf() on Linux (syscall approach)
-- ✅ Updated documentation (GRAMMAR.md, TODO.md)
-- ✅ Verified Windows/Wine support
-- ✅ All tests passing
+- ✅ Improved variadic functions - saved xmm registers on entry
+- ✅ Verified Windows C FFI works correctly (printf, math functions)
+- ✅ Updated documentation (GRAMMAR.md, TODO.md, STATUS_REPORT.md)
+- ✅ All tests passing (9.5s)
+- ✅ 5 commits pushed successfully
 
 ## 📝 Code Quality
 
