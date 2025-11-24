@@ -18,6 +18,7 @@ const (
 	TOKEN_MINUS
 	TOKEN_STAR
 	TOKEN_POWER // ** (exponentiation)
+	TOKEN_CARET // ^ (exponentiation alias)
 	TOKEN_SLASH
 	TOKEN_MOD
 	TOKEN_EQUALS
@@ -85,8 +86,7 @@ const (
 	TOKEN_CARET_B    // ^b (bitwise XOR)
 	TOKEN_TILDE_B    // ~b (bitwise NOT)
 	TOKEN_AMP        // & (used in unsafe blocks, not for lists)
-	TOKEN_CARET      // ^ (head operator)
-	TOKEN_UNDERSCORE // _ (tail operator)
+	TOKEN_UNDERSCORE // _ (wildcard for default match)
 	TOKEN_DOLLAR     // $ (address value operator)
 	TOKEN_LTLT_B     // <<b (shift left)
 	TOKEN_GTGT_B     // >>b (shift right)
@@ -838,19 +838,19 @@ func (l *Lexer) NextToken() Token {
 		l.pos++
 		return Token{Type: TOKEN_AMPERSAND, Value: "&", Line: l.line, Column: tokenColumn}
 	case '^':
-		// Check for ^b
+		// Check for ^b (bitwise XOR)
 		if l.peek() == 'b' {
 			l.pos += 2
 			return Token{Type: TOKEN_CARET_B, Value: "^b", Line: l.line, Column: tokenColumn}
 		}
+		// Standalone ^ is exponentiation (alias for **)
 		l.pos++
 		return Token{Type: TOKEN_CARET, Value: "^", Line: l.line, Column: tokenColumn}
 	case '#':
 		l.pos++
 		return Token{Type: TOKEN_HASH, Value: "#", Line: l.line, Column: tokenColumn}
 	case '_':
-		// It's the tail operator (standalone underscore)
-		// Note: identifiers cannot start with underscore in Flap
+		// Underscore used as wildcard in match expressions
 		l.pos++
 		return Token{Type: TOKEN_UNDERSCORE, Value: "_", Line: l.line, Column: tokenColumn}
 	case '$':

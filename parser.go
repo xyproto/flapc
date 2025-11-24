@@ -1652,9 +1652,17 @@ func (p *Parser) disambiguateBlock() BlockType {
 				// Found ':' before any arrows → map literal
 				foundColon = true
 			} else if tok.Type == TOKEN_FAT_ARROW || tok.Type == TOKEN_DEFAULT_ARROW {
-				// Found arrow → match block
+				// Found arrow → match block (=> or ~>)
 				foundArrow = true
 				break
+			} else if tok.Type == TOKEN_UNDERSCORE {
+				// Check if next token is =>
+				nextTok := tempLexer.NextToken()
+				if nextTok.Type == TOKEN_FAT_ARROW {
+					// Found _ => → match block
+					foundArrow = true
+					break
+				}
 			}
 		}
 	}
@@ -1707,8 +1715,9 @@ func (p *Parser) blockContainsMatchArrows() bool {
 				// We've exited the block
 				break
 			}
-		} else if braceDepth == 0 && (tempParser.current.Type == TOKEN_FAT_ARROW || tempParser.current.Type == TOKEN_DEFAULT_ARROW) {
-			// Found an arrow at the top level of the block
+		} else if braceDepth == 0 && (tempParser.current.Type == TOKEN_FAT_ARROW || tempParser.current.Type == TOKEN_DEFAULT_ARROW ||
+			(tempParser.current.Type == TOKEN_UNDERSCORE && tempParser.peek.Type == TOKEN_FAT_ARROW)) {
+			// Found an arrow at the top level of the block (=>, ~>, or _ =>)
 			foundArrow = true
 			break
 		}
@@ -1759,14 +1768,15 @@ func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
 
 	// Simple conditional mode: if the block doesn't contain match arrows,
 	// treat it as a simple conditional that should execute all statements as one block
-	if !hasMatchArrows && p.current.Type != TOKEN_ARROW && p.current.Type != TOKEN_DEFAULT_ARROW && p.current.Type != TOKEN_RBRACE {
+	isDefaultMatch := p.current.Type == TOKEN_DEFAULT_ARROW || (p.current.Type == TOKEN_UNDERSCORE && p.peek.Type == TOKEN_FAT_ARROW)
+	if !hasMatchArrows && p.current.Type != TOKEN_ARROW && !isDefaultMatch && p.current.Type != TOKEN_RBRACE {
 		// Try parsing as simple conditional first
 		var statements []Statement
 		foundDefaultArrow := false
 
 		for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
-			// Check if we encounter default arrow at top level
-			if p.current.Type == TOKEN_DEFAULT_ARROW {
+			// Check if we encounter default arrow at top level (~> or _ =>)
+			if p.current.Type == TOKEN_DEFAULT_ARROW || (p.current.Type == TOKEN_UNDERSCORE && p.peek.Type == TOKEN_FAT_ARROW) {
 				foundDefaultArrow = true
 				break
 			}
@@ -1849,12 +1859,18 @@ func (p *Parser) parseMatchBlock(condition Expression) *MatchExpr {
 			break
 		}
 
-		if p.current.Type == TOKEN_DEFAULT_ARROW {
+		// Check for default match: ~> or _ =>
+		if p.current.Type == TOKEN_DEFAULT_ARROW || (p.current.Type == TOKEN_UNDERSCORE && p.peek.Type == TOKEN_FAT_ARROW) {
 			if defaultExplicit {
 				p.error("duplicate default clause in match block")
 			}
 			defaultExplicit = true
-			p.nextToken() // skip '~>'
+			if p.current.Type == TOKEN_UNDERSCORE {
+				p.nextToken() // skip '_'
+				p.nextToken() // skip '=>'
+			} else {
+				p.nextToken() // skip '~>'
+			}
 			p.skipNewlines()
 			defaultExpr = p.parseMatchTarget()
 			p.skipNewlines()
@@ -2046,8 +2062,9 @@ func (p *Parser) parseMatchTarget() Expression {
 			p.nextToken() // skip number
 		}
 
-		// Check for optional value
-		if p.current.Type != TOKEN_NEWLINE && p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF && p.current.Type != TOKEN_DEFAULT_ARROW {
+		// Check for optional value (stop at ~> or _ =>)
+		isDefaultMatch := p.current.Type == TOKEN_DEFAULT_ARROW || (p.current.Type == TOKEN_UNDERSCORE && p.peek.Type == TOKEN_FAT_ARROW)
+		if p.current.Type != TOKEN_NEWLINE && p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF && !isDefaultMatch {
 			value = p.parseExpression()
 			p.nextToken()
 		}
@@ -3143,10 +3160,14 @@ func (p *Parser) parseMultiplicative() Expression {
 func (p *Parser) parsePower() Expression {
 	left := p.parseUnary()
 
-	if p.peek.Type == TOKEN_POWER {
-		p.nextToken() // move to **
+	if p.peek.Type == TOKEN_POWER || p.peek.Type == TOKEN_CARET {
+		p.nextToken() // move to ** or ^
 		op := p.current.Value
-		p.nextToken() // move past **
+		// Normalize ^ to ** for backend processing
+		if op == "^" {
+			op = "**"
+		}
+		p.nextToken() // move past ** or ^
 		// Right-associative: recursively parse the right side
 		right := p.parsePower()
 		return &BinaryExpr{Left: left, Operator: op, Right: right}
@@ -3183,20 +3204,6 @@ func (p *Parser) parseUnary() Expression {
 		p.nextToken() // skip '#'
 		operand := p.parseUnary()
 		return &UnaryExpr{Operator: "#", Operand: operand}
-	}
-
-	// Handle prefix head operator: ^xs
-	if p.current.Type == TOKEN_CARET {
-		p.nextToken() // skip '^'
-		operand := p.parseUnary()
-		return &UnaryExpr{Operator: "^", Operand: operand}
-	}
-
-	// Handle prefix tail operator: _xs
-	if p.current.Type == TOKEN_UNDERSCORE {
-		p.nextToken() // skip '_'
-		operand := p.parseUnary()
-		return &UnaryExpr{Operator: "_", Operand: operand}
 	}
 
 	// Unary minus handled in parsePrimary for simplicity
