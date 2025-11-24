@@ -1,0 +1,39 @@
+// sdl3_simple.flap - Simple SDL3 test without image loading
+// Demonstrates SDL3 initialization, window/renderer creation, and cleanup
+//
+// Compile for Linux:
+//   flapc sdl3_simple.flap -o sdl3_simple
+//
+// Compile for Windows:
+//   flapc sdl3_simple.flap -o sdl3_simple.exe -target x86_64_windows
+//
+// Requires SDL3 library installed
+
+import sdl3 as sdl
+
+println("Initializing SDL3...")
+init_result = sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
+
+init_result or! {
+    printf("SDL_Init failed: %s\n", sdl.SDL_GetError())
+    0
+}
+
+printf("SDL_Init successful: %f\n", init_result)
+
+println("Creating window...")
+window = sdl.SDL_CreateWindow("SDL3 Test Window", 640, 480, sdl.SDL_WINDOW_HIDDEN)
+
+window or! {
+    printf("Window creation failed: %s\n", sdl.SDL_GetError())
+    sdl.SDL_Quit()
+    0
+}
+
+printf("Window created: %f\n", window)
+
+println("Cleaning up...")
+sdl.SDL_DestroyWindow(window)
+sdl.SDL_Quit()
+
+println("Done!")
