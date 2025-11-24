@@ -6031,8 +6031,9 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 			fc.mutableVars[lambda.VariadicParam] = false
 			fc.varTypes[lambda.VariadicParam] = "list"
 			
-			// For now: Use empty list to ensure basic flow works
-			// TODO: Build actual list from saved xmm values
+			// For now: Use empty list (argument collection deferred)
+			// The xmm register saving infrastructure is in place and working
+			// TODO: Complete list building from saved xmm values
 			emptyListLabel := fmt.Sprintf("variadic_empty_%d", fc.stringCounter)
 			fc.stringCounter++
 			emptyData := make([]byte, 8)
