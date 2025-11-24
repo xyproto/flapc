@@ -1,79 +1,312 @@
-# TODO for the Flap Compiler (flapc)
+# TODO for Flap 2.0.0 Release
+**Last Updated:** 2025-11-24  
+**Sorted from foundational to higher-level**
 
-## High Priority
-- [x] Windows/Wine PE execution working with proper Microsoft x64 calling convention (RCX,RDX,R8,R9 + shadow space). Printf works correctly, exit codes work, basic tests run under Wine.
-- [x] Fix PE import table generation (ILT+IAT pairs must be interleaved per library).
-- [x] Update remaining C FFI call sites to use platform-specific calling convention helpers - Already implemented in compileCFunctionCall
-- [x] Fix exitf() - Now uses syscall directly to stderr (fd 2) instead of fprintf. All tests pass.
-- [x] PE64 (PE32+) generation working - Can produce .exe files that Wine recognizes and executes
-- [x] Variadic function infrastructure - Grammar, lexer, parser, signature tracking, r14 calling convention. Ready for argument collection implementation.
-- [ ] Fix tail (_) operator - Currently produces garbage values. See TAIL.md for details. The algorithm for copying and re-indexing list elements needs fixing. DEFERRED - focus on other features first.
-- [ ] SDL3 + Windows/Wine GUI support - SDL_Init works, but SDL_CreateWindow fails under Wine in Wayland (Hyprland). This is a Wine/graphics environment limitation, not a flapc bug. PE generation and basic C FFI work correctly. Testing native Windows SDL3 would require actual Windows hardware/VM.
+## PHILOSOPHY: Bottom-Up Excellence
 
-## Variadic Functions (In Progress)
+We're working **bottom-up** from the most foundational issues to higher-level concerns:
+1. Make GRAMMAR.md and LANGUAGESPEC.md excellent and ready for 2.0.0
+2. Ensure lexer and parser match the grammar exactly
+3. Fix the three most problematic bugs: tail/_, printf, variadic arguments
+4. Then proceed to higher-level features and documentation
+
+## CRITICAL: Documentation Foundation (FIRST)
+
+### 1. Review and Finalize GRAMMAR.md ⭐ PRIORITY #1
+**Status:** Mostly complete, needs final review  
+**Estimated:** 30-45 minutes
+
+**Checks:**
+- [x] Variadic function syntax documented (line 300-309, 363-362)
+- [x] Lambda syntax clear (line 296-362 with comprehensive explanation)
+- [x] Match block forms (value vs guard) documented (line 60-104)
+- [x] All operators documented with precedence (line 560-716)
+- [x] Memory management philosophy (arena over malloc) stated (line 518-557)
+- [x] Register allocator/tracker mentioned (line 1626-1628, 1632-1645)
+- [ ] Final consistency check for arrow operators (-> vs =>)
+- [ ] Verify all examples use correct syntax
+- [ ] Ensure no contradictions or ambiguities
+
+**Critical Sections to Review:**
+- Lambda syntax rules (lines 312-362) - Is this clear enough?
+- Block disambiguation (lines 40-124) - Any edge cases missing?
+- Variadic syntax (lines 300-309) - Complete coverage?
+- Assignment operators (lines 607-655) - All cases covered?
+
+### 2. Review and Finalize LANGUAGESPEC.md ⭐ PRIORITY #2
+**Status:** Excellent content, needs consistency check with GRAMMAR.md  
+**Estimated:** 30-45 minutes
+
+**Checks:**
+- [x] Variadic functions documented (lines 702-767)
+- [x] Error handling with or! documented (lines 1917-2241)
+- [x] defer statement documented (lines 1632-1976)
+- [x] All built-in functions listed (lines 1810-1872)
+- [x] Arena allocator usage clear (lines 1591-1636)
+- [ ] Verify all code examples use correct syntax (especially -> vs =>)
+- [ ] Ensure no contradictions with GRAMMAR.md
+- [ ] Check match block examples use correct forms
+- [ ] Verify lambda examples follow grammar rules
+
+**Critical Consistency Checks:**
+- Arrow operators: Ensure -> for lambdas, => for match arms throughout
+- Match syntax: Ensure guard form uses `|` at line start consistently
+- Assignment: Ensure functions defined with `=` not `:=` consistently
+- Builtin philosophy: Ensure minimal builtin principle stated clearly
+
+## CRITICAL: The Three Most Problematic Bugs
+
+### 3. Fix Tail (_) Operator ⭐ PRIORITY #3
+**Status:** DEFERRED - Produces garbage values  
+**Priority:** HIGH  
+**Estimated:** 3-4 hours
+
+**Problem:** The tail operator doesn't correctly copy and re-index elements.
+
+**What works:** Head (^) operator  
+**What doesn't:** Tail (_) operator for lists and maps
+
+**Action Plan:**
+1. Review current tail implementation in codegen (search for "tail" or "_" operator)
+2. Understand how head (^) works correctly
+3. Fix element copying algorithm for tail
+4. Fix index re-mapping (reduce all indices by 1)
+5. Add comprehensive tests: `_[1,2,3]` → `[2,3]`, `_[5]` → `[]`, `_[]` → `[]`
+6. Test with maps as well
+7. Commit and push
+
+### 4. Fix printf in Complex Contexts ⭐ PRIORITY #4
+**Status:** Works in simple cases, fails with recursion + loops  
+**Priority:** HIGH  
+**Estimated:** 2-3 hours
+
+**Known Issues:**
+- printf in recursive function + loop causes problems (factorial example)
+- May be related to register allocation or stack frame management
+
+**Action Plan:**
+1. Create minimal test case that reproduces the issue
+2. Debug with --verbose flag
+3. Check register allocator state during printf calls
+4. Verify stack alignment (16-byte) before C FFI calls
+5. Check if xmm registers properly saved/restored
+6. Add tests for printf in various contexts (loops, recursion, nested calls)
+7. Commit and push
+
+### 5. Variadic Functions - Complete Implementation ⭐ PRIORITY #5
+**Status:** Infrastructure complete, list building has segfault bug  
+**Priority:** CRITICAL  
+**Estimated:** 4-6 hours
+
 - [x] Grammar and lexer support for `...` syntax
-- [x] Parser handles variadic parameters in lambdas
-- [x] Function signature tracking and call-site detection
-- [x] r14 register convention for passing variadic count
-- [ ] Complete argument collection from xmm registers into list
+- [x] Parser handles variadic parameters
+- [x] Function signature tracking 
+- [x] r14 register convention for arg count
+- [x] Call site passes arg count in r14
+- [ ] **FIX: Variadic list construction segfault**
+  - Issue: Stack manipulation during function entry causes crash
+  - Solution: Save xmm args first, build list after frame stable
+  - Must use arena allocation, not malloc
 - [ ] Implement spread operator `func(list...)` at call sites
-- [ ] Create stdlib.flap with variadic printf, eprintf, exitf
-- See VARIADIC_IMPLEMENTATION.md for detailed status
+- [ ] Comprehensive tests (0 args, 1 arg, many args, mixed)
 
-## Features
-- [ ] Add back the "import" feature, for being able to import directly from git repos with .flap source code files.
-- [ ] Add an internal utility function for sorting a Flap type (map[uint64]float64) by key. This can be needed before calling the head or tail operators.
-- [x] head() and tail() functions work correctly, tests enabled. The _ operator is the tail operator and works fine.
-- [ ] Fix or implement local variables in lambda bodies, if it's not implemented yet. Example: `f = x -> { y := x + 1; y }`
-- [x] CRITICAL: Flap does NOT offer malloc, free, realloc, or calloc as builtin functions. Users must use the arena allocator (allocate() within arena {} blocks) or explicitly call c.malloc/c.free/c.realloc/c.calloc via C FFI.
-      Internally, the compiler uses arenas (malloc the arena, expand with realloc as needed, free when done).
-      NOTE: Internal compiler code still uses malloc/realloc/free directly - that's fine for internal use.
-- [x] CRITICAL: head() and tail() should NOT be builtin functions. Only ^ for head and _ for tail operators. Removed head()/tail() functions.
-- [x] CRITICAL: Keep builtin functions to an ABSOLUTE MINIMUM. The language should be minimal and orthogonal. Most functionality should come from:
-      1. Operators (^, _, #, etc.)
-      2. C FFI (c.malloc, c.sin, etc.)
-      3. User-defined functions
-      Only add builtins if there is NO other way to implement the functionality.
-- [ ] Add pattern destructuring in match clauses.
-- [ ] Implement full tail call optimization for mutual recursion.
-
-## Optimizations
-- [ ] Implement whole program optimization.
-- [ ] Make sure that all pure functions are memoized.
-- [ ] Improve the constant folding.
-- [ ] Improve the dead code elimination.
-- [ ] Improve the SIMD optimizations.
-- [ ] More aggressive register allocation.
-- [ ] Only include constant strings in the produced executables if the constant strings are being used.
-
-## Testing
-- [ ] Make it possible to check if a type can be converted, using a Result type. Example: `42 as uint32 or! { exitf("42 can not be converted to uint32!\n") }`
-- [ ] Check that it is possible to write a working ENet client and server in Flap, and that those two executables are able to talk to each other over ENet, using the ENet machine code implementation that Flapc provides.
+**Action Plan:**
+1. Study current implementation in codegen.go (search for "variadic")
+2. Identify exact location of segfault (likely in generateLambdaFunctions)
+3. Fix list construction to use arena allocator properly
+4. Save all xmm registers to temp space immediately on entry
+5. Build list from saved values after frame is stable
+6. Test with simple sum function: `sum = (first, rest...) -> first + #rest`
+7. Add spread operator support at call sites
+8. Create variadic stdlib functions (printf, eprintf, exitf) once working
+9. Comprehensive tests
+10. Commit and push
 
 
-Tips:
-* Use good techniques for dealing with complexity.
-* It's okay if things take time to implement, but take a step back if stuck.
 
-## ✅ RESOLVED: Windows x64 C FFI Return Values
+## HIGHER-LEVEL: Standard Library & Core Functions
 
-**Status: WORKING** (as of 2025-11-24)
+### 6. Core I/O Functions - Verify All Work
+**Priority:** MEDIUM (after bugs fixed)  
+**Estimated:** 1-2 hours
 
-C function calls on Windows x64 now work correctly, including return values.
+**Check each:**
+- [x] println() - Works
+- [x] print() - Works  
+- [x] printf() - Works in simple cases, issues in complex contexts (fixing in #4)
+- [x] eprintln() - Works
+- [x] eprint() - Works
+- [x] eprintf() - Works  
+- [x] exitln() - Works
+- [x] exitf() - Works (fixed to use syscall on stderr)
+- [ ] Test all functions after printf fix
+- [ ] Document limitations if any remain
 
-**Verified working:**
-- ✅ `c.printf("Hello\n")` correctly returns 6
-- ✅ `c.sqrt(16.0)` correctly returns 4.0  
-- ✅ `c.sin(0.5)` correctly returns 0.479426
-- ✅ Math functions work correctly
-- ✅ I/O functions work correctly
-- ✅ Return values are correct (not garbage)
+### 7. Standard Library (stdlib.flap)
+**Status:** Reference docs exist, not auto-included yet  
+**Priority:** MEDIUM (after variadic functions work)  
+**Estimated:** 4-5 hours
 
-**What was fixed:**
-- Proper Windows x64 calling convention (RCX,RDX,R8,R9 + shadow space)
-- Correct PE import table generation (ILT+IAT pairs)
-- Stack alignment before C FFI calls
-- Shadow space allocation/deallocation
+**Needed (requires variadic functions working first):**
+- [ ] Complete variadic printf implementation in Flap
+- [ ] Complete variadic eprintf implementation in Flap  
+- [ ] Complete variadic exitf implementation in Flap
+- [ ] Implement auto-inclusion when stdlib functions are used
+- [ ] Add common string utilities (length, concat, substring)
+- [ ] Add common list utilities (map, filter, reduce, sum)
+- [ ] Document all stdlib functions
 
-Windows PE generation now fully functional for both native Flap code AND C FFI.
+**Philosophy:** Keep builtins MINIMAL. Use:
+1. Operators (^, _, #, etc.) for common operations
+2. C FFI (c.malloc, c.sin) for system functions
+3. stdlib.flap for convenience functions in Flap code
+
+## DEFERRED: Windows, Optimizations, Advanced Features
+
+### 8. Windows + SDL3 Support  
+**Status:** Basic PE works, SDL3 fails under Wine  
+**Priority:** DEFERRED (not blocking 2.0.0)  
+**Estimated:** 8-10 hours (requires actual Windows testing)
+
+**Current State:**
+- ✅ PE generation works
+- ✅ Basic programs run under Wine
+- ✅ printf works with Windows calling convention
+- ✅ C FFI works (malloc, math functions, etc.)
+- ✅ exitf() fixed for Windows
+- ❌ SDL3 window creation fails under Wine (Wine limitation, not flapc bug)
+
+**Deferred because:**
+- Wine's DirectX/DXGI support incomplete
+- Need actual Windows machine for proper testing  
+- Core compiler functionality works on Windows
+- Can revisit after 2.0.0 release with Windows testing
+
+### 9. Performance Optimizations (Post-Release)
+**Priority:** DEFERRED  
+**Estimated:** 8-12 hours
+
+- [ ] Whole program optimization
+- [ ] More aggressive constant folding
+- [ ] Dead code elimination improvements
+- [ ] Better register allocation (reduce spills)
+- [ ] Reduce binary size (strip unused strings)
+- [ ] SIMD optimization improvements
+
+### 10. Advanced Language Features (Post-Release)
+**Priority:** DEFERRED  
+**Estimated:** 16-20 hours
+
+- [ ] Pattern destructuring in match clauses
+- [ ] Full tail call optimization for mutual recursion
+- [ ] Import from git repositories
+- [ ] Module system
+- [ ] Type conversions return Result type (`42 as uint32 or! {...}`)
+- [ ] Local variables in lambda bodies (`f = x -> { y := x + 1; y }`)
+
+## INFRASTRUCTURE: Testing & CI
+
+### 11. Testing Infrastructure
+**Priority:** MEDIUM (after core bugs fixed)  
+**Estimated:** 3-4 hours
+
+- [x] SDL3 headless tests (using dummy video driver)
+- [x] Existing tests pass
+- [ ] GitHub Actions CI setup
+- [ ] Test coverage for tail operator (after #3)
+- [ ] Test coverage for printf in complex contexts (after #4)
+- [ ] Test coverage for variadic functions (after #5)
+- [ ] Benchmark suite
+- [ ] Memory leak detection tests
+
+### 12. Final Documentation Polish
+**Priority:** HIGH (before release)  
+**Estimated:** 2-3 hours
+
+- [ ] README.md updated for 2.0.0
+- [ ] CHANGELOG.md created with all changes since 1.5.0
+- [ ] INSTALL.md updated
+- [ ] All examples verified to work
+- [ ] Tutorial reviewed
+- [ ] API reference reviewed
+- [ ] Best practices guide reviewed
+
+---
+
+## COMPLETED ITEMS (Foundation for 2.0.0)
+
+✅ Windows x64 C FFI with proper calling convention  
+✅ PE import table generation  
+✅ exitf() implementation fixed  
+✅ Variadic function infrastructure (grammar, lexer, parser, r14 convention)  
+✅ head() and tail() removed as builtins (use ^ and _ operators)  
+✅ Minimal builtin philosophy enforced  
+✅ Arena allocator documented as preferred over malloc  
+✅ Register allocator and register tracker implemented  
+✅ Error handling with or! operator  
+✅ defer statement for resource cleanup  
+✅ Result type with NaN error encoding  
+✅ GRAMMAR.md excellent and comprehensive  
+✅ LANGUAGESPEC.md excellent and comprehensive  
+✅ SDL3 examples with defer and railway-oriented error handling  
+
+---
+
+## 2.0.0 RELEASE CHECKLIST (Bottom-Up Order)
+
+**Phase 1: Documentation Foundation (FIRST)**
+- [ ] 1. Final review of GRAMMAR.md for consistency
+- [ ] 2. Final review of LANGUAGESPEC.md for consistency
+- [ ] 3. Ensure no contradictions between docs
+
+**Phase 2: Fix The Three Most Problematic Bugs**
+- [ ] 3. Fix tail (_) operator completely
+- [ ] 4. Fix printf in complex contexts (recursion + loops)
+- [ ] 5. Fix variadic function list construction segfault
+- [ ] 6. Implement spread operator for variadic calls
+
+**Phase 3: Testing & Validation**
+- [ ] 7. All existing tests pass
+- [ ] 8. Test tail operator thoroughly
+- [ ] 9. Test printf in complex contexts
+- [ ] 10. Test variadic functions (0 args, many args, spread)
+
+**Phase 4: Polish & Release**
+- [ ] 11. Test all core I/O functions
+- [ ] 12. Create CHANGELOG.md
+- [ ] 13. Update README.md for 2.0.0
+- [ ] 14. Update version to 2.0.0
+- [ ] 15. Git tag and release
+
+**Nice to Have (Can defer to 2.0.1):**
+- [ ] Complete stdlib.flap with auto-inclusion
+- [ ] GitHub Actions CI
+- [ ] Windows + SDL3 full support (needs actual Windows machine)
+
+**Can Wait (Post-Release):**
+- [ ] Performance optimizations
+- [ ] Advanced language features  
+- [ ] Module system
+
+---
+
+## EXECUTION PLAN (Next Steps)
+
+**Now (Session Goal):**
+1. Review GRAMMAR.md thoroughly (30 min)
+2. Review LANGUAGESPEC.md thoroughly (30 min)
+3. Fix tail operator (3-4 hours)
+4. Commit and push progress
+
+**Next Session:**
+1. Fix printf in complex contexts (2-3 hours)
+2. Fix variadic functions (4-6 hours)
+3. Run all tests
+4. Commit and push
+
+**Final Session:**
+1. Create CHANGELOG.md
+2. Update documentation
+3. Tag release
+4. Celebrate! 🎉
 
