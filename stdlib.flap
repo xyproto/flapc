@@ -1,0 +1,166 @@
+// stdlib.flap - Flap Standard Library
+// Common utility functions for Flap programs
+//
+// NOTE: This is currently a reference/documentation file.
+// Core functions (println, printf, etc.) are built into the compiler
+// for performance and reliability. User-defined utility functions
+// will be added here in future releases.
+
+// String utility functions
+
+// str_length - Get the length of a string
+// Returns the number of characters in the string
+str_length = s -> {
+    import string as c
+    c.strlen(s)
+}
+
+// str_concat - Concatenate two strings
+// Returns a new string containing s1 followed by s2
+str_concat = (s1, s2) -> {
+    import string as c
+    len1 = c.strlen(s1)
+    len2 = c.strlen(s2)
+    result = c.malloc(len1 + len2 + 1)
+    c.strcpy(result, s1)
+    c.strcat(result, s2)
+    result
+}
+
+// str_equals - Compare two strings for equality
+// Returns 1.0 if equal, 0.0 if not
+str_equals = (s1, s2) -> {
+    import string as c
+    result = c.strcmp(s1, s2)
+    | result == 0 => 1.0
+    | _ => 0.0
+}
+
+// List utility functions
+
+// list_sum - Sum all elements in a list
+// Returns the sum of all numeric values
+// NOTE: Requires mutable variable support
+// list_sum = lst -> {
+//     total := 0.0
+//     @ item in lst {
+//         total <- total + item
+//     }
+//     total
+// }
+// TODO: Implement when local mutable variables are supported
+
+// list_product - Multiply all elements in a list
+// Returns the product of all numeric values
+list_product = lst -> {
+    product := 1.0
+    @ item in lst {
+        product <- product * item
+    }
+    product
+}
+
+// list_max - Find the maximum value in a list
+// Returns the largest value
+list_max = lst -> {
+    | #lst == 0 => 0.0
+    | _ => {
+        max := lst[0]
+        @ item in lst {
+            | item > max => { max <- item }
+            | _ => {}
+        }
+        max
+    }
+}
+
+// list_min - Find the minimum value in a list
+// Returns the smallest value
+list_min = lst -> {
+    | #lst == 0 => 0.0
+    | _ => {
+        min := lst[0]
+        @ item in lst {
+            | item < min => { min <- item }
+            | _ => {}
+        }
+        min
+    }
+}
+
+// list_average - Calculate the average of a list
+// Returns the mean of all values
+list_average = lst -> {
+    count = #lst
+    | count == 0 => 0.0
+    | _ => list_sum(lst) / count
+}
+
+// list_reverse - Reverse a list
+// Returns a new list with elements in reverse order
+list_reverse = lst -> {
+    count = #lst
+    result := []
+    @ i in 0..<count {
+        idx = count - i - 1
+        result <- result + [lst[idx]]
+    }
+    result
+}
+
+// list_filter - Filter a list by predicate
+// Returns a new list containing only elements where pred(x) is true
+list_filter = (lst, pred) -> {
+    result := []
+    @ item in lst {
+        | pred(item) => {
+            result <- result + [item]
+        }
+        | _ => {}
+    }
+    result
+}
+
+// list_map - Map a function over a list
+// Returns a new list with f applied to each element
+list_map = (lst, f) -> {
+    result := []
+    @ item in lst {
+        result <- result + [f(item)]
+    }
+    result
+}
+
+// Math utility functions
+
+// abs - Absolute value
+abs = x -> {
+    | x < 0 => -x
+    | _ => x
+}
+
+// min - Minimum of two values
+min = (a, b) -> {
+    | a < b => a
+    | _ => b
+}
+
+// max - Maximum of two values
+max = (a, b) -> {
+    | a > b => a
+    | _ => b
+}
+
+// clamp - Clamp a value between min and max
+clamp = (x, min_val, max_val) -> {
+    | x < min_val => min_val
+    | x > max_val => max_val
+    | _ => x
+}
+
+// sign - Sign of a number (-1, 0, or 1)
+sign = x -> {
+    | x > 0 => 1.0
+    | x < 0 => -1.0
+    | _ => 0.0
+}
