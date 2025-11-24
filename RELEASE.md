@@ -22,13 +22,16 @@ This release focuses on making Flapc production-ready with:
 - [x] Function signature tracking
 - [x] r14 calling convention
 - [x] xmm register saving on entry
-- [ ] **Build list from saved xmm values**
+- [x] Arena allocation for variadic lists
+- [x] **Build list from saved xmm values** (implemented)
+- [ ] **Fix segfault in variadic list creation**
 - [ ] **Implement spread operator `func(list...)`**
 - [ ] Comprehensive tests
 
-**Status:** Infrastructure complete, needs argument collection
+**Status:** Argument collection implemented but has segfault bug
 **Priority:** HIGH
-**Estimated:** 3-4 hours
+**Estimated:** 2-3 hours for debugging
+**Note:** Infrastructure is solid, issue is in list creation logic
 
 ### 2. Standard Library (stdlib.flap)
 - [x] Create stdlib.flap with common functions
@@ -91,17 +94,18 @@ This release focuses on making Flapc production-ready with:
 **Priority:** LOW
 **Estimated:** 8-10 hours
 
-### 7. Testing & CI
-- [x] SDL3 headless tests for CI
+### 7. Testing & CI ✅ MOSTLY COMPLETE
+- [x] SDL3 headless tests for CI (using dummy video driver)
 - [x] Cross-platform Windows/Linux tests
+- [x] All existing tests pass
 - [ ] GitHub Actions CI setup
 - [ ] Benchmark suite
 - [ ] Fuzzing tests
 - [ ] Code coverage reporting
 
-**Status:** SDL3 tests ready for CI, manual testing works well
+**Status:** SDL3 tests ready for CI with headless support
 **Priority:** LOW
-**Estimated:** 2-3 hours remaining
+**Estimated:** 2-3 hours for GH Actions setup
 
 ## Known Issues to Fix
 
