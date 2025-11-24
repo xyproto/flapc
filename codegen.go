@@ -5980,6 +5980,16 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 		xmmRegs := []string{"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5"}
 		baseParamOffset := 24 // First param at rbp-24
 
+		// CRITICAL: If variadic, save ALL xmm registers immediately
+		// This must happen BEFORE any other operations
+		savedXmmOffset := 3500
+		if lambda.VariadicParam != "" {
+			for i := 0; i < len(xmmRegs); i++ {
+				tempOffset := savedXmmOffset + i*16
+				fc.out.MovXmmToMem(xmmRegs[i], "rbp", -tempOffset)
+			}
+		}
+
 		for i, paramName := range lambda.Params {
 			if i >= len(xmmRegs) {
 				compilerError("lambda has too many parameters (max 6)")
@@ -5995,8 +6005,16 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 			// This prevents x + y from being interpreted as list append when x and y are parameters
 			fc.varTypes[paramName] = "number"
 
-			// Store parameter at fixed offset (no rsp modification!)
-			fc.out.MovXmmToMem(xmmRegs[i], "rbp", -paramOffset)
+			// Store parameter at fixed offset
+			if lambda.VariadicParam != "" {
+				// Load from saved location
+				tempOffset := savedXmmOffset + i*16
+				fc.out.MovMemToXmm("xmm15", "rbp", -tempOffset)
+				fc.out.MovXmmToMem("xmm15", "rbp", -paramOffset)
+			} else {
+				// Direct from register (no save needed)
+				fc.out.MovXmmToMem(xmmRegs[i], "rbp", -paramOffset)
+			}
 		}
 
 		// Handle variadic parameter if present
@@ -6013,27 +6031,15 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 			fc.mutableVars[lambda.VariadicParam] = false
 			fc.varTypes[lambda.VariadicParam] = "list"
 			
-			// SIMPLIFIED: Just create empty list for now to get basic functionality working
-			// TODO: Implement full variadic argument collection
-			// The complexity of proper list construction is causing segfaults
-			// This is a working stub that allows variadic functions to work (but with empty lists)
-			
-			emptyListLabel := fmt.Sprintf("empty_variadic_list_%d", fc.stringCounter)
+			// For now: Use empty list to ensure basic flow works
+			// TODO: Build actual list from saved xmm values
+			emptyListLabel := fmt.Sprintf("variadic_empty_%d", fc.stringCounter)
 			fc.stringCounter++
-			var emptyData []byte
-			for i := 0; i < 8; i++ {
-				emptyData = append(emptyData, byte(0))
-			}
+			emptyData := make([]byte, 8)
 			fc.eb.Define(emptyListLabel, string(emptyData))
 			fc.out.LeaSymbolToReg("r13", emptyListLabel)
 			fc.out.MovqRegToXmm("xmm15", "r13")
 			fc.out.MovXmmToMem("xmm15", "rbp", -variadicOffset)
-			
-			// TODO: Full implementation would:
-			// 1. Save variadic arg xmm registers to temp space immediately
-			// 2. Allocate list from arena (NOT malloc, NOT stack manipulation)
-			// 3. Copy saved args to list with proper key-value pairs
-			// 4. Store list pointer at variadicOffset
 			
 			// OLD complex logic removed:
 			/*
