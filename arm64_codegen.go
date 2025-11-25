@@ -1306,11 +1306,15 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 			if err := acg.compileStatement(stmt); err != nil {
 				return err
 			}
-			// If it's the last statement and it's an assignment,
-			// load the assigned value
+			// If it's the last statement, make sure its value is in d0
 			if i == len(e.Statements)-1 {
 				if assignStmt, ok := stmt.(*AssignStmt); ok {
+					// Assignment: load the assigned value
 					return acg.compileExpression(&IdentExpr{Name: assignStmt.Name})
+				} else if _, ok := stmt.(*ExpressionStmt); ok {
+					// Expression statement: value is already in d0 from compileStatement
+					// (compileStatement calls compileExpression for ExpressionStmt)
+					return nil
 				}
 			}
 		}
