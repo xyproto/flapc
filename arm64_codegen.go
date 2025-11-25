@@ -1686,6 +1686,8 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 		return acg.compilePrintln(call)
 	case "exit":
 		return acg.compileExit(call)
+	case "exitf", "exitln":
+		return acg.compileExitf(call)
 	case "print":
 		return acg.compilePrint(call)
 	case "getpid":
@@ -2351,6 +2353,28 @@ callExit:
 
 	// exit() doesn't return, but we'll never reach here anyway
 	return nil
+}
+
+// compileExitf compiles exitf() and exitln() - printf + exit
+func (acg *ARM64CodeGen) compileExitf(call *CallExpr) error {
+	// exitf/exitln: print formatted message to stderr, then exit with code 1
+	// For simplicity, just call printf followed by exit(1)
+	
+	// First, compile the printf call
+	printfCall := &CallExpr{
+		Function: "printf",
+		Args:     call.Args,
+	}
+	if err := acg.compilePrintf(printfCall); err != nil {
+		return err
+	}
+	
+	// Then call exit(1)
+	exitCall := &CallExpr{
+		Function: "exit",
+		Args:     []Expression{&NumberExpr{Value: 1}},
+	}
+	return acg.compileExit(exitCall)
 }
 
 // compileTailCall compiles a tail-recursive call using the "me" keyword
