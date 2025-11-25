@@ -31,10 +31,11 @@ type Statement interface {
 type AssignStmt struct {
 	Name           string
 	Value          Expression
-	Mutable        bool   // true for := or <-, false for =
-	IsUpdate       bool   // true for <-, false for = and :=
-	IsReuseMutable bool   // true when = is used to update existing mutable variable
-	Precision      string // Type annotation: "b64", "f32", etc. (empty if none)
+	Mutable        bool      // true for := or <-, false for =
+	IsUpdate       bool      // true for <-, false for = and :=
+	IsReuseMutable bool      // true when = is used to update existing mutable variable
+	Precision      string    // Legacy type annotation: "b64", "f32", etc. (empty if none)
+	TypeAnnotation *FlapType // Type annotation: num, str, cstring, cptr, etc. (nil if none)
 }
 
 type MultipleAssignStmt struct {
@@ -661,7 +662,9 @@ func (s *StructLiteralExpr) expressionNode() {}
 
 type LambdaExpr struct {
 	Params           []string
-	VariadicParam    string // Name of variadic parameter (if any), empty if none
+	ParamTypes       map[string]*FlapType // Type annotations for parameters (nil if none)
+	VariadicParam    string               // Name of variadic parameter (if any), empty if none
+	ReturnType       *FlapType            // Return type annotation (nil if none)
 	Body             Expression
 	IsPure           bool              // Automatically detected: true if function has no side effects
 	CapturedVars     []string          // Variables captured from outer scope (for closures)

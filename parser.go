@@ -1209,16 +1209,25 @@ func (p *Parser) parseAssignment() *AssignStmt {
 	name := p.current.Value
 	p.nextToken() // skip identifier
 
-	// Check for type annotation: name:bNN or name:fNN
+	// Check for type annotation: name: type
 	var precision string
+	var typeAnnotation *FlapType
 	if p.current.Type == TOKEN_COLON && p.peek.Type == TOKEN_IDENT {
 		p.nextToken() // skip ':'
-		precision = p.current.Value
-		// Validate precision format (bNN or fNN where NN is a number)
-		if len(precision) < 2 || (precision[0] != 'b' && precision[0] != 'f') {
-			p.error("invalid precision format: expected bNN or fNN (e.g., b64, f32)")
+
+		// Try new type system first (num, str, cstring, etc.)
+		typeAnnotation = p.parseTypeAnnotation()
+		if typeAnnotation != nil {
+			p.nextToken() // skip type keyword
+		} else {
+			// Fall back to legacy precision format (bNN or fNN)
+			precision = p.current.Value
+			// Validate precision format (bNN or fNN where NN is a number)
+			if len(precision) < 2 || (precision[0] != 'b' && precision[0] != 'f') {
+				p.error("invalid type annotation: expected num, str, list, map, cstring, cptr, cint, clong, cfloat, cdouble, cbool, cvoid, or legacy bNN/fNN")
+			}
+			p.nextToken() // skip precision identifier
 		}
-		p.nextToken() // skip precision identifier
 	}
 
 	// Check for compound assignment operators (+=, -=, *=, **=, /=, %=)
@@ -1357,7 +1366,14 @@ func (p *Parser) parseAssignment() *AssignStmt {
 		}
 	}
 
-	return &AssignStmt{Name: name, Value: value, Mutable: mutable, IsUpdate: isUpdate, Precision: precision}
+	return &AssignStmt{
+		Name:           name,
+		Value:          value,
+		Mutable:        mutable,
+		IsUpdate:       isUpdate,
+		Precision:      precision,
+		TypeAnnotation: typeAnnotation,
+	}
 }
 
 func (p *Parser) tryParseMultipleAssignment() Statement {
@@ -4572,4 +4588,39 @@ func (p *Parser) parseUnsafeValue() interface{} {
 		return leftValue
 	}
 	return left
+}
+
+// parseTypeAnnotation parses a type annotation (after :)
+// Returns nil if no valid type annotation found
+func (p *Parser) parseTypeAnnotation() *FlapType {
+	// Native Flap types
+	switch p.current.Value {
+	case "num":
+		return &FlapType{Kind: TypeNumber}
+	case "str":
+		return &FlapType{Kind: TypeString}
+	case "list":
+		return &FlapType{Kind: TypeList}
+	case "map":
+		return &FlapType{Kind: TypeMap}
+	// Foreign C types
+	case "cstring":
+		return &FlapType{Kind: TypeCString, CType: "char*"}
+	case "cptr":
+		return &FlapType{Kind: TypeCPointer, CType: "void*"}
+	case "cint":
+		return &FlapType{Kind: TypeCInt, CType: "int"}
+	case "clong":
+		return &FlapType{Kind: TypeCLong, CType: "long"}
+	case "cfloat":
+		return &FlapType{Kind: TypeCFloat, CType: "float"}
+	case "cdouble":
+		return &FlapType{Kind: TypeCDouble, CType: "double"}
+	case "cbool":
+		return &FlapType{Kind: TypeCBool, CType: "bool"}
+	case "cvoid":
+		return &FlapType{Kind: TypeCVoid}
+	default:
+		return nil
+	}
 }

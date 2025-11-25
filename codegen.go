@@ -68,7 +68,8 @@ type FlapCompiler struct {
 	variables            map[string]int                // variable name -> stack offset
 	mutableVars          map[string]bool               // variable name -> is mutable
 	parentVariables      map[string]bool               // Track parent-scope vars in parallel loops (use r11 instead of rbp)
-	varTypes             map[string]string             // variable name -> "map" or "list"
+	varTypes             map[string]string             // variable name -> "map" or "list" (legacy)
+	varTypeInfo          map[string]*FlapType          // variable name -> type annotation (new type system)
 	functionSignatures   map[string]*FunctionSignature // function name -> signature (params, variadic)
 	sourceCode           string                        // Store source for recompilation
 	usedFunctions        map[string]bool               // Track which functions are called
@@ -181,6 +182,7 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 		variables:           make(map[string]int),
 		mutableVars:         make(map[string]bool),
 		varTypes:            make(map[string]string),
+		varTypeInfo:         make(map[string]*FlapType),
 		functionSignatures:  make(map[string]*FunctionSignature),
 		usedFunctions:       make(map[string]bool),
 		unknownFunctions:    make(map[string]bool),
@@ -604,7 +606,15 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 		fmt.Fprintf(os.Stderr, "DEBUG: Finished generating lambda functions\n")
 	}
 
-	// Runtime helpers are generated in writeELF() after the second lambda pass
+	// Generate runtime helpers (string conversion, concatenation, etc.)
+	// For ELF, this is done in writeELF() after second lambda pass
+	// For PE, we do it here since PE doesn't have a second pass
+	if fc.eb.target.IsPE() {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Generating runtime helpers for PE\n")
+		}
+		fc.generateRuntimeHelpers()
+	}
 
 	// Write executable in appropriate format based on target OS
 	if VerboseMode {
@@ -672,6 +682,14 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 				}
 			}
 
+			// Track type annotation if provided
+			if s.TypeAnnotation != nil {
+				fc.varTypeInfo[s.Name] = s.TypeAnnotation
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "DEBUG: Setting varTypeInfo[%s] = %s (mutable, annotated)\n", s.Name, s.TypeAnnotation.String())
+				}
+			}
+
 			// Track type if we can determine it from the expression
 			exprType := fc.getExprType(s.Value)
 			if exprType != "number" && exprType != "unknown" {
@@ -695,6 +713,14 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 				if fc.debug {
 					if VerboseMode {
 						fmt.Fprintf(os.Stderr, "DEBUG collectSymbols: storing immutable variable '%s' at offset %d\n", s.Name, offset)
+					}
+				}
+
+				// Track type annotation if provided
+				if s.TypeAnnotation != nil {
+					fc.varTypeInfo[s.Name] = s.TypeAnnotation
+					if VerboseMode {
+						fmt.Fprintf(os.Stderr, "DEBUG: Setting varTypeInfo[%s] = %s (immutable, annotated)\n", s.Name, s.TypeAnnotation.String())
 					}
 				}
 
@@ -2607,8 +2633,72 @@ func (fc *FlapCompiler) patchJumpImmediate(pos int, offset int32) {
 	}
 }
 
+// isCFFIStringCall returns true if the expression is a C FFI call that returns char*
+func (fc *FlapCompiler) isCFFIStringCall(expr Expression) bool {
+	callExpr, ok := expr.(*CallExpr)
+	if !ok {
+		return false
+	}
+
+	// Check if this is a namespaced C FFI function call (contains dot)
+	if !strings.Contains(callExpr.Function, ".") {
+		return false
+	}
+
+	// Extract namespace/alias and function name
+	parts := strings.Split(callExpr.Function, ".")
+	if len(parts) != 2 {
+		return false
+	}
+	alias := parts[0]
+	funcName := parts[1]
+
+	// First try to look up in parsed headers
+	// NOTE: cConstants is keyed by alias, not library name
+	// e.g., for "import sdl3 as sdl", the key is "sdl"
+	if nsHeader, exists := fc.cConstants[alias]; exists {
+		if funcSig, exists := nsHeader.Functions[funcName]; exists {
+			// Check if return type is char*
+			returnType := strings.TrimSpace(funcSig.ReturnType)
+			isCString := returnType == "char*" || returnType == "const char*"
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "isCFFIStringCall: %s.%s -> %s (isCString=%v)\n", alias, funcName, returnType, isCString)
+			}
+			return isCString
+		}
+	}
+
+	// For dynamically loaded libraries (e.g., SDL3), we don't have parsed headers
+	// Use heuristics based on function naming conventions
+	// Functions that return strings typically have "Get...Error", "Get...String", etc. in their name
+	if strings.Contains(funcName, "GetError") ||
+		strings.Contains(funcName, "GetString") ||
+		strings.HasSuffix(funcName, "Error") ||
+		strings.HasPrefix(funcName, "strerror") {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "isCFFIStringCall: %s.%s looks like cstring (heuristic)\n", alias, funcName)
+		}
+		return true
+	}
+
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "isCFFIStringCall: %s.%s not recognized as cstring\n", alias, funcName)
+	}
+
+	return false
+}
+
+// Helper to get map keys for debugging
+func keysOf(m map[string]*CHeaderConstants) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 // getExprType returns the type of an expression at compile time
-// Returns: "string", "number", "list", "map", or "unknown"
+// Returns: "string", "number", "list", "map", "cstring", or "unknown"
 func (fc *FlapCompiler) getExprType(expr Expression) string {
 	switch e := expr.(type) {
 	case *StringExpr:
@@ -6583,11 +6673,30 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// DO NOT USE MALLOC! See MEMORY.md - C string conversion should use arena allocation
 	// TODO: Replace with arena allocation (or stack for small strings)
 	// Allocate memory: count * 4 + 1 for UTF-8 (max 4 bytes per codepoint + null)
-	fc.out.MovRegToReg("rdi", "r14")
-	fc.out.Emit([]byte{0x48, 0xc1, 0xe7, 0x02}) // shl rdi, 2 (multiply by 4)
-	fc.out.Emit([]byte{0x48, 0x83, 0xc7, 0x01}) // add rdi, 1
+	// Calculate size in temporary register
+	fc.out.MovRegToReg("rax", "r14")
+	fc.out.Emit([]byte{0x48, 0xc1, 0xe0, 0x02}) // shl rax, 2 (multiply by 4)
+	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x01}) // add rax, 1
+
+	// Platform-specific calling convention for malloc
+	if fc.eb.target.OS() == OSWindows {
+		// Windows x64: first arg in rcx
+		fc.out.MovRegToReg("rcx", "rax")
+		// Allocate shadow space (32 bytes) for Windows calling convention
+		fc.out.SubImmFromReg("rsp", 32)
+	} else {
+		// SysV (Linux/Unix): first arg in rdi
+		fc.out.MovRegToReg("rdi", "rax")
+	}
+
 	fc.trackFunctionCall("malloc")
 	fc.eb.GenerateCallInstruction("malloc")
+
+	// Clean up shadow space on Windows
+	if fc.eb.target.OS() == OSWindows {
+		fc.out.AddImmToReg("rsp", 32)
+	}
+
 	fc.out.MovRegToReg("r13", "rax") // r13 = C string buffer
 
 	// Initialize: rbx = codepoint index, r12 = map ptr, r13 = output buffer, r14 = count, r15 = byte position
@@ -11585,13 +11694,32 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 						fc.out.Write(0x05)
 						fc.out.LeaSymbolToReg(targetReg, yesLabel)
 					} else if stringPositions[argIdx-1] {
+						// Check if this arg is a C FFI call that returns char* (cstring)
+						needsConversion := !fc.isCFFIStringCall(arg)
+
+						if VerboseMode {
+							fmt.Fprintf(os.Stderr, "exitf string arg: needsConversion=%v\n", needsConversion)
+						}
+
 						fc.compileExpression(arg)
-						fc.trackFunctionCall("flap_map_to_cstr")
-						fc.eb.GenerateCallInstruction("flap_map_to_cstr")
-						if targetReg != "" && strings.HasPrefix(targetReg, "xmm") {
-							fc.out.MovqRegToXmm(targetReg, "rax")
-						} else if targetReg != "" {
-							fc.out.MovRegToReg(targetReg, "rax")
+
+						if needsConversion {
+							// Convert Flap string to C string
+							fc.trackFunctionCall("flap_string_to_cstr")
+							fc.eb.GenerateCallInstruction("flap_string_to_cstr")
+							if targetReg != "" && strings.HasPrefix(targetReg, "xmm") {
+								fc.out.MovqRegToXmm(targetReg, "rax")
+							} else if targetReg != "" {
+								fc.out.MovRegToReg(targetReg, "rax")
+							}
+						} else {
+							// Already a char* from C FFI - just convert from float64 representation to pointer
+							if targetReg != "" && strings.HasPrefix(targetReg, "xmm") {
+								// Keep in xmm register (already there from compileExpression)
+							} else if targetReg != "" {
+								// Move to integer register
+								fc.out.MovqXmmToReg(targetReg, "xmm0")
+							}
 						}
 					} else if integerPositions[argIdx-1] {
 						fc.compileExpression(arg)
@@ -11604,8 +11732,15 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 					}
 				}
 
-				fc.trackFunctionCall("fprintf")
-				fc.eb.GenerateCallInstruction("fprintf")
+				fc.trackFunctionCall("printf")
+				fc.eb.GenerateCallInstruction("printf")
+				fc.deallocateShadowSpace(shadowSpace)
+
+				// Flush stdout before exit to ensure message is printed
+				shadowSpace = fc.allocateShadowSpace()
+				fc.out.XorRegWithReg("rcx", "rcx") // fflush(NULL) flushes all streams
+				fc.trackFunctionCall("fflush")
+				fc.eb.GenerateCallInstruction("fflush")
 				fc.deallocateShadowSpace(shadowSpace)
 			} else {
 				// Unix: For simple case with no extra args, just write to stderr (fd=2) using syscall
@@ -11636,9 +11771,19 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 						targetReg := targetRegs[argIdx-1]
 
 						if stringPositions[argIdx-1] {
+							// Check if this arg is a C FFI call that returns char* (cstring)
+							needsConversion := !fc.isCFFIStringCall(arg)
+
 							fc.compileExpression(arg)
-							fc.trackFunctionCall("flap_map_to_cstr")
-							fc.eb.GenerateCallInstruction("flap_map_to_cstr")
+
+							if needsConversion {
+								// Convert Flap string to C string
+								fc.trackFunctionCall("flap_string_to_cstr")
+								fc.eb.GenerateCallInstruction("flap_string_to_cstr")
+							} else {
+								// Already a char* from C FFI - just convert from float64 representation to pointer
+								fc.out.MovqXmmToReg("rax", "xmm0")
+							}
 							fc.out.MovRegToReg(targetReg, "rax")
 						} else {
 							fc.compileExpression(arg)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 )
 
 // PE (Portable Executable) format constants for Windows x86_64
@@ -378,7 +379,9 @@ func (eb *ExecutableBuilder) WritePE(outputPath string) error {
 	}
 
 	// Patch calls to use IAT (Import Address Table)
-	eb.PatchPECallsToIAT(iatMap, uint64(textVirtualAddr), uint64(idataVirtualAddr), peImageBase)
+	if err := eb.PatchPECallsToIAT(iatMap, uint64(textVirtualAddr), uint64(idataVirtualAddr), peImageBase); err != nil {
+		return err
+	}
 
 	// Patch PC-relative relocations (LEA instructions for data access)
 	textAddrFull := peImageBase + uint64(textVirtualAddr)
@@ -561,7 +564,9 @@ func (eb *ExecutableBuilder) writePEWithLibraries(outputPath string, libraries m
 	}
 
 	// Patch calls to use IAT (Import Address Table)
-	eb.PatchPECallsToIAT(iatMap, uint64(textVirtualAddr), uint64(idataVirtualAddr), peImageBase)
+	if err := eb.PatchPECallsToIAT(iatMap, uint64(textVirtualAddr), uint64(idataVirtualAddr), peImageBase); err != nil {
+		return err
+	}
 
 	// Patch PC-relative relocations (LEA instructions for data access)
 	textAddrFull := peImageBase + uint64(textVirtualAddr)
@@ -810,8 +815,11 @@ func (eb *ExecutableBuilder) WritePERelocations() ([]byte, error) {
 // Confidence that this function is working: 80%
 // PatchPECallsToIAT patches call instructions to use the Import Address Table (IAT)
 // On Windows, we use indirect calls through the IAT instead of PLT stubs
-func (eb *ExecutableBuilder) PatchPECallsToIAT(iatMap map[string]uint32, textVirtualAddr, idataVirtualAddr, imageBase uint64) {
+// Returns an error if any functions are unresolved
+func (eb *ExecutableBuilder) PatchPECallsToIAT(iatMap map[string]uint32, textVirtualAddr, idataVirtualAddr, imageBase uint64) error {
 	textBytes := eb.text.Bytes()
+	var unresolvedFunctions []string
+	var oversizedDisplacements []string
 
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "Patching %d calls to use IAT\n", len(eb.callPatches))
@@ -826,27 +834,42 @@ func (eb *ExecutableBuilder) PatchPECallsToIAT(iatMap map[string]uint32, textVir
 
 		// Check if this is an internal function label
 		if targetOffset := eb.LabelOffset(funcName); targetOffset >= 0 {
-			// Internal function - patch the call displacement
-			// For Windows, calls are indirect (FF 15), so we compute RIP-relative to the function
-			// RIP points to next instruction after reading the displacement
-			ripAddr := uint64(patch.position) + 4 // RIP after displacement
+			// Internal function - convert from indirect to direct call
+			// Windows GenerateCallInstruction emits: FF 15 XX XX XX XX (6 bytes: indirect call through memory)
+			// For internal functions, we need: E8 XX XX XX XX 90 (6 bytes: direct call + NOP for alignment)
+			// patch.position points to displacement (after FF 15 or E8)
+
+			// Convert FF 15 (indirect) to E8 (direct) for internal calls
+			if patch.position >= 2 && textBytes[patch.position-2] == 0xFF && textBytes[patch.position-1] == 0x15 {
+				textBytes[patch.position-2] = 0xE8 // CALL rel32 opcode
+				// Position -1 will become part of the displacement (first byte)
+			}
+
+			// Calculate displacement for direct call (E8 instruction)
+			// For E8 XX XX XX XX: RIP after instruction = current_pos - 2 + 5 = current_pos + 3
+			// But we're patching the original 6-byte slot, so:
+			//   Original: FF 15 [XX XX XX XX] at position-2
+			//   New:      E8 [XX XX XX XX] 90 at position-2
+			// RIP after E8 instruction (5 bytes) = (position-2) + 5 = position + 3
+			ripAddr := uint64(patch.position) + 3 // RIP after E8 instruction (5 bytes)
 			targetAddr := uint64(targetOffset)    // Target function offset in .text
 			displacement := int64(targetAddr) - int64(ripAddr)
 
 			if displacement >= -0x80000000 && displacement <= 0x7FFFFFFF {
 				disp32 := uint32(displacement)
-				textBytes[patch.position] = byte(disp32 & 0xFF)
-				textBytes[patch.position+1] = byte((disp32 >> 8) & 0xFF)
-				textBytes[patch.position+2] = byte((disp32 >> 16) & 0xFF)
-				textBytes[patch.position+3] = byte((disp32 >> 24) & 0xFF)
+				// Write displacement (4 bytes) + NOP (1 byte) to fill the original 6-byte slot
+				textBytes[patch.position-1] = byte(disp32 & 0xFF)         // First byte of displacement
+				textBytes[patch.position] = byte((disp32 >> 8) & 0xFF)    // Second byte
+				textBytes[patch.position+1] = byte((disp32 >> 16) & 0xFF) // Third byte
+				textBytes[patch.position+2] = byte((disp32 >> 24) & 0xFF) // Fourth byte
+				textBytes[patch.position+3] = 0x90                        // NOP to keep size at 6 bytes
 
 				if VerboseMode {
-					fmt.Fprintf(os.Stderr, "  Patched internal call to %s: offset=%d, displacement=%d\n", funcName, targetOffset, displacement)
+					fmt.Fprintf(os.Stderr, "  Patched internal call to %s: offset=%d, displacement=%d (converted to direct)\n", funcName, targetOffset, displacement)
 				}
 			} else {
-				if VerboseMode {
-					fmt.Fprintf(os.Stderr, "  Warning: Displacement too large for internal call to %s: %d\n", funcName, displacement)
-				}
+				oversizedDisplacements = append(oversizedDisplacements, funcName)
+				fmt.Fprintf(os.Stderr, "  ERROR: Displacement too large for internal call to %s: %d\n", funcName, displacement)
 			}
 			continue
 		}
@@ -854,9 +877,8 @@ func (eb *ExecutableBuilder) PatchPECallsToIAT(iatMap map[string]uint32, textVir
 		// Look up the function in the IAT
 		iatRVA, ok := iatMap[funcName]
 		if !ok {
-			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "  Warning: Function %s not found in IAT\n", funcName)
-			}
+			unresolvedFunctions = append(unresolvedFunctions, funcName)
+			fmt.Fprintf(os.Stderr, "  ERROR: Function %s not found in IAT or internal labels\n", funcName)
 			continue
 		}
 
@@ -874,9 +896,8 @@ func (eb *ExecutableBuilder) PatchPECallsToIAT(iatMap map[string]uint32, textVir
 		displacement := int64(iatAddrRVA) - int64(ripRVA)
 
 		if displacement < -0x80000000 || displacement > 0x7FFFFFFF {
-			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "  Warning: IAT displacement too large for %s: %d\n", funcName, displacement)
-			}
+			oversizedDisplacements = append(oversizedDisplacements, funcName)
+			fmt.Fprintf(os.Stderr, "  ERROR: IAT displacement too large for %s: %d\n", funcName, displacement)
 			continue
 		}
 
@@ -891,6 +912,49 @@ func (eb *ExecutableBuilder) PatchPECallsToIAT(iatMap map[string]uint32, textVir
 			fmt.Fprintf(os.Stderr, "  Patched IAT call to %s: IAT RVA=0x%x, displacement=%d\n", funcName, iatRVA, displacement)
 		}
 	}
+
+	// Check for any unresolved functions or errors
+	if len(unresolvedFunctions) > 0 || len(oversizedDisplacements) > 0 {
+		var errMsg strings.Builder
+		errMsg.WriteString("PE generation failed:\n")
+
+		if len(unresolvedFunctions) > 0 {
+			errMsg.WriteString(fmt.Sprintf("  Unresolved functions (%d): %s\n",
+				len(unresolvedFunctions), strings.Join(unresolvedFunctions, ", ")))
+		}
+
+		if len(oversizedDisplacements) > 0 {
+			errMsg.WriteString(fmt.Sprintf("  Oversized displacements (%d): %s\n",
+				len(oversizedDisplacements), strings.Join(oversizedDisplacements, ", ")))
+		}
+
+		return fmt.Errorf("%s", errMsg.String())
+	}
+
+	// Verify no unpatched placeholders remain (0x12345678)
+	unpatchedCount := 0
+	unpatchedLocations := []int{}
+	placeholder := []byte{0x78, 0x56, 0x34, 0x12} // Little-endian 0x12345678
+
+	for i := 0; i <= len(textBytes)-4; i++ {
+		if textBytes[i] == placeholder[0] &&
+			textBytes[i+1] == placeholder[1] &&
+			textBytes[i+2] == placeholder[2] &&
+			textBytes[i+3] == placeholder[3] {
+			unpatchedCount++
+			unpatchedLocations = append(unpatchedLocations, i)
+			if len(unpatchedLocations) <= 5 { // Report first 5
+				fmt.Fprintf(os.Stderr, "  ERROR: Unpatched placeholder 0x12345678 found at text offset 0x%x (RVA 0x%x)\n",
+					i, textVirtualAddr+uint64(i))
+			}
+		}
+	}
+
+	if unpatchedCount > 0 {
+		return fmt.Errorf("PE generation failed: %d unpatched placeholder(s) remain in code", unpatchedCount)
+	}
+
+	return nil
 }
 
 // Helper function to write import descriptor

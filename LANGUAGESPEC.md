@@ -364,9 +364,61 @@ Every value in Flap IS `map[uint64]float64`:
 
 There are no special cases. No "single entry maps", no "byte indices", no "field hashes" — just uint64 keys and float64 values in every case.
 
+### Type Annotations
+
+Type annotations are **optional metadata** that specify semantic intent and guide FFI conversions. They do NOT change the runtime representation (always `map[uint64]float64`).
+
+**Native Flap types:**
+```flap
+num    // number (default type)
+str    // string (map of character codes)
+list   // list (map with sequential keys)
+map    // explicit map
+```
+
+**Foreign C types:**
+```flap
+cstring   // C char* (null-terminated string pointer)
+cptr      // C pointer (e.g., SDL_Window*, void*)
+cint      // C int/int32_t
+clong     // C int64_t/long
+cfloat    // C float
+cdouble   // C double
+cbool     // C bool/_Bool
+cvoid     // C void (return type only)
+```
+
+**Usage:**
+
+```flap
+// Variable declarations
+x: num = 42
+name: str = "Alice"
+values: list = [1, 2, 3]
+
+// Function parameters and return types
+add = (x: num, y: num) -> num { x + y }
+greet = (name: str) -> str { f"Hello, {name}!" }
+
+// FFI functions (type annotations required for correct marshalling)
+window: cptr = sdl.SDL_CreateWindow("Game", 800, 600, 0)
+error: cstring = sdl.SDL_GetError()
+result: cint = sdl.SDL_Init(0x00000020)
+
+// Without annotations, Flap uses heuristics (may be imprecise)
+window := sdl.SDL_CreateWindow("Game", 800, 600, 0)  // Inferred as map
+```
+
+**When to use type annotations:**
+- **Optional** for pure Flap code (types inferred from usage)
+- **Recommended** for FFI code (enables precise marshalling)
+- **Required** for complex FFI (pointer types, structs, proper error handling)
+
+Without annotations, Flap uses heuristics at FFI boundaries. With annotations, Flap marshalls precisely.
+
 ### Type Conversions
 
-Use `as` for type casts at FFI boundaries:
+Use `as` for explicit type casts at FFI boundaries:
 
 ```flap
 x as int32      // Cast to C int32
@@ -374,7 +426,7 @@ ptr as cstr     // Cast to C string pointer
 val as float64  // Cast to C double
 ```
 
-**Supported C types:**
+**Supported cast types (legacy, for `unsafe` blocks):**
 ```
 int8 int16 int32 int64
 uint8 uint16 uint32 uint64
@@ -392,6 +444,13 @@ point.x  // Works - map has "x" key
 
 person = { name: "Alice", x: 5 }
 person.x  // Also works - different map, same key
+```
+
+Type annotations are contextual keywords - you can use them as identifiers:
+
+```flap
+num = 100              // OK - variable named num
+x: num = num * 2       // OK - type annotation vs variable
 ```
 
 ## Variables and Assignment

@@ -8,7 +8,7 @@ This document defines the complete formal grammar of the Flap programming langua
 
 ## ⚠️ CRITICAL: The Universal Type
 
-Flap has exactly ONE type: `map[uint64]float64`, an ordered map.
+Flap has exactly ONE runtime type: `map[uint64]float64`, an ordered map.
 
 Not "represented as" or "backed by" — every value IS this map:
 
@@ -21,10 +21,50 @@ Not "represented as" or "backed by" — every value IS this map:
 {}              // {}
 ```
 
+**Even C foreign types are stored as maps:**
+
+```flap
+// C pointer (0x7fff1234) stored as float64 bits
+ptr: cptr = sdl.SDL_CreateWindow(...)  // {0: <pointer_as_float64>}
+
+// C string pointer
+err: cstring = sdl.SDL_GetError()      // {0: <char*_as_float64>}
+
+// C int
+result: cint = sdl.SDL_Init(...)       // {0: 1.0} or {0: 0.0}
+```
+
 There are NO special types, NO primitives, NO exceptions.
 Everything is a map from uint64 to float64.
 
 This is not an implementation detail — this IS Flap.
+
+## Type Annotations
+
+Type annotations are **metadata** that specify:
+1. **Semantic intent** - what does this map represent?
+2. **FFI conversions** - how to marshal at C boundaries
+3. **Optimization hints** - compiler optimizations
+
+They do NOT change the runtime representation (always `map[uint64]float64`).
+
+### Native Flap Types
+- `num` - number (default type)
+- `str` - string (map of char codes)
+- `list` - list (map with integer keys)
+- `map` - explicit map
+
+### Foreign C Types
+- `cstring` - C `char*` (pointer stored as `{0: <ptr>}`)
+- `cptr` - C pointer (e.g., `SDL_Window*`)
+- `cint` - C `int`/`int32_t`
+- `clong` - C `int64_t`/`long`
+- `cfloat` - C `float`
+- `cdouble` - C `double`
+- `cbool` - C `bool`/`_Bool`
+- `cvoid` - C `void` (return type only)
+
+Foreign types are used at FFI boundaries to guide marshalling.
 
 ## Table of Contents
 
@@ -178,12 +218,19 @@ type_cast       = "int8" | "int16" | "int32" | "int64"
                 | "number" | "string" | "list" | "address"
                 | "packed" | "aligned" ;
 
-assignment      = identifier ("=" | ":=" | "<-") expression
+assignment      = identifier [ ":" type_annotation ] ("=" | ":=" | "<-") expression
                 | identifier ("+=" | "-=" | "*=" | "/=" | "%=" | "**=") expression
                 | indexed_expr "<-" expression
                 | identifier_list ("=" | ":=" | "<-") expression ;  // Multiple assignment
 
 identifier_list = identifier { "," identifier } ;
+
+type_annotation = native_type | foreign_type ;
+
+native_type     = "num" | "str" | "list" | "map" ;
+
+foreign_type    = "cstring" | "cptr" | "cint" | "clong" 
+                | "cfloat" | "cdouble" | "cbool" | "cvoid" ;
 
 indexed_expr    = identifier "[" expression "]" ;
 
@@ -303,24 +350,30 @@ parameter_list  = variadic_params
 
 param_decl_list = param_decl { "," param_decl } ;
 
-param_decl      = identifier [ "..." ] ;
+param_decl      = identifier [ ":" type_annotation ] [ "..." ] ;
 
-variadic_params = "(" identifier { "," identifier } "," identifier "..." ")" ;
+variadic_params = "(" identifier [ ":" type_annotation ] { "," identifier [ ":" type_annotation ] } "," identifier [ ":" type_annotation ] "..." ")" ;
 
-lambda_body     = block | expression [ match_block ] ;
+lambda_body     = [ "->" type_annotation ] ( block | expression [ match_block ] ) ;
 
 // Lambda Syntax Rules:
 //
 // Explicit lambda syntax (always works):
-//   x -> x * 2                        // One parameter
-//   (x, y) -> x + y                   // Multiple parameters (parens required)
-//   (x, y, rest...) -> sum(rest)      // Variadic parameters (last param with ...)
-//   -> println("hi")                  // No parameters (explicit ->)
-//   x -> { temp = x * 2; temp }       // Block body
+//   x -> x * 2                                    // One parameter
+//   (x, y) -> x + y                               // Multiple parameters (parens required)
+//   (x, y, rest...) -> sum(rest)                  // Variadic parameters (last param with ...)
+//   -> println("hi")                              // No parameters (explicit ->)
+//   x -> { temp = x * 2; temp }                   // Block body
+//
+// With type annotations:
+//   (x: num, y: num) -> num { x + y }             // Parameter and return types
+//   (name: str) -> str { upper(name) }            // String function
+//   (ptr: cptr) -> cint { sdl.SDL_DoSomething(ptr) }  // C types
+//   greet(name: str) -> str { f"Hello, {name}!" } // Function definition with types
 //
 // Inferred lambda syntax (works ONLY in assignment context):
-//   main = { println("hello") }       // Inferred: main = -> { println("hello") }
-//   handler = { | x > 0 => "pos" }    // Inferred: handler = -> { | x > 0 => "pos" }
+//   main = { println("hello") }                   // Inferred: main = -> { println("hello") }
+//   handler = { | x > 0 => "pos" }                // Inferred: handler = -> { | x > 0 => "pos" }
 //
 // When `->` can be omitted:
 //   1. In assignment context: `name = { ... }` or `name := { ... }`
@@ -336,6 +389,7 @@ lambda_body     = block | expression [ match_block ] ;
 // Parentheses rules:
 //   - Single parameter: `x -> x * 2` (no parens needed)
 //   - Multiple parameters: `(x, y) -> x + y` (parens required)
+//   - Type annotations: `(x: num) -> num { x * 2 }` (parens required)
 //   - No parameters with explicit ->: `-> println("hi")` (no parens needed)
 //   - No parameters inferred from block: `main = { ... }` (no parens needed)
 //
@@ -496,20 +550,42 @@ ret arena unsafe cstruct class as max this defer spawn import
 
 **No-argument lambdas** can be written as `-> expr` or inferred from context in assignments: `name = { ... }`
 
-### Contextual Keywords
+### Type Keywords
 
-These are only keywords in specific contexts (e.g., after `as`):
+Type annotations use these keywords (context-dependent):
 
+**Native Flap types:**
+```
+num str list map
+```
+
+**Foreign C types:**
+```
+cstring cptr cint clong cfloat cdouble cbool cvoid
+```
+
+**Legacy type cast keywords (for `unsafe` blocks and `cstruct`):**
 ```
 int8 int16 int32 int64 uint8 uint16 uint32 uint64 float32 float64
-cstr ptr number string list address packed aligned
+ptr cstr number string address packed aligned
 ```
 
-You can use contextual keywords as variable names:
+**Usage:**
+```flap
+// Type annotations (preferred)
+x: num = 42
+name: str = "Alice"
+ptr: cptr = sdl.SDL_CreateWindow(...)
+
+// Type casts in unsafe blocks (legacy)
+value = unsafe int32 { ... }
+```
+
+Type keywords are contextual - you can still use them as variable names in most contexts:
 
 ```flap
-int32 = 100      // OK - variable named int32
-x = y as int32   // OK - int32 as type cast
+num = 100              // OK - variable named num
+x: num = num * 2       // OK - type annotation vs variable
 ```
 
 ## Memory Management and Builtins
@@ -1638,11 +1714,112 @@ class {
 - Backend-specific optimizations in arm64_backend.go, riscv64_backend.go, x86_64_codegen.go
 - SIMD operations for parallel loops (AVX-512 on x86_64)
 
+## Type Annotations
+
+Type annotations are **optional metadata** that specify semantic intent and guide FFI marshalling. They do NOT change the runtime representation (always `map[uint64]float64`).
+
+### Syntax
+
+**Variable declarations:**
+```flap
+x: num = 42                    // Number annotation
+name: str = "Alice"            // String annotation
+items: list = [1, 2, 3]        // List annotation
+config: map = {port: 8080}     // Map annotation
+
+// C types for FFI
+ptr: cptr = sdl.SDL_CreateWindow("Hi", 640, 480, 0)
+err: cstring = sdl.SDL_GetError()
+result: cint = sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
+value: cdouble = 3.14159
+```
+
+**Function signatures:**
+```flap
+// Parameter and return types
+add(x: num, y: num) -> num { x + y }
+
+// String functions
+greet(name: str) -> str { f"Hello, {name}!" }
+
+// C FFI functions
+create_window(title: str, w: cint, h: cint) -> cptr {
+    sdl.SDL_CreateWindow(title, w, h, 0)
+}
+
+// Mixed types
+format_error(code: cint) -> str {
+    f"Error {code}: {sdl.SDL_GetError()}"
+}
+```
+
+### Type Semantics
+
+| Type | Runtime Repr | Purpose | Example |
+|------|-------------|---------|---------|
+| `num` | `{0: 42.0}` | Number intent | `x: num = 42` |
+| `str` | `{0: 72.0, 1: 105.0}` | String intent | `name: str = "Hi"` |
+| `list` | `{0: 1.0, 1: 2.0}` | List intent | `xs: list = [1, 2]` |
+| `map` | `{hash("x"): 10.0}` | Map intent | `m: map = {x: 10}` |
+| `cstring` | `{0: <ptr>}` | C `char*` | `s: cstring = c.fn()` |
+| `cptr` | `{0: <ptr>}` | C pointer | `p: cptr = sdl.fn()` |
+| `cint` | `{0: 42.0}` | C `int` | `n: cint = sdl.fn()` |
+| `clong` | `{0: 42.0}` | C `int64_t` | `l: clong = c.time()` |
+| `cfloat` | `{0: 3.14}` | C `float` | `f: cfloat = 3.14` |
+| `cdouble` | `{0: 3.14}` | C `double` | `d: cdouble = c.fn()` |
+| `cbool` | `{0: 1.0}` | C `bool` | `ok: cbool = c.fn()` |
+
+### FFI Marshalling
+
+Type annotations guide automatic conversions at C FFI boundaries:
+
+**Flap → C conversions:**
+```flap
+// Flap string → C string (calls flap_string_to_cstr)
+title: str = "Window"
+window = sdl.SDL_CreateWindow(title, 640, 480, 0)  // title converted to char*
+
+// Flap number → C int (extracts {0: value})
+result: cint = sdl.SDL_Init(0x00000020)  // Flap num → C int
+```
+
+**C → Flap conversions:**
+```flap
+// C char* → cstring (stored as pointer in {0: <ptr>})
+err: cstring = sdl.SDL_GetError()  // char* stored as-is
+
+// When needed, convert cstring → str manually
+err_str: str = str(err)  // Convert C string to Flap string
+```
+
+### Type Inference
+
+When annotations are omitted, the compiler infers types:
+
+```flap
+x = 42              // Inferred: num
+name = "Alice"      // Inferred: str
+items = [1, 2, 3]   // Inferred: list
+ptr = sdl.SDL_CreateWindow(...)  // Inferred: cptr (from FFI signature)
+```
+
+### When to Use Type Annotations
+
+**Use annotations when:**
+1. Clarifying intent (documentation)
+2. Working with C FFI (marshalling guidance)
+3. Catching type errors early
+4. Enabling future optimizations
+
+**Omit annotations when:**
+1. Type is obvious from context
+2. Writing quick scripts
+3. Type doesn't matter for correctness
+
 ---
 
 **Note:** This grammar is the canonical reference for Flap 3.0. The compiler implementation (lexer.go, parser.go) must match this specification exactly.
 
 **See also:**
 - [LANGUAGESPEC.md](LANGUAGESPEC.md) - Complete language semantics
-- [TYPE_TRACKING.md](TYPE_TRACKING.md) - Compile-time type system
 - [LIBERTIES.md](LIBERTIES.md) - Documentation accuracy guidelines
