@@ -2430,7 +2430,7 @@ callExit:
 func (acg *ARM64CodeGen) compileExitf(call *CallExpr) error {
 	// exitf/exitln: print formatted message to stderr, then exit with code 1
 	// For simplicity, just call printf followed by exit(1)
-	
+
 	// First, compile the printf call
 	printfCall := &CallExpr{
 		Function: "printf",
@@ -2439,7 +2439,7 @@ func (acg *ARM64CodeGen) compileExitf(call *CallExpr) error {
 	if err := acg.compilePrintf(printfCall); err != nil {
 		return err
 	}
-	
+
 	// Then call exit(1)
 	exitCall := &CallExpr{
 		Function: "exit",

@@ -360,13 +360,13 @@ func (p *Parser) parseImport() Statement {
 
 	if p.current.Type == TOKEN_STRING {
 		source = p.current.Value
-		
+
 		// Check if it's a library file (.so, .dll, .dylib)
-		isLibraryFile = strings.HasSuffix(source, ".so") || 
+		isLibraryFile = strings.HasSuffix(source, ".so") ||
 			strings.Contains(source, ".so.") ||
 			strings.HasSuffix(source, ".dll") ||
 			strings.HasSuffix(source, ".dylib")
-		
+
 		p.nextToken()
 	} else if p.current.Type == TOKEN_IDENT {
 		// Bare identifier for library: import sdl3 as sdl
@@ -413,7 +413,7 @@ func (p *Parser) parseImport() Statement {
 	}
 
 	// If it has a version or looks like a git URL, it's an ImportStmt (git/flap)
-	if spec.Version != "" || isGitURL(source) || 
+	if spec.Version != "" || isGitURL(source) ||
 		strings.Contains(source, "/") || strings.Contains(source, "\\") {
 		// Git repository or directory import
 		return &ImportStmt{URL: spec.Source, Version: spec.Version, Alias: alias}

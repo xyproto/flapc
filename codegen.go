@@ -522,7 +522,6 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.out.XorRegWithReg("rcx", "rcx")
 	// ===== END AVX-512 DETECTION =====
 
-
 	// Two-pass compilation: First pass collects all variable declarations
 	// so that function/constant order doesn't matter
 	for _, stmt := range program.Statements {
