@@ -2,7 +2,13 @@
 
 ## 🎯 Priority Tasks for "Flap 2075" (Next 50 years)
 
-1. **ARM64 Support** - 85% complete, needs dynamic linking + testing
+1. **ARM64 Support** - 90% complete, needs defer statement + dynamic linking
+   - ✅ Linux syscalls (x8, svc #0)
+   - ✅ C FFI integration (header parsing, function signatures)
+   - ✅ `exitf`/`exitln` support
+   - ✅ `or!` operator (railway-oriented error handling)
+   - ⏳ defer statement (needed for SDL3 example)
+   - ⏳ Dynamic linking / PLT/GOT stubs
 2. **RISC-V Support** - 80% complete, needs testing + validation  
 3. **Module System** - Import system complete, needs ecosystem/testing
 4. **Type System Refinement** - Core map[uint64]float64 model stable, C types integrated
