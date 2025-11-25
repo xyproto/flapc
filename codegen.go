@@ -480,13 +480,12 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 				}
 			}
 
-			// Extract constants from C headers
+			// Extract constants and function signatures from C headers
+			fmt.Fprintf(os.Stderr, "Extracting constants and functions from %s headers...\n", cImport.Library)
 			constants, err := ExtractConstantsFromLibrary(cImport.Library)
 			if err != nil {
 				// Non-fatal: constants extraction is optional
-				if VerboseMode {
-					fmt.Fprintf(os.Stderr, "Warning: failed to extract constants from %s: %v\n", cImport.Library, err)
-				}
+				fmt.Fprintf(os.Stderr, "Warning: failed to extract constants from %s: %v\n", cImport.Library, err)
 			} else {
 				// Ensure cConstants map is initialized
 				if fc.cConstants[cImport.Alias] == nil {
@@ -509,9 +508,8 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 						fc.cConstants[cImport.Alias].Functions[k] = v
 					}
 				}
-				if VerboseMode {
-					fmt.Fprintf(os.Stderr, "Extracted %d constants from %s\n", len(constants.Constants), cImport.Library)
-				}
+				fmt.Fprintf(os.Stderr, "Extracted %d constants and %d functions from %s\n",
+					len(constants.Constants), len(constants.Functions), cImport.Library)
 			}
 		}
 	}
@@ -2653,7 +2651,7 @@ func (fc *FlapCompiler) isCFFIStringCall(expr Expression) bool {
 	alias := parts[0]
 	funcName := parts[1]
 
-	// First try to look up in parsed headers
+	// Look up in parsed headers
 	// NOTE: cConstants is keyed by alias, not library name
 	// e.g., for "import sdl3 as sdl", the key is "sdl"
 	if nsHeader, exists := fc.cConstants[alias]; exists {
@@ -2668,24 +2666,27 @@ func (fc *FlapCompiler) isCFFIStringCall(expr Expression) bool {
 		}
 	}
 
-	// For dynamically loaded libraries (e.g., SDL3), we don't have parsed headers
-	// Use heuristics based on function naming conventions
-	// Functions that return strings typically have "Get...Error", "Get...String", etc. in their name
+	// Fallback: use naming heuristics for common patterns
+	// This is a reasonable approximation when headers can't be parsed
+	// Functions returning strings typically follow naming conventions
 	if strings.Contains(funcName, "GetError") ||
 		strings.Contains(funcName, "GetString") ||
 		strings.HasSuffix(funcName, "Error") ||
 		strings.HasPrefix(funcName, "strerror") {
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "isCFFIStringCall: %s.%s looks like cstring (heuristic)\n", alias, funcName)
-		}
 		return true
 	}
 
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "isCFFIStringCall: %s.%s not recognized as cstring\n", alias, funcName)
-	}
-
+	// No signature found, and doesn't match naming pattern
 	return false
+}
+
+// Helper to get function names from CHeaderConstants
+func getFunctionNames(constants *CHeaderConstants) []string {
+	names := make([]string, 0, len(constants.Functions))
+	for name := range constants.Functions {
+		names = append(names, name)
+	}
+	return names
 }
 
 // Helper to get map keys for debugging
@@ -2736,7 +2737,44 @@ func (fc *FlapCompiler) getExprType(expr Expression) string {
 		}
 		return "number"
 	case *CallExpr:
-		// Function calls - check return type
+		// Check if this is a C FFI call first (namespace.function)
+		if strings.Contains(e.Function, ".") {
+			parts := strings.Split(e.Function, ".")
+			if len(parts) == 2 {
+				alias := parts[0]
+				funcName := parts[1]
+
+				// Look up function signature
+				if constants, ok := fc.cConstants[alias]; ok {
+					if funcSig, found := constants.Functions[funcName]; found {
+						returnType := strings.TrimSpace(funcSig.ReturnType)
+
+						// Map C return types to Flap types
+						if returnType == "char*" || returnType == "const char*" {
+							return "cstring"
+						} else if isPointerType(returnType) {
+							return "cpointer"
+						} else if returnType == "void" {
+							return "number" // void becomes 0
+						} else if returnType == "float" || returnType == "double" {
+							return "number"
+						} else {
+							// int, bool, etc.
+							return "number"
+						}
+					} else if VerboseMode {
+						fmt.Fprintf(os.Stderr, "Warning: inferExprType: C function %s.%s not found in parsed signatures\n", alias, funcName)
+					}
+				} else if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Warning: inferExprType: No parsed signatures for C library alias '%s'\n", alias)
+				}
+
+				// Default for unknown C FFI: assume number (safest default)
+				return "number"
+			}
+		}
+
+		// Function calls - check return type for Flap built-ins
 		stringFuncs := map[string]bool{
 			"str": true, "read_file": true, "readln": true,
 			"upper": true, "lower": true, "trim": true,

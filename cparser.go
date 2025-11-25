@@ -77,6 +77,9 @@ func (p *CParser) ParseFile(filepath string) (*CHeaderConstants, error) {
 		p.parseTopLevel()
 	}
 
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "    Parsed %d functions, %d constants from %s\n", len(p.results.Functions), len(p.results.Constants), filepath)
+	}
 	return p.results, nil
 }
 
@@ -84,6 +87,8 @@ func (p *CParser) ParseFile(filepath string) (*CHeaderConstants, error) {
 func (p *CParser) tokenize(source string) []CToken {
 	var tokens []CToken
 	lines := strings.Split(source, "\n")
+
+	inMultiLineComment := false
 
 	for lineNum, line := range lines {
 		i := 0
@@ -95,6 +100,23 @@ func (p *CParser) tokenize(source string) []CToken {
 				}
 				return tokens
 			}
+
+			// Handle multi-line comment state
+			if inMultiLineComment {
+				for i < len(line)-1 {
+					if line[i] == '*' && line[i+1] == '/' {
+						i += 2
+						inMultiLineComment = false
+						break
+					}
+					i++
+				}
+				if inMultiLineComment {
+					break // Skip rest of line
+				}
+				continue
+			}
+
 			// Skip whitespace (except newlines)
 			if unicode.IsSpace(rune(line[i])) && line[i] != '\n' {
 				i++
@@ -130,15 +152,21 @@ func (p *CParser) tokenize(source string) []CToken {
 				break // Skip rest of line
 			}
 
-			// Multi-line comment (simplified - assumes it ends on same line)
+			// Multi-line comment start
 			if i < len(line)-1 && line[i] == '/' && line[i+1] == '*' {
 				i += 2
+				// Check if it ends on the same line
 				for i < len(line)-1 {
 					if line[i] == '*' && line[i+1] == '/' {
 						i += 2
 						break
 					}
 					i++
+				}
+				// If we didn't find the end, mark as in multi-line comment
+				if i >= len(line)-1 && !(i > 0 && line[i-1] == '/' && i > 1 && line[i-2] == '*') {
+					inMultiLineComment = true
+					break
 				}
 				continue
 			}
@@ -250,6 +278,12 @@ func (p *CParser) parseTopLevel() {
 		return
 	}
 
+	// Skip typedef declarations
+	if tok.Type == CTokIdentifier && tok.Value == "typedef" {
+		p.skipUntil(";")
+		return
+	}
+
 	// Function declaration
 	if tok.Type == CTokIdentifier {
 		// Try to parse as function declaration
@@ -261,6 +295,16 @@ func (p *CParser) parseTopLevel() {
 
 	// Skip unrecognized tokens
 	p.advance()
+}
+
+// skipUntil skips tokens until the given value is found
+func (p *CParser) skipUntil(value string) {
+	for !p.isAtEnd() {
+		tok := p.advance()
+		if tok.Value == value {
+			return
+		}
+	}
 }
 
 // parsePreprocessor handles preprocessor directives
@@ -475,8 +519,11 @@ func (p *CParser) evalConstant(expr string) (int64, bool) {
 func (p *CParser) tryParseFunctionDecl() bool {
 	saved := p.pos
 
+	// Debug: check if we have extern
+	isExtern := p.match("extern")
+
 	// Skip 'extern' if present
-	if p.match("extern") {
+	if isExtern {
 		p.advance()
 	}
 
@@ -484,9 +531,15 @@ func (p *CParser) tryParseFunctionDecl() bool {
 	var returnTypeParts []string
 	foundOpenParen := false
 
-	maxReturnTypeParts := 30 // Reasonable limit for return type components
+	maxReturnTypeParts := 100 // Generous limit for return type components (SDL has many macros)
 	for !p.isAtEnd() && len(returnTypeParts) < maxReturnTypeParts {
 		tok := p.peek()
+
+		// Skip newlines
+		if tok.Type == CTokNewline {
+			p.advance()
+			continue
+		}
 
 		if tok.Type == CTokPunctuation && tok.Value == "(" {
 			foundOpenParen = true
@@ -499,7 +552,9 @@ func (p *CParser) tryParseFunctionDecl() bool {
 			return false
 		}
 
-		returnTypeParts = append(returnTypeParts, tok.Value)
+		if tok.Type == CTokIdentifier || (tok.Type == CTokPunctuation && tok.Value == "*") {
+			returnTypeParts = append(returnTypeParts, tok.Value)
+		}
 		p.advance()
 	}
 
@@ -556,7 +611,7 @@ func (p *CParser) tryParseFunctionDecl() bool {
 				paramStrs[i] = param.Type
 			}
 		}
-		fmt.Fprintf(os.Stderr, "  Function: %s %s(%s)\n", returnType, funcName, strings.Join(paramStrs, ", "))
+		fmt.Fprintf(os.Stderr, "  Parsed function: %s %s(%s)\n", returnType, funcName, strings.Join(paramStrs, ", "))
 	}
 
 	return true
@@ -568,18 +623,25 @@ func (p *CParser) parseParameters() []CFunctionParam {
 
 	// Handle empty parameter list or (void)
 	if p.match(")") {
+		p.advance() // Consume the closing paren
 		return params
 	}
 
 	if p.match("void") {
 		p.advance()
 		if p.match(")") {
+			p.advance() // Consume the closing paren
 			return params
 		}
 	}
 
 	maxParams := 100 // Reasonable limit for function parameters
 	for !p.isAtEnd() && len(params) < maxParams {
+		// Skip newlines
+		for !p.isAtEnd() && p.peek().Type == CTokNewline {
+			p.advance()
+		}
+
 		// Parse one parameter: type [name]
 		var paramTypeParts []string
 		var paramName string
@@ -587,6 +649,12 @@ func (p *CParser) parseParameters() []CFunctionParam {
 		maxTypeParts := 20 // Reasonable limit for type components
 		for !p.isAtEnd() && len(paramTypeParts) < maxTypeParts {
 			tok := p.peek()
+
+			// Skip newlines
+			if tok.Type == CTokNewline {
+				p.advance()
+				continue
+			}
 
 			// End of parameter
 			if tok.Type == CTokPunctuation && (tok.Value == "," || tok.Value == ")") {
@@ -635,8 +703,14 @@ func (p *CParser) parseParameters() []CFunctionParam {
 		}
 
 		if p.match(")") {
-			break
+			p.advance() // Consume the closing paren
+			return params
 		}
+	}
+
+	// If we get here, consume closing paren if present
+	if p.match(")") {
+		p.advance()
 	}
 
 	return params

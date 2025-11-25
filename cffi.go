@@ -225,9 +225,7 @@ func parseHeaderFileWithDepth(headerPath string, constants *CHeaderConstants, vi
 	parsedResults, err := parser.ParseFile(headerPath)
 	if err != nil {
 		// Fallback to old regex-based parser if new parser fails
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "  CParser failed, using regex fallback: %v\n", err)
-		}
+		fmt.Fprintf(os.Stderr, "  CParser failed for %s, using regex fallback: %v\n", headerPath, err)
 		return parseHeaderFileRecursive(headerPath, constants, visited)
 	}
 
@@ -240,6 +238,12 @@ func parseHeaderFileWithDepth(headerPath string, constants *CHeaderConstants, vi
 	}
 	for k, v := range parsedResults.Functions {
 		constants.Functions[k] = v
+	}
+
+	if len(parsedResults.Functions) > 0 {
+		fmt.Fprintf(os.Stderr, "  Parsed %d function signatures from %s\n", len(parsedResults.Functions), headerPath)
+	} else {
+		fmt.Fprintf(os.Stderr, "  Warning: No function signatures found in %s\n", headerPath)
 	}
 
 	// Handle #include directives for recursive parsing (CParser doesn't follow includes yet)
