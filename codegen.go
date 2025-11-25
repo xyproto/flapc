@@ -295,96 +295,8 @@ func (fc *FlapCompiler) deallocateShadowSpace(shadowSpace int) {
 	}
 }
 
-func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
-	// Clear moved variables tracking for this compilation
-	fc.movedVars = make(map[string]bool)
-	fc.scopedMoved = []map[string]bool{make(map[string]bool)}
-
-	// Always enable arenas - all list operations use arena allocation
-	fc.usesArenas = true
-
-	if fc.debug {
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG Compile: starting compilation with %d statements\n", len(program.Statements))
-		}
-	}
-	// Use ARM64 code generator if target is ARM64
-	if fc.eb.target.Arch() == ArchARM64 {
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "-> Using ARM64 code generator\n")
-		}
-		return fc.compileARM64(program, outputPath)
-	}
-	// Use RISC-V64 code generator if target is RISC-V64
-	if fc.eb.target.Arch() == ArchRiscv64 {
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "-> Using RISC-V64 code generator\n")
-		}
-		return fc.compileRiscv64(program, outputPath)
-	}
-
-	// Add format strings for printf
-	fc.eb.Define("fmt_str", "%s\x00")
-	fc.eb.Define("fmt_int", "%ld\n\x00")
-	fc.eb.Define("fmt_float", "%.0f\n\x00") // Print float without decimal places
-	fc.eb.Define("_str_debug_default_arena", "DEBUG: Initializing default arena\n\x00")
-	fc.eb.Define("_str_debug_arena_value", "DEBUG: Arena pointer value: %p\n\x00")
-	fc.eb.Define("_loop_max_exceeded_msg", "Error: loop exceeded maximum iterations\n\x00")
-	fc.eb.Define("_recursion_max_exceeded_msg", "Error: recursion exceeded maximum depth\n\x00")
-	fc.eb.Define("_null_ptr_msg", "ERROR: Null pointer dereference detected\n\x00")
-	fc.eb.Define("_bounds_negative_msg", "ERROR: Array index out of bounds (index < 0)\n\x00")
-	fc.eb.Define("_bounds_too_large_msg", "ERROR: Array index out of bounds (index >= length)\n\x00")
-	fc.eb.Define("_malloc_failed_msg", "ERROR: Memory allocation failed (out of memory)\n\x00")
-
-	// Define default arena globals (must be before code generation that references them)
-	fc.eb.DefineWritable("_flap_default_arena", "\x00\x00\x00\x00\x00\x00\x00\x00")
-	fc.eb.DefineWritable("_flap_default_arena_struct", strings.Repeat("\x00", 32))
-	// Use 64KB buffer instead of 1MB - more likely to be properly aligned by linker
-	fc.eb.DefineWritable("_flap_default_arena_buffer", strings.Repeat("\x00", 65536))
-
-	// Predeclare arena symbols if arenas are used (always true now)
-	// These MUST be writable since they're modified at runtime
-	fc.eb.DefineWritable("_flap_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")
-	fc.eb.DefineWritable("_flap_arena_meta_cap", "\x00\x00\x00\x00\x00\x00\x00\x00")
-	fc.eb.DefineWritable("_flap_arena_meta_len", "\x00\x00\x00\x00\x00\x00\x00\x00")
-	fc.eb.Define("_arena_null_error", "ERROR: Arena alloc returned NULL\n")
-	fc.eb.Define("_count_mismatch_error", "ERROR: Count write/read mismatch!\n")
-
-	// Initialize registers at entry (where _start jumps to)
-	fc.out.XorRegWithReg("rax", "rax")
-	fc.out.XorRegWithReg("rdi", "rdi")
-	fc.out.XorRegWithReg("rsi", "rsi")
-
-	// ===== AVX-512 CPU DETECTION =====
-	// Check CPUID for AVX-512 support and store result
-	// Required for safe use of AVX-512 instructions in map lookups
-	fc.eb.DefineWritable("cpu_has_avx512", "\x00") // 1 byte: 0=no, 1=yes (must be writable!)
-
-	// Check CPUID leaf 7, subleaf 0, EBX bit 16 (AVX512F)
-	fc.out.MovImmToReg("rax", "7")     // CPUID leaf 7
-	fc.out.XorRegWithReg("rcx", "rcx") // subleaf 0
-	fc.out.Emit([]byte{0x0f, 0xa2})    // cpuid
-
-	// Test EBX bit 16 (AVX512F - foundation)
-	fc.out.Emit([]byte{0xf6, 0xc3, 0x01}) // test bl, 1 (bit 0 after shift)
-	// Actually test bit 16 of ebx: bt ebx, 16
-	fc.out.Emit([]byte{0x0f, 0xba, 0xe3, 0x10}) // bt ebx, 16
-
-	// Set carry flag if supported
-	// setc al (set AL to 1 if carry flag set)
-	fc.out.Emit([]byte{0x0f, 0x92, 0xc0}) // setc al
-
-	// Store result to cpu_has_avx512 (only write AL, not full RAX!)
-	fc.out.LeaSymbolToReg("rbx", "cpu_has_avx512")
-	fc.out.MovByteRegToMem("rax", "rbx", 0) // Write only the low byte (AL)
-
-	// Clear registers used for CPUID
-	fc.out.XorRegWithReg("rax", "rax")
-	fc.out.XorRegWithReg("rbx", "rbx")
-	fc.out.XorRegWithReg("rcx", "rcx")
-	// ===== END AVX-512 DETECTION =====
-
-	// Pre-pass: Collect C imports to set up library handles and extract constants
+// processCImports processes C import statements and extracts constants/function signatures
+func (fc *FlapCompiler) processCImports(program *Program) {
 	for _, stmt := range program.Statements {
 		if cImport, ok := stmt.(*CImportStmt); ok {
 			fc.cImports[cImport.Alias] = cImport.Library
@@ -514,6 +426,102 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 			}
 		}
 	}
+}
+
+func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
+	// Clear moved variables tracking for this compilation
+	fc.movedVars = make(map[string]bool)
+	fc.scopedMoved = []map[string]bool{make(map[string]bool)}
+
+	// Always enable arenas - all list operations use arena allocation
+	fc.usesArenas = true
+
+	if fc.debug {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG Compile: starting compilation with %d statements\n", len(program.Statements))
+		}
+	}
+
+	// Pre-pass: Collect C imports to set up library handles and extract constants
+	// This MUST happen before architecture-specific compilation
+	fc.processCImports(program)
+
+	// Use ARM64 code generator if target is ARM64
+	if fc.eb.target.Arch() == ArchARM64 {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "-> Using ARM64 code generator\n")
+		}
+		return fc.compileARM64(program, outputPath)
+	}
+	// Use RISC-V64 code generator if target is RISC-V64
+	if fc.eb.target.Arch() == ArchRiscv64 {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "-> Using RISC-V64 code generator\n")
+		}
+		return fc.compileRiscv64(program, outputPath)
+	}
+
+	// Add format strings for printf
+	fc.eb.Define("fmt_str", "%s\x00")
+	fc.eb.Define("fmt_int", "%ld\n\x00")
+	fc.eb.Define("fmt_float", "%.0f\n\x00") // Print float without decimal places
+	fc.eb.Define("_str_debug_default_arena", "DEBUG: Initializing default arena\n\x00")
+	fc.eb.Define("_str_debug_arena_value", "DEBUG: Arena pointer value: %p\n\x00")
+	fc.eb.Define("_loop_max_exceeded_msg", "Error: loop exceeded maximum iterations\n\x00")
+	fc.eb.Define("_recursion_max_exceeded_msg", "Error: recursion exceeded maximum depth\n\x00")
+	fc.eb.Define("_null_ptr_msg", "ERROR: Null pointer dereference detected\n\x00")
+	fc.eb.Define("_bounds_negative_msg", "ERROR: Array index out of bounds (index < 0)\n\x00")
+	fc.eb.Define("_bounds_too_large_msg", "ERROR: Array index out of bounds (index >= length)\n\x00")
+	fc.eb.Define("_malloc_failed_msg", "ERROR: Memory allocation failed (out of memory)\n\x00")
+
+	// Define default arena globals (must be before code generation that references them)
+	fc.eb.DefineWritable("_flap_default_arena", "\x00\x00\x00\x00\x00\x00\x00\x00")
+	fc.eb.DefineWritable("_flap_default_arena_struct", strings.Repeat("\x00", 32))
+	// Use 64KB buffer instead of 1MB - more likely to be properly aligned by linker
+	fc.eb.DefineWritable("_flap_default_arena_buffer", strings.Repeat("\x00", 65536))
+
+	// Predeclare arena symbols if arenas are used (always true now)
+	// These MUST be writable since they're modified at runtime
+	fc.eb.DefineWritable("_flap_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")
+	fc.eb.DefineWritable("_flap_arena_meta_cap", "\x00\x00\x00\x00\x00\x00\x00\x00")
+	fc.eb.DefineWritable("_flap_arena_meta_len", "\x00\x00\x00\x00\x00\x00\x00\x00")
+	fc.eb.Define("_arena_null_error", "ERROR: Arena alloc returned NULL\n")
+	fc.eb.Define("_count_mismatch_error", "ERROR: Count write/read mismatch!\n")
+
+	// Initialize registers at entry (where _start jumps to)
+	fc.out.XorRegWithReg("rax", "rax")
+	fc.out.XorRegWithReg("rdi", "rdi")
+	fc.out.XorRegWithReg("rsi", "rsi")
+
+	// ===== AVX-512 CPU DETECTION =====
+	// Check CPUID for AVX-512 support and store result
+	// Required for safe use of AVX-512 instructions in map lookups
+	fc.eb.DefineWritable("cpu_has_avx512", "\x00") // 1 byte: 0=no, 1=yes (must be writable!)
+
+	// Check CPUID leaf 7, subleaf 0, EBX bit 16 (AVX512F)
+	fc.out.MovImmToReg("rax", "7")     // CPUID leaf 7
+	fc.out.XorRegWithReg("rcx", "rcx") // subleaf 0
+	fc.out.Emit([]byte{0x0f, 0xa2})    // cpuid
+
+	// Test EBX bit 16 (AVX512F - foundation)
+	fc.out.Emit([]byte{0xf6, 0xc3, 0x01}) // test bl, 1 (bit 0 after shift)
+	// Actually test bit 16 of ebx: bt ebx, 16
+	fc.out.Emit([]byte{0x0f, 0xba, 0xe3, 0x10}) // bt ebx, 16
+
+	// Set carry flag if supported
+	// setc al (set AL to 1 if carry flag set)
+	fc.out.Emit([]byte{0x0f, 0x92, 0xc0}) // setc al
+
+	// Store result to cpu_has_avx512 (only write AL, not full RAX!)
+	fc.out.LeaSymbolToReg("rbx", "cpu_has_avx512")
+	fc.out.MovByteRegToMem("rax", "rbx", 0) // Write only the low byte (AL)
+
+	// Clear registers used for CPUID
+	fc.out.XorRegWithReg("rax", "rax")
+	fc.out.XorRegWithReg("rbx", "rbx")
+	fc.out.XorRegWithReg("rcx", "rcx")
+	// ===== END AVX-512 DETECTION =====
+
 
 	// Two-pass compilation: First pass collects all variable declarations
 	// so that function/constant order doesn't matter
