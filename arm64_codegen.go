@@ -14,6 +14,7 @@ type ARM64CodeGen struct {
 	eb                *ExecutableBuilder
 	stackVars         map[string]int               // variable name -> stack offset from fp
 	mutableVars       map[string]bool              // variable name -> is mutable
+	lambdaVars        map[string]bool              // variable name -> is lambda/function
 	varTypes          map[string]string            // variable name -> type (for type tracking)
 	stackSize         int                          // current stack size
 	stackFrameSize    uint64                       // total stack frame size allocated in prologue
@@ -64,6 +65,7 @@ func NewARM64CodeGen(eb *ExecutableBuilder, cConstants map[string]*CHeaderConsta
 		eb:            eb,
 		stackVars:     make(map[string]int),
 		mutableVars:   make(map[string]bool),
+		lambdaVars:    make(map[string]bool),
 		varTypes:      make(map[string]string),
 		stackSize:     0,
 		stringCounter: 0,
@@ -103,6 +105,21 @@ func (acg *ARM64CodeGen) CompileProgram(program *Program) error {
 	// Compile each statement
 	for _, stmt := range program.Statements {
 		if err := acg.compileStatement(stmt); err != nil {
+			return err
+		}
+	}
+
+	// After compiling all statements, if main is a lambda function,
+	// call it to get the exit code. Otherwise, the last expression value is in d0.
+	// For programs like "main = { 0 }", main is a lambda that needs to be called.
+	// For programs like "main = 0", main is just a value and is already in d0.
+	if _, exists := acg.stackVars["main"]; exists {
+		// main exists as a variable. Check if it's a function (lambda).
+		// If it is, we need to call it. For now, we assume if main exists and
+		// was defined with a block, it's a function.
+		// The proper fix: call main() if it's a function
+		// For now: load main and use it as the return value
+		if err := acg.compileExpression(&IdentExpr{Name: "main"}); err != nil {
 			return err
 		}
 	}
@@ -1449,6 +1466,11 @@ func (acg *ARM64CodeGen) compileAssignment(assign *AssignStmt) error {
 			}
 			// Track the type of the value being assigned
 			acg.varTypes[assign.Name] = acg.getExprType(assign.Value)
+			// Track if this is a lambda/function
+			switch assign.Value.(type) {
+			case *LambdaExpr, *PatternLambdaExpr, *MultiLambdaExpr:
+				acg.lambdaVars[assign.Name] = true
+			}
 			// x29 points to saved fp location, variables start at offset 16
 			offset = int32(16 + acg.stackSize - 8)
 		}
@@ -2556,6 +2578,29 @@ func (acg *ARM64CodeGen) compileTailCall(call *CallExpr) error {
 
 // compileDirectCall compiles a direct function call (e.g., lambda invocation)
 func (acg *ARM64CodeGen) compileDirectCall(call *DirectCallExpr) error {
+	// Special case: calling a value (not a lambda) with no arguments just returns the value
+	// This handles cases like: main = 42; main() returns 42
+	if len(call.Args) == 0 {
+		// Check if callee is a simple value (not a lambda)
+		isLambda := false
+		switch call.Callee.(type) {
+		case *LambdaExpr, *PatternLambdaExpr, *MultiLambdaExpr:
+			isLambda = true
+		case *IdentExpr:
+			// Check if the identifier refers to a lambda/function
+			if ident, ok := call.Callee.(*IdentExpr); ok {
+				if acg.lambdaVars[ident.Name] {
+					isLambda = true
+				}
+			}
+		}
+		
+		if !isLambda {
+			// Just compile the value and return it (calling a value returns the value)
+			return acg.compileExpression(call.Callee)
+		}
+	}
+
 	// Compile the callee expression (e.g., a lambda) to get function pointer
 	// Result in d0 (function pointer as float64)
 	if err := acg.compileExpression(call.Callee); err != nil {

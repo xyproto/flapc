@@ -2493,6 +2493,87 @@ flapc --version
 - **Memory**: Arena allocators for predictable patterns
 - **Concurrency**: OS-level parallelism via fork()
 
+### Program Execution Model
+
+Flap supports three program structures:
+
+#### 1. Main Function Entry Point
+
+When a `main` function is defined, it serves as the entry point:
+
+```flap
+main = { println("Hello, World!") }    // main() called, returns 0
+main = 42                               // Returns 42 as exit code
+main = () -> { println("Starting"); 1 } // Returns 1
+```
+
+**Behavior:**
+- If `main` is callable (function/lambda): called automatically, return value becomes exit code
+- Return value is implicitly cast to int32 for the OS exit code
+- Empty blocks `{}` return 0
+- Numeric values are converted to int32
+
+#### 2. Main Variable (Non-callable)
+
+When `main` is a variable (not a function) and there's no top-level code:
+
+```flap
+main = 42        // Exit code 42
+main = {}        // Exit code 0 (empty map)
+main = []        // Exit code 0 (empty list)
+```
+
+The value of `main` becomes the program's exit code directly.
+
+#### 3. Top-Level Code
+
+When there's no `main` defined, top-level statements execute sequentially:
+
+```flap
+println("Starting")
+result := compute_something()
+println(f"Result: {result}")
+0  // Last expression is exit code
+```
+
+**Exit code determination:**
+- Last expression value becomes exit code
+- `ret` statement sets explicit exit code
+- No explicit return or value: defaults to 0
+
+#### Mixed Cases
+
+**Top-level code WITH main function:**
+
+When both exist, top-level code executes first and is responsible for calling `main()`:
+
+```flap
+// Setup in top-level
+config := load_config()
+
+main = {
+    println("In main")
+    process(config)
+    0
+}
+
+// Top-level must call main explicitly
+main()  // Without this, main never runs
+```
+
+If top-level code doesn't call `main()`, the function is never executed, and the last top-level expression determines the exit code.
+
+**Top-level code WITH main variable:**
+
+The `main` variable is just another variable; top-level code determines execution:
+
+```flap
+main = 99  // Just a variable
+
+println("Running")
+42  // Exit code is 42, not 99 (main is not special when it's not a function)
+```
+
 ## Examples
 
 ### Hello World

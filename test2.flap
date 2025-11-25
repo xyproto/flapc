@@ -1,0 +1,6 @@
+value = 42
+func = { 99 }
+
+main = {
+    ret value()
+}

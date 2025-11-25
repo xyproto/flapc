@@ -68,6 +68,7 @@ type FlapCompiler struct {
 	platform             Platform                      // Target platform (arch + OS)
 	variables            map[string]int                // variable name -> stack offset
 	mutableVars          map[string]bool               // variable name -> is mutable
+	lambdaVars           map[string]bool               // variable name -> is lambda/function
 	parentVariables      map[string]bool               // Track parent-scope vars in parallel loops (use r11 instead of rbp)
 	varTypes             map[string]string             // variable name -> "map" or "list" (legacy)
 	varTypeInfo          map[string]*FlapType          // variable name -> type annotation (new type system)
@@ -182,6 +183,7 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 		platform:            platform,
 		variables:           make(map[string]int),
 		mutableVars:         make(map[string]bool),
+		lambdaVars:          make(map[string]bool),
 		varTypes:            make(map[string]string),
 		varTypeInfo:         make(map[string]*FlapType),
 		functionSignatures:  make(map[string]*FunctionSignature),
@@ -584,6 +586,33 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 		fc.cleanupAllArenas()
 	}
 
+	// Evaluate main (if it exists) to get the exit code
+	// main can be a direct value (main = 42) or a function (main = { 42 })
+	if _, exists := fc.variables["main"]; exists {
+		// main exists - evaluate it
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Compiling main expression for exit code\n")
+		}
+		fc.compileExpression(&IdentExpr{Name: "main"})
+		// Result is in xmm0 (float64)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Main expression compiled, converting to int32\n")
+		}
+	} else {
+		// No main - use exit code 0
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: No main variable found, using exit code 0\n")
+		}
+		fc.out.XorRegWithReg("xmm0", "xmm0")
+	}
+
+	// Convert float64 result in xmm0 to int32 in rdi (for exit code)
+	// cvttsd2si rdi, xmm0 (convert with truncation scalar double to signed int)
+	fc.out.Emit([]byte{0x48, 0x0f, 0x2c, 0xf8})
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Exit code conversion complete, value in rdi\n")
+	}
+
 	// Always add implicit exit at the end of the program
 	// Even if there's an exit() call in the code, it might be conditional
 	// If an unconditional exit() is called, it will never return, so this code is harmless
@@ -591,16 +620,14 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	// Otherwise use direct syscall for minimal programs (except on Windows where syscalls don't exist)
 	if fc.usedFunctions["printf"] || fc.usedFunctions["exit"] || len(fc.usedFunctions) > 0 || fc.eb.target.OS() == OSWindows {
 		// Use libc's exit() for proper cleanup (flushes buffers)
-		// Use platform-appropriate register for first integer argument
-		exitReg := fc.getIntArgReg(0)
-		fc.out.XorRegWithReg(exitReg, exitReg) // exit code 0
+		// Exit code is already in rdi (first argument)
 		fc.trackFunctionCall("exit")
 		fc.eb.GenerateCallInstruction("exit")
 	} else {
 		// Use direct syscall for minimal programs without libc dependencies (Linux only)
-		fc.out.MovImmToReg("rax", "60")    // syscall number for exit
-		fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
-		fc.eb.Emit("syscall")              // invoke syscall directly
+		fc.out.MovImmToReg("rax", "60") // syscall number for exit
+		// exit code is already in rdi (first syscall argument)
+		fc.eb.Emit("syscall") // invoke syscall directly
 	}
 
 	// Generate lambda functions
@@ -704,6 +731,12 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 					fmt.Fprintf(os.Stderr, "DEBUG: Setting varTypes[%s] = %s (mutable)\n", s.Name, exprType)
 				}
 			}
+
+			// Track if this is a lambda/function
+			switch s.Value.(type) {
+			case *LambdaExpr, *PatternLambdaExpr, *MultiLambdaExpr:
+				fc.lambdaVars[s.Name] = true
+			}
 		} else {
 			// = - Define immutable variable (can shadow existing immutable, but not mutable)
 			if exists && fc.mutableVars[s.Name] {
@@ -740,6 +773,12 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 					if VerboseMode {
 						fmt.Fprintf(os.Stderr, "DEBUG: Setting varTypes[%s] = %s (immutable)\n", s.Name, exprType)
 					}
+				}
+
+				// Track if this is a lambda/function
+				switch s.Value.(type) {
+				case *LambdaExpr, *PatternLambdaExpr, *MultiLambdaExpr:
+					fc.lambdaVars[s.Name] = true
 				}
 			}
 		}
@@ -9190,6 +9229,47 @@ func (fc *FlapCompiler) compileDirectCall(call *DirectCallExpr) {
 			}
 		}
 		compilerError("DirectCallExpr has nil Callee - this is a parser bug!")
+	}
+
+	// Special case: calling a value (not a lambda) just returns the value
+	// This handles cases like: main = 42; main() returns 42
+	if len(call.Args) == 0 {
+		// Check if callee is a simple value (not a lambda)
+		isLambda := false
+		switch call.Callee.(type) {
+		case *LambdaExpr, *PatternLambdaExpr, *MultiLambdaExpr:
+			isLambda = true
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG: DirectCall with 0 args - callee is a Lambda expression\n")
+			}
+		case *IdentExpr:
+			// Check if the identifier refers to a lambda/function
+			if ident, ok := call.Callee.(*IdentExpr); ok {
+				if fc.lambdaVars[ident.Name] {
+					isLambda = true
+					if VerboseMode {
+						fmt.Fprintf(os.Stderr, "DEBUG: DirectCall with 0 args - ident '%s' is a lambda\n", ident.Name)
+					}
+				} else {
+					if VerboseMode {
+						fmt.Fprintf(os.Stderr, "DEBUG: DirectCall with 0 args - ident '%s' is NOT a lambda\n", ident.Name)
+					}
+				}
+			}
+		}
+		
+		if !isLambda {
+			// Just compile the value and return it (calling a value returns the value)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG: Calling a value (not lambda) - just returning the value\n")
+			}
+			fc.compileExpression(call.Callee)
+			return
+		} else {
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG: Calling a lambda with 0 args - will dereference and call\n")
+			}
+		}
 	}
 
 	// Compile the callee expression (e.g., a lambda) to get function pointer

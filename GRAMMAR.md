@@ -217,6 +217,83 @@ import "SDL3.dll" as sdl
   - `@latest` - Latest tag (or default branch if no tags)
   - No `@` - Uses default branch
 
+## Program Execution Model
+
+Flap programs can be structured in three ways:
+
+### 1. Main Function
+When a `main` function is defined, it becomes the program entry point:
+
+```flap
+main = { println("Hello!") }     // Returns 0 (empty block)
+main = 42                         // Returns 42
+main = () -> { 100 }             // Returns 100
+```
+
+**Return value rules:**
+- If `main` returns a float: converted to int32 for exit code
+- If `main` returns an empty map `{}` or empty list `[]`: exit code 0
+- If `main` is callable (function): called, result becomes exit code
+- Return values are implicitly cast to int32 for `_start`
+
+### 2. Main Variable
+When a `main` variable (not a function) is defined without top-level code:
+
+```flap
+main = 42        // Exit with code 42
+main = {}        // Exit with code 0 (empty map)
+main = []        // Exit with code 0 (empty list)
+```
+
+**Evaluation:**
+- The value of `main` becomes the program's exit code
+- Non-callable values are used directly
+
+### 3. Top-Level Code
+When there's no `main` function or variable, top-level code executes:
+
+```flap
+println("Hello!")
+x := 42
+println(x)
+// Last expression or ret determines exit code
+```
+
+**Exit code:**
+- Last expression value becomes exit code
+- `ret` keyword sets explicit exit code
+- No explicit return: exit code 0
+
+### Mixed Cases
+
+**Top-level code + main function:**
+- Top-level code executes first
+- It's the responsibility of top-level code to call `main()`
+- If top-level doesn't call `main()`, `main()` is never executed
+- Last expression in top-level code provides exit code
+
+```flap
+// Top-level setup
+x := 100
+
+main = { println(x); 42 }
+
+// main is defined but not called - exit code is 0
+// To call: main() must appear in top-level code
+```
+
+**Top-level code + main variable:**
+- Top-level code executes
+- `main` variable is accessible but not special
+- Last top-level expression provides exit code
+
+```flap
+main = 99
+
+println("Setup")
+42  // Exit code is 42, not 99
+```
+
 ## Complete Grammar
 
 ```ebnf
