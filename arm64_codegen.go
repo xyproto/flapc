@@ -109,19 +109,27 @@ func (acg *ARM64CodeGen) CompileProgram(program *Program) error {
 		}
 	}
 
-	// After compiling all statements, if main is a lambda function,
-	// call it to get the exit code. Otherwise, the last expression value is in d0.
-	// For programs like "main = { 0 }", main is a lambda that needs to be called.
-	// For programs like "main = 0", main is just a value and is already in d0.
+	// Evaluate main (if it exists) to get the exit code
+	// main can be a direct value (main = 42) or a function (main = { 42 })
 	if _, exists := acg.stackVars["main"]; exists {
-		// main exists as a variable. Check if it's a function (lambda).
-		// If it is, we need to call it. For now, we assume if main exists and
-		// was defined with a block, it's a function.
-		// The proper fix: call main() if it's a function
-		// For now: load main and use it as the return value
+		// main exists - evaluate it (load from stack)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Loading main variable for exit code\n")
+		}
 		if err := acg.compileExpression(&IdentExpr{Name: "main"}); err != nil {
 			return err
 		}
+		// Result is in d0 (float64)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Main loaded, converting to int32\n")
+		}
+	} else {
+		// No main - use exit code 0
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: No main variable found, using exit code 0\n")
+		}
+		// fmov d0, xzr (d0 = 0.0)
+		acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x67, 0x9e})
 	}
 
 	// Pop defer scope and execute deferred expressions
