@@ -1818,11 +1818,6 @@ func (acg *ARM64CodeGen) compilePrint(call *CallExpr) error {
 		content := a.Value // No newline
 		acg.eb.Define(label, content)
 
-		// mov x16, #4 (write syscall)
-		if err := acg.out.MovImm64("x16", 4); err != nil {
-			return err
-		}
-
 		// mov x0, #1 (stdout)
 		if err := acg.out.MovImm64("x0", 1); err != nil {
 			return err
@@ -1842,8 +1837,20 @@ func (acg *ARM64CodeGen) compilePrint(call *CallExpr) error {
 			return err
 		}
 
-		// svc #0x80 (macOS syscall)
-		acg.out.out.writer.WriteBytes([]byte{0x01, 0x10, 0x00, 0xd4})
+		// Syscall number and invocation (OS-specific)
+		if acg.eb.target.OS() == OSDarwin {
+			// macOS: syscall number in x16, svc #0x80
+			if err := acg.out.MovImm64("x16", 4); err != nil { // write syscall
+				return err
+			}
+			acg.out.out.writer.WriteBytes([]byte{0x01, 0x10, 0x00, 0xd4}) // svc #0x80
+		} else {
+			// Linux: syscall number in x8, svc #0
+			if err := acg.out.MovImm64("x8", 64); err != nil { // write syscall = 64
+				return err
+			}
+			acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4}) // svc #0
+		}
 
 	default:
 		return fmt.Errorf("unsupported print argument type for ARM64: %T", arg)
@@ -1868,11 +1875,6 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 		content := strExpr.Value + "\n"
 		acg.eb.Define(label, content)
 
-		// mov x16, #4 (write syscall)
-		if err := acg.out.MovImm64("x16", 4); err != nil {
-			return err
-		}
-
 		// mov x0, #1 (stdout)
 		if err := acg.out.MovImm64("x0", 1); err != nil {
 			return err
@@ -1892,8 +1894,20 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 			return err
 		}
 
-		// svc #0x80 (macOS syscall)
-		acg.out.out.writer.WriteBytes([]byte{0x01, 0x10, 0x00, 0xd4})
+		// Syscall number and invocation (OS-specific)
+		if acg.eb.target.OS() == OSDarwin {
+			// macOS: syscall number in x16, svc #0x80
+			if err := acg.out.MovImm64("x16", 4); err != nil { // write syscall
+				return err
+			}
+			acg.out.out.writer.WriteBytes([]byte{0x01, 0x10, 0x00, 0xd4}) // svc #0x80
+		} else {
+			// Linux: syscall number in x8, svc #0
+			if err := acg.out.MovImm64("x8", 64); err != nil { // write syscall = 64
+				return err
+			}
+			acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4}) // svc #0
+		}
 
 		return nil
 	}
