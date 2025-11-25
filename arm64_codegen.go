@@ -3458,10 +3458,11 @@ func (acg *ARM64CodeGen) generateLambdaFunctions() error {
 
 		// Function prologue - ARM64 ABI
 		// Calculate total stack frame size upfront (similar to x86_64)
-		// Layout: [saved fp/lr (16)] + [params (N*8)] + [temp space (4096)]
+		// Layout: [saved fp/lr (16)] + [params (N*8)] + [temp space (2048)]
 		// Temp space accounts for local variables, nested arithmetic, function calls, etc.
+		// Keep under 4095 bytes to fit in 12-bit immediate
 		paramCount := len(lambda.Params)
-		frameSize := uint32((16 + paramCount*8 + 4096 + 15) &^ 15)
+		frameSize := uint32((16 + paramCount*8 + 2048 + 15) &^ 15)
 
 		// Save frame pointer and link register
 		if err := acg.out.SubImm64("sp", "sp", frameSize); err != nil {
