@@ -132,8 +132,13 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	currentOffset += uint64(ds.plt.Len())
 	currentAddr += uint64(ds.plt.Len())
 
-	// ._start (entry point - clears registers and jumps to user code)
-	startSize := 14 // Size of our minimal _start function (3*3 bytes clear regs + 5 bytes jmp)
+	// ._start (entry point - clears registers and calls user code)
+	// x86-64: 14 bytes (9 bytes xor + 5 bytes jmp)
+	// ARM64: 24 bytes (3*4 mov + 4 bl + 4 mov + 4 svc)
+	startSize := 14
+	if eb.target.Arch() == ArchARM64 {
+		startSize = 24
+	}
 	layout["_start"] = struct {
 		offset uint64
 		addr   uint64
@@ -514,18 +519,23 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	var startActualSize int
 
 	if eb.target.Arch() == ArchARM64 {
-		// ARM64: Clear registers and branch to user code
+		// ARM64: Clear registers, call user code, then exit with return value
 		// mov x0, #0
 		w.WriteBytes([]byte{0x00, 0x00, 0x80, 0xd2})
 		// mov x1, #0
 		w.WriteBytes([]byte{0x01, 0x00, 0x80, 0xd2})
 		// mov x2, #0
 		w.WriteBytes([]byte{0x02, 0x00, 0x80, 0xd2})
-		// b <user_code> (branch - calculate offset)
+		// bl <user_code> (branch with link - saves return address in x30)
 		jumpOffset := int32((textAddrForJump - (startAddr + 12)) / 4) // 12 = 3 instructions * 4 bytes, offset in instructions
-		branchInstr := uint32(0x14000000) | (uint32(jumpOffset) & 0x03FFFFFF)
+		branchInstr := uint32(0x94000000) | (uint32(jumpOffset) & 0x03FFFFFF) // bl instruction (0x94 instead of 0x14)
 		binary.Write(w.(*BufferWrapper).buf, binary.LittleEndian, branchInstr)
-		startActualSize = 16 // 4 instructions * 4 bytes
+		// After return, x0/w0 contains exit code - call exit syscall
+		// mov x8, #93 (sys_exit on Linux ARM64)
+		w.WriteBytes([]byte{0xa8, 0x0b, 0x80, 0xd2})
+		// svc #0
+		w.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4})
+		startActualSize = 24 // 6 instructions * 4 bytes
 	} else {
 		// x86_64: Clear registers and jump to user code
 		// xor rax, rax   ; clear rax
