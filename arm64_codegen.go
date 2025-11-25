@@ -28,6 +28,7 @@ type ARM64CodeGen struct {
 	currentArena      int                          // Arena depth (0=none, 1=first arena, 2=nested, etc.)
 	usesArenas        bool                         // Track if program uses any arena blocks
 	currentAssignName string                       // Name of variable being assigned (for lambda self-reference)
+	deferredExprs     [][]Expression               // Stack of deferred expressions per scope (LIFO order)
 }
 
 // ARM64LambdaFunc represents a lambda function for ARM64
@@ -77,6 +78,9 @@ func (acg *ARM64CodeGen) CompileProgram(program *Program) error {
 	// Initialize arena tracking
 	acg.currentArena = 0
 
+	// Push defer scope for program-level defers
+	acg.pushDeferScope()
+
 	// PHASE 1: Compile program to calculate needed stack size
 	// Save the current text buffer position to patch prologue later
 	prologueStart := acg.eb.text.Len()
@@ -101,6 +105,11 @@ func (acg *ARM64CodeGen) CompileProgram(program *Program) error {
 		if err := acg.compileStatement(stmt); err != nil {
 			return err
 		}
+	}
+
+	// Pop defer scope and execute deferred expressions
+	if err := acg.popDeferScope(); err != nil {
+		return err
 	}
 
 	// PHASE 2: Calculate actual stack frame size needed
@@ -201,10 +210,13 @@ func (acg *ARM64CodeGen) compileStatement(stmt Statement) error {
 	case *ArenaStmt:
 		return acg.compileArenaStmt(s)
 	case *DeferStmt:
-		// Defer statement: execute at scope exit
-		// Full implementation needs defer stack management
-		// For now, return error with guidance
-		return fmt.Errorf("defer statements not yet implemented in ARM64 (requires defer stack)")
+		// Defer statement: collect for execution at scope exit
+		if len(acg.deferredExprs) == 0 {
+			return fmt.Errorf("defer can only be used inside a function or block scope")
+		}
+		currentScope := len(acg.deferredExprs) - 1
+		acg.deferredExprs[currentScope] = append(acg.deferredExprs[currentScope], s.Call)
+		return nil
 	case *SpawnStmt:
 		// Process spawning with fork()
 		// Full implementation needs process management
@@ -227,6 +239,31 @@ func (acg *ARM64CodeGen) compileStatement(stmt Statement) error {
 	}
 }
 
+// pushDeferScope creates a new defer scope for collecting deferred expressions
+func (acg *ARM64CodeGen) pushDeferScope() {
+	acg.deferredExprs = append(acg.deferredExprs, []Expression{})
+}
+
+// popDeferScope executes all deferred expressions in reverse order and removes the scope
+func (acg *ARM64CodeGen) popDeferScope() error {
+	if len(acg.deferredExprs) == 0 {
+		return nil
+	}
+
+	currentScope := len(acg.deferredExprs) - 1
+	deferred := acg.deferredExprs[currentScope]
+
+	// Execute deferred expressions in LIFO order
+	for i := len(deferred) - 1; i >= 0; i-- {
+		if err := acg.compileExpression(deferred[i]); err != nil {
+			return err
+		}
+	}
+
+	acg.deferredExprs = acg.deferredExprs[:currentScope]
+	return nil
+}
+
 // compileArenaStmt compiles an arena block with auto-cleanup
 func (acg *ARM64CodeGen) compileArenaStmt(stmt *ArenaStmt) error {
 	// Mark that this program uses arenas
@@ -241,11 +278,19 @@ func (acg *ARM64CodeGen) compileArenaStmt(stmt *ArenaStmt) error {
 	// alloc() will call malloc() directly
 	_ = arenaDepth // Mark as used
 
+	// Push defer scope for arena
+	acg.pushDeferScope()
+
 	// Compile statements in arena body
 	for _, bodyStmt := range stmt.Body {
 		if err := acg.compileStatement(bodyStmt); err != nil {
 			return err
 		}
+	}
+
+	// Pop defer scope and execute deferred expressions
+	if err := acg.popDeferScope(); err != nil {
+		return err
 	}
 
 	// Restore previous arena context
@@ -3254,8 +3299,16 @@ func (acg *ARM64CodeGen) generateLambdaFunctions() error {
 		acg.currentLambda.BodyStart = bodyStart
 		acg.currentLambda.FuncStart = funcStart
 
+		// Push defer scope for lambda
+		acg.pushDeferScope()
+
 		// Compile lambda body (result in d0)
 		if err := acg.compileExpression(lambda.Body); err != nil {
+			return err
+		}
+
+		// Pop defer scope and execute deferred expressions
+		if err := acg.popDeferScope(); err != nil {
 			return err
 		}
 
