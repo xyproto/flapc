@@ -192,21 +192,21 @@ func (acg *ARM64CodeGen) CompileProgram(program *Program) error {
 		acg.out.out.writer.WriteBytes([]byte{0xa8, 0x0b, 0x80, 0xd2})
 		// svc #0
 		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4})
-		return nil
-	}
-
-	// Dynamic builds or macOS: restore frame and return
-	if err := acg.out.LdrImm64("x30", "sp", 8); err != nil {
-		return err
-	}
-	if err := acg.out.LdrImm64("x29", "sp", 0); err != nil {
-		return err
-	}
-	if err := acg.out.AddImm64("sp", "sp", uint32(acg.stackFrameSize)); err != nil {
-		return err
-	}
-	if err := acg.out.Return("x30"); err != nil {
-		return err
+		// Don't return here - continue to generate lambdas and helpers
+	} else {
+		// Dynamic builds or macOS: restore frame and return
+		if err := acg.out.LdrImm64("x30", "sp", 8); err != nil {
+			return err
+		}
+		if err := acg.out.LdrImm64("x29", "sp", 0); err != nil {
+			return err
+		}
+		if err := acg.out.AddImm64("sp", "sp", uint32(acg.stackFrameSize)); err != nil {
+			return err
+		}
+		if err := acg.out.Return("x30"); err != nil {
+			return err
+		}
 	}
 
 	if VerboseMode {
