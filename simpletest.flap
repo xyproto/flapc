@@ -1,0 +1,5 @@
+main = {
+  println("Hello from Flap!")
+  println(42)
+  0
+}

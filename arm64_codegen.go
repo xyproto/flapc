@@ -146,9 +146,9 @@ func (acg *ARM64CodeGen) CompileProgram(program *Program) error {
 	textBytes[prologueStart+3] = byte(subInstr >> 24)
 
 	// Function epilogue (if no explicit exit)
-	if err := acg.out.MovImm64("x0", 0); err != nil {
-		return err
-	}
+	// Convert d0 (float64 result from main) to w0 (int32 exit code)
+	// fcvtzs w0, d0
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x78, 0x1e})
 
 	// For static Linux builds, exit with syscall instead of returning
 	if acg.eb.target.OS() == OSLinux && !acg.eb.useDynamicLinking {
