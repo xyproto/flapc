@@ -209,14 +209,26 @@ func (acg *ARM64CodeGen) CompileProgram(program *Program) error {
 		return err
 	}
 
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: About to generate lambda functions (count=%d)\n", len(acg.lambdaFuncs))
+	}
+	
 	// Generate lambda functions after main program
 	if err := acg.generateLambdaFunctions(); err != nil {
 		return err
 	}
 
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Finished generating lambda functions\n")
+	}
+
 	// Generate runtime helper functions
 	if err := acg.generateRuntimeHelpers(); err != nil {
 		return err
+	}
+
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: CompileProgram completed successfully\n")
 	}
 
 	return nil
