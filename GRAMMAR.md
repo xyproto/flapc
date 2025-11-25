@@ -162,6 +162,61 @@ compute = x -> {
 - Has expression before `{` → Value match
 - No expression, has `|` at line start → Guard match
 
+## Import System
+
+Flap's import system provides a unified way to import libraries, git repositories, and local directories.
+
+### Import Resolution Priority
+
+1. **Libraries** (highest priority)
+   - System libraries via pkg-config (Linux/macOS)
+   - .dll files in current directory or system paths (Windows)
+   - Headers in standard include paths
+
+2. **Git Repositories**
+   - GitHub, GitLab, Bitbucket
+   - SSH or HTTPS URLs
+   - Optional version specifiers
+
+3. **Local Directories** (lowest priority)
+   - Relative or absolute paths
+   - Current directory with `.`
+
+### Import Syntax
+
+```flap
+// Library import (uses pkg-config or finds .dll)
+import "sdl3" as sdl
+import "raylib" as rl
+
+// Git repository import
+import "github.com/xyproto/flap-math" as math
+import "github.com/xyproto/flap-math@v1.0.0" as math
+import "github.com/xyproto/flap-math@latest" as math
+import "github.com/xyproto/flap-math@main" as math
+import "git@github.com:xyproto/flap-math.git" as math
+
+// Directory import
+import "." as local                    // Current directory
+import "./subdir" as sub              // Relative path
+import "/absolute/path" as abs        // Absolute path
+
+// C library file import
+import "/path/to/libmylib.so" as mylib
+import "SDL3.dll" as sdl
+```
+
+### Import Behavior
+
+- **Libraries**: Searches for library files and headers, parses C headers for FFI
+- **Git Repos**: Clones to `~/.cache/flapc/` (respects `XDG_CACHE_HOME`), imports all top-level `.flap` files
+- **Directories**: Imports all top-level `.flap` files from the directory
+- **Version Specifiers**: 
+  - `@v1.0.0` - Specific tag
+  - `@main` or `@master` - Specific branch
+  - `@latest` - Latest tag (or default branch if no tags)
+  - No `@` - Uses default branch
+
 ## Complete Grammar
 
 ```ebnf
@@ -176,11 +231,23 @@ statement       = assignment
                 | cstruct_decl
                 | class_decl
                 | return_statement
-                | defer_statement ;
+                | defer_statement
+                | import_statement ;
 
 return_statement = "ret" [ "@" [ integer ] ] [ expression ] ;
 
 defer_statement  = "defer" expression ;
+
+import_statement = "import" import_source [ "as" identifier ] ;
+
+import_source   = string_literal           (* library name, file path, or directory *)
+                | git_url [ "@" version_spec ] ; (* git repository with optional version *)
+
+git_url         = identifier { "." identifier } { "/" identifier }  (* github.com/user/repo *)
+                | "git@" identifier ":" identifier "/" identifier ".git" ; (* git@github.com:user/repo.git *)
+
+version_spec    = identifier              (* tag, branch, "latest", or semver like "v1.0.0" *)
+                | "latest" ;
 
 cstruct_decl    = "cstruct" identifier "{" { field_decl } "}" ;
 

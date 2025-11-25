@@ -1467,16 +1467,111 @@ size = buffer_size as int32
 ptr = c.malloc(size)
 
 // Import C library namespaces
-import sdl3 as sdl
+import "sdl3" as sdl
 
 // Access constants from C headers
 flags := sdl.SDL_INIT_VIDEO
 window := sdl.SDL_CreateWindow("Title", 640, 480, flags)
 ```
 
+## Import System
+
+Flap provides a unified import system for libraries, git repositories, and local files.
+
+### Import Priority
+
+1. **Libraries** (highest priority) - system libraries, .dll/.so files
+2. **Git Repositories** - GitHub, GitLab, etc. with version control
+3. **Local Directories** (lowest priority) - relative/absolute paths
+
+### Library Imports
+
+```flap
+// System library (uses pkg-config on Linux/macOS)
+import "sdl3" as sdl
+import "raylib" as rl
+
+// Windows DLL (searches current dir, then system paths)
+import "SDL3.dll" as sdl
+import "kernel32.dll" as kernel
+
+// Direct library file path
+import "/usr/lib/libmylib.so" as mylib
+import "C:\\Windows\\System32\\user32.dll" as user32
+```
+
+**Library resolution:**
+- Linux/macOS: Uses `pkg-config` to find headers and libraries
+- Windows: Searches for .dll in current directory, then system paths
+- Parses C headers automatically for function signatures and constants
+
+### Git Repository Imports
+
+```flap
+// HTTPS format (recommended)
+import "github.com/xyproto/flap-math" as math
+
+// With version specifier
+import "github.com/xyproto/flap-math@v1.0.0" as math
+import "github.com/xyproto/flap-math@v2.1.3" as math
+import "github.com/xyproto/flap-math@latest" as math
+import "github.com/xyproto/flap-math@main" as math
+
+// SSH format
+import "git@github.com:xyproto/flap-math.git" as math
+
+// GitLab and other providers
+import "gitlab.com/user/project" as proj
+import "bitbucket.org/user/repo" as repo
+```
+
+**Git repository behavior:**
+- Clones to `~/.cache/flapc/` (respects `XDG_CACHE_HOME`)
+- Imports all top-level `.flap` files from the repository
+- Version specifiers:
+  - `@v1.0.0` - Specific tag
+  - `@main` / `@master` - Specific branch
+  - `@latest` - Latest tag, or default branch if no tags
+  - No `@` - Uses default branch
+
+### Directory Imports
+
+```flap
+// Current directory
+import "." as local
+
+// Relative paths
+import "./lib" as lib
+import "../shared" as shared
+
+// Absolute paths
+import "/opt/flaplib" as flaplib
+import "C:\\Projects\\mylib" as mylib
+```
+
+**Directory behavior:**
+- Imports all top-level `.flap` files from the directory
+- Relative paths resolved from current working directory
+- Allows organizing code into modules
+
+### Import Examples
+
+```flap
+// Complete game development setup
+import "sdl3" as sdl                           // System library
+import "github.com/xyproto/flap-math" as math  // Git repo
+import "./game_logic" as game                  // Local directory
+
+main = {
+    sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
+    angle := math.radians(45)
+    game.start_level(1)
+}
+```
+
 ### Header Parsing and Constants
 
-Flap automatically parses C header files using pkg-config and DWARF information:
+Flap automatically parses C header files using pkg-config and library introspection:
 
 ```flap
 import sdl3 as sdl  // Parses SDL3 headers, extracts constants and function signatures

@@ -347,91 +347,81 @@ func (p *Parser) ParseProgram() *Program {
 func (p *Parser) parseImport() Statement {
 	p.nextToken() // skip 'import'
 
-	// Auto-detect import type:
-	// - String ending with ".so" -> C library .so file: import "/path/to/lib.so" as alias
-	// - String with "/" -> Flap package (Git): import "github.com/user/pkg" as alias
-	// - Identifier -> C library: import sdl3 as sdl, import raylib as rl
+	// Parse import source (string literal or identifier chain)
+	// Examples:
+	// - import "sdl3" as sdl                                 (library)
+	// - import "github.com/user/repo" as repo                (git)
+	// - import "github.com/user/repo@v1.0.0" as repo         (git with version)
+	// - import "." as local                                  (directory)
+	// - import "/path/to/lib.so" as lib                      (library file)
+
+	var source string
+	var isLibraryFile bool
 
 	if p.current.Type == TOKEN_STRING {
-		value := p.current.Value
-
-		// Check if this is a .so file import
-		if strings.HasSuffix(value, ".so") || strings.Contains(value, ".so.") {
-			// C library .so file import: import "/tmp/libmylib.so" as mylib
-			p.nextToken()
-
-			if p.current.Type != TOKEN_AS {
-				p.error("expected 'as' after .so file path")
-			}
-			p.nextToken()
-
-			if p.current.Type != TOKEN_IDENT {
-				p.error("expected alias after 'as'")
-			}
-			alias := p.current.Value
-			p.nextToken()
-
-			// Extract just the filename from the path
-			soPath := value
-			soFilename := soPath
-			if lastSlash := strings.LastIndex(soPath, "/"); lastSlash != -1 {
-				soFilename = soPath[lastSlash+1:]
-			}
-
-			// Register C import namespace
-			p.cImports[alias] = true
-			return &CImportStmt{Library: soFilename, Alias: alias, SoPath: soPath}
-		}
-
-		// Git import: import "url@version" as alias
-		urlWithVersion := value
+		source = p.current.Value
+		
+		// Check if it's a library file (.so, .dll, .dylib)
+		isLibraryFile = strings.HasSuffix(source, ".so") || 
+			strings.Contains(source, ".so.") ||
+			strings.HasSuffix(source, ".dll") ||
+			strings.HasSuffix(source, ".dylib")
+		
 		p.nextToken()
-
-		// Parse URL and optional version (URL@version)
-		url := urlWithVersion
-		version := ""
-		if atIndex := strings.LastIndex(urlWithVersion, "@"); atIndex != -1 {
-			url = urlWithVersion[:atIndex]
-			version = urlWithVersion[atIndex+1:]
-		}
-
-		if p.current.Type != TOKEN_AS {
-			p.error("expected 'as' after import URL")
-		}
+	} else if p.current.Type == TOKEN_IDENT {
+		// Bare identifier for library: import sdl3 as sdl
+		source = p.current.Value
 		p.nextToken()
-
-		if p.current.Type != TOKEN_IDENT && p.current.Type != TOKEN_STAR {
-			p.error("expected alias or '*' after 'as'")
-		}
-		alias := p.current.Value
-		p.nextToken()
-
-		return &ImportStmt{URL: url, Version: version, Alias: alias}
+	} else {
+		p.error("expected string or identifier after 'import'")
+		return nil
 	}
 
-	if p.current.Type == TOKEN_IDENT {
-		// C library import: import sdl3 as sdl, import raylib as rl
-		libName := p.current.Value
-		p.nextToken()
+	// Parse 'as alias'
+	if p.current.Type != TOKEN_AS {
+		p.error("expected 'as' after import source")
+	}
+	p.nextToken()
 
-		if p.current.Type != TOKEN_AS {
-			p.error("expected 'as' after library name")
-		}
-		p.nextToken()
+	if p.current.Type != TOKEN_IDENT && p.current.Type != TOKEN_STAR {
+		p.error("expected alias or '*' after 'as'")
+	}
+	alias := p.current.Value
+	p.nextToken()
 
-		if p.current.Type != TOKEN_IDENT {
-			p.error("expected alias after 'as'")
+	// Parse the import spec
+	spec, err := ParseImportSource(source)
+	if err != nil {
+		p.error(fmt.Sprintf("invalid import source: %v", err))
+		return nil
+	}
+
+	// Determine import type based on source
+	// Library files are always treated as C imports
+	if isLibraryFile {
+		// Extract just the filename from the path
+		filename := source
+		if lastSlash := strings.LastIndex(source, "/"); lastSlash != -1 {
+			filename = source[lastSlash+1:]
+		} else if lastSlash := strings.LastIndex(source, "\\"); lastSlash != -1 {
+			filename = source[lastSlash+1:]
 		}
-		alias := p.current.Value
-		p.nextToken()
 
 		// Register C import namespace
 		p.cImports[alias] = true
-		return &CImportStmt{Library: libName, Alias: alias}
+		return &CImportStmt{Library: filename, Alias: alias, SoPath: source}
 	}
 
-	p.error("expected library name or git URL string after 'import'")
-	return nil
+	// If it has a version or looks like a git URL, it's an ImportStmt (git/flap)
+	if spec.Version != "" || isGitURL(source) || 
+		strings.Contains(source, "/") || strings.Contains(source, "\\") {
+		// Git repository or directory import
+		return &ImportStmt{URL: spec.Source, Version: spec.Version, Alias: alias}
+	}
+
+	// Otherwise, it's a library name (C import)
+	p.cImports[alias] = true
+	return &CImportStmt{Library: source, Alias: alias}
 }
 
 func (p *Parser) parseArenaStmt() *ArenaStmt {

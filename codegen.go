@@ -15641,7 +15641,7 @@ func filterPrivateFunctions(program *Program) {
 	program.Statements = publicStmts
 }
 
-func processImports(program *Program) error {
+func processImports(program *Program, platform Platform) error {
 	// Find all import statements (both Git and C imports)
 	var imports []*ImportStmt
 	var cImports []*CImportStmt
@@ -15669,14 +15669,14 @@ func processImports(program *Program) error {
 	}
 
 	if len(imports) == 0 {
-		return nil // No Git imports to process
+		return nil // No Flap imports to process
 	}
 
 	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "Processing %d Git import(s)\n", len(imports))
+		fmt.Fprintf(os.Stderr, "Processing %d import(s)\n", len(imports))
 	}
 
-	// Process each import
+	// Process each import using the import resolver
 	for _, imp := range imports {
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "Importing %s", imp.URL)
@@ -15690,16 +15690,17 @@ func processImports(program *Program) error {
 			fmt.Fprintf(os.Stderr, " as %s\n", imp.Alias)
 		}
 
-		// Clone/cache the repository
-		repoPath, err := EnsureRepoClonedWithVersion(imp.URL, imp.Version, UpdateDepsFlag)
-		if err != nil {
-			return fmt.Errorf("failed to fetch %s: %v", imp.URL, err)
+		// Create import spec
+		spec := &ImportSpec{
+			Source:  imp.URL,
+			Version: imp.Version,
+			Alias:   imp.Alias,
 		}
 
-		// Find all .flap files in the repository
-		flapFiles, err := FindFlapFiles(repoPath)
+		// Resolve the import (library, git repo, or directory)
+		flapFiles, err := ResolveImport(spec, platform.OS.String(), platform.Arch.String())
 		if err != nil {
-			return fmt.Errorf("failed to find .flap files in %s: %v", repoPath, err)
+			return fmt.Errorf("failed to resolve import %s: %v", imp.URL, err)
 		}
 
 		// Parse and merge each .flap file with namespace handling
@@ -15950,7 +15951,7 @@ func CompileFlapWithOptions(inputPath string, outputPath string, platform Platfo
 	var combinedSource string
 
 	// Process explicit import statements
-	err = processImports(program)
+	err = processImports(program, platform)
 	if err != nil {
 		return fmt.Errorf("failed to process imports: %v", err)
 	}
