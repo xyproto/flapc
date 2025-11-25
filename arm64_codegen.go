@@ -282,9 +282,65 @@ func (acg *ARM64CodeGen) compileStatement(stmt Statement) error {
 		// svc #0 instruction
 		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4}) // svc #0
 		return nil
+	case *JumpStmt:
+		return acg.compileJumpStatement(s)
 	default:
 		return fmt.Errorf("unsupported statement type for ARM64: %T", stmt)
 	}
+}
+
+// compileJumpStatement compiles jump statements (ret, @label)
+func (acg *ARM64CodeGen) compileJumpStatement(stmt *JumpStmt) error {
+	// Handle function return: ret with Label=0
+	if stmt.Label == 0 && stmt.IsBreak {
+		// Return from function
+		if stmt.Value != nil {
+			if err := acg.compileExpression(stmt.Value); err != nil {
+				return err
+			}
+			// d0 now contains return value
+		}
+		
+		// Restore frame pointer and link register, then return
+		if err := acg.out.LdrImm64("x30", "sp", 8); err != nil {
+			return err
+		}
+		if err := acg.out.LdrImm64("x29", "sp", 0); err != nil {
+			return err
+		}
+		// Add back stack frame size
+		if acg.currentLambda != nil {
+			// Lambda has its own frame size
+			// Calculate based on stored params - simplified version
+			paramCount := len(acg.currentLambda.Params)
+			frameSize := uint32((16 + paramCount*8 + 2048 + 15) &^ 15)
+			if err := acg.out.AddImm64("sp", "sp", frameSize); err != nil {
+				return err
+			}
+		} else {
+			// Main program frame
+			if err := acg.out.AddImm64("sp", "sp", uint32(acg.stackFrameSize)); err != nil {
+				return err
+			}
+		}
+		// ret instruction
+		if err := acg.out.Return("x30"); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	// All other cases require being inside a loop
+	if len(acg.activeLoops) == 0 {
+		keyword := "@"
+		if stmt.IsBreak {
+			keyword = "ret"
+		}
+		return fmt.Errorf("%s used outside of loop", keyword)
+	}
+
+	// Loop continue/break handling (not fully implemented yet)
+	return fmt.Errorf("loop jump statements not yet implemented for ARM64")
 }
 
 // pushDeferScope creates a new defer scope for collecting deferred expressions
