@@ -80,16 +80,16 @@ Foreign types are used at FFI boundaries to guide marshalling.
 
 The grammar uses Extended Backus-Naur Form (EBNF):
 
-| Notation | Meaning |
-|----------|---------|
-| `=` | Definition |
-| `;` | Termination |
-| `\|` | Alternation |
-| `[ ... ]` | Optional (zero or one) |
-| `{ ... }` | Repetition (zero or more) |
-| `( ... )` | Grouping |
-| `"..."` | Terminal string |
-| `letter`, `digit` | Character classes |
+| Notation          | Meaning                   |             |
+|-------------------|---------------------------|-------------|
+| `=`               | Definition                |             |
+| `;`               | Termination               |             |
+| `\                | `                         | Alternation |
+| `[ ... ]`         | Optional (zero or one)    |             |
+| `{ ... }`         | Repetition (zero or more) |             |
+| `( ... )`         | Grouping                  |             |
+| `"..."`           | Terminal string           |             |
+| `letter`, `digit` | Character classes         |             |
 
 ## Block Disambiguation Rules
 
@@ -211,7 +211,7 @@ import "SDL3.dll" as sdl
 - **Libraries**: Searches for library files and headers, parses C headers for FFI
 - **Git Repos**: Clones to `~/.cache/flapc/` (respects `XDG_CACHE_HOME`), imports all top-level `.flap` files
 - **Directories**: Imports all top-level `.flap` files from the directory
-- **Version Specifiers**: 
+- **Version Specifiers**:
   - `@v1.0.0` - Specific tag
   - `@main` or `@master` - Specific branch
   - `@latest` - Latest tag (or default branch if no tags)
@@ -225,13 +225,14 @@ Flap programs can be structured in three ways:
 When a `main` function is defined, it becomes the program entry point:
 
 ```flap
-main = { println("Hello!") }     // Returns 0 (empty block)
-main = 42                         // Returns 42
-main = () -> { 100 }             // Returns 100
+main = { println("Hello!") }     // A lambda that returns the value returned from println (0)
+main = 42                        // A Flap number {0: 42.0}
+main = () -> { 100 }             // A lambda that returns 100
+main = { 100 }                   // A lambda that returns 100
 ```
 
 **Return value rules:**
-- If `main` returns a float: converted to int32 for exit code
+- If `main` is set to a number, it is converted to int32 for the exit code
 - If `main` returns an empty map `{}` or empty list `[]`: exit code 0
 - If `main` is callable (function): called, result becomes exit code
 - Return values are implicitly cast to int32 for `_start`
@@ -341,10 +342,11 @@ class_field_decl = identifier "." identifier "=" expression ;
 
 method_decl     = identifier "=" lambda_expr ;
 
-c_type          = "int8" | "int16" | "int32" | "int64"
-                | "uint8" | "uint16" | "uint32" | "uint64"
-                | "float32" | "float64"
-                | "ptr" | "cstr" ;
+| c_type          = "int8" | "int16"   | "int32"   | "int64"  |          |
+|--------------------------|-----------|-----------|----------|----------|
+|                          | "uint8"   | "uint16"  | "uint32" | "uint64" |
+|                          | "float32" | "float64" |          |          |
+|                          | "ptr"     | "cstr" ;  |          |          |
 
 arena_statement = "arena" block ;
 
@@ -356,14 +358,17 @@ parallel_statement = "||" identifier "in" expression block ;
 
 unsafe_statement = "unsafe" type_cast block [ block ] [ block ] ;
 
-type_cast       = "int8" | "int16" | "int32" | "int64"
-                | "uint8" | "uint16" | "uint32" | "uint64"
-                | "float32" | "float64"
-                | "number" | "string" | "list" | "address"
-                | "packed" | "aligned" ;
+| type_cast       = "int8" | "int16"   | "int32"     | "int64"  |           |
+|--------------------------|-----------|-------------|----------|-----------|
+|                          | "uint8"   | "uint16"    | "uint32" | "uint64"  |
+|                          | "float32" | "float64"   |          |           |
+|                          | "number"  | "string"    | "list"   | "address" |
+|                          | "packed"  | "aligned" ; |          |           |
 
-assignment      = identifier [ ":" type_annotation ] ("=" | ":=" | "<-") expression
-                | identifier ("+=" | "-=" | "*=" | "/=" | "%=" | "**=") expression
+| assignment      = identifier [ ":" type_annotation ] ("=" | ":="             | "<-") expression |      |      |      |                   |
+|-----------------------------------------------------------|------------------|------------------|------|------|------|-------------------|
+|                                                           | identifier ("+=" | "-="             | "*=" | "/=" | "%=" | "**=") expression |
+
                 | indexed_expr "<-" expression
                 | identifier_list ("=" | ":=" | "<-") expression ;  // Multiple assignment
 
@@ -373,8 +378,9 @@ type_annotation = native_type | foreign_type ;
 
 native_type     = "num" | "str" | "list" | "map" ;
 
-foreign_type    = "cstring" | "cptr" | "cint" | "clong" 
-                | "cfloat" | "cdouble" | "cbool" | "cvoid" ;
+| foreign_type    = "cstring" | "cptr"   | "cint"    | "clong" |           |
+|-----------------------------|----------|-----------|---------|-----------|
+|                             | "cfloat" | "cdouble" | "cbool" | "cvoid" ; |
 
 indexed_expr    = identifier "[" expression "]" ;
 
@@ -582,9 +588,11 @@ fstring         = 'f"' { character | "{" expression "}" } '"' ;
 Identifiers start with a letter and contain letters, digits, or underscores:
 
 ```ebnf
-identifier = letter { letter | digit | "_" } ;
-letter     = "a" | "b" | ... | "z" | "A" | "B" | ... | "Z" ;
-digit      = "0" | "1" | ... | "9" ;
+| identifier = letter { letter | digit | "_" } ; |       |     |     |     |       |
+|------------------------------|-------|---------|-------|-----|-----|-----|-------|
+| letter     = "a"             | "b"   | ...     | "z"   | "A" | "B" | ... | "Z" ; |
+| digit      = "0"             | "1"   | ...     | "9" ; |     |     |     |       |
+
 ```
 
 **Rules:**
@@ -841,17 +849,17 @@ All bitwise operators use `b` suffix:
 
 **Arrow Operator Summary:**
 
-| Operator | Context | Meaning | Example |
-|----------|---------|---------|---------|
-| `->` | Lambda definition | Lambda arrow | `x -> x * 2` or `-> println("hi")` |
-| `=>` | Match block | Match arm | `x { 0 => "zero" ~> "other" }` |
-| `~>` | Match block | Default match arm | `x { 0 => "zero" ~> "other" }` |
-| `_ =>` | Match block | Default match arm (alias for ~>) | `x { 0 => "zero" _ => "other" }` |
-| `=` | Variable binding | Immutable assignment | `x = 42` (standard for functions) |
-| `:=` | Variable binding | Mutable assignment | `x := 42` (can reassign later) |
-| `<-` | Update/Send | Update mutable var OR send to ENet | `x <- 99` or `&8080 <- msg` |
-| `<=` | Comparison | Less than or equal | `x <= 10` |
-| `>=` | Comparison | Greater than or equal | `x >= 10` |
+| Operator | Context           | Meaning                            | Example                            |
+|----------|-------------------|------------------------------------|------------------------------------|
+| `->`     | Lambda definition | Lambda arrow                       | `x -> x * 2` or `-> println("hi")` |
+| `=>`     | Match block       | Match arm                          | `x { 0 => "zero" ~> "other" }`     |
+| `~>`     | Match block       | Default match arm                  | `x { 0 => "zero" ~> "other" }`     |
+| `_ =>`   | Match block       | Default match arm (alias for ~>)   | `x { 0 => "zero" _ => "other" }`   |
+| `=`      | Variable binding  | Immutable assignment               | `x = 42` (standard for functions)  |
+| `:=`     | Variable binding  | Mutable assignment                 | `x := 42` (can reassign later)     |
+| `<-`     | Update/Send       | Update mutable var OR send to ENet | `x <- 99` or `&8080 <- msg`        |
+| `<=`     | Comparison        | Less than or equal                 | `x <= 10`                          |
+| `>=`     | Comparison        | Greater than or equal              | `x >= 10`                          |
 
 **Important Conventions:**
 - **Functions/methods** should use `=` (immutable), not `:=`, since they rarely need reassignment
@@ -1899,19 +1907,19 @@ format_error(code: cint) -> str {
 
 ### Type Semantics
 
-| Type | Runtime Repr | Purpose | Example |
-|------|-------------|---------|---------|
-| `num` | `{0: 42.0}` | Number intent | `x: num = 42` |
-| `str` | `{0: 72.0, 1: 105.0}` | String intent | `name: str = "Hi"` |
-| `list` | `{0: 1.0, 1: 2.0}` | List intent | `xs: list = [1, 2]` |
-| `map` | `{hash("x"): 10.0}` | Map intent | `m: map = {x: 10}` |
-| `cstring` | `{0: <ptr>}` | C `char*` | `s: cstring = c.fn()` |
-| `cptr` | `{0: <ptr>}` | C pointer | `p: cptr = sdl.fn()` |
-| `cint` | `{0: 42.0}` | C `int` | `n: cint = sdl.fn()` |
-| `clong` | `{0: 42.0}` | C `int64_t` | `l: clong = c.time()` |
-| `cfloat` | `{0: 3.14}` | C `float` | `f: cfloat = 3.14` |
-| `cdouble` | `{0: 3.14}` | C `double` | `d: cdouble = c.fn()` |
-| `cbool` | `{0: 1.0}` | C `bool` | `ok: cbool = c.fn()` |
+| Type      | Runtime Repr          | Purpose       | Example               |
+|-----------|-----------------------|---------------|-----------------------|
+| `num`     | `{0: 42.0}`           | Number intent | `x: num = 42`         |
+| `str`     | `{0: 72.0, 1: 105.0}` | String intent | `name: str = "Hi"`    |
+| `list`    | `{0: 1.0, 1: 2.0}`    | List intent   | `xs: list = [1, 2]`   |
+| `map`     | `{hash("x"): 10.0}`   | Map intent    | `m: map = {x: 10}`    |
+| `cstring` | `{0: <ptr>}`          | C `char*`     | `s: cstring = c.fn()` |
+| `cptr`    | `{0: <ptr>}`          | C pointer     | `p: cptr = sdl.fn()`  |
+| `cint`    | `{0: 42.0}`           | C `int`       | `n: cint = sdl.fn()`  |
+| `clong`   | `{0: 42.0}`           | C `int64_t`   | `l: clong = c.time()` |
+| `cfloat`  | `{0: 3.14}`           | C `float`     | `f: cfloat = 3.14`    |
+| `cdouble` | `{0: 3.14}`           | C `double`    | `d: cdouble = c.fn()` |
+| `cbool`   | `{0: 1.0}`            | C `bool`      | `ok: cbool = c.fn()`  |
 
 ### FFI Marshalling
 
