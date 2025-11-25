@@ -1316,8 +1316,12 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 					// (compileStatement calls compileExpression for ExpressionStmt)
 					return nil
 				}
+				// Other statement types: no explicit return value
+				return nil
 			}
 		}
+		// Empty block: return 0
+		return acg.compileExpression(&NumberExpr{Value: 0.0})
 
 	case *CastExpr:
 		// For now, just compile the expression being cast
