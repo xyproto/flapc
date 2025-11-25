@@ -1838,6 +1838,8 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 	switch call.Function {
 	case "println":
 		return acg.compilePrintln(call)
+	case "eprint", "eprintln", "eprintf":
+		return acg.compileEprint(call)
 	case "exit":
 		return acg.compileExit(call)
 	case "exitf", "exitln":
@@ -2079,6 +2081,113 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 	}
 
 	return acg.compilePrintf(printfCall)
+}
+
+// compileEprint compiles eprint/eprintln/eprintf calls (stderr output)
+func (acg *ARM64CodeGen) compileEprint(call *CallExpr) error {
+	isNewline := call.Function == "eprintln"
+	isFormatted := call.Function == "eprintf"
+
+	if len(call.Args) == 0 {
+		if isNewline {
+			// Just print newline to stderr
+			label := fmt.Sprintf("eprintln_newline_%d", acg.stringCounter)
+			acg.stringCounter++
+			acg.eb.Define(label, "\n")
+
+			// mov x0, #2 (stderr)
+			if err := acg.out.MovImm64("x0", 2); err != nil {
+				return err
+			}
+
+			// Load string address into x1
+			offset := uint64(acg.eb.text.Len())
+			acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
+				offset:     offset,
+				symbolName: label,
+			})
+			acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0x90}) // ADRP x1, #0
+			acg.out.out.writer.WriteBytes([]byte{0x21, 0x00, 0x00, 0x91}) // ADD x1, x1, #0
+
+			// mov x2, #1
+			if err := acg.out.MovImm64("x2", 1); err != nil {
+				return err
+			}
+
+			// Syscall (write to stderr)
+			if acg.eb.target.OS() == OSDarwin {
+				if err := acg.out.MovImm64("x16", 4); err != nil { // write syscall
+					return err
+				}
+				acg.out.out.writer.WriteBytes([]byte{0x01, 0x10, 0x00, 0xd4}) // svc #0x80
+			} else {
+				if err := acg.out.MovImm64("x8", 64); err != nil { // write syscall = 64
+					return err
+				}
+				acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4}) // svc #0
+			}
+			return nil
+		}
+		return fmt.Errorf("%s requires at least one argument", call.Function)
+	}
+
+	arg := call.Args[0]
+
+	// For string literals, use syscall directly
+	if strExpr, ok := arg.(*StringExpr); ok {
+		label := fmt.Sprintf("str_%d", acg.stringCounter)
+		acg.stringCounter++
+		content := strExpr.Value
+		if isNewline {
+			content += "\n"
+		}
+		acg.eb.Define(label, content)
+
+		// mov x0, #2 (stderr)
+		if err := acg.out.MovImm64("x0", 2); err != nil {
+			return err
+		}
+
+		// Load string address into x1
+		offset := uint64(acg.eb.text.Len())
+		acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
+			offset:     offset,
+			symbolName: label,
+		})
+		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0x90}) // ADRP x1, #0
+		acg.out.out.writer.WriteBytes([]byte{0x21, 0x00, 0x00, 0x91}) // ADD x1, x1, #0
+
+		// mov x2, length
+		if err := acg.out.MovImm64("x2", uint64(len(content))); err != nil {
+			return err
+		}
+
+		// Syscall (write to stderr)
+		if acg.eb.target.OS() == OSDarwin {
+			if err := acg.out.MovImm64("x16", 4); err != nil { // write syscall
+				return err
+			}
+			acg.out.out.writer.WriteBytes([]byte{0x01, 0x10, 0x00, 0xd4}) // svc #0x80
+		} else {
+			if err := acg.out.MovImm64("x8", 64); err != nil { // write syscall = 64
+				return err
+			}
+			acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4}) // svc #0
+		}
+
+		return nil
+	}
+
+	// For other types, use fprintf(stderr, ...)
+	// Create a synthetic fprintf call
+	if isFormatted {
+		// TODO: implement proper formatting
+		return fmt.Errorf("eprintf with format strings not yet implemented for ARM64")
+	}
+
+	// For numeric values, use fprintf(stderr, "%g\n", value)
+	// This will require C FFI support which may not be fully implemented yet
+	return fmt.Errorf("eprint with non-string arguments not yet implemented for ARM64")
 }
 
 // compileLoopStatement compiles a loop statement
