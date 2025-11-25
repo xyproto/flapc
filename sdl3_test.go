@@ -98,12 +98,48 @@ sdl.SDL_Quit()
 println("Done!")
 `
 
-	// Just verify it compiles - Wine with SDL3 may not work in all environments
-	result := compileAndRunWindows(t, source)
+	// Just verify it compiles for Windows - don't run with Wine
+	// (Wine with SDL3 may not work in all environments and SDL3 may not be installed)
+	tmpFile, err := os.CreateTemp("", "sdl3_windows_test_*.flap")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
 
-	// At minimum, check that compilation succeeded and created an .exe
-	// Wine output may vary, so we're lenient on runtime checks
-	t.Logf("Windows SDL3 compilation output: %s", result)
+	if _, err := tmpFile.WriteString(source); err != nil {
+		tmpFile.Close()
+		t.Fatalf("Failed to write source: %v", err)
+	}
+	tmpFile.Close()
+
+	// Compile for Windows
+	outputPath := tmpPath + ".exe"
+	defer os.Remove(outputPath)
+
+	platform := Platform{
+		Arch: ArchX86_64,
+		OS:   OSWindows,
+	}
+
+	err = CompileFlap(tmpPath, outputPath, platform)
+	if err != nil {
+		t.Errorf("Windows SDL3 compilation failed: %v", err)
+		return
+	}
+
+	// Verify PE executable was created
+	info, err := os.Stat(outputPath)
+	if err != nil {
+		t.Errorf("Output file not created: %v", err)
+		return
+	}
+
+	if info.Size() < 100 {
+		t.Errorf("Output file suspiciously small: %d bytes", info.Size())
+	}
+
+	t.Logf("Successfully compiled SDL3 Windows program: %d bytes", info.Size())
 }
 
 func TestSDL3Constants(t *testing.T) {

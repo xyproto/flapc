@@ -299,9 +299,26 @@ println(double(5))
 			tmpOutput.Close()
 			defer os.Remove(tmpOutputPath)
 
+			// Suppress stderr during compilation (these are expected errors)
+			oldStderr := os.Stderr
+			devNull, err := os.Open(os.DevNull)
+			if err == nil {
+				os.Stderr = devNull
+				defer func() {
+					os.Stderr = oldStderr
+					devNull.Close()
+				}()
+			}
+
 			// Try to compile - should fail
 			platform := GetDefaultPlatform()
 			err = CompileFlap(tmpFilePath, tmpOutputPath, platform)
+
+			// Restore stderr before checking results
+			if devNull != nil {
+				os.Stderr = oldStderr
+				devNull.Close()
+			}
 
 			// Verify it failed
 			if err == nil {

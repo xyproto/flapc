@@ -571,7 +571,10 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.popDeferScope()
 
 	// Cleanup all arenas in meta-arena at program exit
-	fc.cleanupAllArenas()
+	// Skip on Windows to avoid Wine compatibility issues (OS will clean up on process exit anyway)
+	if fc.eb.target.OS() != OSWindows {
+		fc.cleanupAllArenas()
+	}
 
 	// Always add implicit exit at the end of the program
 	// Even if there's an exit() call in the code, it might be conditional
@@ -1981,14 +1984,16 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	}
 
 	// V1 IMPLEMENTATION: Actual parallel execution with thread spawning
-	fmt.Fprintf(os.Stderr, "Info: Parallel loop detected: %d threads for range [%d, %d)\n",
-		actualThreads, start, end)
-	fmt.Fprintf(os.Stderr, "      Work distribution: %d items/thread", chunkSize)
-	if remainder > 0 {
-		fmt.Fprintf(os.Stderr, " (+%d to last thread)", remainder)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Info: Parallel loop detected: %d threads for range [%d, %d)\n",
+			actualThreads, start, end)
+		fmt.Fprintf(os.Stderr, "      Work distribution: %d items/thread", chunkSize)
+		if remainder > 0 {
+			fmt.Fprintf(os.Stderr, " (+%d to last thread)", remainder)
+		}
+		fmt.Fprintf(os.Stderr, "\n")
+		fmt.Fprintf(os.Stderr, "      Emitting parallel execution assembly code\n")
 	}
-	fmt.Fprintf(os.Stderr, "\n")
-	fmt.Fprintf(os.Stderr, "      Emitting parallel execution assembly code\n")
 
 	// Step 1: Allocate space on stack for barrier
 	// Barrier layout: [count: int64][total: int64] = 16 bytes total
@@ -2033,7 +2038,9 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	// All children execute the same code but with different work ranges
 	// Each thread synchronizes at barrier after completion
 
-	fmt.Fprintf(os.Stderr, "      Note: V6 spawning %d threads with barrier synchronization\n", actualThreads)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "      Note: V6 spawning %d threads with barrier synchronization\n", actualThreads)
+	}
 
 	// Allocate pthread_t array on stack to store thread IDs
 	// Each pthread_t is 8 bytes, allocate space for all threads
@@ -2043,8 +2050,10 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 
 	// Spawn actualThreads child threads using pthread_create
 	for threadIdx := 0; threadIdx < actualThreads; threadIdx++ {
-		fmt.Fprintf(os.Stderr, "      Spawning thread %d with range [%d, %d)\n",
-			threadIdx, threadRanges[threadIdx][0], threadRanges[threadIdx][1])
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "      Spawning thread %d with range [%d, %d)\n",
+				threadIdx, threadRanges[threadIdx][0], threadRanges[threadIdx][1])
+		}
 
 		// Allocate thread argument structure on heap (32 bytes)
 		// Structure: [start: int64][end: int64][barrier_ptr: int64][parent_rbp: int64]
@@ -8193,80 +8202,158 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.Ret()
 
 	// Generate _flap_string_println(string_ptr) - prints string followed by newline
-	// Argument: rdi = string pointer (map with [count][0][char0][1][char1]...)
-	// Uses write syscall - no PLT dependencies
+	// Argument: rdi/rcx (platform-dependent) = string pointer (map with [count][0][char0][1][char1]...)
 	fc.eb.MarkLabel("_flap_string_println")
 
-	fc.out.PushReg("rbp")
-	fc.out.MovRegToReg("rbp", "rsp")
-	fc.out.PushReg("rbx")
-	fc.out.PushReg("r12")
-	fc.out.PushReg("r13")
-	fc.out.PushReg("r14")
+	// For Windows, we use a simpler approach: call printf for each character
+	// For Unix, we use write syscall for efficiency
+	if fc.eb.target.OS() == OSWindows {
+		// Windows version: use printf to print the string
+		fc.out.PushReg("rbp")
+		fc.out.MovRegToReg("rbp", "rsp")
+		fc.out.PushReg("rbx")
+		fc.out.PushReg("r12")
+		fc.out.PushReg("r14")
 
-	fc.out.MovRegToReg("rbx", "rdi") // rbx = string pointer
+		// Windows calling convention: first arg is rcx
+		fc.out.MovRegToReg("rbx", "rcx") // rbx = string pointer
 
-	// Get length
-	fc.out.MovMemToXmm("xmm0", "rbx", 0)
-	fc.out.Cvttsd2si("r12", "xmm0") // r12 = length
+		// Get length
+		fc.out.MovMemToXmm("xmm0", "rbx", 0)
+		fc.out.Cvttsd2si("r12", "xmm0") // r12 = length
 
-	// Allocate 1-byte buffer on stack
-	fc.out.SubImmFromReg("rsp", 8)
-	fc.out.MovRegToReg("r13", "rsp") // r13 = buffer address
+		// Loop through characters
+		fc.out.XorRegWithReg("r14", "r14") // r14 = index
 
-	// Loop through characters
-	fc.out.XorRegWithReg("r14", "r14") // r14 = index (use r14 instead of rcx since syscall clobbers rcx)
+		strPrintLoopStart := fc.eb.text.Len()
+		fc.out.CmpRegToReg("r14", "r12")
+		strPrintLoopEnd := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpGreaterOrEqual, 0)
+		strPrintLoopEndPos := fc.eb.text.Len()
 
-	strPrintLoopStart := fc.eb.text.Len()
-	fc.out.CmpRegToReg("r14", "r12")
-	strPrintLoopEnd := fc.eb.text.Len()
-	fc.out.JumpConditional(JumpGreaterOrEqual, 0)
-	strPrintLoopEndPos := fc.eb.text.Len()
+		// Calculate offset: 16 + index * 16
+		fc.out.MovRegToReg("rax", "r14")
+		fc.out.ShlImmReg("rax", 4)       // rax = index * 16
+		fc.out.AddImmToReg("rax", 16)    // rax = 16 + index * 16
+		fc.out.AddRegToReg("rax", "rbx") // rax = string_ptr + offset
 
-	// Calculate offset: 16 + index * 16
-	fc.out.MovRegToReg("rax", "r14")
-	fc.out.ShlImmReg("rax", 4)       // rax = index * 16
-	fc.out.AddImmToReg("rax", 16)    // rax = 16 + index * 16
-	fc.out.AddRegToReg("rax", "rbx") // rax = string_ptr + offset
+		// Load character code
+		fc.out.MovMemToXmm("xmm0", "rax", 0)
+		fc.out.Cvttsd2si("rdx", "xmm0") // rdx = character code
 
-	// Load character code
-	fc.out.MovMemToXmm("xmm0", "rax", 0)
-	fc.out.Cvttsd2si("rdi", "xmm0")
-	fc.out.MovRegToMem("rdi", "r13", 0)
+		// Call putchar via printf
+		// printf("%c", char)
+		// Create format string "%c"
+		charFmtLabel := fmt.Sprintf("_flap_char_fmt_%d", fc.stringCounter)
+		fc.stringCounter++
+		fc.eb.Define(charFmtLabel, "%c\x00")
 
-	// write(1, buffer, 1)
-	fc.out.MovImmToReg("rax", "1")   // syscall: write
-	fc.out.MovImmToReg("rdi", "1")   // fd: stdout
-	fc.out.MovRegToReg("rsi", "r13") // buffer
-	fc.out.MovImmToReg("rdx", "1")   // length: 1
-	fc.out.Syscall()
+		fc.out.SubImmFromReg("rsp", 32) // Shadow space
+		fc.out.LeaSymbolToReg("rcx", charFmtLabel)
+		// rdx already has the character
+		fc.trackFunctionCall("printf")
+		fc.eb.GenerateCallInstruction("printf")
+		fc.out.AddImmToReg("rsp", 32)
 
-	// Increment and loop
-	fc.out.IncReg("r14")
-	strPrintBackOffset := int32(strPrintLoopStart - (fc.eb.text.Len() + 5))
-	fc.out.JumpUnconditional(strPrintBackOffset)
+		// Increment and loop
+		fc.out.IncReg("r14")
+		strPrintBackOffset := int32(strPrintLoopStart - (fc.eb.text.Len() + 5))
+		fc.out.JumpUnconditional(strPrintBackOffset)
 
-	// Patch loop end
-	strPrintDonePos := fc.eb.text.Len()
-	fc.patchJumpImmediate(strPrintLoopEnd+2, int32(strPrintDonePos-strPrintLoopEndPos))
+		// Patch loop end
+		strPrintDonePos := fc.eb.text.Len()
+		fc.patchJumpImmediate(strPrintLoopEnd+2, int32(strPrintDonePos-strPrintLoopEndPos))
 
-	// Print newline
-	fc.out.MovImmToReg("rax", "10") // '\n'
-	fc.out.MovRegToMem("rax", "r13", 0)
-	fc.out.MovImmToReg("rax", "1")   // syscall: write
-	fc.out.MovImmToReg("rdi", "1")   // fd: stdout
-	fc.out.MovRegToReg("rsi", "r13") // buffer
-	fc.out.MovImmToReg("rdx", "1")   // length: 1
-	fc.out.Syscall()
+		// Print newline: printf("\n")
+		newlineFmtLabel := fmt.Sprintf("_flap_newline_fmt_%d", fc.stringCounter)
+		fc.stringCounter++
+		fc.eb.Define(newlineFmtLabel, "\n\x00")
 
-	// Restore
-	fc.out.AddImmToReg("rsp", 8)
-	fc.out.PopReg("r14")
-	fc.out.PopReg("r13")
-	fc.out.PopReg("r12")
-	fc.out.PopReg("rbx")
-	fc.out.PopReg("rbp")
-	fc.out.Ret()
+		fc.out.SubImmFromReg("rsp", 32)
+		fc.out.LeaSymbolToReg("rcx", newlineFmtLabel)
+		fc.trackFunctionCall("printf")
+		fc.eb.GenerateCallInstruction("printf")
+		fc.out.AddImmToReg("rsp", 32)
+
+		// Restore
+		fc.out.PopReg("r14")
+		fc.out.PopReg("r12")
+		fc.out.PopReg("rbx")
+		fc.out.PopReg("rbp")
+		fc.out.Ret()
+	} else {
+		// Unix version: use write syscall
+		fc.out.PushReg("rbp")
+		fc.out.MovRegToReg("rbp", "rsp")
+		fc.out.PushReg("rbx")
+		fc.out.PushReg("r12")
+		fc.out.PushReg("r13")
+		fc.out.PushReg("r14")
+
+		fc.out.MovRegToReg("rbx", "rdi") // rbx = string pointer
+
+		// Get length
+		fc.out.MovMemToXmm("xmm0", "rbx", 0)
+		fc.out.Cvttsd2si("r12", "xmm0") // r12 = length
+
+		// Allocate 1-byte buffer on stack
+		fc.out.SubImmFromReg("rsp", 8)
+		fc.out.MovRegToReg("r13", "rsp") // r13 = buffer address
+
+		// Loop through characters
+		fc.out.XorRegWithReg("r14", "r14") // r14 = index (use r14 instead of rcx since syscall clobbers rcx)
+
+		strPrintLoopStart := fc.eb.text.Len()
+		fc.out.CmpRegToReg("r14", "r12")
+		strPrintLoopEnd := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpGreaterOrEqual, 0)
+		strPrintLoopEndPos := fc.eb.text.Len()
+
+		// Calculate offset: 16 + index * 16
+		fc.out.MovRegToReg("rax", "r14")
+		fc.out.ShlImmReg("rax", 4)       // rax = index * 16
+		fc.out.AddImmToReg("rax", 16)    // rax = 16 + index * 16
+		fc.out.AddRegToReg("rax", "rbx") // rax = string_ptr + offset
+
+		// Load character code
+		fc.out.MovMemToXmm("xmm0", "rax", 0)
+		fc.out.Cvttsd2si("rdi", "xmm0")
+		fc.out.MovRegToMem("rdi", "r13", 0)
+
+		// write(1, buffer, 1)
+		fc.out.MovImmToReg("rax", "1")   // syscall: write
+		fc.out.MovImmToReg("rdi", "1")   // fd: stdout
+		fc.out.MovRegToReg("rsi", "r13") // buffer
+		fc.out.MovImmToReg("rdx", "1")   // length: 1
+		fc.out.Syscall()
+
+		// Increment and loop
+		fc.out.IncReg("r14")
+		strPrintBackOffset := int32(strPrintLoopStart - (fc.eb.text.Len() + 5))
+		fc.out.JumpUnconditional(strPrintBackOffset)
+
+		// Patch loop end
+		strPrintDonePos := fc.eb.text.Len()
+		fc.patchJumpImmediate(strPrintLoopEnd+2, int32(strPrintDonePos-strPrintLoopEndPos))
+
+		// Print newline
+		fc.out.MovImmToReg("rax", "10") // '\n'
+		fc.out.MovRegToMem("rax", "r13", 0)
+		fc.out.MovImmToReg("rax", "1")   // syscall: write
+		fc.out.MovImmToReg("rdi", "1")   // fd: stdout
+		fc.out.MovRegToReg("rsi", "r13") // buffer
+		fc.out.MovImmToReg("rdx", "1")   // length: 1
+		fc.out.Syscall()
+
+		// Restore
+		fc.out.AddImmToReg("rsp", 8)
+		fc.out.PopReg("r14")
+		fc.out.PopReg("r13")
+		fc.out.PopReg("r12")
+		fc.out.PopReg("rbx")
+		fc.out.PopReg("rbp")
+		fc.out.Ret()
+	}
 
 	// Generate _flap_arena_ensure_capacity if arenas are used
 	if fc.usesArenas {

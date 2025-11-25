@@ -48,6 +48,13 @@ func compileAndRun(t *testing.T, code string) string {
 func compileAndRunWindows(t *testing.T, code string) string {
 	t.Helper()
 
+	// Check if Wine is available on non-Windows platforms
+	if runtime.GOOS != "windows" {
+		if _, err := exec.LookPath("wine"); err != nil {
+			t.Skip("Wine is not installed - skipping Windows test")
+		}
+	}
+
 	// Create temporary directory
 	tmpDir := t.TempDir()
 
@@ -65,17 +72,36 @@ func compileAndRunWindows(t *testing.T, code string) string {
 		t.Fatalf("Compilation failed: %v\nOutput: %s", err, compileOutput)
 	}
 
+	// Verify the PE executable was created
+	if _, err := os.Stat(exePath); err != nil {
+		t.Fatalf("Executable not created: %v", err)
+	}
+
+	// Verify it's a PE executable
+	data, err := os.ReadFile(exePath)
+	if err != nil {
+		t.Fatalf("Failed to read executable: %v", err)
+	}
+	if len(data) < 2 || data[0] != 'M' || data[1] != 'Z' {
+		t.Fatalf("Not a valid PE executable (missing MZ header)")
+	}
+
 	// Run - use Wine on non-Windows platforms
 	var runCmd *exec.Cmd
 	if runtime.GOOS == "windows" {
 		runCmd = exec.Command(exePath)
 	} else {
-		// Use timeout command with Wine
-		runCmd = exec.Command("timeout", "3", "wine", exePath)
+		// Use Wine directly (no timeout wrapper for now)
+		runCmd = exec.Command("wine", exePath)
 	}
+
 	runOutput, err := runCmd.CombinedOutput()
-	// Note: timeout command may return exit code 124 on timeout, which is expected
-	// Wine also may produce stderr output, so we just capture combined output
+
+	// Wine may return non-zero exit codes even on success
+	// Check if we got any output, which indicates the program ran
+	if err != nil && len(runOutput) == 0 {
+		t.Fatalf("Failed to run Windows executable: %v\nOutput: %s", err, runOutput)
+	}
 
 	return string(runOutput)
 }
