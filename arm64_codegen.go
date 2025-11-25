@@ -110,29 +110,19 @@ func (acg *ARM64CodeGen) CompileProgram(program *Program) error {
 	}
 
 	// Evaluate main (if it exists) to get the exit code
-	// main can be a direct value (main = 42) or a function (main = { 42 })
+	// main can be a direct value (main = 42) or a block (main = { 42 })
+	// Blocks are immediately evaluated, so just load the value
 	if _, exists := acg.stackVars["main"]; exists {
-		// main exists - check if it's a lambda/function or a direct value
-		if acg.lambdaVars["main"] {
-			// main is a lambda/function - call it with no arguments
-			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "DEBUG: Calling main function for exit code\n")
-			}
-			if err := acg.compileExpression(&CallExpr{Function: "main", Args: []Expression{}}); err != nil {
-				return err
-			}
-		} else {
-			// main is a direct value - just load it
-			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "DEBUG: Loading main value for exit code\n")
-			}
-			if err := acg.compileExpression(&IdentExpr{Name: "main"}); err != nil {
-				return err
-			}
+		// main exists - load it (blocks are already evaluated)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Loading main variable for exit code\n")
+		}
+		if err := acg.compileExpression(&IdentExpr{Name: "main"}); err != nil {
+			return err
 		}
 		// Result is in d0 (float64)
 		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG: Main loaded/called, converting to int32\n")
+			fmt.Fprintf(os.Stderr, "DEBUG: Main loaded, converting to int32\n")
 		}
 	} else {
 		// No main - use exit code 0
@@ -1336,27 +1326,38 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 		acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x62, 0x9e})
 
 	case *BlockExpr:
-		// Compile each statement in the block
-		// The last statement should leave its value in d0
+		// Blocks execute all statements in sequence and return the last expression's value
+		if len(e.Statements) == 0 {
+			// Empty block: return 0
+			return acg.compileExpression(&NumberExpr{Value: 0.0})
+		}
+
+		// Execute all statements
 		for i, stmt := range e.Statements {
+			isLast := (i == len(e.Statements)-1)
+			
+			if isLast {
+				// For the last statement, make sure its value ends up in d0
+				if exprStmt, ok := stmt.(*ExpressionStmt); ok {
+					// Expression statement: compile it (result goes to d0)
+					return acg.compileExpression(exprStmt.Expr)
+				} else if assignStmt, ok := stmt.(*AssignStmt); ok {
+					// Assignment: compile it, then load the assigned value into d0
+					if err := acg.compileStatement(stmt); err != nil {
+						return err
+					}
+					return acg.compileExpression(&IdentExpr{Name: assignStmt.Name})
+				}
+			}
+			
+			// Not the last statement, or last statement is not an expression/assignment
 			if err := acg.compileStatement(stmt); err != nil {
 				return err
 			}
-			// If it's the last statement, make sure its value is in d0
-			if i == len(e.Statements)-1 {
-				if assignStmt, ok := stmt.(*AssignStmt); ok {
-					// Assignment: load the assigned value
-					return acg.compileExpression(&IdentExpr{Name: assignStmt.Name})
-				} else if _, ok := stmt.(*ExpressionStmt); ok {
-					// Expression statement: value is already in d0 from compileStatement
-					// (compileStatement calls compileExpression for ExpressionStmt)
-					return nil
-				}
-				// Other statement types: no explicit return value
-				return nil
-			}
 		}
-		// Empty block: return 0
+		
+		// If we get here, the last statement wasn't an expression or assignment
+		// Return 0
 		return acg.compileExpression(&NumberExpr{Value: 0.0})
 
 	case *CastExpr:
@@ -1486,9 +1487,8 @@ func (acg *ARM64CodeGen) compileAssignment(assign *AssignStmt) error {
 			// Track the type of the value being assigned
 			acg.varTypes[assign.Name] = acg.getExprType(assign.Value)
 			// Track if this is a lambda/function
-			// A block without parameters is also a callable function
 			switch assign.Value.(type) {
-			case *LambdaExpr, *PatternLambdaExpr, *MultiLambdaExpr, *BlockExpr:
+			case *LambdaExpr, *PatternLambdaExpr, *MultiLambdaExpr:
 				acg.lambdaVars[assign.Name] = true
 			}
 			// x29 points to saved fp location, variables start at offset 16
