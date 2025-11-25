@@ -3301,8 +3301,14 @@ func (acg *ARM64CodeGen) generateLambdaFunctions() error {
 		funcStart := acg.eb.text.Len()
 
 		// Function prologue - ARM64 ABI
+		// Calculate total stack frame size upfront (similar to x86_64)
+		// Layout: [saved fp/lr (16)] + [params (N*8)] + [temp space (4096)]
+		// Temp space accounts for local variables, nested arithmetic, function calls, etc.
+		paramCount := len(lambda.Params)
+		frameSize := uint32((16 + paramCount*8 + 4096 + 15) &^ 15)
+		
 		// Save frame pointer and link register
-		if err := acg.out.SubImm64("sp", "sp", 32); err != nil {
+		if err := acg.out.SubImm64("sp", "sp", frameSize); err != nil {
 			return err
 		}
 		if err := acg.out.StrImm64("x29", "sp", 0); err != nil {
@@ -3384,7 +3390,7 @@ func (acg *ARM64CodeGen) generateLambdaFunctions() error {
 		if err := acg.out.LdrImm64("x29", "sp", 0); err != nil {
 			return err
 		}
-		if err := acg.out.AddImm64("sp", "sp", 32); err != nil {
+		if err := acg.out.AddImm64("sp", "sp", frameSize); err != nil {
 			return err
 		}
 		if err := acg.out.Return("x30"); err != nil {
