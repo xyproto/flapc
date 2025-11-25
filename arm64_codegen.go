@@ -1888,8 +1888,21 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 			return acg.compileSelfRecursiveCall(call)
 		}
 
-		// Check if it's a variable holding a function pointer
+		// Check if it's a variable holding a function pointer or value
 		if _, exists := acg.stackVars[call.Function]; exists {
+			// Check if this is actually a lambda/function or just a value
+			isLambda := acg.lambdaVars[call.Function]
+			
+			// If calling a non-lambda value with no args, just return the value
+			if !isLambda && len(call.Args) == 0 {
+				stackOffset := acg.stackVars[call.Function]
+				offset := int32(16 + stackOffset - 8)
+				if err := acg.out.LdrImm64Double("d0", "x29", offset); err != nil {
+					return err
+				}
+				return nil
+			}
+			
 			// Convert to DirectCallExpr and compile
 			directCall := &DirectCallExpr{
 				Callee: &IdentExpr{Name: call.Function},
