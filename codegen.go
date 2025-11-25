@@ -588,7 +588,11 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 
 	// Evaluate main (if it exists) to get the exit code
 	// main can be a direct value (main = 42) or a function (main = { 42 })
-	if _, exists := fc.variables["main"]; exists {
+	offset, exists := fc.variables["main"]
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Checking for main: exists=%v, offset=%d, fc.variables=%v\n", exists, offset, fc.variables)
+	}
+	if exists {
 		// main exists - check if it's a lambda/function or a direct value
 		if fc.lambdaVars["main"] {
 			// main is a lambda/function - call it with no arguments
