@@ -541,7 +541,7 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 		w.Write(0x31)
 		w.Write(0xf6)
 		// jmp to user code (relative jump)
-		w.Write(0xe9) // jmp rel32
+		w.Write(0xe9)                                           // jmp rel32
 		jumpOffset := int32(textAddrForJump - (startAddr + 14)) // 14 = size of _start code before jmp
 		binary.Write(w.(*BufferWrapper).buf, binary.LittleEndian, jumpOffset)
 		startActualSize = 14 // 9 bytes of xor instructions + 5 bytes jmp
