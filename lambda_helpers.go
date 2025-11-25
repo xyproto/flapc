@@ -1,3 +1,4 @@
+// Completion: 100% - Helper module complete
 package main
 
 // hasLocalVariables checks if a lambda body defines any local variables

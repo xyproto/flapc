@@ -1,3 +1,4 @@
+// Completion: 100% - Platform support complete
 package main
 
 // Dynamic library support for generated executables

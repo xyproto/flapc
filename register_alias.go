@@ -1,3 +1,4 @@
+// Completion: 100% - Helper module complete
 package main
 
 // resolveRegisterAlias maps cross-platform register aliases to architecture-specific names

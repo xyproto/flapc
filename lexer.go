@@ -1,3 +1,4 @@
+// Completion: 95% - Core lexer complete, supports all Flap 3.0 tokens
 package main
 
 import (

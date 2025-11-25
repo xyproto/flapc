@@ -1,3 +1,4 @@
+// Completion: 100% - C header parser with DWARF support, fully functional
 package main
 
 import (

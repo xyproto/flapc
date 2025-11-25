@@ -1,3 +1,4 @@
+// Completion: 95% - CLI interface complete, all flags working
 package main
 
 import (

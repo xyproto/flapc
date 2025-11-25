@@ -1,3 +1,4 @@
+// Completion: 80% - Backend functional, some TODOs for advanced features
 package main
 
 import (

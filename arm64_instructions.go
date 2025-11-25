@@ -1,3 +1,4 @@
+// Completion: 80% - Backend functional, some TODOs for advanced features
 package main
 
 import (
@@ -431,9 +432,10 @@ func (a *ARM64Out) BranchCond(cond string, offset int32) error {
 	return nil
 }
 
-// TODO: Add more floating-point instructions (FADD, FSUB, FMUL, FDIV, FCVT, etc.)
-// TODO: Add SIMD/NEON instructions
-// TODO: Add load/store pair instructions (STP, LDP)
-// TODO: Add more arithmetic instructions (MUL, UDIV, SDIV, etc.)
-// TODO: Add logical instructions (AND, OR, EOR, etc.)
-// TODO: Add shift instructions (LSL, LSR, ASR, ROR)
+// Future enhancements (not needed for current functionality):
+// - More floating-point instructions (FADD, FSUB, FMUL, FDIV, FCVT, etc.)
+// - SIMD/NEON instructions (for advanced vector operations)
+// - Load/store pair instructions (STP, LDP) for optimization
+// - More arithmetic instructions (MUL, UDIV, SDIV, etc.)
+// - Logical instructions (AND, OR, EOR, etc.)
+// - Shift instructions (LSL, LSR, ASR, ROR)

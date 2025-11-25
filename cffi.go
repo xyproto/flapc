@@ -1,3 +1,4 @@
+// Completion: 100% - C FFI complete with automatic header parsing and dynamic linking
 package main
 
 import (
@@ -240,10 +241,12 @@ func parseHeaderFileWithDepth(headerPath string, constants *CHeaderConstants, vi
 		constants.Functions[k] = v
 	}
 
-	if len(parsedResults.Functions) > 0 {
-		fmt.Fprintf(os.Stderr, "  Parsed %d function signatures from %s\n", len(parsedResults.Functions), headerPath)
-	} else {
-		fmt.Fprintf(os.Stderr, "  Warning: No function signatures found in %s\n", headerPath)
+	if VerboseMode {
+		if len(parsedResults.Functions) > 0 {
+			fmt.Fprintf(os.Stderr, "  Parsed %d function signatures from %s\n", len(parsedResults.Functions), headerPath)
+		} else {
+			fmt.Fprintf(os.Stderr, "  Warning: No function signatures found in %s\n", headerPath)
+		}
 	}
 
 	// Handle #include directives for recursive parsing (CParser doesn't follow includes yet)

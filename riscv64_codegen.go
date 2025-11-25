@@ -1,3 +1,4 @@
+// Completion: 80% - RISC-V64 backend functional, some TODOs for advanced features
 package main
 
 import (

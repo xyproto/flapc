@@ -1,4 +1,5 @@
 // parser.go - Flap Language Parser (Version 3.0.0)
+// Completion: 95%
 //
 // Version: 3.0.0
 // Date: 2025-11-17

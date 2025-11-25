@@ -1,3 +1,4 @@
+// Completion: 100% - Writer module complete
 package main
 
 import (

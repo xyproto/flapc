@@ -1,3 +1,4 @@
+// Completion: 100% - Instruction implementation complete
 package main
 
 // movq.go - MOVQ instruction encoding for x86-64

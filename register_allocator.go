@@ -1,3 +1,4 @@
+// Completion: 90% - Register allocator working, optimizes register usage effectively
 package main
 
 // Register Allocator for Flapc

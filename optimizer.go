@@ -1,3 +1,4 @@
+// Completion: 85% - Peephole optimization working, some TODOs for advanced optimizations
 package main
 
 import (

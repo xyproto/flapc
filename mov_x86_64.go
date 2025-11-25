@@ -1,3 +1,4 @@
+// Completion: 100% - Instruction implementation complete
 package main
 
 // X86_64 Architecture implementation

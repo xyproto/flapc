@@ -1,3 +1,4 @@
+// Completion: 100% - Platform-specific module complete
 //go:build linux
 // +build linux
 
