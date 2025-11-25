@@ -2602,7 +2602,7 @@ func (acg *ARM64CodeGen) compileDirectCall(call *DirectCallExpr) error {
 				}
 			}
 		}
-		
+
 		if !isLambda {
 			// Just compile the value and return it (calling a value returns the value)
 			return acg.compileExpression(call.Callee)
@@ -3306,7 +3306,7 @@ func (acg *ARM64CodeGen) generateLambdaFunctions() error {
 		// Temp space accounts for local variables, nested arithmetic, function calls, etc.
 		paramCount := len(lambda.Params)
 		frameSize := uint32((16 + paramCount*8 + 4096 + 15) &^ 15)
-		
+
 		// Save frame pointer and link register
 		if err := acg.out.SubImm64("sp", "sp", frameSize); err != nil {
 			return err

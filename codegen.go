@@ -589,11 +589,20 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	// Evaluate main (if it exists) to get the exit code
 	// main can be a direct value (main = 42) or a function (main = { 42 })
 	if _, exists := fc.variables["main"]; exists {
-		// main exists - evaluate it
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG: Compiling main expression for exit code\n")
+		// main exists - check if it's a lambda/function or a direct value
+		if fc.lambdaVars["main"] {
+			// main is a lambda/function - call it with no arguments
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG: Calling main function for exit code\n")
+			}
+			fc.compileExpression(&CallExpr{Function: "main", Args: []Expression{}})
+		} else {
+			// main is a direct value - just load it
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG: Loading main value for exit code\n")
+			}
+			fc.compileExpression(&IdentExpr{Name: "main"})
 		}
-		fc.compileExpression(&IdentExpr{Name: "main"})
 		// Result is in xmm0 (float64)
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "DEBUG: Main expression compiled, converting to int32\n")
@@ -608,7 +617,7 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 
 	// Convert float64 result in xmm0 to int32 in rdi (for exit code)
 	// cvttsd2si rdi, xmm0 (convert with truncation scalar double to signed int)
-	fc.out.Emit([]byte{0x48, 0x0f, 0x2c, 0xf8})
+	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2c, 0xf8})
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG: Exit code conversion complete, value in rdi\n")
 	}
@@ -8792,6 +8801,23 @@ func (fc *FlapCompiler) generateArenaEnsureCapacity() {
 }
 
 func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
+	// Check if this is actually a lambda/function or just a value
+	isLambda := fc.lambdaVars[call.Function]
+
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG compileStoredFunctionCall: function='%s', isLambda=%v, args=%d\n", call.Function, isLambda, len(call.Args))
+	}
+
+	// If calling a non-lambda value with no args, just return the value
+	if !isLambda && len(call.Args) == 0 {
+		offset, _ := fc.variables[call.Function]
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG compileStoredFunctionCall: returning non-lambda value from offset %d\n", offset)
+		}
+		fc.out.MovMemToXmm("xmm0", "rbp", -offset)
+		return
+	}
+
 	// Load closure object pointer from variable
 	offset, _ := fc.variables[call.Function]
 	if fc.debug {
@@ -9257,7 +9283,7 @@ func (fc *FlapCompiler) compileDirectCall(call *DirectCallExpr) {
 				}
 			}
 		}
-		
+
 		if !isLambda {
 			// Just compile the value and return it (calling a value returns the value)
 			if VerboseMode {
