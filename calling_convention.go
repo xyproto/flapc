@@ -10,6 +10,11 @@ package main
 // - RISC-V calling convention
 //
 // Integrates with the register allocator to prevent register clobbering.
+//
+// ARCHITECTURE NOTE: Flap uses 3-block unsafe syntax (x86_64, arm64, riscv64)
+// based on ISA, not target (arch+OS). This file bridges the gap by mapping
+// ISA registers to the correct calling convention based on the target OS.
+// See PLATFORM_ARCHITECTURE.md for the full design rationale.
 
 // CallingConvention defines the interface for platform-specific calling conventions
 type CallingConvention interface {

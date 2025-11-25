@@ -1917,49 +1917,103 @@ unsafe ptr {
 
 ## Unsafe Blocks
 
-Direct assembly and memory access:
+For direct machine code access, Flap provides architecture-specific unsafe blocks. The compiler selects the appropriate block based on the target ISA (instruction set architecture).
+
+### Architecture Model
+
+Flap's platform support separates **ISA** from **OS**:
+- **ISA** (x86_64, arm64, riscv64) → determines registers and instructions
+- **OS** (Linux, Windows, macOS) → determines binary format and calling conventions
+- **Target** = ISA + OS (e.g., arm64-darwin, x86_64-windows)
+
+**Unsafe blocks are ISA-based, not target-based.** This means:
+- Write assembly for the CPU architecture (3 blocks)
+- Compiler handles OS differences automatically
+- Same arm64 block works on Linux, macOS, and Windows
+
+See [PLATFORM_ARCHITECTURE.md](PLATFORM_ARCHITECTURE.md) for the full design rationale.
+
+### Supported Targets
+
+| Target | ISA | OS | Status |
+|--------|-----|-------|--------|
+| x86_64-linux | x86_64 | Linux | ✅ Complete |
+| x86_64-windows | x86_64 | Windows | ✅ Complete |
+| arm64-linux | arm64 | Linux | 🚧 90% (needs defer, dynamic linking) |
+| arm64-darwin | arm64 | macOS | ❌ Not started |
+| arm64-windows | arm64 | Windows | ❌ Not started |
+| riscv64-linux | riscv64 | Linux | 🚧 80% (needs testing) |
 
 ### Syntax
 
 ```flap
 unsafe return_type {
-    // Assembly or low-level operations
+    # x86_64 block
 } {
-    // Optional: on success
+    # arm64 block
 } {
-    // Optional: on error
+    # riscv64 block
 }
 ```
 
 ### Examples
 
 ```flap
-// Direct memory access
+// Direct memory access (3 ISA variants)
 value = unsafe float64 {
-    rax <- ptr
+    rax <- ptr           # x86_64
     rax <- [rax + offset]
+} {
+    x0 <- ptr            # arm64
+    x0 <- [x0 + offset]
+} {
+    a0 <- ptr            # riscv64
+    a0 <- [a0 + offset]
 }
 
-// Syscall
+// Syscall (x86_64 only example, expand to 3 blocks in real code)
 unsafe {
-    rax <- 1        // sys_write
+    rax <- 1        // sys_write (x86_64)
     rdi <- 1        // stdout
     rsi <- msg_ptr
     rdx <- msg_len
     syscall
-}
-
-// With error handling
-result = unsafe int32 {
-    rax <- dangerous_operation()
 } {
-    println("Success")
-    rax
+    x8 <- 64        // sys_write (arm64)
+    x0 <- 1         // stdout
+    x1 <- msg_ptr
+    x2 <- msg_len
+    svc
 } {
-    println("Failed")
-    -1
+    a7 <- 64        // sys_write (riscv64)
+    a0 <- 1         // stdout
+    a1 <- msg_ptr
+    a2 <- msg_len
+    ecall
 }
 ```
+
+### Platform Differences (Compiler Handles Automatically)
+
+While you write ISA-specific code, the compiler handles these OS differences:
+
+**Binary Format:**
+- Linux/BSD → ELF
+- Windows → PE
+- macOS → Mach-O
+
+**Calling Conventions:**
+- x86_64 Linux/macOS → System V ABI (rdi, rsi, rdx, rcx, r8, r9)
+- x86_64 Windows → Microsoft x64 (rcx, rdx, r8, r9)
+- arm64 Linux/macOS → AAPCS64 (x0-x7)
+- arm64 Windows → ARM64 Windows (x0-x7, different struct passing)
+
+**Syscalls:**
+- Linux x86_64 → `syscall` instruction
+- Linux arm64 → `svc #0` instruction
+- Windows (any arch) → C FFI to kernel32.dll (no direct syscall)
+
+**Note:** Unsafe blocks break portability and safety guarantees. Use only when absolutely necessary (e.g., custom syscalls, direct hardware access, performance-critical assembly).
 
 ## Built-in Functions
 

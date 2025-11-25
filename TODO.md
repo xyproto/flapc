@@ -2,17 +2,31 @@
 
 ## 🎯 Priority Tasks for "Flap 2075" (Next 50 years)
 
-1. **ARM64 Support** - 90% complete, needs defer statement + dynamic linking
+### Platform Support (see PLATFORM_ARCHITECTURE.md)
+1. **x86_64 + Linux** ✅ 100% complete
+2. **x86_64 + Windows** ✅ 100% complete (SDL3 working!)
+3. **ARM64 + Linux** 🚧 90% complete
    - ✅ Linux syscalls (x8, svc #0)
    - ✅ C FFI integration (header parsing, function signatures)
    - ✅ `exitf`/`exitln` support
    - ✅ `or!` operator (railway-oriented error handling)
    - ⏳ defer statement (needed for SDL3 example)
    - ⏳ Dynamic linking / PLT/GOT stubs
-2. **RISC-V Support** - 80% complete, needs testing + validation  
-3. **Module System** - Import system complete, needs ecosystem/testing
-4. **Type System Refinement** - Core map[uint64]float64 model stable, C types integrated
-5. **Standard Library** - Minimal runtime complete, needs expansion
+4. **RISC-V64 + Linux** 🚧 80% complete, needs testing + validation
+5. **ARM64 + macOS** ❌ Not started (will reuse ARM64 ISA code)
+6. **ARM64 + Windows** ❌ Not started (will reuse ARM64 ISA code)
+
+### Architecture Decision ✅
+**Decision: Keep 3-block `unsafe` design (x86_64, arm64, riscv64)**
+- ISA-based blocks, not target-based
+- Compiler handles OS differences (binary format, calling conventions, syscalls)
+- Scales well: new ISA = add block, new OS = reuse ISA code + add binary writer
+- See PLATFORM_ARCHITECTURE.md for full analysis
+
+### Core Language Features
+1. **Module System** - Import system complete, needs ecosystem/testing
+2. **Type System Refinement** - Core map[uint64]float64 model stable, C types integrated
+3. **Standard Library** - Minimal runtime complete, needs expansion
 
 ## Import System - ✅ COMPLETED
 The import system is now fully implemented with priority-based resolution:

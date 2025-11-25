@@ -5,6 +5,12 @@ import "runtime"
 
 // Target represents a compilation target (architecture + OS)
 // This interface abstracts target-specific behavior, using GCC terminology
+//
+// ARCHITECTURE NOTE: Target = ISA + OS (e.g., arm64-darwin, x86_64-windows)
+// - ISA determines registers and instructions
+// - OS determines binary format and calling conventions
+// Flap's unsafe blocks are ISA-based (3 blocks), not target-based (6+ blocks).
+// See PLATFORM_ARCHITECTURE.md for the full design rationale.
 type Target interface {
 	// Architecture and OS (matching Go's GOARCH and GOOS)
 	Arch() Arch
