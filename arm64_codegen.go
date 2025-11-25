@@ -2803,8 +2803,12 @@ func (acg *ARM64CodeGen) compilePrintf(call *CallExpr) error {
 		}
 	}
 
-	// Generate call to printf stub
-	stubLabel := funcName + "$stub"
+	// Generate call to printf
+	// Use $stub suffix for macOS/Mach-O, plain name for Linux/ELF
+	stubLabel := funcName
+	if acg.eb.target.OS() == OSDarwin {
+		stubLabel = funcName + "$stub"
+	}
 	position := acg.eb.text.Len()
 	acg.eb.callPatches = append(acg.eb.callPatches, CallPatch{
 		position:   position,
