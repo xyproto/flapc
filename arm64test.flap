@@ -1,8 +1,5 @@
 // ARM64 comprehensive test
-println = msg => import "libc" putchar, puts {
-  puts(msg)
-  putchar(10)
-}
+import libc as c
 
 fib = n { 0 | 1 => n _ => fib(n - 1) + fib(n - 2) }
 
@@ -11,25 +8,23 @@ factorial = n { 0 | 1 => 1 _ => n * factorial(n - 1) }
 sum_list = lst { [] => 0 _ => head(lst) + sum_list(tail(lst)) }
 
 main = {
-  println("ARM64 Flap Test Suite")
-  println("=====================")
+  c.puts("ARM64 Flap Test Suite")
+  c.puts("=====================")
   
-  println("Testing fibonacci (should be 55):")
-  import "libc" printf { printf("%d\n", fib(10)) }
+  c.puts("Testing fibonacci (should be 55):")
+  c.printf("%d\n", fib(10))
   
-  println("Testing factorial (should be 120):")
-  import "libc" printf { printf("%d\n", factorial(5)) }
+  c.puts("Testing factorial (should be 120):")
+  c.printf("%d\n", factorial(5))
   
-  println("Testing list operations:")
-  import "libc" printf { 
-    result = sum_list([1, 2, 3, 4, 5])
-    printf("Sum of [1,2,3,4,5] = %d\n", result)
-  }
+  c.puts("Testing list operations:")
+  result := sum_list([1, 2, 3, 4, 5])
+  c.printf("Sum of [1,2,3,4,5] = %d\n", result)
   
-  println("Testing string operations:")
-  str = "Hello from ARM64!"
-  import "libc" printf { printf("%s\n", str) }
+  c.puts("Testing string operations:")
+  str := "Hello from ARM64!"
+  c.printf("%s\n", str)
   
-  println("All tests completed!")
+  c.puts("All tests completed!")
   0
 }
