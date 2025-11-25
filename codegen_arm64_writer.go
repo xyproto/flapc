@@ -12,8 +12,8 @@ import (
 // on ARM64 architecture.
 
 func (fc *FlapCompiler) writeELFARM64(outputPath string) error {
-	// Enable dynamic linking for ARM64 ELF
-	fc.eb.useDynamicLinking = true
+	// For now, create a static ELF (dynamic linking with PLT/GOT requires ARM64-specific stubs)
+	fc.eb.useDynamicLinking = false
 
 	textBytes := fc.eb.text.Bytes()
 	rodataBytes := fc.eb.rodata.Bytes()
@@ -21,14 +21,14 @@ func (fc *FlapCompiler) writeELFARM64(outputPath string) error {
 	// Generate ELF header and program headers for ARM64
 	fc.eb.WriteELFHeader()
 
-	// Write the executable
+	// Write the executable (Bytes() will concatenate header + rodata + data + text for static builds)
 	elfBytes := fc.eb.Bytes()
 	if err := os.WriteFile(outputPath, elfBytes, 0755); err != nil {
 		return fmt.Errorf("failed to write executable: %v", err)
 	}
 
 	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "-> Wrote ARM64 ELF executable: %s\n", outputPath)
+		fmt.Fprintf(os.Stderr, "-> Wrote ARM64 static ELF executable: %s\n", outputPath)
 		fmt.Fprintf(os.Stderr, "   Text size: %d bytes\n", len(textBytes))
 		fmt.Fprintf(os.Stderr, "   Rodata size: %d bytes\n", len(rodataBytes))
 	}
