@@ -140,6 +140,17 @@ func (acg *ARM64CodeGen) CompileProgram(program *Program) error {
 	if err := acg.out.MovImm64("x0", 0); err != nil {
 		return err
 	}
+
+	// For static Linux builds, exit with syscall instead of returning
+	if acg.eb.target.OS() == OSLinux && !acg.eb.useDynamicLinking {
+		// mov x8, #93 (sys_exit on ARM64 Linux)
+		acg.out.out.writer.WriteBytes([]byte{0xa8, 0x0b, 0x80, 0xd2})
+		// svc #0
+		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4})
+		return nil
+	}
+
+	// Dynamic builds or macOS: restore frame and return
 	if err := acg.out.LdrImm64("x30", "sp", 8); err != nil {
 		return err
 	}
