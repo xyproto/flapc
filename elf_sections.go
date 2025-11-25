@@ -47,6 +47,16 @@ const (
 	R_X86_64_JUMP_SLOT = 7
 	R_X86_64_GLOB_DAT  = 6
 
+	// Relocation types (ARM64 / AArch64)
+	R_AARCH64_NONE      = 0
+	R_AARCH64_JUMP_SLOT = 1026
+	R_AARCH64_GLOB_DAT  = 1025
+
+	// Relocation types (RISC-V)
+	R_RISCV_NONE      = 0
+	R_RISCV_JUMP_SLOT = 5
+	R_RISCV_64        = 2
+
 	// Symbol binding and type
 	STB_LOCAL  = 0
 	STB_GLOBAL = 1

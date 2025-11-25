@@ -198,15 +198,28 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	ds.GenerateGOT(functions, dynamicAddr, pltBase)
 
 	// Add relocations with TEMPORARY addresses - will be updated later
+	// Use architecture-specific relocation type
+	var relocType uint32
+	switch eb.target.Arch() {
+	case ArchX86_64:
+		relocType = R_X86_64_JUMP_SLOT
+	case ArchARM64:
+		relocType = R_AARCH64_JUMP_SLOT
+	case ArchRiscv64:
+		relocType = R_RISCV_JUMP_SLOT
+	default:
+		relocType = R_X86_64_JUMP_SLOT
+	}
+
 	for i := range functions {
 		symIndex := uint32(i + 1) // +1 because null symbol is at index 0
 		// GOT entries start after 3 reserved entries (24 bytes)
 		gotEntryAddr := gotBase + uint64(24+i*8)
 		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "Adding TEMPORARY relocation for %s: GOT entry at 0x%x, symIndex=%d\n",
-				functions[i], gotEntryAddr, symIndex)
+			fmt.Fprintf(os.Stderr, "Adding TEMPORARY relocation for %s: GOT entry at 0x%x, symIndex=%d, type=%d\n",
+				functions[i], gotEntryAddr, symIndex, relocType)
 		}
-		ds.AddRelocation(gotEntryAddr, symIndex, R_X86_64_JUMP_SLOT)
+		ds.AddRelocation(gotEntryAddr, symIndex, relocType)
 	}
 
 	// Update layout with actual sizes
