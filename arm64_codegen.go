@@ -2279,7 +2279,7 @@ func (acg *ARM64CodeGen) compileExit(call *CallExpr) error {
 	}
 
 callExit:
-	// On macOS, use syscall instead of dynamic linking (chained fixups not working yet)
+	// On macOS, use syscall with BSD calling convention
 	if acg.eb.target.IsMachO() {
 		// mov x16, #1 (sys_exit)
 		acg.out.out.writer.WriteBytes([]byte{0x30, 0x00, 0x80, 0xd2})
@@ -2288,11 +2288,20 @@ callExit:
 		return nil
 	}
 
-	// Non-macOS: use dynamic linking
+	// For static Linux builds, use Linux ARM64 exit syscall
+	if !acg.eb.useDynamicLinking {
+		// mov x8, #93 (sys_exit on ARM64 Linux)
+		acg.out.out.writer.WriteBytes([]byte{0xa8, 0x0b, 0x80, 0xd2})
+		// svc #0
+		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4})
+		return nil
+	}
+
+	// Dynamic linking: call exit from libc
 	acg.eb.useDynamicLinking = true
 
 	// Add exit to needed functions list if not already there
-	funcName := "exit" // Note: macho.go will add underscore prefix for macOS
+	funcName := "exit"
 	found := false
 	for _, f := range acg.eb.neededFunctions {
 		if f == funcName {
