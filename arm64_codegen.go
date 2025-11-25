@@ -110,19 +110,29 @@ func (acg *ARM64CodeGen) CompileProgram(program *Program) error {
 	}
 
 	// Evaluate main (if it exists) to get the exit code
-	// main can be a direct value (main = 42) or a block (main = { 42 })
-	// Blocks are immediately evaluated, so just load the value
+	// main can be a direct value (main = 42) or a function (main = { 42 })
 	if _, exists := acg.stackVars["main"]; exists {
-		// main exists - load it (blocks are already evaluated)
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG: Loading main variable for exit code\n")
-		}
-		if err := acg.compileExpression(&IdentExpr{Name: "main"}); err != nil {
-			return err
+		// main exists - check if it's a lambda/function or a direct value
+		if acg.lambdaVars["main"] {
+			// main is a lambda/function - call it with no arguments
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG: Calling main function for exit code\n")
+			}
+			if err := acg.compileExpression(&CallExpr{Function: "main", Args: []Expression{}}); err != nil {
+				return err
+			}
+		} else {
+			// main is a direct value - just load it
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG: Loading main value for exit code\n")
+			}
+			if err := acg.compileExpression(&IdentExpr{Name: "main"}); err != nil {
+				return err
+			}
 		}
 		// Result is in d0 (float64)
 		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG: Main loaded, converting to int32\n")
+			fmt.Fprintf(os.Stderr, "DEBUG: Main expression compiled, converting to int32\n")
 		}
 	} else {
 		// No main - use exit code 0
