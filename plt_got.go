@@ -3,53 +3,20 @@ package main
 
 import (
 	"encoding/binary"
-	"fmt"
-	"os"
 )
 
-// GeneratePLT creates PLT (Procedure Linkage Table) stubs for x86_64
+// GeneratePLT creates PLT (Procedure Linkage Table) stubs
 func (ds *DynamicSections) GeneratePLT(functions []string, gotBase uint64, pltBase uint64) {
 	ds.plt.Reset()
 	ds.pltEntries = functions
 
-	// PLT[0] - special resolver stub
-	// pushq GOT[1]
-	ds.plt.Write([]byte{0xff, 0x35})
-	offset1 := uint32(gotBase + 8 - pltBase - 6) // offset to GOT[1]
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "PLT[0] push offset: gotBase=0x%x, pltBase=0x%x, offset=0x%x\n", gotBase, pltBase, offset1)
-	}
-	binary.Write(&ds.plt, binary.LittleEndian, offset1)
-
-	// jmpq *GOT[2]
-	ds.plt.Write([]byte{0xff, 0x25})
-	offset2 := uint32(gotBase + 16 - pltBase - 12) // offset to GOT[2]
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "PLT[0] jmp offset: offset=0x%x\n", offset2)
-	}
-	binary.Write(&ds.plt, binary.LittleEndian, offset2)
-
-	// padding
-	ds.plt.Write([]byte{0x0f, 0x1f, 0x40, 0x00})
-
-	// PLT[1..n] - one per function
-	for i := range functions {
-		pltOffset := pltBase + uint64(ds.plt.Len())
-		gotOffset := gotBase + uint64(24+i*8) // GOT[0,1,2] reserved, functions start at GOT[3]
-
-		// jmpq *GOT[n]
-		ds.plt.Write([]byte{0xff, 0x25})
-		relOffset := int32(gotOffset - pltOffset - 6)
-		binary.Write(&ds.plt, binary.LittleEndian, relOffset)
-
-		// pushq $index
-		ds.plt.Write([]byte{0x68})
-		binary.Write(&ds.plt, binary.LittleEndian, uint32(i))
-
-		// jmpq PLT[0]
-		ds.plt.Write([]byte{0xe9})
-		jumpBack := int32(pltBase - pltOffset - 16)
-		binary.Write(&ds.plt, binary.LittleEndian, jumpBack)
+	switch ds.arch {
+	case ArchARM64:
+		ds.generatePLTARM64(functions, gotBase, pltBase)
+	case ArchRiscv64:
+		ds.generatePLTRiscv64(functions, gotBase, pltBase)
+	default: // x86_64
+		ds.generatePLTx86_64(functions, gotBase, pltBase)
 	}
 }
 
@@ -69,8 +36,15 @@ func (ds *DynamicSections) GenerateGOT(functions []string, dynamicAddr uint64, p
 	// GOT[3..n] = PLT stubs (initial values point to PLT push instructions)
 	for i := range functions {
 		// Point to the push instruction in PLT[i+1]
-		// PLT[0] is 16 bytes, each PLT entry is 16 bytes
-		pltPushAddr := pltBase + 16 + uint64(i*16) + 6
+		// x86_64: PLT[0] is 16 bytes, each entry is 16 bytes, push at +6
+		// ARM64: PLT[0] is 20 bytes, each entry is 16 bytes
+		var pltPushAddr uint64
+		switch ds.arch {
+		case ArchARM64:
+			pltPushAddr = pltBase + 20 + uint64(i*16)
+		default: // x86_64
+			pltPushAddr = pltBase + 16 + uint64(i*16) + 6
+		}
 		binary.Write(&ds.got, binary.LittleEndian, pltPushAddr)
 	}
 }
@@ -79,23 +53,15 @@ func (ds *DynamicSections) GenerateGOT(functions []string, dynamicAddr uint64, p
 func (ds *DynamicSections) GetPLTOffset(funcName string) int {
 	for i, name := range ds.pltEntries {
 		if name == funcName {
-			// PLT[0] is 16 bytes, each entry is 16 bytes
-			return 16 + i*16
+			switch ds.arch {
+			case ArchARM64:
+				// PLT[0] is 20 bytes, each entry is 16 bytes
+				return 20 + i*16
+			default: // x86_64
+				// PLT[0] is 16 bytes, each entry is 16 bytes
+				return 16 + i*16
+			}
 		}
 	}
 	return -1
-}
-
-// GeneratePLTCall generates a call instruction to a PLT entry
-func GeneratePLTCall(w Writer, funcName string, pltOffset int, currentAddr uint64, pltBase uint64) {
-	// Calculate relative offset from current position to PLT entry
-	targetAddr := pltBase + uint64(pltOffset)
-	// Current position after the call instruction
-	nextInstr := currentAddr + 5 // call is 5 bytes
-
-	relOffset := int32(targetAddr - nextInstr)
-
-	// Write call instruction
-	w.Write(0xe8) // call rel32
-	binary.Write(w.(*BufferWrapper).buf, binary.LittleEndian, relOffset)
 }

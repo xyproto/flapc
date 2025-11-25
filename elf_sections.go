@@ -91,6 +91,9 @@ type DynamicSections struct {
 
 	// Needed libraries
 	needed []string
+
+	// Target architecture
+	arch Arch
 }
 
 type Symbol struct {
@@ -102,11 +105,12 @@ type Symbol struct {
 	size  uint64
 }
 
-func NewDynamicSections() *DynamicSections {
+func NewDynamicSections(arch Arch) *DynamicSections {
 	ds := &DynamicSections{
 		dynstrMap:  make(map[string]uint32),
 		pltEntries: []string{},
 		needed:     []string{},
+		arch:       arch,
 	}
 
 	// First byte of string table must be null

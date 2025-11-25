@@ -32,7 +32,7 @@ func TestDynamicELFStructure(t *testing.T) {
 		t.Fatalf("Failed to generate glibc hello world: %v", err)
 	}
 
-	ds := NewDynamicSections()
+	ds := NewDynamicSections(ArchX86_64)
 	ds.AddNeeded("libc.so.6")
 	for _, funcName := range eb.neededFunctions {
 		ds.AddSymbol(funcName, STB_GLOBAL, STT_FUNC)
@@ -114,7 +114,7 @@ func TestDynamicELFStructure(t *testing.T) {
 
 // TestRelocationAddresses tests that relocations have correct addresses
 func TestRelocationAddresses(t *testing.T) {
-	ds := NewDynamicSections()
+	ds := NewDynamicSections(ArchX86_64)
 
 	functions := []string{"printf", "exit"}
 
@@ -152,7 +152,7 @@ func TestRelocationAddresses(t *testing.T) {
 
 // TestPLTOffset tests that PLT offset calculation is correct
 func TestPLTOffset(t *testing.T) {
-	ds := NewDynamicSections()
+	ds := NewDynamicSections(ArchX86_64)
 
 	functions := []string{"printf", "exit", "malloc"}
 
@@ -190,7 +190,7 @@ func TestPLTOffset(t *testing.T) {
 
 // TestDynamicSectionUpdate tests updating DT_PLTGOT
 func TestDynamicSectionUpdate(t *testing.T) {
-	ds := NewDynamicSections()
+	ds := NewDynamicSections(ArchX86_64)
 
 	addrs := make(map[string]uint64)
 	addrs["hash"] = 0x401000
@@ -239,7 +239,7 @@ func TestDynamicSectionUpdate(t *testing.T) {
 
 // TestStringTableDeduplication tests that strings are deduplicated
 func TestStringTableDeduplication(t *testing.T) {
-	ds := NewDynamicSections()
+	ds := NewDynamicSections(ArchX86_64)
 
 	// Add same string multiple times
 	offset1 := ds.addString("test")
@@ -279,7 +279,7 @@ func TestLDDOutput(t *testing.T) {
 		t.Skip("Skipping ldd test due to code generation issue")
 	}
 
-	ds := NewDynamicSections()
+	ds := NewDynamicSections(ArchX86_64)
 	ds.AddNeeded("libc.so.6")
 	ds.AddSymbol("printf", STB_GLOBAL, STT_FUNC)
 

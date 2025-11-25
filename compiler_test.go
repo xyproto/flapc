@@ -80,7 +80,7 @@ func TestDynamicLinking(t *testing.T) {
 
 // TestELFSections tests that dynamic sections can be created
 func TestELFSections(t *testing.T) {
-	ds := NewDynamicSections()
+	ds := NewDynamicSections(ArchX86_64)
 
 	// Add needed library
 	ds.AddNeeded("libc.so.6")
@@ -107,7 +107,7 @@ func TestELFSections(t *testing.T) {
 
 // TestPLTGOT tests PLT and GOT generation
 func TestPLTGOT(t *testing.T) {
-	ds := NewDynamicSections()
+	ds := NewDynamicSections(ArchX86_64)
 
 	functions := []string{"printf", "exit"}
 

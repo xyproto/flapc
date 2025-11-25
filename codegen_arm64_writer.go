@@ -50,7 +50,7 @@ func (fc *FlapCompiler) writeELFARM64(outputPath string) error {
 	}
 
 	// Set up dynamic sections
-	ds := NewDynamicSections()
+	ds := NewDynamicSections(fc.eb.target.Arch())
 	fc.dynamicSymbols = ds
 
 	// Add NEEDED libraries

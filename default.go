@@ -43,7 +43,7 @@ func (eb *ExecutableBuilder) CompileDefaultProgram(outputFile string) error {
 			fmt.Fprintln(os.Stderr, "-> ELF generation")
 		}
 		// Set up complete dynamic sections
-		ds := NewDynamicSections()
+		ds := NewDynamicSections(ArchX86_64)
 		ds.AddNeeded("libc.so.6")
 		// Add symbols
 		for _, funcName := range eb.neededFunctions {

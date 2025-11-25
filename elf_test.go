@@ -87,7 +87,7 @@ func TestMinimalELFSize(t *testing.T) {
 	eb.useDynamicLinking = true
 	eb.neededFunctions = []string{"exit"}
 
-	ds := NewDynamicSections()
+	ds := NewDynamicSections(ArchX86_64)
 	ds.AddNeeded("libc.so.6")
 	ds.AddSymbol("exit", STB_GLOBAL, STT_FUNC)
 
@@ -147,7 +147,7 @@ func TestDynamicELFExecutable(t *testing.T) {
 	eb.useDynamicLinking = true
 	eb.neededFunctions = []string{} // No C library functions needed
 
-	ds := NewDynamicSections()
+	ds := NewDynamicSections(ArchX86_64)
 	ds.AddNeeded("libc.so.6")
 
 	// Exit with code 42 using syscall (no C library call)
@@ -196,7 +196,7 @@ func TestELFSegmentAlignment(t *testing.T) {
 	eb.useDynamicLinking = true
 	eb.neededFunctions = []string{"exit"}
 
-	ds := NewDynamicSections()
+	ds := NewDynamicSections(ArchX86_64)
 	ds.AddNeeded("libc.so.6")
 	ds.AddSymbol("exit", STB_GLOBAL, STT_FUNC)
 
@@ -248,7 +248,7 @@ func TestELFInterpSegment(t *testing.T) {
 	eb.useDynamicLinking = true
 	eb.neededFunctions = []string{"exit"}
 
-	ds := NewDynamicSections()
+	ds := NewDynamicSections(ArchX86_64)
 	ds.AddNeeded("libc.so.6")
 	ds.AddSymbol("exit", STB_GLOBAL, STT_FUNC)
 
@@ -317,7 +317,7 @@ func TestELFDynamicSegment(t *testing.T) {
 	eb.useDynamicLinking = true
 	eb.neededFunctions = []string{"printf"}
 
-	ds := NewDynamicSections()
+	ds := NewDynamicSections(ArchX86_64)
 	ds.AddNeeded("libc.so.6")
 	ds.AddSymbol("printf", STB_GLOBAL, STT_FUNC)
 
@@ -377,7 +377,7 @@ func TestELFType(t *testing.T) {
 	eb.useDynamicLinking = true
 	eb.neededFunctions = []string{"exit"}
 
-	ds := NewDynamicSections()
+	ds := NewDynamicSections(ArchX86_64)
 	ds.AddNeeded("libc.so.6")
 	ds.AddSymbol("exit", STB_GLOBAL, STT_FUNC)
 
@@ -431,7 +431,7 @@ func TestELFMachine(t *testing.T) {
 			eb.useDynamicLinking = true
 			eb.neededFunctions = []string{"exit"}
 
-			ds := NewDynamicSections()
+			ds := NewDynamicSections(ArchX86_64)
 			ds.AddNeeded("libc.so.6")
 			ds.AddSymbol("exit", STB_GLOBAL, STT_FUNC)
 
@@ -482,7 +482,7 @@ func TestELFPermissions(t *testing.T) {
 	eb.useDynamicLinking = true
 	eb.neededFunctions = []string{"exit"}
 
-	ds := NewDynamicSections()
+	ds := NewDynamicSections(ArchX86_64)
 	ds.AddNeeded("libc.so.6")
 	ds.AddSymbol("exit", STB_GLOBAL, STT_FUNC)
 

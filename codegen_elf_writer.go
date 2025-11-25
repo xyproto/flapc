@@ -57,7 +57,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	}
 
 	// Set up dynamic sections
-	ds := NewDynamicSections()
+	ds := NewDynamicSections(fc.eb.target.Arch())
 	fc.dynamicSymbols = ds // Store for later symbol updates
 
 	// Only add NEEDED libraries if their functions are actually used

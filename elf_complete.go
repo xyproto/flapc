@@ -509,31 +509,49 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	}
 
 	// _start function (minimal entry point that clears registers and jumps to user code)
-	// xor rax, rax   ; clear rax
-	w.Write(0x48)
-	w.Write(0x31)
-	w.Write(0xc0)
-	// xor rdi, rdi   ; clear rdi (first argument)
-	w.Write(0x48)
-	w.Write(0x31)
-	w.Write(0xff)
-	// xor rsi, rsi   ; clear rsi (second argument)
-	w.Write(0x48)
-	w.Write(0x31)
-	w.Write(0xf6)
-	// jmp to user code (relative jump)
-	w.Write(0xe9) // jmp rel32
 	startAddr := layout["_start"].addr
 	textAddrForJump := layout["text"].addr
-	jumpOffset := int32(textAddrForJump - (startAddr + 14)) // 14 = size of _start code before jmp
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "_start jump: startAddr=0x%x, textAddr=0x%x, jumpOffset=0x%x (%d)\n",
-			startAddr, textAddrForJump, uint32(jumpOffset), jumpOffset)
+	var startActualSize int
+
+	if eb.target.Arch() == ArchARM64 {
+		// ARM64: Clear registers and branch to user code
+		// mov x0, #0
+		w.WriteBytes([]byte{0x00, 0x00, 0x80, 0xd2})
+		// mov x1, #0
+		w.WriteBytes([]byte{0x01, 0x00, 0x80, 0xd2})
+		// mov x2, #0
+		w.WriteBytes([]byte{0x02, 0x00, 0x80, 0xd2})
+		// b <user_code> (branch - calculate offset)
+		jumpOffset := int32((textAddrForJump - (startAddr + 12)) / 4) // 12 = 3 instructions * 4 bytes, offset in instructions
+		branchInstr := uint32(0x14000000) | (uint32(jumpOffset) & 0x03FFFFFF)
+		binary.Write(w.(*BufferWrapper).buf, binary.LittleEndian, branchInstr)
+		startActualSize = 16 // 4 instructions * 4 bytes
+	} else {
+		// x86_64: Clear registers and jump to user code
+		// xor rax, rax   ; clear rax
+		w.Write(0x48)
+		w.Write(0x31)
+		w.Write(0xc0)
+		// xor rdi, rdi   ; clear rdi (first argument)
+		w.Write(0x48)
+		w.Write(0x31)
+		w.Write(0xff)
+		// xor rsi, rsi   ; clear rsi (second argument)
+		w.Write(0x48)
+		w.Write(0x31)
+		w.Write(0xf6)
+		// jmp to user code (relative jump)
+		w.Write(0xe9) // jmp rel32
+		jumpOffset := int32(textAddrForJump - (startAddr + 14)) // 14 = size of _start code before jmp
+		binary.Write(w.(*BufferWrapper).buf, binary.LittleEndian, jumpOffset)
+		startActualSize = 14 // 9 bytes of xor instructions + 5 bytes jmp
 	}
-	binary.Write(w.(*BufferWrapper).buf, binary.LittleEndian, jumpOffset)
+
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "_start jump: startAddr=0x%x, textAddr=0x%x\n", startAddr, textAddrForJump)
+	}
 
 	// Pad _start to aligned size
-	startActualSize := 14 // 9 bytes of xor instructions + 5 bytes jmp
 	for i := startActualSize; i < ((startSize + 7) & ^7); i++ {
 		w.Write(0)
 	}
