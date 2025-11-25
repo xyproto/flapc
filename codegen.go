@@ -16153,7 +16153,7 @@ func CompileFlapWithOptions(inputPath string, outputPath string, platform Platfo
 	return nil
 }
 
-// compileARM64 compiles a program for ARM64 architecture (macOS)
+// compileARM64 compiles a program for ARM64 architecture
 func (fc *FlapCompiler) compileARM64(program *Program, outputPath string) error {
 	// Create ARM64 code generator
 	acg := NewARM64CodeGen(fc.eb, fc.cConstants)
@@ -16163,8 +16163,12 @@ func (fc *FlapCompiler) compileARM64(program *Program, outputPath string) error 
 		return err
 	}
 
-	// Write Mach-O file
-	return fc.writeMachOARM64(outputPath)
+	// Write executable based on target OS
+	if fc.eb.target.IsMachO() {
+		return fc.writeMachOARM64(outputPath)
+	}
+	// Default to ELF for Linux/FreeBSD
+	return fc.writeELFARM64(outputPath)
 }
 
 // compileRiscv64 compiles a program for RISC-V64 architecture
