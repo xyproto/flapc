@@ -493,6 +493,77 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 			}
 		}
 
+		// Special handling for or! operator (railway-oriented programming)
+		// or! requires conditional execution: only evaluate right side if left is error/null
+		if e.Operator == "or!" {
+			// Compile left expression into d0
+			if err := acg.compileExpression(e.Left); err != nil {
+				return err
+			}
+
+			// Check if d0 is NaN by comparing with itself
+			// fcmp d0, d0
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x20, 0x60, 0x1e})
+			// b.vs (branch if overflow/NaN) to execute_default
+			executeDefaultPos1 := acg.eb.text.Len()
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x54}) // b.vs placeholder
+
+			// Not NaN, now check if d0 == 0.0 (null pointer)
+			// fmov d1, xzr (d1 = 0.0)
+			acg.out.out.writer.WriteBytes([]byte{0xe1, 0x03, 0x67, 0x9e})
+			// fcmp d0, d1
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x20, 0x61, 0x1e})
+			// b.eq (branch if equal to 0) to execute_default
+			executeDefaultPos2 := acg.eb.text.Len()
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x54}) // b.eq placeholder
+
+			// Value is valid (not NaN and not 0), skip to end without evaluating right side
+			skipDefaultPos := acg.eb.text.Len()
+			acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x14}) // b placeholder
+
+			// execute_default label: evaluate right expression (could be block or value)
+			executeDefaultLabel := acg.eb.text.Len()
+			if err := acg.compileExpression(e.Right); err != nil { // Result goes to d0
+				return err
+			}
+
+			// End label
+			endLabel := acg.eb.text.Len()
+
+			// Patch the jumps
+			// ARM64 branch offsets are in instructions (4 bytes each), not bytes
+			// Offset = (target - current_pc) / 4
+
+			// Patch NaN check (b.vs) to execute_default
+			offset1 := int32((executeDefaultLabel - executeDefaultPos1) / 4)
+			bytes1 := acg.eb.text.Bytes()
+			// b.vs encoding: 0x54 with imm19 in bits [23:5] and cond=0110 (VS) in bits [3:0]
+			instr1 := uint32(0x54000006) | (uint32(offset1&0x7ffff) << 5)
+			bytes1[executeDefaultPos1] = byte(instr1 & 0xFF)
+			bytes1[executeDefaultPos1+1] = byte((instr1 >> 8) & 0xFF)
+			bytes1[executeDefaultPos1+2] = byte((instr1 >> 16) & 0xFF)
+			bytes1[executeDefaultPos1+3] = byte((instr1 >> 24) & 0xFF)
+
+			// Patch zero check (b.eq) to execute_default
+			offset2 := int32((executeDefaultLabel - executeDefaultPos2) / 4)
+			instr2 := uint32(0x54000000) | (uint32(offset2&0x7ffff) << 5)
+			bytes1[executeDefaultPos2] = byte(instr2 & 0xFF)
+			bytes1[executeDefaultPos2+1] = byte((instr2 >> 8) & 0xFF)
+			bytes1[executeDefaultPos2+2] = byte((instr2 >> 16) & 0xFF)
+			bytes1[executeDefaultPos2+3] = byte((instr2 >> 24) & 0xFF)
+
+			// Patch skip jump (b) to end
+			offset3 := int32((endLabel - skipDefaultPos) / 4)
+			instr3 := uint32(0x14000000) | uint32(offset3&0x3ffffff)
+			bytes1[skipDefaultPos] = byte(instr3 & 0xFF)
+			bytes1[skipDefaultPos+1] = byte((instr3 >> 8) & 0xFF)
+			bytes1[skipDefaultPos+2] = byte((instr3 >> 16) & 0xFF)
+			bytes1[skipDefaultPos+3] = byte((instr3 >> 24) & 0xFF)
+
+			// d0 now contains either original value (if not NaN/null) or result of right side
+			return nil
+		}
+
 		// Compile left operand (result in d0)
 		if err := acg.compileExpression(e.Left); err != nil {
 			return err
