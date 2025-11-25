@@ -1,5 +1,13 @@
 # Flap Compiler TODO
 
+## 🎯 Priority Tasks for "Flap 2075" (Next 50 years)
+
+1. **ARM64 Support** - 85% complete, needs dynamic linking + testing
+2. **RISC-V Support** - 80% complete, needs testing + validation  
+3. **Module System** - Import system complete, needs ecosystem/testing
+4. **Type System Refinement** - Core map[uint64]float64 model stable, C types integrated
+5. **Standard Library** - Minimal runtime complete, needs expansion
+
 ## Import System - ✅ COMPLETED
 The import system is now fully implemented with priority-based resolution:
 1. Libraries (pkg-config, .dll, .so files) - highest priority
@@ -49,9 +57,20 @@ Supported syntax:
 ## Hot Reload (main.go) - 95% Complete
 - Future enhancement: patch running process via IPC instead of restart
 
-## ARM64 Backend - 80-85% Complete
-- Complete advanced ARM64 features
-- Full testing and validation
+## ARM64 Backend - 85% Complete
+### ✅ Completed
+- Static ELF executable generation for Linux
+- Exit syscall for static builds
+- Basic code generation working
+
+### 🚧 In Progress / TODO
+- Implement ARM64-specific PLT/GOT stubs for dynamic linking
+- Full testing and validation on ARM64 hardware
+- ARM64 printf implementation (currently uses runtime helpers)
+- ARM64 AAPCS calling convention refinements
+- Test malloc/arena allocator on ARM64
+- Test C FFI on ARM64
+- Complete advanced ARM64 SIMD features
 
 ## RISC-V Backend - 80% Complete
 - Complete advanced RISC-V features
