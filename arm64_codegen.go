@@ -4102,8 +4102,11 @@ func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
 	acg.out.out.writer.WriteBytes([]byte{0x46, 0x01, 0x80, 0xd2}) // mov x6, #10
 	// x7 = x0 / 10
 	acg.out.out.writer.WriteBytes([]byte{0x07, 0x08, 0xc6, 0x9a}) // udiv x7, x0, x6
-	// x8 = x0 % 10 = x0 - (x7 * 10)
-	acg.out.out.writer.WriteBytes([]byte{0xe8, 0x58, 0x06, 0x9b}) // msub x8, x7, x6, x0
+	// x8 = x0 % 10 - compute manually to avoid msub issues
+	// First: x9 = x7 * 10
+	acg.out.out.writer.WriteBytes([]byte{0xe9, 0x28, 0x06, 0x9b}) // mul x9, x7, x6
+	// Then: x8 = x0 - x9
+	acg.out.out.writer.WriteBytes([]byte{0x08, 0x00, 0x09, 0xcb}) // sub x8, x0, x9
 
 	// Convert digit to ASCII: x8 = x8 + '0' (48)
 	// add x8, x8, #48
