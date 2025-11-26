@@ -1,5 +1,5 @@
 *.exe
-*.dll
+#*.dll
 *.so
 *.dylib
 *.test
