@@ -518,9 +518,469 @@ func (a *ARM64Out) StrbImm(src, base string, offset int32) error {
 	return nil
 }
 
-// Future enhancements (not needed for current functionality):
-// - More floating-point instructions (FADD, FSUB, FMUL, FDIV, FCVT, etc.)
-// - SIMD/NEON instructions (for advanced vector operations)
-// - Load/store pair instructions (STP, LDP) for optimization
-// - Logical instructions (AND, OR, EOR, etc.)
-// - Shift instructions (LSL, LSR, ASR, ROR)
+// AND (register): AND Xd, Xn, Xm
+func (a *ARM64Out) AndReg64(dest, op1, op2 string) error {
+	rd, ok := arm64GPRegs[dest]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", dest)
+	}
+	rn, ok := arm64GPRegs[op1]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", op1)
+	}
+	rm, ok := arm64GPRegs[op2]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", op2)
+	}
+
+	// AND (shifted register, 64-bit): sf=1, opc=00, shift=00, N=0
+	instr := uint32(0x8a000000) | (rm << 16) | (rn << 5) | rd
+	a.encodeInstr(instr)
+	return nil
+}
+
+// ORR (register): ORR Xd, Xn, Xm (logical OR)
+func (a *ARM64Out) OrrReg64(dest, op1, op2 string) error {
+	rd, ok := arm64GPRegs[dest]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", dest)
+	}
+	rn, ok := arm64GPRegs[op1]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", op1)
+	}
+	rm, ok := arm64GPRegs[op2]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", op2)
+	}
+
+	// ORR (shifted register, 64-bit): sf=1, opc=01, shift=00, N=0
+	instr := uint32(0xaa000000) | (rm << 16) | (rn << 5) | rd
+	a.encodeInstr(instr)
+	return nil
+}
+
+// EOR (register): EOR Xd, Xn, Xm (logical XOR)
+func (a *ARM64Out) EorReg64(dest, op1, op2 string) error {
+	rd, ok := arm64GPRegs[dest]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", dest)
+	}
+	rn, ok := arm64GPRegs[op1]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", op1)
+	}
+	rm, ok := arm64GPRegs[op2]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", op2)
+	}
+
+	// EOR (shifted register, 64-bit): sf=1, opc=10, shift=00, N=0
+	instr := uint32(0xca000000) | (rm << 16) | (rn << 5) | rd
+	a.encodeInstr(instr)
+	return nil
+}
+
+// LSL (register): LSL Xd, Xn, Xm (logical shift left)
+func (a *ARM64Out) LslReg64(dest, value, shift string) error {
+	rd, ok := arm64GPRegs[dest]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", dest)
+	}
+	rn, ok := arm64GPRegs[value]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", value)
+	}
+	rm, ok := arm64GPRegs[shift]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", shift)
+	}
+
+	// LSLV (variable shift, 64-bit): sf=1, op=0, S=0, op2=001000
+	instr := uint32(0x9ac02000) | (rm << 16) | (rn << 5) | rd
+	a.encodeInstr(instr)
+	return nil
+}
+
+// LSR (register): LSR Xd, Xn, Xm (logical shift right)
+func (a *ARM64Out) LsrReg64(dest, value, shift string) error {
+	rd, ok := arm64GPRegs[dest]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", dest)
+	}
+	rn, ok := arm64GPRegs[value]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", value)
+	}
+	rm, ok := arm64GPRegs[shift]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", shift)
+	}
+
+	// LSRV (variable shift, 64-bit): sf=1, op=0, S=0, op2=001001
+	instr := uint32(0x9ac02400) | (rm << 16) | (rn << 5) | rd
+	a.encodeInstr(instr)
+	return nil
+}
+
+// ASR (register): ASR Xd, Xn, Xm (arithmetic shift right)
+func (a *ARM64Out) AsrReg64(dest, value, shift string) error {
+	rd, ok := arm64GPRegs[dest]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", dest)
+	}
+	rn, ok := arm64GPRegs[value]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", value)
+	}
+	rm, ok := arm64GPRegs[shift]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", shift)
+	}
+
+	// ASRV (variable shift, 64-bit): sf=1, op=0, S=0, op2=001010
+	instr := uint32(0x9ac02800) | (rm << 16) | (rn << 5) | rd
+	a.encodeInstr(instr)
+	return nil
+}
+
+// STP (store pair): STP Xt1, Xt2, [Xn{, #offset}]
+func (a *ARM64Out) StpImm64(src1, src2, base string, offset int32) error {
+	rt1, ok := arm64GPRegs[src1]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", src1)
+	}
+	rt2, ok := arm64GPRegs[src2]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", src2)
+	}
+	rn, ok := arm64GPRegs[base]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", base)
+	}
+
+	if offset%8 != 0 {
+		return fmt.Errorf("STP offset not 8-byte aligned: %d", offset)
+	}
+
+	imm7 := offset / 8
+	if imm7 < -64 || imm7 >= 64 {
+		return fmt.Errorf("STP offset out of range: %d", offset)
+	}
+
+	// STP (signed offset, 64-bit): opc=10, V=0, L=0
+	instr := uint32(0xa9000000) | (uint32(imm7&0x7f) << 15) | (rt2 << 10) | (rn << 5) | rt1
+	a.encodeInstr(instr)
+	return nil
+}
+
+// LDP (load pair): LDP Xt1, Xt2, [Xn{, #offset}]
+func (a *ARM64Out) LdpImm64(dest1, dest2, base string, offset int32) error {
+	rt1, ok := arm64GPRegs[dest1]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", dest1)
+	}
+	rt2, ok := arm64GPRegs[dest2]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", dest2)
+	}
+	rn, ok := arm64GPRegs[base]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", base)
+	}
+
+	if offset%8 != 0 {
+		return fmt.Errorf("LDP offset not 8-byte aligned: %d", offset)
+	}
+
+	imm7 := offset / 8
+	if imm7 < -64 || imm7 >= 64 {
+		return fmt.Errorf("LDP offset out of range: %d", offset)
+	}
+
+	// LDP (signed offset, 64-bit): opc=10, V=0, L=1
+	instr := uint32(0xa9400000) | (uint32(imm7&0x7f) << 15) | (rt2 << 10) | (rn << 5) | rt1
+	a.encodeInstr(instr)
+	return nil
+}
+
+// SDIV: SDIV Xd, Xn, Xm (signed division)
+func (a *ARM64Out) SDiv64(dest, dividend, divisor string) error {
+	rd, ok := arm64GPRegs[dest]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", dest)
+	}
+	rn, ok := arm64GPRegs[dividend]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", dividend)
+	}
+	rm, ok := arm64GPRegs[divisor]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", divisor)
+	}
+
+	// SDIV (64-bit): sf=1, op=0, S=0, op2=000011
+	instr := uint32(0x9ac00c00) | (rm << 16) | (rn << 5) | rd
+	a.encodeInstr(instr)
+	return nil
+}
+
+// CMP (register): CMP Xn, Xm (compare, sets flags)
+func (a *ARM64Out) CmpReg64(op1, op2 string) error {
+	rn, ok := arm64GPRegs[op1]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", op1)
+	}
+	rm, ok := arm64GPRegs[op2]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", op2)
+	}
+
+	// SUBS (shifted register, 64-bit) with Rd=XZR: sf=1, op=1, S=1
+	instr := uint32(0xeb00001f) | (rm << 16) | (rn << 5)
+	a.encodeInstr(instr)
+	return nil
+}
+
+// CMP (immediate): CMP Xn, #imm (compare with immediate)
+func (a *ARM64Out) CmpImm64(reg string, imm uint32) error {
+	rn, ok := arm64GPRegs[reg]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", reg)
+	}
+
+	if imm > 0xfff {
+		return fmt.Errorf("immediate value too large for CMP: %d", imm)
+	}
+
+	// SUBS (immediate, 64-bit) with Rd=XZR: sf=1, op=1, S=1
+	instr := uint32(0xf100001f) | (imm << 10) | (rn << 5)
+	a.encodeInstr(instr)
+	return nil
+}
+
+// FADD (scalar): FADD Dd, Dn, Dm (double-precision floating-point add)
+func (a *ARM64Out) FaddScalar64(dest, op1, op2 string) error {
+	rd, ok := arm64FPRegs[dest]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", dest)
+	}
+	rn, ok := arm64FPRegs[op1]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", op1)
+	}
+	rm, ok := arm64FPRegs[op2]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", op2)
+	}
+
+	// FADD (scalar, double): M=0, S=0, type=01, opcode=0010
+	instr := uint32(0x1e602800) | (rm << 16) | (rn << 5) | rd
+	a.encodeInstr(instr)
+	return nil
+}
+
+// FSUB (scalar): FSUB Dd, Dn, Dm (double-precision floating-point subtract)
+func (a *ARM64Out) FsubScalar64(dest, op1, op2 string) error {
+	rd, ok := arm64FPRegs[dest]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", dest)
+	}
+	rn, ok := arm64FPRegs[op1]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", op1)
+	}
+	rm, ok := arm64FPRegs[op2]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", op2)
+	}
+
+	// FSUB (scalar, double): M=0, S=0, type=01, opcode=0011
+	instr := uint32(0x1e603800) | (rm << 16) | (rn << 5) | rd
+	a.encodeInstr(instr)
+	return nil
+}
+
+// FMUL (scalar): FMUL Dd, Dn, Dm (double-precision floating-point multiply)
+func (a *ARM64Out) FmulScalar64(dest, op1, op2 string) error {
+	rd, ok := arm64FPRegs[dest]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", dest)
+	}
+	rn, ok := arm64FPRegs[op1]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", op1)
+	}
+	rm, ok := arm64FPRegs[op2]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", op2)
+	}
+
+	// FMUL (scalar, double): M=0, S=0, type=01, opcode=0000
+	instr := uint32(0x1e600800) | (rm << 16) | (rn << 5) | rd
+	a.encodeInstr(instr)
+	return nil
+}
+
+// FDIV (scalar): FDIV Dd, Dn, Dm (double-precision floating-point divide)
+func (a *ARM64Out) FdivScalar64(dest, op1, op2 string) error {
+	rd, ok := arm64FPRegs[dest]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", dest)
+	}
+	rn, ok := arm64FPRegs[op1]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", op1)
+	}
+	rm, ok := arm64FPRegs[op2]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", op2)
+	}
+
+	// FDIV (scalar, double): M=0, S=0, type=01, opcode=0001
+	instr := uint32(0x1e601800) | (rm << 16) | (rn << 5) | rd
+	a.encodeInstr(instr)
+	return nil
+}
+
+// FSQRT (scalar): FSQRT Dd, Dn (double-precision floating-point square root)
+func (a *ARM64Out) FsqrtScalar64(dest, src string) error {
+	rd, ok := arm64FPRegs[dest]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", dest)
+	}
+	rn, ok := arm64FPRegs[src]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", src)
+	}
+
+	// FSQRT (scalar, double): M=0, S=0, type=01, opcode=110001
+	instr := uint32(0x1e61c000) | (rn << 5) | rd
+	a.encodeInstr(instr)
+	return nil
+}
+
+// FABS (scalar): FABS Dd, Dn (floating-point absolute value)
+func (a *ARM64Out) FabsScalar64(dest, src string) error {
+	rd, ok := arm64FPRegs[dest]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", dest)
+	}
+	rn, ok := arm64FPRegs[src]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", src)
+	}
+
+	// FABS (scalar, double): M=0, S=0, type=01, opcode=000001
+	instr := uint32(0x1e60c000) | (rn << 5) | rd
+	a.encodeInstr(instr)
+	return nil
+}
+
+// FNEG (scalar): FNEG Dd, Dn (floating-point negate)
+func (a *ARM64Out) FnegScalar64(dest, src string) error {
+	rd, ok := arm64FPRegs[dest]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", dest)
+	}
+	rn, ok := arm64FPRegs[src]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", src)
+	}
+
+	// FNEG (scalar, double): M=0, S=0, type=01, opcode=000010
+	instr := uint32(0x1e614000) | (rn << 5) | rd
+	a.encodeInstr(instr)
+	return nil
+}
+
+// SCVTF (scalar, integer to float): SCVTF Dd, Xn (signed int64 to double)
+func (a *ARM64Out) ScvtfInt64ToDouble(dest, src string) error {
+	rd, ok := arm64FPRegs[dest]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", dest)
+	}
+	rn, ok := arm64GPRegs[src]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 GP register: %s", src)
+	}
+
+	// SCVTF (scalar, integer, 64-bit to double): sf=1, S=0, type=00, rmode=00, opcode=000010
+	instr := uint32(0x9e620000) | (rn << 5) | rd
+	a.encodeInstr(instr)
+	return nil
+}
+
+// FCVTZS (scalar, float to integer): FCVTZS Xd, Dn (double to signed int64)
+func (a *ARM64Out) FcvtzsDoubleToInt64(dest, src string) error {
+	rd, ok := arm64GPRegs[dest]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 GP register: %s", dest)
+	}
+	rn, ok := arm64FPRegs[src]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", src)
+	}
+
+	// FCVTZS (scalar, double to 64-bit): sf=1, S=0, type=01, rmode=11, opcode=000000
+	instr := uint32(0x9e780000) | (rn << 5) | rd
+	a.encodeInstr(instr)
+	return nil
+}
+
+// FMOV (register, FP to GP): FMOV Xd, Dn (move double to GP register)
+func (a *ARM64Out) FmovDoubleToGP(dest, src string) error {
+	rd, ok := arm64GPRegs[dest]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 GP register: %s", dest)
+	}
+	rn, ok := arm64FPRegs[src]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", src)
+	}
+
+	// FMOV (general, double to 64-bit): sf=1, S=0, type=01, rmode=00, opcode=000110
+	instr := uint32(0x9e660000) | (rn << 5) | rd
+	a.encodeInstr(instr)
+	return nil
+}
+
+// FMOV (register, GP to FP): FMOV Dd, Xn (move GP register to double)
+func (a *ARM64Out) FmovGPToDouble(dest, src string) error {
+	rd, ok := arm64FPRegs[dest]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", dest)
+	}
+	rn, ok := arm64GPRegs[src]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 GP register: %s", src)
+	}
+
+	// FMOV (general, 64-bit to double): sf=1, S=0, type=01, rmode=00, opcode=000111
+	instr := uint32(0x9e670000) | (rn << 5) | rd
+	a.encodeInstr(instr)
+	return nil
+}
+
+// FCMP (scalar): FCMP Dn, Dm (floating-point compare, sets flags)
+func (a *ARM64Out) FcmpScalar64(op1, op2 string) error {
+	rn, ok := arm64FPRegs[op1]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", op1)
+	}
+	rm, ok := arm64FPRegs[op2]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 FP register: %s", op2)
+	}
+
+	// FCMP (scalar, double): M=0, S=0, type=01, op=00, opcode2=00000
+	instr := uint32(0x1e602000) | (rm << 16) | (rn << 5)
+	a.encodeInstr(instr)
+	return nil
+}
+
+// Future enhancements:
+// - SIMD/NEON vector instructions (for parallel operations)
+// - Advanced addressing modes (pre/post-index)
+// - Atomic operations (LDXR, STXR, CAS, etc.)
+// - More conversion instructions (FCVT between precisions)
