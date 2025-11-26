@@ -12,12 +12,9 @@ import sdl3 as sdl
 width := 620
 height := 387
 
-// Initialize SDL3 with video subsystem
 println("Initializing SDL3...")
 
-// SDL3 returns true (1) on success, false (0) on failure
-// Use or! for railway-oriented error handling
-// Note: Blocks that return values are expressions (no exit needed - defer handles cleanup)
+// Initialize SDL and exit if there is an error
 sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
     exitf("SDL_Init failed: %s\n", sdl.SDL_GetError())
 }
