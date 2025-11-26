@@ -1,8 +1,8 @@
 # Flap Language Specification
 
-**Version:** 1.5.0
-**Date:** 2025-11-21
-**Status:** Canonical Language Reference for the Flap 1.5.0 Release
+**Version:** 3.0.0
+**Date:** 2025-11-26
+**Status:** Canonical Language Reference for the Flap 3.0.0 Release
 
 This document describes the complete semantics, behavior, and design philosophy of the Flap programming language. For the formal grammar, see [GRAMMAR.md](GRAMMAR.md).
 
@@ -74,31 +74,31 @@ Blocks `{ ... }` are disambiguated by their contents:
 // Map literal: contains key: value
 config = { port: 8080, host: "localhost" }
 
-// Statement block: no -> or ~> arrows
-compute = x => {
+// Statement block: no => or ~> arrows
+compute = x -> {
     temp = x * 2
     result = temp + 10
     result  // last value returned
 }
 
-// Value match: expression before {, patterns with ->
-classify = x => x {
-    0 -> "zero"
-    5 -> "five"
+// Value match: expression before {, patterns with =>
+classify = x -> x {
+    0 => "zero"
+    5 => "five"
     ~> "other"
 }
 
 // Guard match: no expression before {, branches with | at line start
-classify = x => {
-    | x == 0 -> "zero"
-    | x > 0 -> "positive"
+classify = x -> {
+    | x == 0 => "zero"
+    | x > 0 => "positive"
     ~> "negative"
 }
 ```
 
 **Block disambiguation rules:**
 1. Contains `:` (before arrows) → Map literal
-2. Contains `->` or `~>` → Match block (value or guard)
+2. Contains `=>` or `~>` → Match block (value or guard)
 3. Otherwise → Statement block
 
 This unifies maps, pattern matching, guards, and function bodies into one syntax.
@@ -122,12 +122,12 @@ window := sdl.SDL_CreateWindow("Title", 640, 480, 0) or! {
 
 // Block in conditional
 value = condition {
-    1 -> {
+    1 => {
         println("Processing true case")
         process_true()
         42  // Block returns 42
     }
-    0 -> {
+    0 => {
         println("Processing false case")
         process_false()
         99  // Block returns 99
@@ -217,7 +217,7 @@ Network-style message passing for concurrency:
 
 ```flap
 &8080 <- "Hello"     // Send to channel
-msg = => &8080       // Receive from channel
+msg <= &8080       // Receive from channel
 ```
 
 ### 9. Fork-Based Process Model
@@ -305,11 +305,11 @@ x = ??  // Uses OS CSPRNG
 new_owner = old_owner!  // Transfer ownership
 ```
 
-### 17. Result Type with NaN Error Encoding
+### 17. Result Type
 
 ```flap
 result = risky_operation()
-result.error { != "" -> println("Error:", result.error) }
+result.error { != "" => println("Error:", result.error) }
 ```
 
 ### 18. Immutable-by-Default
@@ -455,130 +455,116 @@ x: num = num * 2       // OK - type annotation vs variable
 
 ## Variables and Assignment
 
-### Immutable Assignment (`=`)
+Flap has three primary assignment operators, each with a distinct purpose related to mutability and initialization.
 
-Creates immutable binding (cannot reassign variable or modify contents):
+| Operator | Name                  | Purpose                                                                 |
+|----------|-----------------------|-------------------------------------------------------------------------|
+| `=`      | Immutable Binding     | Binds a name to a value that cannot be reassigned or internally modified. |
+| `:=`     | Mutable Initialization| Declares a new mutable variable and assigns its initial value.            |
+| `<-`     | Mutation / Re-binding   | Updates the value of an existing mutable variable or a field within a map/list. |
 
-```flap
-x = 42
-x = 100  // ERROR: cannot reassign immutable variable
+### Immutable Binding (`=`)
 
-nums = [1, 2, 3]
-nums[0] = 99  // ERROR: cannot modify immutable value
-```
-
-**Use for:**
-- Constants
-- Function definitions (standard practice)
-- Values that won't change
-
-### Mutable Assignment (`:=`)
-
-Creates mutable binding (can reassign variable and modify contents):
+The `=` operator creates an **immutable binding**. Once a name is bound with `=`, it cannot be rebound to a new value, and its internal state cannot be changed. This is the preferred way to define constants and functions.
 
 ```flap
-x := 42
-x := 100  // OK: reassign mutable variable
-x <- 200  // OK: update with <-
+// Valid immutable bindings
+PI = 3.14159
+add = (x, y) -> x + y
+CONFIG = { "host": "localhost", "port": 8080 }
 
-nums := [1, 2, 3]
-nums[0] <- 99  // OK: modify mutable value
+// ERROR: Cannot re-bind an immutable variable
+PI = 3.14 // Error!
+
+// ERROR: Cannot mutate the contents of an immutable binding
+CONFIG.port = 9000 // Error!
 ```
 
-**Use for:**
-- Loop counters
-- Accumulators
-- Values that will change
-- Functions that need reassignment (rare)
+**Use `=` for:**
+- Constants that should never change.
+- Function and class definitions.
+- Any value that you want to guarantee remains constant.
 
-### Update Operator (`<-`)
+### Mutable Initialization (`:=`)
 
-Updates mutable variables or map elements:
+The `:=` operator **declares and initializes a mutable variable**. This is the only way to introduce a new variable that can be changed later. Using `:=` on a name that already exists in the current scope will result in a "variable already defined" error.
 
 ```flap
-x := 10
-x <- 20      // Update variable
+// Declare and initialize a mutable counter
+counter := 0
 
-nums := [1, 2, 3]
-nums[0] <- 99    // Update list element
+// Declare a mutable list
+items := [1, 2, 3]
 
-config := { port: 8080 }
-config.port <- 9000  // Update map field
+// ERROR: Cannot re-declare a variable in the same scope
+counter := 10 // Error!
 ```
+
+**Use `:=` for:**
+- Loop counters.
+- Accumulators.
+- Any variable whose value needs to change over its lifetime.
+
+### Mutation / Re-binding (`<-`)
+
+The `<-` operator is used exclusively to **mutate** an existing mutable variable or a field within a mutable collection. It can be used to either re-bind the variable to a completely new value or to change a part of its internal state (like a list index or map key).
+
+It is a compile-time error to use `<-` on a variable that was not declared with `:=`.
+
+```flap
+// Start with a mutable variable
+x := 100
+
+// Re-bind `x` to a new value
+x <- 200
+
+// Mutate an element within a mutable list
+items := ["a", "b", "c"]
+items[1] <- "z" // `items` is now ["a", "z", "c"]
+
+// ERROR: Cannot use `<-` on an immutable variable
+PI <- 3.14 // Error! PI was defined with `=`
+```
+
+### Summary of Rules
+
+1.  **Initialize with `=` for immutability.**
+2.  **Initialize with `:=` for mutability.**
+3.  **Mutate with `<-` for variables declared with `:=`.**
+
+This clear distinction helps prevent accidental modification and makes the programmer's intent explicit.
 
 ### Multiple Assignment (Tuple Unpacking)
 
-Multiple variables can be assigned from a list in a single statement:
+Flap supports assigning multiple variables at once from a list, often known as tuple unpacking.
 
 ```flap
-// Unpack function return (list)
-new_list, popped_value = pop([1, 2, 3])
-println(new_list)      // [1, 2]
-println(popped_value)  // 3
-
-// Unpack list literal
+// Unpack a list literal
 x, y, z := [10, 20, 30]
+// x is 10, y is 20, z is 30
 
-// Works with any list expression
-first, second = some_function()
-a, b, c = [1, 2, 3, 4, 5]  // a=1, b=2, c=3 (extras ignored)
+// Unpack the result of a function call
+// Assume get_point() returns a list like [x_val, y_val]
+px, py = get_point()
 ```
 
 **Rules:**
-- Right side must evaluate to a list/map
-- Variables are assigned elements at indices 0, 1, 2, etc.
-- If list has fewer elements, remaining variables get `0`
-- If list has more elements, extras are ignored
-- Can use `=`, `:=`, or `<-` (with mutable vars)
+- The expression on the right-hand side must evaluate to a list.
+- The variables on the left-hand side are assigned to the elements of the list at the corresponding indices (0, 1, 2, etc.).
+- If the list has fewer elements than the variables, the remaining variables are assigned a value of `0`.
+- If the list has more elements than the variables, the extra elements are ignored.
+- Multiple assignment can be used with `=`, `:=`, or `<-` (for already-declared mutable variables).
 
-**Common patterns:**
+**Common Patterns:**
 ```flap
-// Swap values
-a, b := 1, 2
-a, b <- [b, a]  // Swap using list literal
+// Swapping two variables
+a := 1
+b := 2
+a, b <- [b, a] // a is now 2, b is now 1
 
-// Split list
-first, rest = head(xs), tail(xs)  // First element and remaining
-
-// Function with multiple returns
+// Working with functions that return multiple values
+// Assume divmod(a, b) returns [quotient, remainder]
 quotient, remainder = divmod(17, 5)
-```
-
-### Function Assignment Convention
-
-**Always use `=` for functions** unless the function variable needs reassignment:
-
-```flap
-// Standard (use =)
-add = (x, y) => x + y
-factorial = n => n { 0 -> 1 ~> n * factorial(n-1) }
-
-// Only use := if reassigning
-handler := x => println(x)
-handler := x => println("DEBUG:", x)  // reassign
-```
-
-### Mutability Semantics
-
-The assignment operator determines both **variable mutability** and **value mutability**:
-
-| Operator | Variable Mutability | Value Mutability |
-|----------|---------------------|------------------|
-| `=` | Immutable (can't reassign) | Immutable (can't modify contents) |
-| `:=` | Mutable (can reassign) | Mutable (can modify contents) |
-
-**Examples:**
-
-```flap
-// Immutable binding, immutable value
-nums = [1, 2, 3]
-nums <- [4, 5, 6]     // ERROR: can't reassign
-nums[0] <- 99         // ERROR: can't modify
-
-// Mutable binding, mutable value
-vals := [1, 2, 3]
-vals <- [4, 5, 6]     // OK: reassign
-vals[0] <- 99         // OK: modify
 ```
 
 ## Control Flow
@@ -665,9 +651,9 @@ factorial = (n, acc) -> (n == 0) {
 }
 
 // Tail call in default case
-sum_list = (list, acc) -> (list.length) {
-    0 => acc
-    ~> sum_list(list[1:], acc + list[0])
+sum_list = (list, acc) -> (#list == 0) {
+    1 => acc
+    ~> sum_list(tail(list), acc + head(list))
 }
 ```
 
@@ -725,7 +711,7 @@ Lambdas use `->` for definition:
 // Multi-line lambda
 process = data -> {
     cleaned = data | x -> x.trim()
-    cleaned | x -> x.length > 0
+    cleaned | x -> #x > 0
 }
 ```
 
@@ -809,7 +795,7 @@ When calling a variadic function, you can:
 max = (nums...) -> {
     result := nums[0]
     @ n in nums {
-        ? n > result { result <- n }
+        (n > result) { 1 => result <- n }
     }
     result
 }
@@ -888,7 +874,7 @@ Flap uses `ret @` with loop labels instead of `break`/`continue`:
 }
 
 // ret without @ returns from function
-compute = n => {
+compute = n -> {
     @ i in 0..<100 {
         i == n { ret i }  // Return from function with value
         i == 50 { ret @ } // Exit loop only, continue function
@@ -951,10 +937,10 @@ Use `||` for parallel iteration (each iteration in separate process):
 
 ```flap
 // Sequential map
-results = [1, 2, 3] | x => x * 2
+results = [1, 2, 3] | x -> x * 2
 
 // Parallel map
-results = [1, 2, 3] || x => expensive(x)
+results = [1, 2, 3] || x -> expensive(x)
 ```
 
 
@@ -973,26 +959,26 @@ Flap uses **ENet-style message passing** for concurrency:
 ### Receive Messages
 
 ```flap
-msg = => &8080            // Receive from port 8080
-data = => &"server:9000"  // Receive from remote
+msg <= &8080            // Receive from port 8080
+data <= &"server:9000"  // Receive from remote
 ```
 
 ### Channel Patterns
 
 ```flap
 // Worker pattern
-worker =>> {
+worker = -> {
     @ {
-        task = => &8080
+        task <= &8080
         result = process(task)
         &8081 <- result
     }
 }
 
 // Pipeline pattern
-stage1 =>> @ { &8080 <- generate_data() }
-stage2 =>> @ { data = => &8080; &8081 <- transform(data) }
-stage3 =>> @ { result = => &8081; save(result) }
+stage1 = -> @ { &8080 <- generate_data() }
+stage2 = -> @ { data <= &8080; &8081 <- transform(data) }
+stage3 = -> @ { result <= &8081; save(result) }
 ```
 
 **Note:** ENet channels are compiled directly into machine code that uses ENet library calls.
@@ -1058,10 +1044,10 @@ class Counter {
 }
 
 // Desugars to this:
-Counter := start => {
+Counter := start -> {
     instance := {}
     instance["count"] = start
-    instance["increment"] = () => {
+    instance["increment"] = () -> {
         instance["count"] <- instance["count"] + 1
     }
     ret instance
@@ -1074,16 +1060,16 @@ Inside methods, `.field` accesses instance fields. The `. ` expression (dot foll
 
 ```flap
 class List {
-    init = () => {
+    init = () -> {
         .items = []
     }
 
-    add = item => {
-        .items <- .items :: item
+    add = item -> {
+        .items <- .items + [item]
         ret .   // Return this (self) for chaining
     }
 
-    size = () => .items.length
+    size = () -> #.items
 }
 
 list = List().add(1).add(2).add(3)  // Method chaining via `. `
@@ -1099,23 +1085,25 @@ println(list.size())  // 3
 
 ```flap
 class Account {
-    init = balance => {
+    init = balance -> {
         .balance = balance
     }
 
-    withdraw = amount => {
-        amount > .balance {
-            ret -1  // Insufficient funds
+    withdraw = amount -> {
+        (amount > .balance) {
+            1 => -1, // Insufficient funds
+            ~> {
+                .balance <- .balance - amount
+                0
+            }
         }
-        .balance <- .balance - amount
-        ret 0
     }
 
-    deposit = amount => {
+    deposit = amount -> {
         .balance <- .balance + amount
     }
 
-    get_balance = () => .balance
+    get_balance = () -> .balance
 }
 
 acc = Account(100)
@@ -1136,7 +1124,7 @@ class Entity {
         .name = name
         .id = Entity.count
         Entity.count <- Entity.count + 1
-        Entity.all <- Entity.all :: instance
+        Entity.all <- Entity.all + [instance]
     }
 
     get_total = () -> Entity.count
@@ -1158,7 +1146,7 @@ Serializable := {
     to_json: () -> {
         // Serialize instance to JSON string
         keys := this.keys()
-        @ i in 0..<keys.length {
+        @ i in 0..<#keys {
             // Build JSON...
         }
     },
@@ -1219,7 +1207,7 @@ class Math {
     Math.PI = 3.14159
 
     // Note: no init, Math is never instantiated
-    Math.circle_area = radius => Math.PI * radius * radius
+    Math.circle_area = radius -> Math.PI * radius * radius
 }
 
 area := Math.circle_area(10)
@@ -1237,10 +1225,10 @@ class Parser {
     }
 
     _peek = () -> {
-        .pos < .input.length {
-            ret .input[.pos]
+        (.pos < #.input) {
+            1 => .input[.pos],
+            ~> -1
         }
-        ret -1
     }
 
     _advance = () -> {
@@ -1264,16 +1252,16 @@ Return `. ` (this) to enable chaining:
 
 ```flap
 class StringBuilder {
-    init = () => {
+    init = () -> {
         .parts = []
     }
 
-    append = str => {
-        .parts <- .parts :: str
+    append = str -> {
+        .parts <- .parts + [str]
         ret .  // Return this (self)
     }
 
-    build = () => {
+    build = () -> {
         result := ""
         @ part in .parts {
             result <- result + part
@@ -1385,24 +1373,34 @@ dog.bark()   // From Dog
 
 ```flap
 class Stack {
-    init = () => {
+    init = () -> {
         .items = []
     }
 
-    push = item => {
-        .items <- .items :: item
+    push = item -> {
+        .items <- .items + [item]
     }
 
-    pop = () => {
-        .items.length == 0 {
-            ret ??  // Empty
+    pop = () -> {
+        (#.items == 0) {
+            1 => ??,  // Return random/undefined value if empty
+            ~> {
+                last_index := #.items - 1
+                last_item := .items[last_index]
+
+                // Rebuild the list without the last item
+                new_items := []
+                @ i in 0..<last_index {
+                    new_items <- new_items + [.items[i]]
+                }
+                .items <- new_items
+
+                last_item
+            }
         }
-        last := .items[.items.length - 1]
-        .items <- .items[0..<(.items.length - 1)]
-        ret last
     }
 
-    is_empty = () => .items.length == 0
+    is_empty = () -> #.items == 0
 }
 
 s = Stack()
@@ -1626,10 +1624,12 @@ C functions that return pointers return 0 (null) on failure. Use `or!` for clean
 ```flap
 // Old style: manual null check
 window := sdl.SDL_CreateWindow("Title", 640, 480, 0)
-window == 0 {
-    println("Failed to create window!")
-    sdl.SDL_Quit()
-    exit(1)
+(window == 0) {
+    1 => {
+        println("Failed to create window!")
+        sdl.SDL_Quit()
+        exit(1)
+    }
 }
 
 // New style: or! with block
@@ -1656,7 +1656,7 @@ ptr := c.malloc(1024) or! 0
 Chain multiple C calls with `or!` for clean error handling:
 
 ```flap
-init_graphics = () => {
+init_graphics = () -> {
     // Each call handles its own error with or!
     sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
         println("SDL_Init failed!")
@@ -1806,7 +1806,7 @@ defer expression
 
 **Basic Example:**
 ```flap
-open_file = filename => {
+open_file = filename -> {
     file := c.fopen(filename, "r") or! {
         println("Failed to open:", filename)
         ret 0
@@ -1823,7 +1823,7 @@ open_file = filename => {
 
 **LIFO Execution Order:**
 ```flap
-process = () => {
+process = () -> {
     defer println("First")   // Executes last (3rd)
     defer println("Second")  // Executes second (2nd)
     defer println("Third")   // Executes first (1st)
@@ -1833,7 +1833,7 @@ process = () => {
 
 **With C FFI (SDL3 Example):**
 ```flap
-init_sdl = () => {
+init_sdl = () -> {
     sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
         println("SDL init failed")
         ret 0
@@ -1863,7 +1863,7 @@ init_sdl = () => {
 **Railway-Oriented Pattern:**
 ```flap
 // Combine defer with or! for clean error handling
-acquire_resources = () => {
+acquire_resources = () -> {
     db := connect_db() or! {
         println("DB connection failed")
         ret error("db")
@@ -2058,7 +2058,7 @@ eprintf("Error: invalid value %v\n", x)
 // Check result from error print
 result := eprintln("This is an error message")
 result.error {
-    "out" -> println("Successfully wrote to stderr")
+    "out" => println("Successfully wrote to stderr"),
     ~> println("Unexpected error")
 }
 
@@ -2084,7 +2084,7 @@ x < 0 {
 
 ```flap
 s = "Hello"
-s.length            // 5 (number of entries in the map)
+#s            // 5 (number of entries in the map)
 s.bytes             // Map of byte values {0: 72.0, 1: 101.0, ...}
 s.runes             // Map of Unicode code points
 s + " World"        // Concatenation (merges maps)
@@ -2094,9 +2094,9 @@ s + " World"        // Concatenation (merges maps)
 
 ```flap
 nums = [1, 2, 3]
-nums.length         // 3
+#nums         // 3
 nums[0]             // 1
-nums[1:]            // [2, 3]
+// nums[1:] is not valid syntax per GRAMMAR.md
 nums + [4, 5]       // [1, 2, 3, 4, 5]
 ```
 
@@ -2125,73 +2125,64 @@ abs(x)
 
 ### Result Type Design
 
-Flap uses **NaN-boxing** to encode errors within float64 values. This elegant approach, inspired by ENet's use of bit patterns for encoding flags and types, keeps everything as `map[uint64]float64` while enabling robust error handling.
+Flap uses a **Result type** for operations that can fail. A Result is still `map[uint64]float64`, but with special semantic meaning tracked by the compiler.
 
-**Encoding Scheme:**
-- **Success values:** Regular float64 (standard IEEE 754 representation)
-- **Error values:** Quiet NaN with 32-bit error code encoded in the mantissa
-
-**Error NaN Format:**
+**Byte Layout:**
 ```
-IEEE 754 Double (64 bits):
-[Sign][Exponent (11)][Mantissa (52)]
-
-Error encoding:
-[0][11111111111][1][000][0...0][cccccccccccccccccccccccccccccccc]
-    ^^^^^^^^^^^  ^              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    All 1s = NaN |              32-bit error code (4 ASCII chars)
-                 Quiet NaN bit
-
-Hex representation: 0x7FF8_0000_[CODE]_[CODE]
-Example ("dv0\0"): 0x7FF8_0000_6476_3000
+[type_byte][length][key][value][key][value]...[0x00]
 ```
 
-**Key Properties:**
-- Errors are distinguishable from all valid floats (including ±Inf, regular NaN)
-- Error checking is a single NaN test: `x != x` or `UCOMISD`
-- Error codes are human-readable 4-char ASCII strings
-- Zero runtime overhead for success cases
-- Compatible with all IEEE 754 compliant hardware
+**Type Bytes:**
+```
+0x01 - Flap Number (success)
+0x02 - Flap String (success)
+0x03 - Flap List (success)
+0x04 - Flap Map (success)
+0x05 - Flap Address (success)
+0xE0 - Error (failure, followed by 4-char error code)
+0x10 - C int8
+0x11 - C int16
+0x12 - C int32
+0x13 - C int64
+0x14 - C uint8
+0x15 - C uint16
+0x16 - C uint32
+0x17 - C uint64
+0x18 - C float32
+0x19 - C float64
+0x1A - C pointer
+0x1B - C string pointer
+```
+
+**Success case:**
+- Type byte indicates the Flap or C type
+- Length field (uint64) indicates number of key-value pairs
+- Key-value pairs follow (each pair is uint64 key, float64 value)
+- Terminated with 0x00 byte
+
+**Error case:**
+- Type byte is 0xE0
+- Followed by 4-byte error code (ASCII, space-padded)
+- Terminated with 0x00 byte
 
 ### Standard Error Codes
 
-Error codes are exactly 4 bytes (null-padded if shorter), encoded as 32-bit integers:
-
 ```
-"dv0\0" (0x64763000) - Division by zero
-"idx\0" (0x69647800) - Index out of bounds
-"key\0" (0x6B657900) - Key not found
-"typ\0" (0x74797000) - Type mismatch
-"nil\0" (0x6E696C00) - Null pointer
-"mem\0" (0x6D656D00) - Out of memory
-"arg\0" (0x61726700) - Invalid argument
-"io\0\0" (0x696F0000) - I/O error
-"net\0" (0x6E657400) - Network error
-"prs\0" (0x70727300) - Parse error
-"ovf\0" (0x6F766600) - Overflow
-"udf\0" (0x75646600) - Undefined
+"dv0 " - Division by zero
+"idx " - Index out of bounds
+"key " - Key not found
+"typ " - Type mismatch
+"nil " - Null pointer
+"mem " - Out of memory
+"arg " - Invalid argument
+"io  " - I/O error
+"net " - Network error
+"prs " - Parse error
+"ovf " - Overflow
+"udf " - Undefined
 ```
 
-**Note:** The `.error` accessor extracts the code and converts it to a Flap string, stripping null bytes.
-
-### Operations That Return Results
-
-```flap
-// Arithmetic errors
-x = 10 / 0              // Error: "dv0 " (division by zero)
-y = 2 ** 1000           // Error: "ovf " (overflow)
-
-// Index errors
-xs = [1, 2, 3]
-z = xs[10]              // Error: "idx " (out of bounds)
-
-// Key errors
-m = { x: 10 }
-w = m.y                 // Error: "key " (key not found)
-
-// Custom errors
-err = error("arg")      // Create error with code "arg "
-```
+**Note:** Error codes are 4 bytes, space-padded if shorter. The `.error` accessor strips trailing spaces on access.
 
 ### The `.error` Accessor
 
@@ -2208,16 +2199,8 @@ y.error                 // Returns "dv0" (spaces stripped)
 
 // Typical usage
 result.error {
-    "" -> proceed(result)
+    "" => proceed(result),
     ~> handle_error(result.error)
-}
-
-// Match on specific errors
-result.error {
-    "" -> println("Success:", result)
-    "dv0" -> println("Division by zero")
-    "mem" -> println("Out of memory")
-    ~> println("Unknown error:", result.error)
 }
 ```
 
@@ -2242,26 +2225,22 @@ window := sdl.SDL_CreateWindow("Title", 640, 480, 0) or! {
 
 // Inline null check with default
 ptr := c.malloc(1024) or! 0  // Returns 0 if allocation failed
-
-// Railway-oriented programming pattern
-result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
-    println("SDL_Init failed!")
-    exit(1)
-}
 ```
 
 **Semantics:**
-1. Evaluate left operand
-2. Check if error (type byte 0xE0) or null (value is 0 for pointer types)
-3. If error/null and right side is a block: execute block
-4. If error/null and right side is an expression: return right operand
-5. Otherwise: return left operand value
+1. Evaluate the left operand.
+2. Check the **type byte** of the resulting value.
+3. If the type byte is `0xE0` (indicating an error) or if the value is a null pointer from a C FFI call (represented as `0.0`), the left side is considered to have failed.
+4. If the left side failed:
+   - If the right side is a block, the block is executed.
+   - If the right side is an expression, it is evaluated and its result is returned.
+5. If the left side was successful (not an error or null pointer), its value is returned, and the right side is **not** evaluated (short-circuiting).
 
-**When checking for null (C FFI pointers):**
-- The compiler recognizes pointer-returning C functions
-- `or!` treats 0 (null pointer) as a failure case
-- Enables railway-oriented programming for C interop
-- Blocks can contain cleanup code and exits
+**Error and Null Checking:**
+- **Error Check**: The `or!` operator inspects the type byte of the Result value.
+- **Null Check**: For values returned from C FFI functions that are annotated as pointer types (`cptr`, `cstring`), `or!` also checks if the value is `0.0`.
+
+This mechanism allows `or!` to seamlessly handle both native Flap errors and null pointer checks from C libraries in a single, consistent way.
 
 **Precedence:** Lower than logical OR, higher than send operator
 
@@ -2269,62 +2248,30 @@ result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
 
 ```flap
 // Check and early return
-process = input => {
+process = input -> {
     step1 = validate(input)
-    step1.error { != "" -> step1 }  // Return error early
+    step1.error { != "" => step1 }  // Return error
 
     step2 = transform(step1)
-    step2.error { != "" -> step2 }
+    step2.error { != "" => step2 }
 
     finalize(step2)
 }
 
 // Default values with or!
-compute = input => {
-    x = parse(input) or! 0     // Use 0 if parse fails
-    y = divide(100, x) or! -1  // Use -1 if division fails
+compute = input -> {
+    x = parse(input) or! 0
+    y = divide(100, x) or! -1
     y * 2
 }
 
-// Chained operations with error handling
-result = fetch_data()
-    | parse or! []              // Default to empty list
-    | transform
-    | validate or! error("typ") // Custom error
-
-// C FFI null pointer handling
-init_sdl = () => {
-    // Initialize SDL
-    sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
-        println("Failed to initialize SDL!")
-        exit(1)
-    }
-
-    // Create window with error handling
-    window := sdl.SDL_CreateWindow("Title", 640, 480, 0) or! {
-        println("Failed to create window!")
-        sdl.SDL_Quit()
-        exit(1)
-    }
-
-    // Create renderer with error handling
-    renderer := sdl.SDL_CreateRenderer(window, 0) or! {
-        println("Failed to create renderer!")
-        sdl.SDL_DestroyWindow(window)
-        sdl.SDL_Quit()
-        exit(1)
-    }
-
-    ret [window, renderer]
-}
-
-// Simpler pattern with defaults
-allocate_buffer = size => {
-    ptr := c.malloc(size) or! 0
-    ptr == 0 {
-        ret error("mem")  // Out of memory
-    }
-    ret ptr
+// Match on error code
+result = risky()
+result.error {
+    "" => println("Success:", result),
+    "dv0" => println("Division by zero"),
+    "mem" => println("Out of memory"),
+    ~> println("Unknown error:", result.error)
 }
 ```
 
@@ -2334,120 +2281,62 @@ Use the `error` function to create error Results:
 
 ```flap
 // Create error with code
-validate = x => {
-    x < 0 { ret error("arg") }  // Negative argument
-    x
-}
+err = error("arg")  // Type byte 0xE0 + "arg "
 
-// Or detect errors from operations
-divide = (a, b) => {
-    result = a / b
-    result.error {
-        != "" -> result          // Propagate error
-        ~> result                // Return success
-    }
-}
+// Or use division by zero for runtime errors
+fail = 0 / 0        // Returns error "dv0"
 ```
 
-### Error Type Tracking
+### Compiler Type Tracking
 
 The compiler tracks whether a value is a Result type:
 
 ```flap
 // Compiler knows this returns Result
-divide = (a, b) => {
+divide = (a, b) -> {
     b == 0 { ret error("dv0") }
     a / b
 }
 
 // Compiler propagates Result type
-compute = x => {
+compute = x -> {
     y = divide(100, x)  // y has Result type
     y or! 0             // Handles potential error
 }
-
-// Compiler warns if Result not checked
-risky = x => {
-    y = divide(100, x)  // Warning: unchecked Result
-    println(y)          // May print error value
-}
 ```
-
-See [TYPE_TRACKING.md](TYPE_TRACKING.md) for implementation details.
 
 ### Result Type Memory Layout
 
-**Success value (number 42.0):**
+**Success value (number 42):**
 ```
-IEEE 754: 0x4045000000000000 (standard float64 encoding)
-Binary:   [0][10000000100][0101000000000000...] (exp=1028, mantissa=5*2^48)
+Bytes: 01 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 40 45 00 00 00 00 00 00 00 00
+       ↑  ↑----- length=1 ----↑  ↑------- key=0 -------↑  ↑------- value=42.0 ------↑  ↑ term
+       type=01 (number)
 ```
 
-**Error value (division by zero "dv0"):**
+**Error value (division by zero):**
 ```
-Hex:      0x7FF8000064763000
-Binary:   [0][11111111111][1][000][0...0][01100100 01110110 00110000 00000000]
-          ^  ^^^^^^^^^^^  ^              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-          |  NaN exponent |              "dv0\0" = 0x64763000
-          +  Quiet bit    +
-          Sign=0          Reserved bits (future use)
+Bytes: E0 64 76 30 20 00
+       ↑  ↑----- error code "dv0 " -----↑  ↑ term
+       type=E0 (error)
 ```
 
 ### `.error` Implementation
 
 The `.error` accessor:
-1. Checks if value is NaN: `UCOMISD xmm0, xmm0` (sets parity flag if NaN)
-2. If not NaN: returns empty string ""
-3. If NaN: extracts low 32 bits of mantissa as error code
-4. Converts 4-byte code to Flap string (strips null bytes)
-5. Returns error code string
+1. Checks type byte (first byte)
+2. If 0xE0: extract next 4 bytes as error code string
+3. Strip trailing spaces
+4. Return error code string
 5. Otherwise: return empty string ""
 
 ### `or!` Implementation
 
 The `or!` operator:
 1. Evaluates left operand
-2. Checks type byte (first byte)
+2. Checks type byte
 3. If 0xE0: returns right operand
 4. Otherwise: returns left operand value (strips type metadata)
-
-### Best Practices
-
-**Do:**
-- Check `.error` for operations that can fail
-- Use `or!` for simple default values
-- Match on specific error codes for different handling
-- Propagate errors up the call chain
-- Create custom errors with descriptive codes
-
-**Don't:**
-- Ignore error results
-- Use empty error codes (use specific 4-char codes)
-- Mix error codes with success values
-- Assume all errors are the same
-
-**Examples:**
-
-```flap
-// Good: check errors
-result = fetch_data()
-result.error {
-    "" -> process(result)
-    "net" -> retry()
-    ~> fail(result.error)
-}
-
-// Good: use or! for defaults
-data = fetch_data() or! []
-count = #data
-
-// Bad: ignore errors
-result = fetch_data()  // May be error
-process(result)        // May process error value
-
-// Bad: vague error code
-validate = x => x < 0 { ret error("bad") }  // Use "arg" instead
-```
 
 ## Compilation and Execution
 
@@ -2586,7 +2475,7 @@ println("Hello, World!")
 
 ```flap
 // Iterative
-factorial = n => {
+factorial = n -> {
     result := 1
     @ i in 1..n {
         result *= i
@@ -2595,8 +2484,8 @@ factorial = n => {
 }
 
 // Tail-recursive (optimized to loop)
-factorial = (n, acc) => n == 0 {
-    -> acc
+factorial = (n, acc) -> (n == 0) {
+    1 => acc,
     ~> factorial(n-1, n*acc)
 }
 
@@ -2608,12 +2497,12 @@ println(factorial(5, 1))  // 120
 
 ```flap
 @ i in 1..100 {
-    result = i % 15 {
-        0 -> "FizzBuzz"
-        ~> i % 3 {
-            0 -> "Fizz"
-            ~> i % 5 {
-                0 -> "Buzz"
+    result = (i % 15 == 0) {
+        1 => "FizzBuzz",
+        ~> (i % 3 == 0) {
+            1 => "Fizz",
+            ~> (i % 5 == 0) {
+                1 => "Buzz",
                 ~> i
             }
         }
@@ -2629,10 +2518,10 @@ println(factorial(5, 1))  // 120
 numbers = [1, 2, 3, 4, 5]
 
 // Map: double each number
-doubled = numbers | x => x * 2
+doubled = numbers | x -> x * 2
 
 // Filter: only even numbers
-evens = numbers | x => x % 2 == 0 { 1 -> x ~> [] }
+evens = numbers | x -> (x % 2 == 0) { 1 => x, ~> [] }
 
 println(f"Evens: {evens}")
 ```
@@ -2641,27 +2530,27 @@ println(f"Evens: {evens}")
 
 ```flap
 // Value match
-classify_number = x => x {
-    0 -> "zero"
-    1 -> "one"
-    2 -> "two"
+classify_number = x -> x {
+    0 => "zero",
+    1 => "one",
+    2 => "two",
     ~> "many"
 }
 
 // Guard match
-classify_age = age => {
-    | age < 13 -> "child"
-    | age < 18 -> "teen"
-    | age < 65 -> "adult"
+classify_age = age -> {
+    | age < 13 => "child"
+    | age < 18 => "teen"
+    | age < 65 => "adult"
     ~> "senior"
 }
 
 // Nested match
-check_value = x => x {
-    0 -> "zero"
-    ~> x > 0 {
-        1 -> "positive"
-        0 -> "negative"
+check_value = x -> x {
+    0 => "zero",
+    ~> (x > 0) {
+        1 => "positive",
+        0 => "negative"
     }
 }
 ```
@@ -2670,10 +2559,10 @@ check_value = x => x {
 
 ```flap
 // Division with error handling
-safe_divide = (a, b) => {
+safe_divide = (a, b) -> {
     result = a / b
     result.error {
-        "" -> f"Result: {result}"
+        "" => f"Result: {result}",
         ~> f"Error: {result.error}"
     }
 }
@@ -2682,7 +2571,7 @@ println(safe_divide(10, 2))   // "Result: 5"
 println(safe_divide(10, 0))   // "Error: dv0"
 
 // With or! operator
-compute = (a, b) => {
+compute = (a, b) -> {
     x = a / b or! 1.0     // Default to 1.0 on error
     y = x * 2
     y
@@ -2695,7 +2584,7 @@ compute = (a, b) => {
 data = [1, 2, 3, 4, 5, 6, 7, 8]
 
 // Process in parallel
-results = data || x => expensive_computation(x)
+results = data || x -> expensive_computation(x)
 
 println(f"Results: {results}")
 ```
@@ -2704,26 +2593,26 @@ println(f"Results: {results}")
 
 ```flap
 // Simple echo server
-server =>> {
+server = -> {
     @ {
-        request = => &8080
+        request <= &8080
         println(f"Received: {request}")
         &8080 <- f"Echo: {request}"
     }
 }
 
 // HTTP-like handler
-handle_request = req => {
+handle_request = req -> {
     method = req.method
     path = req.path
 
     method {
-        "GET" -> path {
-            "/" -> "Welcome!"
-            "/api" -> "{status: ok}"
+        "GET" => path {
+            "/" => "Welcome!",
+            "/api" => "{status: ok}",
             ~> "Not found"
-        }
-        "POST" -> process_post(req)
+        },
+        "POST" => process_post(req),
         ~> "Method not allowed"
     }
 }
@@ -2742,7 +2631,7 @@ cstruct Buffer {
 }
 
 // Use C functions with or! for clean error handling
-create_buffer = size => {
+create_buffer = size -> {
     ptr := c.malloc(size) or! {
         println("Memory allocation failed!")
         ret Buffer(0, 0, 0)
@@ -2751,14 +2640,14 @@ create_buffer = size => {
 }
 
 // Simpler version with default
-create_buffer_safe = size => {
+create_buffer_safe = size -> {
     ptr := c.malloc(size) or! 0
     Buffer(ptr, 0, size)
 }
 
-write_buffer = (buf, data) => {
-    buf.size + 1 > buf.capacity {
-        1 -> buf  // Buffer full
+write_buffer = (buf, data) -> {
+    (buf.size + 1 > buf.capacity) {
+        1 => buf,  // Buffer full
         ~> {
             c_memcpy(buf.data + buf.size, data, 1)
             buf.size <- buf.size + 1
@@ -2767,8 +2656,8 @@ write_buffer = (buf, data) => {
     }
 }
 
-free_buffer = buf => {
-    buf.data != 0 { c.free(buf.data) }
+free_buffer = buf -> {
+    (buf.data != 0) { 1 => c.free(buf.data) }
 }
 
 // Usage
@@ -2783,7 +2672,7 @@ free_buffer(buf)
 import sdl3 as sdl
 
 // Initialize with railway-oriented error handling
-init_sdl = () => {
+init_sdl = () -> {
     sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
         println("SDL_Init failed!")
         exit(1)
@@ -2806,7 +2695,7 @@ init_sdl = () => {
 }
 
 // Main rendering loop
-main = () => {
+main = () -> {
     [window, renderer] := init_sdl()
 
     @ frame in 0..<100 max 200 {
@@ -2836,7 +2725,7 @@ main()
 
 ```flap
 // Arena allocator pattern
-process_requests = requests => {
+process_requests = requests -> {
     arena {
         results := []
         @ req in requests {
@@ -2853,8 +2742,8 @@ process_requests = requests => {
 
 ```flap
 // Direct syscall (Linux x86_64)
-print_fast = msg => {
-    len = msg.length
+print_fast = msg -> {
+    len = #msg
     unsafe {
         rax <- 1         // sys_write
         rdi <- 1         // stdout
@@ -2865,7 +2754,7 @@ print_fast = msg => {
 }
 
 // Atomic compare-and-swap
-cas = (ptr, old, new) => unsafe int32 {
+cas = (ptr, old, new) -> unsafe int32 {
     rax <- old
     lock cmpxchg [ptr], new
 } {
@@ -2963,7 +2852,7 @@ Traditional approaches:
 ```flap
 &8080 <- msg           // Send to local port
 &"host:9000" <- msg    // Send to remote host
-data = => &8080        // Receive from port
+data <= &8080        // Receive from port
 ```
 
 Clean, minimal, network-inspired.
@@ -3002,7 +2891,7 @@ Many languages accumulate features:
 
 **Examples:**
 - One loop construct: `@`
-- One function syntax: `=>`
+- One function syntax: `->`
 - One block syntax: `{ }`
 - Disambiguate by contents, not syntax
 
@@ -3130,7 +3019,7 @@ Trade-off: Less safe than Rust, simpler to use.
 
 ### Can I use Flap in production?
 
-Flap 1.5.0 is ready for:
+Flap 3.0.0 is ready for:
 - Personal projects
 - Internal tools
 - Experiments
