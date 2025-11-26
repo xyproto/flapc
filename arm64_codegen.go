@@ -2236,12 +2236,9 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 	// x0 already has the integer value
 	
 	// Call _flap_itoa
-	position := acg.eb.text.Len()
-	acg.eb.callPatches = append(acg.eb.callPatches, CallPatch{
-		position:   position,
-		targetName: "_flap_itoa",
-	})
-	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0x94}) // bl #0
+	if err := acg.eb.GenerateCallInstruction("_flap_itoa"); err != nil {
+		return err
+	}
 	
 	// On return: x1 = buffer pointer, x2 = length (excluding newline)
 	// Add newline at end: strb w3, [x1, x2] where w3 = '\n'
