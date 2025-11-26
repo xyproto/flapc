@@ -1,12 +1,14 @@
 // Completion: 100% - Platform-specific module complete
-//go:build linux
-// +build linux
+//go:build !windows
+// +build !windows
 
 package main
 
 import (
 	"debug/elf"
 	"fmt"
+	"os"
+	"os/signal"
 	"syscall"
 	"time"
 	"unsafe"
@@ -203,4 +205,14 @@ func (hrm *HotReloadManager) ReloadHotFunction(name string, code []byte, tableAd
 	}
 
 	return nil
+}
+
+func setupReloadSignal(recompile func(string)) {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGUSR1)
+	go func() {
+		for range sigChan {
+			recompile("Manual reload triggered (SIGUSR1)")
+		}
+	}()
 }

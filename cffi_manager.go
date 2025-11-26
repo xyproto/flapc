@@ -327,6 +327,7 @@ func (cm *CFFIManager) AutoLoadLibrary(libName string) error {
 	// Try to find header
 	headerPaths := []string{
 		fmt.Sprintf("%s.h", libName),
+		filepath.Join("./include", fmt.Sprintf("%s.h", libName)),
 		filepath.Join("/usr/include", fmt.Sprintf("%s.h", libName)),
 		filepath.Join("/usr/local/include", fmt.Sprintf("%s.h", libName)),
 	}
@@ -335,7 +336,8 @@ func (cm *CFFIManager) AutoLoadLibrary(libName string) error {
 	switch libName {
 	case "sdl3", "SDL3":
 		headerPaths = append(headerPaths,
-			"SDL3/SDL.h",
+			filepath.Join("SDL3", "SDL.h"),
+			filepath.Join(".", "include", "SDL3", "SDL.h"),
 			"/usr/include/SDL3/SDL.h",
 			"/usr/local/include/SDL3/SDL.h")
 	}

@@ -6,12 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -1593,13 +1591,7 @@ func watchAndRecompile(sourceFile, outputFile string, platform Platform) error {
 	}
 
 	// Set up signal handler for USR1
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGUSR1)
-	go func() {
-		for range sigChan {
-			recompile("Manual reload triggered (SIGUSR1)")
-		}
-	}()
+	setupReloadSignal(recompile)
 
 	// Set up file watcher
 	watcher, err := NewFileWatcher(func(path string) {

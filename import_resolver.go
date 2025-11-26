@@ -125,6 +125,7 @@ func resolvePkgConfig(libName string) []string {
 // resolveSystemLibrary searches standard system library paths
 func resolveSystemLibrary(libName string) ([]string, error) {
 	standardPaths := []string{
+		"./include",
 		"/usr/include",
 		"/usr/local/include",
 		"/opt/local/include",

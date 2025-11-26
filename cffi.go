@@ -53,14 +53,15 @@ func ExtractConstantsFromLibrary(libName string) (*CHeaderConstants, error) {
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "Warning: pkg-config not available for %s: %v\n", libName, err)
 		}
-		return constants, nil // Return empty constants, not an error
+		// Fallback to standard paths including local include directory
+		includePaths = []string{"./include", "/usr/include", "/usr/local/include"}
 	}
 
 	// Try to find and parse the main header file
 	headerFile := findMainHeader(libName, includePaths)
 	if headerFile == "" {
 		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "Warning: could not find header for %s\n", libName)
+			fmt.Fprintf(os.Stderr, "Warning: could not find header for %s in paths: %v\n", libName, includePaths)
 		}
 		return constants, nil
 	}
@@ -131,7 +132,7 @@ func getPkgConfigIncludes(libName string) ([]string, error) {
 
 	// If pkg-config succeeded but no -I flags found, use standard include paths
 	if pkgConfigSucceeded {
-		standardPaths := []string{"/usr/include", "/usr/local/include"}
+		standardPaths := []string{"./include", "/usr/include", "/usr/local/include"}
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "No -I flags from pkg-config, using standard paths\n")
 		}
@@ -282,7 +283,7 @@ func parseIncludesWithDepth(headerPath string, constants *CHeaderConstants, visi
 			// If it's an absolute library include like <SDL3/SDL_init.h>
 			// Try standard include paths
 			if strings.Contains(includedFile, "/") {
-				for _, standardPath := range []string{"/usr/include", "/usr/local/include"} {
+				for _, standardPath := range []string{"./include", "/usr/include", "/usr/local/include"} {
 					testPath := filepath.Join(standardPath, includedFile)
 					if _, err := os.Stat(testPath); err == nil {
 						includedPath = testPath
@@ -371,7 +372,7 @@ func parseHeaderFileRecursive(headerPath string, constants *CHeaderConstants, vi
 			// If it's an absolute library include like <SDL3/SDL_init.h>
 			// Try standard include paths
 			if strings.Contains(includedFile, "/") {
-				for _, standardPath := range []string{"/usr/include", "/usr/local/include"} {
+				for _, standardPath := range []string{"./include", "/usr/include", "/usr/local/include"} {
 					testPath := filepath.Join(standardPath, includedFile)
 					if _, err := os.Stat(testPath); err == nil {
 						includedPath = testPath
