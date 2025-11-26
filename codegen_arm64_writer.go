@@ -160,6 +160,11 @@ func (fc *FlapCompiler) writeELFARM64(outputPath string) error {
 			fmt.Fprintf(os.Stderr, "Updated rodata symbol %s to actual address 0x%x\n", symbol, fc.eb.consts[symbol].addr)
 		}
 	}
+	
+	// Re-patch PC relocations with correct rodata addresses
+	// WriteCompleteDynamicELF patched them with estimated addresses, but now we have actual addresses
+	rodataSize := fc.eb.rodata.Len()
+	fc.eb.PatchPCRelocations(textAddr, rodataBaseAddr, rodataSize)
 
 	// Patch PLT calls in the generated code (similar to x86_64 path)
 	fc.eb.patchPLTCalls(ds, textAddr, pltBase, pltFunctions)
