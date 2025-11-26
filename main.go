@@ -576,14 +576,14 @@ func (eb *ExecutableBuilder) PatchCallSites(textAddr uint64) {
 
 		// Calculate addresses - architecture specific
 		targetAddr := textAddr + uint64(targetOffset)
-		
+
 		if eb.target.Arch() == ArchARM64 || eb.target.Arch() == ArchRiscv64 {
 			// ARM64/RISC-V: patch.position points to the BL/JAL instruction itself
 			// Offset is from the instruction address, measured in 4-byte words
 			currentAddr := textAddr + uint64(patch.position)
 			byteOffset := int64(targetAddr) - int64(currentAddr)
 			wordOffset := byteOffset / 4
-			
+
 			// ARM64 BL uses 26-bit signed offset
 			if wordOffset < -0x2000000 || wordOffset >= 0x2000000 {
 				if VerboseMode {
@@ -591,21 +591,21 @@ func (eb *ExecutableBuilder) PatchCallSites(textAddr uint64) {
 				}
 				continue
 			}
-			
+
 			// Read existing instruction and patch offset bits
 			instr := uint32(textBytes[patch.position]) |
 				(uint32(textBytes[patch.position+1]) << 8) |
 				(uint32(textBytes[patch.position+2]) << 16) |
 				(uint32(textBytes[patch.position+3]) << 24)
-			
+
 			// For ARM64 BL: clear old offset (bits 0-25), set new offset
 			instr = (instr & 0xFC000000) | (uint32(wordOffset) & 0x03FFFFFF)
-			
+
 			textBytes[patch.position] = byte(instr & 0xFF)
 			textBytes[patch.position+1] = byte((instr >> 8) & 0xFF)
 			textBytes[patch.position+2] = byte((instr >> 16) & 0xFF)
 			textBytes[patch.position+3] = byte((instr >> 24) & 0xFF)
-			
+
 			if VerboseMode {
 				fmt.Fprintf(os.Stderr, "Patched ARM64/RISC-V call to %s at position 0x%x: target offset 0x%x, word offset %d\n",
 					patch.targetName, patch.position, targetOffset, wordOffset)
@@ -628,7 +628,7 @@ func (eb *ExecutableBuilder) PatchCallSites(textAddr uint64) {
 			textBytes[patch.position+1] = byte((disp32 >> 8) & 0xFF)
 			textBytes[patch.position+2] = byte((disp32 >> 16) & 0xFF)
 			textBytes[patch.position+3] = byte((disp32 >> 24) & 0xFF)
-			
+
 			if VerboseMode {
 				fmt.Fprintf(os.Stderr, "Patched x86_64 call to %s at position 0x%x: target offset 0x%x, displacement %d\n",
 					patch.targetName, patch.position, targetOffset, displacement)

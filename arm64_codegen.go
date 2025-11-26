@@ -4067,7 +4067,7 @@ func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
 	})
 	acg.out.out.writer.WriteBytes([]byte{0x04, 0x00, 0x00, 0x90}) // ADRP x4, #0
 	acg.out.out.writer.WriteBytes([]byte{0x84, 0x00, 0x00, 0x91}) // ADD x4, x4, #0
-	
+
 	// Initialize: x3 = 0, x4 = buffer + 31, x5 = 0
 	acg.out.out.writer.WriteBytes([]byte{0x03, 0x00, 0x80, 0xd2}) // mov x3, #0
 	// add x4, x4, #31 (point to end of buffer)

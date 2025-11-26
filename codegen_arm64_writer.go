@@ -145,7 +145,7 @@ func (fc *FlapCompiler) writeELFARM64(outputPath string) error {
 			dataSymbolNames = append(dataSymbolNames, symbol)
 		}
 		sort.Strings(dataSymbolNames)
-		
+
 		for _, symbol := range dataSymbolNames {
 			value := dataSymbols[symbol]
 			fc.eb.WriteData([]byte(value))

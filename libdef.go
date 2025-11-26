@@ -133,7 +133,7 @@ func CreateGlibcDefinition() *LibraryDefinition {
 		Name:       "sprintf",
 		ReturnType: CTypeInt,
 		Parameters: []Parameter{
-			{Name: "str", Type: CTypePointer},  // char*
+			{Name: "str", Type: CTypePointer},    // char*
 			{Name: "format", Type: CTypePointer}, // const char*
 			// Note: sprintf is variadic
 		},
