@@ -4096,13 +4096,13 @@ func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
 
 	// Initialize: x3 = 0, x4 = buffer + 31, x5 = 0
 	acg.out.out.writer.WriteBytes([]byte{0x03, 0x00, 0x80, 0xd2}) // mov x3, #0
-	
+
 	// add x4, x4, #31 (point to end of buffer)
 	// Use proper AddImm64 instead of manual bytes
 	if err := acg.out.AddImm64("x4", "x4", 31); err != nil {
 		return err
 	}
-	
+
 	acg.out.out.writer.WriteBytes([]byte{0x05, 0x00, 0x80, 0xd2}) // mov x5, #0
 
 	// Handle negative: if x0 < 0, negate and set flag
@@ -4206,7 +4206,7 @@ func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
 	if err := acg.out.AddImm64("x1", "x4", 1); err != nil {
 		return err
 	}
-	
+
 	// x2 = length
 	acg.out.out.writer.WriteBytes([]byte{0xe2, 0x03, 0x05, 0xaa}) // mov x2, x5
 
