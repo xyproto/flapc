@@ -18,8 +18,8 @@ $(PROGRAM): $(SOURCES) $(MODULE_FILES)
 	$(GO) build $(GOFLAGS) -o $(PROGRAM) .
 
 test:
-	@echo "Running all tests..."
-	$(GO) test -timeout 1m ./...
+	@echo "Running tests..."
+	$(GO) test -failfast -timeout 1m ./...
 
 install: flapc
 	install -d "$(DESTDIR)$(BINDIR)"
