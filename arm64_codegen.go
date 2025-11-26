@@ -212,7 +212,7 @@ func (acg *ARM64CodeGen) CompileProgram(program *Program) error {
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG: About to generate lambda functions (count=%d)\n", len(acg.lambdaFuncs))
 	}
-	
+
 	// Generate lambda functions after main program
 	if err := acg.generateLambdaFunctions(); err != nil {
 		return err
@@ -300,7 +300,7 @@ func (acg *ARM64CodeGen) compileJumpStatement(stmt *JumpStmt) error {
 			}
 			// d0 now contains return value
 		}
-		
+
 		// Restore frame pointer and link register, then return
 		if err := acg.out.LdrImm64("x30", "sp", 8); err != nil {
 			return err
@@ -1413,7 +1413,7 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 		// Execute all statements
 		for i, stmt := range e.Statements {
 			isLast := (i == len(e.Statements)-1)
-			
+
 			if isLast {
 				// For the last statement, make sure its value ends up in d0
 				if exprStmt, ok := stmt.(*ExpressionStmt); ok {
@@ -1427,13 +1427,13 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 					return acg.compileExpression(&IdentExpr{Name: assignStmt.Name})
 				}
 			}
-			
+
 			// Not the last statement, or last statement is not an expression/assignment
 			if err := acg.compileStatement(stmt); err != nil {
 				return err
 			}
 		}
-		
+
 		// If we get here, the last statement wasn't an expression or assignment
 		// Return 0
 		return acg.compileExpression(&NumberExpr{Value: 0.0})
@@ -1970,7 +1970,7 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 		if _, exists := acg.stackVars[call.Function]; exists {
 			// Check if this is actually a lambda/function or just a value
 			isLambda := acg.lambdaVars[call.Function]
-			
+
 			// If calling a non-lambda value with no args, just return the value
 			if !isLambda && len(call.Args) == 0 {
 				stackOffset := acg.stackVars[call.Function]
@@ -1980,7 +1980,7 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 				}
 				return nil
 			}
-			
+
 			// Convert to DirectCallExpr and compile
 			directCall := &DirectCallExpr{
 				Callee: &IdentExpr{Name: call.Function},

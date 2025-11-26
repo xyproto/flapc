@@ -527,7 +527,7 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 		// mov x2, #0
 		w.WriteBytes([]byte{0x02, 0x00, 0x80, 0xd2})
 		// bl <user_code> (branch with link - saves return address in x30)
-		jumpOffset := int32((textAddrForJump - (startAddr + 12)) / 4) // 12 = 3 instructions * 4 bytes, offset in instructions
+		jumpOffset := int32((textAddrForJump - (startAddr + 12)) / 4)         // 12 = 3 instructions * 4 bytes, offset in instructions
 		branchInstr := uint32(0x94000000) | (uint32(jumpOffset) & 0x03FFFFFF) // bl instruction (0x94 instead of 0x14)
 		binary.Write(w.(*BufferWrapper).buf, binary.LittleEndian, branchInstr)
 		// After return, x0/w0 contains exit code - call exit syscall
