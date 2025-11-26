@@ -574,29 +574,65 @@ func (eb *ExecutableBuilder) PatchCallSites(textAddr uint64) {
 			continue
 		}
 
-		// Calculate addresses
-		// patch.position points to the 4-byte rel32 offset (after the 0xE8 CALL opcode)
-		ripAddr := textAddr + uint64(patch.position) + 4 // RIP points after the rel32
+		// Calculate addresses - architecture specific
 		targetAddr := textAddr + uint64(targetOffset)
-		displacement := int64(targetAddr) - int64(ripAddr)
-
-		if displacement < -0x80000000 || displacement > 0x7FFFFFFF {
-			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "Warning: Call displacement too large: %d\n", displacement)
+		
+		if eb.target.Arch() == ArchARM64 || eb.target.Arch() == ArchRiscv64 {
+			// ARM64/RISC-V: patch.position points to the BL/JAL instruction itself
+			// Offset is from the instruction address, measured in 4-byte words
+			currentAddr := textAddr + uint64(patch.position)
+			byteOffset := int64(targetAddr) - int64(currentAddr)
+			wordOffset := byteOffset / 4
+			
+			// ARM64 BL uses 26-bit signed offset
+			if wordOffset < -0x2000000 || wordOffset >= 0x2000000 {
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Warning: ARM64/RISC-V call offset too large: %d words\n", wordOffset)
+				}
+				continue
 			}
-			continue
-		}
+			
+			// Read existing instruction and patch offset bits
+			instr := uint32(textBytes[patch.position]) |
+				(uint32(textBytes[patch.position+1]) << 8) |
+				(uint32(textBytes[patch.position+2]) << 16) |
+				(uint32(textBytes[patch.position+3]) << 24)
+			
+			// For ARM64 BL: clear old offset (bits 0-25), set new offset
+			instr = (instr & 0xFC000000) | (uint32(wordOffset) & 0x03FFFFFF)
+			
+			textBytes[patch.position] = byte(instr & 0xFF)
+			textBytes[patch.position+1] = byte((instr >> 8) & 0xFF)
+			textBytes[patch.position+2] = byte((instr >> 16) & 0xFF)
+			textBytes[patch.position+3] = byte((instr >> 24) & 0xFF)
+			
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Patched ARM64/RISC-V call to %s at position 0x%x: target offset 0x%x, word offset %d\n",
+					patch.targetName, patch.position, targetOffset, wordOffset)
+			}
+		} else {
+			// x86_64: patch.position points to the 4-byte rel32 offset (after the 0xE8 CALL opcode)
+			ripAddr := textAddr + uint64(patch.position) + 4 // RIP points after the rel32
+			displacement := int64(targetAddr) - int64(ripAddr)
 
-		// Patch the 4-byte rel32 offset
-		disp32 := uint32(displacement)
-		textBytes[patch.position] = byte(disp32 & 0xFF)
-		textBytes[patch.position+1] = byte((disp32 >> 8) & 0xFF)
-		textBytes[patch.position+2] = byte((disp32 >> 16) & 0xFF)
-		textBytes[patch.position+3] = byte((disp32 >> 24) & 0xFF)
+			if displacement < -0x80000000 || displacement > 0x7FFFFFFF {
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "Warning: Call displacement too large: %d\n", displacement)
+				}
+				continue
+			}
 
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "Patched call to %s at position 0x%x: target offset 0x%x, displacement %d\n",
-				patch.targetName, patch.position, targetOffset, displacement)
+			// Patch the 4-byte rel32 offset
+			disp32 := uint32(displacement)
+			textBytes[patch.position] = byte(disp32 & 0xFF)
+			textBytes[patch.position+1] = byte((disp32 >> 8) & 0xFF)
+			textBytes[patch.position+2] = byte((disp32 >> 16) & 0xFF)
+			textBytes[patch.position+3] = byte((disp32 >> 24) & 0xFF)
+			
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Patched x86_64 call to %s at position 0x%x: target offset 0x%x, displacement %d\n",
+					patch.targetName, patch.position, targetOffset, displacement)
+			}
 		}
 	}
 }
@@ -851,10 +887,14 @@ func (eb *ExecutableBuilder) GenerateCallInstruction(funcName string) error {
 	// Register the call patch for later resolution
 	// For x86-64 Linux/Unix: position points to displacement after 0xE8 (position + 1)
 	// For x86-64 Windows: position points to displacement after 0xFF 0x15 (position + 2)
+	// For ARM64/RISC-V: position points to the instruction itself (position)
 	position := eb.text.Len()
-	dispPosition := position + 1
-	if eb.target.Arch() == ArchX86_64 && eb.target.OS() == OSWindows {
-		dispPosition = position + 2 // Skip FF 15 prefix
+	dispPosition := position
+	if eb.target.Arch() == ArchX86_64 {
+		dispPosition = position + 1
+		if eb.target.OS() == OSWindows {
+			dispPosition = position + 2 // Skip FF 15 prefix
+		}
 	}
 	eb.callPatches = append(eb.callPatches, CallPatch{
 		position:   dispPosition,
