@@ -818,42 +818,75 @@ func (eb *ExecutableBuilder) patchX86PLTCalls(textBytes []byte, ds *DynamicSecti
 }
 
 func (eb *ExecutableBuilder) patchARM64PLTCalls(textBytes []byte, ds *DynamicSections, textAddr, pltBase uint64, functions []string) {
-	// Search for placeholder BL instructions (0x94000000)
-	funcIndex := 0
-	for i := 0; i+3 < len(textBytes); i += 4 {
-		instr := uint32(textBytes[i]) |
-			(uint32(textBytes[i+1]) << 8) |
-			(uint32(textBytes[i+2]) << 16) |
-			(uint32(textBytes[i+3]) << 24)
+	// Use callPatches which has both position and function name
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG patchARM64PLTCalls: have %d callPatches\n", len(eb.callPatches))
+	}
+	for _, patch := range eb.callPatches {
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG patchARM64PLTCalls: patch at pos=%d, target=%s\n", patch.position, patch.targetName)
+		}
+		// Extract function name from targetName (strip "$stub" suffix if present)
+		funcName := patch.targetName
+		if strings.HasSuffix(funcName, "$stub") {
+			funcName = funcName[:len(funcName)-5] // Remove "$stub"
+		}
 
-		// BL instruction: 100101 imm26
-		if (instr&0xFC000000) == 0x94000000 && (instr&0x03FFFFFF) == 0 {
-			if funcIndex < len(functions) {
-				pltOffset := ds.GetPLTOffset(functions[funcIndex])
-				if pltOffset >= 0 {
-					targetAddr := pltBase + uint64(pltOffset)
-					currentAddr := textAddr + uint64(i)
-					offset := int64(targetAddr - currentAddr)
+		// Get the BL instruction position
+		// For ARM64, patch.position was recorded as the position where we wrote the BL
+		callPos := patch.position
 
-					// BL uses signed 26-bit word offset (multiply by 4)
-					wordOffset := offset >> 2
-					if wordOffset >= -0x2000000 && wordOffset < 0x2000000 {
-						imm26 := uint32(wordOffset) & 0x03FFFFFF
-						blInstr := 0x94000000 | imm26
-
-						if VerboseMode {
-							fmt.Fprintf(os.Stderr, "Patching ARM64 call #%d (%s): offset=0x%x, currentAddr=0x%x, targetAddr=0x%x, wordOffset=%d\n",
-								funcIndex, functions[funcIndex], i, currentAddr, targetAddr, wordOffset)
-						}
-
-						textBytes[i] = byte(blInstr & 0xFF)
-						textBytes[i+1] = byte((blInstr >> 8) & 0xFF)
-						textBytes[i+2] = byte((blInstr >> 16) & 0xFF)
-						textBytes[i+3] = byte((blInstr >> 24) & 0xFF)
-					}
-				}
-				funcIndex++
+		// Check bounds
+		if callPos < 0 || callPos+3 >= len(textBytes) {
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG: callPos %d out of bounds (len=%d), skipping\n", callPos, len(textBytes))
 			}
+			continue
+		}
+
+		// Verify it's a BL placeholder (0x94000000)
+		instr := uint32(textBytes[callPos]) |
+			(uint32(textBytes[callPos+1]) << 8) |
+			(uint32(textBytes[callPos+2]) << 16) |
+			(uint32(textBytes[callPos+3]) << 24)
+
+		if (instr & 0xFC000000) != 0x94000000 {
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG: Not a BL instruction at %d: 0x%08x\n", callPos, instr)
+			}
+			continue
+		}
+
+		// Get PLT offset for this function
+		pltOffset := ds.GetPLTOffset(funcName)
+		if pltOffset < 0 {
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Warning: No PLT entry for %s\n", funcName)
+			}
+			continue
+		}
+
+		targetAddr := pltBase + uint64(pltOffset)
+		currentAddr := textAddr + uint64(callPos)
+		offset := int64(targetAddr - currentAddr)
+
+		// BL uses signed 26-bit word offset (divide by 4)
+		wordOffset := offset >> 2
+		if wordOffset >= -0x2000000 && wordOffset < 0x2000000 {
+			imm26 := uint32(wordOffset) & 0x03FFFFFF
+			blInstr := 0x94000000 | imm26
+
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Patching ARM64 call to %s: pos=0x%x, currentAddr=0x%x, targetAddr=0x%x, wordOffset=%d\n",
+					funcName, callPos, currentAddr, targetAddr, wordOffset)
+			}
+
+			textBytes[callPos] = byte(blInstr & 0xFF)
+			textBytes[callPos+1] = byte((blInstr >> 8) & 0xFF)
+			textBytes[callPos+2] = byte((blInstr >> 16) & 0xFF)
+			textBytes[callPos+3] = byte((blInstr >> 24) & 0xFF)
+		} else if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Warning: BL offset too large for %s: %d words\n", funcName, wordOffset)
 		}
 	}
 }
