@@ -5,7 +5,7 @@ Hi, this is written by a human.
 
 As a quick demonstration for what Flapc can do right now, the follow programs compiles and runs fine on both Linux (`x86_64`) and Windows (`x86_64`):
 
-```go
+```c
 import sdl3 as sdl
 
 // Window dimensions
