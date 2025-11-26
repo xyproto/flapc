@@ -1,2 +1,0 @@
-func = { 99 }
-main = func()

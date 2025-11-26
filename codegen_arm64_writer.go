@@ -98,10 +98,20 @@ func (fc *FlapCompiler) writeELFARM64(outputPath string) error {
 	}
 
 	// Write complete dynamic ELF with PLT/GOT
-	_, _, _, _, err := fc.eb.WriteCompleteDynamicELF(ds, pltFunctions)
+	_, rodataAddr, textAddr, pltBase, err := fc.eb.WriteCompleteDynamicELF(ds, pltFunctions)
 	if err != nil {
 		return fmt.Errorf("failed to write ARM64 ELF: %v", err)
 	}
+
+	// Patch PLT calls in the generated code
+	fc.eb.patchPLTCalls(ds, textAddr, pltBase, pltFunctions)
+
+	// Patch PC-relative relocations (for rodata access)
+	rodataSize := fc.eb.rodata.Len()
+	fc.eb.PatchPCRelocations(textAddr, rodataAddr, rodataSize)
+
+	// Update ELF with patched text
+	fc.eb.patchTextInELF()
 
 	// Write the final executable to file
 	elfBytes := fc.eb.Bytes()
