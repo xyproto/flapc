@@ -426,6 +426,40 @@ func (fc *FlapCompiler) processCImports(program *Program) {
 				fmt.Fprintf(os.Stderr, "Extracted %d constants and %d functions from %s\n",
 					len(constants.Constants), len(constants.Functions), cImport.Library)
 			}
+			
+			// Fallback: Add known library functions from libdef.go if extraction failed/incomplete
+			if cImport.Library == "libc" || cImport.Library == "glibc" {
+			// Ensure cConstants map is initialized
+			if fc.cConstants[cImport.Alias] == nil {
+				fc.cConstants[cImport.Alias] = &CHeaderConstants{
+					Constants: make(map[string]int64),
+					Macros:    make(map[string]string),
+					Functions: make(map[string]*CFunctionSignature),
+				}
+			}
+			
+			// Add built-in glibc function signatures
+			glibcDef := CreateGlibcDefinition()
+			for name, fn := range glibcDef.Functions {
+				if _, exists := fc.cConstants[cImport.Alias].Functions[name]; !exists {
+					// Convert libdef.Function to CFunctionSignature
+					params := make([]CFunctionParam, len(fn.Parameters))
+					for i, p := range fn.Parameters {
+						params[i] = CFunctionParam{
+							Name: p.Name,
+							Type: p.Type.String(), // Convert CType to string
+						}
+					}
+					fc.cConstants[cImport.Alias].Functions[name] = &CFunctionSignature{
+						ReturnType: fn.ReturnType.String(), // Convert CType to string
+						Params:     params,
+					}
+				}
+			}
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Added %d built-in glibc functions\n", len(glibcDef.Functions))
+			}
+			}
 		}
 	}
 }
