@@ -4262,7 +4262,7 @@ func (acg *ARM64CodeGen) compileRegisterAssignment(stmt *RegisterAssignStmt) err
 		sourceReg := resolveRegisterAlias(v, ArchARM64)
 		// mov dest, source
 		acg.out.out.writer.WriteBytes([]byte{
-			byte((getRegisterNumber(sourceReg) << 16) | getRegisterNumber(register)),
+			byte((uint32(getRegisterNumber(sourceReg)) << 16) | uint32(getRegisterNumber(register))),
 			0x03,
 			byte(getRegisterNumber(sourceReg)),
 			0xaa,
@@ -4320,8 +4320,8 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			leftNum := getRegisterNumber(leftReg)
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
-				byte((rightNum << 16) | destNum),
-				byte(leftNum<<2 | rightNum>>14),
+				byte((uint32(rightNum) << 16) | uint32(destNum)),
+				byte(uint32(leftNum)<<2 | uint32(rightNum)>>14),
 				byte(rightNum >> 6),
 				0x8b, // add Xd, Xn, Xm
 			})
@@ -4339,8 +4339,8 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			leftNum := getRegisterNumber(leftReg)
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
-				byte((rightNum << 16) | destNum),
-				byte(leftNum<<2 | rightNum>>14),
+				byte((uint32(rightNum) << 16) | uint32(destNum)),
+				byte(uint32(leftNum)<<2 | uint32(rightNum)>>14),
 				byte(rightNum >> 6),
 				0xcb, // sub Xd, Xn, Xm
 			})
@@ -4357,8 +4357,8 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			leftNum := getRegisterNumber(leftReg)
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
-				byte((rightNum << 16) | destNum),
-				byte(leftNum<<2 | rightNum>>14),
+				byte((uint32(rightNum) << 16) | uint32(destNum)),
+				byte(uint32(leftNum)<<2 | uint32(rightNum)>>14),
 				byte(rightNum >> 6),
 				0x8a, // and Xd, Xn, Xm
 			})
@@ -4373,8 +4373,8 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			leftNum := getRegisterNumber(leftReg)
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
-				byte((rightNum << 16) | destNum),
-				byte(leftNum<<2 | rightNum>>14),
+				byte((uint32(rightNum) << 16) | uint32(destNum)),
+				byte(uint32(leftNum)<<2 | uint32(rightNum)>>14),
 				byte(rightNum >> 6),
 				0xaa, // orr Xd, Xn, Xm
 			})
@@ -4389,8 +4389,8 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			leftNum := getRegisterNumber(leftReg)
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
-				byte((rightNum << 16) | destNum),
-				byte(leftNum<<2 | rightNum>>14),
+				byte((uint32(rightNum) << 16) | uint32(destNum)),
+				byte(uint32(leftNum)<<2 | uint32(rightNum)>>14),
 				byte(rightNum >> 6),
 				0xca, // eor Xd, Xn, Xm
 			})
@@ -4405,8 +4405,8 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			leftNum := getRegisterNumber(leftReg)
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
-				byte((rightNum << 16) | destNum),
-				byte(0x7c | leftNum<<2 | rightNum>>14),
+				byte((uint32(rightNum) << 16) | uint32(destNum)),
+				byte(0x7c | uint32(leftNum)<<2 | uint32(rightNum)>>14),
 				byte(rightNum >> 6),
 				0x9b, // mul Xd, Xn, Xm
 			})
@@ -4421,8 +4421,8 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			leftNum := getRegisterNumber(leftReg)
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
-				byte((rightNum << 16) | destNum),
-				byte(0x0c | leftNum<<2 | rightNum>>14),
+				byte((uint32(rightNum) << 16) | uint32(destNum)),
+				byte(0x0c | uint32(leftNum)<<2 | uint32(rightNum)>>14),
 				byte(rightNum >> 6),
 				0x9a, // sdiv Xd, Xn, Xm
 			})
@@ -4451,8 +4451,8 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 
 			// sdiv x9, left, right (x9 = left / right)
 			acg.out.out.writer.WriteBytes([]byte{
-				byte((rightNum << 16) | 9),
-				byte(0x0c | leftNum<<2 | rightNum>>14),
+				byte((uint32(rightNum) << 16) | 9),
+				byte(0x0c | uint32(leftNum)<<2 | uint32(rightNum)>>14),
 				byte(rightNum >> 6),
 				0x9a,
 			})
@@ -4460,8 +4460,8 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			// msub dest, x9, right, left (dest = left - x9*right)
 			// This is the ARM64 "multiply-subtract" instruction
 			acg.out.out.writer.WriteBytes([]byte{
-				byte((leftNum << 16) | destNum),
-				byte(0x80 | rightNum<<2 | leftNum>>14),
+				byte((uint32(leftNum) << 16) | uint32(destNum)),
+				byte(0x80 | uint32(rightNum)<<2 | uint32(leftNum)>>14),
 				byte(9 | rightNum<<3),
 				0x9b, // msub Xd, Xn, Xm, Xa
 			})
@@ -4476,8 +4476,8 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			leftNum := getRegisterNumber(leftReg)
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
-				byte((rightNum << 16) | destNum),
-				byte(0x20 | leftNum<<2 | rightNum>>14),
+				byte((uint32(rightNum) << 16) | uint32(destNum)),
+				byte(0x20 | uint32(leftNum)<<2 | uint32(rightNum)>>14),
 				byte(rightNum >> 6),
 				0x9a, // lsl Xd, Xn, Xm
 			})
@@ -4506,8 +4506,8 @@ func (acg *ARM64CodeGen) compileRegisterOp(dest string, op *RegisterOp) error {
 			leftNum := getRegisterNumber(leftReg)
 			rightNum := getRegisterNumber(rightReg)
 			acg.out.out.writer.WriteBytes([]byte{
-				byte((rightNum << 16) | destNum),
-				byte(0x24 | leftNum<<2 | rightNum>>14),
+				byte((uint32(rightNum) << 16) | uint32(destNum)),
+				byte(0x24 | uint32(leftNum)<<2 | uint32(rightNum)>>14),
 				byte(rightNum >> 6),
 				0x9a, // lsr Xd, Xn, Xm
 			})
