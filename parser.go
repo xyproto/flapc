@@ -204,7 +204,7 @@ func (p *Parser) error(msg string) {
 	err := SyntaxError(msg, SourceLocation{
 		File:   p.filename,
 		Line:   p.current.Line,
-		Column: 0, // TODO: track column positions in lexer
+		Column: p.current.Column,
 		Length: len(p.current.Value),
 	})
 	p.errors.AddError(err)
