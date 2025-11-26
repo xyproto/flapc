@@ -4114,23 +4114,24 @@ func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
 	// loop_start:
 	loopStartItoa := acg.eb.text.Len()
 
-	// x6 = 10 (divisor)
-	acg.out.out.writer.WriteBytes([]byte{0x46, 0x01, 0x80, 0xd2}) // mov x6, #10
-	// x7 = x0 / 10
-	acg.out.out.writer.WriteBytes([]byte{0x07, 0x08, 0xc6, 0x9a}) // udiv x7, x0, x6
-	// x8 = x0 % 10 - compute manually to avoid msub issues
-	// First: x9 = x7 * 10
-	acg.out.out.writer.WriteBytes([]byte{0xe9, 0x28, 0x06, 0x9b}) // mul x9, x7, x6
-	// Then: x8 = x0 - x9
-	acg.out.out.writer.WriteBytes([]byte{0x08, 0x00, 0x09, 0xcb}) // sub x8, x0, x9
+	// Use x10-x15 to avoid conflicts with other registers
+	// x10 = 10 (divisor)
+	acg.out.out.writer.WriteBytes([]byte{0x4a, 0x01, 0x80, 0xd2}) // mov x10, #10
+	// x11 = x0 / 10
+	acg.out.out.writer.WriteBytes([]byte{0x0b, 0x08, 0xca, 0x9a}) // udiv x11, x0, x10
+	// x12 = x0 % 10
+	// First: x13 = x11 * 10
+	acg.out.out.writer.WriteBytes([]byte{0x6d, 0x29, 0x0a, 0x9b}) // mul x13, x11, x10
+	// Then: x12 = x0 - x13
+	acg.out.out.writer.WriteBytes([]byte{0x0c, 0x00, 0x0d, 0xcb}) // sub x12, x0, x13
 
-	// Convert digit to ASCII: x8 = x8 + '0' (48)
-	// add x8, x8, #48
-	acg.out.out.writer.WriteBytes([]byte{0x08, 0xc0, 0x00, 0x91})
+	// Convert digit to ASCII: x12 = x12 + '0' (48)
+	// add x12, x12, #48
+	acg.out.out.writer.WriteBytes([]byte{0x8c, 0xc0, 0x00, 0x91})
 
 	// Store byte at [x4] then decrement x4 separately
-	// strb w8, [x4]
-	acg.out.out.writer.WriteBytes([]byte{0x88, 0x00, 0x00, 0x39})
+	// strb w12, [x4]
+	acg.out.out.writer.WriteBytes([]byte{0x8c, 0x00, 0x00, 0x39})
 	// sub x4, x4, #1
 	acg.out.out.writer.WriteBytes([]byte{0x84, 0x04, 0x00, 0xd1})
 
@@ -4139,7 +4140,7 @@ func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
 	acg.out.out.writer.WriteBytes([]byte{0xa5, 0x04, 0x00, 0x91})
 
 	// x0 = x0 / 10 (for next iteration)
-	acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x07, 0xaa}) // mov x0, x7
+	acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x0b, 0xaa}) // mov x0, x11
 
 	// if x0 != 0, continue loop
 	// cbnz x0, loop_start
