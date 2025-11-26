@@ -2227,6 +2227,10 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4}) // svc #0
 	}
 
+	// Return after printing zero (don't fall through to non-zero case)
+	// RET instruction
+	acg.out.out.writer.WriteBytes([]byte{0xc0, 0x03, 0x5f, 0xd6})
+
 	// non_zero:
 	nonZeroPos := acg.eb.text.Len()
 	acg.patchJumpOffset(nonZeroJump, int32(nonZeroPos-nonZeroJump))
