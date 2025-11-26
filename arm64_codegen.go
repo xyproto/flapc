@@ -4068,6 +4068,22 @@ func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
 	acg.out.out.writer.WriteBytes([]byte{0x04, 0x00, 0x00, 0x90}) // ADRP x4, #0
 	acg.out.out.writer.WriteBytes([]byte{0x84, 0x00, 0x00, 0x91}) // ADD x4, x4, #0
 
+	// Zero out the buffer (32 bytes) to ensure clean state
+	// x9 = 0 (value to store)
+	acg.out.out.writer.WriteBytes([]byte{0x09, 0x00, 0x80, 0xd2}) // mov x9, #0
+	// Store 4 x 8-byte zeros (total 32 bytes)
+	for i := 0; i < 4; i++ {
+		// str x9, [x4, #(i*8)]
+		offset := uint32(i * 8)
+		strInstr := uint32(0xf9000089) | ((offset / 8) << 10)
+		acg.out.out.writer.WriteBytes([]byte{
+			byte(strInstr),
+			byte(strInstr >> 8),
+			byte(strInstr >> 16),
+			byte(strInstr >> 24),
+		})
+	}
+
 	// Initialize: x3 = 0, x4 = buffer + 31, x5 = 0
 	acg.out.out.writer.WriteBytes([]byte{0x03, 0x00, 0x80, 0xd2}) // mov x3, #0
 	// add x4, x4, #31 (point to end of buffer)
