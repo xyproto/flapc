@@ -342,11 +342,11 @@ class_field_decl = identifier "." identifier "=" expression ;
 
 method_decl     = identifier "=" lambda_expr ;
 
-| c_type          = "int8" | "int16"   | "int32"   | "int64"  |          |
-|--------------------------|-----------|-----------|----------|----------|
-|                          | "uint8"   | "uint16"  | "uint32" | "uint64" |
-|                          | "float32" | "float64" |          |          |
-|                          | "ptr"     | "cstr" ;  |          |          |
+| c_type          = "int8" | "int16"   | "int32"     | "int64"  |          |
+|--------------------------|-----------|-------------|----------|----------|
+|                          | "uint8"   | "uint16"    | "uint32" | "uint64" |
+|                          | "float32" | "float64"   |          |          |
+|                          | "cptr"    | "cstring" ; |          |          |
 
 arena_statement = "arena" block ;
 
@@ -719,7 +719,7 @@ cstring cptr cint clong cfloat cdouble cbool cvoid
 **Legacy type cast keywords (for `unsafe` blocks and `cstruct`):**
 ```
 int8 int16 int32 int64 uint8 uint16 uint32 uint64 float32 float64
-ptr cstr number string address packed aligned
+cptr cstring number string address packed aligned
 ```
 
 **Usage:**
@@ -1688,7 +1688,7 @@ class Vec2 {
     init = (x, y) -> {
         .data = call("malloc", Vec2Data.size as uint64)
         unsafe float64 {
-            rax <- .data as ptr
+            rax <- .data as cptr
             [rax] <- x
             [rax + 8] <- y
         }
@@ -1696,7 +1696,7 @@ class Vec2 {
 
     magnitude = () -> {
         unsafe float64 {
-            rax <- .data as ptr
+            rax <- .data as cptr
             xmm0 <- [rax]
             xmm1 <- [rax + 8]
             xmm0 <- xmm0 * xmm0
