@@ -2173,17 +2173,12 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 		return nil
 	}
 
-	// For everything else (numbers, expressions), use printf("%g\n", value)
-	// This reuses the existing printf implementation which handles all types correctly
-
-	// Create a synthetic printf call with format "%g\n" and the original argument
-	formatStr := &StringExpr{Value: "%g\n"}
-	printfCall := &CallExpr{
-		Function: "printf",
-		Args:     []Expression{formatStr, arg},
-	}
-
-	return acg.compilePrintf(printfCall)
+	// For numbers, convert to string and output via syscall
+	// This avoids libc printf which has calling convention issues on ARM64
+	
+	// TODO: Implement native float-to-string conversion
+	// For now, return error suggesting to use string literals
+	return fmt.Errorf("println with numbers not yet supported on ARM64 - use println(\"string\") or implement native conversion")
 }
 
 // compileEprint compiles eprint/eprintln/eprintf calls (stderr output)
