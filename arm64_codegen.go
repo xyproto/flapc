@@ -2227,9 +2227,11 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4}) // svc #0
 	}
 
-	// Return after printing zero (don't fall through to non-zero case)
-	// RET instruction
-	acg.out.out.writer.WriteBytes([]byte{0xc0, 0x03, 0x5f, 0xd6})
+	// Jump to end after printing zero (don't fall through to non-zero case)
+	zeroEndJump := acg.eb.text.Len()
+	if err := acg.out.Branch(0); err != nil {
+		return err
+	}
 
 	// non_zero:
 	nonZeroPos := acg.eb.text.Len()
@@ -2273,6 +2275,10 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 		}
 		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4}) // svc #0
 	}
+
+	// Patch jump from zero case to here
+	endPos := acg.eb.text.Len()
+	acg.patchJumpOffset(zeroEndJump, int32(endPos-zeroEndJump))
 
 	return nil
 }
