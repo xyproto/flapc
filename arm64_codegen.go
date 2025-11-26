@@ -4172,7 +4172,10 @@ func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
 	endItoaPos := acg.eb.text.Len()
 	acg.patchJumpOffset(endItoaJump, int32(endItoaPos-endItoaJump))
 
-	acg.out.out.writer.WriteBytes([]byte{0xfd, 0x7b, 0xc4, 0xa8}) // ldp x29, x30, [sp], #64
+	// NOTE: We don't deallocate the stack here because the caller needs the buffer!
+	// The buffer is in our stack frame and must remain valid after return
+	// Just restore fp and lr, but leave stack as-is
+	acg.out.out.writer.WriteBytes([]byte{0xfd, 0x7b, 0x40, 0xa9}) // ldp x29, x30, [sp] (no post-increment!)
 	acg.out.Return("x30")
 
 	return nil
