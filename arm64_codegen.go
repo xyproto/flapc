@@ -2176,9 +2176,148 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 	// For numbers, convert to string and output via syscall
 	// This avoids libc printf which has calling convention issues on ARM64
 	
-	// TODO: Implement native float-to-string conversion
-	// For now, return error suggesting to use string literals
-	return fmt.Errorf("println with numbers not yet supported on ARM64 - use println(\"string\") or implement native conversion")
+	// Compile the expression to get the number in d0
+	if err := acg.compileExpression(arg); err != nil {
+		return err
+	}
+	
+	// Convert float64 in d0 to signed integer in x0
+	// fcvtzs x0, d0
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x78, 0x9e})
+	
+	// Allocate 32 bytes on stack for number string buffer (more than enough for int64)
+	// sub sp, sp, #32
+	acg.out.out.writer.WriteBytes([]byte{0xff, 0x83, 0x00, 0xd1})
+	
+	// x1 = buffer end pointer (sp + 31, we build string backwards)
+	// add x1, sp, #31
+	acg.out.out.writer.WriteBytes([]byte{0xe1, 0x7f, 0x00, 0x91})
+	
+	// x2 = digit count (starts at 0)
+	// mov x2, #0
+	acg.out.out.writer.WriteBytes([]byte{0x02, 0x00, 0x80, 0xd2})
+	
+	// Handle negative: if x0 < 0, negate and remember
+	// x3 = is_negative flag
+	// cmp x0, #0
+	acg.out.out.writer.WriteBytes([]byte{0x1f, 0x00, 0x00, 0xf1})
+	// b.ge positive
+	posJump := acg.eb.text.Len()
+	acg.out.BranchCond("ge", 0) // Placeholder
+	// neg x0, x0
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0xcb})
+	// mov x3, #1 (negative flag)
+	acg.out.out.writer.WriteBytes([]byte{0x23, 0x00, 0x80, 0xd2})
+	// b after_sign
+	afterSignJump := acg.eb.text.Len()
+	acg.out.Branch(0) // Placeholder
+	
+	// positive:
+	posPos := acg.eb.text.Len()
+	acg.patchJumpOffset(posJump, int32(posPos-posJump))
+	// mov x3, #0 (not negative)
+	acg.out.out.writer.WriteBytes([]byte{0x03, 0x00, 0x80, 0xd2})
+	
+	// after_sign:
+	afterSignPos := acg.eb.text.Len()
+	acg.patchJumpOffset(afterSignJump, int32(afterSignPos-afterSignJump))
+	
+	// Convert loop: extract digits backwards
+	// loop:
+	loopStart := acg.eb.text.Len()
+	// x4 = x0 % 10: udiv x5, x0, #10, then msub x4, x5, #10, x0
+	// mov x6, #10
+	acg.out.out.writer.WriteBytes([]byte{0x46, 0x01, 0x80, 0xd2})
+	// udiv x5, x0, x6
+	acg.out.out.writer.WriteBytes([]byte{0x05, 0x08, 0xc6, 0x9a})
+	// msub x4, x5, x6, x0 (x4 = x0 - x5*x6, i.e., x0 % 10)
+	acg.out.out.writer.WriteBytes([]byte{0x04, 0x58, 0x06, 0x9b})
+	
+	// Convert digit to ASCII: x4 = x4 + '0'
+	// add x4, x4, #48
+	acg.out.out.writer.WriteBytes([]byte{0x84, 0xc0, 0x00, 0x91})
+	
+	// Store digit: strb w4, [x1], #-1 (store and post-decrement)
+	acg.out.out.writer.WriteBytes([]byte{0x24, 0xf4, 0x1f, 0x38})
+	
+	// Increment digit count: x2++
+	// add x2, x2, #1
+	acg.out.out.writer.WriteBytes([]byte{0x42, 0x04, 0x00, 0x91})
+	
+	// x0 = x0 / 10
+	// mov x0, x5
+	acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x05, 0xaa})
+	
+	// if x0 != 0, continue loop
+	// cbnz x0, loop
+	loopOffset := int32(loopStart - (acg.eb.text.Len() + 4))
+	cbnzInstr := uint32(0xb5000000) | (uint32(loopOffset>>2)&0x7ffff)<<5
+	acg.out.out.writer.WriteBytes([]byte{
+		byte(cbnzInstr),
+		byte(cbnzInstr >> 8),
+		byte(cbnzInstr >> 16),
+		byte(cbnzInstr >> 24),
+	})
+	
+	// Add minus sign if negative
+	// cbz x3, skip_minus - use proper cbz encoding
+	skipMinusJump2 := acg.eb.text.Len()
+	// cbz x3, skip_minus - encoding: 0xb4000003 | (offset << 5)
+	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0xb4}) // Placeholder
+	// mov x4, #45 ('-')
+	acg.out.out.writer.WriteBytes([]byte{0xa4, 0x05, 0x80, 0xd2})
+	// strb w4, [x1], #-1
+	acg.out.out.writer.WriteBytes([]byte{0x24, 0xf4, 0x1f, 0x38})
+	// add x2, x2, #1
+	acg.out.out.writer.WriteBytes([]byte{0x42, 0x04, 0x00, 0x91})
+	
+	// skip_minus:
+	skipMinusPos := acg.eb.text.Len()
+	cbzOffset := uint32((skipMinusPos - skipMinusJump2) >> 2)
+	cbzInstr := uint32(0xb4000003) | ((cbzOffset & 0x7ffff) << 5)
+	acg.eb.text.Bytes()[skipMinusJump2] = byte(cbzInstr)
+	acg.eb.text.Bytes()[skipMinusJump2+1] = byte(cbzInstr >> 8)
+	acg.eb.text.Bytes()[skipMinusJump2+2] = byte(cbzInstr >> 16)
+	acg.eb.text.Bytes()[skipMinusJump2+3] = byte(cbzInstr >> 24)
+	
+	// x1 now points to char before first digit, increment to first digit
+	// add x1, x1, #1
+	acg.out.out.writer.WriteBytes([]byte{0x21, 0x04, 0x00, 0x91})
+	
+	// Add newline after number
+	// mov x4, #10 ('\n')
+	acg.out.out.writer.WriteBytes([]byte{0x84, 0x01, 0x80, 0xd2})
+	// strb w4, [x1, x2]
+	acg.out.out.writer.WriteBytes([]byte{0x24, 0x68, 0x22, 0x38})
+	// add x2, x2, #1 (include newline in length)
+	acg.out.out.writer.WriteBytes([]byte{0x42, 0x04, 0x00, 0x91})
+	
+	// Write syscall: write(1, buffer_start, length)
+	// mov x0, #1 (stdout)
+	if err := acg.out.MovImm64("x0", 1); err != nil {
+		return err
+	}
+	// x1 already points to buffer start
+	// x2 already has length
+	
+	// Syscall number
+	if acg.eb.target.OS() == OSDarwin {
+		if err := acg.out.MovImm64("x16", 4); err != nil { // macOS write
+			return err
+		}
+		acg.out.out.writer.WriteBytes([]byte{0x01, 0x10, 0x00, 0xd4}) // svc #0x80
+	} else {
+		if err := acg.out.MovImm64("x8", 64); err != nil { // Linux write
+			return err
+		}
+		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4}) // svc #0
+	}
+	
+	// Clean up stack
+	// add sp, sp, #32
+	acg.out.out.writer.WriteBytes([]byte{0xff, 0x83, 0x00, 0x91})
+	
+	return nil
 }
 
 // compileEprint compiles eprint/eprintln/eprintf calls (stderr output)
