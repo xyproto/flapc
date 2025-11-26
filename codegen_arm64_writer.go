@@ -101,21 +101,21 @@ func (fc *FlapCompiler) writeELFARM64(outputPath string) error {
 	// Prepare rodata section (strings, constants) before writing ELF
 	// This is crucial - WriteCompleteDynamicELF expects rodata to be in eb.rodata buffer
 	rodataSymbols := fc.eb.RodataSection()
-	
+
 	// Create sorted list for deterministic ordering
 	var symbolNames []string
 	for name := range rodataSymbols {
 		symbolNames = append(symbolNames, name)
 	}
 	sort.Strings(symbolNames)
-	
+
 	// Clear rodata buffer and write sorted symbols
 	fc.eb.rodata.Reset()
 	estimatedRodataAddr := uint64(0x403000 + 0x100)
 	currentAddr := estimatedRodataAddr
 	for _, symbol := range symbolNames {
 		value := rodataSymbols[symbol]
-		
+
 		// Align string literals to 8-byte boundaries
 		if strings.HasPrefix(symbol, "str_") {
 			padding := (8 - (currentAddr % 8)) % 8
@@ -124,13 +124,13 @@ func (fc *FlapCompiler) writeELFARM64(outputPath string) error {
 				currentAddr += padding
 			}
 		}
-		
+
 		fc.eb.WriteRodata([]byte(value))
 		fc.eb.DefineAddr(symbol, currentAddr)
 		currentAddr += uint64(len(value))
-		
+
 		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "Prepared rodata symbol %s at estimated 0x%x (%d bytes): %q\n", 
+			fmt.Fprintf(os.Stderr, "Prepared rodata symbol %s at estimated 0x%x (%d bytes): %q\n",
 				symbol, currentAddr-uint64(len(value)), len(value), value)
 		}
 	}
@@ -141,26 +141,26 @@ func (fc *FlapCompiler) writeELFARM64(outputPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to write ARM64 ELF: %v", err)
 	}
-	
+
 	// Update rodata addresses with actual addresses from ELF layout
 	currentAddr = rodataBaseAddr
 	for _, symbol := range symbolNames {
 		value := rodataSymbols[symbol]
-		
+
 		// Apply same alignment as when writing
 		if strings.HasPrefix(symbol, "str_") {
 			padding := (8 - (currentAddr % 8)) % 8
 			currentAddr += padding
 		}
-		
+
 		fc.eb.DefineAddr(symbol, currentAddr)
 		currentAddr += uint64(len(value))
-		
+
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "Updated rodata symbol %s to actual address 0x%x\n", symbol, fc.eb.consts[symbol].addr)
 		}
 	}
-	
+
 	// Re-patch PC relocations with correct rodata addresses
 	// WriteCompleteDynamicELF patched them with estimated addresses, but now we have actual addresses
 	rodataSize := fc.eb.rodata.Len()
