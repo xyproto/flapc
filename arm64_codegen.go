@@ -2232,20 +2232,15 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 	acg.patchJumpOffset(nonZeroJump, int32(nonZeroPos-nonZeroJump))
 
 	// For non-zero numbers, call _flap_itoa helper
-	// Allocate 64 bytes on stack for buffer
-	// sub sp, sp, #64
-	acg.out.out.writer.WriteBytes([]byte{0xff, 0x03, 0x01, 0xd1})
-	
 	// x0 already has the integer value
-	// x1 = sp (buffer address for itoa to write to)
-	acg.out.out.writer.WriteBytes([]byte{0xe1, 0x03, 0x00, 0x91}) // mov x1, sp
+	// itoa uses global buffer, no need to allocate or pass buffer address
 
-	// Call _flap_itoa(x0=number, x1=buffer) -> x2=length
+	// Call _flap_itoa(x0=number) -> x1=buffer, x2=length
 	if err := acg.eb.GenerateCallInstruction("_flap_itoa"); err != nil {
 		return err
 	}
 
-	// On return: x1 still has buffer pointer, x2 = length (excluding newline)
+	// On return: x1 = buffer pointer (global), x2 = length (excluding newline)
 	// Add newline at end: strb w3, [x1, x2] where w3 = '\n'
 	// mov x3, #10
 	acg.out.out.writer.WriteBytes([]byte{0x43, 0x01, 0x80, 0xd2})
@@ -2274,10 +2269,6 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 		}
 		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4}) // svc #0
 	}
-	
-	// Clean up stack buffer
-	// add sp, sp, #64
-	acg.out.out.writer.WriteBytes([]byte{0xff, 0x03, 0x01, 0x91})
 
 	return nil
 }
@@ -4051,25 +4042,36 @@ func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
 	// Note: Arena runtime generation disabled for ARM64 (using malloc directly)
 	// The arena system is simplified - alloc() calls malloc, no arena management needed
 
+	// Define a global buffer for itoa (32 bytes, writable)
+	acg.eb.DefineWritable("_itoa_buffer", string(make([]byte, 32)))
+
 	// Generate _flap_itoa(int64) -> (buffer_ptr, length)
 	// Converts integer in x0 to decimal string
-	// Returns: x1 = buffer pointer (on stack), x2 = length
-	// Uses stack buffer, builds string backwards
+	// Returns: x1 = buffer pointer (global), x2 = length
+	// Uses global _itoa_buffer, builds string backwards
 	acg.eb.MarkLabel("_flap_itoa")
 
-	// Prologue: save link register and allocate stack
-	// We need 32 bytes for buffer + 16 for saved regs = 48, round to 64
-	acg.out.out.writer.WriteBytes([]byte{0xfd, 0x7b, 0xbc, 0xa9}) // stp x29, x30, [sp, #-64]!
+	// Prologue: save link register (no stack allocation needed)
+	acg.out.out.writer.WriteBytes([]byte{0xfd, 0x7b, 0xbe, 0xa9}) // stp x29, x30, [sp, #-32]!
 	acg.out.out.writer.WriteBytes([]byte{0xfd, 0x03, 0x00, 0x91}) // mov x29, sp
 
 	// x3 = is_negative flag (0 = positive, 1 = negative)
-	// x4 = buffer pointer (starts at sp + 63, builds backwards)
+	// x4 = buffer pointer (starts at _itoa_buffer + 31, builds backwards)
 	// x5 = digit counter
 
-	// Initialize: x3 = 0, x4 = sp + 63, x5 = 0
+	// Load buffer address: ADRP + ADD for _itoa_buffer
+	offset := uint64(acg.eb.text.Len())
+	acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
+		offset:     offset,
+		symbolName: "_itoa_buffer",
+	})
+	acg.out.out.writer.WriteBytes([]byte{0x04, 0x00, 0x00, 0x90}) // ADRP x4, #0
+	acg.out.out.writer.WriteBytes([]byte{0x84, 0x00, 0x00, 0x91}) // ADD x4, x4, #0
+	
+	// Initialize: x3 = 0, x4 = buffer + 31, x5 = 0
 	acg.out.out.writer.WriteBytes([]byte{0x03, 0x00, 0x80, 0xd2}) // mov x3, #0
-	// add x4, sp, #63
-	acg.out.out.writer.WriteBytes([]byte{0xe4, 0xff, 0x00, 0x91})
+	// add x4, x4, #31 (point to end of buffer)
+	acg.out.out.writer.WriteBytes([]byte{0x84, 0x7c, 0x00, 0x91})
 	acg.out.out.writer.WriteBytes([]byte{0x05, 0x00, 0x80, 0xd2}) // mov x5, #0
 
 	// Handle negative: if x0 < 0, negate and set flag
@@ -4182,10 +4184,8 @@ func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
 	endItoaPos := acg.eb.text.Len()
 	acg.patchJumpOffset(endItoaJump, int32(endItoaPos-endItoaJump))
 
-	// NOTE: We don't deallocate the stack here because the caller needs the buffer!
-	// The buffer is in our stack frame and must remain valid after return
-	// Just restore fp and lr, but leave stack as-is
-	acg.out.out.writer.WriteBytes([]byte{0xfd, 0x7b, 0x40, 0xa9}) // ldp x29, x30, [sp] (no post-increment!)
+	// Restore stack and return (buffer is global, so it's safe to deallocate)
+	acg.out.out.writer.WriteBytes([]byte{0xfd, 0x7b, 0xc2, 0xa8}) // ldp x29, x30, [sp], #32
 	acg.out.Return("x30")
 
 	return nil
