@@ -1,11 +1,11 @@
-// parser.go - Flap Language Parser (Version 3.0.0)
+// parser.go - Flap Language Parser (Version 1.3.0)
 // Completion: 95%
 //
-// Version: 3.0.0
-// Date: 2025-11-17
-// Status: Canonical Implementation of GRAMMAR.md and LANGUAGESPEC.md v3.0
+// Version: 1.3.0
+// Date: 2025-11-26
+// Status: Canonical Implementation of GRAMMAR.md and LANGUAGESPEC.md v1.3.0
 //
-// This parser is the authoritative implementation of GRAMMAR.md and LANGUAGESPEC.md v3.0.0.
+// This parser is the authoritative implementation of GRAMMAR.md and LANGUAGESPEC.md v1.3.0.
 // It implements a complete recursive descent parser for the Flap programming
 // language with direct machine code generation for x86_64, ARM64, and RISCV64.
 //

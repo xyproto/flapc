@@ -5748,7 +5748,7 @@ func (fc *FlapCompiler) compileRegisterOp(dest string, op *RegisterOp) {
 			fc.out.ShrRegByImm(dest, int64(r.Value))
 		}
 	default:
-		compilerError("operator %s not yet implemented in v1.5.0", op.Operator)
+		compilerError("operator %s not yet implemented", op.Operator)
 	}
 }
 
