@@ -1,51 +1,49 @@
 # ARM64 Support Status
 
 ## Working ✓
-- Simple value returns (e.g., `main = 42`)
+- Simple value returns (e.g., `main = { 42 }`)
 - ELF binary generation for ARM64+Linux
 - Target flag parsing (`--target arm64-linux`)
 - Basic register operations (mov, add, sub, cmp, jump)
-- Syscalls (exit)
+- Syscalls (write, exit)
+- **String literals with println** ✅ NEW!
+- **PC-relative addressing for rodata** ✅ NEW!
+- **PLT/GOT infrastructure** ✅ NEW!
 
 ## In Progress / Not Working ✗
-- Function calls (including println, print)
-- Block expressions with multiple statements
-- C FFI integration
-- Complex expressions
+- **Printf-based I/O** (numbers) - calling convention issue
+- C FFI integration (printf hangs, other functions untested)
+- Complex expressions with libc calls
 - Loops
-- Match expressions
+- Match expressions  
 - Lambda functions
 - Parallel execution
 
-## Known Issues
-1. **Flag ordering**: Flags must come BEFORE positional arguments
-   - Works: `./flapc --target arm64-linux file.flap`
-   - Fails: `./flapc file.flap --target arm64-linux`
-   - This is a Go flag package limitation
+## Recent Fixes (2025-11-26)
+1. ✅ **Rodata preparation**: Added proper symbol collection and buffer writing
+2. ✅ **PC relocation patching**: Re-patch after address updates
+3. ✅ **PLT call patching**: Added call site patching infrastructure
 
-2. **Exit codes**: Block expressions may return incorrect exit codes (INT_MAX seen)
-
-## Testing
-Simple programs work on ARM64 hardware:
-```bash
-# On x86_64 host:
-./flapc --target arm64-linux exitcode.flap -o exitcode_arm64
-
-# On ARM64 host:
-./exitcode_arm64
-echo $?  # Should print 42
+## Working Example
+```flap
+println("Hello from ARM64!")
+println("Strings work perfectly!")
+main = { 42 }
 ```
+
+## Known Issues
+1. **Printf hangs**: Stack alignment or calling convention issue with variadic functions
+2. **Number println**: Currently uses printf (which hangs) - needs native conversion
+
+## Next Steps
+1. Implement native number-to-string conversion for println
+2. Debug printf calling convention issue
+3. Add ARM64-specific tests
+4. Complete runtime helper functions
 
 ## Architecture
 - `arm64_backend.go`: Backend interface implementation
-- `arm64_codegen.go`: Main code generation (4693 lines)
+- `arm64_codegen.go`: Main code generation
 - `arm64_instructions.go`: Instruction encoding
-- `codegen_arm64_writer.go`: ELF writer for ARM64
+- `codegen_arm64_writer.go`: ELF writer for ARM64 (rodata, PLT, PC relocations)
 - `pltgot_aarch64.go`: PLT/GOT support
-
-## Next Steps
-1. Complete function call implementation
-2. Fix block expression compilation
-3. Add C FFI support for ARM64
-4. Port runtime helpers (arena, parallel, etc.)
-5. Comprehensive test suite
