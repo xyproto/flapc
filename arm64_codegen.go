@@ -2226,7 +2226,6 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 		}
 		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4}) // svc #0
 	}
-	return nil
 
 	// non_zero:
 	nonZeroPos := acg.eb.text.Len()
