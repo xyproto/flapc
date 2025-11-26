@@ -186,24 +186,24 @@ Flap's import system provides a unified way to import libraries, git repositorie
 
 ```flap
 // Library import (uses pkg-config or finds .dll)
-import "sdl3" as sdl
-import "raylib" as rl
+import sdl3 as sdl
+import raylib as rl
 
 // Git repository import
-import "github.com/xyproto/flap-math" as math
-import "github.com/xyproto/flap-math@v1.0.0" as math
-import "github.com/xyproto/flap-math@latest" as math
-import "github.com/xyproto/flap-math@main" as math
-import "git@github.com:xyproto/flap-math.git" as math
+import github.com/xyproto/flap-math as math
+import github.com/xyproto/flap-math@v1.0.0 as math
+import github.com/xyproto/flap-math@latest as math
+import github.com/xyproto/flap-math@main as math
+import git@github.com:xyproto/flap-math.git as math
 
 // Directory import
-import "." as local                    // Current directory
-import "./subdir" as sub              // Relative path
-import "/absolute/path" as abs        // Absolute path
+import . as local                    // Current directory
+import ./subdir as sub              // Relative path
+import /absolute/path as abs        // Absolute path
 
 // C library file import
-import "/path/to/libmylib.so" as mylib
-import "SDL3.dll" as sdl
+import /path/to/libmylib.so as mylib
+import SDL3.dll as sdl
 ```
 
 ### Import Behavior
@@ -310,7 +310,8 @@ statement       = assignment
                 | class_decl
                 | return_statement
                 | defer_statement
-                | import_statement ;
+                | import_statement
+                | export_statement ;
 
 return_statement = "ret" [ "@" [ integer ] ] [ expression ] ;
 
@@ -318,7 +319,9 @@ defer_statement  = "defer" expression ;
 
 import_statement = "import" import_source [ "as" identifier ] ;
 
-import_source   = string_literal           (* library name, file path, or directory *)
+export_statement = "export" identifier { ", " identifier } ;
+
+import_source   = string_literal           (* library name, file path, or directory, unquoted string *)
                 | git_url [ "@" version_spec ] ; (* git repository with optional version *)
 
 git_url         = identifier { "." identifier } { "/" identifier }  (* github.com/user/repo *)
@@ -466,8 +469,7 @@ primary_expr    = identifier
                 | "(" expression ")"
                 | "??"
                 | unsafe_expr
-                | arena_expr
-                | "???" ;
+                | arena_expr ;
 
 instance_field  = "." identifier ;
 
@@ -908,7 +910,7 @@ When a function returns a list, multiple assignment unpacks the elements:
 @     Loop
 &     ENet address (network endpoints)
 $     Address value (memory addresses)
-??    Random number
+??    Random number (cryptographically safe)
 or!   Error/null handler (executes right side if left is error or null pointer)
 ```
 

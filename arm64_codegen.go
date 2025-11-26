@@ -2175,28 +2175,28 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 
 	// For numbers, convert to string and output via syscall
 	// This avoids libc printf which has calling convention issues on ARM64
-	
+
 	// Compile the expression to get the number in d0
 	if err := acg.compileExpression(arg); err != nil {
 		return err
 	}
-	
+
 	// Convert float64 in d0 to signed integer in x0
 	// fcvtzs x0, d0
 	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x78, 0x9e})
-	
+
 	// Special case: if x0 == 0, just print "0\n"
 	// cmp x0, #0
 	acg.out.out.writer.WriteBytes([]byte{0x1f, 0x00, 0x00, 0xf1})
 	// b.ne non_zero
 	nonZeroJump := acg.eb.text.Len()
 	acg.out.BranchCond("ne", 0) // Placeholder
-	
+
 	// Zero case - print "0\n" via syscall
 	zeroLabel := fmt.Sprintf("println_zero_%d", acg.stringCounter)
 	acg.stringCounter++
 	acg.eb.Define(zeroLabel, "0\n")
-	
+
 	// Load "0\n" address into x1
 	offset := uint64(acg.eb.text.Len())
 	acg.eb.pcRelocations = append(acg.eb.pcRelocations, PCRelocation{
@@ -2205,7 +2205,7 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 	})
 	acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0x90}) // ADRP x1, #0
 	acg.out.out.writer.WriteBytes([]byte{0x21, 0x00, 0x00, 0x91}) // ADD x1, x1, #0
-	
+
 	// mov x0, #1 (stdout)
 	if err := acg.out.MovImm64("x0", 1); err != nil {
 		return err
@@ -2227,19 +2227,19 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4}) // svc #0
 	}
 	return nil
-	
+
 	// non_zero:
 	nonZeroPos := acg.eb.text.Len()
 	acg.patchJumpOffset(nonZeroJump, int32(nonZeroPos-nonZeroJump))
-	
+
 	// For non-zero numbers, call _flap_itoa helper
 	// x0 already has the integer value
-	
+
 	// Call _flap_itoa
 	if err := acg.eb.GenerateCallInstruction("_flap_itoa"); err != nil {
 		return err
 	}
-	
+
 	// On return: x1 = buffer pointer, x2 = length (excluding newline)
 	// Add newline at end: strb w3, [x1, x2] where w3 = '\n'
 	// mov x3, #10
@@ -2248,7 +2248,7 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 	acg.out.out.writer.WriteBytes([]byte{0x23, 0x68, 0x22, 0x38})
 	// add x2, x2, #1 (include newline in length)
 	acg.out.out.writer.WriteBytes([]byte{0x42, 0x04, 0x00, 0x91})
-	
+
 	// Write syscall: write(1, buffer, length)
 	// mov x0, #1 (stdout)
 	if err := acg.out.MovImm64("x0", 1); err != nil {
@@ -2256,7 +2256,7 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 	}
 	// x1 already has buffer pointer
 	// x2 already has length
-	
+
 	// Syscall
 	if acg.eb.target.OS() == OSDarwin {
 		if err := acg.out.MovImm64("x16", 4); err != nil {
@@ -2269,7 +2269,7 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 		}
 		acg.out.out.writer.WriteBytes([]byte{0x01, 0x00, 0x00, 0xd4}) // svc #0
 	}
-	
+
 	return nil
 }
 
@@ -4047,22 +4047,22 @@ func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
 	// Returns: x1 = buffer pointer (on stack), x2 = length
 	// Uses stack buffer, builds string backwards
 	acg.eb.MarkLabel("_flap_itoa")
-	
+
 	// Prologue: save link register and allocate stack
 	// We need 32 bytes for buffer + 16 for saved regs = 48, round to 64
 	acg.out.out.writer.WriteBytes([]byte{0xfd, 0x7b, 0xbc, 0xa9}) // stp x29, x30, [sp, #-64]!
 	acg.out.out.writer.WriteBytes([]byte{0xfd, 0x03, 0x00, 0x91}) // mov x29, sp
-	
+
 	// x3 = is_negative flag (0 = positive, 1 = negative)
 	// x4 = buffer pointer (starts at sp + 63, builds backwards)
 	// x5 = digit counter
-	
+
 	// Initialize: x3 = 0, x4 = sp + 63, x5 = 0
 	acg.out.out.writer.WriteBytes([]byte{0x03, 0x00, 0x80, 0xd2}) // mov x3, #0
 	// add x4, sp, #63
 	acg.out.out.writer.WriteBytes([]byte{0xe4, 0xff, 0x00, 0x91})
 	acg.out.out.writer.WriteBytes([]byte{0x05, 0x00, 0x80, 0xd2}) // mov x5, #0
-	
+
 	// Handle negative: if x0 < 0, negate and set flag
 	// cmp x0, #0
 	acg.out.out.writer.WriteBytes([]byte{0x1f, 0x00, 0x00, 0xf1})
@@ -4073,42 +4073,42 @@ func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
 	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0xcb})
 	// mov x3, #1
 	acg.out.out.writer.WriteBytes([]byte{0x23, 0x00, 0x80, 0xd2})
-	
+
 	// positive:
 	posItoaPos := acg.eb.text.Len()
 	acg.patchJumpOffset(posJumpItoa, int32(posItoaPos-posJumpItoa))
-	
+
 	// Special case: if x0 == 0, emit single '0'
 	// cbz x0, zero_case
 	zeroJumpItoa := acg.eb.text.Len()
 	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0xb4}) // Placeholder
-	
+
 	// Conversion loop: extract digits backwards
 	// loop_start:
 	loopStartItoa := acg.eb.text.Len()
-	
+
 	// x6 = 10 (divisor)
 	acg.out.out.writer.WriteBytes([]byte{0x46, 0x01, 0x80, 0xd2}) // mov x6, #10
 	// x7 = x0 / 10
 	acg.out.out.writer.WriteBytes([]byte{0x07, 0x08, 0xc6, 0x9a}) // udiv x7, x0, x6
 	// x8 = x0 % 10 = x0 - (x7 * 10)
 	acg.out.out.writer.WriteBytes([]byte{0xe8, 0x58, 0x06, 0x9b}) // msub x8, x7, x6, x0
-	
+
 	// Convert digit to ASCII: x8 = x8 + '0' (48)
 	// add x8, x8, #48
 	acg.out.out.writer.WriteBytes([]byte{0x08, 0xc0, 0x00, 0x91})
-	
+
 	// Store byte at [x4], decrement x4
 	// strb w8, [x4], #-1
 	acg.out.out.writer.WriteBytes([]byte{0x88, 0xf4, 0x1f, 0x38})
-	
+
 	// Increment digit count
 	// add x5, x5, #1
 	acg.out.out.writer.WriteBytes([]byte{0xa5, 0x04, 0x00, 0x91})
-	
+
 	// x0 = x0 / 10 (for next iteration)
 	acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x07, 0xaa}) // mov x0, x7
-	
+
 	// if x0 != 0, continue loop
 	// cbnz x0, loop_start
 	loopOffsetItoa := int32(loopStartItoa - (acg.eb.text.Len() + 4))
@@ -4119,7 +4119,7 @@ func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
 		byte(cbnzInstrItoa >> 16),
 		byte(cbnzInstrItoa >> 24),
 	})
-	
+
 	// After loop, x4 points to char before first digit, x5 = digit count
 	// Add minus sign if negative
 	// cbz x3, skip_minus_itoa
@@ -4131,7 +4131,7 @@ func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
 	acg.out.out.writer.WriteBytes([]byte{0x88, 0xf4, 0x1f, 0x38})
 	// add x5, x5, #1
 	acg.out.out.writer.WriteBytes([]byte{0xa5, 0x04, 0x00, 0x91})
-	
+
 	// skip_minus_itoa:
 	skipMinusItoaPos := acg.eb.text.Len()
 	skipMinusItoaOffset := uint32((skipMinusItoaPos - skipMinusItoaJump) >> 2)
@@ -4140,17 +4140,17 @@ func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
 	acg.eb.text.Bytes()[skipMinusItoaJump+1] = byte(cbzInstrItoa >> 8)
 	acg.eb.text.Bytes()[skipMinusItoaJump+2] = byte(cbzInstrItoa >> 16)
 	acg.eb.text.Bytes()[skipMinusItoaJump+3] = byte(cbzInstrItoa >> 24)
-	
+
 	// x4 now points to char before first char, increment to get buffer start
 	// add x1, x4, #1
 	acg.out.out.writer.WriteBytes([]byte{0x81, 0x04, 0x00, 0x91})
 	// x2 = length
 	acg.out.out.writer.WriteBytes([]byte{0xe2, 0x03, 0x05, 0xaa}) // mov x2, x5
-	
+
 	// Jump to epilogue
 	endItoaJump := acg.eb.text.Len()
 	acg.out.Branch(0) // Placeholder
-	
+
 	// zero_case: emit single '0'
 	zeroItoaPos := acg.eb.text.Len()
 	zeroItoaOffset := uint32((zeroItoaPos - zeroJumpItoa) >> 2)
@@ -4159,7 +4159,7 @@ func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
 	acg.eb.text.Bytes()[zeroJumpItoa+1] = byte(cbzZeroInstr >> 8)
 	acg.eb.text.Bytes()[zeroJumpItoa+2] = byte(cbzZeroInstr >> 16)
 	acg.eb.text.Bytes()[zeroJumpItoa+3] = byte(cbzZeroInstr >> 24)
-	
+
 	// mov x8, #48 ('0')
 	acg.out.out.writer.WriteBytes([]byte{0x08, 0x06, 0x80, 0xd2})
 	// strb w8, [x4]
@@ -4168,11 +4168,11 @@ func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
 	acg.out.out.writer.WriteBytes([]byte{0xe1, 0x03, 0x04, 0xaa}) // mov x1, x4
 	// mov x2, #1 (length)
 	acg.out.out.writer.WriteBytes([]byte{0x22, 0x00, 0x80, 0xd2})
-	
+
 	// Epilogue: restore and return
 	endItoaPos := acg.eb.text.Len()
 	acg.patchJumpOffset(endItoaJump, int32(endItoaPos-endItoaJump))
-	
+
 	acg.out.out.writer.WriteBytes([]byte{0xfd, 0x7b, 0xc4, 0xa8}) // ldp x29, x30, [sp], #64
 	acg.out.Return("x30")
 

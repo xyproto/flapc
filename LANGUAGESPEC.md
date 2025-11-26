@@ -801,7 +801,7 @@ log("Error:", "File not found:", filename)
 
 When calling a variadic function, you can:
 1. Pass arguments individually: `sum(1, 2, 3, 4)`
-2. Spread a list with `...`: `sum(values...)`  
+2. Spread a list with `...`: `sum(values...)`
 3. Mix both: `sum(1, 2, values...)`
 
 ```flap
