@@ -2276,10 +2276,105 @@ func (p *Parser) parseLoopStatement() Statement {
 			}
 		}
 
-		// Expect identifier for loop variable
+		// At this point, we need to determine the loop type:
+		// 1. @ ident in expr { } - for-each loop
+		// 2. @ ident, ident in expr { } - receive loop
+		// 3. @ expr max N { } - condition loop
+
+		// Check for condition loop: if we don't have an identifier followed by 'in' or ','
+		// then it's a condition expression
+		isConditionLoop := false
 		if p.current.Type != TOKEN_IDENT {
-			p.error("expected identifier after @")
+			// Not an identifier, must be start of condition expression (or error)
+			isConditionLoop = true
+		} else {
+			// Have identifier - check what comes after
+			if p.peek.Type != TOKEN_IN && p.peek.Type != TOKEN_COMMA {
+				// Not followed by 'in' or ',' - must be condition loop
+				isConditionLoop = true
+			}
 		}
+
+		if isConditionLoop {
+			// Condition loop: @ expr max N { ... }
+			// Parse the full condition expression
+			condition := p.parseComparison()
+
+			// After parsing expression, advance to next token
+			p.nextToken()
+
+			// Condition loops MUST have explicit 'max' clause
+			if p.current.Type != TOKEN_MAX {
+				p.error("condition loop requires 'max' clause (e.g., @ n < 5 max 10 { ... })")
+			}
+
+			p.nextToken() // skip 'max'
+
+			// Parse max iterations: either a number or 'inf'
+			var maxIterations int64
+			if p.current.Type == TOKEN_INF {
+				maxIterations = math.MaxInt64
+				p.nextToken() // skip 'inf'
+			} else if p.current.Type == TOKEN_NUMBER {
+				maxInt, err := strconv.ParseInt(p.current.Value, 10, 64)
+				if err != nil || maxInt < 1 {
+					p.error("max iterations must be a positive integer or 'inf'")
+				}
+				maxIterations = maxInt
+				p.nextToken() // skip number
+			} else {
+				p.error("expected number or 'inf' after 'max' keyword")
+			}
+
+			// Skip newlines before '{'
+			for p.current.Type == TOKEN_NEWLINE {
+				p.nextToken()
+			}
+
+			// Expect '{'
+			if p.current.Type != TOKEN_LBRACE {
+				p.error("expected '{' to start loop body")
+			}
+
+			// Skip newlines after '{'
+			for p.peek.Type == TOKEN_NEWLINE {
+				p.nextToken()
+			}
+
+			// Track loop depth for nested loops
+			oldDepth := p.loopDepth
+			p.loopDepth = label
+			defer func() { p.loopDepth = oldDepth }()
+
+			// Parse loop body
+			var body []Statement
+			for p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
+				p.nextToken()
+				if p.current.Type == TOKEN_NEWLINE {
+					continue
+				}
+				stmt := p.parseStatement()
+				if stmt != nil {
+					body = append(body, stmt)
+				}
+			}
+
+			// Expect and consume '}'
+			if p.peek.Type != TOKEN_RBRACE {
+				p.error("expected '}' at end of loop body")
+			}
+			p.nextToken() // consume the '}'
+
+			// Return a WhileStmt for condition-based loops
+			return &WhileStmt{
+				Condition:     condition,
+				Body:          body,
+				MaxIterations: maxIterations,
+				NumThreads:    numThreads,
+			}
+		}
+
+		// For-each or receive loop - we have an identifier
 		firstIdent := p.current.Value
 		p.nextToken() // skip identifier
 
@@ -2345,130 +2440,129 @@ func (p *Parser) parseLoopStatement() Statement {
 			}
 		}
 
-		iterator := firstIdent
+		// Check if this is a for-each loop (@ i in list) or a condition loop (@ i < 5)
+		if p.current.Type == TOKEN_IN {
+			// For-each loop: @ identifier in expression
+			iterator := firstIdent
+			p.nextToken() // skip 'in'
 
-		// Expect 'in' keyword
-		if p.current.Type != TOKEN_IN {
-			p.error("expected 'in' in loop statement")
-		}
-		p.nextToken() // skip 'in'
+			// Parse iterable expression
+			iterable := p.parseExpression()
 
-		// Parse iterable expression
-		iterable := p.parseExpression()
+			// Determine max iterations and whether runtime checking is needed
+			var maxIterations int64
+			needsRuntimeCheck := false
 
-		// Determine max iterations and whether runtime checking is needed
-		var maxIterations int64
-		needsRuntimeCheck := false
+			// Check if max keyword is present
+			if p.peek.Type == TOKEN_MAX {
+				p.nextToken() // advance to 'max'
+				p.nextToken() // skip 'max'
 
-		// Check if max keyword is present
-		if p.peek.Type == TOKEN_MAX {
-			p.nextToken() // advance to 'max'
-			p.nextToken() // skip 'max'
+				// Explicit max always requires runtime checking
+				needsRuntimeCheck = true
 
-			// Explicit max always requires runtime checking
-			needsRuntimeCheck = true
-
-			// Parse max iterations: either a number or 'inf'
-			if p.current.Type == TOKEN_INF {
-				maxIterations = math.MaxInt64 // Use MaxInt64 for infinite iterations
-				p.nextToken()                 // skip 'inf'
-			} else if p.current.Type == TOKEN_NUMBER {
-				// Parse the number
-				maxInt, err := strconv.ParseInt(p.current.Value, 10, 64)
-				if err != nil || maxInt < 1 {
-					p.error("max iterations must be a positive integer or 'inf'")
-				}
-				maxIterations = maxInt
-				p.nextToken() // skip number
-			} else {
-				p.error("expected number or 'inf' after 'max' keyword")
-			}
-		} else {
-			// No explicit max - check if we can determine iteration count at compile time
-			if rangeExpr, ok := iterable.(*RangeExpr); ok {
-				// Try to calculate max from range: end - start
-				startVal, startOk := rangeExpr.Start.(*NumberExpr)
-				endVal, endOk := rangeExpr.End.(*NumberExpr)
-
-				if startOk && endOk {
-					// Literal range - known at compile time, no runtime check needed
-					start := int64(startVal.Value)
-					end := int64(endVal.Value)
-					maxIterations = end - start
-					if maxIterations < 0 {
-						maxIterations = 0
+				// Parse max iterations: either a number or 'inf'
+				if p.current.Type == TOKEN_INF {
+					maxIterations = math.MaxInt64 // Use MaxInt64 for infinite iterations
+					p.nextToken()                 // skip 'inf'
+				} else if p.current.Type == TOKEN_NUMBER {
+					// Parse the number
+					maxInt, err := strconv.ParseInt(p.current.Value, 10, 64)
+					if err != nil || maxInt < 1 {
+						p.error("max iterations must be a positive integer or 'inf'")
 					}
-					needsRuntimeCheck = false
+					maxIterations = maxInt
+					p.nextToken() // skip number
 				} else {
-					// Range bounds are not literals, require explicit max
-					p.error("loop over non-literal range requires explicit 'max' clause")
+					p.error("expected number or 'inf' after 'max' keyword")
 				}
-			} else if listExpr, ok := iterable.(*ListExpr); ok {
-				// List literal - known at compile time, no runtime check needed
-				maxIterations = int64(len(listExpr.Elements))
-				needsRuntimeCheck = false
-			} else if _, ok := iterable.(*IdentExpr); ok {
-				// Variable (could be a list or map) - use runtime length check
-				maxIterations = math.MaxInt64 // Use max value, will check length at runtime
-				needsRuntimeCheck = true
-			} else if _, ok := iterable.(*IndexExpr); ok {
-				// Indexed expression (e.g., lists[0]) - use runtime length check
-				maxIterations = math.MaxInt64
-				needsRuntimeCheck = true
 			} else {
-				// Not a range expression or list literal, require explicit max
-				p.error("loop requires 'max' clause (or use range expression like 0..<10 or list literal)")
+				// No explicit max - check if we can determine iteration count at compile time
+				if rangeExpr, ok := iterable.(*RangeExpr); ok {
+					// Try to calculate max from range: end - start
+					startVal, startOk := rangeExpr.Start.(*NumberExpr)
+					endVal, endOk := rangeExpr.End.(*NumberExpr)
+
+					if startOk && endOk {
+						// Literal range - known at compile time, no runtime check needed
+						start := int64(startVal.Value)
+						end := int64(endVal.Value)
+						maxIterations = end - start
+						if maxIterations < 0 {
+							maxIterations = 0
+						}
+						needsRuntimeCheck = false
+					} else {
+						// Range bounds are not literals, require explicit max
+						p.error("loop over non-literal range requires explicit 'max' clause")
+					}
+				} else if listExpr, ok := iterable.(*ListExpr); ok {
+					// List literal - known at compile time, no runtime check needed
+					maxIterations = int64(len(listExpr.Elements))
+					needsRuntimeCheck = false
+				} else if _, ok := iterable.(*IdentExpr); ok {
+					// Variable (could be a list or map) - use runtime length check
+					maxIterations = math.MaxInt64 // Use max value, will check length at runtime
+					needsRuntimeCheck = true
+				} else if _, ok := iterable.(*IndexExpr); ok {
+					// Indexed expression (e.g., lists[0]) - use runtime length check
+					maxIterations = math.MaxInt64
+					needsRuntimeCheck = true
+				} else {
+					// Not a range expression or list literal, require explicit max
+					p.error("loop requires 'max' clause (or use range expression like 0..<10 or list literal)")
+				}
+				// Advance to next token after iterable expression
+				p.nextToken()
 			}
-			// Advance to next token after iterable expression
-			p.nextToken()
-		}
 
-		// Skip newlines before '{'
-		for p.current.Type == TOKEN_NEWLINE {
-			p.nextToken()
-		}
-
-		// Expect '{'
-		if p.current.Type != TOKEN_LBRACE {
-			p.error("expected '{' to start loop body")
-		}
-
-		// Skip newlines after '{'
-		for p.peek.Type == TOKEN_NEWLINE {
-			p.nextToken()
-		}
-
-		// Track loop depth for nested loops
-		oldDepth := p.loopDepth
-		p.loopDepth = label
-		defer func() { p.loopDepth = oldDepth }()
-
-		// Parse loop body
-		var body []Statement
-		for p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
-			p.nextToken()
-			if p.current.Type == TOKEN_NEWLINE {
-				continue
+			// Skip newlines before '{'
+			for p.current.Type == TOKEN_NEWLINE {
+				p.nextToken()
 			}
-			stmt := p.parseStatement()
-			if stmt != nil {
-				body = append(body, stmt)
+
+			// Expect '{'
+			if p.current.Type != TOKEN_LBRACE {
+				p.error("expected '{' to start loop body")
 			}
-		}
 
-		// Expect and consume '}'
-		if p.peek.Type != TOKEN_RBRACE {
-			p.error("expected '}' at end of loop body")
-		}
-		p.nextToken() // consume the '}'
+			// Skip newlines after '{'
+			for p.peek.Type == TOKEN_NEWLINE {
+				p.nextToken()
+			}
 
-		return &LoopStmt{
-			Iterator:      iterator,
-			Iterable:      iterable,
-			Body:          body,
-			MaxIterations: maxIterations,
-			NeedsMaxCheck: needsRuntimeCheck,
-			NumThreads:    numThreads,
+			// Track loop depth for nested loops
+			oldDepth := p.loopDepth
+			p.loopDepth = label
+			defer func() { p.loopDepth = oldDepth }()
+
+			// Parse loop body
+			var body []Statement
+			for p.peek.Type != TOKEN_RBRACE && p.peek.Type != TOKEN_EOF {
+				p.nextToken()
+				if p.current.Type == TOKEN_NEWLINE {
+					continue
+				}
+				stmt := p.parseStatement()
+				if stmt != nil {
+					body = append(body, stmt)
+				}
+			}
+
+			// Expect and consume '}'
+			if p.peek.Type != TOKEN_RBRACE {
+				p.error("expected '}' at end of loop body")
+			}
+			p.nextToken() // consume the '}'
+
+			return &LoopStmt{
+				Iterator:      iterator,
+				Iterable:      iterable,
+				Body:          body,
+				MaxIterations: maxIterations,
+				NeedsMaxCheck: needsRuntimeCheck,
+				NumThreads:    numThreads,
+			}
 		}
 	}
 

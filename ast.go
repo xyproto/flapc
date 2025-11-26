@@ -254,6 +254,20 @@ type LoopStmt struct {
 	Reducer       *LambdaExpr // Optional reduction lambda for parallel loops: | a,b | { a + b }
 }
 
+type WhileStmt struct {
+	Condition     Expression  // Condition expression (e.g., n < 5)
+	Body          []Statement // Body statements to execute while condition is true
+	MaxIterations int64       // Maximum allowed iterations (required for condition loops)
+	BaseOffset    int         // Stack offset before loop body
+	NumThreads    int         // Number of threads for parallel execution (0 = sequential)
+}
+
+func (w *WhileStmt) String() string {
+	return fmt.Sprintf("@ %s max %d { ... }", w.Condition.String(), w.MaxIterations)
+}
+
+func (w *WhileStmt) statementNode() {}
+
 type ReceiveLoopStmt struct {
 	MessageVar string      // Variable name for received message (e.g., "msg")
 	SenderVar  string      // Variable name for sender address (e.g., "from")

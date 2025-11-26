@@ -908,6 +908,25 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 		// Sequential loops at the same nesting level should start at the same stackOffset
 		fc.stackOffset = baseOffset
 
+	case *WhileStmt:
+		baseOffset := fc.stackOffset
+
+		if s.BaseOffset == 0 {
+			s.BaseOffset = baseOffset
+		}
+
+		// Allocate stack space for iteration counter (8 bytes)
+		fc.updateStackOffset(8)
+
+		for _, bodyStmt := range s.Body {
+			if err := fc.collectSymbols(bodyStmt); err != nil {
+				return err
+			}
+		}
+
+		// Restore stackOffset after loop body
+		fc.stackOffset = baseOffset
+
 	case *ReceiveLoopStmt:
 		baseOffset := fc.stackOffset
 
@@ -1418,6 +1437,9 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 	case *LoopStmt:
 		fc.compileLoopStatement(s)
 
+	case *WhileStmt:
+		fc.compileWhileStatement(s)
+
 	case *ReceiveLoopStmt:
 		fc.compileReceiveLoopStmt(s)
 
@@ -1665,6 +1687,117 @@ func (fc *FlapCompiler) compileLoopStatement(stmt *LoopStmt) {
 	} else {
 		// List iteration
 		fc.compileListLoop(stmt)
+	}
+}
+
+func (fc *FlapCompiler) compileWhileStatement(stmt *WhileStmt) {
+	// Condition loop: @ expr max N { ... }
+	// Structure:
+	//   loop_start:
+	//     evaluate condition
+	//     if condition == false, jump to loop_end
+	//     execute body
+	//     increment iteration counter
+	//     if counter >= max, jump to loop_end
+	//     jump to loop_start
+	//   loop_end:
+
+	// Increment label counter for uniqueness
+	fc.labelCounter++
+	currentLoopLabel := fc.labelCounter
+
+	// Allocate a register or stack slot for iteration counter
+	// Use a callee-saved register if available
+	counterReg := fc.regTracker.AllocIntCalleeSaved(fmt.Sprintf("while_counter_%d", currentLoopLabel))
+	useRegister := counterReg != ""
+	var counterOffset int
+
+	if !useRegister {
+		// Allocate stack space for counter
+		fc.stackOffset -= 8
+		counterOffset = fc.stackOffset
+	}
+
+	// Initialize counter to 0
+	if useRegister {
+		fc.out.XorRegWithReg(counterReg, counterReg) // counter = 0
+	} else {
+		fc.out.XorRegWithReg("rax", "rax")
+		fc.out.MovRegToMem("rax", "rbp", counterOffset)
+	}
+
+	// Mark loop start - record position for back jump
+	loopStartPos := fc.eb.text.Len()
+
+	// Push loop info for break/continue handling
+	loopInfo := LoopInfo{
+		Label:       len(fc.activeLoops) + 1,
+		StartPos:    loopStartPos,
+		ContinuePos: loopStartPos,
+		EndPatches:  []int{}, // Collect positions that need to jump to end
+	}
+	fc.activeLoops = append(fc.activeLoops, loopInfo)
+
+	// Evaluate condition expression
+	fc.compileExpression(stmt.Condition)
+	// Result is in xmm0 (float)
+
+	// Check if condition is zero (false)
+	// Compare xmm0 with 0.0
+	fc.out.XorpdXmm("xmm1", "xmm1") // xmm1 = 0.0
+	fc.out.Ucomisd("xmm0", "xmm1")  // Compare xmm0 with xmm1 (0.0)
+
+	// Jump to end if condition is false (zero)
+	conditionJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0) // Placeholder, will patch
+	fc.activeLoops[len(fc.activeLoops)-1].EndPatches = append(
+		fc.activeLoops[len(fc.activeLoops)-1].EndPatches, conditionJumpPos)
+
+	// Execute loop body
+	for _, bodyStmt := range stmt.Body {
+		fc.compileStatement(bodyStmt)
+	}
+
+	// Increment iteration counter
+	if useRegister {
+		fc.out.IncReg(counterReg)
+		// Check against max iterations
+		fc.out.MovImmToReg("r10", fmt.Sprintf("%d", stmt.MaxIterations))
+		fc.out.CmpRegToReg(counterReg, "r10")
+	} else {
+		// Load counter, increment, store back
+		fc.out.MovMemToReg("rax", "rbp", counterOffset)
+		fc.out.IncReg("rax")
+		fc.out.MovRegToMem("rax", "rbp", counterOffset)
+		// Check against max iterations
+		fc.out.MovImmToReg("r10", fmt.Sprintf("%d", stmt.MaxIterations))
+		fc.out.CmpRegToReg("rax", "r10")
+	}
+
+	// Jump to end if counter >= max
+	maxCheckJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreaterOrEqual, 0) // Placeholder
+	fc.activeLoops[len(fc.activeLoops)-1].EndPatches = append(
+		fc.activeLoops[len(fc.activeLoops)-1].EndPatches, maxCheckJumpPos)
+
+	// Jump back to loop start
+	currentPos := fc.eb.text.Len()
+	backOffset := int32(loopStartPos - (currentPos + 5)) // 5 bytes for JMP instruction
+	fc.out.JumpUnconditional(backOffset)
+
+	// Mark loop end - patch all forward jumps
+	loopEndPos := fc.eb.text.Len()
+	for _, patchPos := range fc.activeLoops[len(fc.activeLoops)-1].EndPatches {
+		offset := int32(loopEndPos - (patchPos + 6)) // 6 bytes for conditional jump
+		fc.patchJumpImmediate(patchPos+2, offset)    // +2 to skip opcode bytes
+	}
+
+	// Pop loop info
+	fc.activeLoops = fc.activeLoops[:len(fc.activeLoops)-1]
+
+	// Free the counter register if we allocated one
+	if useRegister {
+		fc.regTracker.FreeInt(counterReg)
 	}
 }
 
