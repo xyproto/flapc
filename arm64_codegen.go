@@ -4109,9 +4109,11 @@ func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
 	// add x8, x8, #48
 	acg.out.out.writer.WriteBytes([]byte{0x08, 0xc0, 0x00, 0x91})
 
-	// Store byte at [x4], decrement x4
-	// strb w8, [x4], #-1
-	acg.out.out.writer.WriteBytes([]byte{0x88, 0xf4, 0x1f, 0x38})
+	// Store byte at [x4] then decrement x4 separately
+	// strb w8, [x4]
+	acg.out.out.writer.WriteBytes([]byte{0x88, 0x00, 0x00, 0x39})
+	// sub x4, x4, #1
+	acg.out.out.writer.WriteBytes([]byte{0x84, 0x04, 0x00, 0xd1})
 
 	// Increment digit count
 	// add x5, x5, #1
