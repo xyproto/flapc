@@ -29,6 +29,14 @@ func (fc *FlapCompiler) writeELFARM64(outputPath string) error {
 		pltSet[f] = true
 	}
 
+	// Add functions from eb.neededFunctions (populated by ARM64 codegen)
+	for _, funcName := range fc.eb.neededFunctions {
+		if !pltSet[funcName] {
+			pltFunctions = append(pltFunctions, funcName)
+			pltSet[funcName] = true
+		}
+	}
+
 	// Build set of lambda function names to exclude from PLT
 	lambdaSet := make(map[string]bool)
 	for _, lambda := range fc.lambdaFuncs {
