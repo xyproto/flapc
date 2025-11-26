@@ -135,6 +135,30 @@ func (fc *FlapCompiler) writeELFARM64(outputPath string) error {
 		}
 	}
 
+	// Prepare .data section (writable data like itoa buffer)
+	dataSymbols := fc.eb.DataSection()
+	if len(dataSymbols) > 0 {
+		fc.eb.data.Reset()
+		dataBaseAddr := currentAddr // Follows .rodata
+		dataSymbolNames := make([]string, 0, len(dataSymbols))
+		for symbol := range dataSymbols {
+			dataSymbolNames = append(dataSymbolNames, symbol)
+		}
+		sort.Strings(dataSymbolNames)
+		
+		for _, symbol := range dataSymbolNames {
+			value := dataSymbols[symbol]
+			fc.eb.WriteData([]byte(value))
+			fc.eb.DefineAddr(symbol, dataBaseAddr)
+			dataBaseAddr += uint64(len(value))
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Prepared .data symbol %s at estimated 0x%x (%d bytes)\n",
+					symbol, fc.eb.consts[symbol].addr, len(value))
+			}
+		}
+		currentAddr = dataBaseAddr
+	}
+
 	// Write complete dynamic ELF with PLT/GOT
 	// This already patches PC-relative relocations internally
 	_, rodataBaseAddr, textAddr, pltBase, err := fc.eb.WriteCompleteDynamicELF(ds, pltFunctions)
@@ -161,7 +185,21 @@ func (fc *FlapCompiler) writeELFARM64(outputPath string) error {
 		}
 	}
 
-	// Re-patch PC relocations with correct rodata addresses
+	// Update .data addresses with actual addresses from ELF layout
+	dataSymbols = fc.eb.DataSection()
+	if len(dataSymbols) > 0 {
+		dataBaseAddr := currentAddr // Follows rodata
+		for symbol, value := range dataSymbols {
+			fc.eb.DefineAddr(symbol, dataBaseAddr)
+			dataBaseAddr += uint64(len(value))
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Updated .data symbol %s to actual address 0x%x\n",
+					symbol, fc.eb.consts[symbol].addr)
+			}
+		}
+	}
+
+	// Re-patch PC relocations with correct rodata/data addresses
 	// WriteCompleteDynamicELF patched them with estimated addresses, but now we have actual addresses
 	rodataSize := fc.eb.rodata.Len()
 	fc.eb.PatchPCRelocations(textAddr, rodataBaseAddr, rodataSize)
