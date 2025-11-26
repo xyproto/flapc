@@ -80,16 +80,16 @@ Foreign types are used at FFI boundaries to guide marshalling.
 
 The grammar uses Extended Backus-Naur Form (EBNF):
 
-| Notation          | Meaning                   |             |
-|-------------------|---------------------------|-------------|
-| `=`               | Definition                |             |
-| `;`               | Termination               |             |
-| `\                | `                         | Alternation |
-| `[ ... ]`         | Optional (zero or one)    |             |
-| `{ ... }`         | Repetition (zero or more) |             |
-| `( ... )`         | Grouping                  |             |
-| `"..."`           | Terminal string           |             |
-| `letter`, `digit` | Character classes         |             |
+| Notation          | Meaning                   |
+|-------------------|---------------------------|
+| `=`               | Definition                |
+| `;`               | Termination               |
+| `\`               | Alternation               |
+| `[ ... ]`         | Optional (zero or one)    |
+| `{ ... }`         | Repetition (zero or more) |
+| `( ... )`         | Grouping                  |
+| `"..."`           | Terminal string           |
+| `letter`, `digit` | Character classes         |
 
 ## Block Disambiguation Rules
 
