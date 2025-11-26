@@ -4,6 +4,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -97,11 +98,67 @@ func (fc *FlapCompiler) writeELFARM64(outputPath string) error {
 		ds.AddSymbol(lambda.Name, 1, 2) // STB_GLOBAL, STT_FUNC
 	}
 
+	// Prepare rodata section (strings, constants) before writing ELF
+	// This is crucial - WriteCompleteDynamicELF expects rodata to be in eb.rodata buffer
+	rodataSymbols := fc.eb.RodataSection()
+	
+	// Create sorted list for deterministic ordering
+	var symbolNames []string
+	for name := range rodataSymbols {
+		symbolNames = append(symbolNames, name)
+	}
+	sort.Strings(symbolNames)
+	
+	// Clear rodata buffer and write sorted symbols
+	fc.eb.rodata.Reset()
+	estimatedRodataAddr := uint64(0x403000 + 0x100)
+	currentAddr := estimatedRodataAddr
+	for _, symbol := range symbolNames {
+		value := rodataSymbols[symbol]
+		
+		// Align string literals to 8-byte boundaries
+		if strings.HasPrefix(symbol, "str_") {
+			padding := (8 - (currentAddr % 8)) % 8
+			if padding > 0 {
+				fc.eb.WriteRodata(make([]byte, padding))
+				currentAddr += padding
+			}
+		}
+		
+		fc.eb.WriteRodata([]byte(value))
+		fc.eb.DefineAddr(symbol, currentAddr)
+		currentAddr += uint64(len(value))
+		
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Prepared rodata symbol %s at estimated 0x%x (%d bytes): %q\n", 
+				symbol, currentAddr-uint64(len(value)), len(value), value)
+		}
+	}
+
 	// Write complete dynamic ELF with PLT/GOT
 	// This already patches PC-relative relocations internally
-	_, _, textAddr, pltBase, err := fc.eb.WriteCompleteDynamicELF(ds, pltFunctions)
+	_, rodataBaseAddr, textAddr, pltBase, err := fc.eb.WriteCompleteDynamicELF(ds, pltFunctions)
 	if err != nil {
 		return fmt.Errorf("failed to write ARM64 ELF: %v", err)
+	}
+	
+	// Update rodata addresses with actual addresses from ELF layout
+	currentAddr = rodataBaseAddr
+	for _, symbol := range symbolNames {
+		value := rodataSymbols[symbol]
+		
+		// Apply same alignment as when writing
+		if strings.HasPrefix(symbol, "str_") {
+			padding := (8 - (currentAddr % 8)) % 8
+			currentAddr += padding
+		}
+		
+		fc.eb.DefineAddr(symbol, currentAddr)
+		currentAddr += uint64(len(value))
+		
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "Updated rodata symbol %s to actual address 0x%x\n", symbol, fc.eb.consts[symbol].addr)
+		}
 	}
 
 	// Patch PLT calls in the generated code (similar to x86_64 path)
