@@ -121,6 +121,24 @@ func CreateGlibcDefinition() *LibraryDefinition {
 		},
 	}
 
+	lib.Functions["puts"] = &Function{
+		Name:       "puts",
+		ReturnType: CTypeInt,
+		Parameters: []Parameter{
+			{Name: "s", Type: CTypePointer}, // const char*
+		},
+	}
+
+	lib.Functions["sprintf"] = &Function{
+		Name:       "sprintf",
+		ReturnType: CTypeInt,
+		Parameters: []Parameter{
+			{Name: "str", Type: CTypePointer},  // char*
+			{Name: "format", Type: CTypePointer}, // const char*
+			// Note: sprintf is variadic
+		},
+	}
+
 	return lib
 }
 
