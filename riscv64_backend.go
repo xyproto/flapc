@@ -1,4 +1,4 @@
-// Completion: 80% - Backend functional, some TODOs for advanced features
+// Completion: 85% - Backend functional, instruction emission working
 package main
 
 import (

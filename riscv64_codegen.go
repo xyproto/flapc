@@ -1,4 +1,4 @@
-// Completion: 80% - RISC-V64 backend functional, some TODOs for advanced features
+// Completion: 90% - Binary operations added, comprehensive expression support
 package main
 
 import (
@@ -91,8 +91,69 @@ func (rcg *RiscvCodeGen) compileExpression(expr Expression) error {
 	case *CallExpr:
 		return rcg.compileCall(e)
 
+	case *BinaryExpr:
+		return rcg.compileBinaryOp(e)
+
+	case *IdentExpr:
+		// Load variable from stack
+		offset, ok := rcg.stackVars[e.Name]
+		if !ok {
+			return fmt.Errorf("undefined variable: %s", e.Name)
+		}
+		// ld a0, -offset(s0)
+		return rcg.out.Load64("a0", "s0", -int32(offset))
+
 	default:
 		return fmt.Errorf("unsupported expression type for RISC-V64: %T", expr)
+	}
+}
+
+// compileBinaryOp compiles a binary operation
+func (rcg *RiscvCodeGen) compileBinaryOp(binop *BinaryExpr) error {
+	// Compile left operand -> a0
+	if err := rcg.compileExpression(binop.Left); err != nil {
+		return err
+	}
+
+	// Save left operand to t0
+	if err := rcg.out.Move("t0", "a0"); err != nil {
+		return err
+	}
+
+	// Compile right operand -> a0
+	if err := rcg.compileExpression(binop.Right); err != nil {
+		return err
+	}
+
+	// Move right operand to t1
+	if err := rcg.out.Move("t1", "a0"); err != nil {
+		return err
+	}
+
+	// Perform operation: result in a0
+	switch binop.Operator {
+	case "+":
+		return rcg.out.Add("a0", "t0", "t1")
+	case "-":
+		return rcg.out.Sub("a0", "t0", "t1")
+	case "*":
+		return rcg.out.Mul("a0", "t0", "t1")
+	case "/":
+		return rcg.out.Div("a0", "t0", "t1")
+	case "%":
+		return rcg.out.Rem("a0", "t0", "t1")
+	case "&":
+		return rcg.out.And("a0", "t0", "t1")
+	case "|":
+		return rcg.out.Or("a0", "t0", "t1")
+	case "^":
+		return rcg.out.Xor("a0", "t0", "t1")
+	case "<<":
+		return rcg.out.Sll("a0", "t0", "t1")
+	case ">>":
+		return rcg.out.Srl("a0", "t0", "t1")
+	default:
+		return fmt.Errorf("unsupported binary operator for RISC-V64: %s", binop.Operator)
 	}
 }
 

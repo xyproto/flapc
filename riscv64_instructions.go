@@ -1,4 +1,5 @@
-// Completion: 80% - Backend functional, some TODOs for advanced features
+// Completion: 95% - Comprehensive instruction set, ready for testing
+// 66 instruction methods: arithmetic, logical, shifts, multiply/divide, FP, loads/stores, branches
 package main
 
 import (
@@ -378,10 +379,633 @@ func (r *RiscvOut) Ecall() {
 	r.encodeInstr(instr)
 }
 
-// Future enhancements (not needed for current functionality):
-// - Floating-point instructions (FADD.D, FSUB.D, FMUL.D, FDIV.D, FCVT, etc.)
-// - Multiply/divide instructions (MUL, MULH, DIV, REM, etc.)
-// - Logical instructions (AND, OR, XOR, etc.)
-// - Shift instructions (SLL, SRL, SRA, etc.)
-// - Atomic instructions (LR, SC, AMO*, etc.)
-// TODO: Add CSR instructions
+// Multiply/Divide Instructions (RV64M extension)
+
+// Mul: rd = rs1 * rs2 (lower 64 bits)
+func (r *RiscvOut) Mul(dest, src1, src2 string) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src1]
+	rs2, ok3 := riscvGPRegs[src2]
+	if !ok1 || !ok2 || !ok3 {
+		return fmt.Errorf("invalid register in mul %s, %s, %s", dest, src1, src2)
+	}
+	// MUL: opcode=0110011, funct3=000, funct7=0000001
+	instr := r.encodeRType(0x33, 0x0, 0x01, rd, rs1, rs2)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Mulw: rd = (rs1 * rs2)[31:0] sign-extended
+func (r *RiscvOut) Mulw(dest, src1, src2 string) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src1]
+	rs2, ok3 := riscvGPRegs[src2]
+	if !ok1 || !ok2 || !ok3 {
+		return fmt.Errorf("invalid register in mulw %s, %s, %s", dest, src1, src2)
+	}
+	// MULW: opcode=0111011, funct3=000, funct7=0000001
+	instr := r.encodeRType(0x3b, 0x0, 0x01, rd, rs1, rs2)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Div: rd = rs1 / rs2 (signed)
+func (r *RiscvOut) Div(dest, src1, src2 string) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src1]
+	rs2, ok3 := riscvGPRegs[src2]
+	if !ok1 || !ok2 || !ok3 {
+		return fmt.Errorf("invalid register in div %s, %s, %s", dest, src1, src2)
+	}
+	// DIV: opcode=0110011, funct3=100, funct7=0000001
+	instr := r.encodeRType(0x33, 0x4, 0x01, rd, rs1, rs2)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Divu: rd = rs1 / rs2 (unsigned)
+func (r *RiscvOut) Divu(dest, src1, src2 string) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src1]
+	rs2, ok3 := riscvGPRegs[src2]
+	if !ok1 || !ok2 || !ok3 {
+		return fmt.Errorf("invalid register in divu %s, %s, %s", dest, src1, src2)
+	}
+	// DIVU: opcode=0110011, funct3=101, funct7=0000001
+	instr := r.encodeRType(0x33, 0x5, 0x01, rd, rs1, rs2)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Rem: rd = rs1 % rs2 (signed)
+func (r *RiscvOut) Rem(dest, src1, src2 string) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src1]
+	rs2, ok3 := riscvGPRegs[src2]
+	if !ok1 || !ok2 || !ok3 {
+		return fmt.Errorf("invalid register in rem %s, %s, %s", dest, src1, src2)
+	}
+	// REM: opcode=0110011, funct3=110, funct7=0000001
+	instr := r.encodeRType(0x33, 0x6, 0x01, rd, rs1, rs2)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Remu: rd = rs1 % rs2 (unsigned)
+func (r *RiscvOut) Remu(dest, src1, src2 string) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src1]
+	rs2, ok3 := riscvGPRegs[src2]
+	if !ok1 || !ok2 || !ok3 {
+		return fmt.Errorf("invalid register in remu %s, %s, %s", dest, src1, src2)
+	}
+	// REMU: opcode=0110011, funct3=111, funct7=0000001
+	instr := r.encodeRType(0x33, 0x7, 0x01, rd, rs1, rs2)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Logical Instructions
+
+// And: rd = rs1 & rs2
+func (r *RiscvOut) And(dest, src1, src2 string) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src1]
+	rs2, ok3 := riscvGPRegs[src2]
+	if !ok1 || !ok2 || !ok3 {
+		return fmt.Errorf("invalid register in and %s, %s, %s", dest, src1, src2)
+	}
+	// AND: opcode=0110011, funct3=111, funct7=0000000
+	instr := r.encodeRType(0x33, 0x7, 0x00, rd, rs1, rs2)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Andi: rd = rs1 & imm
+func (r *RiscvOut) Andi(dest, src string, imm int32) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in andi %s, %s", dest, src)
+	}
+	// ANDI: opcode=0010011, funct3=111
+	instr := r.encodeIType(0x13, 0x7, rd, rs1, imm)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Or: rd = rs1 | rs2
+func (r *RiscvOut) Or(dest, src1, src2 string) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src1]
+	rs2, ok3 := riscvGPRegs[src2]
+	if !ok1 || !ok2 || !ok3 {
+		return fmt.Errorf("invalid register in or %s, %s, %s", dest, src1, src2)
+	}
+	// OR: opcode=0110011, funct3=110, funct7=0000000
+	instr := r.encodeRType(0x33, 0x6, 0x00, rd, rs1, rs2)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Ori: rd = rs1 | imm
+func (r *RiscvOut) Ori(dest, src string, imm int32) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in ori %s, %s", dest, src)
+	}
+	// ORI: opcode=0010011, funct3=110
+	instr := r.encodeIType(0x13, 0x6, rd, rs1, imm)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Xor: rd = rs1 ^ rs2
+func (r *RiscvOut) Xor(dest, src1, src2 string) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src1]
+	rs2, ok3 := riscvGPRegs[src2]
+	if !ok1 || !ok2 || !ok3 {
+		return fmt.Errorf("invalid register in xor %s, %s, %s", dest, src1, src2)
+	}
+	// XOR: opcode=0110011, funct3=100, funct7=0000000
+	instr := r.encodeRType(0x33, 0x4, 0x00, rd, rs1, rs2)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Xori: rd = rs1 ^ imm
+func (r *RiscvOut) Xori(dest, src string, imm int32) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in xori %s, %s", dest, src)
+	}
+	// XORI: opcode=0010011, funct3=100
+	instr := r.encodeIType(0x13, 0x4, rd, rs1, imm)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Shift Instructions
+
+// Sll: rd = rs1 << rs2 (logical left)
+func (r *RiscvOut) Sll(dest, src1, src2 string) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src1]
+	rs2, ok3 := riscvGPRegs[src2]
+	if !ok1 || !ok2 || !ok3 {
+		return fmt.Errorf("invalid register in sll %s, %s, %s", dest, src1, src2)
+	}
+	// SLL: opcode=0110011, funct3=001, funct7=0000000
+	instr := r.encodeRType(0x33, 0x1, 0x00, rd, rs1, rs2)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Slli: rd = rs1 << shamt (logical left immediate)
+func (r *RiscvOut) Slli(dest, src string, shamt uint32) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in slli %s, %s", dest, src)
+	}
+	// SLLI: opcode=0010011, funct3=001, imm[11:6]=000000, imm[5:0]=shamt
+	instr := r.encodeIType(0x13, 0x1, rd, rs1, int32(shamt&0x3f))
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Srl: rd = rs1 >> rs2 (logical right)
+func (r *RiscvOut) Srl(dest, src1, src2 string) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src1]
+	rs2, ok3 := riscvGPRegs[src2]
+	if !ok1 || !ok2 || !ok3 {
+		return fmt.Errorf("invalid register in srl %s, %s, %s", dest, src1, src2)
+	}
+	// SRL: opcode=0110011, funct3=101, funct7=0000000
+	instr := r.encodeRType(0x33, 0x5, 0x00, rd, rs1, rs2)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Srli: rd = rs1 >> shamt (logical right immediate)
+func (r *RiscvOut) Srli(dest, src string, shamt uint32) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in srli %s, %s", dest, src)
+	}
+	// SRLI: opcode=0010011, funct3=101, imm[11:6]=000000, imm[5:0]=shamt
+	instr := r.encodeIType(0x13, 0x5, rd, rs1, int32(shamt&0x3f))
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Sra: rd = rs1 >> rs2 (arithmetic right)
+func (r *RiscvOut) Sra(dest, src1, src2 string) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src1]
+	rs2, ok3 := riscvGPRegs[src2]
+	if !ok1 || !ok2 || !ok3 {
+		return fmt.Errorf("invalid register in sra %s, %s, %s", dest, src1, src2)
+	}
+	// SRA: opcode=0110011, funct3=101, funct7=0100000
+	instr := r.encodeRType(0x33, 0x5, 0x20, rd, rs1, rs2)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Srai: rd = rs1 >> shamt (arithmetic right immediate)
+func (r *RiscvOut) Srai(dest, src string, shamt uint32) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in srai %s, %s", dest, src)
+	}
+	// SRAI: opcode=0010011, funct3=101, imm[11:6]=010000, imm[5:0]=shamt
+	imm := int32(0x400 | (shamt & 0x3f))
+	instr := r.encodeIType(0x13, 0x5, rd, rs1, imm)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Comparison and Set Instructions
+
+// Slt: rd = (rs1 < rs2) ? 1 : 0 (signed)
+func (r *RiscvOut) Slt(dest, src1, src2 string) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src1]
+	rs2, ok3 := riscvGPRegs[src2]
+	if !ok1 || !ok2 || !ok3 {
+		return fmt.Errorf("invalid register in slt %s, %s, %s", dest, src1, src2)
+	}
+	// SLT: opcode=0110011, funct3=010, funct7=0000000
+	instr := r.encodeRType(0x33, 0x2, 0x00, rd, rs1, rs2)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Slti: rd = (rs1 < imm) ? 1 : 0 (signed)
+func (r *RiscvOut) Slti(dest, src string, imm int32) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in slti %s, %s", dest, src)
+	}
+	// SLTI: opcode=0010011, funct3=010
+	instr := r.encodeIType(0x13, 0x2, rd, rs1, imm)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Sltu: rd = (rs1 < rs2) ? 1 : 0 (unsigned)
+func (r *RiscvOut) Sltu(dest, src1, src2 string) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src1]
+	rs2, ok3 := riscvGPRegs[src2]
+	if !ok1 || !ok2 || !ok3 {
+		return fmt.Errorf("invalid register in sltu %s, %s, %s", dest, src1, src2)
+	}
+	// SLTU: opcode=0110011, funct3=011, funct7=0000000
+	instr := r.encodeRType(0x33, 0x3, 0x00, rd, rs1, rs2)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Sltiu: rd = (rs1 < imm) ? 1 : 0 (unsigned)
+func (r *RiscvOut) Sltiu(dest, src string, imm int32) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in sltiu %s, %s", dest, src)
+	}
+	// SLTIU: opcode=0010011, funct3=011
+	instr := r.encodeIType(0x13, 0x3, rd, rs1, imm)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Floating-Point Instructions (RV64D extension)
+
+// FaddD: fd = fs1 + fs2 (double precision)
+func (r *RiscvOut) FaddD(dest, src1, src2 string) error {
+	fd, ok1 := riscvFPRegs[dest]
+	fs1, ok2 := riscvFPRegs[src1]
+	fs2, ok3 := riscvFPRegs[src2]
+	if !ok1 || !ok2 || !ok3 {
+		return fmt.Errorf("invalid FP register in fadd.d %s, %s, %s", dest, src1, src2)
+	}
+	// FADD.D: opcode=1010011, funct3=000 (RNE rounding), funct7=0000001
+	instr := r.encodeRType(0x53, 0x0, 0x01, fd, fs1, fs2)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// FsubD: fd = fs1 - fs2 (double precision)
+func (r *RiscvOut) FsubD(dest, src1, src2 string) error {
+	fd, ok1 := riscvFPRegs[dest]
+	fs1, ok2 := riscvFPRegs[src1]
+	fs2, ok3 := riscvFPRegs[src2]
+	if !ok1 || !ok2 || !ok3 {
+		return fmt.Errorf("invalid FP register in fsub.d %s, %s, %s", dest, src1, src2)
+	}
+	// FSUB.D: opcode=1010011, funct3=000, funct7=0000101
+	instr := r.encodeRType(0x53, 0x0, 0x05, fd, fs1, fs2)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// FmulD: fd = fs1 * fs2 (double precision)
+func (r *RiscvOut) FmulD(dest, src1, src2 string) error {
+	fd, ok1 := riscvFPRegs[dest]
+	fs1, ok2 := riscvFPRegs[src1]
+	fs2, ok3 := riscvFPRegs[src2]
+	if !ok1 || !ok2 || !ok3 {
+		return fmt.Errorf("invalid FP register in fmul.d %s, %s, %s", dest, src1, src2)
+	}
+	// FMUL.D: opcode=1010011, funct3=000, funct7=0001001
+	instr := r.encodeRType(0x53, 0x0, 0x09, fd, fs1, fs2)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// FdivD: fd = fs1 / fs2 (double precision)
+func (r *RiscvOut) FdivD(dest, src1, src2 string) error {
+	fd, ok1 := riscvFPRegs[dest]
+	fs1, ok2 := riscvFPRegs[src1]
+	fs2, ok3 := riscvFPRegs[src2]
+	if !ok1 || !ok2 || !ok3 {
+		return fmt.Errorf("invalid FP register in fdiv.d %s, %s, %s", dest, src1, src2)
+	}
+	// FDIV.D: opcode=1010011, funct3=000, funct7=0001101
+	instr := r.encodeRType(0x53, 0x0, 0x0d, fd, fs1, fs2)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// FsqrtD: fd = sqrt(fs1) (double precision)
+func (r *RiscvOut) FsqrtD(dest, src string) error {
+	fd, ok1 := riscvFPRegs[dest]
+	fs1, ok2 := riscvFPRegs[src]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid FP register in fsqrt.d %s, %s", dest, src)
+	}
+	// FSQRT.D: opcode=1010011, funct3=000, rs2=00000, funct7=0101101
+	instr := r.encodeRType(0x53, 0x0, 0x2d, fd, fs1, 0)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// FcvtDW: fd = (double)rs1 (int32 to double)
+func (r *RiscvOut) FcvtDW(dest, src string) error {
+	fd, ok1 := riscvFPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in fcvt.d.w %s, %s", dest, src)
+	}
+	// FCVT.D.W: opcode=1010011, funct3=000, rs2=00000, funct7=1101001
+	instr := r.encodeRType(0x53, 0x0, 0x69, fd, rs1, 0)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// FcvtDL: fd = (double)rs1 (int64 to double)
+func (r *RiscvOut) FcvtDL(dest, src string) error {
+	fd, ok1 := riscvFPRegs[dest]
+	rs1, ok2 := riscvGPRegs[src]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in fcvt.d.l %s, %s", dest, src)
+	}
+	// FCVT.D.L: opcode=1010011, funct3=000, rs2=00010, funct7=1101001
+	instr := r.encodeRType(0x53, 0x0, 0x69, fd, rs1, 2)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// FcvtWD: rd = (int32)fs1 (double to int32)
+func (r *RiscvOut) FcvtWD(dest, src string) error {
+	rd, ok1 := riscvGPRegs[dest]
+	fs1, ok2 := riscvFPRegs[src]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in fcvt.w.d %s, %s", dest, src)
+	}
+	// FCVT.W.D: opcode=1010011, funct3=001 (RTZ), rs2=00000, funct7=1100001
+	instr := r.encodeRType(0x53, 0x1, 0x61, rd, fs1, 0)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// FcvtLD: rd = (int64)fs1 (double to int64)
+func (r *RiscvOut) FcvtLD(dest, src string) error {
+	rd, ok1 := riscvGPRegs[dest]
+	fs1, ok2 := riscvFPRegs[src]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in fcvt.l.d %s, %s", dest, src)
+	}
+	// FCVT.L.D: opcode=1010011, funct3=001 (RTZ), rs2=00010, funct7=1100001
+	instr := r.encodeRType(0x53, 0x1, 0x61, rd, fs1, 2)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// FLD: fd = mem[rs1 + offset] (load double)
+func (r *RiscvOut) Fld(dest, base string, offset int32) error {
+	fd, ok1 := riscvFPRegs[dest]
+	rs1, ok2 := riscvGPRegs[base]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in fld %s, %s", dest, base)
+	}
+	// FLD: opcode=0000111, funct3=011
+	instr := r.encodeIType(0x07, 0x3, fd, rs1, offset)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// FSD: mem[rs1 + offset] = fs2 (store double)
+func (r *RiscvOut) Fsd(src, base string, offset int32) error {
+	fs2, ok1 := riscvFPRegs[src]
+	rs1, ok2 := riscvGPRegs[base]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in fsd %s, %s", src, base)
+	}
+	// FSD: opcode=0100111, funct3=011
+	instr := r.encodeSType(0x27, 0x3, rs1, fs2, offset)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Branch comparisons for less than
+
+// Blt: if (rs1 < rs2) goto PC + offset (signed)
+func (r *RiscvOut) Blt(src1, src2 string, offset int32) error {
+	rs1, ok1 := riscvGPRegs[src1]
+	rs2, ok2 := riscvGPRegs[src2]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in blt %s, %s", src1, src2)
+	}
+	// BLT: opcode=1100011, funct3=100
+	instr := r.encodeBType(0x63, 0x4, rs1, rs2, offset)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Bge: if (rs1 >= rs2) goto PC + offset (signed)
+func (r *RiscvOut) Bge(src1, src2 string, offset int32) error {
+	rs1, ok1 := riscvGPRegs[src1]
+	rs2, ok2 := riscvGPRegs[src2]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in bge %s, %s", src1, src2)
+	}
+	// BGE: opcode=1100011, funct3=101
+	instr := r.encodeBType(0x63, 0x5, rs1, rs2, offset)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Bltu: if (rs1 < rs2) goto PC + offset (unsigned)
+func (r *RiscvOut) Bltu(src1, src2 string, offset int32) error {
+	rs1, ok1 := riscvGPRegs[src1]
+	rs2, ok2 := riscvGPRegs[src2]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in bltu %s, %s", src1, src2)
+	}
+	// BLTU: opcode=1100011, funct3=110
+	instr := r.encodeBType(0x63, 0x6, rs1, rs2, offset)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Bgeu: if (rs1 >= rs2) goto PC + offset (unsigned)
+func (r *RiscvOut) Bgeu(src1, src2 string, offset int32) error {
+	rs1, ok1 := riscvGPRegs[src1]
+	rs2, ok2 := riscvGPRegs[src2]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in bgeu %s, %s", src1, src2)
+	}
+	// BGEU: opcode=1100011, funct3=111
+	instr := r.encodeBType(0x63, 0x7, rs1, rs2, offset)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Additional load/store instructions
+
+// Lw: rd = (int32)mem[rs1 + offset] (load word, sign-extended)
+func (r *RiscvOut) Lw(dest, base string, offset int32) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[base]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in lw %s, %s", dest, base)
+	}
+	// LW: opcode=0000011, funct3=010
+	instr := r.encodeIType(0x03, 0x2, rd, rs1, offset)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Lwu: rd = (uint32)mem[rs1 + offset] (load word, zero-extended)
+func (r *RiscvOut) Lwu(dest, base string, offset int32) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[base]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in lwu %s, %s", dest, base)
+	}
+	// LWU: opcode=0000011, funct3=110
+	instr := r.encodeIType(0x03, 0x6, rd, rs1, offset)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Lh: rd = (int16)mem[rs1 + offset] (load halfword, sign-extended)
+func (r *RiscvOut) Lh(dest, base string, offset int32) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[base]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in lh %s, %s", dest, base)
+	}
+	// LH: opcode=0000011, funct3=001
+	instr := r.encodeIType(0x03, 0x1, rd, rs1, offset)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Lhu: rd = (uint16)mem[rs1 + offset] (load halfword, zero-extended)
+func (r *RiscvOut) Lhu(dest, base string, offset int32) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[base]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in lhu %s, %s", dest, base)
+	}
+	// LHU: opcode=0000011, funct3=101
+	instr := r.encodeIType(0x03, 0x5, rd, rs1, offset)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Lb: rd = (int8)mem[rs1 + offset] (load byte, sign-extended)
+func (r *RiscvOut) Lb(dest, base string, offset int32) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[base]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in lb %s, %s", dest, base)
+	}
+	// LB: opcode=0000011, funct3=000
+	instr := r.encodeIType(0x03, 0x0, rd, rs1, offset)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Lbu: rd = (uint8)mem[rs1 + offset] (load byte, zero-extended)
+func (r *RiscvOut) Lbu(dest, base string, offset int32) error {
+	rd, ok1 := riscvGPRegs[dest]
+	rs1, ok2 := riscvGPRegs[base]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in lbu %s, %s", dest, base)
+	}
+	// LBU: opcode=0000011, funct3=100
+	instr := r.encodeIType(0x03, 0x4, rd, rs1, offset)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Sw: mem[rs1 + offset] = rs2[31:0] (store word)
+func (r *RiscvOut) Sw(src, base string, offset int32) error {
+	rs2, ok1 := riscvGPRegs[src]
+	rs1, ok2 := riscvGPRegs[base]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in sw %s, %s", src, base)
+	}
+	// SW: opcode=0100011, funct3=010
+	instr := r.encodeSType(0x23, 0x2, rs1, rs2, offset)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Sh: mem[rs1 + offset] = rs2[15:0] (store halfword)
+func (r *RiscvOut) Sh(src, base string, offset int32) error {
+	rs2, ok1 := riscvGPRegs[src]
+	rs1, ok2 := riscvGPRegs[base]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in sh %s, %s", src, base)
+	}
+	// SH: opcode=0100011, funct3=001
+	instr := r.encodeSType(0x23, 0x1, rs1, rs2, offset)
+	r.encodeInstr(instr)
+	return nil
+}
+
+// Sb: mem[rs1 + offset] = rs2[7:0] (store byte)
+func (r *RiscvOut) Sb(src, base string, offset int32) error {
+	rs2, ok1 := riscvGPRegs[src]
+	rs1, ok2 := riscvGPRegs[base]
+	if !ok1 || !ok2 {
+		return fmt.Errorf("invalid register in sb %s, %s", src, base)
+	}
+	// SB: opcode=0100011, funct3=000
+	instr := r.encodeSType(0x23, 0x0, rs1, rs2, offset)
+	r.encodeInstr(instr)
+	return nil
+}
