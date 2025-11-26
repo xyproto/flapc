@@ -4110,48 +4110,60 @@ func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
 	zeroJumpItoa := acg.eb.text.Len()
 	acg.out.out.writer.WriteBytes([]byte{0x00, 0x00, 0x00, 0xb4}) // Placeholder
 
-	// Conversion loop: extract digits backwards
+	// Conversion loop: extract digits backwards using proper instruction methods
 	// loop_start:
 	loopStartItoa := acg.eb.text.Len()
 
-	// Use x10-x15 to avoid conflicts with other registers
 	// x10 = 10 (divisor)
-	acg.out.out.writer.WriteBytes([]byte{0x4a, 0x01, 0x80, 0xd2}) // mov x10, #10
-	// x11 = x0 / 10
-	acg.out.out.writer.WriteBytes([]byte{0x0b, 0x08, 0xca, 0x9a}) // udiv x11, x0, x10
-	// x12 = x0 % 10
+	if err := acg.out.MovImm64("x10", 10); err != nil {
+		return err
+	}
+
+	// x11 = x0 / 10 (unsigned division)
+	if err := acg.out.UDiv64("x11", "x0", "x10"); err != nil {
+		return err
+	}
+
+	// x12 = x0 % 10 (compute as: x12 = x0 - (x11 * 10))
 	// First: x13 = x11 * 10
-	acg.out.out.writer.WriteBytes([]byte{0x6d, 0x29, 0x0a, 0x9b}) // mul x13, x11, x10
+	if err := acg.out.Mul64("x13", "x11", "x10"); err != nil {
+		return err
+	}
 	// Then: x12 = x0 - x13
-	acg.out.out.writer.WriteBytes([]byte{0x0c, 0x00, 0x0d, 0xcb}) // sub x12, x0, x13
+	if err := acg.out.SubReg64("x12", "x0", "x13"); err != nil {
+		return err
+	}
 
-	// Convert digit to ASCII: x12 = x12 + '0' (48)
-	// add x12, x12, #48
-	acg.out.out.writer.WriteBytes([]byte{0x8c, 0xc0, 0x00, 0x91})
+	// Convert digit to ASCII: x12 = x12 + 48 ('0')
+	if err := acg.out.AddImm64("x12", "x12", 48); err != nil {
+		return err
+	}
 
-	// Store byte at [x4] then decrement x4 separately
-	// strb w12, [x4]
-	acg.out.out.writer.WriteBytes([]byte{0x8c, 0x00, 0x00, 0x39})
-	// sub x4, x4, #1
-	acg.out.out.writer.WriteBytes([]byte{0x84, 0x04, 0x00, 0xd1})
+	// Store byte at [x4, #0]
+	if err := acg.out.StrbImm("x12", "x4", 0); err != nil {
+		return err
+	}
 
-	// Increment digit count
-	// add x5, x5, #1
-	acg.out.out.writer.WriteBytes([]byte{0xa5, 0x04, 0x00, 0x91})
+	// Decrement buffer pointer: x4 = x4 - 1
+	if err := acg.out.SubImm64("x4", "x4", 1); err != nil {
+		return err
+	}
 
-	// x0 = x0 / 10 (for next iteration)
-	acg.out.out.writer.WriteBytes([]byte{0xe0, 0x03, 0x0b, 0xaa}) // mov x0, x11
+	// Increment digit count: x5 = x5 + 1
+	if err := acg.out.AddImm64("x5", "x5", 1); err != nil {
+		return err
+	}
 
-	// if x0 != 0, continue loop
-	// cbnz x0, loop_start
+	// x0 = x11 (quotient becomes new number for next iteration)
+	if err := acg.out.MovReg64("x0", "x11"); err != nil {
+		return err
+	}
+
+	// if x0 != 0, continue loop (branch back to loop_start)
 	loopOffsetItoa := int32(loopStartItoa - (acg.eb.text.Len() + 4))
-	cbnzInstrItoa := uint32(0xb5000000) | (uint32(loopOffsetItoa>>2)&0x7ffff)<<5
-	acg.out.out.writer.WriteBytes([]byte{
-		byte(cbnzInstrItoa),
-		byte(cbnzInstrItoa >> 8),
-		byte(cbnzInstrItoa >> 16),
-		byte(cbnzInstrItoa >> 24),
-	})
+	if err := acg.out.CompareAndBranchNonZero64("x0", loopOffsetItoa); err != nil {
+		return err
+	}
 
 	// After loop, x4 points to char before first digit, x5 = digit count
 	// Add minus sign if negative

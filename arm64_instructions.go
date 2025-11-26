@@ -432,10 +432,95 @@ func (a *ARM64Out) BranchCond(cond string, offset int32) error {
 	return nil
 }
 
+// UDIV: UDIV Xd, Xn, Xm (unsigned division)
+func (a *ARM64Out) UDiv64(dest, dividend, divisor string) error {
+	rd, ok := arm64GPRegs[dest]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", dest)
+	}
+	rn, ok := arm64GPRegs[dividend]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", dividend)
+	}
+	rm, ok := arm64GPRegs[divisor]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", divisor)
+	}
+
+	// UDIV (64-bit): sf=1, op=0, S=0, op2=000010
+	instr := uint32(0x9ac00800) | (rm << 16) | (rn << 5) | rd
+	a.encodeInstr(instr)
+	return nil
+}
+
+// MUL: MUL Xd, Xn, Xm (multiply, implemented as MADD Xd, Xn, Xm, XZR)
+func (a *ARM64Out) Mul64(dest, op1, op2 string) error {
+	rd, ok := arm64GPRegs[dest]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", dest)
+	}
+	rn, ok := arm64GPRegs[op1]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", op1)
+	}
+	rm, ok := arm64GPRegs[op2]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", op2)
+	}
+
+	// MADD (64-bit): sf=1, op54=00, op31=000, Rm, o0=0, Ra=XZR(31), Rn, Rd
+	ra := uint32(31) // XZR
+	instr := uint32(0x9b000000) | (rm << 16) | (ra << 10) | (rn << 5) | rd
+	a.encodeInstr(instr)
+	return nil
+}
+
+// SUB (register): SUB Xd, Xn, Xm
+func (a *ARM64Out) SubReg64(dest, op1, op2 string) error {
+	rd, ok := arm64GPRegs[dest]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", dest)
+	}
+	rn, ok := arm64GPRegs[op1]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", op1)
+	}
+	rm, ok := arm64GPRegs[op2]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", op2)
+	}
+
+	// SUB (shifted register, 64-bit): sf=1, op=1, S=0, shift=00
+	instr := uint32(0xcb000000) | (rm << 16) | (rn << 5) | rd
+	a.encodeInstr(instr)
+	return nil
+}
+
+// STRB: STRB Wt, [Xn{, #offset}] (store byte, zero offset version)
+func (a *ARM64Out) StrbImm(src, base string, offset int32) error {
+	rt, ok := arm64GPRegs[src]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", src)
+	}
+	rn, ok := arm64GPRegs[base]
+	if !ok {
+		return fmt.Errorf("invalid ARM64 register: %s", base)
+	}
+
+	if offset < 0 || offset >= 4096 {
+		return fmt.Errorf("STRB offset out of range: %d", offset)
+	}
+
+	// STRB (immediate, unsigned offset): size=00, V=0, opc=00
+	imm12 := uint32(offset)
+	instr := uint32(0x39000000) | (imm12 << 10) | (rn << 5) | rt
+	a.encodeInstr(instr)
+	return nil
+}
+
 // Future enhancements (not needed for current functionality):
 // - More floating-point instructions (FADD, FSUB, FMUL, FDIV, FCVT, etc.)
 // - SIMD/NEON instructions (for advanced vector operations)
 // - Load/store pair instructions (STP, LDP) for optimization
-// - More arithmetic instructions (MUL, UDIV, SDIV, etc.)
 // - Logical instructions (AND, OR, EOR, etc.)
 // - Shift instructions (LSL, LSR, ASR, ROR)
