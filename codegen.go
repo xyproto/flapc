@@ -99,6 +99,9 @@ type FlapCompiler struct {
 	cContext             bool                          // When true, compile expressions for C FFI (affects strings, pointers, ints)
 	currentArena         int                           // Current arena index (starts at 1 for global arena = meta-arena[0])
 	usesArenas           bool                          // Track if program uses any arena blocks
+	arenaStack           []ArenaScope                  // Stack of active arena scopes
+	globalArenaInit      bool                          // Track if global arena has been initialized
+	importedFunctions    []string                      // Track imported C functions (malloc, free, etc.)
 	cacheEnabledLambdas  map[string]bool               // Track which lambdas use cme
 	deferredExprs        [][]Expression                // Stack of deferred expressions per scope (LIFO order)
 	memoCaches           map[string]bool               // Track memoization caches that need storage allocation
@@ -4312,10 +4315,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			// Size: 8 + (count * 16) bytes
 			size := 8 + (count * 16)
 
-			// Allocate memory using malloc
+			// Allocate memory using arena allocator
 			fc.out.MovImmToReg("rdi", fmt.Sprintf("%d", size))
-			fc.trackFunctionCall("malloc")
-			fc.eb.GenerateCallInstruction("malloc")
+			fc.callArenaAlloc() // Use arena instead of malloc
 			// rax now contains pointer to allocated memory
 
 			// Save list pointer
@@ -6835,12 +6837,11 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.Emit([]byte{0x48, 0x83, 0xc0, 0x0f}) // add rax, 15
 	fc.out.Emit([]byte{0x48, 0x83, 0xe0, 0xf0}) // and rax, ~15
 
-	// DO NOT USE MALLOC! See MEMORY.md - string concat should use arena allocation
-	// TODO: Replace with arena allocation
-	fc.out.MovRegToReg("rdi", "rax")
-	fc.trackFunctionCall("malloc") // Track for PLT patching
-	fc.eb.GenerateCallInstruction("malloc")
-	fc.out.MovRegToReg("r10", "rax") // r10 = result pointer
+	// Use arena allocation instead of malloc
+	// rax contains the size needed
+	fc.out.MovRegToReg("rdi", "rax") // rdi = size
+	fc.callArenaAlloc()               // Allocate from current arena
+	fc.out.MovRegToReg("r10", "rax")  // r10 = result pointer
 
 	// Write total count to result
 	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2a, 0xc3}) // cvtsi2sd xmm0, rbx
