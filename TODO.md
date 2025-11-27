@@ -71,7 +71,7 @@ This document tracks the implementation of the 3 critical features for Flap's co
 **Goal:** Allow passing lambdas and blocks as function parameters
 
 **Current State:**
-- Can store lambdas in variables: `f := x -> x * 2`  
+- Can store lambdas in variables: `f := x -> x * 2`
 - Can compose function calls: `add_five(double(10))`
 - Cannot pass lambdas as parameters: `apply(f, x)` fails
 
@@ -90,7 +90,7 @@ This document tracks the implementation of the 3 critical features for Flap's co
 
 **Current State:**
 - Operator added to grammar ✅
-- Parser support complete ✅  
+- Parser support complete ✅
 - AST node exists ✅
 - Codegen stub exists ✅
 - Full implementation blocked on closure capture
@@ -141,7 +141,7 @@ Replace malloc with arena allocation for all Flap data structures (strings, list
 ```
 Arena structure:
 - Base pointer
-- Current pointer  
+- Current pointer
 - Size/capacity
 - Parent arena (for nested scopes)
 ```
@@ -295,26 +295,4 @@ arena.temp()      // Temporary scratch arena
 
 ---
 
-## Timeline Estimate
-
-**Functional Support:** 3-5 days
-- Blocks as arguments: 1-2 days
-- Function composition: 1-2 days
-- Pipeline fixes: 1 day
-
-**Arena Allocator:** 2-3 days
-- Core allocator: 1 day
-- Integration: 1 day
-- Testing/benchmarks: 1 day
-
-**Optimizer:** 2-4 days
-- Type system fixes: 1-2 days
-- Optimization work: 1-2 days
-- Testing/tuning: 1 day
-
-**Total:** ~7-12 days of focused work
-
----
-
-*Last Updated: 2025-11-27*
-*Status: Functional support in progress*
+*Status: Functional and arena support in progress*

@@ -3530,9 +3530,9 @@ arena {
     # Scoped arena - all allocations freed at block exit
     frame_data := "temporary"
     temp_list := [1, 2, 3]
-    
+
     do_work(temp_list)
-    
+
 } # <-- All arena allocations freed here
 
 # global_data still valid, frame_data freed
