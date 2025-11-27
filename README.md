@@ -90,6 +90,9 @@ println("Done!")
 * License: BSD-3
 # Flap: The Gamedev Language
 
+
+# The rest is written by an LLM:
+
 **Flap compiles directly to x86_64, ARM64, and RISC-V machine code. Zero dependencies. Zero runtime. Pure metal.**
 
 ```flap
@@ -189,7 +192,7 @@ LIFO resource cleanup, like Go:
 file := open("data.txt") or! ret
 defer close(file)
 
-buffer := c.malloc(1024) or! ret  
+buffer := c.malloc(1024) or! ret
 defer c.free(buffer)
 
 // Cleanup happens automatically on return/error
@@ -288,39 +291,39 @@ running := 1
         | e == 0 => break
         | sdl.SDL_EventType(e) == sdl.SDL_EVENT_QUIT => { running = 0; break }
     }
-    
+
     // Input
     keys := sdl.SDL_GetKeyboardState(0)
     | keys[sdl.SDL_SCANCODE_W] => paddle1_y -= PADDLE_SPEED
     | keys[sdl.SDL_SCANCODE_S] => paddle1_y += PADDLE_SPEED
     | keys[sdl.SDL_SCANCODE_UP] => paddle2_y -= PADDLE_SPEED
     | keys[sdl.SDL_SCANCODE_DOWN] => paddle2_y += PADDLE_SPEED
-    
+
     // Physics
     ball_x += ball_vx
     ball_y += ball_vy
-    
+
     | ball_y <= 0 or ball_y >= HEIGHT => ball_vy = -ball_vy
     | ball_x <= 0 or ball_x >= WIDTH => {
         ball_x = 400.0
         ball_y = 300.0
     }
-    
+
     // Render
     sdl.SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)
     sdl.SDL_RenderClear(renderer)
     sdl.SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255)
-    
+
     // Draw paddles
     sdl.SDL_RenderFillRect(renderer, 10, paddle1_y, 15, 100)
     sdl.SDL_RenderFillRect(renderer, WIDTH - 25, paddle2_y, 15, 100)
-    
+
     // Draw ball
     sdl.SDL_RenderFillRect(renderer, ball_x, ball_y, 15, 15)
-    
+
     sdl.SDL_RenderPresent(renderer)
     sdl.SDL_Delay(16)
-    
+
     | running == 0 => break
 }
 ```
@@ -452,7 +455,7 @@ Particle = (x, y) -> {x: x, y: y, vx: ??, vy: ??}
 
 arena {
     particles = @ i in 0..<1000 { Particle(400, 300) }
-    
+
     @ {
         particles = particles | p -> {
             x: p.x + p.vx,
@@ -460,7 +463,7 @@ arena {
             vx: p.vx,
             vy: p.vy + 0.1  // Gravity
         }
-        
+
         @ p in particles { draw_pixel(p.x, p.y) }
     }
 }
