@@ -8739,6 +8739,13 @@ func (fc *FlapCompiler) initializeMetaArenaAndGlobalArena() {
 	// Initialize meta-arena system - all arenas are malloc'd at runtime
 	const initialCapacity = 4
 	
+	// DEBUG: Print that we're starting initialization
+	if false { // Set to true for debugging
+		fc.out.LeaSymbolToReg("rdi", "_str_debug_default_arena")
+		fc.trackFunctionCall("printf")
+		fc.eb.GenerateCallInstruction("printf")
+	}
+	
 	// Allocate meta-arena array: malloc(8 * 4) = 32 bytes for 4 arena pointers
 	fc.out.MovImmToReg("rdi", fmt.Sprintf("%d", 8*initialCapacity))
 	fc.trackFunctionCall("malloc")

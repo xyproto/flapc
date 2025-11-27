@@ -386,8 +386,8 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 
 	fc.pushDeferScope()
 
-	// Arena initialization happens in codegen.go via initializeMetaArenaAndGlobalArena()
-	// No static initialization needed here - all arenas are malloc'd at runtime
+	// Initialize arena system (malloc'd arenas at runtime)
+	fc.initializeMetaArenaAndGlobalArena()
 
 	// Generate code with symbols collected
 	for _, stmt := range program.Statements {
