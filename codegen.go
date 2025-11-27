@@ -5369,108 +5369,90 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 		// Convert value to Flap string  
 		// First check if already a string
 		exprType := fc.getExprType(expr.Expr)
-		if exprType != "string" {
-			// Convert number to Flap string
-		// xmm0 contains the number as float64
-		// Use the exact same logic as the str() builtin (lines 13756-13865)
-		
-		// Allocate 32 bytes for ASCII conversion buffer
-		fc.out.SubImmFromReg("rsp", 32)
-		// Save buffer address before compileFloatToString changes rsp
-		fc.out.MovRegToReg("r15", "rsp")
-
-		// Convert float64 in xmm0 to ASCII string at r15
-		// Result: rsi = string start, rdx = length
-		fc.compileFloatToString("xmm0", "r15")
-
-		// Check if last char is newline and adjust length
-		fc.out.MovRegToReg("rax", "rdx")
-		fc.out.SubImmFromReg("rax", 1)
-		fc.out.MovRegToReg("r10", "rsi")
-		fc.out.AddRegToReg("r10", "rax")
-		// Load byte at r10: movzx r10d, byte [r10]
-		fc.out.Emit([]byte{0x45, 0x0f, 0xb6, 0x12})
-		// Compare r10 with 10 (newline): cmp r10, 10
-		fc.out.Emit([]byte{0x49, 0x83, 0xfa, 0x0a})
-		skipNewlineLabel := fc.eb.text.Len()
-		fc.out.JumpConditional(JumpNotEqual, 0)
-		skipNewlineEnd := fc.eb.text.Len()
-
-		// Has newline - decrement length
-		fc.out.SubImmFromReg("rdx", 1)
-
-		// Skip target
-		skipNewline := fc.eb.text.Len()
-		fc.patchJumpImmediate(skipNewlineLabel+2, int32(skipNewline-skipNewlineEnd))
-
-		// Calculate map size: 8 + length * 16
-		fc.out.MovRegToReg("rdi", "rdx")
-		fc.out.Emit([]byte{0x48, 0xc1, 0xe7, 0x04}) // shl rdi, 4
-		fc.out.AddImmToReg("rdi", 8)
-
-		// Save rsi and rdx before malloc
-		fc.out.PushReg("rsi")
-		fc.out.PushReg("rdx")
-
-		// Call malloc
-		fc.trackFunctionCall("malloc")
-		fc.eb.GenerateCallInstruction("malloc")
-
-		// Restore
-		fc.out.PopReg("rdx")
-		fc.out.PopReg("rsi")
-
-		// Write count
-		fc.out.Cvtsi2sd("xmm1", "rdx")
-		fc.out.MovXmmToMem("xmm1", "rax", 0)
-
-		// Save map pointer
-		fc.out.MovRegToReg("r11", "rax")
-
-		// Loop to build map
-		fc.out.XorRegWithReg("rcx", "rcx")
-		fc.out.MovRegToReg("rdi", "rax")
-		fc.out.AddImmToReg("rdi", 8)
-
-		loopStart := fc.eb.text.Len()
-
-		// cmp rcx, rdx
-		fc.out.Emit([]byte{0x48, 0x39, 0xd1})
-		loopEndJump := fc.eb.text.Len()
-		fc.out.JumpConditional(JumpGreaterOrEqual, 0)
-		loopEndJumpEnd := fc.eb.text.Len()
-
-		// Write key
-		fc.out.Cvtsi2sd("xmm1", "rcx")
-		fc.out.MovXmmToMem("xmm1", "rdi", 0)
-		fc.out.AddImmToReg("rdi", 8)
-
-		// Load char and write value: movzx r10, byte [rsi]
-		fc.out.Emit([]byte{0x4c, 0x0f, 0xb6, 0x16})
-		fc.out.Cvtsi2sd("xmm1", "r10")
-		fc.out.MovXmmToMem("xmm1", "rdi", 0)
-		fc.out.AddImmToReg("rdi", 8)
-
-		// Increment
-		fc.out.AddImmToReg("rcx", 1)
-		fc.out.AddImmToReg("rsi", 1)
-
-		// Jump back
-		loopEnd := fc.eb.text.Len()
-		offset := loopStart - (loopEnd + 2)
-		fc.out.Emit([]byte{0xeb, byte(offset)})
-
-		// Loop done
-		loopDone := fc.eb.text.Len()
-		fc.patchJumpImmediate(loopEndJump+2, int32(loopDone-loopEndJumpEnd))
-
-			// Return map pointer as float64: movq xmm0, r11
-			fc.out.Emit([]byte{0x66, 0x49, 0x0f, 0x6e, 0xc3})
-
-			// Clean up
-			fc.out.AddImmToReg("rsp", 32)
+		if exprType == "string" {
+			// Already a string, no conversion needed
+			// xmm0 already has correct value from fc.compileExpression(expr.Expr)
+			return
 		}
-		// If already string, xmm0 has correct value, nothing to do
+		
+		// Convert number to string using sprintf
+		// Allocate buffer for number string (32 bytes enough for any number)
+		fc.out.SubImmFromReg("rsp", 32)
+		fc.out.MovRegToReg("r15", "rsp") // r15 = buffer pointer
+		
+		// sprintf(buffer, "%.15g", number)
+		shadowSpace := fc.allocateShadowSpace()
+		fc.out.MovRegToReg(fc.getIntArgReg(0), "r15") // buffer
+		
+		// Format string
+		fmtLabel := fmt.Sprintf("numstr_fmt_%d", fc.stringCounter)
+		fc.stringCounter++
+		fc.eb.Define(fmtLabel, "%.15g\x00")
+		fc.out.LeaSymbolToReg(fc.getIntArgReg(1), fmtLabel)
+		
+		// Number in xmm0 already (from fc.compileExpression above)
+		// For Windows, need to copy to correct XMM register
+		if fc.eb.target.OS() == OSWindows {
+			fc.out.MovXmmToXmm("xmm2", "xmm0") // 3rd arg
+		}
+		
+		fc.trackFunctionCall("sprintf")
+		fc.eb.GenerateCallInstruction("sprintf")
+		fc.deallocateShadowSpace(shadowSpace)
+		
+		// sprintf returns length in rax, buffer is at r15
+		fc.out.MovRegToReg("r13", "rax") // r13 = length
+		
+		// Convert C string to Flap string: allocate 8 + len*16 bytes
+		fc.out.MovRegToReg("rax", "r13")
+		fc.out.ShlRegByImm("rax", 4) // len * 16
+		fc.out.AddImmToReg("rax", 8) // + 8 for count
+		fc.out.MovRegToReg("rdi", "rax")
+		fc.callArenaAlloc()
+		fc.out.MovRegToReg("r14", "rax") // r14 = Flap string
+		
+		// Store count
+		fc.out.Cvtsi2sd("xmm0", "r13")
+		fc.out.MovXmmToMem("xmm0", "r14", 0)
+		
+		// Copy characters to Flap string
+		fc.out.XorRegWithReg("rcx", "rcx") // index
+		copyLoopStart := fc.eb.text.Len()
+		fc.out.CmpRegToReg("rcx", "r13")
+		copyLoopEnd := fc.eb.text.Len()
+		fc.out.JumpConditional(JumpGreaterOrEqual, 0)
+		
+		// Load character: movzx rax, byte [r15 + rcx]
+		fc.out.MovRegToReg("rax", "r15")
+		fc.out.AddRegToReg("rax", "rcx")
+		fc.out.Emit([]byte{0x48, 0x0f, 0xb6, 0x00}) // movzx rax, byte [rax]
+		
+		// Store to Flap string at offset 8 + rcx*16
+		fc.out.MovRegToReg("rdx", "rcx")
+		fc.out.ShlRegByImm("rdx", 4) // rcx * 16
+		fc.out.AddImmToReg("rdx", 8) // + 8
+		fc.out.AddRegToReg("rdx", "r14") // rdx = string_ptr + offset
+		
+		// Store index as float64
+		fc.out.Cvtsi2sd("xmm0", "rcx")
+		fc.out.MovXmmToMem("xmm0", "rdx", 0)
+		
+		// Store char as float64
+		fc.out.Cvtsi2sd("xmm0", "rax")
+		fc.out.MovXmmToMem("xmm0", "rdx", 8)
+		
+		// Increment and loop
+		fc.out.AddImmToReg("rcx", 1)
+		backOffset := int32(copyLoopStart - (fc.eb.text.Len() + UnconditionalJumpSize))
+		fc.out.JumpUnconditional(backOffset)
+		
+		// Loop end
+		loopEndTarget := fc.eb.text.Len()
+		fc.patchJumpImmediate(copyLoopEnd+2, int32(loopEndTarget-(copyLoopEnd+ConditionalJumpSize)))
+		
+		// Clean up buffer and return Flap string pointer in xmm0
+		fc.out.AddImmToReg("rsp", 32)
+		fc.out.MovqRegToXmm("xmm0", "r14")
 
 	case "list":
 		// Convert C array to Flap list
