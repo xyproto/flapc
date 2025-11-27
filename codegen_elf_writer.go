@@ -21,7 +21,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 
 	// Build pltFunctions list from all called functions
 	// Start with essential functions that runtime helpers need
-	pltFunctions := []string{"printf", "exit", "malloc", "free", "realloc", "strlen", "pow", "fflush"}
+	pltFunctions := []string{"printf", "sprintf", "exit", "malloc", "free", "realloc", "strlen", "pow", "fflush"}
 
 	// Add all functions from usedFunctions (includes call() dynamic calls)
 	pltSet := make(map[string]bool)

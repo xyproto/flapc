@@ -3463,19 +3463,29 @@ func (p *Parser) parsePostfix() Expression {
 			// Parse the cast type
 			var castType string
 			if p.current.Type == TOKEN_IDENT {
-				// All type keywords are contextual - check if this identifier is a valid type name
+				// All Flap and C types are valid after 'as'
 				validTypes := map[string]bool{
+					// C integer types
 					"int8": true, "int16": true, "int32": true, "int64": true,
 					"uint8": true, "uint16": true, "uint32": true, "uint64": true,
-					"float32": true, "float64": true, "cstr": true, "cstring": true,
-					"ptr": true, "pointer": true,
-					"int": true, "uint": true,
-					"number": true, "string": true, "list": true, "address": true,
+					"char": true, "short": true, "int": true, "long": true,
+					"uchar": true, "ushort": true, "uint": true, "ulong": true,
+					"size_t": true, "ssize_t": true, "ptrdiff_t": true,
+					// C floating point types
+					"float": true, "float32": true, "float64": true, "double": true,
+					// C string/pointer types
+					"cstr": true, "cstring": true, "ptr": true, "pointer": true,
+					// Flap types
+					"number": true, "num": true, "string": true, "str": true,
+					"list": true, "map": true, "address": true, "addr": true,
+					"bool": true, "boolean": true,
+					// Type aliases
+					"void": true,
 				}
 				if validTypes[p.current.Value] {
 					castType = p.current.Value
 				} else {
-					p.error("expected type after 'as'")
+					p.error("expected valid type after 'as' (e.g., string, int, float, ptr)")
 				}
 			} else {
 				p.error("expected type after 'as'")
