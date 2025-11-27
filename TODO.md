@@ -1,30 +1,5 @@
 # Flap TODO
 
-## Platform Support
-
-### x86_64 + Linux ✅
-Complete and tested.
-
-### x86_64 + Windows ✅  
-Complete and tested (Wine + native).
-
-### ARM64 + Linux ✅
-Complete and tested.
-
-### RISC-V + Linux 🚧
-- Test on real hardware
-- Validate all instructions
-- Complete dynamic linking
-
-### ARM64 + macOS 🚧
-- Implement Mach-O loader
-- Test on Apple Silicon
-- Handle macOS syscalls
-
-### x86_64 + macOS 🚧
-- Complete Mach-O support
-- Test on Intel Macs
-
 ## Core Features
 
 ### Parser ✅

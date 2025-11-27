@@ -787,6 +787,16 @@ func (p *PipeExpr) String() string {
 }
 func (p *PipeExpr) expressionNode() {}
 
+type ComposeExpr struct {
+	Left  Expression // Outer function (applied second)
+	Right Expression // Inner function (applied first)
+}
+
+func (c *ComposeExpr) String() string {
+	return c.Left.String() + " <> " + c.Right.String()
+}
+func (c *ComposeExpr) expressionNode() {}
+
 type BackgroundExpr struct {
 	Expr Expression // Expression to execute in background process
 }

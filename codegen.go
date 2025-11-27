@@ -4996,6 +4996,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 	case *PipeExpr:
 		fc.compilePipeExpr(e)
 
+	case *ComposeExpr:
+		fc.compileComposeExpr(e)
+
 	case *SendExpr:
 		fc.compileSendExpr(e)
 
@@ -15219,6 +15222,13 @@ func (fc *FlapCompiler) compilePipeExpr(expr *PipeExpr) {
 	default:
 		fc.compileExpression(expr.Right)
 	}
+}
+
+func (fc *FlapCompiler) compileComposeExpr(expr *ComposeExpr) {
+	// Function composition: f <> g creates a new function x -> f(g(x))
+	// This is currently not fully implemented - need runtime support
+	// For now, report error
+	compilerError("function composition operator <> not yet fully implemented\nPlease use explicit lambda: x -> f(g(x)) instead")
 }
 
 func (fc *FlapCompiler) compileSendExpr(expr *SendExpr) {

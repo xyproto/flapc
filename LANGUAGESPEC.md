@@ -758,6 +758,32 @@ increment = x -> x + 1
 result = apply_twice(increment, 10)  // 12
 ```
 
+### Function Composition
+
+The `<>` operator composes two functions, creating a new function that applies the right operand first, then the left:
+
+```flap
+// Basic composition
+double = x -> x * 2
+add_ten = x -> x + 10
+
+// compose creates: x -> double(add_ten(x))
+compose = double <> add_ten
+result = compose(5)  // (5 + 10) * 2 = 30
+
+// Multiple compositions
+triple = x -> x * 3
+add_five = x -> x + 5
+transform = triple <> double <> add_five
+value = transform(10)  // ((10 + 5) * 2) * 3 = 90
+
+// Composition is right-associative, so:
+// f <> g <> h  means  f <> (g <> h)
+// And evaluates as: x -> f(g(h(x)))
+```
+
+The composition operator provides a concise way to build complex transformations from simple functions.
+
 ### Variadic Functions
 
 Functions can accept a variable number of arguments using the `...` suffix on the last parameter:

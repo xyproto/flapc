@@ -3009,7 +3009,7 @@ func (p *Parser) parseExpression() Expression {
 
 // parseErrorHandling handles the or! operator (lowest precedence, right-associative)
 func (p *Parser) parseErrorHandling() Expression {
-	left := p.parsePipe()
+	left := p.parseCompose()
 
 	// or! is right-associative and very low precedence
 	if p.peek.Type == TOKEN_OR_BANG {
@@ -3017,6 +3017,21 @@ func (p *Parser) parseErrorHandling() Expression {
 		p.nextToken()                   // skip 'or!'
 		right := p.parseErrorHandling() // right-associative recursion
 		return &BinaryExpr{Left: left, Operator: "or!", Right: right}
+	}
+
+	return left
+}
+
+// parseCompose handles the <> (function composition) operator
+// Right-associative: f <> g <> h means f <> (g <> h), evaluates as x -> f(g(h(x)))
+func (p *Parser) parseCompose() Expression {
+	left := p.parsePipe()
+
+	if p.peek.Type == TOKEN_LTGT {
+		p.nextToken()                // move to left
+		p.nextToken()                // skip '<>'
+		right := p.parseCompose()    // right-associative recursion
+		return &ComposeExpr{Left: left, Right: right}
 	}
 
 	return left

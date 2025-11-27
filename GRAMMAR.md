@@ -901,6 +901,7 @@ When a function returns a list, multiple assignment unpacks the elements:
 ~>    Default match arm
 |     Pipe operator
 ||    Parallel map
+<>    Function composition (f <> g creates a new function that applies g then f)
 <-    Update/Send (update mutable var OR send to ENet)
 <=    Receive (ENet, prefix) OR less-than-or-equal comparison
 !     Move operator (postfix)
@@ -931,11 +932,12 @@ From highest to lowest precedence:
 11. **Logical AND**: `&&`
 12. **Logical OR**: `||`
 13. **Or-bang**: `or!`
-14. **Send**: `<-`
-15. **Receive**: `<=`
-16. **Pipe**: `|` `||`
-17. **Match**: `{ }` (postfix)
-18. **Assignment**: `=` `:=` `<-` `+=` `-=` `*=` `/=` `%=` `**=`
+14. **Function Composition**: `¤`
+15. **Send**: `<-`
+16. **Receive**: `<=`
+17. **Pipe**: `|` `||`
+18. **Match**: `{ }` (postfix)
+19. **Assignment**: `=` `:=` `<-` `+=` `-=` `*=` `/=` `%=` `**=`
 
 **Associativity:**
 - Left-associative: All binary operators except `**` and assignments
