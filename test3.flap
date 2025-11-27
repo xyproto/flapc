@@ -1,4 +1,0 @@
-value = 42
-func = { 99 }
-
-main = value() + func()

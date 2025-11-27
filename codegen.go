@@ -6841,8 +6841,8 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// Use arena allocation instead of malloc
 	// rax contains the size needed
 	fc.out.MovRegToReg("rdi", "rax") // rdi = size
-	fc.callArenaAlloc()               // Allocate from current arena
-	fc.out.MovRegToReg("r10", "rax")  // r10 = result pointer
+	fc.callArenaAlloc()              // Allocate from current arena
+	fc.out.MovRegToReg("r10", "rax") // r10 = result pointer
 
 	// Write total count to result
 	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2a, 0xc3}) // cvtsi2sd xmm0, rbx
@@ -15235,12 +15235,12 @@ func (fc *FlapCompiler) compilePipeExpr(expr *PipeExpr) {
 
 func (fc *FlapCompiler) compileComposeExpr(expr *ComposeExpr) {
 	// Function composition: f <> g creates a new function x -> f(g(x))
-	// For now, we'll create a simpler implementation that generates 
+	// For now, we'll create a simpler implementation that generates
 	// an inline lambda expression: (x -> left(right(x)))
 	//
 	// TODO: Full implementation with proper closure generation
 	// Currently this is a simplified approach that works for simple cases
-	
+
 	compilerError("function composition operator <> not yet fully implemented\n" +
 		"Use explicit lambda instead: compose = x -> f(g(x))\n" +
 		"Full composition support requires closure capture implementation")

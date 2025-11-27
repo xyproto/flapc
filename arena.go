@@ -10,20 +10,20 @@ import (
 type ArenaScope int
 
 const (
-	ArenaGlobal ArenaScope = iota // Program lifetime
-	ArenaFrame                    // Per-frame (game loop)
-	ArenaFunction                 // Per-function call
-	ArenaBlock                    // arena { ... } block
+	ArenaGlobal   ArenaScope = iota // Program lifetime
+	ArenaFrame                      // Per-frame (game loop)
+	ArenaFunction                   // Per-function call
+	ArenaBlock                      // arena { ... } block
 )
 
 // Arena represents an allocation arena in the generated code
 type Arena struct {
-	name      string
-	scope     ArenaScope
-	baseReg   string // Register holding base pointer
+	name       string
+	scope      ArenaScope
+	baseReg    string // Register holding base pointer
 	currentReg string // Register holding current pointer
-	sizeReg   string // Register holding size
-	labelNum  int    // Unique label number
+	sizeReg    string // Register holding size
+	labelNum   int    // Unique label number
 }
 
 // Arena runtime structure (in generated code):
@@ -41,10 +41,10 @@ type Arena struct {
 func (fc *FlapCompiler) generateArenaInit(arena *Arena, sizeBytes int) {
 	// Allocate arena memory with malloc
 	fc.out.MovImmToReg("rdi", fmt.Sprintf("%d", sizeBytes))
-	
+
 	// Call malloc (we'll add a helper for this)
 	fc.callMalloc()
-	
+
 	// rax now contains the arena base pointer
 	// Store in arena structure (we'll use stack for now)
 	fc.out.MovRegToMem("rax", "rbp", -16) // arena.base
@@ -60,17 +60,17 @@ func (fc *FlapCompiler) generateArenaInit(arena *Arena, sizeBytes int) {
 func (fc *FlapCompiler) generateArenaAlloc(sizeBytes int) {
 	// Load current pointer
 	fc.out.MovMemToReg("rax", "rbp", -24) // rax = arena.current
-	
+
 	// Allocate by bumping pointer
 	fc.out.MovRegToReg("rcx", "rax") // Save allocation pointer
 	fc.out.AddImmToReg("rax", int64(sizeBytes))
 	fc.out.MovRegToMem("rax", "rbp", -24) // Update arena.current
-	
+
 	// Update used count
 	fc.out.MovMemToReg("rdx", "rbp", -40) // Load arena.used
 	fc.out.AddImmToReg("rdx", int64(sizeBytes))
 	fc.out.MovRegToMem("rdx", "rbp", -40) // Store arena.used
-	
+
 	// Return allocation pointer in rax
 	fc.out.MovRegToReg("rax", "rcx")
 }
@@ -80,7 +80,7 @@ func (fc *FlapCompiler) generateArenaReset() {
 	// Reset current = base
 	fc.out.MovMemToReg("rax", "rbp", -16) // Load arena.base
 	fc.out.MovRegToMem("rax", "rbp", -24) // Store to arena.current
-	
+
 	// Reset used = 0
 	fc.out.XorRegWithReg("rax", "rax")
 	fc.out.MovRegToMem("rax", "rbp", -40)
@@ -101,7 +101,7 @@ func (fc *FlapCompiler) callMalloc() {
 	if !fc.hasCFunction("malloc") {
 		fc.importCFunction("malloc", "libc.so.6")
 	}
-	
+
 	// Call malloc through PLT
 	mallocSymbol := "malloc@plt"
 	if fc.eb.target.OS() == OSWindows {
@@ -115,7 +115,7 @@ func (fc *FlapCompiler) callRealloc() {
 	if !fc.hasCFunction("realloc") {
 		fc.importCFunction("realloc", "libc.so.6")
 	}
-	
+
 	reallocSymbol := "realloc@plt"
 	if fc.eb.target.OS() == OSWindows {
 		reallocSymbol = "__imp_realloc"
@@ -128,7 +128,7 @@ func (fc *FlapCompiler) callFree() {
 	if !fc.hasCFunction("free") {
 		fc.importCFunction("free", "libc.so.6")
 	}
-	
+
 	// Call free through PLT
 	freeSymbol := "free@plt"
 	if fc.eb.target.OS() == OSWindows {
@@ -154,7 +154,7 @@ func (fc *FlapCompiler) importCFunction(name, library string) {
 	if fc.eb.dynlinker != nil {
 		fc.eb.dynlinker.ImportFunction(library, name)
 	}
-	
+
 	// Track that we've imported it
 	fc.importedFunctions = append(fc.importedFunctions, name)
 }
@@ -165,14 +165,14 @@ func (fc *FlapCompiler) importCFunction(name, library string) {
 func (fc *FlapCompiler) compileStringLiteralWithArena(s string) {
 	// Calculate size needed (length + null terminator)
 	size := len(s) + 1
-	
+
 	// Allocate from current arena
 	fc.generateArenaAlloc(size)
-	
+
 	// rax now points to allocated memory
 	// Copy string data
 	fc.out.MovRegToReg("rdi", "rax") // Save pointer
-	
+
 	// Store each byte (using standard mov instructions)
 	for i, ch := range []byte(s) {
 		fc.out.MovImmToReg("rax", fmt.Sprintf("%d", ch))
@@ -181,7 +181,7 @@ func (fc *FlapCompiler) compileStringLiteralWithArena(s string) {
 	// Null terminator
 	fc.out.XorRegWithReg("rax", "rax")
 	fc.out.MovByteRegToMem("rax", "rdi", len(s))
-	
+
 	// Convert pointer to float64 for Flap
 	fc.out.Cvtsi2sd("xmm0", "rdi")
 }
@@ -192,19 +192,19 @@ func (fc *FlapCompiler) compileListLiteralWithArena(elements []Expression) {
 	// Calculate size for map structure (simplified)
 	// For now: array of float64 values
 	size := len(elements) * 8 // 8 bytes per float64
-	
+
 	// Allocate from current arena
 	fc.generateArenaAlloc(size)
-	
+
 	// rax points to array
 	fc.out.MovRegToReg("r14", "rax") // Save base pointer
-	
+
 	// Store each element
 	for i, elem := range elements {
 		fc.compileExpression(elem) // Result in xmm0
 		fc.out.MovXmmToMem("xmm0", "r14", i*8)
 	}
-	
+
 	// Return pointer as float64
 	fc.out.Cvtsi2sd("xmm0", "r14")
 }
@@ -214,34 +214,34 @@ func (fc *FlapCompiler) compileMapLiteralWithArena(keys, values []Expression) {
 	// Similar to list, but with key-value pairs
 	// For now: simple array of alternating keys and values
 	size := len(keys) * 16 // 16 bytes per pair (key + value)
-	
+
 	// Allocate from current arena
 	fc.generateArenaAlloc(size)
-	
+
 	// rax points to map data
 	fc.out.MovRegToReg("r14", "rax")
-	
+
 	// Store key-value pairs
 	for i := range keys {
 		// Store key
 		fc.compileExpression(keys[i])
 		fc.out.MovXmmToMem("xmm0", "r14", i*16)
-		
+
 		// Store value
 		fc.compileExpression(values[i])
 		fc.out.MovXmmToMem("xmm0", "r14", i*16+8)
 	}
-	
+
 	// Return pointer as float64
 	fc.out.Cvtsi2sd("xmm0", "r14")
 }
 
 // Default arena sizes
 const (
-	DefaultGlobalArenaSize   = 1024 * 1024      // 1 MB
-	DefaultFrameArenaSize    = 256 * 1024       // 256 KB
-	DefaultFunctionArenaSize = 64 * 1024        // 64 KB
-	DefaultBlockArenaSize    = 32 * 1024        // 32 KB
+	DefaultGlobalArenaSize   = 1024 * 1024 // 1 MB
+	DefaultFrameArenaSize    = 256 * 1024  // 256 KB
+	DefaultFunctionArenaSize = 64 * 1024   // 64 KB
+	DefaultBlockArenaSize    = 32 * 1024   // 32 KB
 )
 
 // callArenaAlloc generates code to allocate from current arena
@@ -251,20 +251,20 @@ func (fc *FlapCompiler) callArenaAlloc() {
 	// Use the existing flap_arena_alloc runtime function
 	// It expects: rdi = arena_ptr, rsi = size
 	// Returns: rax = allocated pointer
-	
+
 	// Save size to stack first (rdi will be overwritten)
 	fc.out.PushReg("rdi")
-	
+
 	// Load default arena struct pointer directly
 	// The default arena is statically allocated and initialized at program start
-	fc.out.LeaSymbolToReg("rdi", "_flap_default_arena_struct")  // rdi = arena struct pointer
-	
+	fc.out.LeaSymbolToReg("rdi", "_flap_default_arena_struct") // rdi = arena struct pointer
+
 	// Restore size to rsi
-	fc.out.PopReg("rsi")  // rsi = size
-	
+	fc.out.PopReg("rsi") // rsi = size
+
 	// Call arena allocator (rdi = arena_ptr, rsi = size)
 	fc.trackFunctionCall("flap_arena_alloc")
 	fc.out.CallSymbol("flap_arena_alloc")
-	
+
 	// Result is in rax
 }

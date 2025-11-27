@@ -1,7 +1,0 @@
-import libc as c
-
-main = {
-  c.puts("Hello from ARM64!")
-  c.printf("Testing printf: %d + %d = %d\n", 2, 3, 5)
-  42
-}

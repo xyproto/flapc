@@ -108,7 +108,7 @@ printf("f(5) = %f\n", f(5))
 			output := compileAndRun(t, tt.source)
 			output = strings.TrimSpace(output)
 			expected := strings.TrimSpace(tt.expected)
-			
+
 			// Check if all expected lines are present
 			expectedLines := strings.Split(expected, "\n")
 			for _, line := range expectedLines {

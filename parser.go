@@ -3028,9 +3028,9 @@ func (p *Parser) parseCompose() Expression {
 	left := p.parsePipe()
 
 	if p.peek.Type == TOKEN_LTGT {
-		p.nextToken()                // move to left
-		p.nextToken()                // skip '<>'
-		right := p.parseCompose()    // right-associative recursion
+		p.nextToken()             // move to left
+		p.nextToken()             // skip '<>'
+		right := p.parseCompose() // right-associative recursion
 		return &ComposeExpr{Left: left, Right: right}
 	}
 
