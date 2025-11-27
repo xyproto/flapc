@@ -6283,9 +6283,10 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 			// Save r14 (we need it after the call)
 			fc.out.PushReg("r14")
 
-			// rdi = arena_ptr (first meta-arena)
+			// rdi = arena_ptr (requires TWO dereferences)
 			fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
-			fc.out.MovMemToReg("rdi", "rdi", 0) // Load first arena pointer
+			fc.out.MovMemToReg("rdi", "rdi", 0) // Load meta-arena array pointer
+			fc.out.MovMemToReg("rdi", "rdi", 0) // Load arena[0] struct pointer
 
 			// rsi = size (already in rax)
 			fc.out.MovRegToReg("rsi", "rax")
@@ -8740,6 +8741,13 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 func (fc *FlapCompiler) initializeMetaArenaAndGlobalArena() {
 	// Inline initialization of meta-arena with capacity for 1 arena
 	// This avoids calling a function that hasn't been generated yet
+
+	// DEBUG: Print message that we're initializing
+	if false { // Set to true for debugging
+		fc.out.LeaSymbolToReg("rdi", "_str_debug_default_arena")
+		fc.trackFunctionCall("printf")
+		fc.eb.GenerateCallInstruction("printf")
+	}
 
 	// Allocate meta-arena array: malloc(8 * 1) = 8 bytes for 1 arena pointer
 	fc.out.MovImmToReg("rdi", "8")

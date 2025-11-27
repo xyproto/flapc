@@ -252,26 +252,19 @@ func (fc *FlapCompiler) callArenaAlloc() {
 	// It expects: rdi = arena_ptr, rsi = size
 	// Returns: rax = allocated pointer
 	
-	// Save size to rsi first (mov, not push/pop!)
-	fc.out.MovRegToReg("rsi", "rdi") // rsi = size
+	// Save size to stack first (rdi will be overwritten)
+	fc.out.PushReg("rdi")
 	
-	// Load arena pointer from meta-arena into rdi
-	// currentArena is 1-based (1 = meta-arena[0])
-	arenaIndex := fc.currentArena - 1
+	// Load default arena struct pointer directly
+	// The default arena is statically allocated and initialized at program start
+	fc.out.LeaSymbolToReg("rdi", "_flap_default_arena_struct")  // rdi = arena struct pointer
 	
-	fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
-	fc.out.MovMemToReg("rdi", "rdi", 0) // rdi = meta-arena pointer
+	// Restore size to rsi
+	fc.out.PopReg("rsi")  // rsi = size
 	
-	if arenaIndex > 0 {
-		fc.out.MovMemToReg("rdi", "rdi", arenaIndex*8) // rdi = arena struct
-	} else {
-		fc.out.MovMemToReg("rdi", "rdi", 0) // rdi = arena struct (first arena)
-	}
-	
-	// Call the arena allocator
-	// rdi = arena_ptr, rsi = size
+	// Call arena allocator (rdi = arena_ptr, rsi = size)
 	fc.trackFunctionCall("flap_arena_alloc")
-	fc.eb.GenerateCallInstruction("flap_arena_alloc")
+	fc.out.CallSymbol("flap_arena_alloc")
 	
 	// Result is in rax
 }
