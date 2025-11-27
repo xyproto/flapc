@@ -3030,6 +3030,24 @@ func (fc *FlapCompiler) getExprType(expr Expression) string {
 	case *FStringExpr:
 		// F-strings are always strings
 		return "string"
+	case *CastExpr:
+		// Cast expressions have the type they're cast to
+		// Map cast types to Flap types
+		switch e.Type {
+		case "string", "str":
+			return "string"
+		case "cstr", "cstring":
+			return "cstring"
+		case "list":
+			return "list"
+		case "map":
+			return "map"
+		case "ptr", "pointer":
+			return "pointer"
+		default:
+			// All numeric types
+			return "number"
+		}
 	case *IndexExpr:
 		// Indexing returns the element type
 		// For lists/maps, elements are numbers (float64)
@@ -5259,9 +5277,6 @@ func (fc *FlapCompiler) compileMatchJump(jumpExpr *JumpExpr) {
 }
 
 func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG: compileCastExpr called for type: %s\n", expr.Type)
-	}
 	// Check if this is a read syntax: ptr[offset] as TYPE
 	// Transform to: read_TYPE(ptr, offset)
 	if indexExpr, ok := expr.Expr.(*IndexExpr); ok {
@@ -5305,9 +5320,6 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 
 	// Compile the expression being cast (result in xmm0)
 	fc.compileExpression(expr.Expr)
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG: compileCastExpr - after compiling expr, before switch\n")
-	}
 
 	// Cast is primarily a TYPE ANNOTATION for FFI interop
 	// The actual conversion happens when the value is used in a specific context:
@@ -5357,9 +5369,6 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 		// Convert value to Flap string  
 		// First check if already a string
 		exprType := fc.getExprType(expr.Expr)
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG: as string cast - expr type detected as: %s\n", exprType)
-		}
 		if exprType != "string" {
 			// Convert number to Flap string
 		// xmm0 contains the number as float64
@@ -5462,9 +5471,6 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 			fc.out.AddImmToReg("rsp", 32)
 		}
 		// If already string, xmm0 has correct value, nothing to do
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG: compileCastExpr - string case completed\n")
-		}
 
 	case "list":
 		// Convert C array to Flap list
