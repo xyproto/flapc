@@ -1,5 +1,20 @@
 # Flap TODO
 
+## Current Status (2025-01-27)
+
+### Working Features ✅
+- String to string casts: `s as string`
+- Number to string conversion: `42 as string`
+- F-strings with mixed types: `f"Hello {name}, age {age}"`
+- Arena allocator using malloc/realloc (stable)
+- All core language features functional
+- All tests passing (208+ test functions, 23.5% coverage)
+
+### Known Limitations
+- Programs with many string operations may crash (arena exhaustion)
+- Currently uses libc (malloc, realloc, sprintf, printf)
+- Need mmap syscalls for libc-free operation (except macOS)
+
 ## Core Features
 
 ### Parser ✅
@@ -12,7 +27,9 @@
 
 ### Code Generation
 - Add explicit float32/float64 conversions where needed
-- Replace malloc with arena allocation in string/map/list operations
+- Replace malloc/realloc with mmap syscalls (Linux/BSD only, keep libc for macOS)
+- Implement pure assembly float-to-string (avoid sprintf dependency)
+- Increase default arena size or add auto-growth
 - Optimize O(n²) algorithms
 
 ### Type System
