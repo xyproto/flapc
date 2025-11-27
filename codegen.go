@@ -513,17 +513,12 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	fc.eb.Define("_bounds_too_large_msg", "ERROR: Array index out of bounds (index >= length)\n\x00")
 	fc.eb.Define("_malloc_failed_msg", "ERROR: Memory allocation failed (out of memory)\n\x00")
 
-	// Define default arena globals (must be before code generation that references them)
-	fc.eb.DefineWritable("_flap_default_arena", "\x00\x00\x00\x00\x00\x00\x00\x00")
-	fc.eb.DefineWritable("_flap_default_arena_struct", strings.Repeat("\x00", 32))
-	// Use 64KB buffer instead of 1MB - more likely to be properly aligned by linker
-	fc.eb.DefineWritable("_flap_default_arena_buffer", strings.Repeat("\x00", 65536))
-
-	// Predeclare arena symbols if arenas are used (always true now)
-	// These MUST be writable since they're modified at runtime
-	fc.eb.DefineWritable("_flap_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")
-	fc.eb.DefineWritable("_flap_arena_meta_cap", "\x00\x00\x00\x00\x00\x00\x00\x00")
-	fc.eb.DefineWritable("_flap_arena_meta_len", "\x00\x00\x00\x00\x00\x00\x00\x00")
+	// Define arena metadata in .data section
+	// Only store POINTERS here, actual arena buffers are malloc'd
+	// Meta-arena: array of pointers to arena structs
+	fc.eb.DefineWritable("_flap_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")     // Pointer to arena array
+	fc.eb.DefineWritable("_flap_arena_meta_cap", "\x00\x00\x00\x00\x00\x00\x00\x00") // Capacity (number of slots)
+	fc.eb.DefineWritable("_flap_arena_meta_len", "\x00\x00\x00\x00\x00\x00\x00\x00") // Length (number of active arenas)
 	fc.eb.Define("_arena_null_error", "ERROR: Arena alloc returned NULL\n")
 	fc.eb.Define("_count_mismatch_error", "ERROR: Count write/read mismatch!\n")
 
@@ -8282,10 +8277,12 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovRegToReg("r12", "rdi") // r12 = element bits (head)
 	fc.out.MovRegToReg("r13", "rsi") // r13 = tail pointer bits
 
-	// Allocate 16-byte cons cell from arena
+	// Allocate 16-byte cons cell from arena (use default arena 0)
 	// Cons cell format: [head: float64][tail: float64] = 16 bytes
-	fc.out.LeaSymbolToReg("rdi", "_flap_default_arena_struct") // rdi = arena pointer
-	fc.out.MovImmToReg("rsi", "16")                            // rsi = 16 bytes
+	fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
+	fc.out.MovMemToReg("rdi", "rdi", 0)  // rdi = meta-arena array pointer
+	fc.out.MovMemToReg("rdi", "rdi", 0)  // rdi = arena[0] struct pointer
+	fc.out.MovImmToReg("rsi", "16")      // rsi = 16 bytes
 	fc.trackFunctionCall("flap_arena_alloc")
 	fc.eb.GenerateCallInstruction("flap_arena_alloc")
 	// rax now contains pointer to cons cell
@@ -8737,61 +8734,54 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	}
 }
 
-// initializeMetaArenaAndGlobalArena initializes the meta-arena and creates arena 0 (global arena)
+// initializeMetaArenaAndGlobalArena initializes the meta-arena and creates arena 0 (default arena)
 func (fc *FlapCompiler) initializeMetaArenaAndGlobalArena() {
-	// Inline initialization of meta-arena with capacity for 1 arena
-	// This avoids calling a function that hasn't been generated yet
-
-	// DEBUG: Print message that we're initializing
-	if false { // Set to true for debugging
-		fc.out.LeaSymbolToReg("rdi", "_str_debug_default_arena")
-		fc.trackFunctionCall("printf")
-		fc.eb.GenerateCallInstruction("printf")
-	}
-
-	// Allocate meta-arena array: malloc(8 * 1) = 8 bytes for 1 arena pointer
-	fc.out.MovImmToReg("rdi", "8")
+	// Initialize meta-arena system - all arenas are malloc'd at runtime
+	const initialCapacity = 4
+	
+	// Allocate meta-arena array: malloc(8 * 4) = 32 bytes for 4 arena pointers
+	fc.out.MovImmToReg("rdi", fmt.Sprintf("%d", 8*initialCapacity))
 	fc.trackFunctionCall("malloc")
 	fc.eb.GenerateCallInstruction("malloc")
-
-	// Store meta-arena pointer
+	
+	// Store meta-arena array pointer
 	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta")
 	fc.out.MovRegToMem("rax", "rbx", 0)
-
-	// Set meta-arena capacity = 1
-	fc.out.MovImmToReg("rcx", "1")
+	
+	// Set meta-arena capacity
+	fc.out.MovImmToReg("rcx", fmt.Sprintf("%d", initialCapacity))
 	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta_cap")
 	fc.out.MovRegToMem("rcx", "rbx", 0)
-
-	// Create arena 0 using flap_arena_create
-	// We need to generate a simple arena struct inline
+	
+	// Create default arena (arena 0) - 1MB malloc'd buffer
 	// Arena struct: [base_ptr(8), capacity(8), used(8), alignment(8)] = 32 bytes
-	fc.out.MovImmToReg("rdi", "1048576") // Initial arena size: 1MB
+	
+	// Allocate arena buffer: malloc(1MB)
+	fc.out.MovImmToReg("rdi", "1048576")
 	fc.trackFunctionCall("malloc")
 	fc.eb.GenerateCallInstruction("malloc")
 	fc.out.MovRegToReg("r12", "rax") // r12 = arena buffer
-
+	
 	// Allocate arena struct: malloc(32)
 	fc.out.MovImmToReg("rdi", "32")
 	fc.trackFunctionCall("malloc")
 	fc.eb.GenerateCallInstruction("malloc")
-	// rax = arena struct pointer
-
-	// Initialize arena struct
-	fc.out.MovRegToMem("r12", "rax", 0) // base_ptr = arena buffer
+	
+	// Initialize arena struct fields
+	fc.out.MovRegToMem("r12", "rax", 0)  // base_ptr = arena buffer
 	fc.out.MovImmToReg("rcx", "1048576")
-	fc.out.MovRegToMem("rcx", "rax", 8) // capacity = 1MB
+	fc.out.MovRegToMem("rcx", "rax", 8)  // capacity = 1MB
 	fc.out.XorRegWithReg("rcx", "rcx")
 	fc.out.MovRegToMem("rcx", "rax", 16) // used = 0
 	fc.out.MovImmToReg("rcx", "8")
 	fc.out.MovRegToMem("rcx", "rax", 24) // alignment = 8
-
-	// Store arena pointer in meta-arena[0]
+	
+	// Store arena struct pointer in meta-arena[0]
 	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta")
-	fc.out.MovMemToReg("rbx", "rbx", 0) // rbx = meta-arena pointer
-	fc.out.MovRegToMem("rax", "rbx", 0) // meta-arena[0] = arena struct
-
-	// Set meta-arena len = 1
+	fc.out.MovMemToReg("rbx", "rbx", 0)  // rbx = meta-arena array
+	fc.out.MovRegToMem("rax", "rbx", 0)  // meta-arena[0] = arena struct
+	
+	// Set meta-arena len = 1 (one active arena)
 	fc.out.MovImmToReg("rcx", "1")
 	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta_len")
 	fc.out.MovRegToMem("rcx", "rbx", 0)

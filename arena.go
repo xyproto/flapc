@@ -255,9 +255,14 @@ func (fc *FlapCompiler) callArenaAlloc() {
 	// Save size to stack first (rdi will be overwritten)
 	fc.out.PushReg("rdi")
 
-	// Load default arena struct pointer directly
-	// The default arena is statically allocated and initialized at program start
-	fc.out.LeaSymbolToReg("rdi", "_flap_default_arena_struct") // rdi = arena struct pointer
+	// Load arena pointer from meta-arena[currentArena-1]
+	// currentArena is 1-based (1 = meta-arena[0], the default arena)
+	arenaIndex := fc.currentArena - 1
+	offset := arenaIndex * 8
+	
+	fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
+	fc.out.MovMemToReg("rdi", "rdi", 0)      // rdi = meta-arena array pointer
+	fc.out.MovMemToReg("rdi", "rdi", offset) // rdi = arena struct pointer
 
 	// Restore size to rsi
 	fc.out.PopReg("rsi") // rsi = size

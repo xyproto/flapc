@@ -386,20 +386,8 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 
 	fc.pushDeferScope()
 
-	// Initialize default arena at program start (before any user code)
-	// This is where _start jumps to, so it will execute first
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG: Generating arena init at text offset %d (after _start jump target)\n", fc.eb.text.Len())
-	}
-	fc.out.LeaSymbolToReg("rax", "_flap_default_arena_struct") // rax = arena struct
-	fc.out.LeaSymbolToReg("rbx", "_flap_default_arena_buffer") // rbx = buffer
-	fc.out.MovRegToMem("rbx", "rax", 0)                        // [struct+0] = buffer_ptr
-	fc.out.MovImmToMem(65536, "rax", 8)                        // [struct+8] = capacity (64KB)
-	fc.out.MovImmToMem(0, "rax", 16)                           // [struct+16] = offset (0)
-	fc.out.MovImmToMem(8, "rax", 24)                           // [struct+24] = alignment (8)
-	// Store arena struct pointer in _flap_default_arena
-	fc.out.LeaSymbolToReg("rcx", "_flap_default_arena")
-	fc.out.MovRegToMem("rax", "rcx", 0)
+	// Arena initialization happens in codegen.go via initializeMetaArenaAndGlobalArena()
+	// No static initialization needed here - all arenas are malloc'd at runtime
 
 	// Generate code with symbols collected
 	for _, stmt := range program.Statements {
