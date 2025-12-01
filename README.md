@@ -20,6 +20,10 @@ flapc sdl3example.flap -o sdl3example.exe
 wine sdl3example.exe
 ```
 
+### Example programs
+
+* [sdl3example.flap](sdl3example.flap)
+
 ### General info
 
 * License: BSD-3
