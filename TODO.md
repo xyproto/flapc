@@ -10,7 +10,12 @@
 - All tests passing (208+ test functions, 23.5% coverage)
 
 ### Critical Bugs 🐛
-**NONE! All tests passing! 🎉**
+**P1 - Pattern match blocks return garbage when assigned to variables:**
+- `result := x { 5 => 42 ~> 99 }; println(result)` prints garbage
+- Match blocks work correctly for side effects: `x { 5 => println("yes") ~> println("no") }` ✅
+- Root cause: MatchExpr appears to return closure pointer instead of actual result value
+- All existing tests pass because they only use side effects, never assign match results
+- **Workaround:** Use match blocks for side effects only, or use intermediate variables
 
 ### Known Limitations
 - Currently uses libc (malloc, realloc, sprintf, printf)

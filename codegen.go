@@ -1608,6 +1608,61 @@ func (fc *FlapCompiler) compileArenaStmt(stmt *ArenaStmt) {
 	fc.out.CallSymbol("flap_arena_reset")
 }
 
+func (fc *FlapCompiler) compileArenaExpr(expr *ArenaExpr) {
+	// Mark that this program uses arenas
+	fc.usesArenas = true
+
+	// First, collect symbols from all statements in the block
+	for _, stmt := range expr.Body {
+		if err := fc.collectSymbols(stmt); err != nil {
+			compilerError("%v at line 0", err)
+		}
+	}
+
+	// Save previous arena context and increment to next arena
+	previousArena := fc.currentArena
+	fc.currentArena++
+	arenaIndex := fc.currentArena - 1
+
+	// Ensure meta-arena has enough capacity
+	fc.out.MovImmToReg("rdi", fmt.Sprintf("%d", fc.currentArena))
+	fc.out.CallSymbol("_flap_arena_ensure_capacity")
+
+	// Load arena pointer from meta-arena
+	offset := arenaIndex * 8
+	fc.out.LeaSymbolToReg("rax", "_flap_arena_meta")
+	fc.out.MovMemToReg("rax", "rax", 0)
+	fc.out.MovMemToReg("rax", "rax", offset)
+
+	fc.pushDeferScope()
+
+	// Compile statements in arena body
+	// The last statement should leave its value in xmm0
+	for i, bodyStmt := range expr.Body {
+		fc.compileStatement(bodyStmt)
+		// If it's the last statement and it's an assignment,
+		// we need to load the assigned value
+		if i == len(expr.Body)-1 {
+			if assignStmt, ok := bodyStmt.(*AssignStmt); ok {
+				fc.compileExpression(&IdentExpr{Name: assignStmt.Name})
+			}
+		}
+	}
+
+	fc.popDeferScope()
+
+	// Restore previous arena context
+	fc.currentArena = previousArena
+
+	// Reset arena
+	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta")
+	fc.out.MovMemToReg("rbx", "rbx", 0)
+	fc.out.MovMemToReg("rdi", "rbx", offset)
+	fc.out.CallSymbol("flap_arena_reset")
+	
+	// Result is already in xmm0 from the last statement
+}
+
 func (fc *FlapCompiler) compileSpawnStmt(stmt *SpawnStmt) {
 	// Call fork() syscall (57 on x86-64 Linux)
 	// Returns: child gets 0 in rax, parent gets child PID in rax
@@ -5022,6 +5077,9 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 
 	case *UnsafeExpr:
 		fc.compileUnsafeExpr(e)
+
+	case *ArenaExpr:
+		fc.compileArenaExpr(e)
 
 	case *SliceExpr:
 		fc.compileSliceExpr(e)
