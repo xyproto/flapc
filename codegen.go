@@ -16078,12 +16078,12 @@ func collectFunctionCallsWithParams(expr Expression, calls map[string]bool, para
 		if e.IsCFFI {
 			funcName = "c." + funcName
 		}
-		
+
 		// Only add to calls if it's not a parameter
 		if params == nil || !params[e.Function] {
 			calls[funcName] = true
 		}
-		
+
 		for _, arg := range e.Args {
 			collectFunctionCallsWithParams(arg, calls, params)
 		}
