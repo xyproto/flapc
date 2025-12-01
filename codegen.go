@@ -16062,6 +16062,10 @@ func (fc *FlapCompiler) callMallocAligned(sizeReg string, pushCount int) {
 // Confidence that this function is working: 95%
 // Confidence that this function is working: 98%
 func collectFunctionCalls(expr Expression, calls map[string]bool) {
+	collectFunctionCallsWithParams(expr, calls, nil)
+}
+
+func collectFunctionCallsWithParams(expr Expression, calls map[string]bool, params map[string]bool) {
 	if expr == nil {
 		return
 	}
@@ -16070,151 +16074,186 @@ func collectFunctionCalls(expr Expression, calls map[string]bool) {
 	case *CallExpr:
 		// For C FFI calls, the parser strips "c." and sets IsCFFI=true
 		// We need to add the "c." prefix back for proper tracking
+		funcName := e.Function
 		if e.IsCFFI {
-			calls["c."+e.Function] = true
-		} else {
-			calls[e.Function] = true
+			funcName = "c." + funcName
 		}
+		
+		// Only add to calls if it's not a parameter
+		if params == nil || !params[e.Function] {
+			calls[funcName] = true
+		}
+		
 		for _, arg := range e.Args {
-			collectFunctionCalls(arg, calls)
+			collectFunctionCallsWithParams(arg, calls, params)
 		}
 	case *DirectCallExpr:
 		// Direct calls don't add to function calls - they're calling values, not named functions
 		// But we still need to recurse into the callee and args
-		collectFunctionCalls(e.Callee, calls)
+		collectFunctionCallsWithParams(e.Callee, calls, params)
 		for _, arg := range e.Args {
-			collectFunctionCalls(arg, calls)
+			collectFunctionCallsWithParams(arg, calls, params)
 		}
 	case *BinaryExpr:
-		collectFunctionCalls(e.Left, calls)
-		collectFunctionCalls(e.Right, calls)
+		collectFunctionCallsWithParams(e.Left, calls, params)
+		collectFunctionCallsWithParams(e.Right, calls, params)
 	case *UnaryExpr:
-		collectFunctionCalls(e.Operand, calls)
+		collectFunctionCallsWithParams(e.Operand, calls, params)
 	case *PostfixExpr:
-		collectFunctionCalls(e.Operand, calls)
+		collectFunctionCallsWithParams(e.Operand, calls, params)
 	case *PipeExpr:
-		collectFunctionCalls(e.Left, calls)
-		collectFunctionCalls(e.Right, calls)
+		collectFunctionCallsWithParams(e.Left, calls, params)
+		collectFunctionCallsWithParams(e.Right, calls, params)
 	case *SendExpr:
-		collectFunctionCalls(e.Target, calls)
-		collectFunctionCalls(e.Message, calls)
+		collectFunctionCallsWithParams(e.Target, calls, params)
+		collectFunctionCallsWithParams(e.Message, calls, params)
 	case *MatchExpr:
-		collectFunctionCalls(e.Condition, calls)
+		collectFunctionCallsWithParams(e.Condition, calls, params)
 		for _, clause := range e.Clauses {
 			if clause.Guard != nil {
-				collectFunctionCalls(clause.Guard, calls)
+				collectFunctionCallsWithParams(clause.Guard, calls, params)
 			}
-			collectFunctionCalls(clause.Result, calls)
+			collectFunctionCallsWithParams(clause.Result, calls, params)
 		}
 		if e.DefaultExpr != nil {
-			collectFunctionCalls(e.DefaultExpr, calls)
+			collectFunctionCallsWithParams(e.DefaultExpr, calls, params)
 		}
 	case *BlockExpr:
 		// BlockExpr contains statements - recurse into them
 		for _, stmt := range e.Statements {
-			collectFunctionCallsFromStmt(stmt, calls)
+			collectFunctionCallsFromStmtWithParams(stmt, calls, params)
 		}
 	case *LambdaExpr:
-		collectFunctionCalls(e.Body, calls)
+		// Create new parameter set for this lambda scope
+		lambdaParams := make(map[string]bool)
+		if params != nil {
+			for k, v := range params {
+				lambdaParams[k] = v
+			}
+		}
+		for _, param := range e.Params {
+			lambdaParams[param] = true
+		}
+		collectFunctionCallsWithParams(e.Body, calls, lambdaParams)
 	case *PatternLambdaExpr:
+		// Pattern lambdas have an implicit parameter (the matched value)
+		lambdaParams := make(map[string]bool)
+		if params != nil {
+			for k, v := range params {
+				lambdaParams[k] = v
+			}
+		}
 		for _, clause := range e.Clauses {
-			collectFunctionCalls(clause.Body, calls)
+			collectFunctionCallsWithParams(clause.Body, calls, lambdaParams)
 		}
 	case *MultiLambdaExpr:
 		for _, lambda := range e.Lambdas {
-			collectFunctionCalls(lambda.Body, calls)
+			lambdaParams := make(map[string]bool)
+			if params != nil {
+				for k, v := range params {
+					lambdaParams[k] = v
+				}
+			}
+			for _, param := range lambda.Params {
+				lambdaParams[param] = true
+			}
+			collectFunctionCallsWithParams(lambda.Body, calls, lambdaParams)
 		}
 	case *RangeExpr:
-		collectFunctionCalls(e.Start, calls)
-		collectFunctionCalls(e.End, calls)
+		collectFunctionCallsWithParams(e.Start, calls, params)
+		collectFunctionCallsWithParams(e.End, calls, params)
 	case *ListExpr:
 		for _, elem := range e.Elements {
-			collectFunctionCalls(elem, calls)
+			collectFunctionCallsWithParams(elem, calls, params)
 		}
 	case *MapExpr:
 		for i := range e.Keys {
-			collectFunctionCalls(e.Keys[i], calls)
-			collectFunctionCalls(e.Values[i], calls)
+			collectFunctionCallsWithParams(e.Keys[i], calls, params)
+			collectFunctionCallsWithParams(e.Values[i], calls, params)
 		}
 	case *IndexExpr:
-		collectFunctionCalls(e.List, calls)
-		collectFunctionCalls(e.Index, calls)
+		collectFunctionCallsWithParams(e.List, calls, params)
+		collectFunctionCallsWithParams(e.Index, calls, params)
 	case *SliceExpr:
-		collectFunctionCalls(e.List, calls)
+		collectFunctionCallsWithParams(e.List, calls, params)
 		if e.Start != nil {
-			collectFunctionCalls(e.Start, calls)
+			collectFunctionCallsWithParams(e.Start, calls, params)
 		}
 		if e.End != nil {
-			collectFunctionCalls(e.End, calls)
+			collectFunctionCallsWithParams(e.End, calls, params)
 		}
 	case *LengthExpr:
-		collectFunctionCalls(e.Operand, calls)
+		collectFunctionCallsWithParams(e.Operand, calls, params)
 	case *CastExpr:
-		collectFunctionCalls(e.Expr, calls)
+		collectFunctionCallsWithParams(e.Expr, calls, params)
 	case *UnsafeExpr:
 		// UnsafeExpr contains architecture-specific statement blocks
 		for _, stmt := range e.X86_64Block {
-			collectFunctionCallsFromStmt(stmt, calls)
+			collectFunctionCallsFromStmtWithParams(stmt, calls, params)
 		}
 		for _, stmt := range e.ARM64Block {
-			collectFunctionCallsFromStmt(stmt, calls)
+			collectFunctionCallsFromStmtWithParams(stmt, calls, params)
 		}
 		for _, stmt := range e.RISCV64Block {
-			collectFunctionCallsFromStmt(stmt, calls)
+			collectFunctionCallsFromStmtWithParams(stmt, calls, params)
 		}
 	case *ArenaExpr:
 		// ArenaExpr contains a statement block
 		for _, stmt := range e.Body {
-			collectFunctionCallsFromStmt(stmt, calls)
+			collectFunctionCallsFromStmtWithParams(stmt, calls, params)
 		}
 	case *ParallelExpr:
-		collectFunctionCalls(e.List, calls)
-		collectFunctionCalls(e.Operation, calls)
+		collectFunctionCallsWithParams(e.List, calls, params)
+		collectFunctionCallsWithParams(e.Operation, calls, params)
 	case *BackgroundExpr:
-		collectFunctionCalls(e.Expr, calls)
+		collectFunctionCallsWithParams(e.Expr, calls, params)
 	case *LoopExpr:
-		collectFunctionCalls(e.Iterable, calls)
+		collectFunctionCallsWithParams(e.Iterable, calls, params)
 		for _, stmt := range e.Body {
-			collectFunctionCallsFromStmt(stmt, calls)
+			collectFunctionCallsFromStmtWithParams(stmt, calls, params)
 		}
 		if e.Reducer != nil {
-			collectFunctionCalls(e.Reducer, calls)
+			collectFunctionCallsWithParams(e.Reducer, calls, params)
 		}
 	case *StructLiteralExpr:
 		for _, fieldExpr := range e.Fields {
-			collectFunctionCalls(fieldExpr, calls)
+			collectFunctionCallsWithParams(fieldExpr, calls, params)
 		}
 	case *VectorExpr:
 		for _, comp := range e.Components {
-			collectFunctionCalls(comp, calls)
+			collectFunctionCallsWithParams(comp, calls, params)
 		}
 	case *FStringExpr:
 		for _, part := range e.Parts {
-			collectFunctionCalls(part, calls)
+			collectFunctionCallsWithParams(part, calls, params)
 		}
 	case *InExpr:
-		collectFunctionCalls(e.Value, calls)
-		collectFunctionCalls(e.Container, calls)
+		collectFunctionCallsWithParams(e.Value, calls, params)
+		collectFunctionCallsWithParams(e.Container, calls, params)
 	case *MoveExpr:
-		collectFunctionCalls(e.Expr, calls)
+		collectFunctionCallsWithParams(e.Expr, calls, params)
 	}
 }
 
 // collectFunctionCallsFromStmt walks a statement and collects all function calls
 func collectFunctionCallsFromStmt(stmt Statement, calls map[string]bool) {
+	collectFunctionCallsFromStmtWithParams(stmt, calls, nil)
+}
+
+func collectFunctionCallsFromStmtWithParams(stmt Statement, calls map[string]bool, params map[string]bool) {
 	if stmt == nil {
 		return
 	}
 
 	switch s := stmt.(type) {
 	case *AssignStmt:
-		collectFunctionCalls(s.Value, calls)
+		collectFunctionCallsWithParams(s.Value, calls, params)
 	case *ExpressionStmt:
-		collectFunctionCalls(s.Expr, calls)
+		collectFunctionCallsWithParams(s.Expr, calls, params)
 	case *LoopStmt:
-		collectFunctionCalls(s.Iterable, calls)
+		collectFunctionCallsWithParams(s.Iterable, calls, params)
 		for _, bodyStmt := range s.Body {
-			collectFunctionCallsFromStmt(bodyStmt, calls)
+			collectFunctionCallsFromStmtWithParams(bodyStmt, calls, params)
 		}
 	}
 }

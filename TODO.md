@@ -1,9 +1,11 @@
 # Flap TODO
 
+If it's true that "xor eax,eax" does the same as "xor rax,rax" and also the same as "mov rax,0", then use "xor eax,eax" and friends more often.
+
 ## Current Status (2025-12-01)
 
 ### Working Features ✅
-- **Match expression return values FIXED!** ✅ 
+- **Match expression return values FIXED!** ✅
   - `result := x { 5 => 42 ~> 99 }` now correctly returns 42/99
   - Supports both `=>` and `->` arrows in match clauses
   - Guardless matches still correctly wrapped in lambdas
@@ -24,7 +26,7 @@
 - String to string casts: `s as string`
 - **Windows SDL3 support WORKING!** ✅
   - No libc dependencies for core operations
-  - Windows programs compile and run correctly  
+  - Windows programs compile and run correctly
   - SDL3 example works on Windows via Wine
 - All core language features functional
 - **All tests passing** (arithmetic, basic programs, lambdas working)
