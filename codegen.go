@@ -8207,6 +8207,12 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	fc.out.MovRegToReg("rbx", "rdi") // rbx = arena_ptr (preserve across calls)
 	fc.out.MovRegToReg("r12", "rsi") // r12 = size (preserve across calls)
+	
+	// Safety check: reject allocations > 512MB (likely a bug)
+	fc.out.MovImmToReg("rax", "536870912") // 512MB
+	fc.out.CmpRegToReg("r12", "rax")
+	insaneAllocJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreater, 0) // jg to error if size > 512MB
 
 	// Load arena fields
 	fc.out.MovMemToReg("r8", "rbx", 0)   // r8 = buffer_ptr
@@ -8307,15 +8313,16 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	arenaDoneJump2 := fc.eb.text.Len()
 	fc.out.JumpUnconditional(0) // jmp to done
 
-	// Error path: realloc failed or max size exceeded
+	// Error path: realloc failed, max size exceeded, or insane allocation
 	arenaErrorLabel := fc.eb.text.Len()
 	fc.patchJumpImmediate(arenaErrorJump+2, int32(arenaErrorLabel-(arenaErrorJump+6)))
 	fc.patchJumpImmediate(arenaMaxExceeded+2, int32(arenaErrorLabel-(arenaMaxExceeded+6)))
+	fc.patchJumpImmediate(insaneAllocJump+2, int32(arenaErrorLabel-(insaneAllocJump+6)))
 	fc.eb.MarkLabel("_arena_alloc_error")
 
 	// Print error message to stderr and exit(1)
 	// Write to stderr (fd=2): "Error: Arena allocation failed (out of memory)\n"
-	errorMsg := "Error: Arena allocation failed (out of memory or exceeded 1GB limit)\n"
+	errorMsg := "Error: Arena allocation failed (out of memory, exceeded limit, or invalid size)\n"
 	errorLabel := fmt.Sprintf("_arena_error_msg_%d", fc.stringCounter)
 	fc.stringCounter++
 	fc.eb.Define(errorLabel, errorMsg)
@@ -8887,11 +8894,53 @@ func (fc *FlapCompiler) initializeMetaArenaAndGlobalArena() {
 	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta_cap")
 	fc.out.MovRegToMem("rcx", "rbx", 0)
 	
-	// Create default arena (arena 0) - 16MB malloc'd buffer
+	// Create default arena (arena 0) - size depends on SMALLARENA env var
 	// Arena struct: [base_ptr(8), capacity(8), used(8), alignment(8)] = 32 bytes
 	
-	// Allocate arena buffer: malloc(16MB)
-	fc.out.MovImmToReg("rdi", "16777216")  // 16 * 1024 * 1024
+	// Check SMALLARENA environment variable at runtime
+	// If set, use 4 bytes; otherwise use 16MB
+	// This tests arena growth mechanism thoroughly
+	
+	smallArenaEnvName := "_env_smallarena"
+	fc.eb.Define(smallArenaEnvName, "SMALLARENA\x00")
+	
+	// Call getenv("SMALLARENA") - ensure it's in neededFunctions
+	hasGetenv := false
+	for _, fn := range fc.eb.neededFunctions {
+		if fn == "getenv" {
+			hasGetenv = true
+			break
+		}
+	}
+	if !hasGetenv {
+		fc.eb.neededFunctions = append(fc.eb.neededFunctions, "getenv")
+	}
+	
+	fc.out.LeaSymbolToReg("rdi", smallArenaEnvName)
+	fc.trackFunctionCall("getenv")
+	fc.eb.GenerateCallInstruction("getenv")
+	
+	// Check if getenv returned NULL (env var not set)
+	fc.out.TestRegReg("rax", "rax")
+	smallArenaNotSet := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0) // je to normal_arena (SMALLARENA not set)
+	
+	// SMALLARENA is set - use 4 bytes (stress test arena growth)
+	fc.out.MovImmToReg("r13", "4")
+	skipToAlloc := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0) // jmp to alloc
+	
+	// SMALLARENA not set - use 16MB (normal mode)
+	normalArenaLabel := fc.eb.text.Len()
+	fc.patchJumpImmediate(smallArenaNotSet+2, int32(normalArenaLabel-(smallArenaNotSet+6)))
+	fc.out.MovImmToReg("r13", "16777216")  // 16 * 1024 * 1024
+	
+	// Now allocate with size in r13
+	allocLabel := fc.eb.text.Len()
+	fc.patchJumpImmediate(skipToAlloc+1, int32(allocLabel-(skipToAlloc+5)))
+	
+	// Allocate arena buffer: malloc(r13)
+	fc.out.MovRegToReg("rdi", "r13")
 	fc.trackFunctionCall("malloc")
 	fc.eb.GenerateCallInstruction("malloc")
 	fc.out.MovRegToReg("r12", "rax") // r12 = arena buffer
@@ -8903,8 +8952,7 @@ func (fc *FlapCompiler) initializeMetaArenaAndGlobalArena() {
 	
 	// Initialize arena struct fields
 	fc.out.MovRegToMem("r12", "rax", 0)  // base_ptr = arena buffer
-	fc.out.MovImmToReg("rcx", "16777216")  // 16MB
-	fc.out.MovRegToMem("rcx", "rax", 8)  // capacity = 16MB
+	fc.out.MovRegToMem("r13", "rax", 8)  // capacity = 4 or 16MB
 	fc.out.XorRegWithReg("rcx", "rcx")
 	fc.out.MovRegToMem("rcx", "rax", 16) // used = 0
 	fc.out.MovImmToReg("rcx", "8")
