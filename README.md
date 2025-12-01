@@ -1,3 +1,5 @@
+[![Go CI](https://github.com/xyproto/flapc/actions/workflows/ci.yml/badge.svg)](https://github.com/xyproto/flapc/actions/workflows/ci.yml)
+
 Flapc is a compiler for the Flap programming language.
 
 See [GRAMMAR.md](GRAMMAR.md) and [LANGUAGESPEC.md](LANGUAGESPEC.md) for more information about the Flap programming language.
@@ -27,3 +29,4 @@ wine sdl3example.exe
 ### General info
 
 * License: BSD-3
+* Version: 1.5.0
