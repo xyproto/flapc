@@ -2,8 +2,6 @@
 
 Flapc is a compiler for the Flap programming language.
 
-See [GRAMMAR.md](GRAMMAR.md) and [LANGUAGESPEC.md](LANGUAGESPEC.md) for more information about the Flap programming language.
-
 ### Installation
 
 `go install github.com/xyproto/flapc@latest`
