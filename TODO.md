@@ -3,13 +3,18 @@
 ## Current Status (2025-12-01)
 
 ### Working Features ✅
+- **Statically linked executables on Linux!** ✅
+  - No libc dependency for simple programs
+  - Uses mmap/munmap/write syscalls directly
+  - Arena allocator uses mmap instead of malloc
+  - Number printing uses pure assembly (_flap_itoa)
+  - Exit via syscall (not libc exit())
+  - ~29KB for "Hello World" program
 - **Match expression return values FIXED!** ✅
 - **Arena allocator FULLY IMPLEMENTED!** ✅
   - 100% libc-free memory management on Linux
-  - Uses mmap/mremap/munmap syscalls directly
-  - Dynamic arena growth with 1.3x scaling using mremap
-  - Initial 1MB arena grows automatically as needed
-  - Proper cleanup at program exit with munmap syscall
+  - Uses mmap/munmap syscalls directly (no malloc/free)
+  - Dynamic arena growth possible with mremap
   - Platform-specific: syscalls on Linux, C functions on Windows/macOS
 - **Number to string conversion PURE ASSEMBLY!** ✅
   - `_flap_itoa` implemented in pure x86_64 assembly
