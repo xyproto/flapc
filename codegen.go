@@ -3054,7 +3054,7 @@ func (fc *FlapCompiler) getExprType(expr Expression) string {
 
 		// Function calls - check return type for Flap built-ins
 		stringFuncs := map[string]bool{
-			"str": true, "read_file": true, "readln": true,
+			"str": true, "read_file": true,
 			"upper": true, "lower": true, "trim": true,
 			"_error_code_extract": true,
 		}
@@ -8412,15 +8412,17 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	fc.out.MovRegToReg("rbx", "rdi") // rbx = arena_ptr
 
-	// Free buffer
-	fc.out.MovMemToReg("rdi", "rbx", 0) // rdi = buffer_ptr
-	fc.trackFunctionCall("free")
-	fc.eb.GenerateCallInstruction("free")
+	// Munmap buffer: munmap(ptr, size)
+	fc.out.MovMemToReg("rdi", "rbx", 0)  // rdi = buffer_ptr
+	fc.out.MovMemToReg("rsi", "rbx", 8)  // rsi = capacity
+	fc.trackFunctionCall("munmap")
+	fc.eb.GenerateCallInstruction("munmap")
 
-	// Free arena structure
-	fc.out.MovRegToReg("rdi", "rbx") // rdi = arena_ptr
-	fc.trackFunctionCall("free")
-	fc.eb.GenerateCallInstruction("free")
+	// Munmap arena structure: munmap(ptr, 32)
+	fc.out.MovRegToReg("rdi", "rbx")     // rdi = arena_ptr
+	fc.out.MovImmToReg("rsi", "32")      // rsi = sizeof(Arena)
+	fc.trackFunctionCall("munmap")
+	fc.eb.GenerateCallInstruction("munmap")
 
 	fc.out.PopReg("rbx")
 	fc.out.PopReg("rbp")
@@ -9007,20 +9009,31 @@ func (fc *FlapCompiler) cleanupAllArenas() {
 	fc.out.ShlRegByImm("rax", 3) // offset = index * 8
 	fc.out.AddRegToReg("rax", "rbx")
 
-	// Use proper calling convention for first argument
-	firstArgReg := "rdi" // System V AMD64 (Linux/Unix)
-	if fc.eb.target.OS() == OSWindows {
-		firstArgReg = "rcx" // Microsoft x64 (Windows)
-	}
-	fc.out.MovMemToReg(firstArgReg, "rax", 0) // first_arg = arena_ptrs[r8]
+	fc.out.MovMemToReg("r9", "rax", 0) // r9 = arena struct pointer
 
+	// Munmap buffer: munmap(ptr, size)
+	fc.out.MovMemToReg("rdi", "r9", 0)  // rdi = buffer_ptr (arena[0])
+	fc.out.MovMemToReg("rsi", "r9", 8)  // rsi = capacity (arena[8])
+	
 	// Allocate shadow space for Windows
 	shadowSpace := fc.allocateShadowSpace()
+	
+	fc.trackFunctionCall("munmap")
+	fc.eb.GenerateCallInstruction("munmap")
+	
+	// Deallocate shadow space
+	fc.deallocateShadowSpace(shadowSpace)
 
-	// Free the arena
-	fc.trackFunctionCall("free")
-	fc.eb.GenerateCallInstruction("free")
-
+	// Munmap arena struct: munmap(ptr, 32)
+	fc.out.MovRegToReg("rdi", "r9")      // rdi = arena struct pointer
+	fc.out.MovImmToReg("rsi", "32")      // rsi = sizeof(Arena)
+	
+	// Allocate shadow space for Windows
+	shadowSpace = fc.allocateShadowSpace()
+	
+	fc.trackFunctionCall("munmap")
+	fc.eb.GenerateCallInstruction("munmap")
+	
 	// Deallocate shadow space
 	fc.deallocateShadowSpace(shadowSpace)
 
@@ -9033,13 +9046,16 @@ func (fc *FlapCompiler) cleanupAllArenas() {
 	cleanupDone := fc.eb.text.Len()
 	fc.patchJumpImmediate(skipCleanupEnd+2, int32(cleanupDone-(skipCleanupEnd+ConditionalJumpSize)))
 
-	fc.out.MovRegToReg(firstArgReg, "rbx") // meta-arena pointer (reuse firstArgReg from above)
+	// Munmap the meta-arena array itself
+	// Size = MAX_ARENAS * 8 = 256 * 8 = 2048
+	fc.out.MovRegToReg("rdi", "rbx")    // rdi = meta-arena pointer
+	fc.out.MovImmToReg("rsi", "2048")   // rsi = size (256 arena pointers * 8 bytes)
 
 	// Allocate shadow space for Windows
 	shadowSpace2 := fc.allocateShadowSpace()
 
-	fc.trackFunctionCall("free")
-	fc.eb.GenerateCallInstruction("free")
+	fc.trackFunctionCall("munmap")
+	fc.eb.GenerateCallInstruction("munmap")
 
 	// Deallocate shadow space
 	fc.deallocateShadowSpace(shadowSpace2)
@@ -14552,10 +14568,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.Cvtsi2sd("xmm0", "rax")
 
 	case "readln":
-		// readln() - Read a line from stdin, return as Flap string
-		if len(call.Args) != 0 {
-			compilerError("readln() takes no arguments")
-		}
+		compilerError("readln() is not implemented yet - requires stdin support without libc")
 
 		// Allocate space on stack for getline parameters
 		// getline(&lineptr, &n, stdin)
