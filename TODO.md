@@ -19,10 +19,11 @@
 - **Higher-order functions WORKING!** ✅
   - Functions can be passed as parameters
   - `apply := f, x -> f(x)` works correctly
-- **Executable compression IMPLEMENTED!** ✅
-  - Custom aPLib compression with tiny decompressor stub
-  - ~50-70% size reduction for executables
-  - SDL3 example: 2.8KB → ~1.5KB (estimated)
+- **Executable compression PARTIALLY IMPLEMENTED** 🚧
+  - Custom compression algorithm implemented
+  - Decompressor stub written but has bugs (segfaults)
+  - Currently disabled until debugging complete
+  - Infrastructure in place for future enablement
 - **All core tests passing** ✅
 
 ### Platform Support
