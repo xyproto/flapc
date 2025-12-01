@@ -2361,8 +2361,8 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 		// Allocate thread argument structure on heap (32 bytes)
 		// Structure: [start: int64][end: int64][barrier_ptr: int64][parent_rbp: int64]
 		fc.out.MovImmToReg("rdi", "32") // size = 32 bytes
-		fc.trackFunctionCall("malloc")
-		fc.eb.GenerateCallInstruction("malloc")
+		// Allocate from arena
+		fc.callArenaAlloc()
 		fc.out.MovRegToReg("r13", "rax") // r13 = thread args
 
 		// Store thread parameters in the allocated structure
@@ -3836,8 +3836,8 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.MovRegToReg("rdi", "rdx")
 				fc.out.PushReg("rsi")
 				fc.out.PushReg("rcx")
-				fc.trackFunctionCall("malloc")
-				fc.eb.GenerateCallInstruction("malloc")
+				// Allocate from arena
+				fc.callArenaAlloc()
 				fc.out.PopReg("rcx")
 				fc.out.PopReg("rsi")
 
@@ -4916,8 +4916,8 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.AndRegWithImm("rsp", -16) // Align to 16 bytes
 
 			fc.out.MovImmToReg("rdi", fmt.Sprintf("%d", totalSize))
-			fc.trackFunctionCall("malloc")
-			fc.eb.GenerateCallInstruction("malloc")
+			// Allocate from arena
+			fc.callArenaAlloc()
 
 			fc.out.MovRegToReg("rsp", "r13") // Restore original rsp
 			fc.out.MovRegToReg("r12", "rax") // r12 = closure object pointer
@@ -6197,8 +6197,8 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 
 	// DO NOT USE MALLOC! See MEMORY.md - should use arena allocation
 	// TODO: Replace with arena allocation (if mutable) or .rodata (if immutable)
-	fc.trackFunctionCall("malloc")
-	fc.eb.GenerateCallInstruction("malloc")
+	// Allocate from arena
+	fc.callArenaAlloc()
 
 	// Store result list pointer in r12
 	fc.out.MovRegToReg("r12", "rax") // r12 = result list base (from malloc)
@@ -7119,8 +7119,8 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 		fc.out.MovRegToReg("rdi", "rax")
 	}
 
-	fc.trackFunctionCall("malloc")
-	fc.eb.GenerateCallInstruction("malloc")
+	// Allocate from arena
+	fc.callArenaAlloc()
 
 	// Clean up shadow space on Windows
 	if fc.eb.target.OS() == OSWindows {
@@ -7299,8 +7299,8 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovRegToReg("rdi", "r14")
 	fc.out.Emit([]byte{0x48, 0xc1, 0xe7, 0x04}) // shl rdi, 4 (multiply by 16)
 	fc.out.Emit([]byte{0x48, 0x83, 0xc7, 0x08}) // add rdi, 8
-	fc.trackFunctionCall("malloc")
-	fc.eb.GenerateCallInstruction("malloc")
+	// Allocate from arena
+	fc.callArenaAlloc()
 	fc.out.MovRegToReg("r13", "rax") // r13 = Flap string map pointer
 
 	// Store count in map[0]
@@ -7470,8 +7470,8 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovRegToReg("rdi", "rax")
 	// Save r8 (step) before malloc since it's caller-saved
 	fc.out.PushReg("r8")
-	fc.trackFunctionCall("malloc")
-	fc.eb.GenerateCallInstruction("malloc")
+	// Allocate from arena
+	fc.callArenaAlloc()
 	fc.out.MovRegToReg("rbx", "rax") // rbx = new string pointer
 	// Restore r8 (step)
 	fc.out.PopReg("r8")
@@ -7606,8 +7606,8 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Call malloc(rax)
 	fc.out.MovRegToReg("rdi", "rax")
-	fc.trackFunctionCall("malloc")
-	fc.eb.GenerateCallInstruction("malloc")
+	// Allocate from arena
+	fc.callArenaAlloc()
 	fc.out.MovRegToReg("r10", "rax") // r10 = result pointer
 
 	// Write total length to result
@@ -7823,8 +7823,8 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.ShlRegImm("rax", "4") // rax = count * 16
 	fc.out.AddImmToReg("rax", 8)
 	fc.out.MovRegToReg("rdi", "rax")
-	fc.trackFunctionCall("malloc")
-	fc.eb.GenerateCallInstruction("malloc")
+	// Allocate from arena
+	fc.callArenaAlloc()
 	fc.out.MovRegToReg("r13", "rax") // r13 = output string
 
 	// Copy count
@@ -7917,8 +7917,8 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.ShlRegImm("rax", "4") // rax = count * 16
 	fc.out.AddImmToReg("rax", 8)
 	fc.out.MovRegToReg("rdi", "rax")
-	fc.trackFunctionCall("malloc")
-	fc.eb.GenerateCallInstruction("malloc")
+	// Allocate from arena
+	fc.callArenaAlloc()
 	fc.out.MovRegToReg("r13", "rax") // r13 = output string
 
 	// Copy count
@@ -8126,8 +8126,8 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovRegToReg("rdi", "r14")
 	fc.out.ShlRegImm("rdi", "4") // rdi = r14 * 16
 	fc.out.AddImmToReg("rdi", 8) // rdi = r14 * 16 + 8
-	fc.trackFunctionCall("malloc")
-	fc.eb.GenerateCallInstruction("malloc")
+	// Allocate from arena
+	fc.callArenaAlloc()
 	fc.out.MovRegToReg("r13", "rax")
 
 	// Copy count
@@ -8177,8 +8177,8 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Allocate empty string
 	fc.out.MovImmToReg("rdi", "8")
-	fc.trackFunctionCall("malloc")
-	fc.eb.GenerateCallInstruction("malloc")
+	// Allocate from arena
+	fc.callArenaAlloc()
 	fc.out.MovRegToReg("r13", "rax")
 	fc.out.XorRegWithReg("rax", "rax")
 	fc.out.Cvtsi2sd("xmm0", "rax")
@@ -8214,8 +8214,8 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Allocate arena structure (32 bytes)
 	fc.out.MovImmToReg("rdi", "32")
-	fc.trackFunctionCall("malloc")
-	fc.eb.GenerateCallInstruction("malloc")
+	// Allocate from arena
+	fc.callArenaAlloc()
 
 	// Check if malloc failed
 	fc.out.TestRegReg("rax", "rax")
@@ -8226,8 +8226,8 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Allocate arena buffer
 	fc.out.MovRegToReg("rdi", "r12") // rdi = capacity
-	fc.trackFunctionCall("malloc")
-	fc.eb.GenerateCallInstruction("malloc")
+	// Allocate from arena
+	fc.callArenaAlloc()
 
 	// Check if malloc failed
 	fc.out.TestRegReg("rax", "rax")
@@ -8948,10 +8948,15 @@ func (fc *FlapCompiler) initializeMetaArenaAndGlobalArena() {
 		fc.eb.GenerateCallInstruction("printf")
 	}
 	
-	// Allocate meta-arena array: malloc(8 * 4) = 32 bytes for 4 arena pointers
-	fc.out.MovImmToReg("rdi", fmt.Sprintf("%d", 8*initialCapacity))
-	fc.trackFunctionCall("malloc")
-	fc.eb.GenerateCallInstruction("malloc")
+	// Allocate meta-arena array using mmap: 8 * 4 = 32 bytes for 4 arena pointers
+	fc.out.MovImmToReg("rdi", "0") // addr = NULL
+	fc.out.MovImmToReg("rsi", fmt.Sprintf("%d", 8*initialCapacity)) // length = 32
+	fc.out.MovImmToReg("rdx", "3") // prot = PROT_READ | PROT_WRITE
+	fc.out.MovImmToReg("r10", "34") // flags = MAP_PRIVATE | MAP_ANONYMOUS
+	fc.out.MovImmToReg("r8", "-1") // fd = -1
+	fc.out.MovImmToReg("r9", "0") // offset = 0
+	fc.out.MovImmToReg("rax", "9") // syscall number for mmap
+	fc.out.Syscall()
 	
 	// Store meta-arena array pointer
 	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta")
@@ -8962,24 +8967,34 @@ func (fc *FlapCompiler) initializeMetaArenaAndGlobalArena() {
 	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta_cap")
 	fc.out.MovRegToMem("rcx", "rbx", 0)
 	
-	// Create default arena (arena 0) - 16MB malloc'd buffer
+	// Create default arena (arena 0) - 1MB mmap'd buffer
 	// Arena struct: [base_ptr(8), capacity(8), used(8), alignment(8)] = 32 bytes
 	
-	// Allocate arena buffer: malloc(16MB)
-	fc.out.MovImmToReg("rdi", "16777216")  // 16 * 1024 * 1024
-	fc.trackFunctionCall("malloc")
-	fc.eb.GenerateCallInstruction("malloc")
+	// Allocate arena buffer using mmap: 1MB
+	fc.out.MovImmToReg("rdi", "0") // addr = NULL
+	fc.out.MovImmToReg("rsi", "1048576") // length = 1MB
+	fc.out.MovImmToReg("rdx", "3") // prot = PROT_READ | PROT_WRITE
+	fc.out.MovImmToReg("r10", "34") // flags = MAP_PRIVATE | MAP_ANONYMOUS
+	fc.out.MovImmToReg("r8", "-1") // fd = -1
+	fc.out.MovImmToReg("r9", "0") // offset = 0
+	fc.out.MovImmToReg("rax", "9") // syscall number for mmap
+	fc.out.Syscall()
 	fc.out.MovRegToReg("r12", "rax") // r12 = arena buffer
 	
-	// Allocate arena struct: malloc(32)
-	fc.out.MovImmToReg("rdi", "32")
-	fc.trackFunctionCall("malloc")
-	fc.eb.GenerateCallInstruction("malloc")
+	// Allocate arena struct using mmap: 32 bytes (round up to page size 4096)
+	fc.out.MovImmToReg("rdi", "0") // addr = NULL
+	fc.out.MovImmToReg("rsi", "4096") // length = 4096 (page size)
+	fc.out.MovImmToReg("rdx", "3") // prot = PROT_READ | PROT_WRITE
+	fc.out.MovImmToReg("r10", "34") // flags = MAP_PRIVATE | MAP_ANONYMOUS
+	fc.out.MovImmToReg("r8", "-1") // fd = -1
+	fc.out.MovImmToReg("r9", "0") // offset = 0
+	fc.out.MovImmToReg("rax", "9") // syscall number for mmap
+	fc.out.Syscall()
 	
 	// Initialize arena struct fields
 	fc.out.MovRegToMem("r12", "rax", 0)  // base_ptr = arena buffer
-	fc.out.MovImmToReg("rcx", "16777216")  // 16MB
-	fc.out.MovRegToMem("rcx", "rax", 8)  // capacity = 16MB
+	fc.out.MovImmToReg("rcx", "1048576")  // 1MB
+	fc.out.MovRegToMem("rcx", "rax", 8)  // capacity = 1MB
 	fc.out.XorRegWithReg("rcx", "rcx")
 	fc.out.MovRegToMem("rcx", "rax", 16) // used = 0
 	fc.out.MovImmToReg("rcx", "8")
@@ -9579,8 +9594,8 @@ func (fc *FlapCompiler) compileMemoizedCall(call *CallExpr, lambda *LambdaFunc) 
 	// Reallocate with malloc
 	fc.out.MovRegToReg("rdi", "rax")
 	fc.out.SubImmFromReg("rsp", 16) // Align stack
-	fc.trackFunctionCall("malloc")
-	fc.eb.GenerateCallInstruction("malloc")
+	// Allocate from arena
+	fc.callArenaAlloc()
 	fc.out.AddImmToReg("rsp", 16)
 	// rax = new cache pointer (r14 still has old count - malloc preserves callee-saved regs)
 
@@ -9648,8 +9663,8 @@ func (fc *FlapCompiler) compileMemoizedCall(call *CallExpr, lambda *LambdaFunc) 
 	// Allocate initial cache: 8 bytes for count
 	fc.out.MovImmToReg("rdi", "8")
 	fc.out.SubImmFromReg("rsp", 16)
-	fc.trackFunctionCall("malloc")
-	fc.eb.GenerateCallInstruction("malloc")
+	// Allocate from arena
+	fc.callArenaAlloc()
 	fc.out.AddImmToReg("rsp", 16)
 	// rax = cache pointer
 
@@ -11408,8 +11423,8 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Allocate string memory (need 8 bytes count + 3*16 bytes entries = 56 bytes)
 		// Use malloc for simplicity
 		fc.out.Emit([]byte{0x48, 0xc7, 0xc7, 0x38, 0x00, 0x00, 0x00}) // mov rdi, 56
-		fc.trackFunctionCall("malloc")
-		fc.eb.GenerateCallInstruction("malloc")
+		// Allocate from arena
+		fc.callArenaAlloc()
 		// rax now points to allocated memory
 		fc.out.MovRegToReg("rsi", "rax")
 
@@ -11582,8 +11597,8 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			fc.out.PushReg("rcx")
 			fc.out.PushReg("r8")
 
-			fc.trackFunctionCall("malloc")
-			fc.eb.GenerateCallInstruction("malloc")
+			// Allocate from arena
+			fc.callArenaAlloc()
 
 			// Restore registers
 			fc.out.PopReg("r8")  // new count
@@ -12629,8 +12644,8 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.MovRegToReg("rdi", "rdx")
 		fc.out.PushReg("rsi") // Save old list ptr
 		fc.out.PushReg("rcx") // Save count
-		fc.trackFunctionCall("malloc")
-		fc.eb.GenerateCallInstruction("malloc")
+		// Allocate from arena
+		fc.callArenaAlloc()
 		fc.out.PopReg("rcx") // Restore count
 		fc.out.PopReg("rsi") // Restore old list ptr
 
@@ -12747,8 +12762,8 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Allocate new_list
 		fc.out.MovRegToReg("rdi", "r14")
-		fc.trackFunctionCall("malloc")
-		fc.eb.GenerateCallInstruction("malloc")
+		// Allocate from arena
+		fc.callArenaAlloc()
 		fc.out.MovRegToReg("r14", "rax") // r14 = new_list pointer
 
 		// Store new count in new_list
@@ -12795,8 +12810,8 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Allocate result list with 2 elements
 		// Result size: 8 (count) + 2 * 16 (two entries) = 40 bytes
 		fc.out.MovImmToReg("rdi", "40")
-		fc.trackFunctionCall("malloc")
-		fc.eb.GenerateCallInstruction("malloc")
+		// Allocate from arena
+		fc.callArenaAlloc()
 		fc.out.MovRegToReg("r15", "rax") // r15 = result list pointer
 
 		// Store count=2 in result list
@@ -12829,8 +12844,8 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Allocate empty list
 		fc.out.MovImmToReg("rdi", "8")
-		fc.trackFunctionCall("malloc")
-		fc.eb.GenerateCallInstruction("malloc")
+		// Allocate from arena
+		fc.callArenaAlloc()
 		fc.out.MovRegToReg("r14", "rax") // r14 = empty list
 
 		// Store count=0 in empty list
@@ -12840,8 +12855,8 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Allocate result list with 2 elements
 		fc.out.MovImmToReg("rdi", "40")
-		fc.trackFunctionCall("malloc")
-		fc.eb.GenerateCallInstruction("malloc")
+		// Allocate from arena
+		fc.callArenaAlloc()
 		fc.out.MovRegToReg("r15", "rax") // r15 = result list
 
 		// Store count=2
@@ -14051,8 +14066,8 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.PushReg("rdx")
 
 		// Call malloc
-		fc.trackFunctionCall("malloc")
-		fc.eb.GenerateCallInstruction("malloc")
+		// Allocate from arena
+		fc.callArenaAlloc()
 
 		// Restore
 		fc.out.PopReg("rdx")
@@ -14798,8 +14813,8 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Create empty Flap string (count = 0)
 		fc.out.MovImmToReg("rdi", "8") // Allocate 8 bytes for count
-		fc.trackFunctionCall("malloc")
-		fc.eb.GenerateCallInstruction("malloc")
+		// Allocate from arena
+		fc.callArenaAlloc()
 		fc.out.XorRegWithReg("rdx", "rdx")
 		fc.out.Cvtsi2sd("xmm0", "rdx")       // xmm0 = 0.0
 		fc.out.MovXmmToMem("xmm0", "rax", 0) // [map] = 0.0
@@ -14866,8 +14881,8 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Allocate buffer: malloc(size + 1) for null terminator
 		fc.out.MovMemToReg("rdi", "rsp", 8) // size from [rsp+8]
 		fc.out.AddImmToReg("rdi", 1)        // +1 for null terminator
-		fc.trackFunctionCall("malloc")
-		fc.eb.GenerateCallInstruction("malloc")
+		// Allocate from arena
+		fc.callArenaAlloc()
 
 		// Save buffer at [rsp+16]
 		fc.out.MovRegToMem("rax", "rsp", 16)
@@ -14923,8 +14938,8 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Create empty Flap string (count = 0)
 		fc.out.MovImmToReg("rdi", "8")
-		fc.trackFunctionCall("malloc")
-		fc.eb.GenerateCallInstruction("malloc")
+		// Allocate from arena
+		fc.callArenaAlloc()
 		fc.out.XorRegWithReg("rdx", "rdx")
 		fc.out.Cvtsi2sd("xmm0", "rdx")
 		fc.out.MovXmmToMem("xmm0", "rax", 0)
@@ -15980,8 +15995,8 @@ func (fc *FlapCompiler) callMallocAligned(sizeReg string, pushCount int) {
 	}
 
 	// Call malloc
-	fc.trackFunctionCall("malloc")
-	fc.eb.GenerateCallInstruction("malloc")
+	// Allocate from arena
+	fc.callArenaAlloc()
 
 	// Restore stack alignment offset if we added one
 	if alignmentOffset > 0 {
