@@ -29,4 +29,4 @@ wine sdl3example.exe
 ### General info
 
 * License: BSD-3
-* Version: 1.5.0
+* Version: 1.4.0
