@@ -7,28 +7,33 @@
   - `result := x { 5 => 42 ~> 99 }` now correctly returns 42/99
   - Supports both `=>` and `->` arrows in match clauses
   - Guardless matches still correctly wrapped in lambdas
+- **Arena allocator with mmap syscalls IMPLEMENTED!** ✅
+  - No libc dependency for internal memory management
+  - Uses mmap/munmap syscalls directly on Linux
+  - Dynamic arena growth with 1.3x scaling
+  - Proper cleanup at program exit
 - String to string casts: `s as string`
 - Number to string conversion: `42 as string` (single use works)
-- Arena allocator with 1.3x dynamic growth (16MB → 20.8MB → 27MB...)
-- **Windows SDL3 support FIXED!** ✅
-  - Removed SMALLARENA environment variable dependency
-  - Windows programs compile and run correctly
+- **Windows SDL3 support WORKING!** ✅
+  - No libc dependencies for core operations
+  - Windows programs compile and run correctly  
   - SDL3 example works on Windows via Wine
 - All core language features functional
-- **All 208 tests passing** (100%, 23.5% coverage)
+- **Basic tests passing** (arithmetic, basic programs, lambdas working)
 
 ### Platform Support
-- ✅ Linux x86_64: Fully working
+- ✅ Linux x86_64: Fully working with mmap-based arenas
 - ✅ Windows x86_64: Fully working (tested via Wine)
-- 🚧 Linux ARM64: 95% complete (needs testing)
+- 🚧 Linux ARM64: 95% complete (needs arena implementation)
 - ❌ Linux RISC-V64: Not yet implemented
 - ❌ Windows ARM64: Not yet implemented
-- ❌ macOS ARM64: Not yet implemented
+- ❌ macOS ARM64: Not yet implemented (will need libc)
 
 ### Known Limitations
-- Currently uses libc (malloc, realloc, sprintf, printf)
-- Need mmap syscalls for libc-free operation (except macOS)
-- Pattern matching returns matched value instead of result expression
+- `readln()` builtin removed (was using libc getline)
+- Higher-order function tests have syntax errors (need fixing)
+- Some C functions still used: sprintf for printf, pow for **
+- macOS will need libc for syscalls (no direct syscall support)
 
 ## Core Features
 
