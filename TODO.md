@@ -29,7 +29,12 @@ If it's true that "xor eax,eax" does the same as "xor rax,rax" and also the same
   - Windows programs compile and run correctly
   - SDL3 example works on Windows via Wine
 - All core language features functional
-- **All tests passing** (arithmetic, basic programs, lambdas working)
+- **Higher-order functions WORKING!** ✅ NEW (2025-12-01 evening)
+  - Lambda parameters properly tracked during compilation
+  - `apply := f, x -> f(x)` compiles and works correctly
+  - Functions can be passed as parameters
+  - Enables functional programming patterns (map, filter, compose)
+- **All tests passing** (arithmetic, basic programs, lambdas, higher-order functions)
 
 ### Platform Support
 - ✅ Linux x86_64: Fully working with mmap-based arenas
@@ -41,7 +46,9 @@ If it's true that "xor eax,eax" does the same as "xor rax,rax" and also the same
 
 ### Known Limitations
 - `readln()` builtin removed (was using libc getline)
-- Higher-order function tests have syntax errors (need fixing)
+- ~~Higher-order function tests have syntax errors (need fixing)~~ **FIXED!** ✅
+- Pipeline with lambdas returns wrong values (needs fixing)
+- Multiple f-string interpolations may not work correctly
 - Some C functions still used: pow for ** (can be replaced with pure assembly)
 - macOS will need libc for syscalls (no direct syscall support)
 - printf still uses libc (but can be replaced with write syscall + itoa)
