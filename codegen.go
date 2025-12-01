@@ -11721,20 +11721,30 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		return
 
 	case "println":
-		// println is now a simple wrapper around printf
-		// This avoids the fflush issues and keeps things simple
+		// println uses syscalls on Linux, printf on Windows
 
 		if len(call.Args) == 0 {
 			// Just print a newline
 			newlineLabel := fmt.Sprintf("println_fmt_%d", fc.stringCounter)
 			fc.stringCounter++
-			fc.eb.Define(newlineLabel, "\n\x00")
+			fc.eb.Define(newlineLabel, "\n")
 
-			shadowSpace := fc.allocateShadowSpace()
-			fc.out.LeaSymbolToReg(fc.getIntArgReg(0), newlineLabel)
-			fc.trackFunctionCall("printf")
-			fc.eb.GenerateCallInstruction("printf")
-			fc.deallocateShadowSpace(shadowSpace)
+			if fc.eb.target.OS() == OSLinux {
+				// Use write syscall
+				fc.out.MovImmToReg("rax", "1")       // sys_write
+				fc.out.MovImmToReg("rdi", "1")       // stdout
+				fc.out.LeaSymbolToReg("rsi", newlineLabel)
+				fc.out.MovImmToReg("rdx", "1")       // 1 byte
+				fc.out.Syscall()
+			} else {
+				// Windows - use printf
+				fc.eb.Define(newlineLabel+"_z", "\n\x00") // null-terminated
+				shadowSpace := fc.allocateShadowSpace()
+				fc.out.LeaSymbolToReg(fc.getIntArgReg(0), newlineLabel+"_z")
+				fc.trackFunctionCall("printf")
+				fc.eb.GenerateCallInstruction("printf")
+				fc.deallocateShadowSpace(shadowSpace)
+			}
 			return
 		}
 
@@ -11742,21 +11752,33 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		argType := fc.getExprType(arg)
 
 		if strExpr, ok := arg.(*StringExpr); ok {
-			// String literal - use printf with %s\n
+			// String literal
 			labelName := fmt.Sprintf("str_%d", fc.stringCounter)
 			fc.stringCounter++
-			fc.eb.Define(labelName, strExpr.Value+"\x00")
+			strWithNewline := strExpr.Value + "\n"
+			fc.eb.Define(labelName, strWithNewline)
 
-			fmtLabel := fmt.Sprintf("println_fmt_%d", fc.stringCounter)
-			fc.stringCounter++
-			fc.eb.Define(fmtLabel, "%s\n\x00")
+			if fc.eb.target.OS() == OSLinux {
+				// Use write syscall
+				fc.out.MovImmToReg("rax", "1")       // sys_write
+				fc.out.MovImmToReg("rdi", "1")       // stdout
+				fc.out.LeaSymbolToReg("rsi", labelName)
+				fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", len(strWithNewline)))
+				fc.out.Syscall()
+			} else {
+				// Windows - use printf
+				fc.eb.Define(labelName+"_z", strWithNewline+"\x00") // null-terminated
+				fmtLabel := fmt.Sprintf("println_fmt_%d", fc.stringCounter)
+				fc.stringCounter++
+				fc.eb.Define(fmtLabel, "%s\x00")
 
-			shadowSpace := fc.allocateShadowSpace()
-			fc.out.LeaSymbolToReg(fc.getIntArgReg(0), fmtLabel)
-			fc.out.LeaSymbolToReg(fc.getIntArgReg(1), labelName)
-			fc.trackFunctionCall("printf")
-			fc.eb.GenerateCallInstruction("printf")
-			fc.deallocateShadowSpace(shadowSpace)
+				shadowSpace := fc.allocateShadowSpace()
+				fc.out.LeaSymbolToReg(fc.getIntArgReg(0), fmtLabel)
+				fc.out.LeaSymbolToReg(fc.getIntArgReg(1), labelName+"_z")
+				fc.trackFunctionCall("printf")
+				fc.eb.GenerateCallInstruction("printf")
+				fc.deallocateShadowSpace(shadowSpace)
+			}
 			return
 		} else if argType == "string" {
 			// String variable - call _flap_string_println helper
@@ -11873,32 +11895,57 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			return
 
 		} else {
-			// Print number using printf with %g (smart formatting)
-			// %g prints integers without decimals, floats with minimal decimals
+			// Print number using pure assembly (no libc)
 			fc.compileExpression(arg)
 			// xmm0 contains float64 value
 
-			fmtLabel := fmt.Sprintf("println_fmt_%d", fc.stringCounter)
-			fc.stringCounter++
-			fc.eb.Define(fmtLabel, "%g\n\x00")
+			if fc.eb.target.OS() == OSLinux {
+				// Convert to int64 and use _flap_itoa + write syscall
+				fc.out.Cvttsd2si("rdi", "xmm0") // Convert float to int64
+				
+				// Allocate stack buffer for number string
+				fc.out.SubImmFromReg("rsp", 32)
+				fc.out.MovRegToReg("r15", "rsp") // Save buffer pointer
+				
+				// Call _flap_itoa(rdi=number)
+				fc.trackFunctionCall("_flap_itoa")
+				fc.eb.GenerateCallInstruction("_flap_itoa")
+				// Returns: rsi=string start, rdx=length
+				
+				// Write to stdout: write(1, rsi, rdx)
+				fc.out.MovImmToReg("rax", "1") // sys_write
+				fc.out.MovImmToReg("rdi", "1") // stdout
+				// rsi already has buffer pointer
+				// rdx already has length
+				fc.out.Syscall()
+				
+				// Write newline
+				newlineLabel := fmt.Sprintf("println_newline_%d", fc.stringCounter)
+				fc.stringCounter++
+				fc.eb.Define(newlineLabel, "\n")
+				fc.out.MovImmToReg("rax", "1") // sys_write
+				fc.out.MovImmToReg("rdi", "1") // stdout
+				fc.out.LeaSymbolToReg("rsi", newlineLabel)
+				fc.out.MovImmToReg("rdx", "1")
+				fc.out.Syscall()
+				
+				// Clean up stack
+				fc.out.AddImmToReg("rsp", 32)
+			} else {
+				// Windows - use printf
+				fmtLabel := fmt.Sprintf("println_fmt_%d", fc.stringCounter)
+				fc.stringCounter++
+				fc.eb.Define(fmtLabel, "%g\n\x00")
 
-			shadowSpace := fc.allocateShadowSpace()
-			fc.out.LeaSymbolToReg(fc.getIntArgReg(0), fmtLabel)
-
-			// Windows requires float args in BOTH integer and XMM registers for variadic functions
-			if fc.eb.target.OS() == OSWindows {
-				// Move xmm0 to xmm1 (2nd parameter position)
+				shadowSpace := fc.allocateShadowSpace()
+				fc.out.LeaSymbolToReg(fc.getIntArgReg(0), fmtLabel)
 				fc.out.MovXmmToXmm("xmm1", "xmm0")
-				// Also copy to integer register rdx (2nd parameter)
 				fc.out.MovqXmmToReg(fc.getIntArgReg(1), "xmm0")
+				fc.out.MovImmToReg("rax", "1")
+				fc.trackFunctionCall("printf")
+				fc.eb.GenerateCallInstruction("printf")
+				fc.deallocateShadowSpace(shadowSpace)
 			}
-			// xmm0 already has the value (Linux System V ABI)
-
-			// Set rax = 1 (one vector register used) for variadic printf
-			fc.out.MovImmToReg("rax", "1")
-			fc.trackFunctionCall("printf")
-			fc.eb.GenerateCallInstruction("printf")
-			fc.deallocateShadowSpace(shadowSpace)
 		}
 		return
 

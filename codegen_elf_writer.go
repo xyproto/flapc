@@ -20,8 +20,8 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	fc.eb.useDynamicLinking = true
 
 	// Build pltFunctions list from all called functions
-	// Start with essential functions that runtime helpers need
-	pltFunctions := []string{"printf", "sprintf", "exit", "malloc", "free", "realloc", "strlen", "pow", "fflush"}
+	// Only add functions that are actually used
+	pltFunctions := []string{}
 
 	// Add all functions from usedFunctions (includes call() dynamic calls)
 	pltSet := make(map[string]bool)
@@ -56,13 +56,40 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 		callToPLT[f] = i
 	}
 
+	// Remove functions from PLT that won't be called externally
+	// For example, if we're using syscall for exit, don't add exit to PLT
+	filteredPLT := []string{}
+	for _, funcName := range pltFunctions {
+		// Skip exit if we won't actually call it (using syscall instead)
+		if funcName == "exit" {
+			// Check if we use any libc functions
+			usesLibc := false
+			for fn := range fc.usedFunctions {
+				libcFuncs := map[string]bool{
+					"printf": true, "sprintf": true, "snprintf": true,
+					"malloc": true, "free": true, "realloc": true,
+					"strlen": true, "memcpy": true, "memset": true,
+					"fflush": true,
+				}
+				if libcFuncs[fn] {
+					usesLibc = true
+					break
+				}
+			}
+			if !usesLibc {
+				continue // Skip exit - we'll use syscall
+			}
+		}
+		filteredPLT = append(filteredPLT, funcName)
+	}
+	pltFunctions = filteredPLT
+
 	// Set up dynamic sections
 	ds := NewDynamicSections(fc.eb.target.Arch())
 	fc.dynamicSymbols = ds // Store for later symbol updates
 
 	// Only add NEEDED libraries if their functions are actually used
-	// libc.so.6 is always needed for basic functionality
-	ds.AddNeeded("libc.so.6")
+	// libc.so.6 is only needed if we actually call libc functions
 
 	// Check if pthread functions are used (parallel loops with @@)
 	if fc.usedFunctions["pthread_create"] || fc.usedFunctions["pthread_join"] {
@@ -401,13 +428,36 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	// If an unconditional exit() is called, it will never return, so this code is harmless
 	// If we've used printf or other libc functions, call exit() to ensure proper cleanup
 	// Otherwise use direct syscall for minimal programs
-	if fc.usedFunctions["printf"] || fc.usedFunctions["exit"] || len(fc.usedFunctions) > 0 {
+	usesLibc := false
+	libcFuncs := map[string]bool{
+		"printf": true, "sprintf": true, "snprintf": true,
+		"malloc": true, "free": true, "realloc": true,
+		"strlen": true, "memcpy": true, "memset": true,
+		"fflush": true,
+	}
+	for funcName := range fc.usedFunctions {
+		if libcFuncs[funcName] {
+			usesLibc = true
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG: Found libc function: %s\n", funcName)
+			}
+			break
+		}
+	}
+	
+	if usesLibc {
 		// Use libc's exit() for proper cleanup (flushes buffers)
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Using libc exit()\n")
+		}
 		fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
 		fc.trackFunctionCall("exit")
 		fc.eb.GenerateCallInstruction("exit")
 	} else {
 		// Use direct syscall for minimal programs without libc dependencies
+		if VerboseMode {
+			fmt.Fprintf(os.Stderr, "DEBUG: Using syscall exit (no libc)\n")
+		}
 		fc.out.MovImmToReg("rax", "60")    // syscall number for exit
 		fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
 		fc.eb.Emit("syscall")              // invoke syscall directly

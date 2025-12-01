@@ -39,11 +39,26 @@ type Arena struct {
 // generateArenaInit generates code to initialize an arena
 // This is called at program start or arena block entry
 func (fc *FlapCompiler) generateArenaInit(arena *Arena, sizeBytes int) {
-	// Allocate arena memory with malloc
-	fc.out.MovImmToReg("rdi", fmt.Sprintf("%d", sizeBytes))
-
-	// Call malloc (we'll add a helper for this)
-	fc.callMalloc()
+	// Allocate arena memory with mmap (Linux) or malloc (Windows/macOS)
+	if fc.eb.target.OS() == OSLinux {
+		// mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)
+		fc.out.XorRegWithReg("rdi", "rdi") // addr = NULL
+		fc.out.MovImmToReg("rsi", fmt.Sprintf("%d", sizeBytes)) // length
+		fc.out.MovImmToReg("rdx", "7")  // PROT_READ|PROT_WRITE|PROT_EXEC = 7
+		fc.out.MovImmToReg("r10", "34") // MAP_PRIVATE|MAP_ANONYMOUS = 0x22 = 34
+		fc.out.MovImmToReg("r8", "-1")  // fd = -1
+		fc.out.XorRegWithReg("r9", "r9") // offset = 0
+		fc.out.MovImmToReg("rax", "9")  // sys_mmap = 9
+		fc.out.Syscall()
+	} else {
+		// Fall back to malloc for Windows/macOS
+		if !fc.hasCFunction("malloc") {
+			fc.importCFunction("malloc", "msvcrt.dll")
+		}
+		fc.out.MovImmToReg("rdi", fmt.Sprintf("%d", sizeBytes))
+		mallocSymbol := "__imp_malloc"
+		fc.out.CallSymbol(mallocSymbol)
+	}
 
 	// rax now contains the arena base pointer
 	// Store in arena structure (we'll use stack for now)
@@ -89,9 +104,22 @@ func (fc *FlapCompiler) generateArenaReset() {
 // generateArenaFree generates code to free arena memory
 // This is called at program end or arena block exit
 func (fc *FlapCompiler) generateArenaFree() {
-	// Load base pointer and call free
+	// Load base pointer
 	fc.out.MovMemToReg("rdi", "rbp", -16) // rdi = arena.base
-	fc.callFree()
+	
+	if fc.eb.target.OS() == OSLinux {
+		// munmap(addr, length)
+		fc.out.MovMemToReg("rsi", "rbp", -32) // rsi = arena.size
+		fc.out.MovImmToReg("rax", "11")       // sys_munmap = 11
+		fc.out.Syscall()
+	} else {
+		// Fall back to free for Windows/macOS
+		if !fc.hasCFunction("free") {
+			fc.importCFunction("free", "msvcrt.dll")
+		}
+		freeSymbol := "__imp_free"
+		fc.out.CallSymbol(freeSymbol)
+	}
 }
 
 // Helper functions for calling C runtime
