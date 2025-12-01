@@ -1659,7 +1659,7 @@ func (fc *FlapCompiler) compileArenaExpr(expr *ArenaExpr) {
 	fc.out.MovMemToReg("rbx", "rbx", 0)
 	fc.out.MovMemToReg("rdi", "rbx", offset)
 	fc.out.CallSymbol("flap_arena_reset")
-	
+
 	// Result is already in xmm0 from the last statement
 }
 
@@ -5424,7 +5424,7 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 		fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	case "string", "str":
-		// Convert value to Flap string  
+		// Convert value to Flap string
 		// First check if already a string
 		exprType := fc.getExprType(expr.Expr)
 		if exprType == "string" {
@@ -5432,22 +5432,22 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 			// xmm0 already has correct value from fc.compileExpression(expr.Expr)
 			return
 		}
-		
+
 		// Convert number to string using _flap_itoa (pure machine code, no libc)
 		// Allocate buffer for number string (32 bytes enough for any number)
 		fc.out.SubImmFromReg("rsp", 32)
 		fc.out.MovRegToReg("r15", "rsp") // r15 = buffer pointer
-		
+
 		// Convert float to int64 (truncate)
 		fc.out.Cvttsd2si("rdi", "xmm0")
-		
+
 		// Call _flap_itoa(rdi=number) -> (rsi=buffer, rdx=length)
 		// Save r15 before call (it contains buffer pointer)
 		fc.out.PushReg("r15")
 		fc.trackFunctionCall("_flap_itoa")
 		fc.eb.GenerateCallInstruction("_flap_itoa")
 		fc.out.PopReg("r15")
-		
+
 		// _flap_itoa returns: rsi=buffer start, rdx=length
 		// Copy result to our stack buffer
 		fc.out.MovRegToReg("rdi", "r15") // dest
@@ -5457,7 +5457,7 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 		fc.out.Write(0x74) // JE (jump if zero)
 		fc.out.Write(0x00) // Placeholder
 		endJump := fc.eb.text.Len() - 1
-		
+
 		copyStart := fc.eb.text.Len()
 		fc.out.MovMemToReg("al", "rsi", 0)
 		fc.out.MovByteRegToMem("al", "rdi", 0)
@@ -5467,12 +5467,12 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 		fc.out.Write(0x75) // JNZ (jump back if not zero)
 		copyOffset := int8(copyStart - (fc.eb.text.Len() + 1))
 		fc.out.Write(byte(copyOffset))
-		
+
 		endPos := fc.eb.text.Len()
 		fc.eb.text.Bytes()[endJump] = byte(endPos - (endJump + 1))
-		
+
 		fc.out.MovRegToReg("r13", "rdx") // r13 = length
-		
+
 		// Convert C string to Flap string: allocate 8 + len*16 bytes
 		fc.out.MovRegToReg("rax", "r13")
 		fc.out.ShlRegByImm("rax", 4) // len * 16
@@ -5480,46 +5480,46 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 		fc.out.MovRegToReg("rdi", "rax")
 		fc.callArenaAlloc()
 		fc.out.MovRegToReg("r14", "rax") // r14 = Flap string
-		
+
 		// Store count
 		fc.out.Cvtsi2sd("xmm0", "r13")
 		fc.out.MovXmmToMem("xmm0", "r14", 0)
-		
+
 		// Copy characters to Flap string
 		fc.out.XorRegWithReg("rcx", "rcx") // index
 		copyLoopStart := fc.eb.text.Len()
 		fc.out.CmpRegToReg("rcx", "r13")
 		copyLoopEnd := fc.eb.text.Len()
 		fc.out.JumpConditional(JumpGreaterOrEqual, 0)
-		
+
 		// Load character: movzx rax, byte [r15 + rcx]
 		fc.out.MovRegToReg("rax", "r15")
 		fc.out.AddRegToReg("rax", "rcx")
 		fc.out.Emit([]byte{0x48, 0x0f, 0xb6, 0x00}) // movzx rax, byte [rax]
-		
+
 		// Store to Flap string at offset 8 + rcx*16
 		fc.out.MovRegToReg("rdx", "rcx")
-		fc.out.ShlRegByImm("rdx", 4) // rcx * 16
-		fc.out.AddImmToReg("rdx", 8) // + 8
+		fc.out.ShlRegByImm("rdx", 4)     // rcx * 16
+		fc.out.AddImmToReg("rdx", 8)     // + 8
 		fc.out.AddRegToReg("rdx", "r14") // rdx = string_ptr + offset
-		
+
 		// Store index as float64
 		fc.out.Cvtsi2sd("xmm0", "rcx")
 		fc.out.MovXmmToMem("xmm0", "rdx", 0)
-		
+
 		// Store char as float64
 		fc.out.Cvtsi2sd("xmm0", "rax")
 		fc.out.MovXmmToMem("xmm0", "rdx", 8)
-		
+
 		// Increment and loop
 		fc.out.AddImmToReg("rcx", 1)
 		backOffset := int32(copyLoopStart - (fc.eb.text.Len() + UnconditionalJumpSize))
 		fc.out.JumpUnconditional(backOffset)
-		
+
 		// Loop end
 		loopEndTarget := fc.eb.text.Len()
 		fc.patchJumpImmediate(copyLoopEnd+2, int32(loopEndTarget-(copyLoopEnd+ConditionalJumpSize)))
-		
+
 		// Clean up buffer and return Flap string pointer in xmm0
 		fc.out.AddImmToReg("rsp", 32)
 		fc.out.MovqRegToXmm("xmm0", "r14")
@@ -8213,14 +8213,14 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovRegToReg("r12", "rdi") // r12 = capacity
 
 	// Allocate arena structure using mmap (4096 bytes = 1 page)
-	fc.out.PushReg("r12") // Save capacity
-	fc.out.MovImmToReg("rdi", "0") // addr = NULL
+	fc.out.PushReg("r12")             // Save capacity
+	fc.out.MovImmToReg("rdi", "0")    // addr = NULL
 	fc.out.MovImmToReg("rsi", "4096") // length = 4096
-	fc.out.MovImmToReg("rdx", "3") // prot = PROT_READ | PROT_WRITE
-	fc.out.MovImmToReg("r10", "34") // flags = MAP_PRIVATE | MAP_ANONYMOUS
-	fc.out.MovImmToReg("r8", "-1") // fd = -1
-	fc.out.MovImmToReg("r9", "0") // offset = 0
-	fc.out.MovImmToReg("rax", "9") // syscall number for mmap
+	fc.out.MovImmToReg("rdx", "3")    // prot = PROT_READ | PROT_WRITE
+	fc.out.MovImmToReg("r10", "34")   // flags = MAP_PRIVATE | MAP_ANONYMOUS
+	fc.out.MovImmToReg("r8", "-1")    // fd = -1
+	fc.out.MovImmToReg("r9", "0")     // offset = 0
+	fc.out.MovImmToReg("rax", "9")    // syscall number for mmap
 	fc.out.Syscall()
 	fc.out.PopReg("r12") // Restore capacity
 
@@ -8232,13 +8232,13 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovRegToReg("rbx", "rax") // rbx = arena struct pointer
 
 	// Allocate arena buffer using mmap
-	fc.out.MovImmToReg("rdi", "0") // addr = NULL
+	fc.out.MovImmToReg("rdi", "0")   // addr = NULL
 	fc.out.MovRegToReg("rsi", "r12") // length = capacity
-	fc.out.MovImmToReg("rdx", "3") // prot = PROT_READ | PROT_WRITE
-	fc.out.MovImmToReg("r10", "34") // flags = MAP_PRIVATE | MAP_ANONYMOUS
-	fc.out.MovImmToReg("r8", "-1") // fd = -1
-	fc.out.MovImmToReg("r9", "0") // offset = 0
-	fc.out.MovImmToReg("rax", "9") // syscall number for mmap
+	fc.out.MovImmToReg("rdx", "3")   // prot = PROT_READ | PROT_WRITE
+	fc.out.MovImmToReg("r10", "34")  // flags = MAP_PRIVATE | MAP_ANONYMOUS
+	fc.out.MovImmToReg("r8", "-1")   // fd = -1
+	fc.out.MovImmToReg("r9", "0")    // offset = 0
+	fc.out.MovImmToReg("rax", "9")   // syscall number for mmap
 	fc.out.Syscall()
 
 	// Check if mmap failed
@@ -8333,17 +8333,17 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Calculate new capacity: max(capacity * 1.3, aligned_offset + size)
 	// capacity * 1.3 = (capacity * 13) / 10
-	fc.out.MovRegToReg("rdi", "r9")              // rdi = capacity
-	fc.out.MovImmToReg("rax", "13")              // rax = 13
+	fc.out.MovRegToReg("rdi", "r9")             // rdi = capacity
+	fc.out.MovImmToReg("rax", "13")             // rax = 13
 	fc.out.Emit([]byte{0x48, 0x0f, 0xaf, 0xf8}) // imul rdi, rax (rdi *= 13)
-	fc.out.MovImmToReg("rax", "10")              // rax = 10
-	fc.out.XorRegWithReg("rdx", "rdx")           // rdx = 0 (for div)
-	fc.out.MovRegToReg("rcx", "rdi")             // rcx = capacity * 13 (save)
-	fc.out.MovRegToReg("rax", "rcx")             // rax = capacity * 13
-	fc.out.MovImmToReg("rcx", "10")              // rcx = 10
+	fc.out.MovImmToReg("rax", "10")             // rax = 10
+	fc.out.XorRegWithReg("rdx", "rdx")          // rdx = 0 (for div)
+	fc.out.MovRegToReg("rcx", "rdi")            // rcx = capacity * 13 (save)
+	fc.out.MovRegToReg("rax", "rcx")            // rax = capacity * 13
+	fc.out.MovImmToReg("rcx", "10")             // rcx = 10
 	fc.out.Emit([]byte{0x48, 0xf7, 0xf1})       // div rcx (rax = capacity * 13 / 10)
-	fc.out.MovRegToReg("rdi", "rax")             // rdi = capacity * 1.3
-	
+	fc.out.MovRegToReg("rdi", "rax")            // rdi = capacity * 1.3
+
 	// Check if we need even more space
 	fc.out.MovRegToReg("rsi", "r13") // rsi = aligned_offset
 	fc.out.AddRegToReg("rsi", "r12") // rsi = aligned_offset + size
@@ -8356,7 +8356,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// rdi now contains new_capacity
 	fc.out.MovRegToReg("r9", "rdi") // r9 = new_capacity (update)
-	
+
 	// Check if new capacity exceeds max (1GB)
 	fc.out.MovImmToReg("rax", "1073741824") // 1GB max
 	fc.out.CmpRegToReg("r9", "rax")
@@ -8369,11 +8369,11 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 		// Use mremap syscall on Linux
 		// syscall 25: mremap(void *old_address, size_t old_size, size_t new_size, int flags, ...)
 		// MREMAP_MAYMOVE = 1
-		fc.out.MovRegToReg("rdi", "r8")      // rdi = old buffer_ptr
-		fc.out.MovMemToReg("rsi", "rbx", 8)  // rsi = old capacity from arena
-		fc.out.MovRegToReg("rdx", "r9")      // rdx = new_capacity
-		fc.out.MovImmToReg("r10", "1")       // r10 = MREMAP_MAYMOVE
-		fc.out.MovImmToReg("rax", "25")      // rax = syscall number for mremap
+		fc.out.MovRegToReg("rdi", "r8")     // rdi = old buffer_ptr
+		fc.out.MovMemToReg("rsi", "rbx", 8) // rsi = old capacity from arena
+		fc.out.MovRegToReg("rdx", "r9")     // rdx = new_capacity
+		fc.out.MovImmToReg("r10", "1")      // r10 = MREMAP_MAYMOVE
+		fc.out.MovImmToReg("rax", "25")     // rax = syscall number for mremap
 		fc.out.Syscall()
 
 		// Check if mremap failed (returns MAP_FAILED = -1 or negative on error)
@@ -8422,13 +8422,13 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	errorLabel := fmt.Sprintf("_arena_error_msg_%d", fc.stringCounter)
 	fc.stringCounter++
 	fc.eb.Define(errorLabel, errorMsg)
-	
-	fc.out.MovImmToReg("rdi", "2")  // stderr
+
+	fc.out.MovImmToReg("rdi", "2") // stderr
 	fc.out.LeaSymbolToReg("rsi", errorLabel)
 	fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", len(errorMsg)))
-	fc.out.MovImmToReg("rax", "1")  // write syscall
+	fc.out.MovImmToReg("rax", "1") // write syscall
 	fc.out.Syscall()
-	
+
 	fc.out.MovImmToReg("rdi", "1")  // exit code 1
 	fc.out.MovImmToReg("rax", "60") // exit syscall
 	fc.out.Syscall()
@@ -8458,15 +8458,15 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.MovRegToReg("rbx", "rdi") // rbx = arena_ptr
 
 	// Munmap buffer: munmap(ptr, size) via syscall 11
-	fc.out.MovMemToReg("rdi", "rbx", 0)  // rdi = buffer_ptr
-	fc.out.MovMemToReg("rsi", "rbx", 8)  // rsi = capacity
-	fc.out.MovImmToReg("rax", "11")      // rax = syscall number for munmap
+	fc.out.MovMemToReg("rdi", "rbx", 0) // rdi = buffer_ptr
+	fc.out.MovMemToReg("rsi", "rbx", 8) // rsi = capacity
+	fc.out.MovImmToReg("rax", "11")     // rax = syscall number for munmap
 	fc.out.Syscall()
 
 	// Munmap arena structure: munmap(ptr, 32) via syscall 11
-	fc.out.MovRegToReg("rdi", "rbx")     // rdi = arena_ptr
-	fc.out.MovImmToReg("rsi", "4096")    // rsi = page size (was 32, but mmap'd full page)
-	fc.out.MovImmToReg("rax", "11")      // rax = syscall number for munmap
+	fc.out.MovRegToReg("rdi", "rbx")  // rdi = arena_ptr
+	fc.out.MovImmToReg("rsi", "4096") // rsi = page size (was 32, but mmap'd full page)
+	fc.out.MovImmToReg("rax", "11")   // rax = syscall number for munmap
 	fc.out.Syscall()
 
 	fc.out.PopReg("rbx")
@@ -8512,9 +8512,9 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// Allocate 16-byte cons cell from arena (use default arena 0)
 	// Cons cell format: [head: float64][tail: float64] = 16 bytes
 	fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
-	fc.out.MovMemToReg("rdi", "rdi", 0)  // rdi = meta-arena array pointer
-	fc.out.MovMemToReg("rdi", "rdi", 0)  // rdi = arena[0] struct pointer
-	fc.out.MovImmToReg("rsi", "16")      // rsi = 16 bytes
+	fc.out.MovMemToReg("rdi", "rdi", 0) // rdi = meta-arena array pointer
+	fc.out.MovMemToReg("rdi", "rdi", 0) // rdi = arena[0] struct pointer
+	fc.out.MovImmToReg("rsi", "16")     // rsi = 16 bytes
 	fc.trackFunctionCall("flap_arena_alloc")
 	fc.eb.GenerateCallInstruction("flap_arena_alloc")
 	// rax now contains pointer to cons cell
@@ -8962,7 +8962,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Generate _flap_itoa for number to string conversion
 	fc.generateItoa()
-	
+
 	// Generate _flap_arena_ensure_capacity if arenas are used
 	if fc.usesArenas {
 		fc.generateArenaEnsureCapacity()
@@ -8973,71 +8973,71 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 func (fc *FlapCompiler) initializeMetaArenaAndGlobalArena() {
 	// Initialize meta-arena system - all arenas are malloc'd at runtime
 	const initialCapacity = 4
-	
+
 	// DEBUG: Print that we're starting initialization
 	if false { // Set to true for debugging
 		fc.out.LeaSymbolToReg("rdi", "_str_debug_default_arena")
 		fc.trackFunctionCall("printf")
 		fc.eb.GenerateCallInstruction("printf")
 	}
-	
+
 	// Allocate meta-arena array using mmap: 8 * 4 = 32 bytes for 4 arena pointers
-	fc.out.MovImmToReg("rdi", "0") // addr = NULL
+	fc.out.MovImmToReg("rdi", "0")                                  // addr = NULL
 	fc.out.MovImmToReg("rsi", fmt.Sprintf("%d", 8*initialCapacity)) // length = 32
-	fc.out.MovImmToReg("rdx", "3") // prot = PROT_READ | PROT_WRITE
-	fc.out.MovImmToReg("r10", "34") // flags = MAP_PRIVATE | MAP_ANONYMOUS
-	fc.out.MovImmToReg("r8", "-1") // fd = -1
-	fc.out.MovImmToReg("r9", "0") // offset = 0
-	fc.out.MovImmToReg("rax", "9") // syscall number for mmap
+	fc.out.MovImmToReg("rdx", "3")                                  // prot = PROT_READ | PROT_WRITE
+	fc.out.MovImmToReg("r10", "34")                                 // flags = MAP_PRIVATE | MAP_ANONYMOUS
+	fc.out.MovImmToReg("r8", "-1")                                  // fd = -1
+	fc.out.MovImmToReg("r9", "0")                                   // offset = 0
+	fc.out.MovImmToReg("rax", "9")                                  // syscall number for mmap
 	fc.out.Syscall()
-	
+
 	// Store meta-arena array pointer
 	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta")
 	fc.out.MovRegToMem("rax", "rbx", 0)
-	
+
 	// Set meta-arena capacity
 	fc.out.MovImmToReg("rcx", fmt.Sprintf("%d", initialCapacity))
 	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta_cap")
 	fc.out.MovRegToMem("rcx", "rbx", 0)
-	
+
 	// Create default arena (arena 0) - 1MB mmap'd buffer
 	// Arena struct: [base_ptr(8), capacity(8), used(8), alignment(8)] = 32 bytes
-	
+
 	// Allocate arena buffer using mmap: 1MB
-	fc.out.MovImmToReg("rdi", "0") // addr = NULL
+	fc.out.MovImmToReg("rdi", "0")       // addr = NULL
 	fc.out.MovImmToReg("rsi", "1048576") // length = 1MB
-	fc.out.MovImmToReg("rdx", "3") // prot = PROT_READ | PROT_WRITE
-	fc.out.MovImmToReg("r10", "34") // flags = MAP_PRIVATE | MAP_ANONYMOUS
-	fc.out.MovImmToReg("r8", "-1") // fd = -1
-	fc.out.MovImmToReg("r9", "0") // offset = 0
-	fc.out.MovImmToReg("rax", "9") // syscall number for mmap
+	fc.out.MovImmToReg("rdx", "3")       // prot = PROT_READ | PROT_WRITE
+	fc.out.MovImmToReg("r10", "34")      // flags = MAP_PRIVATE | MAP_ANONYMOUS
+	fc.out.MovImmToReg("r8", "-1")       // fd = -1
+	fc.out.MovImmToReg("r9", "0")        // offset = 0
+	fc.out.MovImmToReg("rax", "9")       // syscall number for mmap
 	fc.out.Syscall()
 	fc.out.MovRegToReg("r12", "rax") // r12 = arena buffer
-	
+
 	// Allocate arena struct using mmap: 32 bytes (round up to page size 4096)
-	fc.out.MovImmToReg("rdi", "0") // addr = NULL
+	fc.out.MovImmToReg("rdi", "0")    // addr = NULL
 	fc.out.MovImmToReg("rsi", "4096") // length = 4096 (page size)
-	fc.out.MovImmToReg("rdx", "3") // prot = PROT_READ | PROT_WRITE
-	fc.out.MovImmToReg("r10", "34") // flags = MAP_PRIVATE | MAP_ANONYMOUS
-	fc.out.MovImmToReg("r8", "-1") // fd = -1
-	fc.out.MovImmToReg("r9", "0") // offset = 0
-	fc.out.MovImmToReg("rax", "9") // syscall number for mmap
+	fc.out.MovImmToReg("rdx", "3")    // prot = PROT_READ | PROT_WRITE
+	fc.out.MovImmToReg("r10", "34")   // flags = MAP_PRIVATE | MAP_ANONYMOUS
+	fc.out.MovImmToReg("r8", "-1")    // fd = -1
+	fc.out.MovImmToReg("r9", "0")     // offset = 0
+	fc.out.MovImmToReg("rax", "9")    // syscall number for mmap
 	fc.out.Syscall()
-	
+
 	// Initialize arena struct fields
 	fc.out.MovRegToMem("r12", "rax", 0)  // base_ptr = arena buffer
-	fc.out.MovImmToReg("rcx", "1048576")  // 1MB
+	fc.out.MovImmToReg("rcx", "1048576") // 1MB
 	fc.out.MovRegToMem("rcx", "rax", 8)  // capacity = 1MB
 	fc.out.XorRegWithReg("rcx", "rcx")
 	fc.out.MovRegToMem("rcx", "rax", 16) // used = 0
 	fc.out.MovImmToReg("rcx", "8")
 	fc.out.MovRegToMem("rcx", "rax", 24) // alignment = 8
-	
+
 	// Store arena struct pointer in meta-arena[0]
 	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta")
-	fc.out.MovMemToReg("rbx", "rbx", 0)  // rbx = meta-arena array
-	fc.out.MovRegToMem("rax", "rbx", 0)  // meta-arena[0] = arena struct
-	
+	fc.out.MovMemToReg("rbx", "rbx", 0) // rbx = meta-arena array
+	fc.out.MovRegToMem("rax", "rbx", 0) // meta-arena[0] = arena struct
+
 	// Set meta-arena len = 1 (one active arena)
 	fc.out.MovImmToReg("rcx", "1")
 	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta_len")
@@ -9075,9 +9075,9 @@ func (fc *FlapCompiler) cleanupAllArenas() {
 	fc.out.MovMemToReg("r9", "rax", 0) // r9 = arena struct pointer
 
 	// Munmap buffer: munmap(ptr, size)
-	fc.out.MovMemToReg("rdi", "r9", 0)  // rdi = buffer_ptr (arena[0])
-	fc.out.MovMemToReg("rsi", "r9", 8)  // rsi = capacity (arena[8])
-	
+	fc.out.MovMemToReg("rdi", "r9", 0) // rdi = buffer_ptr (arena[0])
+	fc.out.MovMemToReg("rsi", "r9", 8) // rsi = capacity (arena[8])
+
 	if fc.eb.target.OS() == OSLinux {
 		// Use syscall on Linux
 		fc.out.MovImmToReg("rax", "11") // syscall number for munmap
@@ -9091,9 +9091,9 @@ func (fc *FlapCompiler) cleanupAllArenas() {
 	}
 
 	// Munmap arena struct: munmap(ptr, 4096)
-	fc.out.MovRegToReg("rdi", "r9")      // rdi = arena struct pointer
-	fc.out.MovImmToReg("rsi", "4096")    // rsi = page size (was 32, but mmap'd full page)
-	
+	fc.out.MovRegToReg("rdi", "r9")   // rdi = arena struct pointer
+	fc.out.MovImmToReg("rsi", "4096") // rsi = page size (was 32, but mmap'd full page)
+
 	if fc.eb.target.OS() == OSLinux {
 		// Use syscall on Linux
 		fc.out.MovImmToReg("rax", "11") // syscall number for munmap
@@ -9117,8 +9117,8 @@ func (fc *FlapCompiler) cleanupAllArenas() {
 
 	// Munmap the meta-arena array itself
 	// Size = MAX_ARENAS * 8 = 256 * 8 = 2048
-	fc.out.MovRegToReg("rdi", "rbx")    // rdi = meta-arena pointer
-	fc.out.MovImmToReg("rsi", "2048")   // rsi = size (256 arena pointers * 8 bytes)
+	fc.out.MovRegToReg("rdi", "rbx")  // rdi = meta-arena pointer
+	fc.out.MovImmToReg("rsi", "2048") // rsi = size (256 arena pointers * 8 bytes)
 
 	if fc.eb.target.OS() == OSLinux {
 		// Use syscall on Linux
@@ -9145,9 +9145,9 @@ func (fc *FlapCompiler) cleanupAllArenas() {
 func (fc *FlapCompiler) generateItoa() {
 	// Define global buffer for itoa (32 bytes)
 	fc.eb.DefineWritable("_itoa_buffer", string(make([]byte, 32)))
-	
+
 	fc.eb.MarkLabel("_flap_itoa")
-	
+
 	// Prologue
 	fc.out.PushReg("rbp")
 	fc.out.MovRegToReg("rbp", "rsp")
@@ -9155,38 +9155,38 @@ func (fc *FlapCompiler) generateItoa() {
 	fc.out.PushReg("r12")
 	fc.out.PushReg("r13")
 	fc.out.PushReg("r14")
-	
+
 	// rdi = input number
 	// rbx = buffer pointer (builds backwards from end)
 	// r12 = digit counter
 	// r13 = is_negative flag
-	
+
 	// Load buffer address
 	fc.out.LeaSymbolToReg("rbx", "_itoa_buffer")
-	fc.out.AddImmToReg("rbx", 31) // Point to end of buffer
+	fc.out.AddImmToReg("rbx", 31)      // Point to end of buffer
 	fc.out.XorRegWithReg("r12", "r12") // digit counter = 0
 	fc.out.XorRegWithReg("r13", "r13") // is_negative = 0
-	
+
 	// Handle negative
 	fc.out.CmpRegToImm("rdi", 0)
 	fc.out.Write(0x7D) // JGE (jump if >= 0)
 	fc.out.Write(0x00) // Placeholder
 	positiveJump := fc.eb.text.Len() - 1
-	
+
 	// Negative: set flag and negate
 	fc.out.MovImmToReg("r13", "1")
 	fc.out.NegReg("rdi")
-	
+
 	// Positive label
 	positivePos := fc.eb.text.Len()
 	fc.eb.text.Bytes()[positiveJump] = byte(positivePos - (positiveJump + 1))
-	
+
 	// Special case: zero
 	fc.out.CmpRegToImm("rdi", 0)
 	fc.out.Write(0x75) // JNE (jump if != 0)
 	fc.out.Write(0x00) // Placeholder
 	nonZeroJump := fc.eb.text.Len() - 1
-	
+
 	// Zero case: just write '0'
 	fc.out.MovImmToReg("rax", "48") // '0'
 	fc.out.MovByteRegToMem("rax", "rbx", 0)
@@ -9194,61 +9194,61 @@ func (fc *FlapCompiler) generateItoa() {
 	fc.out.Write(0xEB) // JMP unconditional
 	fc.out.Write(0x00) // Placeholder
 	endJump := fc.eb.text.Len() - 1
-	
+
 	// Non-zero: convert digits
 	nonZeroPos := fc.eb.text.Len()
 	fc.eb.text.Bytes()[nonZeroJump] = byte(nonZeroPos - (nonZeroJump + 1))
-	
+
 	// Loop start
 	loopStart := fc.eb.text.Len()
-	
+
 	// Divide by 10: rax = rdi / 10, rdx = rdi % 10
 	fc.out.MovRegToReg("rax", "rdi")
 	fc.out.XorRegWithReg("rdx", "rdx")
 	fc.out.MovImmToReg("r14", "10")
 	fc.out.DivRegByReg("rax", "r14") // rax = quotient, rdx = remainder
-	
+
 	// Convert remainder to ASCII
 	fc.out.AddImmToReg("rdx", 48) // + '0'
 	fc.out.MovByteRegToMem("rdx", "rbx", 0)
-	
+
 	// Move to previous position
 	fc.out.SubImmFromReg("rbx", 1)
 	fc.out.AddImmToReg("r12", 1)
-	
+
 	// Continue if quotient != 0
 	fc.out.MovRegToReg("rdi", "rax")
 	fc.out.CmpRegToImm("rdi", 0)
 	fc.out.Write(0x75) // JNE (jump back if != 0)
 	loopOffset := int8(loopStart - (fc.eb.text.Len() + 1))
 	fc.out.Write(byte(loopOffset))
-	
+
 	// Add minus sign if negative
 	fc.out.CmpRegToImm("r13", 0)
 	fc.out.Write(0x74) // JE (skip if not negative)
 	fc.out.Write(0x00) // Placeholder
 	skipMinusJump := fc.eb.text.Len() - 1
-	
+
 	fc.out.MovImmToReg("rax", "45") // '-'
 	fc.out.MovByteRegToMem("rax", "rbx", 0)
 	fc.out.SubImmFromReg("rbx", 1)
 	fc.out.AddImmToReg("r12", 1)
-	
+
 	// Skip minus label
 	skipMinusPos := fc.eb.text.Len()
 	fc.eb.text.Bytes()[skipMinusJump] = byte(skipMinusPos - (skipMinusJump + 1))
-	
+
 	// Calculate start pointer: rbx currently points before first char
 	fc.out.AddImmToReg("rbx", 1)
-	
+
 	// End label
 	endPos := fc.eb.text.Len()
 	fc.eb.text.Bytes()[endJump] = byte(endPos - (endJump + 1))
-	
+
 	// Return: rsi = buffer start, rdx = length
 	fc.out.MovRegToReg("rsi", "rbx")
 	fc.out.MovRegToReg("rdx", "r12")
-	
+
 	// Epilogue
 	fc.out.PopReg("r14")
 	fc.out.PopReg("r13")
