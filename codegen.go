@@ -16064,6 +16064,17 @@ func getUnknownFunctions(program *Program) []string {
 		"_error_code_extract": true,
 		// Debug
 		"printa": true,
+		// Memory allocation
+		"alloc": true, "free": true,
+		// Dynamic library loading
+		"dlopen": true, "dlsym": true, "dlclose": true,
+		// Memory operations
+		"read_i8": true, "read_u8": true, "read_i16": true, "read_u16": true,
+		"read_i32": true, "read_u32": true, "read_i64": true, "read_u64": true, "read_f64": true,
+		"write_i8": true, "write_u8": true, "write_i16": true, "write_u16": true,
+		"write_i32": true, "write_u32": true, "write_i64": true, "write_u64": true, "write_f64": true,
+		// Dynamic calling
+		"call": true, "arena_create": true, "arena_alloc": true, "arena_reset": true, "arena_destroy": true,
 	}
 
 	// Collect C import namespaces (e.g., "enet", "libc")

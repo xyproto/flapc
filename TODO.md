@@ -10,15 +10,20 @@
 - String to string casts: `s as string`
 - Number to string conversion: `42 as string` (single use works)
 - Arena allocator with 1.3x dynamic growth (16MB → 20.8MB → 27MB...)
+- **Windows SDL3 support FIXED!** ✅
+  - Removed SMALLARENA environment variable dependency
+  - Windows programs compile and run correctly
+  - SDL3 example works on Windows via Wine
 - All core language features functional
 - **All 208 tests passing** (100%, 23.5% coverage)
 
-### Active Issues 🔧
-**P1 - Windows/SDL3 segfault:**
-- SDL3 example compiles for Windows but segfaults in wine
-- Crash at 0x0000000000000004 (NULL pointer dereference)
-- Likely arena allocator or initialization issue
-- Linux x86_64 and ARM64 work fine
+### Platform Support
+- ✅ Linux x86_64: Fully working
+- ✅ Windows x86_64: Fully working (tested via Wine)
+- 🚧 Linux ARM64: 95% complete (needs testing)
+- ❌ Linux RISC-V64: Not yet implemented
+- ❌ Windows ARM64: Not yet implemented
+- ❌ macOS ARM64: Not yet implemented
 
 ### Known Limitations
 - Currently uses libc (malloc, realloc, sprintf, printf)
