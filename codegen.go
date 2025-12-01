@@ -8212,27 +8212,39 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// Save capacity argument
 	fc.out.MovRegToReg("r12", "rdi") // r12 = capacity
 
-	// Allocate arena structure (32 bytes)
-	fc.out.MovImmToReg("rdi", "32")
-	// Allocate from arena
-	fc.callArenaAlloc()
+	// Allocate arena structure using mmap (4096 bytes = 1 page)
+	fc.out.PushReg("r12") // Save capacity
+	fc.out.MovImmToReg("rdi", "0") // addr = NULL
+	fc.out.MovImmToReg("rsi", "4096") // length = 4096
+	fc.out.MovImmToReg("rdx", "3") // prot = PROT_READ | PROT_WRITE
+	fc.out.MovImmToReg("r10", "34") // flags = MAP_PRIVATE | MAP_ANONYMOUS
+	fc.out.MovImmToReg("r8", "-1") // fd = -1
+	fc.out.MovImmToReg("r9", "0") // offset = 0
+	fc.out.MovImmToReg("rax", "9") // syscall number for mmap
+	fc.out.Syscall()
+	fc.out.PopReg("r12") // Restore capacity
 
-	// Check if malloc failed
-	fc.out.TestRegReg("rax", "rax")
+	// Check if mmap failed (returns -1 or negative on error)
+	fc.out.CmpRegToImm("rax", 0)
 	structMallocFailedJump := fc.eb.text.Len()
-	fc.out.JumpConditional(JumpEqual, 0) // je to error
+	fc.out.JumpConditional(JumpLess, 0) // jl to error (negative result)
 
 	fc.out.MovRegToReg("rbx", "rax") // rbx = arena struct pointer
 
-	// Allocate arena buffer
-	fc.out.MovRegToReg("rdi", "r12") // rdi = capacity
-	// Allocate from arena
-	fc.callArenaAlloc()
+	// Allocate arena buffer using mmap
+	fc.out.MovImmToReg("rdi", "0") // addr = NULL
+	fc.out.MovRegToReg("rsi", "r12") // length = capacity
+	fc.out.MovImmToReg("rdx", "3") // prot = PROT_READ | PROT_WRITE
+	fc.out.MovImmToReg("r10", "34") // flags = MAP_PRIVATE | MAP_ANONYMOUS
+	fc.out.MovImmToReg("r8", "-1") // fd = -1
+	fc.out.MovImmToReg("r9", "0") // offset = 0
+	fc.out.MovImmToReg("rax", "9") // syscall number for mmap
+	fc.out.Syscall()
 
-	// Check if malloc failed
-	fc.out.TestRegReg("rax", "rax")
+	// Check if mmap failed
+	fc.out.CmpRegToImm("rax", 0)
 	bufferMallocFailedJump := fc.eb.text.Len()
-	fc.out.JumpConditional(JumpEqual, 0) // je to error
+	fc.out.JumpConditional(JumpLess, 0) // jl to error
 
 	// Fill arena structure
 	fc.out.MovRegToMem("rax", "rbx", 0) // [rbx+0] = buffer_ptr
