@@ -10,13 +10,14 @@
 - All tests passing (208+ test functions, 23.5% coverage)
 
 ### Critical Bugs 🐛
-**P0 - Pattern match with .error property crashes:**
-- Test: `result := 10/0; code := result.error; code { ~> println(f"error: {code}") }`
-- Prints "error: dv0" successfully, then segfaults
-- Root cause: .error extraction uses malloc (not arena), possibly corrupting state
-- Workaround: Avoid f-strings in pattern match with error codes
-- Only affects this specific combination
-- **This blocks 1 test: TestErrorPropertyBasic**
+**P1 - Pattern match with .error property crashes (NARROW BUG):**
+- SPECIFIC pattern: `(10/0).error` → match with "" clause → println(matched_var)
+- Prints successfully ("error: dv0"), THEN crashes when continuing
+- Root cause: `_error_code_extract` malloc'd string + multi-clause match = corruption
+- **Workaround**: Use single default clause: `code { ~> println(code) }` ✓
+- Regular strings work fine, `as string` works fine
+- **Only blocks 1 test**: TestErrorPropertyBasic
+- **Investigation**: malloc may overlap or corrupt state, needs deeper analysis
 
 ### Known Limitations
 - Currently uses libc (malloc, realloc, sprintf, printf)
