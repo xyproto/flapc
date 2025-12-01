@@ -10,12 +10,13 @@
 - All tests passing (208+ test functions, 23.5% coverage)
 
 ### Critical Bugs 🐛
-**P0 - Multiple f-strings crash:**
-- First f-string works: `println(f"x={x}")` ✅
-- Second f-string segfaults: `println(f"y={y}")` ❌
-- Root cause: Likely sprintf or string concat bug, NOT arena exhaustion
-- Multiple `as string` casts work fine
-- **This is the #1 blocker for real programs**
+**P0 - Pattern match with .error property crashes:**
+- Test: `result := 10/0; code := result.error; code { ~> println(f"error: {code}") }`
+- Prints "error: dv0" successfully, then segfaults
+- Root cause: .error extraction uses malloc (not arena), possibly corrupting state
+- Workaround: Avoid f-strings in pattern match with error codes
+- Only affects this specific combination
+- **This blocks 1 test: TestErrorPropertyBasic**
 
 ### Known Limitations
 - Currently uses libc (malloc, realloc, sprintf, printf)
