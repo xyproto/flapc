@@ -19,11 +19,12 @@
 - **Higher-order functions WORKING!** ✅
   - Functions can be passed as parameters
   - `apply := f, x -> f(x)` works correctly
-- **Executable compression DEFERRED** 🚧
-  - Self-extracting executables require ~150 byte decompressor stub
-  - Would need mmap syscall + decompression + jump to decompressed code
-  - Complex implementation deferred for now
-  - Current executables are ~30KB which is reasonable
+- **Executable compression INFRASTRUCTURE READY** 🚧
+  - Tiny RLE compression algorithm implemented and tested
+  - Decompressor stub generator for x86-64 created
+  - Uses mmap syscall for executable memory allocation
+  - Foundation complete for 4k demoscene intros
+  - Next: Integrate into compilation pipeline
 - **All core tests passing** ✅
 
 ### Platform Support
