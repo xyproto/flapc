@@ -3,19 +3,22 @@
 ## Current Status (2025-12-01)
 
 ### Working Features ✅
+- **Match expression return values FIXED!** ✅ 
+  - `result := x { 5 => 42 ~> 99 }` now correctly returns 42/99
+  - Supports both `=>` and `->` arrows in match clauses
+  - Guardless matches still correctly wrapped in lambdas
 - String to string casts: `s as string`
 - Number to string conversion: `42 as string` (single use works)
 - Arena allocator with 1.3x dynamic growth (16MB → 20.8MB → 27MB...)
 - All core language features functional
-- All tests passing (208+ test functions, 23.5% coverage)
+- **All 208 tests passing** (100%, 23.5% coverage)
 
-### Critical Bugs 🐛
-**P1 - Pattern match blocks return garbage when assigned to variables:**
-- `result := x { 5 => 42 ~> 99 }; println(result)` prints garbage
-- Match blocks work correctly for side effects: `x { 5 => println("yes") ~> println("no") }` ✅
-- Root cause: MatchExpr appears to return closure pointer instead of actual result value
-- All existing tests pass because they only use side effects, never assign match results
-- **Workaround:** Use match blocks for side effects only, or use intermediate variables
+### Active Issues 🔧
+**P1 - Windows/SDL3 segfault:**
+- SDL3 example compiles for Windows but segfaults in wine
+- Crash at 0x0000000000000004 (NULL pointer dereference)
+- Likely arena allocator or initialization issue
+- Linux x86_64 and ARM64 work fine
 
 ### Known Limitations
 - Currently uses libc (malloc, realloc, sprintf, printf)

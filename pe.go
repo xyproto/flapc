@@ -259,7 +259,7 @@ func (eb *ExecutableBuilder) WritePE(outputPath string) error {
 	// Standard C runtime functions needed by Flap programs
 	libraries := map[string][]string{
 		"msvcrt.dll": {
-			"printf", "exit", "malloc", "free", "realloc",
+			"printf", "exit", "malloc", "free", "realloc", "getenv",
 			"strlen", "memcpy", "memset", "pow", "fflush",
 			"sin", "cos", "sqrt", "fopen", "fclose", "fwrite", "fread",
 		},
@@ -441,7 +441,7 @@ func (eb *ExecutableBuilder) WritePEWithLibraries(outputPath string, libraries m
 	if len(libraries) == 0 {
 		// No imports, use default msvcrt.dll
 		libraries = map[string][]string{
-			"msvcrt.dll": {"printf", "exit", "malloc", "free", "realloc", "strlen", "memcpy", "memset", "pow", "fflush"},
+			"msvcrt.dll": {"printf", "exit", "malloc", "free", "realloc", "getenv", "strlen", "memcpy", "memset", "pow", "fflush"},
 		}
 	}
 
