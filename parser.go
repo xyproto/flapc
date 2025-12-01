@@ -1281,8 +1281,24 @@ func (p *Parser) parseAssignment() *AssignStmt {
 		// Statement block -> wrap in zero-arg lambda
 		value = &LambdaExpr{Params: []string{}, VariadicParam: "", Body: v}
 	case *MatchExpr:
-		// Match block -> wrap in zero-arg lambda
-		value = &LambdaExpr{Params: []string{}, VariadicParam: "", Body: v}
+		// Only wrap guardless match blocks in zero-arg lambda
+		// Match expressions with a condition variable (e.g., `x { 5 => 42 }`) should execute immediately
+		// Guardless matches that reference variables in guards should be wrapped
+		// Check if condition is a simple variable reference that matches the assigned variable
+		isConditionedMatch := false
+		if identExpr, ok := v.Condition.(*IdentExpr); ok {
+			// If condition is an identifier, this is a conditioned match like `x { 5 => 42 }`
+			// It should execute immediately, not be wrapped in a lambda
+			isConditionedMatch = true
+			_ = identExpr // avoid unused warning
+		}
+		if isConditionedMatch {
+			// Don't wrap - this is a value match that should execute immediately
+		} else {
+			// Guardless match block with only guards -> wrap in zero-arg lambda
+			// Example: handler = { | x > 0 => "pos" | x < 0 => "neg" }
+			value = &LambdaExpr{Params: []string{}, VariadicParam: "", Body: v}
+		}
 		// MapExpr is NOT wrapped - it's a literal value
 	}
 
@@ -1722,9 +1738,9 @@ func (p *Parser) blockContainsMatchArrows() bool {
 				// We've exited the block
 				break
 			}
-		} else if braceDepth == 0 && (tempParser.current.Type == TOKEN_FAT_ARROW || tempParser.current.Type == TOKEN_DEFAULT_ARROW ||
+		} else if braceDepth == 0 && (tempParser.current.Type == TOKEN_FAT_ARROW || tempParser.current.Type == TOKEN_ARROW || tempParser.current.Type == TOKEN_DEFAULT_ARROW ||
 			(tempParser.current.Type == TOKEN_UNDERSCORE && tempParser.peek.Type == TOKEN_FAT_ARROW)) {
-			// Found an arrow at the top level of the block (=>, ~>, or _ =>)
+			// Found an arrow at the top level of the block (=>, ->, ~>, or _ =>)
 			foundArrow = true
 			break
 		}
@@ -1980,8 +1996,8 @@ func (p *Parser) parseMatchClause() (*MatchClause, bool) {
 	}
 	p.skipNewlines()
 
-	if p.current.Type == TOKEN_FAT_ARROW {
-		p.nextToken() // skip '=>'
+	if p.current.Type == TOKEN_FAT_ARROW || p.current.Type == TOKEN_ARROW {
+		p.nextToken() // skip '=>' or '->'
 		p.skipNewlines()
 		result := p.parseMatchTarget()
 		p.skipNewlines()
