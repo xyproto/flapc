@@ -537,15 +537,24 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	// Output the executable file
 	elfBytes := fc.eb.Bytes()
 
-	// TODO: Re-enable compression once decompressor stub is fully debugged
-	// Compression implementation exists in compress.go but has decompressor bugs
+	// TODO: Compression is temporarily disabled due to decompressor bugs
+	// The compression algorithm works, but the x86-64 assembly decompressor stub needs debugging
 	// archStr := "amd64"
 	// if fc.eb.target.Arch() == ArchARM64 {
 	// 	archStr = "arm64"
 	// }
-	// compressed, err := WrapWithDecompressor(elfBytes, archStr)
-	// if err == nil && len(compressed) < len(elfBytes) {
+	// compressed, compressErr := WrapWithDecompressor(elfBytes, archStr)
+	// if compressErr == nil && len(compressed) < len(elfBytes) {
+	// 	if VerboseMode {
+	// 		fmt.Fprintf(os.Stderr, "Compressed %d -> %d bytes (%.1f%%)\n", len(elfBytes), len(compressed), float64(len(compressed))*100/float64(len(elfBytes)))
+	// 	}
 	// 	elfBytes = compressed
+	// } else if VerboseMode {
+	// 	if compressErr != nil {
+	// 		fmt.Fprintf(os.Stderr, "Compression failed: %v\n", compressErr)
+	// 	} else {
+	// 		fmt.Fprintf(os.Stderr, "Compression didn't reduce size: %d -> %d\n", len(elfBytes), len(compressed))
+	// 	}
 	// }
 
 	if err := os.WriteFile(outputPath, elfBytes, 0o755); err != nil {
