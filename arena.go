@@ -236,12 +236,22 @@ func (fc *FlapCompiler) compileMapLiteralWithArena(keys, values []Expression) {
 	fc.out.Cvtsi2sd("xmm0", "r14")
 }
 
-// Default arena sizes
+// Default arena sizes and growth parameters
 const (
-	DefaultGlobalArenaSize   = 1024 * 1024 // 1 MB
-	DefaultFrameArenaSize    = 256 * 1024  // 256 KB
-	DefaultFunctionArenaSize = 64 * 1024   // 64 KB
-	DefaultBlockArenaSize    = 32 * 1024   // 32 KB
+	// Initial sizes - generous defaults for game/demoscene development
+	DefaultGlobalArenaSize   = 16 * 1024 * 1024 // 16 MB (was 1MB)
+	DefaultFrameArenaSize    = 4 * 1024 * 1024  // 4 MB (was 256KB)
+	DefaultFunctionArenaSize = 1024 * 1024      // 1 MB (was 64KB)
+	DefaultBlockArenaSize    = 512 * 1024       // 512 KB (was 32KB)
+	
+	// Growth parameters
+	// 1.3x growth is gentler than 2x, wastes less memory
+	// Example: 16MB → 20.8MB → 27MB → 35.1MB → 45.6MB → 59.3MB → 77MB → 100MB
+	ArenaGrowthNumerator   = 13  // Multiply by 13
+	ArenaGrowthDenominator = 10  // Divide by 10 = 1.3x growth
+	
+	// Maximum arena size before failing (1GB)
+	MaxArenaSize = 1024 * 1024 * 1024
 )
 
 // callArenaAlloc generates code to allocate from current arena

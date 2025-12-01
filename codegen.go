@@ -8244,25 +8244,42 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	arenaDoneJump := fc.eb.text.Len()
 	fc.out.JumpUnconditional(0) // jmp to done
 
-	// Grow path: realloc buffer to 2x size
+	// Grow path: realloc buffer with 1.3x growth
 	arenaGrowLabel := fc.eb.text.Len()
 	fc.patchJumpImmediate(arenaGrowJump+2, int32(arenaGrowLabel-(arenaGrowJump+6)))
 	fc.eb.MarkLabel("_arena_alloc_grow")
 
-	// Calculate new capacity: max(capacity * 2, aligned_offset + size)
-	fc.out.MovRegToReg("rdi", "r9")  // rdi = capacity
-	fc.out.AddRegToReg("rdi", "r9")  // rdi = capacity * 2
+	// Calculate new capacity: max(capacity * 1.3, aligned_offset + size)
+	// capacity * 1.3 = (capacity * 13) / 10
+	fc.out.MovRegToReg("rdi", "r9")              // rdi = capacity
+	fc.out.MovImmToReg("rax", "13")              // rax = 13
+	fc.out.Emit([]byte{0x48, 0x0f, 0xaf, 0xf8}) // imul rdi, rax (rdi *= 13)
+	fc.out.MovImmToReg("rax", "10")              // rax = 10
+	fc.out.XorRegWithReg("rdx", "rdx")           // rdx = 0 (for div)
+	fc.out.MovRegToReg("rcx", "rdi")             // rcx = capacity * 13 (save)
+	fc.out.MovRegToReg("rax", "rcx")             // rax = capacity * 13
+	fc.out.MovImmToReg("rcx", "10")              // rcx = 10
+	fc.out.Emit([]byte{0x48, 0xf7, 0xf1})       // div rcx (rax = capacity * 13 / 10)
+	fc.out.MovRegToReg("rdi", "rax")             // rdi = capacity * 1.3
+	
+	// Check if we need even more space
 	fc.out.MovRegToReg("rsi", "r13") // rsi = aligned_offset
 	fc.out.AddRegToReg("rsi", "r12") // rsi = aligned_offset + size
-	fc.out.CmpRegToReg("rdi", "rsi") // compare 2*capacity with needed
+	fc.out.CmpRegToReg("rdi", "rsi") // compare 1.3*capacity with needed
 	skipMaxJump := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpGreaterOrEqual, 0) // jge skip_max
-	fc.out.MovRegToReg("rdi", "rsi")              // rdi = max(2*capacity, needed)
+	fc.out.MovRegToReg("rdi", "rsi")              // rdi = max(1.3*capacity, needed)
 	skipMaxLabel := fc.eb.text.Len()
 	fc.patchJumpImmediate(skipMaxJump+2, int32(skipMaxLabel-(skipMaxJump+6)))
 
 	// rdi now contains new_capacity
 	fc.out.MovRegToReg("r9", "rdi") // r9 = new_capacity (update)
+	
+	// Check if new capacity exceeds max (1GB)
+	fc.out.MovImmToReg("rax", "1073741824") // 1GB max
+	fc.out.CmpRegToReg("r9", "rax")
+	arenaMaxExceeded := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpGreater, 0) // jg to error if > 1GB
 
 	// Call realloc(buffer_ptr, new_capacity)
 	fc.out.MovRegToReg("rdi", "r8") // rdi = old buffer_ptr
@@ -8290,16 +8307,28 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	arenaDoneJump2 := fc.eb.text.Len()
 	fc.out.JumpUnconditional(0) // jmp to done
 
-	// Error path: realloc failed
+	// Error path: realloc failed or max size exceeded
 	arenaErrorLabel := fc.eb.text.Len()
 	fc.patchJumpImmediate(arenaErrorJump+2, int32(arenaErrorLabel-(arenaErrorJump+6)))
+	fc.patchJumpImmediate(arenaMaxExceeded+2, int32(arenaErrorLabel-(arenaMaxExceeded+6)))
 	fc.eb.MarkLabel("_arena_alloc_error")
 
-	// Print error message and exit(1)
-	// TODO: Integrate with or! error handling
-	fc.trackFunctionCall("exit")
-	fc.out.MovImmToReg("rdi", "1")
-	fc.eb.GenerateCallInstruction("exit")
+	// Print error message to stderr and exit(1)
+	// Write to stderr (fd=2): "Error: Arena allocation failed (out of memory)\n"
+	errorMsg := "Error: Arena allocation failed (out of memory or exceeded 1GB limit)\n"
+	errorLabel := fmt.Sprintf("_arena_error_msg_%d", fc.stringCounter)
+	fc.stringCounter++
+	fc.eb.Define(errorLabel, errorMsg)
+	
+	fc.out.MovImmToReg("rdi", "2")  // stderr
+	fc.out.LeaSymbolToReg("rsi", errorLabel)
+	fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", len(errorMsg)))
+	fc.out.MovImmToReg("rax", "1")  // write syscall
+	fc.out.Syscall()
+	
+	fc.out.MovImmToReg("rdi", "1")  // exit code 1
+	fc.out.MovImmToReg("rax", "60") // exit syscall
+	fc.out.Syscall()
 
 	// Done label
 	arenaDoneLabel := fc.eb.text.Len()
@@ -8858,11 +8887,11 @@ func (fc *FlapCompiler) initializeMetaArenaAndGlobalArena() {
 	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta_cap")
 	fc.out.MovRegToMem("rcx", "rbx", 0)
 	
-	// Create default arena (arena 0) - 1MB malloc'd buffer
+	// Create default arena (arena 0) - 16MB malloc'd buffer
 	// Arena struct: [base_ptr(8), capacity(8), used(8), alignment(8)] = 32 bytes
 	
-	// Allocate arena buffer: malloc(1MB)
-	fc.out.MovImmToReg("rdi", "1048576")
+	// Allocate arena buffer: malloc(16MB)
+	fc.out.MovImmToReg("rdi", "16777216")  // 16 * 1024 * 1024
 	fc.trackFunctionCall("malloc")
 	fc.eb.GenerateCallInstruction("malloc")
 	fc.out.MovRegToReg("r12", "rax") // r12 = arena buffer
@@ -8874,8 +8903,8 @@ func (fc *FlapCompiler) initializeMetaArenaAndGlobalArena() {
 	
 	// Initialize arena struct fields
 	fc.out.MovRegToMem("r12", "rax", 0)  // base_ptr = arena buffer
-	fc.out.MovImmToReg("rcx", "1048576")
-	fc.out.MovRegToMem("rcx", "rax", 8)  // capacity = 1MB
+	fc.out.MovImmToReg("rcx", "16777216")  // 16MB
+	fc.out.MovRegToMem("rcx", "rax", 8)  // capacity = 16MB
 	fc.out.XorRegWithReg("rcx", "rcx")
 	fc.out.MovRegToMem("rcx", "rax", 16) // used = 0
 	fc.out.MovImmToReg("rcx", "8")

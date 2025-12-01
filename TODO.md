@@ -1,19 +1,26 @@
 # Flap TODO
 
-## Current Status (2025-01-27)
+## Current Status (2025-12-01)
 
 ### Working Features ✅
 - String to string casts: `s as string`
-- Number to string conversion: `42 as string`
-- F-strings with mixed types: `f"Hello {name}, age {age}"`
-- Arena allocator using malloc/realloc (stable)
+- Number to string conversion: `42 as string` (single use works)
+- Arena allocator with 1.3x dynamic growth (16MB → 20.8MB → 27MB...)
 - All core language features functional
 - All tests passing (208+ test functions, 23.5% coverage)
 
+### Critical Bugs 🐛
+**P0 - Multiple f-strings crash:**
+- First f-string works: `println(f"x={x}")` ✅
+- Second f-string segfaults: `println(f"y={y}")` ❌
+- Root cause: Likely sprintf or string concat bug, NOT arena exhaustion
+- Multiple `as string` casts work fine
+- **This is the #1 blocker for real programs**
+
 ### Known Limitations
-- Programs with many string operations may crash (arena exhaustion)
 - Currently uses libc (malloc, realloc, sprintf, printf)
 - Need mmap syscalls for libc-free operation (except macOS)
+- Pattern matching returns matched value instead of result expression
 
 ## Core Features
 
