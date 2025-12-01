@@ -32,11 +32,6 @@ import sdl3 as sdl
 width = 620
 height = 387
 
-
-// SDL3 returns true (1) on success, false (0) on failure
-// Use or! for railway-oriented error handling
-// Note: Blocks that return values are expressions (no exit needed - defer handles cleanup)
-
 // Initialize SDL with SDL_Init. Use the "or!" keyword to handle the case where SDL_Init returns nothing.
 sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
     // Exitf is like printf, but writes to stderr and also quits the program with error code 1
