@@ -9,11 +9,13 @@
   - Guardless matches still correctly wrapped in lambdas
 - **Arena allocator FULLY IMPLEMENTED!** ✅
   - 100% libc-free memory management on Linux
-  - Uses mmap syscalls directly (no malloc/realloc/free)
-  - Dynamic arena growth with 1.3x scaling
+  - Uses mmap/mremap/munmap syscalls directly (no malloc/realloc/free)
+  - Dynamic arena growth with 1.3x scaling using mremap
   - Initial 1MB arena grows automatically as needed
-  - Proper cleanup at program exit with munmap
+  - Proper cleanup at program exit with munmap syscall
   - All 31 malloc calls replaced with arena allocator
+  - Fixed: No more free() on arena memory (recursion now works!)
+  - Platform-specific: syscalls on Linux, C functions on Windows/macOS
 - **Number to string conversion PURE ASSEMBLY!** ✅
   - `_flap_itoa` implemented in pure x86_64 assembly
   - No sprintf dependency - completely libc-free
