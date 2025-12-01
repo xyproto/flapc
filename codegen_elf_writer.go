@@ -536,9 +536,9 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 
 	// Output the executable file
 	elfBytes := fc.eb.Bytes()
-	
-	// TODO: Re-enable compression once decompressor stub is debugged
-	// Compression is currently disabled to avoid segfaults
+
+	// TODO: Re-enable compression once decompressor stub is fully debugged
+	// Compression implementation exists in compress.go but has decompressor bugs
 	// archStr := "amd64"
 	// if fc.eb.target.Arch() == ArchARM64 {
 	// 	archStr = "arm64"
@@ -547,7 +547,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	// if err == nil && len(compressed) < len(elfBytes) {
 	// 	elfBytes = compressed
 	// }
-	
+
 	if err := os.WriteFile(outputPath, elfBytes, 0o755); err != nil {
 		return err
 	}

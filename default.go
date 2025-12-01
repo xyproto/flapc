@@ -137,33 +137,22 @@ func (eb *ExecutableBuilder) CompileDefaultProgram(outputFile string) error {
 			}
 		}
 	}
-	
+
 	// Get the executable bytes
 	executableData := eb.Bytes()
-	
-	// Compress executable for smaller size (demoscene-friendly)
-	if !eb.target.IsMachO() && eb.target.OS() != OSWindows {
-		// Only compress Linux executables for now
-		archStr := "amd64"
-		if eb.target.Arch() == ArchARM64 {
-			archStr = "arm64"
-		}
-		compressed, err := WrapWithDecompressor(executableData, archStr)
-		if VerboseMode {
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Compression error: %v\n", err)
-			} else {
-				fmt.Fprintf(os.Stderr, "Compression: %d -> %d bytes (%.1f%%) %s\n",
-					len(executableData), len(compressed),
-					float64(len(compressed))*100/float64(len(executableData)),
-					map[bool]string{true: "APPLIED", false: "skipped (larger)"}[len(compressed) < len(executableData)])
-			}
-		}
-		if err == nil && len(compressed) < len(executableData) {
-			executableData = compressed
-		}
-	}
-	
+
+	// TODO: Re-enable compression once decompressor stub is fully debugged
+	// if !eb.target.IsMachO() && eb.target.OS() != OSWindows {
+	// 	archStr := "amd64"
+	// 	if eb.target.Arch() == ArchARM64 {
+	// 		archStr = "arm64"
+	// 	}
+	// 	compressed, err := WrapWithDecompressor(executableData, archStr)
+	// 	if err == nil && len(compressed) < len(executableData) {
+	// 		executableData = compressed
+	// 	}
+	// }
+
 	// Output the executable file
 	if err := os.WriteFile(outputFile, executableData, 0o755); err != nil {
 		return err
