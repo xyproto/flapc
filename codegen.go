@@ -8363,16 +8363,37 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	arenaMaxExceeded := fc.eb.text.Len()
 	fc.out.JumpConditional(JumpGreater, 0) // jg to error if > 1GB
 
-	// Call realloc(buffer_ptr, new_capacity)
-	fc.out.MovRegToReg("rdi", "r8") // rdi = old buffer_ptr
-	fc.out.MovRegToReg("rsi", "r9") // rsi = new_capacity
-	fc.trackFunctionCall("realloc")
-	fc.eb.GenerateCallInstruction("realloc")
+	// Grow the arena buffer
+	var arenaErrorJump int
+	if fc.eb.target.OS() == OSLinux {
+		// Use mremap syscall on Linux
+		// syscall 25: mremap(void *old_address, size_t old_size, size_t new_size, int flags, ...)
+		// MREMAP_MAYMOVE = 1
+		fc.out.MovRegToReg("rdi", "r8")      // rdi = old buffer_ptr
+		fc.out.MovMemToReg("rsi", "rbx", 8)  // rsi = old capacity from arena
+		fc.out.MovRegToReg("rdx", "r9")      // rdx = new_capacity
+		fc.out.MovImmToReg("r10", "1")       // r10 = MREMAP_MAYMOVE
+		fc.out.MovImmToReg("rax", "25")      // rax = syscall number for mremap
+		fc.out.Syscall()
 
-	// Check if realloc failed (returns NULL)
-	fc.out.TestRegReg("rax", "rax")
-	arenaErrorJump := fc.eb.text.Len()
-	fc.out.JumpConditional(JumpEqual, 0) // je to error (realloc failed - rax==0)
+		// Check if mremap failed (returns MAP_FAILED = -1 or negative on error)
+		fc.out.CmpRegToImm("rax", -1)
+		arenaErrorJump = fc.eb.text.Len()
+		fc.out.JumpConditional(JumpEqual, 0) // je to error (mremap failed)
+	} else {
+		// Use realloc on Windows/macOS
+		fc.out.MovRegToReg("rdi", "r8") // rdi = old buffer_ptr
+		fc.out.MovRegToReg("rsi", "r9") // rsi = new_capacity
+		shadowSpace := fc.allocateShadowSpace()
+		fc.trackFunctionCall("realloc")
+		fc.eb.GenerateCallInstruction("realloc")
+		fc.deallocateShadowSpace(shadowSpace)
+
+		// Check if realloc failed (returns NULL)
+		fc.out.TestRegReg("rax", "rax")
+		arenaErrorJump = fc.eb.text.Len()
+		fc.out.JumpConditional(JumpEqual, 0) // je to error (realloc failed)
+	}
 
 	// Realloc succeeded: update arena structure
 	fc.out.MovRegToMem("rax", "rbx", 0) // [arena_ptr+0] = new buffer_ptr
@@ -8436,17 +8457,17 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	fc.out.MovRegToReg("rbx", "rdi") // rbx = arena_ptr
 
-	// Munmap buffer: munmap(ptr, size)
+	// Munmap buffer: munmap(ptr, size) via syscall 11
 	fc.out.MovMemToReg("rdi", "rbx", 0)  // rdi = buffer_ptr
 	fc.out.MovMemToReg("rsi", "rbx", 8)  // rsi = capacity
-	fc.trackFunctionCall("munmap")
-	fc.eb.GenerateCallInstruction("munmap")
+	fc.out.MovImmToReg("rax", "11")      // rax = syscall number for munmap
+	fc.out.Syscall()
 
-	// Munmap arena structure: munmap(ptr, 32)
+	// Munmap arena structure: munmap(ptr, 32) via syscall 11
 	fc.out.MovRegToReg("rdi", "rbx")     // rdi = arena_ptr
-	fc.out.MovImmToReg("rsi", "32")      // rsi = sizeof(Arena)
-	fc.trackFunctionCall("munmap")
-	fc.eb.GenerateCallInstruction("munmap")
+	fc.out.MovImmToReg("rsi", "4096")    // rsi = page size (was 32, but mmap'd full page)
+	fc.out.MovImmToReg("rax", "11")      // rax = syscall number for munmap
+	fc.out.Syscall()
 
 	fc.out.PopReg("rbx")
 	fc.out.PopReg("rbp")
@@ -9057,27 +9078,33 @@ func (fc *FlapCompiler) cleanupAllArenas() {
 	fc.out.MovMemToReg("rdi", "r9", 0)  // rdi = buffer_ptr (arena[0])
 	fc.out.MovMemToReg("rsi", "r9", 8)  // rsi = capacity (arena[8])
 	
-	// Allocate shadow space for Windows
-	shadowSpace := fc.allocateShadowSpace()
-	
-	fc.trackFunctionCall("munmap")
-	fc.eb.GenerateCallInstruction("munmap")
-	
-	// Deallocate shadow space
-	fc.deallocateShadowSpace(shadowSpace)
+	if fc.eb.target.OS() == OSLinux {
+		// Use syscall on Linux
+		fc.out.MovImmToReg("rax", "11") // syscall number for munmap
+		fc.out.Syscall()
+	} else {
+		// Use C function on Windows/macOS
+		shadowSpace := fc.allocateShadowSpace()
+		fc.trackFunctionCall("munmap")
+		fc.eb.GenerateCallInstruction("munmap")
+		fc.deallocateShadowSpace(shadowSpace)
+	}
 
-	// Munmap arena struct: munmap(ptr, 32)
+	// Munmap arena struct: munmap(ptr, 4096)
 	fc.out.MovRegToReg("rdi", "r9")      // rdi = arena struct pointer
-	fc.out.MovImmToReg("rsi", "32")      // rsi = sizeof(Arena)
+	fc.out.MovImmToReg("rsi", "4096")    // rsi = page size (was 32, but mmap'd full page)
 	
-	// Allocate shadow space for Windows
-	shadowSpace = fc.allocateShadowSpace()
-	
-	fc.trackFunctionCall("munmap")
-	fc.eb.GenerateCallInstruction("munmap")
-	
-	// Deallocate shadow space
-	fc.deallocateShadowSpace(shadowSpace)
+	if fc.eb.target.OS() == OSLinux {
+		// Use syscall on Linux
+		fc.out.MovImmToReg("rax", "11") // syscall number for munmap
+		fc.out.Syscall()
+	} else {
+		// Use C function on Windows/macOS
+		shadowSpace := fc.allocateShadowSpace()
+		fc.trackFunctionCall("munmap")
+		fc.eb.GenerateCallInstruction("munmap")
+		fc.deallocateShadowSpace(shadowSpace)
+	}
 
 	// Increment index
 	fc.out.AddImmToReg("r8", 1)
@@ -9093,14 +9120,17 @@ func (fc *FlapCompiler) cleanupAllArenas() {
 	fc.out.MovRegToReg("rdi", "rbx")    // rdi = meta-arena pointer
 	fc.out.MovImmToReg("rsi", "2048")   // rsi = size (256 arena pointers * 8 bytes)
 
-	// Allocate shadow space for Windows
-	shadowSpace2 := fc.allocateShadowSpace()
-
-	fc.trackFunctionCall("munmap")
-	fc.eb.GenerateCallInstruction("munmap")
-
-	// Deallocate shadow space
-	fc.deallocateShadowSpace(shadowSpace2)
+	if fc.eb.target.OS() == OSLinux {
+		// Use syscall on Linux
+		fc.out.MovImmToReg("rax", "11") // syscall number for munmap
+		fc.out.Syscall()
+	} else {
+		// Use C function on Windows/macOS
+		shadowSpace := fc.allocateShadowSpace()
+		fc.trackFunctionCall("munmap")
+		fc.eb.GenerateCallInstruction("munmap")
+		fc.deallocateShadowSpace(shadowSpace)
+	}
 
 	// skip_cleanup:
 	skipCleanup := fc.eb.text.Len()
@@ -9629,12 +9659,7 @@ func (fc *FlapCompiler) compileMemoizedCall(call *CallExpr, lambda *LambdaFunc) 
 	fc.eb.GenerateCallInstruction("memcpy")
 	fc.out.AddImmToReg("rsp", 16)
 
-	// Free old cache
-	fc.out.MovRegToReg("rdi", "rbx")
-	fc.out.SubImmFromReg("rsp", 16)
-	fc.trackFunctionCall("free")
-	fc.eb.GenerateCallInstruction("free")
-	fc.out.AddImmToReg("rsp", 16)
+	// Old cache is arena-allocated, no need to free (arena cleanup handles it)
 
 	// Update cache pointer
 	fc.out.LeaSymbolToReg("r12", cacheName)
@@ -14926,10 +14951,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Save result at [rsp+24]
 		fc.out.MovXmmToMem("xmm0", "rsp", 24)
 
-		// Free buffer
-		fc.out.MovMemToReg("rdi", "rsp", 16) // buffer from [rsp+16]
-		fc.trackFunctionCall("free")
-		fc.eb.GenerateCallInstruction("free")
+		// Buffer is arena-allocated, no need to free (arena cleanup handles it)
 
 		// Restore result
 		fc.out.MovMemToXmm("xmm0", "rsp", 24)
