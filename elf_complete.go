@@ -156,15 +156,16 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	currentAddr = (currentAddr + pageSize - 1) & ^uint64(pageSize-1)
 
 	// .text (our code)
+	// Reserve 4 pages (16KB) for text section regardless of current size
+	// This ensures RIP-relative addresses remain valid when code grows
+	textReservedSize := uint64(pageSize * 4) // 16KB reserved
+	
 	layout["text"] = struct {
 		offset uint64
 		addr   uint64
 		size   int
-	}{currentOffset, currentAddr, codeSize}
-
-	// Reserve 4 pages (16KB) for text section regardless of current size
-	// This ensures RIP-relative addresses remain valid when code grows
-	textReservedSize := uint64(pageSize * 4) // 16KB reserved
+	}{currentOffset, currentAddr, int(textReservedSize)}
+	
 	currentOffset += textReservedSize
 	currentAddr += textReservedSize
 

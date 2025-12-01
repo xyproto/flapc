@@ -10,18 +10,7 @@
 - All tests passing (208+ test functions, 23.5% coverage)
 
 ### Critical Bugs 🐛
-**P1 - Multiple f-string creation crashes (ROOT CAUSE IDENTIFIED):**
-- **Pattern**: Create 2+ f-strings, access first one after creating second → segfault
-- Example: `s1 := f"a={x}"; s2 := f"b={y}"; println(s1)` crashes
-- **Root cause**: Memory corruption when accessing heap-allocated strings
-- Creates s1 ✓, creates s2 ✓, accessing s1 crashes ❌
-- NOT an arena growth issue (tested with 128MB arena)
-- NOT a stack layout issue (offsets are correct)
-- All stack frame operations are balanced
-- **Hypothesis**: malloc heap corruption or pointer invalidation
-- **Workaround**: Create one f-string at a time: `println(f"..."); println(f"...")`
-- **Affects**: TestErrorPropertyBasic (uses f-string in pattern match)
-- **Status**: 207/208 tests pass, needs deep malloc/heap debugging
+**NONE! All tests passing! 🎉**
 
 ### Known Limitations
 - Currently uses libc (malloc, realloc, sprintf, printf)
