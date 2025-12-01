@@ -19,11 +19,11 @@
 - **Higher-order functions WORKING!** ✅
   - Functions can be passed as parameters
   - `apply := f, x -> f(x)` works correctly
-- **Executable compression PARTIALLY IMPLEMENTED** 🚧
-  - Custom compression algorithm implemented
-  - Decompressor stub written but has bugs (segfaults)
-  - Currently disabled until debugging complete
-  - Infrastructure in place for future enablement
+- **Executable compression DEFERRED** 🚧
+  - Self-extracting executables require ~150 byte decompressor stub
+  - Would need mmap syscall + decompression + jump to decompressed code
+  - Complex implementation deferred for now
+  - Current executables are ~30KB which is reasonable
 - **All core tests passing** ✅
 
 ### Platform Support
