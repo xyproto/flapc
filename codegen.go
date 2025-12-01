@@ -5433,33 +5433,45 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 			return
 		}
 		
-		// Convert number to string using sprintf
+		// Convert number to string using _flap_itoa (pure machine code, no libc)
 		// Allocate buffer for number string (32 bytes enough for any number)
 		fc.out.SubImmFromReg("rsp", 32)
 		fc.out.MovRegToReg("r15", "rsp") // r15 = buffer pointer
 		
-		// sprintf(buffer, "%.15g", number)
-		shadowSpace := fc.allocateShadowSpace()
-		fc.out.MovRegToReg(fc.getIntArgReg(0), "r15") // buffer
+		// Convert float to int64 (truncate)
+		fc.out.Cvttsd2si("rdi", "xmm0")
 		
-		// Format string
-		fmtLabel := fmt.Sprintf("numstr_fmt_%d", fc.stringCounter)
-		fc.stringCounter++
-		fc.eb.Define(fmtLabel, "%.15g\x00")
-		fc.out.LeaSymbolToReg(fc.getIntArgReg(1), fmtLabel)
+		// Call _flap_itoa(rdi=number) -> (rsi=buffer, rdx=length)
+		// Save r15 before call (it contains buffer pointer)
+		fc.out.PushReg("r15")
+		fc.trackFunctionCall("_flap_itoa")
+		fc.eb.GenerateCallInstruction("_flap_itoa")
+		fc.out.PopReg("r15")
 		
-		// Number in xmm0 already (from fc.compileExpression above)
-		// For Windows, need to copy to correct XMM register
-		if fc.eb.target.OS() == OSWindows {
-			fc.out.MovXmmToXmm("xmm2", "xmm0") // 3rd arg
-		}
+		// _flap_itoa returns: rsi=buffer start, rdx=length
+		// Copy result to our stack buffer
+		fc.out.MovRegToReg("rdi", "r15") // dest
+		fc.out.MovRegToReg("rcx", "rdx") // count
+		// memcpy loop
+		fc.out.CmpRegToImm("rcx", 0)
+		fc.out.Write(0x74) // JE (jump if zero)
+		fc.out.Write(0x00) // Placeholder
+		endJump := fc.eb.text.Len() - 1
 		
-		fc.trackFunctionCall("sprintf")
-		fc.eb.GenerateCallInstruction("sprintf")
-		fc.deallocateShadowSpace(shadowSpace)
+		copyStart := fc.eb.text.Len()
+		fc.out.MovMemToReg("al", "rsi", 0)
+		fc.out.MovByteRegToMem("al", "rdi", 0)
+		fc.out.AddImmToReg("rsi", 1)
+		fc.out.AddImmToReg("rdi", 1)
+		fc.out.SubImmFromReg("rcx", 1)
+		fc.out.Write(0x75) // JNZ (jump back if not zero)
+		copyOffset := int8(copyStart - (fc.eb.text.Len() + 1))
+		fc.out.Write(byte(copyOffset))
 		
-		// sprintf returns length in rax, buffer is at r15
-		fc.out.MovRegToReg("r13", "rax") // r13 = length
+		endPos := fc.eb.text.Len()
+		fc.eb.text.Bytes()[endJump] = byte(endPos - (endJump + 1))
+		
+		fc.out.MovRegToReg("r13", "rdx") // r13 = length
 		
 		// Convert C string to Flap string: allocate 8 + len*16 bytes
 		fc.out.MovRegToReg("rax", "r13")
@@ -8915,6 +8927,9 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 		fc.out.Ret()
 	}
 
+	// Generate _flap_itoa for number to string conversion
+	fc.generateItoa()
+	
 	// Generate _flap_arena_ensure_capacity if arenas are used
 	if fc.usesArenas {
 		fc.generateArenaEnsureCapacity()
@@ -9063,6 +9078,127 @@ func (fc *FlapCompiler) cleanupAllArenas() {
 	// skip_cleanup:
 	skipCleanup := fc.eb.text.Len()
 	fc.patchJumpImmediate(skipCleanupJump+2, int32(skipCleanup-(skipCleanupJump+ConditionalJumpSize)))
+}
+
+// generateItoa generates the _flap_itoa function
+// Converts int64 to decimal string representation
+// Input: rdi = number
+// Output: rsi = buffer pointer, rdx = length
+// Uses a global buffer _itoa_buffer
+func (fc *FlapCompiler) generateItoa() {
+	// Define global buffer for itoa (32 bytes)
+	fc.eb.DefineWritable("_itoa_buffer", string(make([]byte, 32)))
+	
+	fc.eb.MarkLabel("_flap_itoa")
+	
+	// Prologue
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+	fc.out.PushReg("rbx")
+	fc.out.PushReg("r12")
+	fc.out.PushReg("r13")
+	fc.out.PushReg("r14")
+	
+	// rdi = input number
+	// rbx = buffer pointer (builds backwards from end)
+	// r12 = digit counter
+	// r13 = is_negative flag
+	
+	// Load buffer address
+	fc.out.LeaSymbolToReg("rbx", "_itoa_buffer")
+	fc.out.AddImmToReg("rbx", 31) // Point to end of buffer
+	fc.out.XorRegWithReg("r12", "r12") // digit counter = 0
+	fc.out.XorRegWithReg("r13", "r13") // is_negative = 0
+	
+	// Handle negative
+	fc.out.CmpRegToImm("rdi", 0)
+	fc.out.Write(0x7D) // JGE (jump if >= 0)
+	fc.out.Write(0x00) // Placeholder
+	positiveJump := fc.eb.text.Len() - 1
+	
+	// Negative: set flag and negate
+	fc.out.MovImmToReg("r13", "1")
+	fc.out.NegReg("rdi")
+	
+	// Positive label
+	positivePos := fc.eb.text.Len()
+	fc.eb.text.Bytes()[positiveJump] = byte(positivePos - (positiveJump + 1))
+	
+	// Special case: zero
+	fc.out.CmpRegToImm("rdi", 0)
+	fc.out.Write(0x75) // JNE (jump if != 0)
+	fc.out.Write(0x00) // Placeholder
+	nonZeroJump := fc.eb.text.Len() - 1
+	
+	// Zero case: just write '0'
+	fc.out.MovImmToReg("rax", "48") // '0'
+	fc.out.MovByteRegToMem("rax", "rbx", 0)
+	fc.out.MovImmToReg("r12", "1")
+	fc.out.Write(0xEB) // JMP unconditional
+	fc.out.Write(0x00) // Placeholder
+	endJump := fc.eb.text.Len() - 1
+	
+	// Non-zero: convert digits
+	nonZeroPos := fc.eb.text.Len()
+	fc.eb.text.Bytes()[nonZeroJump] = byte(nonZeroPos - (nonZeroJump + 1))
+	
+	// Loop start
+	loopStart := fc.eb.text.Len()
+	
+	// Divide by 10: rax = rdi / 10, rdx = rdi % 10
+	fc.out.MovRegToReg("rax", "rdi")
+	fc.out.XorRegWithReg("rdx", "rdx")
+	fc.out.MovImmToReg("r14", "10")
+	fc.out.DivRegByReg("rax", "r14") // rax = quotient, rdx = remainder
+	
+	// Convert remainder to ASCII
+	fc.out.AddImmToReg("rdx", 48) // + '0'
+	fc.out.MovByteRegToMem("rdx", "rbx", 0)
+	
+	// Move to previous position
+	fc.out.SubImmFromReg("rbx", 1)
+	fc.out.AddImmToReg("r12", 1)
+	
+	// Continue if quotient != 0
+	fc.out.MovRegToReg("rdi", "rax")
+	fc.out.CmpRegToImm("rdi", 0)
+	fc.out.Write(0x75) // JNE (jump back if != 0)
+	loopOffset := int8(loopStart - (fc.eb.text.Len() + 1))
+	fc.out.Write(byte(loopOffset))
+	
+	// Add minus sign if negative
+	fc.out.CmpRegToImm("r13", 0)
+	fc.out.Write(0x74) // JE (skip if not negative)
+	fc.out.Write(0x00) // Placeholder
+	skipMinusJump := fc.eb.text.Len() - 1
+	
+	fc.out.MovImmToReg("rax", "45") // '-'
+	fc.out.MovByteRegToMem("rax", "rbx", 0)
+	fc.out.SubImmFromReg("rbx", 1)
+	fc.out.AddImmToReg("r12", 1)
+	
+	// Skip minus label
+	skipMinusPos := fc.eb.text.Len()
+	fc.eb.text.Bytes()[skipMinusJump] = byte(skipMinusPos - (skipMinusJump + 1))
+	
+	// Calculate start pointer: rbx currently points before first char
+	fc.out.AddImmToReg("rbx", 1)
+	
+	// End label
+	endPos := fc.eb.text.Len()
+	fc.eb.text.Bytes()[endJump] = byte(endPos - (endJump + 1))
+	
+	// Return: rsi = buffer start, rdx = length
+	fc.out.MovRegToReg("rsi", "rbx")
+	fc.out.MovRegToReg("rdx", "r12")
+	
+	// Epilogue
+	fc.out.PopReg("r14")
+	fc.out.PopReg("r13")
+	fc.out.PopReg("r12")
+	fc.out.PopReg("rbx")
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
 }
 
 // generateArenaEnsureCapacity generates the _flap_arena_ensure_capacity function
