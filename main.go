@@ -1216,6 +1216,7 @@ func main() {
 	var watchFlag = flag.Bool("watch", false, "watch mode: recompile on file changes (requires hot functions)")
 	var singleFlag = flag.Bool("single", false, "compile single file only (don't load other .flap files from directory)")
 	var singleShort = flag.Bool("s", false, "shorthand for --single")
+	_ = flag.Bool("tiny", false, "size optimization mode: remove debug strings and minimize runtime checks for demoscene/64k")
 	flag.Parse()
 
 	// Set global update-deps flag (use whichever was specified)
