@@ -22,9 +22,85 @@ flapc sdl3example.flap -o sdl3example.exe
 wine sdl3example.exe
 ```
 
-### Example programs
+### Example program
 
-* [sdl3example.flap](sdl3example.flap)
+```go
+// Import the SDL3 library (auto detect header files and library files with pkg-config on Linux, use SDL3.dll and include/* on Windows)
+import sdl3 as sdl
+
+// Set the window dimentions
+width = 620
+height = 387
+
+
+// SDL3 returns true (1) on success, false (0) on failure
+// Use or! for railway-oriented error handling
+// Note: Blocks that return values are expressions (no exit needed - defer handles cleanup)
+
+// Initialize SDL with SDL_Init. Use the "or!" keyword to handle the case where SDL_Init returns nothing.
+sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
+    // Exitf is like printf, but writes to stderr and also quits the program with error code 1
+    exitf("SDL_Init failed: %s\n", sdl.SDL_GetError())
+}
+
+// Call SDL_Quit when the program ends
+defer sdl.SDL_Quit()
+
+// Create window, or exit with an error
+window = sdl.SDL_CreateWindow("Hello World!", width, height, sdl.SDL_WINDOW_RESIZABLE) or! {
+    exitf("Failed to create window: %s\n", sdl.SDL_GetError())
+}
+
+// Call SDL_DestroyWindow when the program ends (before SDL_Quit)
+defer sdl.SDL_DestroyWindow(window)
+
+// Create renderer, or exit with an error
+renderer = sdl.SDL_CreateRenderer(window, 0) or! {
+    exitf("Failed to create renderer: %s\n", sdl.SDL_GetError())
+}
+
+// Call SDL_DestroyRenderer when the program ends (before SDL_DestroyWindow and SDL_Quit)
+defer sdl.SDL_DestroyRenderer(renderer)
+
+// Load BMP file, or exit with an error
+file = sdl.SDL_IOFromFile("img/grumpy-cat.bmp", "rb") or! {
+    exitf("Error reading file: %s\n", sdl.SDL_GetError())
+}
+
+// Load surface from file, or exit with an error
+bmp = sdl.SDL_LoadBMP_IO(file, 1) or! {
+    exitf("Error creating surface: %s\n", sdl.SDL_GetError())
+}
+
+// Clean up the surface when the program ends
+defer sdl.SDL_DestroySurface(bmp)
+
+// Create texture from surface, or exit with an error
+tex = sdl.SDL_CreateTextureFromSurface(renderer, bmp) or! {
+    exitf("Error creating texture: %s\n", sdl.SDL_GetError())
+}
+
+// Clean up the surface when the program ends
+defer sdl.SDL_DestroyTexture(tex)
+
+// Main rendering loop. Run for approximately 2 seconds (20 frames * 100ms = 2s)
+@ frame in 0..<20 {
+
+    // Clear screen
+    sdl.SDL_RenderClear(renderer)
+
+    // Render texture (fills entire window)
+    sdl.SDL_RenderTexture(renderer, tex, 0, 0)
+
+    // Present the rendered frame
+    sdl.SDL_RenderPresent(renderer)
+
+    // Delay to maintain framerate
+    sdl.SDL_Delay(100)
+}
+
+// That's it
+```
 
 ### General info
 
