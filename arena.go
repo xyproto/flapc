@@ -42,13 +42,13 @@ func (fc *FlapCompiler) generateArenaInit(arena *Arena, sizeBytes int) {
 	// Allocate arena memory with mmap (Linux) or malloc (Windows/macOS)
 	if fc.eb.target.OS() == OSLinux {
 		// mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)
-		fc.out.XorRegWithReg("rdi", "rdi") // addr = NULL
+		fc.out.XorRegWithReg("rdi", "rdi")                      // addr = NULL
 		fc.out.MovImmToReg("rsi", fmt.Sprintf("%d", sizeBytes)) // length
-		fc.out.MovImmToReg("rdx", "7")  // PROT_READ|PROT_WRITE|PROT_EXEC = 7
-		fc.out.MovImmToReg("r10", "34") // MAP_PRIVATE|MAP_ANONYMOUS = 0x22 = 34
-		fc.out.MovImmToReg("r8", "-1")  // fd = -1
-		fc.out.XorRegWithReg("r9", "r9") // offset = 0
-		fc.out.MovImmToReg("rax", "9")  // sys_mmap = 9
+		fc.out.MovImmToReg("rdx", "7")                          // PROT_READ|PROT_WRITE|PROT_EXEC = 7
+		fc.out.MovImmToReg("r10", "34")                         // MAP_PRIVATE|MAP_ANONYMOUS = 0x22 = 34
+		fc.out.MovImmToReg("r8", "-1")                          // fd = -1
+		fc.out.XorRegWithReg("r9", "r9")                        // offset = 0
+		fc.out.MovImmToReg("rax", "9")                          // sys_mmap = 9
 		fc.out.Syscall()
 	} else {
 		// Fall back to malloc for Windows/macOS
@@ -106,7 +106,7 @@ func (fc *FlapCompiler) generateArenaReset() {
 func (fc *FlapCompiler) generateArenaFree() {
 	// Load base pointer
 	fc.out.MovMemToReg("rdi", "rbp", -16) // rdi = arena.base
-	
+
 	if fc.eb.target.OS() == OSLinux {
 		// munmap(addr, length)
 		fc.out.MovMemToReg("rsi", "rbp", -32) // rsi = arena.size

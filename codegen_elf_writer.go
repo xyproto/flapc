@@ -60,26 +60,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	// For example, if we're using syscall for exit, don't add exit to PLT
 	filteredPLT := []string{}
 	for _, funcName := range pltFunctions {
-		// Skip exit if we won't actually call it (using syscall instead)
-		if funcName == "exit" {
-			// Check if we use any libc functions
-			usesLibc := false
-			for fn := range fc.usedFunctions {
-				libcFuncs := map[string]bool{
-					"printf": true, "sprintf": true, "snprintf": true,
-					"malloc": true, "free": true, "realloc": true,
-					"strlen": true, "memcpy": true, "memset": true,
-					"fflush": true,
-				}
-				if libcFuncs[fn] {
-					usesLibc = true
-					break
-				}
-			}
-			if !usesLibc {
-				continue // Skip exit - we'll use syscall
-			}
-		}
+		// Always include functions that are in the PLT list - they're needed
 		filteredPLT = append(filteredPLT, funcName)
 	}
 	pltFunctions = filteredPLT
@@ -89,7 +70,31 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	fc.dynamicSymbols = ds // Store for later symbol updates
 
 	// Only add NEEDED libraries if their functions are actually used
-	// libc.so.6 is only needed if we actually call libc functions
+	// libc.so.6 is needed if we call C standard library functions
+	libcFunctions := map[string]bool{
+		"printf": true, "sprintf": true, "snprintf": true, "fprintf": true, "dprintf": true,
+		"puts": true, "putchar": true, "fputc": true, "fputs": true, "fflush": true,
+		"scanf": true, "sscanf": true, "fscanf": true,
+		"fopen": true, "fclose": true, "fread": true, "fwrite": true, "fseek": true, "ftell": true,
+		"malloc": true, "calloc": true, "realloc": true, "free": true,
+		"memcpy": true, "memset": true, "memmove": true, "memcmp": true,
+		"strlen": true, "strcpy": true, "strncpy": true, "strcmp": true, "strncmp": true,
+		"strcat": true, "strncat": true, "strchr": true, "strrchr": true, "strstr": true,
+		"exit": true, "abort": true, "atexit": true,
+		"getenv": true, "setenv": true, "unsetenv": true,
+		"time": true, "clock": true, "localtime": true, "gmtime": true,
+		"dlopen": true, "dlsym": true, "dlclose": true, "dlerror": true,
+	}
+	needsLibc := false
+	for funcName := range fc.usedFunctions {
+		if libcFunctions[funcName] {
+			needsLibc = true
+			break
+		}
+	}
+	if needsLibc {
+		ds.AddNeeded("libc.so.6")
+	}
 
 	// Check if pthread functions are used (parallel loops with @@)
 	if fc.usedFunctions["pthread_create"] || fc.usedFunctions["pthread_join"] {
@@ -444,7 +449,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 			break
 		}
 	}
-	
+
 	if usesLibc {
 		// Use libc's exit() for proper cleanup (flushes buffers)
 		if VerboseMode {

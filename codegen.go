@@ -11731,10 +11731,10 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 			if fc.eb.target.OS() == OSLinux {
 				// Use write syscall
-				fc.out.MovImmToReg("rax", "1")       // sys_write
-				fc.out.MovImmToReg("rdi", "1")       // stdout
+				fc.out.MovImmToReg("rax", "1") // sys_write
+				fc.out.MovImmToReg("rdi", "1") // stdout
 				fc.out.LeaSymbolToReg("rsi", newlineLabel)
-				fc.out.MovImmToReg("rdx", "1")       // 1 byte
+				fc.out.MovImmToReg("rdx", "1") // 1 byte
 				fc.out.Syscall()
 			} else {
 				// Windows - use printf
@@ -11760,8 +11760,8 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 			if fc.eb.target.OS() == OSLinux {
 				// Use write syscall
-				fc.out.MovImmToReg("rax", "1")       // sys_write
-				fc.out.MovImmToReg("rdi", "1")       // stdout
+				fc.out.MovImmToReg("rax", "1") // sys_write
+				fc.out.MovImmToReg("rdi", "1") // stdout
 				fc.out.LeaSymbolToReg("rsi", labelName)
 				fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", len(strWithNewline)))
 				fc.out.Syscall()
@@ -11902,23 +11902,23 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			if fc.eb.target.OS() == OSLinux {
 				// Convert to int64 and use _flap_itoa + write syscall
 				fc.out.Cvttsd2si("rdi", "xmm0") // Convert float to int64
-				
+
 				// Allocate stack buffer for number string
 				fc.out.SubImmFromReg("rsp", 32)
 				fc.out.MovRegToReg("r15", "rsp") // Save buffer pointer
-				
+
 				// Call _flap_itoa(rdi=number)
 				fc.trackFunctionCall("_flap_itoa")
 				fc.eb.GenerateCallInstruction("_flap_itoa")
 				// Returns: rsi=string start, rdx=length
-				
+
 				// Write to stdout: write(1, rsi, rdx)
 				fc.out.MovImmToReg("rax", "1") // sys_write
 				fc.out.MovImmToReg("rdi", "1") // stdout
 				// rsi already has buffer pointer
 				// rdx already has length
 				fc.out.Syscall()
-				
+
 				// Write newline
 				newlineLabel := fmt.Sprintf("println_newline_%d", fc.stringCounter)
 				fc.stringCounter++
@@ -11928,7 +11928,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 				fc.out.LeaSymbolToReg("rsi", newlineLabel)
 				fc.out.MovImmToReg("rdx", "1")
 				fc.out.Syscall()
-				
+
 				// Clean up stack
 				fc.out.AddImmToReg("rsp", 32)
 			} else {
@@ -12674,7 +12674,6 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Exit with code 1
 		fc.out.MovImmToReg("rdi", "1")
-		fc.out.MovRegToReg("rsp", "rbp")
 		fc.trackFunctionCall("exit")
 		fc.eb.GenerateCallInstruction("exit")
 		fc.hasExplicitExit = true
