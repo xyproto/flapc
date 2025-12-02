@@ -612,13 +612,7 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 
 	fc.popDeferScope()
 
-	// Cleanup all arenas in meta-arena at program exit
-	// Skip on Windows to avoid Wine compatibility issues (OS will clean up on process exit anyway)
-	if fc.eb.target.OS() != OSWindows {
-		fc.cleanupAllArenas()
-	}
-
-	// Evaluate main (if it exists) to get the exit code
+	// Evaluate main (if it exists) to get the exit code BEFORE cleaning up arenas
 	// main can be a direct value (main = 42) or a function (main = { 42 })
 	offset, exists := fc.variables["main"]
 	if VerboseMode {
@@ -658,18 +652,40 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 		fmt.Fprintf(os.Stderr, "DEBUG: Exit code conversion complete, value in rdi\n")
 	}
 
+	// Save exit code on stack before cleanup (rdi will be clobbered by munmap syscalls)
+	fc.out.PushReg("rdi")
+
+	// Cleanup all arenas in meta-arena at program exit
+	// Skip on Windows to avoid Wine compatibility issues (OS will clean up on process exit anyway)
+	if fc.eb.target.OS() != OSWindows {
+		fc.cleanupAllArenas()
+	}
+
+	// Restore exit code to rdi
+	fc.out.PopReg("rdi")
+
 	// Always add implicit exit at the end of the program
 	// Even if there's an exit() call in the code, it might be conditional
 	// If an unconditional exit() is called, it will never return, so this code is harmless
-	// If we've used printf or other libc functions, call exit() to ensure proper cleanup
-	// Otherwise use direct syscall for minimal programs (except on Windows where syscalls don't exist)
-	if fc.usedFunctions["printf"] || fc.usedFunctions["exit"] || len(fc.usedFunctions) > 0 || fc.eb.target.OS() == OSWindows {
+
+	// Determine if we need libc exit or can use syscall
+	// We need libc exit if:
+	// 1. On Windows (no syscalls)
+	// 2. Used C FFI functions (c.printf, c.exit, etc.) that need libc cleanup
+	// 3. Used libc printf (on non-Linux systems)
+	needsLibcExit := fc.eb.target.OS() == OSWindows
+	if !needsLibcExit && fc.eb.target.OS() != OSLinux {
+		// Non-Linux, non-Windows systems: check if used printf (which would be libc printf)
+		needsLibcExit = fc.usedFunctions["printf"]
+	}
+
+	if needsLibcExit {
 		// Use libc's exit() for proper cleanup (flushes buffers)
 		// Exit code is already in rdi (first argument)
 		fc.trackFunctionCall("exit")
 		fc.eb.GenerateCallInstruction("exit")
 	} else {
-		// Use direct syscall for minimal programs without libc dependencies (Linux only)
+		// Use direct syscall exit on Linux (works with syscall-based printf)
 		fc.out.MovImmToReg("rax", "60") // syscall number for exit
 		// exit code is already in rdi (first syscall argument)
 		fc.eb.Emit("syscall") // invoke syscall directly
@@ -6944,6 +6960,9 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	// Don't call fc.eb.EmitArenaRuntimeCode() as it's the old stub from main.go
 	// Arena symbols are predeclared earlier in writeELF() to ensure they're available during code generation
 
+	// Generate syscall-based printf runtime on Linux
+	fc.GeneratePrintfSyscallRuntime()
+
 	fc.generateCacheLookup()
 	fc.generateCacheInsert()
 
@@ -9121,7 +9140,7 @@ func (fc *FlapCompiler) cleanupAllArenas() {
 	cleanupDone := fc.eb.text.Len()
 	fc.patchJumpImmediate(skipCleanupEnd+2, int32(cleanupDone-(skipCleanupEnd+ConditionalJumpSize)))
 
-	// Munmap the meta-arena array itself
+	// Munmap the meta-arena array itself (only if it was allocated)
 	// Size = MAX_ARENAS * 8 = 256 * 8 = 2048
 	fc.out.MovRegToReg("rdi", "rbx")  // rdi = meta-arena pointer
 	fc.out.MovImmToReg("rsi", "2048") // rsi = size (256 arena pointers * 8 bytes)
@@ -9138,7 +9157,7 @@ func (fc *FlapCompiler) cleanupAllArenas() {
 		fc.deallocateShadowSpace(shadowSpace)
 	}
 
-	// skip_cleanup:
+	// skip_cleanup: Patch both skip jumps to here (after all cleanup)
 	skipCleanup := fc.eb.text.Len()
 	fc.patchJumpImmediate(skipCleanupJump+2, int32(skipCleanup-(skipCleanupJump+ConditionalJumpSize)))
 }
@@ -12116,7 +12135,13 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			compilerError("printf() first argument must be a string literal (got %T)", formatArg)
 		}
 
-		// Process format string: %v -> %g (smart float), %b -> %s (boolean), %s -> string
+		// On Linux, use syscall-based printf; on other systems, use libc
+		if fc.eb.target.OS() == OSLinux {
+			fc.compilePrintfSyscall(call, strExpr)
+			return
+		}
+
+		// Process format string for libc printf: %v -> %g (smart float), %b -> %s (boolean), %s -> string
 		processedFormat := processEscapeSequences(strExpr.Value)
 		boolPositions := make(map[int]bool)    // Track which args are %b (boolean)
 		stringPositions := make(map[int]bool)  // Track which args are %s (string)
@@ -12362,12 +12387,12 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			// Save registers that might be clobbered by fflush
 			fc.out.PushReg("rax")
 			fc.out.PushReg("rdi")
-			
+
 			// Call fflush(stdout): fflush(NULL) flushes all streams
 			fc.out.XorRegWithReg("rdi", "rdi") // NULL argument flushes all streams
 			fc.trackFunctionCall("fflush")
 			fc.eb.GenerateCallInstruction("fflush")
-			
+
 			// Restore registers
 			fc.out.PopReg("rdi")
 			fc.out.PopReg("rax")
@@ -12439,25 +12464,25 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 					// For numbers, convert to string using pure syscall approach
 					fc.compileExpression(arg)
 					// Result in xmm0 (float64)
-					
+
 					// Convert to int64 and use _flap_itoa + write syscall
 					fc.out.Cvttsd2si("rdi", "xmm0")
-					
+
 					// Allocate stack buffer
 					fc.out.SubImmFromReg("rsp", 32)
 					fc.out.MovRegToReg("r15", "rsp")
-					
+
 					// Call _flap_itoa(rdi=number)
 					fc.trackFunctionCall("_flap_itoa")
 					fc.eb.GenerateCallInstruction("_flap_itoa")
 					// Returns: rsi=string start, rdx=length
-					
+
 					// Write to stderr: write(2, rsi, rdx)
 					fc.out.MovImmToReg("rax", "1") // sys_write
 					fc.out.MovImmToReg("rdi", "2") // stderr
 					// rsi, rdx already set
 					fc.out.Syscall()
-					
+
 					// Write newline
 					newlineLabel := fmt.Sprintf("eprintln_newline_%d", fc.stringCounter)
 					fc.stringCounter++
@@ -12467,7 +12492,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 					fc.out.LeaSymbolToReg("rsi", newlineLabel)
 					fc.out.MovImmToReg("rdx", "1")
 					fc.out.Syscall()
-					
+
 					fc.out.AddImmToReg("rsp", 32)
 				}
 			}
@@ -12495,25 +12520,25 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 				// For numbers, convert to string using pure syscall approach
 				fc.compileExpression(arg)
 				// Result in xmm0 (float64)
-				
+
 				// Convert to int64 and use _flap_itoa + write syscall
 				fc.out.Cvttsd2si("rdi", "xmm0")
-				
+
 				// Allocate stack buffer
 				fc.out.SubImmFromReg("rsp", 32)
 				fc.out.MovRegToReg("r15", "rsp")
-				
+
 				// Call _flap_itoa(rdi=number)
 				fc.trackFunctionCall("_flap_itoa")
 				fc.eb.GenerateCallInstruction("_flap_itoa")
 				// Returns: rsi=string start, rdx=length
-				
+
 				// Write to stderr: write(2, rsi, rdx)
 				fc.out.MovImmToReg("rax", "1") // sys_write
 				fc.out.MovImmToReg("rdi", "2") // stderr
 				// rsi, rdx already set
 				fc.out.Syscall()
-				
+
 				fc.out.AddImmToReg("rsp", 32)
 			}
 		}

@@ -429,44 +429,13 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	fc.popDeferScope()
 
 	// Always add implicit exit at the end of the program
-	// Even if there's an exit() call in the code, it might be conditional
-	// If an unconditional exit() is called, it will never return, so this code is harmless
-	// If we've used printf or other libc functions, call exit() to ensure proper cleanup
-	// Otherwise use direct syscall for minimal programs
-	usesLibc := false
-	libcFuncs := map[string]bool{
-		"printf": true, "sprintf": true, "snprintf": true,
-		"malloc": true, "free": true, "realloc": true,
-		"strlen": true, "memcpy": true, "memset": true,
-		"fflush": true,
+	// Use syscall exit on Linux (no libc dependency for syscall-based printf)
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Using syscall exit (no libc)\n")
 	}
-	for funcName := range fc.usedFunctions {
-		if libcFuncs[funcName] {
-			usesLibc = true
-			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "DEBUG: Found libc function: %s\n", funcName)
-			}
-			break
-		}
-	}
-
-	if usesLibc {
-		// Use libc's exit() for proper cleanup (flushes buffers)
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG: Using libc exit()\n")
-		}
-		fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
-		fc.trackFunctionCall("exit")
-		fc.eb.GenerateCallInstruction("exit")
-	} else {
-		// Use direct syscall for minimal programs without libc dependencies
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG: Using syscall exit (no libc)\n")
-		}
-		fc.out.MovImmToReg("rax", "60")    // syscall number for exit
-		fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
-		fc.eb.Emit("syscall")              // invoke syscall directly
-	}
+	fc.out.MovImmToReg("rax", "60")    // syscall number for exit
+	fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
+	fc.eb.Emit("syscall")              // invoke syscall directly
 
 	// Generate lambda functions
 	// (lambdas are generated after the main code, so they can reference main code)

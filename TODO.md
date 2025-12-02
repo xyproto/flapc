@@ -2,6 +2,36 @@
 
 ## Current Status (2025-12-02)
 
+### Known Issues 🐛
+
+#### Float Printf Decimal Precision Bug
+**Status**: Structure works, decimal digits show as zeros
+**Affects**: 3 tests (float_division, printf_float, cfloat/cdouble annotations)
+
+**What Works**:
+- Sign handling (negative numbers)
+- Integer part printing
+- Decimal point
+- Format structure: "3.000000"
+
+**What Doesn't Work**:
+- Decimal digits print as "000000" instead of actual digits
+- Example: 3.14 prints as "3.000000" instead of "3.140000"
+
+**Root Cause**: Float operations in inline assembly produce 0 after cvttsd2si conversion
+- Suspected XMM register clobbering or stack corruption
+- Hardcoded values work correctly (verified digit extraction loop is OK)
+- Float math in Flap code works fine (0.14 * 1000000 = 140000)
+- Assembly implementation gets 0 instead of 140000
+
+**Debug Evidence**:
+```
+I3 F1 M1 R0  -> Should be I3 F0 M140000 R140000
+```
+
+**Time Spent**: 3+ hours of debugging
+**Next Steps**: Requires deeper x86-64 SSE debugging or alternative approach (x87 FPU, sprintf wrapper, etc.)
+
 ### Working Features ✅
 - **Dynamic library linking on Linux FIXED!** ✅
   - DT_NEEDED entries properly generated for libc.so.6

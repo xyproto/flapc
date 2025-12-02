@@ -1,0 +1,19 @@
+main = {
+  println("Test 1: Simple println")
+  print("Test 2: Simple print\n")
+  eprint("Test 3: Simple eprint\n")
+  eprintln("Test 4: Simple eprintln")
+  
+  let x = 42
+  println(f"Test 5: f-string with int: {x}")
+  
+  let s = "hello"
+  println(f"Test 6: f-string with string: {s}")
+  
+  printf("Test 7: printf with %d\n", x)
+  eprintf("Test 8: eprintf with %s\n", s)
+  
+  println(f"Test 9: Multiple {x} values {s}")
+  
+  0
+}

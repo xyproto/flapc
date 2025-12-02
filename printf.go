@@ -1,4 +1,16 @@
-// Completion: 90% - Printf implementation working for x86_64, TODOs for other arches
+// Printf runtime implementation for Flap
+//
+// STATUS: The functions in this file are stubs for a syscall-based printf implementation.
+// Currently, printf is implemented inline in codegen.go by calling libc's printf function.
+// This works correctly but depends on libc and generates PLT entry warnings.
+//
+// FUTURE: Implement a pure syscall-based printf similar to asm/printf.asm which:
+//   - Parses format strings at runtime
+//   - Converts arguments to strings using inline assembly
+//   - Writes output using write(1, buf, len) syscall
+//   - Eliminates dependency on libc's printf
+//
+// The assembly reference implementation in asm/printf.asm demonstrates the correct approach.
 package main
 
 import (
@@ -7,21 +19,22 @@ import (
 )
 
 // PrintfRuntime generates the printf runtime function for all architectures.
-// This implements a robust printf that can be called from Flap code without
-// worrying about register clobbering or format complexity.
+// NOTE: These functions are currently stubs and not used by the compiler.
+// See codegen.go case "printf" for the actual implementation.
 //
-// Function signature:
+// Planned function signature for syscall-based implementation:
 //   _flap_printf(format_str_ptr, arg1, arg2, arg3, ...)
 //
 // Calling convention (x86-64 System V ABI):
-//   rdi = format string pointer (Flap string map)
+//   rdi = format string pointer (C-style null-terminated)
+//   rsi,rdx,rcx,r8,r9 = integer arguments
 //   xmm0-xmm7 = float arguments
 //   Preserves: rbx, rbp, r12-r15
 //   Clobbers: rax, rcx, rdx, rsi, rdi, r8-r11, xmm0-xmm15
 //
-// Approach:
-//   1. Parse format string to identify conversion specifiers
-//   2. For each specifier, convert the corresponding argument to string
+// Approach (from asm/printf.asm):
+//   1. Parse format string character by character
+//   2. For '%' specifiers, convert corresponding argument to string
 //   3. Write output using syscall write(1, buf, len)
 //   4. Return total bytes written
 
