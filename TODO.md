@@ -1,36 +1,31 @@
 # Flap TODO
 
-## Current Status (2025-12-01)
+## Current Status (2025-12-02)
 
 ### Working Features ✅
-- **Statically linked executables on Linux!** ✅
-  - No libc dependency for simple programs
-  - Uses mmap/munmap/write syscalls directly
-  - Arena allocator uses mmap instead of malloc
-  - Number printing uses pure assembly (_flap_itoa)
-  - Exit via syscall (not libc exit())
-  - ~29KB for "Hello World" program
-- **Match expression return values FIXED!** ✅
+- **Dynamic library linking on Linux FIXED!** ✅
+  - DT_NEEDED entries properly generated for libc.so.6
+  - PLT/GOT correctly set up for external functions
+  - printf, exit, and all libc functions now work
+  - Fixed segfaults caused by missing library dependencies
 - **Arena allocator FULLY IMPLEMENTED!** ✅
-  - 100% libc-free memory management on Linux
-  - Uses mmap/munmap syscalls directly (no malloc/free)
-  - Dynamic arena growth possible with mremap
-  - Platform-specific: syscalls on Linux, C functions on Windows/macOS
+  - Default arena allocated at program start
+  - Arena blocks with automatic cleanup on scope exit
+  - Dynamic growth via realloc (future: mmap/mremap)
+  - Used for all internal allocations (strings, lists, etc.)
+- **Match expression return values FIXED!** ✅
 - **Number to string conversion PURE ASSEMBLY!** ✅
   - `_flap_itoa` implemented in pure x86_64 assembly
-  - Completely libc-free on Linux
 - **Windows SDL3 support WORKING!** ✅
   - SDL3 example compiles and runs on Windows via Wine
 - **Higher-order functions WORKING!** ✅
   - Functions can be passed as parameters
   - `apply := f, x -> f(x)` works correctly
-- **Executable compression INFRASTRUCTURE READY** 🚧
-  - Tiny RLE compression algorithm implemented and tested
-  - Decompressor stub generator for x86-64 created
-  - Uses mmap syscall for executable memory allocation
-  - Foundation complete for 4k demoscene intros
-  - Next: Integrate into compilation pipeline
-- **All core tests passing** ✅
+- **Executable compression PLANNED** 📋
+  - Compression infrastructure exists (compress.go, decompressor_stub.go)
+  - Not yet integrated into compilation pipeline
+  - Foundation ready for 4k demoscene intros
+- **Most tests passing** ✅ (some edge cases remain)
 
 ### Platform Support
 - ✅ Linux x86_64: Fully working with mmap-based arenas
