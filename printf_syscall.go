@@ -928,8 +928,7 @@ func (fc *FlapCompiler) generatePrintFloat() {
 }
 
 // emitSyscallPrintFloatPrecise prints a float with 6 decimal places
-// Input: xmm0 = float64 value
-// TODO: Float decimal precision bug - prints "X.000000" instead of actual decimals
+// Input: xmm0 = float64 value  
 func (fc *FlapCompiler) emitSyscallPrintFloatPrecise() {
 	fc.out.SubImmFromReg("rsp", 16)
 	
@@ -938,8 +937,8 @@ func (fc *FlapCompiler) emitSyscallPrintFloatPrecise() {
 	fc.emitSyscallPrintInteger()
 	fc.emitSyscallPrintChar('.')
 	
-	// Print 6 zeros (decimal precision bug documented in TODO.md)
-	fc.out.MovImmToReg("rax", "48") // '0' ASCII
+	// Print 6 zeros (decimal precision bug - see TODO.md)
+	fc.out.MovImmToReg("rax", "48") // '0'
 	fc.out.MovRegToMem("rax", "rsp", 0)
 	fc.out.MovRegToMem("rax", "rsp", 1)
 	fc.out.MovRegToMem("rax", "rsp", 2)
