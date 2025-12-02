@@ -4,9 +4,9 @@
 
 ### Known Issues 🐛
 
-#### Float Printf Decimal Precision Bug
-**Status**: Structure works, decimal digits show as zeros
-**Affects**: 3 tests (float_division, printf_float, cfloat/cdouble annotations)
+#### Float Printf Decimal Precision Bug  
+**Status**: KNOWN LIMITATION - decimal digits print as zeros
+**Affects**: 9 tests (float_division, printf_float, cfloat/cdouble annotations, etc.)
 
 **What Works**:
 - Sign handling (negative numbers)
