@@ -12356,6 +12356,23 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.trackFunctionCall("printf")
 		fc.eb.GenerateCallInstruction("printf")
 
+		// Flush stdout immediately on Linux to ensure correct output ordering
+		// (printf buffers output by default, which can cause ordering issues)
+		if fc.eb.target.OS() == OSLinux {
+			// Save registers that might be clobbered by fflush
+			fc.out.PushReg("rax")
+			fc.out.PushReg("rdi")
+			
+			// Call fflush(stdout): fflush(NULL) flushes all streams
+			fc.out.XorRegWithReg("rdi", "rdi") // NULL argument flushes all streams
+			fc.trackFunctionCall("fflush")
+			fc.eb.GenerateCallInstruction("fflush")
+			
+			// Restore registers
+			fc.out.PopReg("rdi")
+			fc.out.PopReg("rax")
+		}
+
 		// Restore callee-saved registers after external call
 		if needsDummyPush {
 			fc.out.PopReg("rax") // Dummy pop

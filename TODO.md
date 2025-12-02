@@ -36,8 +36,12 @@
 - ❌ macOS ARM64: Not yet implemented (will need libc)
 
 ### Known Limitations
+- **Printf buffering issue**: printf output appears out of order due to libc buffering
+  - println/print/f-strings work perfectly (syscall-based, no buffering)
+  - printf needs syscall-based implementation for Linux
+  - Test failing: TestLoopPrograms/nested_loops
 - Pipeline with lambdas may have issues (needs testing)
-- Multiple f-string interpolations may not work correctly
+- Multiple f-string interpolations may not work correctly  
 - macOS will need libc for syscalls (no direct syscall support)
 
 ## Remaining Work
