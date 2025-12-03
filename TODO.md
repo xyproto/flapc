@@ -59,7 +59,7 @@
 - 🚧 macOS support (will require libc for syscalls)
 
 ### Advanced Features
-- 🚧 Executable compression (infrastructure exists, not integrated)
+- 🚧 Executable compression (LZ77 compressor working, decompressor stub has bugs)
 - 🚧 Function composition `<>` operator (partial)
 - 🚧 Automatic memoization (not implemented)
 - 🚧 Parallel loops `@@` (basic support, needs testing)
@@ -87,10 +87,10 @@
 ## 🎯 Priority Work Items
 
 ### High Priority
-1. Test ARM64/RISC-V backends on real hardware
-2. Implement float printing for ARM64/RISC-V
-3. Complete type inference for optimizer
-4. Integrate executable compression
+1. Fix decompressor stub segfaults for compression feature
+2. Test ARM64/RISC-V backends on real hardware
+3. Implement float printing for ARM64/RISC-V
+4. Complete type inference for optimizer
 
 ### Medium Priority
 5. Add more SDL3 examples
