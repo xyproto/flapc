@@ -28,10 +28,11 @@
 - **Higher-order functions WORKING!** ✅
   - Functions can be passed as parameters
   - `apply := f, x -> f(x)` works correctly
-- **Executable compression READY** 📋
+- **Executable compression** 🚧
   - Compression infrastructure exists (compress.go, decompressor_stub.go)
-  - Not yet integrated into compilation pipeline
-  - Foundation ready for 4k demoscene intros
+  - **NOT yet integrated into compilation pipeline**
+  - Tests pass but feature is not exposed via CLI
+  - Foundation ready for 4k demoscene intros when integrated
 - **All tests passing!** ✅
 
 ### Platform Support
@@ -99,11 +100,10 @@
 6. **Higher-order functions** - Functions as parameters working
 7. **Match return values** - Fixed return value handling
 8. **Pure assembly number conversion** - No libc dependencies
-9. **Executable compression ready** - aPLib with tiny decompressor stub
-10. **Windows support** - SDL3 example working
+9. **Windows support** - SDL3 example working
 
 ### 🎯 Next Steps
-1. Test ARM64/RISC-V backends on hardware
-2. Implement float printing for ARM64/RISC-V
-3. Integrate executable compression
-4. Re-enable optimizer with type system improvements
+1. **Integrate executable compression** - Add `-compress` flag to CLI
+2. **Test ARM64/RISC-V backends** - Need real hardware testing
+3. **Implement float printing for ARM64/RISC-V** - Port inline float print
+4. **Re-enable optimizer** - Once type system is stable
