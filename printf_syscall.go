@@ -940,7 +940,9 @@ func (fc *FlapCompiler) generatePrintFloat() {
 // Input: xmm0 = float64 value
 // FULLY INLINE - zero function calls, direct syscalls only!
 func (fc *FlapCompiler) emitSyscallPrintFloatPrecise(precision int) {
-	fc.out.SubImmFromReg("rsp", 128)
+	// Allocate 160 bytes: 128 for work area + 32 for emitSyscallPrintInteger's stack use
+	// This ensures our saved value stays at a consistent offset
+	fc.out.SubImmFromReg("rsp", 160)
 	if precision < 0 {
 		precision = 6
 	}
@@ -948,13 +950,67 @@ func (fc *FlapCompiler) emitSyscallPrintFloatPrecise(precision int) {
 		precision = 15
 	}
 
-	// Save xmm0 at rsp+120 (high offset, safe from overwrites)
-	fc.out.MovXmmToMem("xmm0", "rsp", 120)
+	// Save xmm0 at the TOP of our stack frame (offset 152, safe from all modifications)
+	fc.out.MovXmmToMem("xmm0", "rsp", 152)
 
-	// ===== Print integer part using helper (handles all sizes) =====
-	fc.out.MovMemToXmm("xmm0", "rsp", 120)
+	// ===== Print integer part INLINE (no function calls) =====
+	fc.out.MovMemToXmm("xmm0", "rsp", 152)
 	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2c, 0xc0}) // cvttsd2si rax, xmm0
-	fc.emitSyscallPrintInteger()
+	
+	// Convert integer to string inline
+	fc.out.PushReg("rbx")
+	fc.out.PushReg("rcx")
+	fc.out.PushReg("rdx")
+	
+	// Check if negative
+	fc.out.Emit([]byte{0x48, 0x85, 0xc0}) // test rax, rax
+	positiveJump := fc.eb.text.Len()
+	fc.out.Emit([]byte{0x79, 0x00}) // jns (will patch)
+	
+	// Negative: print minus, negate
+	fc.out.PushReg("rax")
+	fc.out.MovImmToReg("r15", "45") // '-'
+	fc.out.MovRegToMem("r15", "rsp", 8)
+	fc.out.MovImmToReg("rax", "1")
+	fc.out.MovImmToReg("rdi", "1")
+	fc.out.LeaMemToReg("rsi", "rsp", 8)
+	fc.out.MovImmToReg("rdx", "1")
+	fc.out.Syscall()
+	fc.out.PopReg("rax")
+	fc.out.NegReg("rax")
+	
+	// Patch positive jump
+	positiveStart := fc.eb.text.Len()
+	fc.eb.text.Bytes()[positiveJump+1] = byte(positiveStart - (positiveJump + 2))
+	
+	// Convert to string
+	fc.out.LeaMemToReg("rbx", "rsp", 32)
+	fc.out.MovImmToReg("rcx", "10")
+	
+	convertStart := fc.eb.text.Len()
+	fc.out.XorRegWithReg("rdx", "rdx")
+	fc.out.Emit([]byte{0x48, 0xf7, 0xf1}) // div rcx
+	fc.out.AddImmToReg("rdx", 48)
+	fc.out.DecReg("rbx")
+	fc.out.Emit([]byte{0x88, 0x13}) // mov [rbx], dl
+	fc.out.Emit([]byte{0x48, 0x85, 0xc0}) // test rax, rax
+	convertJump := fc.eb.text.Len()
+	fc.out.Emit([]byte{0x75, 0x00}) // jnz (will patch)
+	fc.eb.text.Bytes()[convertJump+1] = byte(convertStart - (convertJump + 2))
+	
+	// Calculate length
+	fc.out.LeaMemToReg("rdx", "rsp", 32)
+	fc.out.SubRegFromReg("rdx", "rbx")
+	
+	// Write
+	fc.out.MovImmToReg("rax", "1")
+	fc.out.MovImmToReg("rdi", "1")
+	fc.out.MovRegToReg("rsi", "rbx")
+	fc.out.Syscall()
+	
+	fc.out.PopReg("rdx")
+	fc.out.PopReg("rcx")
+	fc.out.PopReg("rbx")
 
 	// ===== Print decimal point INLINE =====
 	fc.out.MovImmToReg("rax", "46") // '.'
@@ -966,10 +1022,10 @@ func (fc *FlapCompiler) emitSyscallPrintFloatPrecise(precision int) {
 	fc.out.Syscall()
 
 	// ===== Extract decimal digits - exact working assembly =====
-	fc.out.MovMemToXmm("xmm0", "rsp", 120)            // Load saved value
+	fc.out.MovMemToXmm("xmm0", "rsp", 152)            // Load saved value
 	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2c, 0xc0}) // cvttsd2si rax, xmm0
 	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2a, 0xc8}) // cvtsi2sd xmm1, rax
-	fc.out.MovMemToXmm("xmm0", "rsp", 120)            // Reload (critical!)
+	fc.out.MovMemToXmm("xmm0", "rsp", 152)            // Reload (critical!)
 	fc.out.Emit([]byte{0xf2, 0x0f, 0x5c, 0xc1})       // subsd xmm0, xmm1
 
 	multiplier := 1
@@ -1004,5 +1060,5 @@ func (fc *FlapCompiler) emitSyscallPrintFloatPrecise(precision int) {
 	fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", precision))
 	fc.out.Syscall()
 
-	fc.out.AddImmToReg("rsp", 128)
+	fc.out.AddImmToReg("rsp", 160) // Match the initial allocation
 }
