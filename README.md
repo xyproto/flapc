@@ -20,6 +20,8 @@ flapc sdl3example.flap -o sdl3example.exe
 wine sdl3example.exe
 ```
 
+(requires `SDL3.dll`)
+
 ### Example program
 
 ```go
