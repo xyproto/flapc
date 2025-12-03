@@ -932,15 +932,15 @@ func (fc *FlapCompiler) generatePrintFloat() {
 // FULLY INLINE - zero function calls, direct syscalls only!
 func (fc *FlapCompiler) emitSyscallPrintFloatPrecise() {
 	fc.out.SubImmFromReg("rsp", 128)
-	
+
 	// Save xmm0 at rsp+120 (high offset, safe from overwrites)
 	fc.out.MovXmmToMem("xmm0", "rsp", 120)
-	
+
 	// ===== Print integer part using helper (handles all sizes) =====
 	fc.out.MovMemToXmm("xmm0", "rsp", 120)
 	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2c, 0xc0}) // cvttsd2si rax, xmm0
 	fc.emitSyscallPrintInteger()
-	
+
 	// ===== Print decimal point INLINE =====
 	fc.out.MovImmToReg("rax", "46") // '.'
 	fc.out.MovRegToMem("rax", "rsp", 0)
@@ -949,64 +949,64 @@ func (fc *FlapCompiler) emitSyscallPrintFloatPrecise() {
 	fc.out.MovRegToReg("rsi", "rsp")
 	fc.out.MovImmToReg("rdx", "1")
 	fc.out.Syscall()
-	
+
 	// ===== Extract decimal digits - exact working assembly =====
-	fc.out.MovMemToXmm("xmm0", "rsp", 120)              // Load saved value
-	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2c, 0xc0})   // cvttsd2si rax, xmm0
-	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2a, 0xc8})   // cvtsi2sd xmm1, rax
-	fc.out.MovMemToXmm("xmm0", "rsp", 120)              // Reload (critical!)
-	fc.out.Emit([]byte{0xf2, 0x0f, 0x5c, 0xc1})         // subsd xmm0, xmm1
-	
+	fc.out.MovMemToXmm("xmm0", "rsp", 120)            // Load saved value
+	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2c, 0xc0}) // cvttsd2si rax, xmm0
+	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2a, 0xc8}) // cvtsi2sd xmm1, rax
+	fc.out.MovMemToXmm("xmm0", "rsp", 120)            // Reload (critical!)
+	fc.out.Emit([]byte{0xf2, 0x0f, 0x5c, 0xc1})       // subsd xmm0, xmm1
+
 	// Multiply by 1000000
 	fc.out.MovImmToReg("rax", "1000000")
-	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2a, 0xc8})   // cvtsi2sd xmm1, rax
-	fc.out.Emit([]byte{0xf2, 0x0f, 0x59, 0xc1})         // mulsd xmm0, xmm1
-	
+	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2a, 0xc8}) // cvtsi2sd xmm1, rax
+	fc.out.Emit([]byte{0xf2, 0x0f, 0x59, 0xc1})       // mulsd xmm0, xmm1
+
 	// Add 0.5 for proper rounding (store on stack and load)
-	fc.out.MovImmToReg("rax", "0x3FE0000000000000")     // 0.5 in IEEE 754
+	fc.out.MovImmToReg("rax", "0x3FE0000000000000") // 0.5 in IEEE 754
 	fc.out.MovRegToMem("rax", "rsp", 112)
 	fc.out.MovMemToXmm("xmm1", "rsp", 112)
-	fc.out.Emit([]byte{0xf2, 0x0f, 0x58, 0xc1})         // addsd xmm0, xmm1
-	
-	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2c, 0xc0})   // cvttsd2si rax, xmm0
-	
+	fc.out.Emit([]byte{0xf2, 0x0f, 0x58, 0xc1}) // addsd xmm0, xmm1
+
+	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2c, 0xc0}) // cvttsd2si rax, xmm0
+
 	// Extract 6 digits - store BYTES at rsp+64..69
 	fc.out.MovImmToReg("rcx", "10")
-	
+
 	fc.out.XorRegWithReg("rdx", "rdx")
 	fc.out.Emit([]byte{0x48, 0xf7, 0xf1}) // div rcx
 	fc.out.AddImmToReg("rdx", 48)
 	fc.out.MovByteRegToMem("dl", "rsp", 69)
-	
+
 	fc.out.XorRegWithReg("rdx", "rdx")
 	fc.out.Emit([]byte{0x48, 0xf7, 0xf1})
 	fc.out.AddImmToReg("rdx", 48)
 	fc.out.MovByteRegToMem("dl", "rsp", 68)
-	
+
 	fc.out.XorRegWithReg("rdx", "rdx")
 	fc.out.Emit([]byte{0x48, 0xf7, 0xf1})
 	fc.out.AddImmToReg("rdx", 48)
 	fc.out.MovByteRegToMem("dl", "rsp", 67)
-	
+
 	fc.out.XorRegWithReg("rdx", "rdx")
 	fc.out.Emit([]byte{0x48, 0xf7, 0xf1})
 	fc.out.AddImmToReg("rdx", 48)
 	fc.out.MovByteRegToMem("dl", "rsp", 66)
-	
+
 	fc.out.XorRegWithReg("rdx", "rdx")
 	fc.out.Emit([]byte{0x48, 0xf7, 0xf1})
 	fc.out.AddImmToReg("rdx", 48)
 	fc.out.MovByteRegToMem("dl", "rsp", 65)
-	
+
 	fc.out.AddImmToReg("rax", 48)
 	fc.out.MovByteRegToMem("al", "rsp", 64)
-	
+
 	// ===== Print 6 digits INLINE =====
 	fc.out.MovImmToReg("rax", "1")
 	fc.out.MovImmToReg("rdi", "1")
 	fc.out.LeaMemToReg("rsi", "rsp", 64)
 	fc.out.MovImmToReg("rdx", "6")
 	fc.out.Syscall()
-	
+
 	fc.out.AddImmToReg("rsp", 128)
 }
