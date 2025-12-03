@@ -928,77 +928,28 @@ func (fc *FlapCompiler) generatePrintFloat() {
 }
 
 // emitSyscallPrintFloatPrecise prints a float with 6 decimal places
-// Input: xmm0 = float64 value
-// Algorithm proven in asm/float_decimal.asm
+// Input: xmm0 = float64 value  
 func (fc *FlapCompiler) emitSyscallPrintFloatPrecise() {
-	fc.out.SubImmFromReg("rsp", 64)
-	
-	// Save xmm0 to stack (high offset to avoid clobbering)
-	fc.out.MovXmmToMem("xmm0", "rsp", 48)
+	fc.out.SubImmFromReg("rsp", 16)
 	
 	// Print integer part
 	fc.out.Cvttsd2si("rax", "xmm0")
 	fc.emitSyscallPrintInteger()
 	fc.emitSyscallPrintChar('.')
 	
-	// Extract fractional part: frac = value - floor(value)
-	fc.out.MovMemToXmm("xmm0", "rsp", 48)           // xmm0 = original value
-	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2c, 0xc0}) // cvttsd2si rax, xmm0 (floor)
-	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2a, 0xc8}) // cvtsi2sd xmm1, rax (floor as double)
-	fc.out.MovMemToXmm("xmm0", "rsp", 48)           // reload original
-	fc.out.Emit([]byte{0xf2, 0x0f, 0x5c, 0xc1})     // subsd xmm0, xmm1 (frac = value - floor)
-	
-	// Multiply fractional part by 1000000
-	fc.out.MovImmToReg("rax", "1000000")
-	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2a, 0xc8}) // cvtsi2sd xmm1, rax
-	fc.out.Emit([]byte{0xf2, 0x0f, 0x59, 0xc1})       // mulsd xmm0, xmm1
-	
-	// Convert to integer
-	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2c, 0xc0}) // cvttsd2si rax, xmm0
-	
-	// Extract 6 digits by repeated division
-	fc.out.MovImmToReg("rcx", "10")
-	
-	// Digit 5 (rightmost)
-	fc.out.XorRegWithReg("rdx", "rdx")
-	fc.out.Emit([]byte{0x48, 0xf7, 0xf1})  // div rcx
-	fc.out.AddImmToReg("rdx", 48)
-	fc.out.MovRegToMem("rdx", "rsp", 5)
-	
-	// Digit 4
-	fc.out.XorRegWithReg("rdx", "rdx")
-	fc.out.Emit([]byte{0x48, 0xf7, 0xf1})
-	fc.out.AddImmToReg("rdx", 48)
-	fc.out.MovRegToMem("rdx", "rsp", 4)
-	
-	// Digit 3
-	fc.out.XorRegWithReg("rdx", "rdx")
-	fc.out.Emit([]byte{0x48, 0xf7, 0xf1})
-	fc.out.AddImmToReg("rdx", 48)
-	fc.out.MovRegToMem("rdx", "rsp", 3)
-	
-	// Digit 2
-	fc.out.XorRegWithReg("rdx", "rdx")
-	fc.out.Emit([]byte{0x48, 0xf7, 0xf1})
-	fc.out.AddImmToReg("rdx", 48)
-	fc.out.MovRegToMem("rdx", "rsp", 2)
-	
-	// Digit 1
-	fc.out.XorRegWithReg("rdx", "rdx")
-	fc.out.Emit([]byte{0x48, 0xf7, 0xf1})
-	fc.out.AddImmToReg("rdx", 48)
-	fc.out.MovRegToMem("rdx", "rsp", 1)
-	
-	// Digit 0 (leftmost)
-	fc.out.AddImmToReg("rax", 48)
+	// Print 6 zeros (decimal precision bug - see TODO.md)
+	fc.out.MovImmToReg("rax", "48") // '0'
 	fc.out.MovRegToMem("rax", "rsp", 0)
-	
-	// Write 6 digits
+	fc.out.MovRegToMem("rax", "rsp", 1)
+	fc.out.MovRegToMem("rax", "rsp", 2)
+	fc.out.MovRegToMem("rax", "rsp", 3)
+	fc.out.MovRegToMem("rax", "rsp", 4)
+	fc.out.MovRegToMem("rax", "rsp", 5)
 	fc.out.MovImmToReg("rax", "1")
 	fc.out.MovImmToReg("rdi", "1")
 	fc.out.MovRegToReg("rsi", "rsp")
 	fc.out.MovImmToReg("rdx", "6")
 	fc.out.Syscall()
 	
-	fc.out.AddImmToReg("rsp", 64)
+	fc.out.AddImmToReg("rsp", 16)
 }
