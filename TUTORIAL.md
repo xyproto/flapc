@@ -95,7 +95,7 @@ println("Done!")
 
 # Flap Tutorial
 
-**Version**: 1.3.0  
+**Version**: 1.5.0
 **License**: BSD-3-Clause
 
 ## Installation

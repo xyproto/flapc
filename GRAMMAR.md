@@ -1,7 +1,7 @@
 # Flap Grammar Specification
 
-**Version:** 1.4.0
-**Date:** 2025-12-01
+**Version:** 1.5.0
+**Date:** 2025-12-03
 **Status:** Canonical Grammar Reference for Flap 3.0 Release
 
 This document defines the complete formal grammar of the Flap programming language using Extended Backus-Naur Form (EBNF).

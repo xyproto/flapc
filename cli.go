@@ -316,7 +316,7 @@ func cmdBuildDir(ctx *CommandContext, dirPath string) error {
 
 // cmdHelp displays usage information
 func cmdHelp(ctx *CommandContext) error {
-	fmt.Printf(`flapc - The Flap Compiler (Version 2.0.0)
+	fmt.Printf(`flapc - The Flap Compiler (Version 1.5.0)
 
 USAGE:
     flapc <command> [arguments]

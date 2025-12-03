@@ -1,8 +1,8 @@
 # Flap Language Specification
 
-**Version:** 1.4.0
-**Date:** 2025-12-01
-**Status:** Canonical Language Reference for the Flap 1.6.0 Release
+**Version:** 1.5.0
+**Date:** 2025-12-03
+**Status:** Canonical Language Reference for the Flap 1.5.0 Release
 
 This document describes the complete semantics, behavior, and design philosophy of the Flap programming language. For the formal grammar, see [GRAMMAR.md](GRAMMAR.md).
 
