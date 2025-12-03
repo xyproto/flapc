@@ -961,6 +961,13 @@ func (fc *FlapCompiler) emitSyscallPrintFloatPrecise() {
 	fc.out.MovImmToReg("rax", "1000000")
 	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2a, 0xc8})   // cvtsi2sd xmm1, rax
 	fc.out.Emit([]byte{0xf2, 0x0f, 0x59, 0xc1})         // mulsd xmm0, xmm1
+	
+	// Add 0.5 for proper rounding (store on stack and load)
+	fc.out.MovImmToReg("rax", "0x3FE0000000000000")     // 0.5 in IEEE 754
+	fc.out.MovRegToMem("rax", "rsp", 112)
+	fc.out.MovMemToXmm("xmm1", "rsp", 112)
+	fc.out.Emit([]byte{0xf2, 0x0f, 0x58, 0xc1})         // addsd xmm0, xmm1
+	
 	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2c, 0xc0})   // cvttsd2si rax, xmm0
 	
 	// Extract 6 digits - store BYTES at rsp+64..69
