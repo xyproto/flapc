@@ -3,9 +3,9 @@
 package main
 
 import (
-	"strconv"
 	"fmt"
 	"os"
+	"strconv"
 )
 
 // GeneratePrintfSyscallRuntime generates syscall-based printf runtime helpers
