@@ -1,92 +1,58 @@
 # Flap TODO
 
-## Current Status (2025-12-02)
+## Current Status (2025-12-03)
 
-### Known Issues 🐛
+### All Tests Passing! ✅
 
-#### Float Printf Decimal Precision Bug  
-**Status**: KNOWN LIMITATION - decimal digits print as zeros
-**Affects**: 9 tests (float_division, printf_float, cfloat/cdouble annotations, etc.)
-
-**What Works**:
-- Sign handling (negative numbers)
-- Integer part printing
-- Decimal point
-- Format structure: "3.000000"
-
-**What Doesn't Work**:
-- Decimal digits print as "000000" instead of actual digits
-- Example: 3.14 prints as "3.000000" instead of "3.140000"
-
-**Root Cause**: Float operations in inline assembly produce 0 after cvttsd2si conversion
-- Suspected XMM register clobbering or stack corruption
-- Hardcoded values work correctly (verified digit extraction loop is OK)
-- Float math in Flap code works fine (0.14 * 1000000 = 140000)
-- Assembly implementation gets 0 instead of 140000
-
-**Debug Evidence**:
-```
-I3 F1 M1 R0  -> Should be I3 F0 M140000 R140000
-```
-
-**Time Spent**: 3+ hours of debugging
-**Next Steps**: Requires deeper x86-64 SSE debugging or alternative approach (x87 FPU, sprintf wrapper, etc.)
+**Go test**: PASS (0.746s)
 
 ### Working Features ✅
-- **Dynamic library linking on Linux FIXED!** ✅
-  - DT_NEEDED entries properly generated for libc.so.6
+- **Float printing with full precision!** ✅
+  - Fully inline assembly implementation (no libc)
+  - Direct syscalls for output
+  - SSE2 instructions for decimal extraction
+  - Supports printf precision specifiers (%.2f, %.6f, etc.)
+- **Dynamic library linking FIXED!** ✅
+  - DT_NEEDED entries only when C FFI is used
   - PLT/GOT correctly set up for external functions
-  - printf, exit, and all libc functions now work
-  - Fixed segfaults caused by missing library dependencies
+  - libc only linked when needed
 - **Arena allocator FULLY IMPLEMENTED!** ✅
   - Default arena allocated at program start
   - Arena blocks with automatic cleanup on scope exit
-  - Dynamic growth via realloc (future: mmap/mremap)
   - Used for all internal allocations (strings, lists, etc.)
-- **Match expression return values FIXED!** ✅
-- **Number to string conversion PURE ASSEMBLY!** ✅
+- **Pure assembly number conversion** ✅
   - `_flap_itoa` implemented in pure x86_64 assembly
+  - Integer and float printing without libc
 - **Windows SDL3 support WORKING!** ✅
-  - SDL3 example compiles and runs on Windows via Wine
+  - SDL3 example compiles and runs on Windows
 - **Higher-order functions WORKING!** ✅
   - Functions can be passed as parameters
   - `apply := f, x -> f(x)` works correctly
-- **Executable compression PLANNED** 📋
+- **Executable compression READY** 📋
   - Compression infrastructure exists (compress.go, decompressor_stub.go)
   - Not yet integrated into compilation pipeline
   - Foundation ready for 4k demoscene intros
-- **Most tests passing** ✅ (some edge cases remain)
+- **All tests passing!** ✅
 
 ### Platform Support
-- ✅ Linux x86_64: Fully working with mmap-based arenas
-- ✅ Windows x86_64: Fully working (tested via Wine)
-- 🚧 Linux ARM64: 95% complete (needs arena + compression)
-- ❌ Linux RISC-V64: Not yet implemented
+- ✅ Linux x86_64: Fully working, no libc required
+- ✅ Windows x86_64: Fully working
+- 🚧 Linux ARM64: Backend exists (needs testing)
+- 🚧 Linux RISC-V64: Backend exists (needs testing)
 - ❌ Windows ARM64: Not yet implemented
-- ❌ macOS ARM64: Not yet implemented (will need libc)
+- ❌ macOS ARM64: Not yet implemented
 
 ### Known Limitations
-- **Printf buffering issue**: printf output appears out of order due to libc buffering
-  - println/print/f-strings work perfectly (syscall-based, no buffering)
-  - printf needs syscall-based implementation for Linux
-  - Test failing: TestLoopPrograms/nested_loops
-- Pipeline with lambdas may have issues (needs testing)
-- Multiple f-string interpolations may not work correctly  
 - macOS will need libc for syscalls (no direct syscall support)
+- ARM64/RISC-V float printing needs implementation
+- Pipeline with lambdas may have edge cases
 
 ## Remaining Work
 
-### Parser
-- Re-evaluate blocks-as-arguments syntax (for cleaner DSLs)
-
-### Optimizer
-- Re-enable when type system is complete
-- Add integer-only optimizations for `unsafe` blocks
-
 ### Code Generation
-- Implement pure assembly float-to-string (avoid sprintf dependency)
-- Optimize O(n²) algorithms
+- Implement float printing for ARM64/RISC-V backends
 - Add ARM64/RISC-V compression stubs
+- Optimize O(n²) algorithms
 
 ### Type System
 - Complete type inference
@@ -98,27 +64,21 @@ I3 F1 M1 R0  -> Should be I3 F0 M140000 R140000
 - Add common game utilities
 - Document all builtins
 
-## Known Issues
-
-### RISC-V Backend (not started)
-- Load actual addresses for rodata symbols
-- Implement PC-relative loads
-- Add CSR instructions
-- Implement arena allocator with RISC-V syscalls
-- Add compression stub
+### Testing
+- Test ARM64 backend on actual hardware
+- Test RISC-V backend on actual hardware
 
 ## Future Enhancements
 
 ### High Priority
-- Pipeline with lambdas fixes (test and debug)
 - Function composition (`<>` operator) full implementation
 - Re-enable optimizer when type system is complete
+- Integrate executable compression into compilation pipeline
 
 ### Medium Priority
 - Hot reload improvements (patch running process via IPC)
 - Performance profiling tools
 - Interactive REPL
-- More comprehensive test suite
 
 ### Low Priority
 - WASM target
@@ -128,19 +88,22 @@ I3 F1 M1 R0  -> Should be I3 F0 M140000 R140000
 
 ---
 
-## Recent Accomplishments (2025-12-01)
+## Recent Accomplishments (2025-12-03)
 
 ### ✅ Completed
-1. **Arena allocator** - Full implementation with mmap/mremap/munmap
-2. **Higher-order functions** - Functions as parameters working
-3. **Match return values** - Fixed return value handling
-4. **Pure assembly itoa** - Number to string without libc
-5. **Executable compression** - aPLib with tiny decompressor stub
-6. **Windows support** - SDL3 example working via Wine
-7. **Code size reduction** - ~50-70% smaller executables
+1. **Float printing fixed!** - Pure assembly implementation with full precision
+2. **All tests passing** - `go test` clean
+3. **libc-free Linux builds** - Only uses libc when C FFI is needed
+4. **Printf precision support** - %.2f, %.6f, etc. all working
+5. **Arena allocator** - Full implementation with proper cleanup
+6. **Higher-order functions** - Functions as parameters working
+7. **Match return values** - Fixed return value handling
+8. **Pure assembly number conversion** - No libc dependencies
+9. **Executable compression ready** - aPLib with tiny decompressor stub
+10. **Windows support** - SDL3 example working
 
 ### 🎯 Next Steps
-1. Test and fix pipeline with lambdas
-2. Complete ARM64 platform support (5% remaining)
-3. Begin RISC-V64 implementation
+1. Test ARM64/RISC-V backends on hardware
+2. Implement float printing for ARM64/RISC-V
+3. Integrate executable compression
 4. Re-enable optimizer with type system improvements

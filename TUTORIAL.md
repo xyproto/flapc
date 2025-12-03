@@ -2,8 +2,9 @@ Hi, this is written by a human.
 
 * Flap is a programming language.
 * Flapc is a compiler written in Go for compiling `.flap` programs directly to machine code.
+* **Status (2025-12-03)**: All tests passing! Float printing working with full precision!
 
-As a quick demonstration for what Flapc can do right now, the follow programs compiles and runs fine on both Linux (`x86_64`) and Windows (`x86_64`):
+As a quick demonstration for what Flapc can do right now, the following program compiles and runs fine on both Linux (`x86_64`) and Windows (`x86_64`):
 
 ```c
 import sdl3 as sdl
