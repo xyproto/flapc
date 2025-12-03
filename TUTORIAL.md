@@ -1,10 +1,16 @@
-Hi, this is written by a human.
+* **Flap** is a programming language for games, demos, and tools.
+* **Flapc** is a compiler written in Go that compiles `.flap` programs directly to machine code.
+* **Status (December 2025)**: All tests passing! Production-ready for x86_64 Linux/Windows.
 
-* Flap is a programming language.
-* Flapc is a compiler written in Go for compiling `.flap` programs directly to machine code.
-* **Status (2025-12-03)**: All tests passing! Float printing working with full precision!
+## What Makes Flap Special?
 
-As a quick demonstration for what Flapc can do right now, the following program compiles and runs fine on both Linux (`x86_64`) and Windows (`x86_64`):
+1. **Compiles to native machine code** - No VM, no interpreter, no LLVM
+2. **Compact executables** - Hello World is ~29KB on Linux
+3. **No garbage collection** - Arena allocators for predictable performance
+4. **Zero-cost C FFI** - Call SDL3, OpenGL, Raylib directly
+5. **Pure syscalls** - Linux builds don't need libc (unless you use C FFI)
+
+As a quick demonstration, the following SDL3 program compiles and runs on both Linux and Windows:
 
 ```c
 import sdl3 as sdl
@@ -85,163 +91,12 @@ println("Rendering for 2 seconds...")
 println("Done!")
 ```
 
-### General info
-
-* Version: 1.3.0
-* License: BSD-3
-# Flap: The Gamedev Language
-
-
-# The rest is written by an LLM:
-
-**Flap compiles directly to x86_64, ARM64, and RISC-V machine code. Zero dependencies. Zero runtime. Pure metal.**
-
-```flap
-import sdl3 as sdl
-
-sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! exitln("SDL init failed")
-defer sdl.SDL_Quit()
-
-window := sdl.SDL_CreateWindow("My Game", 800, 600, 0) or! exitln("Window failed")
-defer sdl.SDL_DestroyWindow(window)
-
-@ { render_frame(); sdl.SDL_Delay(16) }  // 60 FPS forever
-```
-
-**That's it. No build system. No package manager. No ceremony.**
-
 ---
 
-## What Makes Flap Different?
+# Flap Tutorial
 
-### 1. **Everything Is A Map**
-
-Flap has ONE type: `map[uint64]float64`
-
-```flap
-42                    // {0: 42.0}
-"Hello"               // {0: 72, 1: 101, 2: 108, 3: 108, 4: 111}
-[1, 2, 3]            // {0: 1, 1: 2, 2: 3}
-{x: 10, y: 20}       // {hash("x"): 10, hash("y"): 20}
-```
-
-No type system complexity. No generics hell. No trait soup. **Just maps.**
-
-### 2. **Automatic Memoization**
-
-Pure functions are automatically cached:
-
-```flap
-fib = n -> {
-    | n == 0 => 0
-    | n == 1 => 1
-    _ => fib(n-1) + fib(n-2)
-}
-
-println(fib(35))  // Instant: ~0.001s (cached)
-```
-
-No decorators. No manual cache management. **Just write recursive code.**
-
-### 3. **Direct Machine Code**
-
-Flapc compiles straight to machine code. No LLVM. No intermediate layers.
-
-```bash
-./flapc game.flap -o game
-./game
-```
-
-**x86_64, ARM64, RISC-V support. Windows, Linux, macOS binaries.**
-
-### 4. **Zero-Cost C FFI**
-
-Call C functions directly. No wrappers. No overhead.
-
-```flap
-import sdl3 as sdl
-import opengl as gl
-
-window := sdl.SDL_CreateWindow("OpenGL", 800, 600, sdl.SDL_WINDOW_OPENGL)
-context := sdl.SDL_GL_CreateContext(window)
-
-gl.glClearColor(0.0, 0.0, 0.0, 1.0)
-gl.glClear(gl.GL_COLOR_BUFFER_BIT)
-```
-
-SDL3, Raylib, OpenGL, Vulkan, GLFW—just import and use.
-
-### 5. **Arena Allocators**
-
-Bulk allocate per frame, bulk free at end:
-
-```flap
-arena {
-    particles = @ i in 0..<1000 { create_particle(i) }
-    @ p in particles { update(p) }
-    // All 1000 particles freed HERE
-}
-```
-
-**No GC pauses. No reference counting. No use-after-free.**
-
-### 6. **Defer For Cleanup**
-
-LIFO resource cleanup, like Go:
-
-```flap
-file := open("data.txt") or! ret
-defer close(file)
-
-buffer := c.malloc(1024) or! ret
-defer c.free(buffer)
-
-// Cleanup happens automatically on return/error
-```
-
-### 7. **Railway-Oriented Errors**
-
-The `or!` operator handles errors inline:
-
-```flap
-window := sdl.SDL_CreateWindow("Game", 800, 600, 0) or! {
-    exitln("Failed to create window")
-}
-
-result := divide(10, 0) or! -1  // Returns -1 on error
-```
-
-**No try/catch. No Result<T, E> ceremony. Just `or!`.**
-
-### 8. **Match Expressions**
-
-Pattern matching built-in:
-
-```flap
-sign = x {
-    | x > 0 => "positive"
-    | x < 0 => "negative"
-    _ => "zero"
-}
-```
-
-### 9. **Parallel Everything**
-
-Multi-core by default:
-
-```flap
-// Parallel map
-squared = [1, 2, 3, 4] || x -> x * x
-
-// Parallel loop
-entities || entity -> update(entity)
-```
-
-### 10. **Small Binaries**
-
-A "Hello World" is ~8KB on Linux. No runtime, no stdlib bloat.
-
----
+**Version**: 1.3.0  
+**License**: BSD-3-Clause
 
 ## Installation
 
@@ -249,12 +104,213 @@ A "Hello World" is ~8KB on Linux. No runtime, no stdlib bloat.
 git clone https://github.com/xyproto/flapc
 cd flapc
 go build
-sudo mv flapc /usr/local/bin/
+sudo cp flapc /usr/local/bin/
+```
+
+Test it:
+
+```bash
+echo 'println("Hello, Flap!")' > hello.flap
+flapc hello.flap -o hello
+./hello
 ```
 
 ---
 
-## Your First Game: Pong
+## Core Concepts
+
+### 1. **Everything Is A Map**
+
+Flap has ONE universal type: maps all the way down.
+
+```flap
+42                    // A number
+"Hello"               // A string (map of character codes)
+[1, 2, 3]            // A list (map with numeric keys)
+{x: 10, y: 20}       // A struct-like map
+```
+
+This simplicity means:
+- No type annotations needed (usually)
+- No generic syntax complexity
+- C structs map directly to Flap maps
+
+### 2. **Variables: Immutable by Default**
+
+```flap
+x = 42              // Immutable binding
+counter := 0        // Mutable variable (:= declares mutable)
+counter <- 10       // Update with <-
+```
+
+### 3. **Functions Are Values**
+
+```flap
+square = x -> x * x
+add = (x, y) -> x + y
+
+// Higher-order functions
+apply = (f, x) -> f(x)
+result = apply(square, 5)  // 25
+```
+
+### 4. **Loops with @**
+
+```flap
+@ i in 0..<10 { println(i) }           // Range loop (0..9)
+@ item in list { process(item) }       // For-each
+@ condition { work() }                 // While loop
+@ { render(); delay(16) }              // Infinite loop
+```
+
+Break out with `break`:
+```flap
+@ i in 0..<100 {
+    | i > 50 => break
+    println(i)
+}
+```
+
+### 5. **Pattern Matching**
+
+```flap
+sign = x {
+    | x > 0 => "positive"
+    | x < 0 => "negative"
+    _ => "zero"
+}
+
+// Works on maps too
+get_x = point {
+    | point.x != 0 => point.x
+    _ => 0.0
+}
+```
+
+### 6. **Error Handling with or!**
+
+The `or!` operator checks for null/zero/error and executes alternative:
+
+```flap
+window := sdl.SDL_CreateWindow("Game", 800, 600, 0) or! {
+    exitln("Failed to create window")
+}
+
+// Short form for default values
+value := might_fail() or! 42
+```
+
+### 7. **Defer for Cleanup**
+
+Resources are freed in LIFO order:
+
+```flap
+sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
+defer sdl.SDL_Quit()
+
+window := sdl.SDL_CreateWindow("Game", 800, 600, 0)
+defer sdl.SDL_DestroyWindow(window)
+
+renderer := sdl.SDL_CreateRenderer(window, 0)
+defer sdl.SDL_DestroyRenderer(renderer)
+
+// Cleanup happens automatically: renderer, then window, then SDL
+```
+
+### 8. **Arena Allocators**
+
+Bulk allocation and deallocation for performance:
+
+```flap
+arena {
+    // All allocations in this block use arena memory
+    particles = @ i in 0..<1000 { create_particle(i) }
+    @ p in particles { update(p) }
+}  // All arena memory freed here in one operation
+```
+
+**No GC pauses. No individual free() calls. Perfect for games.**
+
+### 9. **Direct C FFI**
+
+Import C libraries directly:
+
+```flap
+import sdl3 as sdl
+import c
+
+// Call C functions as if they were Flap functions
+ptr := c.malloc(1024)
+defer c.free(ptr)
+
+// SDL3 functions work the same way
+sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
+```
+
+Flapc parses C headers and generates bindings automatically.
+
+### 10. **Compact, Fast Binaries**
+
+- Hello World: ~29KB on Linux (vs 16KB for dynamically linked GCC, 813KB for static GCC)
+- No runtime dependencies (unless you use C FFI)
+- Direct syscalls for I/O
+- Compiles in seconds
+
+---
+
+## Quick Examples
+
+### Hello World
+
+```flap
+println("Hello, Flap!")
+```
+
+Compile and run:
+```bash
+flapc hello.flap -o hello
+./hello
+```
+
+### Variables and Math
+
+```flap
+x = 42
+y := x * 2           // Mutable
+y <- y + 1           // Update
+
+printf("x=%d, y=%d\n", x, y)
+```
+
+### Functions
+
+```flap
+factorial = n {
+    | n <= 1 => 1
+    _ => n * factorial(n - 1)
+}
+
+println(factorial(10))  // 3628800
+```
+
+### Lists and Loops
+
+```flap
+numbers = [1, 2, 3, 4, 5]
+
+// Map over list
+squared = numbers | x -> x * x
+println(squared)
+
+// Loop with index
+@ i in 0..<#numbers {
+    printf("numbers[%d] = %f\n", i, numbers[i])
+}
+```
+
+---
+
+## Building a Game: Pong
 
 ```flap
 import sdl3 as sdl
@@ -400,9 +456,9 @@ import opengl as gl
 
 ## Why Flap For Gamedev?
 
-### Small Executables
+### Compact Executables
 
-No runtime = small binaries. Ship games under 1MB easily.
+No heavyweight runtime means reasonable binary sizes. Ship indie games easily.
 
 ### Fast Compile Times
 
