@@ -33,9 +33,10 @@
 - ✅ List comprehensions
 
 ### I/O & Printing
-- ✅ Float printing with full precision (inline assembly, no libc)
+- ✅ Float printing (inline assembly, no libc)
 - ✅ SSE2-based decimal extraction
-- ✅ Printf format specifiers (%.2f, %.6f, etc.)
+- ✅ Printf format specifiers (%.2f, %.6f work correctly)
+- 🚧 High-precision float printing (>6 decimals has bugs)
 - ✅ Direct syscalls for I/O on Linux
 - ✅ Pure assembly number conversion
 
