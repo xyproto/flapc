@@ -1182,6 +1182,7 @@ var QuietMode bool
 var UpdateDepsFlag bool
 var WPOTimeout float64
 var SingleFlag bool
+var CompressFlag bool
 
 func main() {
 	// Create default output filename in system temp directory
@@ -1216,6 +1217,7 @@ func main() {
 	var watchFlag = flag.Bool("watch", false, "watch mode: recompile on file changes (requires hot functions)")
 	var singleFlag = flag.Bool("single", false, "compile single file only (don't load other .flap files from directory)")
 	var singleShort = flag.Bool("s", false, "shorthand for --single")
+	var compressFlag = flag.Bool("compress", false, "enable executable compression (experimental)")
 	_ = flag.Bool("tiny", false, "size optimization mode: remove debug strings and minimize runtime checks for demoscene/64k")
 	flag.Parse()
 
@@ -1224,6 +1226,7 @@ func main() {
 
 	// Set global single flag (use whichever was specified)
 	SingleFlag = *singleFlag || *singleShort
+	CompressFlag = *compressFlag
 
 	if *version || *versionShort {
 		fmt.Println(versionString)

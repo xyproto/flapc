@@ -121,82 +121,85 @@ func generateDecompressorStub(arch string, compressedSize, decompressedSize uint
 func generateX64DecompressorStub(compressedSize, decompressedSize uint32) []byte {
 	var stub []byte
 
-	// Save registers
+	// Save registers we'll use
 	stub = append(stub, 0x53)       // push rbx
-	stub = append(stub, 0x55)       // push rbp
+	stub = append(stub, 0x55)       // push rbp  
 	stub = append(stub, 0x41, 0x54) // push r12
 	stub = append(stub, 0x41, 0x55) // push r13
-	stub = append(stub, 0x41, 0x56) // push r14
 
-	// Allocate memory: mmap(NULL, size, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)
-	stub = append(stub, 0x48, 0x31, 0xFF) // xor rdi, rdi
-	stub = append(stub, 0x48, 0xBE)       // movabs rsi, decompressedSize
-	stub = append(stub, uint64ToBytes(uint64(decompressedSize))...)
-	stub = append(stub, 0x48, 0xC7, 0xC2, 0x07, 0x00, 0x00, 0x00) // mov rdx, 7
-	stub = append(stub, 0x49, 0xC7, 0xC2, 0x22, 0x00, 0x00, 0x00) // mov r10, 0x22
-	stub = append(stub, 0x49, 0xC7, 0xC0, 0xFF, 0xFF, 0xFF, 0xFF) // mov r8, -1
-	stub = append(stub, 0x4D, 0x31, 0xC9)                         // xor r9, r9
-	stub = append(stub, 0x48, 0xC7, 0xC0, 0x09, 0x00, 0x00, 0x00) // mov rax, 9
+	// mmap(NULL, decompressedSize, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)
+	stub = append(stub, 0x48, 0x31, 0xFF) // xor rdi, rdi (addr = NULL)
+	stub = append(stub, 0x48, 0xC7, 0xC6) // mov rsi, decompressedSize (low 32 bits)
+	stub = append(stub, byte(decompressedSize), byte(decompressedSize>>8), 
+		byte(decompressedSize>>16), byte(decompressedSize>>24))
+	stub = append(stub, 0x48, 0xC7, 0xC2, 0x07, 0x00, 0x00, 0x00) // mov rdx, 7 (PROT_R|W|X)
+	stub = append(stub, 0x49, 0xC7, 0xC2, 0x22, 0x00, 0x00, 0x00) // mov r10, 0x22 (MAP_PRIVATE|ANON)
+	stub = append(stub, 0x49, 0xC7, 0xC0, 0xFF, 0xFF, 0xFF, 0xFF) // mov r8, -1 (fd)
+	stub = append(stub, 0x4D, 0x31, 0xC9)                         // xor r9, r9 (offset)
+	stub = append(stub, 0x48, 0xC7, 0xC0, 0x09, 0x00, 0x00, 0x00) // mov rax, 9 (sys_mmap)
 	stub = append(stub, 0x0F, 0x05)                               // syscall
-	stub = append(stub, 0x48, 0x85, 0xC0)                         // test rax, rax
-
-	// Jump to error handler
+	
+	// Check for mmap failure
+	stub = append(stub, 0x48, 0x85, 0xC0) // test rax, rax
 	errorJmpPos := len(stub)
-	stub = append(stub, 0x78, 0x00) // js error (will patch offset)
+	stub = append(stub, 0x78, 0x00) // js error (will patch)
 
-	stub = append(stub, 0x49, 0x89, 0xC4) // mov r12, rax (save dest pointer)
+	// Save mapped address in r13 (our target to jump to)
+	stub = append(stub, 0x49, 0x89, 0xC5) // mov r13, rax
+	// Also save in rdi (destination for decompression)
+	stub = append(stub, 0x48, 0x89, 0xC7) // mov rdi, rax
 
-	// Get source pointer
+	// Get source pointer to compressed data
 	stub = append(stub, 0x48, 0x8D, 0x35) // lea rsi, [rip+offset]
 	leaOffsetPos := len(stub)
-	stub = append(stub, 0x00, 0x00, 0x00, 0x00) // Placeholder
+	stub = append(stub, 0x00, 0x00, 0x00, 0x00) // Placeholder (will patch)
 
-	// Load original size and setup pointers
-	stub = append(stub, 0x8B, 0x0E)             // mov ecx, [rsi]
+	// Skip the 4-byte size header
 	stub = append(stub, 0x48, 0x83, 0xC6, 0x04) // add rsi, 4
-	stub = append(stub, 0x4C, 0x89, 0xE7)       // mov rdi, r12
-	stub = append(stub, 0x4D, 0x89, 0xE5)       // mov r13, r12
-	stub = append(stub, 0x49, 0x01, 0xCD)       // add r13, rcx (r13 = end)
+	
+	// Calculate end of decompressed buffer: r12 = rdi + decompressedSize
+	stub = append(stub, 0x49, 0x89, 0xFC)       // mov r12, rdi
+	stub = append(stub, 0x49, 0x81, 0xC4)       // add r12, decompressedSize
+	stub = append(stub, byte(decompressedSize), byte(decompressedSize>>8),
+		byte(decompressedSize>>16), byte(decompressedSize>>24))
 
 	// Main decompress loop
 	decompressLoopStart := len(stub)
-	stub = append(stub, 0x4C, 0x39, 0xEF) // cmp rdi, r13
-
+	// Check if we've filled the output buffer
+	stub = append(stub, 0x4C, 0x39, 0xE7) // cmp rdi, r12
 	doneJmpPos := len(stub)
 	stub = append(stub, 0x73, 0x00) // jae done (will patch)
 
+	// Read next byte from compressed stream
 	stub = append(stub, 0xAC)       // lodsb (al = [rsi++])
 	stub = append(stub, 0x3C, 0xFF) // cmp al, 0xFF
-
 	literalJmpPos := len(stub)
 	stub = append(stub, 0x75, 0x00) // jne literal (will patch)
 
-	// Match case
-	stub = append(stub, 0x66, 0xAD)       // lodsw
-	stub = append(stub, 0x0F, 0xB7, 0xD8) // movzx ebx, ax
-	stub = append(stub, 0xAC)             // lodsb
-	stub = append(stub, 0x0F, 0xB6, 0xD0) // movzx edx, al
+	// Match case: read distance (2 bytes) and length (1 byte)
+	stub = append(stub, 0x66, 0xAD)       // lodsw (ax = dist)
+	stub = append(stub, 0x0F, 0xB7, 0xD8) // movzx ebx, ax (ebx = dist)
+	stub = append(stub, 0xAC)             // lodsb (al = len)
+	stub = append(stub, 0x0F, 0xB6, 0xD0) // movzx edx, al (edx = len)
+	
+	// Check for escaped 0xFF (dist==0, len==1)
 	stub = append(stub, 0x66, 0x85, 0xDB) // test bx, bx
-
 	copyMatchJmpPos := len(stub)
 	stub = append(stub, 0x75, 0x00) // jnz copy_match (will patch)
-
 	stub = append(stub, 0x83, 0xFA, 0x01) // cmp edx, 1
-
 	copyMatchJmpPos2 := len(stub)
 	stub = append(stub, 0x75, 0x00) // jne copy_match (will patch)
 
-	// Escaped 0xFF
+	// Escaped 0xFF: write literal 0xFF
 	stub = append(stub, 0xC6, 0x07, 0xFF) // mov byte [rdi], 0xFF
 	stub = append(stub, 0x48, 0xFF, 0xC7) // inc rdi
-
 	loopBackJmpPos := len(stub)
 	stub = append(stub, 0xEB, 0x00) // jmp decompress_loop (will patch)
 
-	// copy_match:
+	// copy_match: copy edx bytes from [rdi-ebx]
 	copyMatchLabel := len(stub)
 	stub = append(stub, 0x48, 0x89, 0xF8) // mov rax, rdi
-	stub = append(stub, 0x48, 0x29, 0xD8) // sub rax, rbx
+	stub = append(stub, 0x48, 0x29, 0xD8) // sub rax, rbx (rax = source)
 
 	// copy_loop:
 	copyLoopStart := len(stub)
@@ -205,32 +208,28 @@ func generateX64DecompressorStub(compressedSize, decompressedSize uint32) []byte
 	stub = append(stub, 0x48, 0xFF, 0xC0) // inc rax
 	stub = append(stub, 0x48, 0xFF, 0xC7) // inc rdi
 	stub = append(stub, 0xFF, 0xCA)       // dec edx
-
 	copyLoopJmpPos := len(stub)
 	stub = append(stub, 0x75, 0x00) // jnz copy_loop (will patch)
-
 	loopBackJmpPos2 := len(stub)
 	stub = append(stub, 0xEB, 0x00) // jmp decompress_loop (will patch)
 
-	// literal:
+	// literal: write byte to output
 	literalLabel := len(stub)
-	stub = append(stub, 0xAA) // stosb
-
+	stub = append(stub, 0xAA) // stosb ([rdi++] = al)
 	loopBackJmpPos3 := len(stub)
 	stub = append(stub, 0xEB, 0x00) // jmp decompress_loop (will patch)
 
-	// done:
+	// done: restore registers and jump to decompressed code
 	doneLabel := len(stub)
-	stub = append(stub, 0x41, 0x5E)       // pop r14
 	stub = append(stub, 0x41, 0x5D)       // pop r13
 	stub = append(stub, 0x41, 0x5C)       // pop r12
 	stub = append(stub, 0x5D)             // pop rbp
 	stub = append(stub, 0x5B)             // pop rbx
-	stub = append(stub, 0x49, 0xFF, 0xE4) // jmp r12
+	stub = append(stub, 0x41, 0xFF, 0xE5) // jmp r13 (jump to decompressed code)
 
-	// error:
+	// error: exit with code 1
 	errorLabel := len(stub)
-	stub = append(stub, 0x48, 0xC7, 0xC0, 0x3C, 0x00, 0x00, 0x00) // mov rax, 60
+	stub = append(stub, 0x48, 0xC7, 0xC0, 0x3C, 0x00, 0x00, 0x00) // mov rax, 60 (sys_exit)
 	stub = append(stub, 0x48, 0xC7, 0xC7, 0x01, 0x00, 0x00, 0x00) // mov rdi, 1
 	stub = append(stub, 0x0F, 0x05)                               // syscall
 
