@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -150,12 +151,16 @@ func compileTestCode(t *testing.T, code string) string {
 		t.Fatalf("Failed to write source file: %v", err)
 	}
 
-	// Compile
+	// Compile using Go API directly
 	exePath := filepath.Join(tmpDir, "test")
-	cmd := exec.Command("./flapc", "-o", exePath, srcFile)
-	compileOutput, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("Compilation failed: %v\nOutput: %s", err, compileOutput)
+	osType, _ := ParseOS(runtime.GOOS)
+	archType, _ := ParseArch(runtime.GOARCH)
+	platform := Platform{
+		OS:   osType,
+		Arch: archType,
+	}
+	if err := CompileFlapWithOptions(srcFile, exePath, platform, 0); err != nil {
+		t.Fatalf("Compilation failed: %v", err)
 	}
 
 	return exePath

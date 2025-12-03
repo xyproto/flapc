@@ -2,8 +2,8 @@ package main
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -21,26 +21,20 @@ func compileTestCodeAllowError(t *testing.T, code string) (string, error) {
 		t.Fatalf("Failed to write source file: %v", err)
 	}
 
-	// Compile
+	// Compile using Go API directly
 	exePath := filepath.Join(tmpDir, "test")
-	cmd := exec.Command("./flapc", "-o", exePath, srcFile)
-	compileOutput, err := cmd.CombinedOutput()
+	osType, _ := ParseOS(runtime.GOOS)
+	archType, _ := ParseArch(runtime.GOARCH)
+	platform := Platform{
+		OS:   osType,
+		Arch: archType,
+	}
+	err := CompileFlapWithOptions(srcFile, exePath, platform, 0)
 	if err != nil {
-		// Return the error with output
-		return "", &CompilationError{err: err, output: string(compileOutput)}
+		return "", err
 	}
 
 	return exePath, nil
-}
-
-// CompilationError represents a compilation failure
-type CompilationError struct {
-	err    error
-	output string
-}
-
-func (e *CompilationError) Error() string {
-	return e.output
 }
 
 // Confidence that this function is working: 95%

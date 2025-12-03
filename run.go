@@ -9,7 +9,6 @@ import (
 	"testing"
 )
 
-// Confidence that this function is working: 95%
 // compileAndRun is a helper function that compiles and runs Flap code,
 // returning the output
 func compileAndRun(t *testing.T, code string) string {
@@ -24,16 +23,20 @@ func compileAndRun(t *testing.T, code string) string {
 		t.Fatalf("Failed to write source file: %v", err)
 	}
 
-	// Compile
+	// Compile using Go API directly
 	exePath := filepath.Join(tmpDir, "test")
-	cmd := exec.Command("./flapc", "-o", exePath, srcFile)
-	compileOutput, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("Compilation failed: %v\nOutput: %s", err, compileOutput)
+	osType, _ := ParseOS(runtime.GOOS)
+	archType, _ := ParseArch(runtime.GOARCH)
+	platform := Platform{
+		OS:   osType,
+		Arch: archType,
+	}
+	if err := CompileFlapWithOptions(srcFile, exePath, platform, 0); err != nil {
+		t.Fatalf("Compilation failed: %v", err)
 	}
 
 	// Run - inherit environment variables for SDL_VIDEODRIVER etc
-	cmd = exec.Command(exePath)
+	cmd := exec.Command(exePath)
 	cmd.Env = os.Environ()
 	runOutput, err := cmd.CombinedOutput()
 	if err != nil {
@@ -43,7 +46,6 @@ func compileAndRun(t *testing.T, code string) string {
 	return string(runOutput)
 }
 
-// Confidence that this function is working: 90%
 // compileAndRunWindows is a helper function that compiles and runs Flap code for Windows
 // under Wine (on non-Windows platforms), with a 3-second timeout
 func compileAndRunWindows(t *testing.T, code string) string {
@@ -65,12 +67,16 @@ func compileAndRunWindows(t *testing.T, code string) string {
 		t.Fatalf("Failed to write source file: %v", err)
 	}
 
-	// Compile for Windows
+	// Compile for Windows using Go API directly
 	exePath := filepath.Join(tmpDir, "test.exe")
-	cmd := exec.Command("./flapc", "-target", "amd64-windows", "-o", exePath, srcFile)
-	compileOutput, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("Compilation failed: %v\nOutput: %s", err, compileOutput)
+	osType, _ := ParseOS("windows")
+	archType, _ := ParseArch("amd64")
+	platform := Platform{
+		OS:   osType,
+		Arch: archType,
+	}
+	if err := CompileFlapWithOptions(srcFile, exePath, platform, 0); err != nil {
+		t.Fatalf("Compilation failed: %v", err)
 	}
 
 	// Verify the PE executable was created
@@ -92,7 +98,6 @@ func compileAndRunWindows(t *testing.T, code string) string {
 	if runtime.GOOS == "windows" {
 		runCmd = exec.Command(exePath)
 	} else {
-		// Use Wine directly (no timeout wrapper for now)
 		runCmd = exec.Command("wine", exePath)
 	}
 

@@ -267,10 +267,14 @@ func TestSDL3ExampleCompiles(t *testing.T) {
 				t.Fatalf("Failed to write source: %v", err)
 			}
 
-			cmd = exec.Command("./flapc", "-o", exePath, srcFile)
-			output, err := cmd.CombinedOutput()
-			if err != nil {
-				t.Fatalf("Compilation failed: %v\nOutput: %s", err, output)
+			osType, _ := ParseOS("linux")
+			archType, _ := ParseArch(runtime.GOARCH)
+			platform := Platform{
+				OS:   osType,
+				Arch: archType,
+			}
+			if err := CompileFlapWithOptions(srcFile, exePath, platform, 0); err != nil {
+				t.Fatalf("Compilation failed: %v", err)
 			}
 
 			info, err := os.Stat(exePath)
@@ -294,10 +298,14 @@ func TestSDL3ExampleCompiles(t *testing.T) {
 			t.Fatalf("Failed to write source: %v", err)
 		}
 
-		cmd := exec.Command("./flapc", "-target", "amd64-windows", "-o", exePath, srcFile)
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("Compilation failed: %v\nOutput: %s", err, output)
+		osType, _ := ParseOS("windows")
+		archType, _ := ParseArch("amd64")
+		platform := Platform{
+			OS:   osType,
+			Arch: archType,
+		}
+		if err := CompileFlapWithOptions(srcFile, exePath, platform, 0); err != nil {
+			t.Fatalf("Compilation failed: %v", err)
 		}
 
 		// Verify it's a valid PE executable
