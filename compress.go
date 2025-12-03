@@ -269,9 +269,25 @@ func WrapWithDecompressor(originalELF []byte, arch string) ([]byte, error) {
 		fmt.Fprintf(os.Stderr, "DEBUG: WrapWithDecompressor called for arch=%s, size=%d\n", arch, len(originalELF))
 	}
 
-	// Extract the actual code sections to compress
-	// For simplicity, compress everything after the ELF headers
+	// NOTE: Compressing the entire ELF doesn't work because the ELF headers,
+	// PLT, GOT, and relocations all assume specific virtual addresses.
+	// When we decompress to a different mmap'd address, everything breaks.
+	// 
+	// To properly implement compression, we would need to:
+	// 1. Extract only the .text section (machine code)
+	// 2. Compress that
+	// 3. Have the decompressor write it back to the correct virtual address
+	// 4. Or implement position-independent decompression
+	//
+	// For now, disable compression to avoid segfaults.
+	
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG: Compression disabled for %s (needs position-independent code support)\n", arch)
+	}
+	return originalELF, nil
 
+	// Keep the old code commented for reference:
+	/*
 	compressor := NewCompressor()
 
 	// Compress the entire ELF
@@ -291,86 +307,7 @@ func WrapWithDecompressor(originalELF []byte, arch string) ([]byte, error) {
 		return originalELF, nil
 	}
 
-	// Build new ELF with:
-	// 1. ELF header
-	// 2. Program header (single LOAD segment)
-	// 3. Decompressor stub
-	// 4. Compressed data
-
-	var result bytes.Buffer
-
-	// ELF header
-	elfHeader := make([]byte, 64)
-	// ELF magic
-	elfHeader[0] = 0x7F
-	elfHeader[1] = 'E'
-	elfHeader[2] = 'L'
-	elfHeader[3] = 'F'
-	elfHeader[4] = 2 // 64-bit
-	elfHeader[5] = 1 // Little endian
-	elfHeader[6] = 1 // ELF version
-	// OS/ABI and padding
-	elfHeader[16] = 2 // ET_EXEC
-
-	if arch == "amd64" {
-		binary.LittleEndian.PutUint16(elfHeader[18:20], 0x3E) // EM_X86_64
-	} else if arch == "arm64" {
-		binary.LittleEndian.PutUint16(elfHeader[18:20], 0xB7) // EM_AARCH64
-	}
-
-	binary.LittleEndian.PutUint32(elfHeader[20:24], 1) // EV_CURRENT
-
-	// Entry point
-	entryPoint := uint64(0x400000 + 64 + 56) // After headers
-	binary.LittleEndian.PutUint64(elfHeader[24:32], entryPoint)
-
-	// Program header offset
-	binary.LittleEndian.PutUint64(elfHeader[32:40], 64)
-
-	// Section header offset (none)
-	binary.LittleEndian.PutUint64(elfHeader[40:48], 0)
-
-	// Flags
-	binary.LittleEndian.PutUint32(elfHeader[48:52], 0)
-
-	// Header size
-	binary.LittleEndian.PutUint16(elfHeader[52:54], 64)
-
-	// Program header size and count
-	binary.LittleEndian.PutUint16(elfHeader[54:56], 56)
-	binary.LittleEndian.PutUint16(elfHeader[56:58], 1)
-
-	result.Write(elfHeader)
-
-	// Program header (LOAD segment with RWX)
-	progHeader := make([]byte, 56)
-	binary.LittleEndian.PutUint32(progHeader[0:4], 1) // PT_LOAD
-	binary.LittleEndian.PutUint32(progHeader[4:8], 7) // PF_R|PF_W|PF_X
-
-	// Offset in file
-	binary.LittleEndian.PutUint64(progHeader[8:16], 0)
-
-	// Virtual address
-	binary.LittleEndian.PutUint64(progHeader[16:24], 0x400000)
-
-	// Physical address
-	binary.LittleEndian.PutUint64(progHeader[24:32], 0x400000)
-
-	// Size in file and memory
-	totalSize := uint64(64 + 56 + len(stub) + len(compressed))
-	binary.LittleEndian.PutUint64(progHeader[32:40], totalSize)
-	binary.LittleEndian.PutUint64(progHeader[40:48], totalSize)
-
-	// Alignment
-	binary.LittleEndian.PutUint64(progHeader[48:56], 0x1000)
-
-	result.Write(progHeader)
-
-	// Decompressor stub
-	result.Write(stub)
-
-	// Compressed data
-	result.Write(compressed)
-
-	return result.Bytes(), nil
+	*/
+	
+	// Rest of the function is never reached
 }
