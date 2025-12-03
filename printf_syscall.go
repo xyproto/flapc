@@ -3,6 +3,7 @@
 package main
 
 import (
+	"strconv"
 	"fmt"
 	"os"
 )
@@ -507,14 +508,22 @@ func (fc *FlapCompiler) compilePrintfSyscall(call *CallExpr, formatStr *StringEx
 			}
 
 			// Check for format with precision (like %.15g)
+			precision := 6 // default precision
 			if next == '.' {
 				// Skip precision specifier - find the actual format character
 				i += 2 // skip %.
+				precisionStart := i
 				for i < len(runes) && (runes[i] >= '0' && runes[i] <= '9') {
 					i++
 				}
 				if i >= len(runes) {
 					compilerError("printf: incomplete format specifier")
+				}
+				if i > precisionStart {
+					precisionStr := string(runes[precisionStart:i])
+					if p, err := strconv.Atoi(precisionStr); err == nil {
+						precision = p
+					}
 				}
 				next = runes[i]
 				i++ // we'll increment by 1 below, so total advance is correct
@@ -545,7 +554,7 @@ func (fc *FlapCompiler) compilePrintfSyscall(call *CallExpr, formatStr *StringEx
 			case 'f', 'g': // Float
 				fc.compileExpression(arg)
 				// xmm0 contains float - use precise formatter
-				fc.emitSyscallPrintFloatPrecise()
+				fc.emitSyscallPrintFloatPrecise(precision)
 
 			case 't', 'b': // Boolean (t=true/false, b=yes/no)
 				fc.compileExpression(arg)
@@ -930,8 +939,14 @@ func (fc *FlapCompiler) generatePrintFloat() {
 // emitSyscallPrintFloatPrecise prints a float with 6 decimal places
 // Input: xmm0 = float64 value
 // FULLY INLINE - zero function calls, direct syscalls only!
-func (fc *FlapCompiler) emitSyscallPrintFloatPrecise() {
+func (fc *FlapCompiler) emitSyscallPrintFloatPrecise(precision int) {
 	fc.out.SubImmFromReg("rsp", 128)
+	if precision < 0 {
+		precision = 6
+	}
+	if precision > 15 {
+		precision = 15
+	}
 
 	// Save xmm0 at rsp+120 (high offset, safe from overwrites)
 	fc.out.MovXmmToMem("xmm0", "rsp", 120)
@@ -957,8 +972,11 @@ func (fc *FlapCompiler) emitSyscallPrintFloatPrecise() {
 	fc.out.MovMemToXmm("xmm0", "rsp", 120)            // Reload (critical!)
 	fc.out.Emit([]byte{0xf2, 0x0f, 0x5c, 0xc1})       // subsd xmm0, xmm1
 
-	// Multiply by 1000000
-	fc.out.MovImmToReg("rax", "1000000")
+	multiplier := 1
+	for i := 0; i < precision; i++ {
+		multiplier *= 10
+	}
+	fc.out.MovImmToReg("rax", fmt.Sprintf("%d", multiplier))
 	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2a, 0xc8}) // cvtsi2sd xmm1, rax
 	fc.out.Emit([]byte{0xf2, 0x0f, 0x59, 0xc1})       // mulsd xmm0, xmm1
 
@@ -970,42 +988,20 @@ func (fc *FlapCompiler) emitSyscallPrintFloatPrecise() {
 
 	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2c, 0xc0}) // cvttsd2si rax, xmm0
 
-	// Extract 6 digits - store BYTES at rsp+64..69
 	fc.out.MovImmToReg("rcx", "10")
 
-	fc.out.XorRegWithReg("rdx", "rdx")
-	fc.out.Emit([]byte{0x48, 0xf7, 0xf1}) // div rcx
-	fc.out.AddImmToReg("rdx", 48)
-	fc.out.MovByteRegToMem("dl", "rsp", 69)
-
-	fc.out.XorRegWithReg("rdx", "rdx")
-	fc.out.Emit([]byte{0x48, 0xf7, 0xf1})
-	fc.out.AddImmToReg("rdx", 48)
-	fc.out.MovByteRegToMem("dl", "rsp", 68)
-
-	fc.out.XorRegWithReg("rdx", "rdx")
-	fc.out.Emit([]byte{0x48, 0xf7, 0xf1})
-	fc.out.AddImmToReg("rdx", 48)
-	fc.out.MovByteRegToMem("dl", "rsp", 67)
-
-	fc.out.XorRegWithReg("rdx", "rdx")
-	fc.out.Emit([]byte{0x48, 0xf7, 0xf1})
-	fc.out.AddImmToReg("rdx", 48)
-	fc.out.MovByteRegToMem("dl", "rsp", 66)
-
-	fc.out.XorRegWithReg("rdx", "rdx")
-	fc.out.Emit([]byte{0x48, 0xf7, 0xf1})
-	fc.out.AddImmToReg("rdx", 48)
-	fc.out.MovByteRegToMem("dl", "rsp", 65)
-
-	fc.out.AddImmToReg("rax", 48)
-	fc.out.MovByteRegToMem("al", "rsp", 64)
+	for i := precision - 1; i >= 0; i-- {
+		fc.out.XorRegWithReg("rdx", "rdx")
+		fc.out.Emit([]byte{0x48, 0xf7, 0xf1})
+		fc.out.AddImmToReg("rdx", 48)
+		fc.out.MovByteRegToMem("dl", "rsp", 64+i)
+	}
 
 	// ===== Print 6 digits INLINE =====
 	fc.out.MovImmToReg("rax", "1")
 	fc.out.MovImmToReg("rdi", "1")
 	fc.out.LeaMemToReg("rsi", "rsp", 64)
-	fc.out.MovImmToReg("rdx", "6")
+	fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", precision))
 	fc.out.Syscall()
 
 	fc.out.AddImmToReg("rsp", 128)
