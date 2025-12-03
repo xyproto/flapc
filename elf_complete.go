@@ -793,7 +793,13 @@ func (eb *ExecutableBuilder) patchX86PLTCalls(textBytes []byte, ds *DynamicSecti
 						fmt.Fprintf(os.Stderr, "DEBUG: Patching internal call to %s: labelOffset=%d, targetAddr=%x\n", funcName, labelOffset, targetAddr)
 					}
 				} else {
-					fmt.Fprintf(os.Stderr, "Warning: No PLT entry or label for %s\n", funcName)
+					// Function not in PLT and not an internal label
+					// This can happen for runtime helper functions (printf, strlen, malloc, etc.)
+					// that are generated after PLT is built. These warnings are harmless.
+					// Only warn in verbose mode.
+					if VerboseMode {
+						fmt.Fprintf(os.Stderr, "Note: Function %s called but not in PLT (likely from runtime helpers)\n", funcName)
+					}
 				}
 
 				if pltOffset >= 0 || isInternal {

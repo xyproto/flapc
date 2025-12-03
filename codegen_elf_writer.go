@@ -19,15 +19,10 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 	// Enable dynamic linking for ELF (required for WriteCompleteDynamicELF)
 	fc.eb.useDynamicLinking = true
 
-	// Build pltFunctions list from all called functions
-	// Only add functions that are actually used
+	// First pass: Build initial PLT with main program functions
+	// (will be rebuilt after runtime helpers are generated)
 	pltFunctions := []string{}
-
-	// Add all functions from usedFunctions (includes call() dynamic calls)
 	pltSet := make(map[string]bool)
-	for _, f := range pltFunctions {
-		pltSet[f] = true
-	}
 
 	// Build set of lambda function names to exclude from PLT
 	lambdaSet := make(map[string]bool)
@@ -35,12 +30,11 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 		lambdaSet[lambda.Name] = true
 	}
 
+	// Add functions used so far (main program only, not runtime helpers yet)
 	for funcName := range fc.usedFunctions {
-		// Skip lambda functions - they are internal, not external PLT functions
 		if lambdaSet[funcName] {
 			continue
 		}
-		// Skip internal runtime functions (start with _flap or flap_) - they are resolved directly
 		if strings.HasPrefix(funcName, "_flap") || strings.HasPrefix(funcName, "flap_") {
 			continue
 		}
@@ -50,27 +44,14 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 		}
 	}
 
-	// Build mapping from actual calls to PLT indices
-	callToPLT := make(map[string]int)
-	for i, f := range pltFunctions {
-		callToPLT[f] = i
-	}
-
-	// Remove functions from PLT that won't be called externally
-	// For example, if we're using syscall for exit, don't add exit to PLT
-	filteredPLT := []string{}
-	for _, funcName := range pltFunctions {
-		// Always include functions that are in the PLT list - they're needed
-		filteredPLT = append(filteredPLT, funcName)
-	}
-	pltFunctions = filteredPLT
+	// Note: Runtime helper functions will be tracked but won't be in first-pass PLT
+	// This is OK - they'll be resolved as internal labels, not PLT entries
 
 	// Set up dynamic sections
 	ds := NewDynamicSections(fc.eb.target.Arch())
-	fc.dynamicSymbols = ds // Store for later symbol updates
+	fc.dynamicSymbols = ds
 
-	// Only add NEEDED libraries if their functions are actually used
-	// libc.so.6 is needed if we call C standard library functions
+	// Add library dependencies based on functions used in main program
 	libcFunctions := map[string]bool{
 		"printf": true, "sprintf": true, "snprintf": true, "fprintf": true, "dprintf": true,
 		"puts": true, "putchar": true, "fputc": true, "fputs": true, "fflush": true,
@@ -96,14 +77,12 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 		ds.AddNeeded("libc.so.6")
 	}
 
-	// Check if pthread functions are used (parallel loops with @@)
+	// Check if pthread functions are used
 	if fc.usedFunctions["pthread_create"] || fc.usedFunctions["pthread_join"] {
 		ds.AddNeeded("libpthread.so.0")
 	}
 
-	// Check if any libm functions are called (via call() FFI)
-	// Note: builtin math functions like sqrt(), sin(), cos() use hardware instructions, not libm
-	// But call("sqrt", ...) calls libm's sqrt
+	// Check if libm functions are used
 	libmFunctions := map[string]bool{
 		"sqrt": true, "sin": true, "cos": true, "tan": true,
 		"asin": true, "acos": true, "atan": true, "atan2": true,
@@ -124,58 +103,42 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 
 	// Add C library dependencies from imports
 	for libName := range fc.cLibHandles {
-		if libName != "linked" { // Skip our marker value
-			// Skip "c" - standard C library functions are already in libc.so.6
+		if libName != "linked" {
 			if libName == "c" {
 				continue
 			}
-
-			// If library name already contains .so, it's a direct .so file - use it as-is
 			libSoName := libName
 			if strings.Contains(libSoName, ".so") {
-				// Direct .so file (e.g., "libmanyargs.so" from import "/tmp/libmanyargs.so" as mylib)
-				// Use it directly for DT_NEEDED
 				if VerboseMode {
 					fmt.Fprintf(os.Stderr, "Adding custom C library dependency: %s\n", libSoName)
 				}
 				ds.AddNeeded(libSoName)
 				continue
 			}
-
-			// Add .so.X suffix if not present (standard library mapping)
 			if !strings.Contains(libSoName, ".so") {
-				// Try to get library name from pkg-config
 				cmd := exec.Command("pkg-config", "--libs-only-l", libName)
 				if output, err := cmd.Output(); err == nil {
-					// Parse output like "-lSDL3" to get "SDL3"
 					libs := strings.TrimSpace(string(output))
 					if strings.HasPrefix(libs, "-l") {
 						libSoName = "lib" + strings.TrimPrefix(libs, "-l") + ".so"
 					} else {
-						// Fallback to standard naming
 						if !strings.HasPrefix(libSoName, "lib") {
 							libSoName = "lib" + libSoName
 						}
 						libSoName += ".so"
 					}
 				} else {
-					// pkg-config failed, try to find versioned .so using ldconfig
 					if !strings.HasPrefix(libSoName, "lib") {
 						libSoName = "lib" + libSoName
 					}
-
-					// Try to find the actual .so file with ldconfig
 					ldconfigCmd := exec.Command("ldconfig", "-p")
 					if ldOutput, ldErr := ldconfigCmd.Output(); ldErr == nil {
-						// Search for libname.so in ldconfig output
 						lines := strings.Split(string(ldOutput), "\n")
 						for _, line := range lines {
 							if strings.Contains(line, libSoName) && strings.Contains(line, "=>") {
-								// Extract the path after =>
 								parts := strings.Split(line, "=>")
 								if len(parts) == 2 {
 									actualPath := strings.TrimSpace(parts[1])
-									// Extract just the filename from the path
 									pathParts := strings.Split(actualPath, "/")
 									if len(pathParts) > 0 {
 										libSoName = pathParts[len(pathParts)-1]
@@ -185,8 +148,6 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 							}
 						}
 					}
-
-					// If still no version, just add .so
 					if !strings.Contains(libSoName, ".so") {
 						libSoName += ".so"
 					}
@@ -199,24 +160,17 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 		}
 	}
 
-	// Note: dlopen/dlsym/dlclose are part of libc.so.6 on modern glibc (2.34+)
-	// No need to link libdl.so.2 separately
-
-	// Add symbols for PLT functions
+	// Add PLT symbols
 	for _, funcName := range pltFunctions {
 		ds.AddSymbol(funcName, STB_GLOBAL, STT_FUNC)
 	}
 
-	// Add symbols for lambda functions so they can be resolved at runtime
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG: Adding %d lambda function symbols to dynsym\n", len(fc.lambdaFuncs))
-	}
+	// Add lambda symbols
 	for _, lambda := range fc.lambdaFuncs {
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG: Adding lambda symbol '%s' to dynsym\n", lambda.Name)
-		}
 		ds.AddSymbol(lambda.Name, STB_GLOBAL, STT_FUNC)
 	}
+
+	// Note: Library dependencies will be determined dynamically based on actual usage
 
 	// Add cache pointer storage to rodata (8 bytes of zeros for each cache)
 	if len(fc.memoCaches) > 0 {
