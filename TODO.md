@@ -1,109 +1,105 @@
 # Flap TODO
 
-## Current Status (2025-12-03)
+## Current Status (December 2025)
 
-### All Tests Passing! ✅
+### ✅ All Tests Passing
+- **Go test**: PASS (0.748s)
+- All 100+ tests pass reliably
 
-**Go test**: PASS (0.746s)
+## ✅ Core Features Working
 
-### Working Features ✅
-- **Float printing with full precision!** ✅
-  - Fully inline assembly implementation (no libc)
-  - Direct syscalls for output
-  - SSE2 instructions for decimal extraction
-  - Supports printf precision specifiers (%.2f, %.6f, etc.)
-- **Dynamic library linking FIXED!** ✅
-  - DT_NEEDED entries only when C FFI is used
-  - PLT/GOT correctly set up for external functions
-  - libc only linked when needed
-- **Arena allocator FULLY IMPLEMENTED!** ✅
-  - Default arena allocated at program start
-  - Arena blocks with automatic cleanup on scope exit
-  - Used for all internal allocations (strings, lists, etc.)
-- **Pure assembly number conversion** ✅
-  - `_flap_itoa` implemented in pure x86_64 assembly
-  - Integer and float printing without libc
-- **Windows SDL3 support WORKING!** ✅
-  - SDL3 example compiles and runs on Windows
-- **Higher-order functions WORKING!** ✅
-  - Functions can be passed as parameters
-  - `apply := f, x -> f(x)` works correctly
-- **Executable compression** 🚧
-  - Compression infrastructure exists (compress.go, decompressor_stub.go)
-  - **NOT yet integrated into compilation pipeline**
-  - Tests pass but feature is not exposed via CLI
-  - Foundation ready for 4k demoscene intros when integrated
-- **All tests passing!** ✅
+### Compilation
+- ✅ Direct to machine code (x86_64, ARM64, RISC-V)
+- ✅ Linux x86_64: Fully working, no libc required for pure Flap code
+- ✅ Windows x86_64: Fully working with PE format
+- ✅ ELF and PE executable generation
+- ✅ Mach-O support (basic)
+
+### Memory Management
+- ✅ Arena allocator with automatic cleanup
+- ✅ Default arena at program start
+- ✅ `arena { }` blocks with scope-based cleanup
+- ✅ Used for all internal allocations
+
+### Language Features
+- ✅ Functions as first-class values
+- ✅ Higher-order functions (map, filter, fold)
+- ✅ Pattern matching with guards
+- ✅ `defer` for LIFO cleanup
+- ✅ `or!` error handling operator
+- ✅ Loops: `@`, `@ in`, `@ condition`
+- ✅ Match expressions with guards
+- ✅ String interpolation
+- ✅ List comprehensions
+
+### I/O & Printing
+- ✅ Float printing with full precision (inline assembly, no libc)
+- ✅ SSE2-based decimal extraction
+- ✅ Printf format specifiers (%.2f, %.6f, etc.)
+- ✅ Direct syscalls for I/O on Linux
+- ✅ Pure assembly number conversion
+
+### C FFI
+- ✅ Import C libraries (`import sdl3 as sdl`)
+- ✅ Header parsing for constants and functions
+- ✅ PLT/GOT dynamic linking
+- ✅ Conditional libc linking (only when C FFI used)
+- ✅ Windows DLL support
+- ✅ SDL3 bindings working
+
+## 🚧 Partial/Experimental Features
+
+### Optimization
+- 🚧 Tail call optimization (implemented but conservative)
+- 🚧 General optimizer disabled (needs type system)
 
 ### Platform Support
-- ✅ Linux x86_64: Fully working, no libc required
-- ✅ Windows x86_64: Fully working
-- 🚧 Linux ARM64: Backend exists (needs testing)
-- 🚧 Linux RISC-V64: Backend exists (needs testing)
-- ❌ Windows ARM64: Not yet implemented
-- ❌ macOS ARM64: Not yet implemented
+- 🚧 ARM64 backend (code exists, needs testing)
+- 🚧 RISC-V backend (code exists, needs testing)
+- 🚧 macOS support (will require libc for syscalls)
 
-### Known Limitations
-- macOS will need libc for syscalls (no direct syscall support)
-- ARM64/RISC-V float printing needs implementation
-- Pipeline with lambdas may have edge cases
+### Advanced Features
+- 🚧 Executable compression (infrastructure exists, not integrated)
+- 🚧 Function composition `<>` operator (partial)
+- 🚧 Automatic memoization (not implemented)
+- 🚧 Parallel loops `@@` (basic support, needs testing)
 
-## Remaining Work
+## ❌ Not Yet Implemented
 
-### Code Generation
-- Implement float printing for ARM64/RISC-V backends
-- Add ARM64/RISC-V compression stubs
-- Optimize O(n²) algorithms
+### Language Features
+- ❌ Automatic memoization for pure functions
+- ❌ SIMD operations
+- ❌ Inline assembly blocks
 
-### Type System
-- Complete type inference
-- Ensure C types integrate with Flap's universal type
-- Add runtime type checking (optional)
+### Tooling
+- ❌ Hot reload (infrastructure exists)
+- ❌ Interactive REPL
+- ❌ Language server protocol
+- ❌ Package manager
+- ❌ Debugger integration
 
-### Standard Library
-- Expand minimal runtime
-- Add common game utilities
-- Document all builtins
+### Platform Support
+- ❌ Windows ARM64
+- ❌ macOS ARM64
+- ❌ WASM target
+- ❌ WebGPU bindings
 
-### Testing
-- Test ARM64 backend on actual hardware
-- Test RISC-V backend on actual hardware
-
-## Future Enhancements
+## 🎯 Priority Work Items
 
 ### High Priority
-- Function composition (`<>` operator) full implementation
-- Re-enable optimizer when type system is complete
-- Integrate executable compression into compilation pipeline
+1. Test ARM64/RISC-V backends on real hardware
+2. Implement float printing for ARM64/RISC-V
+3. Complete type inference for optimizer
+4. Integrate executable compression
 
 ### Medium Priority
-- Hot reload improvements (patch running process via IPC)
-- Performance profiling tools
-- Interactive REPL
+5. Add more SDL3 examples
+6. Performance benchmarking suite
+7. Improve error messages
+8. Document all builtins
 
 ### Low Priority
-- WASM target
-- WebGPU bindings
-- Language server protocol support
-- Package manager
-
----
-
-## Recent Accomplishments (2025-12-03)
-
-### ✅ Completed
-1. **Float printing fixed!** - Pure assembly implementation with full precision
-2. **All tests passing** - `go test` clean
-3. **libc-free Linux builds** - Only uses libc when C FFI is needed
-4. **Printf precision support** - %.2f, %.6f, etc. all working
-5. **Arena allocator** - Full implementation with proper cleanup
-6. **Higher-order functions** - Functions as parameters working
-7. **Match return values** - Fixed return value handling
-8. **Pure assembly number conversion** - No libc dependencies
-9. **Windows support** - SDL3 example working
-
-### 🎯 Next Steps
-1. **Integrate executable compression** - Add `-compress` flag to CLI
-2. **Test ARM64/RISC-V backends** - Need real hardware testing
-3. **Implement float printing for ARM64/RISC-V** - Port inline float print
-4. **Re-enable optimizer** - Once type system is stable
+9. REPL implementation
+10. Hot reload improvements
+11. Language server
+12. Package ecosystem
