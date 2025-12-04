@@ -1500,9 +1500,67 @@ flags := sdl.SDL_INIT_VIDEO
 window := sdl.SDL_CreateWindow("Title", 640, 480, flags)
 ```
 
-## Import System
+## Import and Export System
 
-C67 provides a unified import system for libraries, git repositories, and local files.
+C67 provides a unified import system for libraries, git repositories, and local files. The export system controls function visibility and namespace requirements.
+
+### Export Control
+
+The `export` statement at the top of a C67 file controls which functions are available to importers:
+
+**Three export modes:**
+
+1. **`export *`** - All functions exported to global namespace (no prefix needed)
+   ```c67
+   // gamelib.c67
+   export *
+   
+   init = (w, h) -> { ... }
+   draw_rect = (x, y, w, h) -> { ... }
+   ```
+   Usage:
+   ```c67
+   import "gamelib" as game
+   init(800, 600)      // No prefix
+   draw_rect(10, 20, 50, 50)
+   ```
+
+2. **`export func1 func2`** - Only listed functions exported (prefix required)
+   ```c67
+   // api.c67
+   export public_func another_func
+   
+   public_func = { ... }       // Exported
+   another_func = { ... }      // Exported
+   internal_helper = { ... }   // Not exported
+   ```
+   Usage:
+   ```c67
+   import "api" as api
+   api.public_func()        // OK
+   api.another_func()       // OK
+   api.internal_helper()    // Error - not exported
+   ```
+
+3. **No export** - All functions available (prefix required)
+   ```c67
+   // utils.c67
+   // No export statement
+   
+   helper1 = { ... }
+   helper2 = { ... }
+   ```
+   Usage:
+   ```c67
+   import "utils" as utils
+   utils.helper1()   // Prefix required
+   utils.helper2()   // Prefix required
+   ```
+
+**Use cases:**
+- `export *`: Beginner-friendly libraries, game frameworks (QBASIC-like feel)
+- `export list`: Controlled public APIs with internal implementation details
+- No export: General libraries where namespace pollution matters
 
 ### Import Priority
 

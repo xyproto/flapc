@@ -162,9 +162,89 @@ compute = x -> {
 - Has expression before `{` → Value match
 - No expression, has `|` at line start → Guard match
 
-## Import System
+## Import and Export System
 
-C67's import system provides a unified way to import libraries, git repositories, and local directories.
+C67's import system provides a unified way to import libraries, git repositories, and local directories. The export system controls which functions are available to importers and whether they require namespace prefixes.
+
+### Export Statements
+
+The `export` statement controls which functions are available to importers:
+
+**Three export modes:**
+
+1. **`export *`** - Export all functions into global namespace (no prefix required)
+   ```c67
+   export *
+   
+   hello = { println("Hello from this module!") }
+   goodbye = { println("Goodbye!") }
+   ```
+   When imported:
+   ```c67
+   import "github.com/user/greetings" as greet
+   hello()      // Works - no prefix needed
+   goodbye()    // Works - no prefix needed
+   ```
+
+2. **`export func1 func2 ...`** - Export only listed functions (prefix required)
+   ```c67
+   export hello goodbye
+   
+   hello = { println("Hello!") }
+   goodbye = { println("Goodbye!") }
+   internal_helper = { println("Internal") }  // Not exported
+   ```
+   When imported:
+   ```c67
+   import "github.com/user/greetings" as greet
+   greet.hello()         // Works - prefix required
+   greet.goodbye()       // Works - prefix required
+   greet.internal_helper()  // Error - not exported
+   ```
+
+3. **No export statement** - All functions available (prefix required)
+   ```c67
+   // No export statement
+   
+   hello = { println("Hello!") }
+   goodbye = { println("Goodbye!") }
+   ```
+   When imported:
+   ```c67
+   import "github.com/user/greetings" as greet
+   greet.hello()    // Works - prefix required
+   greet.goodbye()  // Works - prefix required
+   ```
+
+**Design rationale:**
+- `export *` is for beginner-friendly libraries (e.g., game frameworks that provide a QBASIC-like environment)
+- `export func1 func2` is for controlled APIs with selective exposure
+- No export is for general libraries where namespace pollution is a concern
+
+**Example: Beginner-friendly game library**
+```c67
+// c67game/main.c67
+export *
+
+// Game initialization
+init_game = (width, height, title) -> { ... }
+
+// Drawing functions
+draw_rect = (x, y, w, h, color) -> { ... }
+draw_circle = (x, y, radius, color) -> { ... }
+clear_screen = color -> { ... }
+
+// Usage in game:
+import "github.com/xyproto/c67game" as game
+
+// No prefixes needed - feels like built-in functions!
+init_game(800, 600, "My Game")
+@ {
+    clear_screen(0)
+    draw_rect(100, 100, 50, 50, 0xFF0000)
+    draw_circle(400, 300, 30, 0x00FF00)
+}
+```
 
 ### Import Resolution Priority
 
@@ -216,6 +296,29 @@ import SDL3.dll as sdl
   - `@main` or `@master` - Specific branch
   - `@latest` - Latest tag (or default branch if no tags)
   - No `@` - Uses default branch
+
+### Namespace Rules
+
+When importing a C67 module:
+
+1. **If module has `export *`**: Functions available without prefix
+   ```c67
+   import "github.com/user/gamelib" as game
+   init_game()  // No prefix needed
+   ```
+
+2. **If module has `export func1 func2`**: Only listed functions available, prefix required
+   ```c67
+   import "github.com/user/api" as api
+   api.exported_func()  // Prefix required
+   api.internal_func()  // Error - not exported
+   ```
+
+3. **If module has no export**: All functions available, prefix required
+   ```c67
+   import "github.com/user/utils" as utils
+   utils.helper()  // Prefix required
+   ```
 
 ## Program Execution Model
 
@@ -319,7 +422,7 @@ defer_statement  = "defer" expression ;
 
 import_statement = "import" import_source [ "as" identifier ] ;
 
-export_statement = "export" identifier { ", " identifier } ;
+export_statement = "export" ( "*" | identifier { identifier } ) ;
 
 import_source   = string_literal           (* library name, file path, or directory, unquoted string *)
                 | git_url [ "@" version_spec ] ; (* git repository with optional version *)
