@@ -16598,15 +16598,8 @@ func getUnknownFunctions(program *Program) []string {
 		if imp, ok := stmt.(*ImportStmt); ok {
 			if imp.Alias != "*" {
 				c67Imports[imp.Alias] = true
-				if VerboseMode {
-					fmt.Fprintf(os.Stderr, "DEBUG getUnknownFunctions: Found C67 import namespace: %s\n", imp.Alias)
-				}
 			}
 		}
-	}
-	
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG getUnknownFunctions: C67 imports: %v\n", c67Imports)
 	}
 
 	// Collect all function calls
@@ -16746,9 +16739,6 @@ func processImports(program *Program, platform Platform, sourceFilePath string) 
 		if strings.HasPrefix(importSource, ".") {
 			sourceDir := filepath.Dir(sourceFilePath)
 			importSource = filepath.Clean(filepath.Join(sourceDir, importSource))
-			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "DEBUG: Resolved relative import %s + %s = %s\n", sourceDir, imp.URL, importSource)
-			}
 		}
 		
 		spec := &ImportSpec{
@@ -16980,9 +16970,6 @@ func addNamespaceToFunctions(program *Program, namespace string) {
 		if assign, ok := stmt.(*AssignStmt); ok {
 			// Track which namespace this function belongs to
 			program.FunctionNamespaces[assign.Name] = namespace
-			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "DEBUG: Mapping function %s to namespace %s\n", assign.Name, namespace)
-			}
 		}
 	}
 }
