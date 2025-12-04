@@ -113,12 +113,13 @@ type C67Compiler struct {
 	metaArenaGrowthErrorJump      int
 	firstMetaArenaMallocErrorJump int
 
-	regAlloc       *RegisterAllocator // Register allocator for optimized variable allocation
-	regTracker     *RegisterTracker   // Real-time register availability tracker
-	regSpiller     *RegisterSpiller   // Register spilling manager
-	wpoTimeout     float64            // Whole-program optimization timeout (non-global, thread-safe)
-	movedVars      map[string]bool    // Track variables that have been moved (use-after-move detection)
-	inUnsafeBlock  bool               // True when compiling inside an unsafe block (skip safety checks)
+	regAlloc          *RegisterAllocator    // Register allocator for optimized variable allocation
+	regTracker        *RegisterTracker      // Real-time register availability tracker
+	regSpiller        *RegisterSpiller      // Register spilling manager
+	wpoTimeout        float64               // Whole-program optimization timeout (non-global, thread-safe)
+	movedVars         map[string]bool       // Track variables that have been moved (use-after-move detection)
+	inUnsafeBlock     bool                  // True when compiling inside an unsafe block (skip safety checks)
+	functionNamespace map[string]string     // function name -> namespace (for imported C67 functions)
 	scopeDepth     int                // Track scope depth for proper move tracking
 	scopedMoved    []map[string]bool  // Stack of moved variables per scope
 	errors         *ErrorCollector    // Railway-oriented error collector
@@ -209,6 +210,7 @@ func NewC67Compiler(platform Platform, verbose bool) (*C67Compiler, error) {
 		scopeDepth:          0,
 		scopedMoved:         []map[string]bool{make(map[string]bool)},
 		errors:              NewErrorCollector(10),
+		functionNamespace:   make(map[string]string),
 	}, nil
 }
 
@@ -474,6 +476,11 @@ func (fc *C67Compiler) Compile(program *Program, outputPath string) error {
 
 	// Always enable arenas - all list operations use arena allocation
 	fc.usesArenas = true
+
+	// Transfer namespace information from program to compiler
+	if program.FunctionNamespaces != nil {
+		fc.functionNamespace = program.FunctionNamespaces
+	}
 
 	if fc.debug {
 		if VerboseMode {
@@ -11316,7 +11323,7 @@ func (fc *C67Compiler) compileCall(call *CallExpr) {
 		return
 	}
 
-	// Check if this is a C library function call (namespace.function)
+	// Check if this is a namespaced function call (namespace.function)
 	if strings.Contains(call.Function, ".") {
 		parts := strings.Split(call.Function, ".")
 		if len(parts) == 2 {
@@ -11327,6 +11334,21 @@ func (fc *C67Compiler) compileCall(call *CallExpr) {
 			if libName, ok := fc.cImports[namespace]; ok {
 				fc.compileCFunctionCall(libName, funcName, call.Args)
 				return
+			}
+
+			// Check if this is a C67 namespaced function call
+			// Look up the function in the namespace map
+			if actualNamespace, exists := fc.functionNamespace[funcName]; exists && actualNamespace == namespace {
+				// This is a valid namespaced C67 function call
+				// Compile it as a regular function call (the function is defined without the namespace prefix)
+				call.Function = funcName // Strip the namespace prefix
+				// Continue with regular compilation below
+			} else if _, isVariable := fc.variables[namespace]; isVariable {
+				// The "namespace" is actually a variable, so this is method call syntax
+				// Desugar: xs.append(a) -> append(xs, a)
+				call.Function = funcName
+				call.Args = append([]Expression{&IdentExpr{Name: namespace}}, call.Args...)
+				// Continue with regular compilation below
 			}
 		}
 	}
@@ -16570,6 +16592,23 @@ func getUnknownFunctions(program *Program) []string {
 		}
 	}
 
+	// Collect C67 import namespaces (e.g., "lib", "math")
+	c67Imports := make(map[string]bool)
+	for _, stmt := range program.Statements {
+		if imp, ok := stmt.(*ImportStmt); ok {
+			if imp.Alias != "*" {
+				c67Imports[imp.Alias] = true
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "DEBUG getUnknownFunctions: Found C67 import namespace: %s\n", imp.Alias)
+				}
+			}
+		}
+	}
+	
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG getUnknownFunctions: C67 imports: %v\n", c67Imports)
+	}
+
 	// Collect all function calls
 	calls := make(map[string]bool)
 	for _, stmt := range program.Statements {
@@ -16601,7 +16640,30 @@ func getUnknownFunctions(program *Program) []string {
 			}
 		}
 
-		if !builtins[funcName] && !defined[funcName] && !isFromCImport {
+		// Check for C67 import namespaces
+		isFromC67Import := false
+		for ns := range c67Imports {
+			if len(funcName) > len(ns)+1 && funcName[:len(ns)+1] == ns+"." {
+				isFromC67Import = true
+				break
+			}
+		}
+
+		// Check if it's a method call (namespace.method where namespace is in defined)
+		// For dotted names, also check if the base function (after removing namespace) is defined
+		isMethodCall := false
+		if strings.Contains(funcName, ".") {
+			parts := strings.SplitN(funcName, ".", 2)
+			if len(parts) == 2 {
+				baseFuncName := parts[1]
+				// If the base function is a builtin or defined, it's likely a method call
+				if builtins[baseFuncName] || defined[baseFuncName] {
+					isMethodCall = true
+				}
+			}
+		}
+
+		if !builtins[funcName] && !defined[funcName] && !isFromCImport && !isFromC67Import && !isMethodCall {
 			unknown = append(unknown, funcName)
 		}
 	}
@@ -16628,7 +16690,7 @@ func filterPrivateFunctions(program *Program) {
 	program.Statements = publicStmts
 }
 
-func processImports(program *Program, platform Platform) error {
+func processImports(program *Program, platform Platform, sourceFilePath string) error {
 	// Find all import statements (both Git and C imports)
 	var imports []*ImportStmt
 	var cImports []*CImportStmt
@@ -16678,8 +16740,19 @@ func processImports(program *Program, platform Platform) error {
 		}
 
 		// Create import spec
+		importSource := imp.URL
+		
+		// If it's a relative path, resolve it relative to the source file's directory
+		if strings.HasPrefix(importSource, ".") {
+			sourceDir := filepath.Dir(sourceFilePath)
+			importSource = filepath.Clean(filepath.Join(sourceDir, importSource))
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG: Resolved relative import %s + %s = %s\n", sourceDir, imp.URL, importSource)
+			}
+		}
+		
 		spec := &ImportSpec{
-			Source:  imp.URL,
+			Source:  importSource,
 			Version: imp.Version,
 			Alias:   imp.Alias,
 		}
@@ -16706,14 +16779,37 @@ func processImports(program *Program, platform Platform) error {
 			// Filter out private functions (names starting with _)
 			filterPrivateFunctions(depProgram)
 
-			// If alias is "*", import into same namespace
-			// Otherwise, prefix all function names with namespace
-			if imp.Alias != "*" {
+			// Determine namespace prefixing based on export mode and import alias
+			// Priority:
+			// 1. If imported with "as *", no prefix (backward compatibility)
+			// 2. If dep has "export *", no prefix
+			// 3. Otherwise, add namespace prefix
+			usePrefix := true
+			if imp.Alias == "*" {
+				// "import ... as *" - no prefix
+				usePrefix = false
+			} else if depProgram.ExportMode == "*" {
+				// "export *" in imported file - no prefix
+				usePrefix = false
+			}
+
+			if usePrefix {
 				addNamespaceToFunctions(depProgram, imp.Alias)
 			}
 
 			// Prepend dependency program to main program
 			program.Statements = append(depProgram.Statements, program.Statements...)
+			
+			// Merge namespace mappings
+			if depProgram.FunctionNamespaces != nil {
+				if program.FunctionNamespaces == nil {
+					program.FunctionNamespaces = make(map[string]string)
+				}
+				for funcName, ns := range depProgram.FunctionNamespaces {
+					program.FunctionNamespaces[funcName] = ns
+				}
+			}
+			
 			if VerboseMode {
 				fmt.Fprintf(os.Stderr, "Loaded %s from %s\n", c67File, imp.URL)
 			}
@@ -16873,10 +16969,20 @@ func transformDotNotationExpr(expr Expression, instanceName string) Expression {
 }
 
 func addNamespaceToFunctions(program *Program, namespace string) {
+	// Store namespace metadata in Program for later use during compilation
+	// We can't rename functions with dots because the parser doesn't support it
+	// Instead, we'll track which namespace each function belongs to
+	if program.FunctionNamespaces == nil {
+		program.FunctionNamespaces = make(map[string]string)
+	}
+	
 	for _, stmt := range program.Statements {
 		if assign, ok := stmt.(*AssignStmt); ok {
-			// Add namespace prefix to function name
-			assign.Name = namespace + "." + assign.Name
+			// Track which namespace this function belongs to
+			program.FunctionNamespaces[assign.Name] = namespace
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG: Mapping function %s to namespace %s\n", assign.Name, namespace)
+			}
 		}
 	}
 }
@@ -16938,7 +17044,7 @@ func CompileC67WithOptions(inputPath string, outputPath string, platform Platfor
 	var combinedSource string
 
 	// Process explicit import statements
-	err = processImports(program, platform)
+	err = processImports(program, platform, inputPath)
 	if err != nil {
 		return fmt.Errorf("failed to process imports: %v", err)
 	}

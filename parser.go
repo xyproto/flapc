@@ -316,6 +316,14 @@ func (p *Parser) ParseProgram() *Program {
 			if aliasStmt, ok := stmt.(*AliasStmt); ok {
 				// Store the alias in the parser's alias map
 				p.aliases[aliasStmt.NewName] = aliasStmt.Target
+			} else if exportStmt, ok := stmt.(*ExportStmt); ok {
+				// Handle export statements: store in program metadata
+				if exportStmt.Mode == "*" {
+					program.ExportMode = "*"
+				} else {
+					program.ExportedFuncs = append(program.ExportedFuncs, exportStmt.Functions...)
+				}
+				// Don't add export statements to the AST
 			} else {
 				// Regular statements are added to the program
 				program.Statements = append(program.Statements, stmt)
@@ -420,6 +428,34 @@ func (p *Parser) parseImport() Statement {
 	// Otherwise, it's a library name (C import)
 	p.cImports[alias] = true
 	return &CImportStmt{Library: source, Alias: alias}
+}
+
+func (p *Parser) parseExport() Statement {
+	p.nextToken() // skip 'export'
+
+	// Check for "export *"
+	if p.current.Type == TOKEN_STAR {
+		p.nextToken()
+		return &ExportStmt{Mode: "*", Functions: nil}
+	}
+
+	// Parse list of function names: "export func1 func2 func3"
+	var functions []string
+	for p.current.Type == TOKEN_IDENT {
+		functions = append(functions, p.current.Value)
+		p.nextToken()
+		
+		// Allow optional commas between function names
+		if p.current.Type == TOKEN_COMMA {
+			p.nextToken()
+		}
+	}
+
+	if len(functions) == 0 {
+		p.error("expected '*' or function names after 'export'")
+	}
+
+	return &ExportStmt{Mode: "", Functions: functions}
 }
 
 func (p *Parser) parseArenaStmt() *ArenaStmt {
@@ -863,6 +899,11 @@ func (p *Parser) parseStatement() Statement {
 		}
 		path := p.current.Value
 		return &UseStmt{Path: path}
+	}
+
+	// Check for export keyword
+	if p.current.Type == TOKEN_EXPORT {
+		return p.parseExport()
 	}
 
 	// Check for import keyword (git URL imports)
@@ -3575,14 +3616,16 @@ func (p *Parser) parsePostfix() Expression {
 							// For C FFI calls, use just the function name without the "c." prefix
 							expr = &CallExpr{Function: fieldName, Args: args, IsCFFI: true}
 						} else {
-							// Regular namespaced call (e.g., sdl.SDL_Init)
+							// Regular C library namespace call (e.g., sdl.SDL_Init)
 							expr = &CallExpr{Function: namespacedName, Args: args}
 						}
 					} else {
-						// Method call syntax sugar: obj.method(args) -> method(obj, args)
-						p.nextToken()              // skip field name
-						p.nextToken()              // skip '('
-						args := []Expression{expr} // receiver becomes first argument
+						// Ambiguous: could be method call (xs.append) or C67 namespace (lib.hello)
+						// Parse as namespaced call and let compiler resolve
+						namespacedName := ident.Name + "." + fieldName
+						p.nextToken() // skip second identifier
+						p.nextToken() // skip '('
+						args := []Expression{}
 
 						if p.current.Type != TOKEN_RPAREN {
 							args = append(args, p.parseExpression())
@@ -3593,8 +3636,8 @@ func (p *Parser) parsePostfix() Expression {
 							}
 							p.nextToken() // move to ')'
 						}
-						// Desugar to function call with receiver as first arg
-						expr = &CallExpr{Function: fieldName, Args: args}
+						// Store as namespace.function, compiler will handle both cases
+						expr = &CallExpr{Function: namespacedName, Args: args}
 					}
 				} else {
 					// Check for special property access on Result types

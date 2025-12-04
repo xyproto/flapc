@@ -121,6 +121,7 @@ const (
 	TOKEN_CVOID    // cvoid (C void)
 	TOKEN_USE      // use (import)
 	TOKEN_IMPORT   // import (with git URL)
+	TOKEN_EXPORT   // export (export functions for import)
 	TOKEN_DOT      // . (for namespaced calls)
 	TOKEN_DOTDOT   // .. (inclusive range operator)
 	TOKEN_DOTDOTLT // ..< (exclusive range operator)
@@ -439,6 +440,8 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_USE, Value: value, Line: l.line, Column: tokenColumn}
 		case "import":
 			return Token{Type: TOKEN_IMPORT, Value: value, Line: l.line, Column: tokenColumn}
+		case "export":
+			return Token{Type: TOKEN_EXPORT, Value: value, Line: l.line, Column: tokenColumn}
 		case "as":
 			return Token{Type: TOKEN_AS, Value: value, Line: l.line, Column: tokenColumn}
 		case "unsafe":

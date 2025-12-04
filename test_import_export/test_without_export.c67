@@ -1,0 +1,7 @@
+import "./lib_without_export.c67" as lib
+
+lib.hello()
+result = lib.add(5, 10)
+println(result)
+result2 = lib.mul(3, 7)
+println(result2)

@@ -12,7 +12,10 @@ type Node interface {
 }
 
 type Program struct {
-	Statements []Statement
+	Statements          []Statement
+	ExportMode          string            // "*" for export all without prefix, "" for require prefix
+	ExportedFuncs       []string          // Specific functions to export (only if ExportMode is not "*")
+	FunctionNamespaces  map[string]string // function name -> namespace (for imports)
 }
 
 func (p *Program) String() string {
@@ -94,6 +97,19 @@ type UseStmt struct {
 
 func (u *UseStmt) String() string { return "use " + u.Path }
 func (u *UseStmt) statementNode() {}
+
+type ExportStmt struct {
+	Mode      string   // "*" for export all, "" for export specific functions
+	Functions []string // Function names to export (only if Mode != "*")
+}
+
+func (e *ExportStmt) String() string {
+	if e.Mode == "*" {
+		return "export *"
+	}
+	return "export " + strings.Join(e.Functions, " ")
+}
+func (e *ExportStmt) statementNode() {}
 
 type ImportStmt struct {
 	URL     string // Git URL: "github.com/owner/repo"

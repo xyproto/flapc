@@ -232,7 +232,7 @@ func resolveGitRepo(spec *ImportSpec) ([]string, error) {
 	return findC67Files(repoPath, false)
 }
 
-// resolveDirectory resolves a local directory import and returns paths to .c67 files
+// resolveDirectory resolves a local directory or file import and returns paths to .c67 files
 func resolveDirectory(spec *ImportSpec) ([]string, error) {
 	dirPath := spec.Source
 
@@ -254,13 +254,18 @@ func resolveDirectory(spec *ImportSpec) ([]string, error) {
 		dirPath = filepath.Join(wd, dirPath)
 	}
 
-	// Check if directory exists
+	// Check if path exists
 	info, err := os.Stat(dirPath)
 	if err != nil {
-		return nil, fmt.Errorf("directory not found: %s", dirPath)
+		return nil, fmt.Errorf("path not found: %s", dirPath)
 	}
+
+	// If it's a .c67 file, return it directly
 	if !info.IsDir() {
-		return nil, fmt.Errorf("not a directory: %s", dirPath)
+		if strings.HasSuffix(dirPath, ".c67") {
+			return []string{dirPath}, nil
+		}
+		return nil, fmt.Errorf("not a .c67 file or directory: %s", dirPath)
 	}
 
 	// Find all top-level .c67 files (not recursive for directories)
