@@ -1975,17 +1975,13 @@ func (fc *C67Compiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	fc.out.SubImmFromReg("rsp", stackSize)
 	fc.runtimeStack += int(stackSize) // Track runtime allocation
 
-	// Initialize iteration counter and max iterations (after stack allocation)
+	// Initialize max iterations (after stack allocation)
 	if stmt.NeedsMaxCheck {
 		// Store max iterations on stack (skip if infinite)
 		if stmt.MaxIterations != math.MaxInt64 {
 			fc.out.MovImmToReg("rax", fmt.Sprintf("%d", stmt.MaxIterations))
 			fc.out.MovRegToMem("rax", "rbp", -maxIterOffset)
 		}
-
-		// Initialize iteration counter to 0
-		fc.out.XorRegWithReg("rax", "rax")
-		fc.out.MovRegToMem("rax", "rbp", -iterationCountOffset)
 	}
 
 	// Evaluate range start and store in counter (register or stack)
@@ -2018,6 +2014,12 @@ func (fc *C67Compiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 
 	// Loop start label - this is where we jump back to
 	loopStartPos := fc.eb.text.Len()
+
+	// Reset iteration counter to 0 at loop start (critical for nested loops)
+	if stmt.NeedsMaxCheck {
+		fc.out.XorRegWithReg("rax", "rax")
+		fc.out.MovRegToMem("rax", "rbp", -iterationCountOffset)
+	}
 
 	// Register this loop on the active loop stack
 	loopLabel := len(fc.activeLoops) + 1
