@@ -6,16 +6,16 @@ import (
 
 func TestExportParsing(t *testing.T) {
 	tests := []struct {
-		name         string
-		code         string
-		expectMode   string
-		expectFuncs  []string
+		name        string
+		code        string
+		expectMode  string
+		expectFuncs []string
 	}{
 		{
 			name: "export all",
 			code: `export *
 hello = println "Hello"`,
-			expectMode: "*",
+			expectMode:  "*",
 			expectFuncs: nil,
 		},
 		{
@@ -23,7 +23,7 @@ hello = println "Hello"`,
 			code: `export hello goodbye
 hello = println "Hello"
 goodbye = println "Goodbye"`,
-			expectMode: "",
+			expectMode:  "",
 			expectFuncs: []string{"hello", "goodbye"},
 		},
 		{
@@ -32,13 +32,13 @@ goodbye = println "Goodbye"`,
 add = x -> x + 1
 sub = x -> x - 1
 mul = x -> x * 2`,
-			expectMode: "",
+			expectMode:  "",
 			expectFuncs: []string{"add", "sub", "mul"},
 		},
 		{
-			name: "no export statement",
-			code: `hello = println "Hello"`,
-			expectMode: "",
+			name:        "no export statement",
+			code:        `hello = println "Hello"`,
+			expectMode:  "",
 			expectFuncs: nil,
 		},
 	}

@@ -132,15 +132,15 @@ func deriveAliasFromSource(source string) string {
 	if idx := strings.Index(source, "@"); idx != -1 {
 		source = source[:idx]
 	}
-	
+
 	// Remove trailing slashes
 	source = strings.TrimRight(source, "/\\")
-	
+
 	// Get the last component
 	if lastSlash := strings.LastIndexAny(source, "/\\"); lastSlash != -1 {
 		return source[lastSlash+1:]
 	}
-	
+
 	// No slashes, use as-is
 	return source
 }

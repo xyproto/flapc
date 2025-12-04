@@ -113,17 +113,17 @@ type C67Compiler struct {
 	metaArenaGrowthErrorJump      int
 	firstMetaArenaMallocErrorJump int
 
-	regAlloc          *RegisterAllocator    // Register allocator for optimized variable allocation
-	regTracker        *RegisterTracker      // Real-time register availability tracker
-	regSpiller        *RegisterSpiller      // Register spilling manager
-	wpoTimeout        float64               // Whole-program optimization timeout (non-global, thread-safe)
-	movedVars         map[string]bool       // Track variables that have been moved (use-after-move detection)
-	inUnsafeBlock     bool                  // True when compiling inside an unsafe block (skip safety checks)
-	functionNamespace map[string]string     // function name -> namespace (for imported C67 functions)
-	scopeDepth     int                // Track scope depth for proper move tracking
-	scopedMoved    []map[string]bool  // Stack of moved variables per scope
-	errors         *ErrorCollector    // Railway-oriented error collector
-	dynamicSymbols *DynamicSections   // Dynamic symbol table (for updating lambda symbols post-generation)
+	regAlloc          *RegisterAllocator // Register allocator for optimized variable allocation
+	regTracker        *RegisterTracker   // Real-time register availability tracker
+	regSpiller        *RegisterSpiller   // Register spilling manager
+	wpoTimeout        float64            // Whole-program optimization timeout (non-global, thread-safe)
+	movedVars         map[string]bool    // Track variables that have been moved (use-after-move detection)
+	inUnsafeBlock     bool               // True when compiling inside an unsafe block (skip safety checks)
+	functionNamespace map[string]string  // function name -> namespace (for imported C67 functions)
+	scopeDepth        int                // Track scope depth for proper move tracking
+	scopedMoved       []map[string]bool  // Stack of moved variables per scope
+	errors            *ErrorCollector    // Railway-oriented error collector
+	dynamicSymbols    *DynamicSections   // Dynamic symbol table (for updating lambda symbols post-generation)
 }
 
 type FunctionSignature struct {
@@ -399,7 +399,9 @@ func (fc *C67Compiler) processCImports(program *Program) {
 			}
 
 			// Extract constants and function signatures from C headers
-			fmt.Fprintf(os.Stderr, "Extracting constants and functions from %s headers...\n", cImport.Library)
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "Extracting constants and functions from %s headers...\n", cImport.Library)
+			}
 			constants, err := ExtractConstantsFromLibrary(cImport.Library)
 			if err != nil {
 				// Non-fatal: constants extraction is optional
@@ -16749,13 +16751,13 @@ func processImports(program *Program, platform Platform, sourceFilePath string) 
 
 		// Create import spec
 		importSource := imp.URL
-		
+
 		// If it's a relative path, resolve it relative to the source file's directory
 		if strings.HasPrefix(importSource, ".") {
 			sourceDir := filepath.Dir(sourceFilePath)
 			importSource = filepath.Clean(filepath.Join(sourceDir, importSource))
 		}
-		
+
 		spec := &ImportSpec{
 			Source:  importSource,
 			Version: imp.Version,
@@ -16796,7 +16798,7 @@ func processImports(program *Program, platform Platform, sourceFilePath string) 
 			} else if depProgram.ExportMode == "*" {
 				// "export *" in imported file - no prefix
 				usePrefix = false
-				
+
 				// Warn if user explicitly provided an alias (not the default derived one)
 				derivedAlias := deriveAliasFromSource(imp.URL)
 				if imp.Alias != derivedAlias && imp.Alias != "" && imp.Alias != "*" {
@@ -16810,7 +16812,7 @@ func processImports(program *Program, platform Platform, sourceFilePath string) 
 
 			// Prepend dependency program to main program
 			program.Statements = append(depProgram.Statements, program.Statements...)
-			
+
 			// Merge namespace mappings
 			if depProgram.FunctionNamespaces != nil {
 				if program.FunctionNamespaces == nil {
@@ -16820,7 +16822,7 @@ func processImports(program *Program, platform Platform, sourceFilePath string) 
 					program.FunctionNamespaces[funcName] = ns
 				}
 			}
-			
+
 			if VerboseMode {
 				fmt.Fprintf(os.Stderr, "Loaded %s from %s\n", c67File, imp.URL)
 			}
@@ -16841,7 +16843,7 @@ func processImports(program *Program, platform Platform, sourceFilePath string) 
 	var varDecls []Statement
 	var funcDefs []Statement
 	var others []Statement
-	
+
 	for _, stmt := range program.Statements {
 		if assign, ok := stmt.(*AssignStmt); ok {
 			// := creates new mutable variables (variable declarations)
@@ -16858,12 +16860,12 @@ func processImports(program *Program, platform Platform, sourceFilePath string) 
 			others = append(others, stmt)
 		}
 	}
-	
+
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "Statement reordering: %d varDecls, %d funcDefs, %d others\n",
 			len(varDecls), len(funcDefs), len(others))
 	}
-	
+
 	// Reconstruct: varDecls, then funcDefs, then others
 	program.Statements = nil
 	program.Statements = append(program.Statements, varDecls...)
@@ -17020,7 +17022,7 @@ func addNamespaceToFunctions(program *Program, namespace string) {
 	if program.FunctionNamespaces == nil {
 		program.FunctionNamespaces = make(map[string]string)
 	}
-	
+
 	for _, stmt := range program.Statements {
 		if assign, ok := stmt.(*AssignStmt); ok {
 			// Track which namespace this function belongs to

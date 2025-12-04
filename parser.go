@@ -97,20 +97,20 @@ func (p *Parser) parseNumberLiteral(s string) float64 {
 }
 
 type Parser struct {
-	lexer            *Lexer
-	current          Token
-	peek             Token
-	filename         string
-	source           string
-	loopDepth        int                     // Current loop nesting level (0 = not in loop, 1 = outer loop, etc.)
-	constants        map[string]Expression   // Compile-time constants (immutable literals)
-	aliases          map[string]TokenType    // Keyword aliases (e.g., "for" -> TOKEN_AT)
-	cstructs         map[string]*CStructDecl // CStruct declarations for metadata access
-	cImports         map[string]bool         // C import namespaces (e.g., "sdl", "c")
-	speculative      bool                    // True when in speculative parsing mode (suppress errors)
-	errors           *ErrorCollector         // Railway-oriented error collector
-	inMatchBlock     bool                    // True when parsing inside a match block (prevents nested match parsing)
-	inConditionLoop  bool                    // True when parsing condition loop expression (prevents 'max' consumption)
+	lexer           *Lexer
+	current         Token
+	peek            Token
+	filename        string
+	source          string
+	loopDepth       int                     // Current loop nesting level (0 = not in loop, 1 = outer loop, etc.)
+	constants       map[string]Expression   // Compile-time constants (immutable literals)
+	aliases         map[string]TokenType    // Keyword aliases (e.g., "for" -> TOKEN_AT)
+	cstructs        map[string]*CStructDecl // CStruct declarations for metadata access
+	cImports        map[string]bool         // C import namespaces (e.g., "sdl", "c")
+	speculative     bool                    // True when in speculative parsing mode (suppress errors)
+	errors          *ErrorCollector         // Railway-oriented error collector
+	inMatchBlock    bool                    // True when parsing inside a match block (prevents nested match parsing)
+	inConditionLoop bool                    // True when parsing condition loop expression (prevents 'max' consumption)
 }
 
 type parserState struct {
@@ -450,7 +450,7 @@ func (p *Parser) parseExport() Statement {
 	for p.current.Type == TOKEN_IDENT {
 		functions = append(functions, p.current.Value)
 		p.nextToken()
-		
+
 		// Allow optional commas between function names
 		if p.current.Type == TOKEN_COMMA {
 			p.nextToken()
@@ -2366,7 +2366,7 @@ func (p *Parser) parseLoopStatement() Statement {
 			oldInConditionLoop := p.inConditionLoop
 			p.inConditionLoop = true
 			defer func() { p.inConditionLoop = oldInConditionLoop }()
-			
+
 			// Parse the condition expression using parseComparison
 			// This handles comparisons (i < 5), function calls (check()), etc.
 			// but avoids match block parsing that would consume the { token
@@ -2376,7 +2376,7 @@ func (p *Parser) parseLoopStatement() Statement {
 			if p.peek.Type != TOKEN_MAX {
 				p.error("condition loop requires 'max' clause (e.g., @ n < 5 max 10 { ... })")
 			}
-			
+
 			p.nextToken() // move to 'max'
 			p.nextToken() // skip 'max', now current is on the number/inf
 
