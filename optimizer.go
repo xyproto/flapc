@@ -271,7 +271,7 @@ func strengthReduceExpr(expr Expression) Expression {
 			}
 
 			// x * 2^n → x << n (only for positive integer powers of 2)
-			// DISABLED: This optimization is only valid for integers, but Flap uses float64 by default.
+			// DISABLED: This optimization is only valid for integers, but C67 uses float64 by default.
 			// Applying this to floating-point operations breaks codegen because << is an integer operation.
 			// TODO: Re-enable this optimization only in integer contexts (unsafe blocks, explicit int types).
 			/*
@@ -305,7 +305,7 @@ func strengthReduceExpr(expr Expression) Expression {
 			}
 
 			// x / 2^n → x >> n (only for positive powers of 2)
-			// DISABLED: This optimization is only valid for integers, but Flap uses float64 by default.
+			// DISABLED: This optimization is only valid for integers, but C67 uses float64 by default.
 			// Applying this to floating-point operations breaks codegen because >> is an integer operation.
 			// TODO: Re-enable this optimization only in integer contexts (unsafe blocks, explicit int types).
 			/*
@@ -386,7 +386,7 @@ func strengthReduceExpr(expr Expression) Expression {
 			}
 
 			// x % 2^n → x & (2^n - 1) for positive powers of 2
-			// DISABLED: This optimization is only valid for integers, but Flap uses float64 by default.
+			// DISABLED: This optimization is only valid for integers, but C67 uses float64 by default.
 			// Applying this to floating-point operations breaks codegen because & is an integer operation.
 			// TODO: Re-enable this optimization only in integer contexts (unsafe blocks, explicit int types).
 			/*

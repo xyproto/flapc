@@ -9,15 +9,15 @@ import (
 	"strings"
 )
 
-// cli.go - User-friendly command-line interface for flapc
+// cli.go - User-friendly command-line interface for c67
 //
 // This file implements a Go-like CLI interface with subcommands:
-// - flapc (default: compile current directory or show help)
-// - flapc build <file> (compile to executable)
-// - flapc run <file> (compile and run immediately)
-// - flapc <file.flap> (shorthand for build)
+// - c67 (default: compile current directory or show help)
+// - c67 build <file> (compile to executable)
+// - c67 run <file> (compile and run immediately)
+// - c67 <file.c67> (shorthand for build)
 //
-// Also supports shebang execution: #!/usr/bin/flapc
+// Also supports shebang execution: #!/usr/bin/c67
 
 // CommandContext holds the execution context for a CLI command
 type CommandContext struct {
@@ -51,8 +51,8 @@ func RunCLI(args []string, platform Platform, verbose, quiet bool, optTimeout fl
 	}
 
 	// Check for shebang execution
-	// If first arg is a .flap file and it starts with #!, we're in shebang mode
-	if len(args) > 0 && strings.HasSuffix(args[0], ".flap") {
+	// If first arg is a .c67 file and it starts with #!, we're in shebang mode
+	if len(args) > 0 && strings.HasSuffix(args[0], ".c67") {
 		content, err := os.ReadFile(args[0])
 		if err == nil && len(content) > 2 && content[0] == '#' && content[1] == '!' {
 			// Shebang mode - run the file with remaining args
@@ -66,13 +66,13 @@ func RunCLI(args []string, platform Platform, verbose, quiet bool, optTimeout fl
 	switch subcmd {
 	case "build":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: flapc build <file.flap> [-o output]")
+			return fmt.Errorf("usage: c67 build <file.c67> [-o output]")
 		}
 		return cmdBuild(ctx, args[1:])
 
 	case "run":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: flapc run <file.flap> [args...]")
+			return fmt.Errorf("usage: c67 run <file.c67> [args...]")
 		}
 		return cmdRun(ctx, args[1:])
 
@@ -84,27 +84,27 @@ func RunCLI(args []string, platform Platform, verbose, quiet bool, optTimeout fl
 		return nil
 
 	default:
-		// Check if it's a .flap file (shorthand for build)
-		if strings.HasSuffix(subcmd, ".flap") {
+		// Check if it's a .c67 file (shorthand for build)
+		if strings.HasSuffix(subcmd, ".c67") {
 			return cmdBuild(ctx, args)
 		}
 
-		// Check if it's a directory (compile all .flap files)
+		// Check if it's a directory (compile all .c67 files)
 		info, err := os.Stat(subcmd)
 		if err == nil && info.IsDir() {
 			return cmdBuildDir(ctx, subcmd)
 		}
 
 		// Unknown command
-		return fmt.Errorf("unknown command: %s\n\nRun 'flapc help' for usage information", subcmd)
+		return fmt.Errorf("unknown command: %s\n\nRun 'c67 help' for usage information", subcmd)
 	}
 }
 
-// cmdBuild compiles a Flap source file to an executable
+// cmdBuild compiles a C67 source file to an executable
 // Confidence that this function is working: 85%
 func cmdBuild(ctx *CommandContext, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: flapc build <file.flap> [-o output]")
+		return fmt.Errorf("usage: c67 build <file.c67> [-o output]")
 	}
 
 	inputFile := args[0]
@@ -134,7 +134,7 @@ func cmdBuild(ctx *CommandContext, args []string) error {
 
 	// If still no output path specified, use input filename without extension
 	if outputPath == "" {
-		outputPath = strings.TrimSuffix(filepath.Base(inputFile), ".flap")
+		outputPath = strings.TrimSuffix(filepath.Base(inputFile), ".c67")
 		// Add .exe extension for Windows targets
 		if ctx.Platform.OS == OSWindows {
 			outputPath += ".exe"
@@ -142,7 +142,7 @@ func cmdBuild(ctx *CommandContext, args []string) error {
 	}
 
 	// When a specific file is given (not -s flag explicitly passed), enable single-file mode
-	// This ensures flapc doesn't look for other .flap files in the same directory
+	// This ensures c67 doesn't look for other .c67 files in the same directory
 	oldSingleFlag := SingleFlag
 	if !ctx.SingleFile {
 		// Only set SingleFlag if not already set via command line
@@ -155,7 +155,7 @@ func cmdBuild(ctx *CommandContext, args []string) error {
 	}
 
 	// Compile
-	err := CompileFlapWithOptions(inputFile, outputPath, ctx.Platform, ctx.OptTimeout)
+	err := CompileC67WithOptions(inputFile, outputPath, ctx.Platform, ctx.OptTimeout)
 	if err != nil {
 		return fmt.Errorf("compilation failed: %v", err)
 	}
@@ -167,10 +167,10 @@ func cmdBuild(ctx *CommandContext, args []string) error {
 	return nil
 }
 
-// cmdRun compiles a Flap source file to /dev/shm and executes it
+// cmdRun compiles a C67 source file to /dev/shm and executes it
 func cmdRun(ctx *CommandContext, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: flapc run <file.flap> [args...]")
+		return fmt.Errorf("usage: c67 run <file.c67> [args...]")
 	}
 
 	inputFile := args[0]
@@ -184,8 +184,8 @@ func cmdRun(ctx *CommandContext, args []string) error {
 	}
 
 	// Create unique temporary filename
-	baseName := strings.TrimSuffix(filepath.Base(inputFile), ".flap")
-	tmpExec := filepath.Join(tmpDir, fmt.Sprintf("flapc_run_%s_%d", baseName, os.Getpid()))
+	baseName := strings.TrimSuffix(filepath.Base(inputFile), ".c67")
+	tmpExec := filepath.Join(tmpDir, fmt.Sprintf("c67_run_%s_%d", baseName, os.Getpid()))
 
 	// Enable single-file mode when running a specific file
 	oldSingleFlag := SingleFlag
@@ -199,7 +199,7 @@ func cmdRun(ctx *CommandContext, args []string) error {
 	}
 
 	// Compile
-	err := CompileFlapWithOptions(inputFile, tmpExec, ctx.Platform, ctx.OptTimeout)
+	err := CompileC67WithOptions(inputFile, tmpExec, ctx.Platform, ctx.OptTimeout)
 	if err != nil {
 		return fmt.Errorf("compilation failed: %v", err)
 	}
@@ -229,7 +229,7 @@ func cmdRun(ctx *CommandContext, args []string) error {
 	return nil
 }
 
-// cmdRunShebang handles shebang execution (#!/usr/bin/flapc)
+// cmdRunShebang handles shebang execution (#!/usr/bin/c67)
 func cmdRunShebang(ctx *CommandContext, scriptPath string, scriptArgs []string) error {
 	// In shebang mode, we compile and run immediately
 	// This is similar to cmdRun but optimized for shebang use
@@ -239,8 +239,8 @@ func cmdRunShebang(ctx *CommandContext, scriptPath string, scriptArgs []string) 
 		tmpDir = os.TempDir()
 	}
 
-	baseName := strings.TrimSuffix(filepath.Base(scriptPath), ".flap")
-	tmpExec := filepath.Join(tmpDir, fmt.Sprintf("flapc_shebang_%s_%d", baseName, os.Getpid()))
+	baseName := strings.TrimSuffix(filepath.Base(scriptPath), ".c67")
+	tmpExec := filepath.Join(tmpDir, fmt.Sprintf("c67_shebang_%s_%d", baseName, os.Getpid()))
 
 	// Enable single-file mode for shebang scripts
 	oldSingleFlag := SingleFlag
@@ -248,7 +248,7 @@ func cmdRunShebang(ctx *CommandContext, scriptPath string, scriptArgs []string) 
 	defer func() { SingleFlag = oldSingleFlag }()
 
 	// Compile (quietly unless verbose mode)
-	err := CompileFlapWithOptions(scriptPath, tmpExec, ctx.Platform, ctx.OptTimeout)
+	err := CompileC67WithOptions(scriptPath, tmpExec, ctx.Platform, ctx.OptTimeout)
 	if err != nil {
 		return fmt.Errorf("compilation failed: %v", err)
 	}
@@ -272,19 +272,19 @@ func cmdRunShebang(ctx *CommandContext, scriptPath string, scriptArgs []string) 
 	return nil
 }
 
-// cmdBuildDir compiles all .flap files in a directory
+// cmdBuildDir compiles all .c67 files in a directory
 func cmdBuildDir(ctx *CommandContext, dirPath string) error {
-	matches, err := filepath.Glob(filepath.Join(dirPath, "*.flap"))
+	matches, err := filepath.Glob(filepath.Join(dirPath, "*.c67"))
 	if err != nil {
-		return fmt.Errorf("failed to find .flap files: %v", err)
+		return fmt.Errorf("failed to find .c67 files: %v", err)
 	}
 
 	if len(matches) == 0 {
-		return fmt.Errorf("no .flap files found in %s", dirPath)
+		return fmt.Errorf("no .c67 files found in %s", dirPath)
 	}
 
 	if ctx.Verbose {
-		fmt.Fprintf(os.Stderr, "Found %d .flap file(s) in %s\n", len(matches), dirPath)
+		fmt.Fprintf(os.Stderr, "Found %d .c67 file(s) in %s\n", len(matches), dirPath)
 	}
 
 	// When compiling a directory, don't enable single-file mode
@@ -295,13 +295,13 @@ func cmdBuildDir(ctx *CommandContext, dirPath string) error {
 
 	// Compile each file
 	for _, file := range matches {
-		outputPath := strings.TrimSuffix(filepath.Base(file), ".flap")
+		outputPath := strings.TrimSuffix(filepath.Base(file), ".c67")
 
 		if ctx.Verbose {
 			fmt.Fprintf(os.Stderr, "Building %s -> %s (directory mode)\n", file, outputPath)
 		}
 
-		err := CompileFlapWithOptions(file, outputPath, ctx.Platform, ctx.OptTimeout)
+		err := CompileC67WithOptions(file, outputPath, ctx.Platform, ctx.OptTimeout)
 		if err != nil {
 			return fmt.Errorf("compilation of %s failed: %v", file, err)
 		}
@@ -316,23 +316,23 @@ func cmdBuildDir(ctx *CommandContext, dirPath string) error {
 
 // cmdHelp displays usage information
 func cmdHelp(ctx *CommandContext) error {
-	fmt.Printf(`flapc - The Flap Compiler (Version 1.5.0)
+	fmt.Printf(`c67 - The C67 Compiler (Version 1.5.0)
 
 USAGE:
-    flapc <command> [arguments]
+    c67 <command> [arguments]
 
 COMMANDS:
-    build <file.flap>      Compile a Flap source file to an executable
-    run <file.flap>        Compile and run a Flap program immediately
+    build <file.c67>      Compile a C67 source file to an executable
+    run <file.c67>        Compile and run a C67 program immediately
     help                   Show this help message
     version                Show version information
 
 SHORTHAND:
-    flapc <file.flap>      Same as 'flapc build <file.flap>'
-    flapc                  Show this help message (or build if .flap files found)
+    c67 <file.c67>      Same as 'c67 build <file.c67>'
+    c67                  Show this help message (or build if .c67 files found)
 
 FLAGS (can be used with any command):
-    -o, --output <file>    Output executable filename (default: input name without .flap)
+    -o, --output <file>    Output executable filename (default: input name without .c67)
     -v, --verbose          Verbose mode (show detailed compilation info)
     -q, --quiet            Quiet mode (suppress progress messages)
     --arch <arch>          Target architecture: amd64, arm64, riscv64 (default: amd64)
@@ -344,23 +344,23 @@ FLAGS (can be used with any command):
 
 EXAMPLES:
     # Compile a program
-    flapc build hello.flap
-    flapc build hello.flap -o hello
+    c67 build hello.c67
+    c67 build hello.c67 -o hello
 
     # Compile and run immediately
-    flapc run hello.flap
-    flapc run server.flap --port 8080
+    c67 run hello.c67
+    c67 run server.c67 --port 8080
 
     # Shorthand compilation
-    flapc hello.flap
+    c67 hello.c67
 
-    # Shebang execution (add #!/usr/bin/flapc to first line of .flap file)
-    chmod +x script.flap
-    ./script.flap arg1 arg2
+    # Shebang execution (add #!/usr/bin/c67 to first line of .c67 file)
+    chmod +x script.c67
+    ./script.c67 arg1 arg2
 
 DOCUMENTATION:
     For language documentation, see LANGUAGESPEC.md
-    For help or bug reports: https://github.com/anthropics/flapc/issues
+    For help or bug reports: https://github.com/anthropics/c67/issues
 
 `)
 	return nil

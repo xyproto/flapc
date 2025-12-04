@@ -77,17 +77,17 @@ var expectedExitCodes = map[string]int{
 	"div_zero_test": 1, // Tests division-by-zero error handling
 }
 
-// TestFlapPrograms is an integration test that compiles and runs all .flap testprograms
+// TestC67Programs is an integration test that compiles and runs all .c67 testprograms
 // and compares their output against .result files
 
-func testFlapProgram(t *testing.T, name, srcPath, buildDir string) {
+func testC67Program(t *testing.T, name, srcPath, buildDir string) {
 	executable := filepath.Join(buildDir, name)
 	expectedPattern, shouldFailCompile := compileExpectations[name]
 
 	// Compile the program using Go API directly
 	// Use current platform for testing
 	platform := GetDefaultPlatform()
-	compileErr := CompileFlap(srcPath, executable, platform)
+	compileErr := CompileC67(srcPath, executable, platform)
 
 	// Check compilation result
 	if compileErr != nil {
@@ -145,7 +145,7 @@ func testFlapProgram(t *testing.T, name, srcPath, buildDir string) {
 	}
 
 	// Compare output with .result file if it exists
-	resultPath := strings.TrimSuffix(srcPath, ".flap") + ".result"
+	resultPath := strings.TrimSuffix(srcPath, ".c67") + ".result"
 	if _, err := os.Stat(resultPath); os.IsNotExist(err) {
 		t.Logf("No .result file found at %s - skipping output comparison", resultPath)
 		return

@@ -15,7 +15,7 @@ import (
 	"unsafe"
 )
 
-// codegen.go - Flap Code Generator
+// codegen.go - C67 Code Generator
 //
 // This code generator is the authoritative implementation of LANGUAGESPEC.md v1.5.0.
 // It transforms parsed AST into x86_64 assembly and ELF executables.
@@ -29,7 +29,7 @@ import (
 // - ARM64 Linux/macOS (deferred)
 // - RISC-V64 Linux (deferred)
 //
-// This file contains the FlapCompiler and all code generation logic:
+// This file contains the C67Compiler and all code generation logic:
 // - Expression and statement compilation
 // - Register allocation and optimization
 // - Stack management and calling conventions
@@ -57,8 +57,8 @@ type LoopInfo struct {
 	UseRegister bool   // True if counter is in register, false if on stack
 }
 
-// Code Generator for Flap
-type FlapCompiler struct {
+// Code Generator for C67
+type C67Compiler struct {
 	eb                   *ExecutableBuilder
 	out                  *Out
 	platform             Platform                      // Target platform (arch + OS)
@@ -67,7 +67,7 @@ type FlapCompiler struct {
 	lambdaVars           map[string]bool               // variable name -> is lambda/function
 	parentVariables      map[string]bool               // Track parent-scope vars in parallel loops (use r11 instead of rbp)
 	varTypes             map[string]string             // variable name -> "map" or "list" (legacy)
-	varTypeInfo          map[string]*FlapType          // variable name -> type annotation (new type system)
+	varTypeInfo          map[string]*C67Type           // variable name -> type annotation (new type system)
 	functionSignatures   map[string]*FunctionSignature // function name -> signature (params, variadic)
 	sourceCode           string                        // Store source for recompilation
 	usedFunctions        map[string]bool               // Track which functions are called
@@ -147,18 +147,18 @@ type PatternLambdaFunc struct {
 }
 
 // nextLabel generates a unique label name
-func (fc *FlapCompiler) nextLabel() string {
+func (fc *C67Compiler) nextLabel() string {
 	fc.labelCounter++
 	return fmt.Sprintf("L%d", fc.labelCounter)
 }
 
 // defineLabel marks a label at the current position
-func (fc *FlapCompiler) defineLabel(label string, pos int) {
+func (fc *C67Compiler) defineLabel(label string, pos int) {
 	// Labels are tracked in ExecutableBuilder
 	fc.eb.labels[label] = pos
 }
 
-func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
+func NewC67Compiler(platform Platform) (*C67Compiler, error) {
 	// Create ExecutableBuilder
 	eb, err := NewWithPlatform(platform)
 	if err != nil {
@@ -176,7 +176,7 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 	// Check if debug mode is enabled
 	debugEnabled := os.Getenv("DEBUG") != ""
 
-	return &FlapCompiler{
+	return &C67Compiler{
 		eb:                  eb,
 		out:                 out,
 		platform:            platform,
@@ -184,7 +184,7 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 		mutableVars:         make(map[string]bool),
 		lambdaVars:          make(map[string]bool),
 		varTypes:            make(map[string]string),
-		varTypeInfo:         make(map[string]*FlapType),
+		varTypeInfo:         make(map[string]*C67Type),
 		functionSignatures:  make(map[string]*FunctionSignature),
 		usedFunctions:       make(map[string]bool),
 		unknownFunctions:    make(map[string]bool),
@@ -213,7 +213,7 @@ func NewFlapCompiler(platform Platform) (*FlapCompiler, error) {
 // addSemanticError adds a semantic error to the error collector
 // For codegen-time errors, we don't have exact line/column info,
 // so we use line 0 as a placeholder
-func (fc *FlapCompiler) addSemanticError(message string, suggestions ...string) {
+func (fc *C67Compiler) addSemanticError(message string, suggestions ...string) {
 	suggestion := ""
 	if len(suggestions) > 0 {
 		suggestion = strings.Join(suggestions, ", ")
@@ -238,7 +238,7 @@ func (fc *FlapCompiler) addSemanticError(message string, suggestions ...string) 
 // Confidence that this function is working: 95%
 // getIntArgReg returns the register name for the nth integer/pointer argument (0-based)
 // based on the target platform's calling convention
-func (fc *FlapCompiler) getIntArgReg(argIndex int) string {
+func (fc *C67Compiler) getIntArgReg(argIndex int) string {
 	if fc.eb.target.OS() == OSWindows {
 		// Microsoft x64 calling convention: RCX, RDX, R8, R9
 		switch argIndex {
@@ -279,7 +279,7 @@ func (fc *FlapCompiler) getIntArgReg(argIndex int) string {
 // Confidence that this function is working: 90%
 // allocateShadowSpace allocates the required shadow space for Windows x64 calling convention
 // Returns the amount of space allocated (32 for Windows, 0 for other platforms)
-func (fc *FlapCompiler) allocateShadowSpace() int {
+func (fc *C67Compiler) allocateShadowSpace() int {
 	if fc.eb.target.OS() == OSWindows {
 		// Windows requires 32 bytes of "shadow space" for the called function
 		fc.out.SubImmFromReg("rsp", 32)
@@ -290,14 +290,14 @@ func (fc *FlapCompiler) allocateShadowSpace() int {
 
 // Confidence that this function is working: 90%
 // deallocateShadowSpace removes the shadow space after a function call
-func (fc *FlapCompiler) deallocateShadowSpace(shadowSpace int) {
+func (fc *C67Compiler) deallocateShadowSpace(shadowSpace int) {
 	if shadowSpace > 0 {
 		fc.out.AddImmToReg("rsp", int64(shadowSpace))
 	}
 }
 
 // processCImports processes C import statements and extracts constants/function signatures
-func (fc *FlapCompiler) processCImports(program *Program) {
+func (fc *C67Compiler) processCImports(program *Program) {
 	for _, stmt := range program.Statements {
 		if cImport, ok := stmt.(*CImportStmt); ok {
 			fc.cImports[cImport.Alias] = cImport.Library
@@ -463,7 +463,7 @@ func (fc *FlapCompiler) processCImports(program *Program) {
 	}
 }
 
-func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
+func (fc *C67Compiler) Compile(program *Program, outputPath string) error {
 	// Clear moved variables tracking for this compilation
 	fc.movedVars = make(map[string]bool)
 	fc.scopedMoved = []map[string]bool{make(map[string]bool)}
@@ -512,9 +512,9 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 	// Define arena metadata in .data section
 	// Only store POINTERS here, actual arena buffers are malloc'd
 	// Meta-arena: array of pointers to arena structs
-	fc.eb.DefineWritable("_flap_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")     // Pointer to arena array
-	fc.eb.DefineWritable("_flap_arena_meta_cap", "\x00\x00\x00\x00\x00\x00\x00\x00") // Capacity (number of slots)
-	fc.eb.DefineWritable("_flap_arena_meta_len", "\x00\x00\x00\x00\x00\x00\x00\x00") // Length (number of active arenas)
+	fc.eb.DefineWritable("_c67_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")     // Pointer to arena array
+	fc.eb.DefineWritable("_c67_arena_meta_cap", "\x00\x00\x00\x00\x00\x00\x00\x00") // Capacity (number of slots)
+	fc.eb.DefineWritable("_c67_arena_meta_len", "\x00\x00\x00\x00\x00\x00\x00\x00") // Length (number of active arenas)
 	fc.eb.Define("_arena_null_error", "ERROR: Arena alloc returned NULL\n")
 	fc.eb.Define("_count_mismatch_error", "ERROR: Count write/read mismatch!\n")
 
@@ -560,7 +560,7 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 		}
 	}
 
-	// currentArena is already set to 1 in NewFlapCompiler (representing meta-arena[0])
+	// currentArena is already set to 1 in NewC67Compiler (representing meta-arena[0])
 	// Arena initialization is needed for variadic function lists
 	fc.initializeMetaArenaAndGlobalArena()
 
@@ -731,7 +731,7 @@ func (fc *FlapCompiler) Compile(program *Program, outputPath string) error {
 
 // collectSymbols performs the first pass: collect all variable declarations
 // without generating any code. This allows forward references.
-func (fc *FlapCompiler) updateStackOffset(delta int) {
+func (fc *C67Compiler) updateStackOffset(delta int) {
 	fc.stackOffset += delta
 	if fc.stackOffset > fc.maxStackOffset {
 		fc.maxStackOffset = fc.stackOffset
@@ -739,7 +739,7 @@ func (fc *FlapCompiler) updateStackOffset(delta int) {
 }
 
 // Confidence that this function is working: 95%
-func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
+func (fc *C67Compiler) collectSymbols(stmt Statement) error {
 	switch s := stmt.(type) {
 	case *AssignStmt:
 		// Check if variable already exists
@@ -971,7 +971,7 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 		fc.currentArena++
 
 		// Recursively collect symbols from arena body
-		// Note: Arena pointers are stored in static storage (_flap_arena_ptrs)
+		// Note: Arena pointers are stored in static storage (_c67_arena_ptrs)
 		for _, bodyStmt := range s.Body {
 			if err := fc.collectSymbols(bodyStmt); err != nil {
 				return err
@@ -989,7 +989,7 @@ func (fc *FlapCompiler) collectSymbols(stmt Statement) error {
 	return nil
 }
 
-func (fc *FlapCompiler) collectLoopsFromExpression(expr Expression) {
+func (fc *C67Compiler) collectLoopsFromExpression(expr Expression) {
 	switch e := expr.(type) {
 	case *LoopExpr:
 		fc.labelCounter++
@@ -1139,7 +1139,7 @@ func (fc *FlapCompiler) collectLoopsFromExpression(expr Expression) {
 	}
 }
 
-func (fc *FlapCompiler) isExpressionPure(expr Expression, pureFunctions map[string]bool) bool {
+func (fc *C67Compiler) isExpressionPure(expr Expression, pureFunctions map[string]bool) bool {
 	switch e := expr.(type) {
 	case *NumberExpr, *StringExpr:
 		return true
@@ -1215,7 +1215,7 @@ func (fc *FlapCompiler) isExpressionPure(expr Expression, pureFunctions map[stri
 }
 
 // Confidence that this function is working: 100%
-func (fc *FlapCompiler) compileStatement(stmt Statement) {
+func (fc *C67Compiler) compileStatement(stmt Statement) {
 	switch s := stmt.(type) {
 	case *AssignStmt:
 		offset := fc.variables[s.Name]
@@ -1542,7 +1542,7 @@ func (fc *FlapCompiler) compileStatement(stmt Statement) {
 	}
 }
 
-func (fc *FlapCompiler) pushDeferScope() {
+func (fc *C67Compiler) pushDeferScope() {
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG: pushDeferScope called, len before = %d\n", len(fc.deferredExprs))
 	}
@@ -1552,7 +1552,7 @@ func (fc *FlapCompiler) pushDeferScope() {
 	}
 }
 
-func (fc *FlapCompiler) popDeferScope() {
+func (fc *C67Compiler) popDeferScope() {
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG: popDeferScope called, len before = %d\n", len(fc.deferredExprs))
 	}
@@ -1580,7 +1580,7 @@ func (fc *FlapCompiler) popDeferScope() {
 	}
 }
 
-func (fc *FlapCompiler) compileArenaStmt(stmt *ArenaStmt) {
+func (fc *C67Compiler) compileArenaStmt(stmt *ArenaStmt) {
 	// Mark that this program uses arenas
 	fc.usesArenas = true
 
@@ -1590,14 +1590,14 @@ func (fc *FlapCompiler) compileArenaStmt(stmt *ArenaStmt) {
 	arenaIndex := fc.currentArena - 1 // Convert arena number to 0-based index
 
 	// Ensure meta-arena has enough capacity
-	// Call _flap_arena_ensure_capacity(arenaIndex + 1)
+	// Call _c67_arena_ensure_capacity(arenaIndex + 1)
 	fc.out.MovImmToReg("rdi", fmt.Sprintf("%d", fc.currentArena))
-	fc.out.CallSymbol("_flap_arena_ensure_capacity")
+	fc.out.CallSymbol("_c67_arena_ensure_capacity")
 
-	// Load arena pointer from meta-arena: _flap_arena_meta[arenaIndex]
+	// Load arena pointer from meta-arena: _c67_arena_meta[arenaIndex]
 	// Each pointer is 8 bytes, so offset = arenaIndex * 8
 	offset := arenaIndex * 8
-	fc.out.LeaSymbolToReg("rax", "_flap_arena_meta")
+	fc.out.LeaSymbolToReg("rax", "_c67_arena_meta")
 	fc.out.MovMemToReg("rax", "rax", 0)      // Load the meta-arena pointer
 	fc.out.MovMemToReg("rax", "rax", offset) // Load the arena pointer from slot
 
@@ -1614,13 +1614,13 @@ func (fc *FlapCompiler) compileArenaStmt(stmt *ArenaStmt) {
 	fc.currentArena = previousArena
 
 	// Reset arena (resets offset to 0, keeps buffer allocated for reuse)
-	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta")
+	fc.out.LeaSymbolToReg("rbx", "_c67_arena_meta")
 	fc.out.MovMemToReg("rbx", "rbx", 0)      // rbx = meta-arena pointer
 	fc.out.MovMemToReg("rdi", "rbx", offset) // rdi = arena pointer from slot
-	fc.out.CallSymbol("flap_arena_reset")
+	fc.out.CallSymbol("c67_arena_reset")
 }
 
-func (fc *FlapCompiler) compileArenaExpr(expr *ArenaExpr) {
+func (fc *C67Compiler) compileArenaExpr(expr *ArenaExpr) {
 	// Mark that this program uses arenas
 	fc.usesArenas = true
 
@@ -1638,11 +1638,11 @@ func (fc *FlapCompiler) compileArenaExpr(expr *ArenaExpr) {
 
 	// Ensure meta-arena has enough capacity
 	fc.out.MovImmToReg("rdi", fmt.Sprintf("%d", fc.currentArena))
-	fc.out.CallSymbol("_flap_arena_ensure_capacity")
+	fc.out.CallSymbol("_c67_arena_ensure_capacity")
 
 	// Load arena pointer from meta-arena
 	offset := arenaIndex * 8
-	fc.out.LeaSymbolToReg("rax", "_flap_arena_meta")
+	fc.out.LeaSymbolToReg("rax", "_c67_arena_meta")
 	fc.out.MovMemToReg("rax", "rax", 0)
 	fc.out.MovMemToReg("rax", "rax", offset)
 
@@ -1667,15 +1667,15 @@ func (fc *FlapCompiler) compileArenaExpr(expr *ArenaExpr) {
 	fc.currentArena = previousArena
 
 	// Reset arena
-	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta")
+	fc.out.LeaSymbolToReg("rbx", "_c67_arena_meta")
 	fc.out.MovMemToReg("rbx", "rbx", 0)
 	fc.out.MovMemToReg("rdi", "rbx", offset)
-	fc.out.CallSymbol("flap_arena_reset")
+	fc.out.CallSymbol("c67_arena_reset")
 
 	// Result is already in xmm0 from the last statement
 }
 
-func (fc *FlapCompiler) compileSpawnStmt(stmt *SpawnStmt) {
+func (fc *C67Compiler) compileSpawnStmt(stmt *SpawnStmt) {
 	// Call fork() syscall (57 on x86-64 Linux)
 	// Returns: child gets 0 in rax, parent gets child PID in rax
 	fc.out.MovImmToReg("rax", "57") // fork syscall number
@@ -1693,7 +1693,7 @@ func (fc *FlapCompiler) compileSpawnStmt(stmt *SpawnStmt) {
 	// (child PID is in rax, but we don't use it for fire-and-forget)
 	if stmt.Block != nil {
 		// Note: Pipe-based result waiting from child processes is a future enhancement
-		compilerError("flap with pipe syntax (| params | block) not yet implemented - use simple flap for now")
+		compilerError("c67 with pipe syntax (| params | block) not yet implemented - use simple c67 for now")
 	}
 
 	// Jump over child code
@@ -1707,7 +1707,7 @@ func (fc *FlapCompiler) compileSpawnStmt(stmt *SpawnStmt) {
 	childOffset := int32(childStartPos - (childJumpPos + ConditionalJumpSize))
 	fc.patchJumpImmediate(childJumpPos+2, childOffset)
 
-	// Execute the flapped expression
+	// Execute the c67ped expression
 	fc.compileExpression(stmt.Expr)
 
 	// Flush all output streams before exiting
@@ -1729,7 +1729,7 @@ func (fc *FlapCompiler) compileSpawnStmt(stmt *SpawnStmt) {
 	fc.patchJumpImmediate(parentJumpPos+1, parentOffset)
 }
 
-func (fc *FlapCompiler) compileLoopStatement(stmt *LoopStmt) {
+func (fc *C67Compiler) compileLoopStatement(stmt *LoopStmt) {
 	// Check if this is a parallel loop
 	if stmt.NumThreads != 0 {
 		// Parallel loop: @@ or N @
@@ -1755,7 +1755,7 @@ func (fc *FlapCompiler) compileLoopStatement(stmt *LoopStmt) {
 	}
 }
 
-func (fc *FlapCompiler) compileWhileStatement(stmt *WhileStmt) {
+func (fc *C67Compiler) compileWhileStatement(stmt *WhileStmt) {
 	// Condition loop: @ expr max N { ... }
 	// Structure:
 	//   loop_start:
@@ -1866,7 +1866,7 @@ func (fc *FlapCompiler) compileWhileStatement(stmt *WhileStmt) {
 	}
 }
 
-func (fc *FlapCompiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
+func (fc *C67Compiler) compileRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	// REGISTER ALLOCATION OPTIMIZATION:
 	// Use rbx for loop counter, r12 for loop limit
 	// This eliminates memory operations in tight loops (30-40% speedup)
@@ -2243,7 +2243,7 @@ func hasAtomicInExpr(expr Expression) bool {
 	return false
 }
 
-func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
+func (fc *C67Compiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *RangeExpr) {
 	// Fixed: atomic operations now work in parallel loops!
 	// We changed atomic_cas to use r12 instead of r11, avoiding register conflicts.
 	// r11 is reserved for parent rbp in parallel loops.
@@ -2676,7 +2676,7 @@ func (fc *FlapCompiler) compileParallelRangeLoop(stmt *LoopStmt, rangeExpr *Rang
 	fc.runtimeStack -= 16
 }
 
-func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
+func (fc *C67Compiler) compileListLoop(stmt *LoopStmt) {
 	fc.labelCounter++
 
 	fc.compileExpression(stmt.Iterable)
@@ -2816,7 +2816,7 @@ func (fc *FlapCompiler) compileListLoop(stmt *LoopStmt) {
 	fc.activeLoops = fc.activeLoops[:len(fc.activeLoops)-1]
 }
 
-func (fc *FlapCompiler) compileJumpStatement(stmt *JumpStmt) {
+func (fc *C67Compiler) compileJumpStatement(stmt *JumpStmt) {
 	// New semantics with ret keyword:
 	// ret (Label=0, IsBreak=true): return from function
 	// ret @N (Label=N, IsBreak=true): exit loop N and all inner loops
@@ -2897,7 +2897,7 @@ func (fc *FlapCompiler) compileJumpStatement(stmt *JumpStmt) {
 	}
 }
 
-func (fc *FlapCompiler) patchJumpImmediate(pos int, offset int32) {
+func (fc *C67Compiler) patchJumpImmediate(pos int, offset int32) {
 	// Get the current bytes from buffer
 	// This is safe because we're patching backwards into already-written code
 	bytes := fc.eb.text.Bytes()
@@ -2922,7 +2922,7 @@ func (fc *FlapCompiler) patchJumpImmediate(pos int, offset int32) {
 }
 
 // isCFFIStringCall returns true if the expression is a C FFI call that returns char*
-func (fc *FlapCompiler) isCFFIStringCall(expr Expression) bool {
+func (fc *C67Compiler) isCFFIStringCall(expr Expression) bool {
 	callExpr, ok := expr.(*CallExpr)
 	if !ok {
 		return false
@@ -2990,7 +2990,7 @@ func keysOf(m map[string]*CHeaderConstants) []string {
 
 // getExprType returns the type of an expression at compile time
 // Returns: "string", "number", "list", "map", "cstring", or "unknown"
-func (fc *FlapCompiler) getExprType(expr Expression) string {
+func (fc *C67Compiler) getExprType(expr Expression) string {
 	switch e := expr.(type) {
 	case *StringExpr:
 		return "string"
@@ -3039,7 +3039,7 @@ func (fc *FlapCompiler) getExprType(expr Expression) string {
 					if funcSig, found := constants.Functions[funcName]; found {
 						returnType := strings.TrimSpace(funcSig.ReturnType)
 
-						// Map C return types to Flap types
+						// Map C return types to C67 types
 						if returnType == "char*" || returnType == "const char*" {
 							return "cstring"
 						} else if isPointerType(returnType) {
@@ -3064,7 +3064,7 @@ func (fc *FlapCompiler) getExprType(expr Expression) string {
 			}
 		}
 
-		// Function calls - check return type for Flap built-ins
+		// Function calls - check return type for C67 built-ins
 		stringFuncs := map[string]bool{
 			"str": true, "read_file": true,
 			"upper": true, "lower": true, "trim": true,
@@ -3099,7 +3099,7 @@ func (fc *FlapCompiler) getExprType(expr Expression) string {
 		return "string"
 	case *CastExpr:
 		// Cast expressions have the type they're cast to
-		// Map cast types to Flap types
+		// Map cast types to C67 types
 		switch e.Type {
 		case "string", "str":
 			return "string"
@@ -3126,7 +3126,7 @@ func (fc *FlapCompiler) getExprType(expr Expression) string {
 
 // Confidence that this function is working: 95%
 // (IndexExpr with SIMD is very complex but tested; minor edge cases may exist)
-func (fc *FlapCompiler) compileExpression(expr Expression) {
+func (fc *C67Compiler) compileExpression(expr Expression) {
 	if expr == nil {
 		compilerError("INTERNAL ERROR: compileExpression received nil expression")
 	}
@@ -3135,7 +3135,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 	}
 	switch e := expr.(type) {
 	case *NumberExpr:
-		// Flap uses float64 foundation - all values are float64
+		// C67 uses float64 foundation - all values are float64
 		// For whole numbers, use integer conversion; for decimals, load from .rodata
 		if e.Value == float64(int64(e.Value)) {
 			// Whole number - can use integer path
@@ -3222,7 +3222,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			// Note: In C context, we keep the pointer in rax, not convert to float64
 			// The caller (compileCFunctionCall) will handle it appropriately
 		} else {
-			// Flap context: compile as map[uint64]float64 where keys are indices
+			// C67 context: compile as map[uint64]float64 where keys are indices
 			// and values are character codes
 			// Map format: [count][key0][val0][key1][val1]...
 			// Following Lisp philosophy: even empty strings are objects (count=0), not null
@@ -3319,8 +3319,8 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			// Align stack for call
 			fc.out.SubImmFromReg("rsp", StackSlotSize)
 
-			// Call _flap_string_concat(rdi, rsi) -> rax
-			fc.out.CallSymbol("_flap_string_concat")
+			// Call _c67_string_concat(rdi, rsi) -> rax
+			fc.out.CallSymbol("_c67_string_concat")
 
 			// Restore stack alignment
 			fc.out.AddImmToReg("rsp", StackSlotSize)
@@ -3699,7 +3699,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.SubImmFromReg("rsp", 16)
 				fc.out.MovXmmToMem("xmm0", "rsp", 0)
 
-				// Call _flap_string_concat(left_ptr, right_ptr)
+				// Call _c67_string_concat(left_ptr, right_ptr)
 				// Load arguments into registers following x86-64 calling convention
 				fc.out.MovMemToReg("rdi", "rsp", 16) // left ptr (first arg)
 				fc.out.MovMemToReg("rsi", "rsp", 0)  // right ptr (second arg)
@@ -3709,7 +3709,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.SubImmFromReg("rsp", StackSlotSize)
 
 				// Call the helper function (direct call, not through PLT)
-				fc.out.CallSymbol("_flap_string_concat")
+				fc.out.CallSymbol("_c67_string_concat")
 
 				// Restore stack alignment
 				fc.out.AddImmToReg("rsp", StackSlotSize)
@@ -3784,7 +3784,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.SubImmFromReg("rsp", 16)
 				fc.out.MovXmmToMem("xmm0", "rsp", 0)
 
-				// Call _flap_list_concat(left_ptr, right_ptr)
+				// Call _c67_list_concat(left_ptr, right_ptr)
 				fc.out.MovMemToReg("rdi", "rsp", 16) // left ptr
 				fc.out.MovMemToReg("rsi", "rsp", 0)  // right ptr
 				fc.out.AddImmToReg("rsp", 32)
@@ -3793,8 +3793,8 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.SubImmFromReg("rsp", StackSlotSize)
 
 				// Call the helper function
-				// Note: Don't track internal function calls (see comment at _flap_string_eq call)
-				fc.out.CallSymbol("_flap_list_concat")
+				// Note: Don't track internal function calls (see comment at _c67_string_eq call)
+				fc.out.CallSymbol("_c67_list_concat")
 
 				fc.out.AddImmToReg("rsp", StackSlotSize)
 
@@ -3940,7 +3940,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				fc.out.SubImmFromReg("rsp", 16)
 				fc.out.MovXmmToMem("xmm0", "rsp", 0)
 
-				// Call _flap_string_eq(left_ptr, right_ptr)
+				// Call _c67_string_eq(left_ptr, right_ptr)
 				fc.out.MovMemToReg("rdi", "rsp", 16) // left ptr
 				fc.out.MovMemToReg("rsi", "rsp", 0)  // right ptr
 				fc.out.AddImmToReg("rsp", 32)
@@ -3951,7 +3951,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 				// Call the helper function
 				// Note: Don't track internal function calls - they use CallSymbol (0x00000000 placeholder)
 				// not GenerateCallInstruction (0x12345678 placeholder), so they shouldn't be in callOrder
-				fc.out.CallSymbol("_flap_string_eq")
+				fc.out.CallSymbol("_c67_string_eq")
 
 				// Restore stack alignment
 				fc.out.AddImmToReg("rsp", StackSlotSize)
@@ -4276,7 +4276,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 			fc.out.MovMemToReg("rsi", "rsp", 0) // second arg
 			fc.out.AddImmToReg("rsp", 8)
 
-			fc.eb.GenerateCallInstruction("_flap_list_cons")
+			fc.eb.GenerateCallInstruction("_c67_list_cons")
 			// Result pointer in rax, move to xmm0 preserving bit pattern
 			fc.out.SubImmFromReg("rsp", 8)
 			fc.out.MovRegToMem("rax", "rsp", 0)
@@ -5129,7 +5129,7 @@ func (fc *FlapCompiler) compileExpression(expr Expression) {
 	}
 }
 
-func (fc *FlapCompiler) compileMatchExpr(expr *MatchExpr) {
+func (fc *C67Compiler) compileMatchExpr(expr *MatchExpr) {
 	fc.compileExpression(expr.Condition)
 
 	fc.labelCounter++
@@ -5244,7 +5244,7 @@ func (fc *FlapCompiler) compileMatchExpr(expr *MatchExpr) {
 	}
 }
 
-func (fc *FlapCompiler) compileMatchClauseResult(result Expression, endJumps *[]int) {
+func (fc *C67Compiler) compileMatchClauseResult(result Expression, endJumps *[]int) {
 	if jumpExpr, isJump := result.(*JumpExpr); isJump {
 		fc.compileMatchJump(jumpExpr)
 		return
@@ -5266,7 +5266,7 @@ func (fc *FlapCompiler) compileMatchClauseResult(result Expression, endJumps *[]
 	*endJumps = append(*endJumps, jumpPos)
 }
 
-func (fc *FlapCompiler) compileMatchDefault(result Expression) {
+func (fc *C67Compiler) compileMatchDefault(result Expression) {
 	if jumpExpr, isJump := result.(*JumpExpr); isJump {
 		fc.compileMatchJump(jumpExpr)
 		return
@@ -5279,7 +5279,7 @@ func (fc *FlapCompiler) compileMatchDefault(result Expression) {
 	fc.inTailPosition = savedTailPosition
 }
 
-func (fc *FlapCompiler) compileMatchJump(jumpExpr *JumpExpr) {
+func (fc *C67Compiler) compileMatchJump(jumpExpr *JumpExpr) {
 	// Handle ret (Label=0, IsBreak=true) - return from function
 	if jumpExpr.Label == 0 && jumpExpr.IsBreak {
 		// Return from function
@@ -5346,7 +5346,7 @@ func (fc *FlapCompiler) compileMatchJump(jumpExpr *JumpExpr) {
 	}
 }
 
-func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
+func (fc *C67Compiler) compileCastExpr(expr *CastExpr) {
 	// Check if this is a read syntax: ptr[offset] as TYPE
 	// Transform to: read_TYPE(ptr, offset)
 	if indexExpr, ok := expr.Expr.(*IndexExpr); ok {
@@ -5413,7 +5413,7 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 
 	case "float64":
 		// Already float64, nothing to do
-		// This is the native Flap type
+		// This is the native C67 type
 
 	case "ptr":
 		// Pointer cast: value is already in xmm0 as float64 (reinterpreted bits)
@@ -5421,14 +5421,14 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 		// Used for NULL pointers and raw memory addresses
 
 	case "number":
-		// Convert C return value to Flap number (identity, already float64)
+		// Convert C return value to C67 number (identity, already float64)
 		// This is a no-op but explicit for FFI clarity
 
 	case "cstr":
-		// Convert Flap string to C null-terminated string
-		// xmm0 contains pointer to Flap string map
-		// Call runtime function: flap_string_to_cstr(xmm0) -> rax
-		fc.out.CallSymbol("flap_string_to_cstr")
+		// Convert C67 string to C null-terminated string
+		// xmm0 contains pointer to C67 string map
+		// Call runtime function: c67_string_to_cstr(xmm0) -> rax
+		fc.out.CallSymbol("c67_string_to_cstr")
 		// Convert C string pointer (rax) back to float64 in xmm0
 		fc.out.SubImmFromReg("rsp", StackSlotSize)
 		fc.out.MovRegToMem("rax", "rsp", 0)
@@ -5436,7 +5436,7 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 		fc.out.AddImmToReg("rsp", StackSlotSize)
 
 	case "string", "str":
-		// Convert value to Flap string
+		// Convert value to C67 string
 		// First check if already a string
 		exprType := fc.getExprType(expr.Expr)
 		if exprType == "string" {
@@ -5445,7 +5445,7 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 			return
 		}
 
-		// Convert number to string using _flap_itoa (pure machine code, no libc)
+		// Convert number to string using _c67_itoa (pure machine code, no libc)
 		// Allocate buffer for number string (32 bytes enough for any number)
 		fc.out.SubImmFromReg("rsp", 32)
 		fc.out.MovRegToReg("r15", "rsp") // r15 = buffer pointer
@@ -5453,14 +5453,14 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 		// Convert float to int64 (truncate)
 		fc.out.Cvttsd2si("rdi", "xmm0")
 
-		// Call _flap_itoa(rdi=number) -> (rsi=buffer, rdx=length)
+		// Call _c67_itoa(rdi=number) -> (rsi=buffer, rdx=length)
 		// Save r15 before call (it contains buffer pointer)
 		fc.out.PushReg("r15")
-		fc.trackFunctionCall("_flap_itoa")
-		fc.eb.GenerateCallInstruction("_flap_itoa")
+		fc.trackFunctionCall("_c67_itoa")
+		fc.eb.GenerateCallInstruction("_c67_itoa")
 		fc.out.PopReg("r15")
 
-		// _flap_itoa returns: rsi=buffer start, rdx=length
+		// _c67_itoa returns: rsi=buffer start, rdx=length
 		// Copy result to our stack buffer
 		fc.out.MovRegToReg("rdi", "r15") // dest
 		fc.out.MovRegToReg("rcx", "rdx") // count
@@ -5485,19 +5485,19 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 
 		fc.out.MovRegToReg("r13", "rdx") // r13 = length
 
-		// Convert C string to Flap string: allocate 8 + len*16 bytes
+		// Convert C string to C67 string: allocate 8 + len*16 bytes
 		fc.out.MovRegToReg("rax", "r13")
 		fc.out.ShlRegByImm("rax", 4) // len * 16
 		fc.out.AddImmToReg("rax", 8) // + 8 for count
 		fc.out.MovRegToReg("rdi", "rax")
 		fc.callArenaAlloc()
-		fc.out.MovRegToReg("r14", "rax") // r14 = Flap string
+		fc.out.MovRegToReg("r14", "rax") // r14 = C67 string
 
 		// Store count
 		fc.out.Cvtsi2sd("xmm0", "r13")
 		fc.out.MovXmmToMem("xmm0", "r14", 0)
 
-		// Copy characters to Flap string
+		// Copy characters to C67 string
 		fc.out.XorRegWithReg("rcx", "rcx") // index
 		copyLoopStart := fc.eb.text.Len()
 		fc.out.CmpRegToReg("rcx", "r13")
@@ -5509,7 +5509,7 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 		fc.out.AddRegToReg("rax", "rcx")
 		fc.out.Emit([]byte{0x48, 0x0f, 0xb6, 0x00}) // movzx rax, byte [rax]
 
-		// Store to Flap string at offset 8 + rcx*16
+		// Store to C67 string at offset 8 + rcx*16
 		fc.out.MovRegToReg("rdx", "rcx")
 		fc.out.ShlRegByImm("rdx", 4)     // rcx * 16
 		fc.out.AddImmToReg("rdx", 8)     // + 8
@@ -5532,12 +5532,12 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 		loopEndTarget := fc.eb.text.Len()
 		fc.patchJumpImmediate(copyLoopEnd+2, int32(loopEndTarget-(copyLoopEnd+ConditionalJumpSize)))
 
-		// Clean up buffer and return Flap string pointer in xmm0
+		// Clean up buffer and return C67 string pointer in xmm0
 		fc.out.AddImmToReg("rsp", 32)
 		fc.out.MovqRegToXmm("xmm0", "r14")
 
 	case "list":
-		// Convert C array to Flap list
+		// Convert C array to C67 list
 		// TODO: implement when needed (requires length parameter)
 		compilerError("'as list' conversion not yet implemented")
 
@@ -5546,7 +5546,7 @@ func (fc *FlapCompiler) compileCastExpr(expr *CastExpr) {
 	}
 }
 
-func (fc *FlapCompiler) compileSliceExpr(expr *SliceExpr) {
+func (fc *C67Compiler) compileSliceExpr(expr *SliceExpr) {
 	// Slice syntax: list[start:end:step] or string[start:end:step]
 	// For now, implement simple case: string/list[start:end] (step=1, forward)
 
@@ -5649,7 +5649,7 @@ func (fc *FlapCompiler) compileSliceExpr(expr *SliceExpr) {
 	fc.out.MovXmmToMem("xmm0", "rsp", 0)
 
 	// Stack layout: [collection_ptr][step][start][end] (rsp points to end)
-	// Call runtime function: flap_slice_string(collection_ptr, start, end, step) -> new_collection_ptr
+	// Call runtime function: c67_slice_string(collection_ptr, start, end, step) -> new_collection_ptr
 
 	// Load step into rcx (arg4)
 	fc.out.MovMemToXmm("xmm0", "rsp", 16)
@@ -5670,7 +5670,7 @@ func (fc *FlapCompiler) compileSliceExpr(expr *SliceExpr) {
 	fc.out.AddImmToReg("rsp", 32)
 
 	// Call runtime function
-	fc.out.CallSymbol("flap_slice_string")
+	fc.out.CallSymbol("c67_slice_string")
 
 	// Result (new string pointer) is in rax, convert to float64 in xmm0
 	fc.out.SubImmFromReg("rsp", StackSlotSize)
@@ -5679,7 +5679,7 @@ func (fc *FlapCompiler) compileSliceExpr(expr *SliceExpr) {
 	fc.out.AddImmToReg("rsp", StackSlotSize)
 }
 
-func (fc *FlapCompiler) compileUnsafeExpr(expr *UnsafeExpr) {
+func (fc *C67Compiler) compileUnsafeExpr(expr *UnsafeExpr) {
 	// Execute the appropriate architecture block based on target
 	var block []Statement
 	var retStmt *UnsafeReturnStmt
@@ -5762,7 +5762,7 @@ func (fc *FlapCompiler) compileUnsafeExpr(expr *UnsafeExpr) {
 	}
 }
 
-func (fc *FlapCompiler) compileSyscall() {
+func (fc *C67Compiler) compileSyscall() {
 	// Emit raw syscall instruction
 	// Registers must be set up before calling syscall:
 	// x86-64: rax=syscall#, rdi=arg1, rsi=arg2, rdx=arg3, r10=arg4, r8=arg5, r9=arg6
@@ -5771,7 +5771,7 @@ func (fc *FlapCompiler) compileSyscall() {
 	fc.out.Syscall()
 }
 
-func (fc *FlapCompiler) compileRegisterAssignment(stmt *RegisterAssignStmt) {
+func (fc *C67Compiler) compileRegisterAssignment(stmt *RegisterAssignStmt) {
 	// Resolve register aliases (a->rax, b->rbx, etc)
 	register := stmt.Register
 
@@ -5841,7 +5841,7 @@ func (fc *FlapCompiler) compileRegisterAssignment(stmt *RegisterAssignStmt) {
 	}
 }
 
-func (fc *FlapCompiler) compileRegisterOp(dest string, op *RegisterOp) {
+func (fc *C67Compiler) compileRegisterOp(dest string, op *RegisterOp) {
 	// Unary operations
 	if op.Left == "" {
 		if op.Operator == "~b" {
@@ -5932,7 +5932,7 @@ func (fc *FlapCompiler) compileRegisterOp(dest string, op *RegisterOp) {
 	}
 }
 
-func (fc *FlapCompiler) compileMemoryLoad(dest string, load *MemoryLoad) {
+func (fc *C67Compiler) compileMemoryLoad(dest string, load *MemoryLoad) {
 	// Memory load: dest <- [addr + offset]
 	// Support sized loads: uint8, int8, uint16, int16, uint32, int32, uint64, int64
 
@@ -5968,7 +5968,7 @@ func (fc *FlapCompiler) compileMemoryLoad(dest string, load *MemoryLoad) {
 	}
 }
 
-func (fc *FlapCompiler) compileSizedMemoryStore(store *MemoryStore) {
+func (fc *C67Compiler) compileSizedMemoryStore(store *MemoryStore) {
 	// Memory store: [addr + offset] <- value as size
 
 	// SAFETY: Add null pointer check for the address register (skip in unsafe blocks)
@@ -6023,7 +6023,7 @@ func (fc *FlapCompiler) compileSizedMemoryStore(store *MemoryStore) {
 // emitNullPointerCheck generates code to check if a register contains a null pointer (0)
 // and aborts the program with an error message if so.
 // This prevents segfaults from null pointer dereferences.
-func (fc *FlapCompiler) emitNullPointerCheck(reg string) {
+func (fc *C67Compiler) emitNullPointerCheck(reg string) {
 	// Test if register is zero (null)
 	// test reg, reg sets ZF if reg == 0
 	fc.out.TestRegReg(reg, reg)
@@ -6053,7 +6053,7 @@ func (fc *FlapCompiler) emitNullPointerCheck(reg string) {
 // and aborts the program with an error message if out of bounds.
 // indexReg: register containing the index (as signed 64-bit integer)
 // lengthReg: register containing the list/array length (as signed 64-bit integer)
-func (fc *FlapCompiler) emitBoundsCheck(indexReg, lengthReg string) {
+func (fc *C67Compiler) emitBoundsCheck(indexReg, lengthReg string) {
 	// Check if index < 0
 	fc.out.CmpRegToImm(indexReg, 0)
 	negativeJumpPos := fc.eb.text.Len()
@@ -6102,7 +6102,7 @@ func (fc *FlapCompiler) emitBoundsCheck(indexReg, lengthReg string) {
 	fc.patchJumpImmediate(okJumpPos+1, okOffset)
 }
 
-func (fc *FlapCompiler) compileMemoryStore(addr string, value interface{}) {
+func (fc *C67Compiler) compileMemoryStore(addr string, value interface{}) {
 	// Memory store: [addr] <- value
 
 	// SAFETY: Add null pointer check for the address register
@@ -6120,7 +6120,7 @@ func (fc *FlapCompiler) compileMemoryStore(addr string, value interface{}) {
 	}
 }
 
-func (fc *FlapCompiler) compileUnsafeCast(dest string, cast *CastExpr) {
+func (fc *C67Compiler) compileUnsafeCast(dest string, cast *CastExpr) {
 	// Handle type casts in unsafe blocks
 	// Examples: rax <- 42 as uint8, rax <- buffer as pointer, rax <- msg as cstr
 
@@ -6140,10 +6140,10 @@ func (fc *FlapCompiler) compileUnsafeCast(dest string, cast *CastExpr) {
 
 			// Handle specific cast types
 			if cast.Type == "cstr" || cast.Type == "cstring" {
-				// Convert Flap string to C null-terminated string
-				// xmm0 contains pointer to Flap string map
-				// flap_string_to_cstr is an internal runtime function, not external
-				fc.out.CallSymbol("flap_string_to_cstr")
+				// Convert C67 string to C null-terminated string
+				// xmm0 contains pointer to C67 string map
+				// c67_string_to_cstr is an internal runtime function, not external
+				fc.out.CallSymbol("c67_string_to_cstr")
 				// Result is C string pointer in rax
 				if dest != "rax" {
 					fc.out.MovRegToReg(dest, "rax")
@@ -6171,7 +6171,7 @@ func (fc *FlapCompiler) compileUnsafeCast(dest string, cast *CastExpr) {
 	}
 }
 
-func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
+func (fc *C67Compiler) compileParallelExpr(expr *ParallelExpr) {
 	// Support: list || lambda or list || lambdaVar
 	lambda, isDirectLambda := expr.Operation.(*LambdaExpr)
 	if isDirectLambda {
@@ -6303,7 +6303,7 @@ func (fc *FlapCompiler) compileParallelExpr(expr *ParallelExpr) {
 	// End of parallel operator - xmm0 contains result pointer as float64
 }
 
-func (fc *FlapCompiler) predeclareLambdaSymbols() {
+func (fc *C67Compiler) predeclareLambdaSymbols() {
 	for _, lambda := range fc.lambdaFuncs {
 		if _, ok := fc.eb.consts[lambda.Name]; !ok {
 			fc.eb.consts[lambda.Name] = &Const{value: ""}
@@ -6311,7 +6311,7 @@ func (fc *FlapCompiler) predeclareLambdaSymbols() {
 	}
 }
 
-func (fc *FlapCompiler) generateLambdaFunctions() {
+func (fc *C67Compiler) generateLambdaFunctions() {
 	if fc.debug {
 		if VerboseMode {
 			fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: generating %d lambdas\n", len(fc.lambdaFuncs))
@@ -6407,7 +6407,7 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 			fc.variables[paramName] = paramOffset
 			fc.mutableVars[paramName] = false
 
-			// Mark parameter type as "number" by default (all values are float64 in Flap)
+			// Mark parameter type as "number" by default (all values are float64 in C67)
 			// This prevents x + y from being interpreted as list append when x and y are parameters
 			fc.varTypes[paramName] = "number"
 
@@ -6454,12 +6454,12 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 			fc.out.ShlRegByImm("rax", 4) // rax = r14 * 16
 			fc.out.AddImmToReg("rax", 8) // rax = 8 + r14 * 16
 
-			// Allocate from arena: flap_arena_alloc(arena_ptr, size)
+			// Allocate from arena: c67_arena_alloc(arena_ptr, size)
 			// Save r14 (we need it after the call)
 			fc.out.PushReg("r14")
 
 			// rdi = arena_ptr (requires TWO dereferences)
-			fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
+			fc.out.LeaSymbolToReg("rdi", "_c67_arena_meta")
 			fc.out.MovMemToReg("rdi", "rdi", 0) // Load meta-arena array pointer
 			fc.out.MovMemToReg("rdi", "rdi", 0) // Load arena[0] struct pointer
 
@@ -6467,8 +6467,8 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 			fc.out.MovRegToReg("rsi", "rax")
 
 			// Call arena allocator
-			fc.trackFunctionCall("flap_arena_alloc")
-			fc.out.CallSymbol("flap_arena_alloc")
+			fc.trackFunctionCall("c67_arena_alloc")
+			fc.out.CallSymbol("c67_arena_alloc")
 
 			// rax now contains pointer to allocated list
 			// Restore r14
@@ -6614,7 +6614,7 @@ func (fc *FlapCompiler) generateLambdaFunctions() {
 	}
 }
 
-func (fc *FlapCompiler) generatePatternLambdaFunctions() {
+func (fc *C67Compiler) generatePatternLambdaFunctions() {
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG generatePatternLambdaFunctions: generating %d pattern lambdas\n", len(fc.patternLambdaFuncs))
 	}
@@ -6758,7 +6758,7 @@ func (fc *FlapCompiler) generatePatternLambdaFunctions() {
 	}
 }
 
-func (fc *FlapCompiler) buildHotFunctionTable() {
+func (fc *C67Compiler) buildHotFunctionTable() {
 	if len(fc.hotFunctions) == 0 {
 		return
 	}
@@ -6774,7 +6774,7 @@ func (fc *FlapCompiler) buildHotFunctionTable() {
 	}
 }
 
-func (fc *FlapCompiler) generateHotFunctionTable() {
+func (fc *C67Compiler) generateHotFunctionTable() {
 	if len(fc.hotFunctions) == 0 {
 		return
 	}
@@ -6790,7 +6790,7 @@ func (fc *FlapCompiler) generateHotFunctionTable() {
 	fc.eb.Define("_hot_function_table", string(tableData))
 }
 
-func (fc *FlapCompiler) patchHotFunctionTable() {
+func (fc *C67Compiler) patchHotFunctionTable() {
 	if len(fc.hotFunctions) == 0 {
 		return
 	}
@@ -6836,8 +6836,8 @@ func (fc *FlapCompiler) patchHotFunctionTable() {
 	}
 }
 
-func (fc *FlapCompiler) generateCacheLookup() {
-	fc.eb.MarkLabel("flap_cache_lookup")
+func (fc *C67Compiler) generateCacheLookup() {
+	fc.eb.MarkLabel("c67_cache_lookup")
 
 	fc.out.PushReg("rbp")
 	fc.out.MovRegToReg("rbp", "rsp")
@@ -6903,8 +6903,8 @@ func (fc *FlapCompiler) generateCacheLookup() {
 	fc.out.Ret()
 }
 
-func (fc *FlapCompiler) generateCacheInsert() {
-	fc.eb.MarkLabel("flap_cache_insert")
+func (fc *C67Compiler) generateCacheInsert() {
+	fc.eb.MarkLabel("c67_cache_insert")
 
 	fc.out.PushReg("rbp")
 	fc.out.MovRegToReg("rbp", "rsp")
@@ -6951,8 +6951,8 @@ func (fc *FlapCompiler) generateCacheInsert() {
 	fc.out.Ret()
 }
 
-func (fc *FlapCompiler) generateRuntimeHelpers() {
-	// Arena runtime functions are generated inline below (flap_arena_create, alloc, etc)
+func (fc *C67Compiler) generateRuntimeHelpers() {
+	// Arena runtime functions are generated inline below (c67_arena_create, alloc, etc)
 	// Don't call fc.eb.EmitArenaRuntimeCode() as it's the old stub from main.go
 	// Arena symbols are predeclared earlier in writeELF() to ensure they're available during code generation
 
@@ -6967,11 +6967,11 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 		fc.eb.Define(cacheName, "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
 	}
 
-	// Generate _flap_string_concat(left_ptr, right_ptr) -> new_ptr
+	// Generate _c67_string_concat(left_ptr, right_ptr) -> new_ptr
 	// Arguments: rdi = left_ptr, rsi = right_ptr
 	// Returns: rax = pointer to new concatenated string
 
-	fc.eb.MarkLabel("_flap_string_concat")
+	fc.eb.MarkLabel("_c67_string_concat")
 
 	// Function prologue
 	fc.out.PushReg("rbp")
@@ -7084,11 +7084,11 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
-	// Generate flap_string_to_cstr(flap_string_ptr) -> cstr_ptr
-	// Converts a Flap string (map format) to a null-terminated C string
-	// Argument: xmm0 = Flap string pointer (as float64)
+	// Generate c67_string_to_cstr(c67_string_ptr) -> cstr_ptr
+	// Converts a C67 string (map format) to a null-terminated C string
+	// Argument: xmm0 = C67 string pointer (as float64)
 	// Returns: rax = C string pointer
-	fc.eb.MarkLabel("flap_string_to_cstr")
+	fc.eb.MarkLabel("c67_string_to_cstr")
 
 	// Function prologue
 	fc.out.PushReg("rbp")
@@ -7281,11 +7281,11 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
-	// Generate cstr_to_flap_string(cstr_ptr) -> flap_string_ptr
-	// Converts a null-terminated C string to a Flap string (map format)
+	// Generate cstr_to_c67_string(cstr_ptr) -> c67_string_ptr
+	// Converts a null-terminated C string to a C67 string (map format)
 	// Argument: rdi = C string pointer
-	// Returns: xmm0 = Flap string pointer (as float64)
-	fc.eb.MarkLabel("cstr_to_flap_string")
+	// Returns: xmm0 = C67 string pointer (as float64)
+	fc.eb.MarkLabel("cstr_to_c67_string")
 
 	// Function prologue
 	fc.out.PushReg("rbp")
@@ -7309,14 +7309,14 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.eb.GenerateCallInstruction("strlen")
 	fc.out.MovRegToReg("r14", "rax") // r14 = string length
 
-	// Allocate Flap string map: 8 + (length * 16) bytes
+	// Allocate C67 string map: 8 + (length * 16) bytes
 	// count (8 bytes) + (key, value) pairs (16 bytes each)
 	fc.out.MovRegToReg("rdi", "r14")
 	fc.out.Emit([]byte{0x48, 0xc1, 0xe7, 0x04}) // shl rdi, 4 (multiply by 16)
 	fc.out.Emit([]byte{0x48, 0x83, 0xc7, 0x08}) // add rdi, 8
 	// Allocate from arena
 	fc.callArenaAlloc()
-	fc.out.MovRegToReg("r13", "rax") // r13 = Flap string map pointer
+	fc.out.MovRegToReg("r13", "rax") // r13 = C67 string map pointer
 
 	// Store count in map[0]
 	fc.out.MovRegToReg("rax", "r14")
@@ -7328,7 +7328,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Loop: for each character
 	cstrLoopStart := fc.eb.text.Len()
-	fc.eb.MarkLabel("_cstr_to_flap_loop")
+	fc.eb.MarkLabel("_cstr_to_c67_loop")
 
 	// Compare index with length
 	fc.out.Emit([]byte{0x4c, 0x39, 0xf3}) // cmp rbx, r14
@@ -7372,7 +7372,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	cstrExitPos := fc.eb.text.Len()
 	fc.patchJumpImmediate(cstrExitJumpPos+2, int32(cstrExitPos-(cstrExitJumpPos+6)))
 
-	// Return Flap string pointer in xmm0
+	// Return C67 string pointer in xmm0
 	fc.out.MovRegToXmm("xmm0", "r13")
 
 	// Restore callee-saved registers (no stack adjustment needed)
@@ -7385,13 +7385,13 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
-	// Generate flap_slice_string(str_ptr, start, end, step) -> new_str_ptr
+	// Generate c67_slice_string(str_ptr, start, end, step) -> new_str_ptr
 	// Arguments: rdi = string_ptr, rsi = start_index (int64), rdx = end_index (int64), rcx = step (int64)
 	// Returns: rax = pointer to new sliced string
 	// String format (map): [count (float64)][key0 (float64)][val0 (float64)]...
 	// Note: Currently only step == 1 is fully supported
 
-	fc.eb.MarkLabel("flap_slice_string")
+	fc.eb.MarkLabel("c67_slice_string")
 
 	// Function prologue
 	fc.out.PushReg("rbp")
@@ -7573,12 +7573,12 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
-	// Generate _flap_list_concat(left_ptr, right_ptr) -> new_ptr
+	// Generate _c67_list_concat(left_ptr, right_ptr) -> new_ptr
 	// Arguments: rdi = left_ptr, rsi = right_ptr
 	// Returns: rax = pointer to new concatenated list
 	// List format: [length (8 bytes)][elem0 (8 bytes)][elem1 (8 bytes)]...
 
-	fc.eb.MarkLabel("_flap_list_concat")
+	fc.eb.MarkLabel("_c67_list_concat")
 
 	// Function prologue
 	fc.out.PushReg("rbp")
@@ -7680,12 +7680,12 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
-	// Generate _flap_string_eq(left_ptr, right_ptr) -> 1.0 or 0.0
+	// Generate _c67_string_eq(left_ptr, right_ptr) -> 1.0 or 0.0
 	// Arguments: rdi = left_ptr, rsi = right_ptr
 	// Returns: xmm0 = 1.0 if equal, 0.0 if not
 	// String format: [count (8 bytes)][key0 (8)][val0 (8)][key1 (8)][val1 (8)]...
 
-	fc.eb.MarkLabel("_flap_string_eq")
+	fc.eb.MarkLabel("_c67_string_eq")
 
 	fc.out.PushReg("rbp")
 	fc.out.MovRegToReg("rbp", "rsp")
@@ -7813,10 +7813,10 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
-	// Generate upper_string(flap_string_ptr) -> uppercase_flap_string_ptr
-	// Converts a Flap string to uppercase
-	// Argument: rdi = Flap string pointer (as integer)
-	// Returns: xmm0 = uppercase Flap string pointer (as float64)
+	// Generate upper_string(c67_string_ptr) -> uppercase_c67_string_ptr
+	// Converts a C67 string to uppercase
+	// Argument: rdi = C67 string pointer (as integer)
+	// Returns: xmm0 = uppercase C67 string pointer (as float64)
 	fc.eb.MarkLabel("upper_string")
 
 	fc.out.PushReg("rbp")
@@ -7907,10 +7907,10 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
-	// Generate lower_string(flap_string_ptr) -> lowercase_flap_string_ptr
-	// Converts a Flap string to lowercase
-	// Argument: rdi = Flap string pointer (as integer)
-	// Returns: xmm0 = lowercase Flap string pointer (as float64)
+	// Generate lower_string(c67_string_ptr) -> lowercase_c67_string_ptr
+	// Converts a C67 string to lowercase
+	// Argument: rdi = C67 string pointer (as integer)
+	// Returns: xmm0 = lowercase C67 string pointer (as float64)
 	fc.eb.MarkLabel("lower_string")
 
 	fc.out.PushReg("rbp")
@@ -8001,10 +8001,10 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
-	// Generate trim_string(flap_string_ptr) -> trimmed_flap_string_ptr
+	// Generate trim_string(c67_string_ptr) -> trimmed_c67_string_ptr
 	// Removes leading and trailing whitespace
-	// Argument: rdi = Flap string pointer (as integer)
-	// Returns: xmm0 = trimmed Flap string pointer (as float64)
+	// Argument: rdi = C67 string pointer (as integer)
+	// Returns: xmm0 = trimmed C67 string pointer (as float64)
 	fc.eb.MarkLabel("trim_string")
 
 	fc.out.PushReg("rbp")
@@ -8212,12 +8212,12 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
-	// Generate flap_arena_create(capacity) -> arena_ptr
+	// Generate c67_arena_create(capacity) -> arena_ptr
 	// Creates a new arena with the specified capacity
 	// Argument: rdi = capacity (int64)
 	// Returns: rax = arena pointer
 	// Arena structure: [buffer_ptr (8)][capacity (8)][offset (8)][alignment (8)] = 32 bytes header
-	fc.eb.MarkLabel("flap_arena_create")
+	fc.eb.MarkLabel("c67_arena_create")
 
 	fc.out.PushReg("rbp")
 	fc.out.MovRegToReg("rbp", "rsp")
@@ -8281,19 +8281,19 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.patchJumpImmediate(bufferMallocFailedJump+2, int32(createErrorLabel-(bufferMallocFailedJump+6)))
 
 	// Print error message and exit
-	fc.out.LeaSymbolToReg("rdi", "_flap_str_arena_alloc_error")
+	fc.out.LeaSymbolToReg("rdi", "_c67_str_arena_alloc_error")
 	fc.trackFunctionCall("printf")
 	fc.eb.GenerateCallInstruction("printf")
 	fc.out.MovImmToReg("rdi", "1")
 	fc.trackFunctionCall("exit")
 	fc.eb.GenerateCallInstruction("exit")
 
-	// Generate flap_arena_alloc(arena_ptr, size) -> allocation_ptr
+	// Generate c67_arena_alloc(arena_ptr, size) -> allocation_ptr
 	// Allocates memory from the arena using bump allocation with auto-growing
 	// If arena is full, reallocs buffer to 2x size
 	// Arguments: rdi = arena_ptr, rsi = size (int64)
 	// Returns: rax = allocated memory pointer
-	fc.eb.MarkLabel("flap_arena_alloc")
+	fc.eb.MarkLabel("c67_arena_alloc")
 
 	fc.out.PushReg("rbp")
 	fc.out.MovRegToReg("rbp", "rsp")
@@ -8461,10 +8461,10 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
-	// Generate flap_arena_destroy(arena_ptr)
+	// Generate c67_arena_destroy(arena_ptr)
 	// Frees all memory associated with the arena
 	// Argument: rdi = arena_ptr
-	fc.eb.MarkLabel("flap_arena_destroy")
+	fc.eb.MarkLabel("c67_arena_destroy")
 
 	fc.out.PushReg("rbp")
 	fc.out.MovRegToReg("rbp", "rsp")
@@ -8488,10 +8488,10 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
-	// Generate flap_arena_reset(arena_ptr)
+	// Generate c67_arena_reset(arena_ptr)
 	// Resets the arena offset to 0, effectively freeing all allocations
 	// Argument: rdi = arena_ptr
-	fc.eb.MarkLabel("flap_arena_reset")
+	fc.eb.MarkLabel("c67_arena_reset")
 
 	fc.out.PushReg("rbp")
 	fc.out.MovRegToReg("rbp", "rsp")
@@ -8502,11 +8502,11 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
-	// Generate _flap_list_cons(element_float, list_ptr_float) -> new_list_ptr
+	// Generate _c67_list_cons(element_float, list_ptr_float) -> new_list_ptr
 	// LINKED LIST implementation - creates a cons cell: [head|tail]
 	// Arguments: rdi = element (as float64 bits), rsi = tail pointer (as float64 bits, 0.0 = nil)
 	// Returns: rax = pointer to new cons cell (16 bytes)
-	fc.eb.MarkLabel("_flap_list_cons")
+	fc.eb.MarkLabel("_c67_list_cons")
 
 	// Function prologue
 	fc.out.PushReg("rbp")
@@ -8526,12 +8526,12 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 
 	// Allocate 16-byte cons cell from arena (use default arena 0)
 	// Cons cell format: [head: float64][tail: float64] = 16 bytes
-	fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
+	fc.out.LeaSymbolToReg("rdi", "_c67_arena_meta")
 	fc.out.MovMemToReg("rdi", "rdi", 0) // rdi = meta-arena array pointer
 	fc.out.MovMemToReg("rdi", "rdi", 0) // rdi = arena[0] struct pointer
 	fc.out.MovImmToReg("rsi", "16")     // rsi = 16 bytes
-	fc.trackFunctionCall("flap_arena_alloc")
-	fc.eb.GenerateCallInstruction("flap_arena_alloc")
+	fc.trackFunctionCall("c67_arena_alloc")
+	fc.eb.GenerateCallInstruction("c67_arena_alloc")
 	// rax now contains pointer to cons cell
 
 	// Write head (element) at [cell+0]
@@ -8561,11 +8561,11 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
-	// Generate _flap_list_head(list_ptr_float) -> element_float
+	// Generate _c67_list_head(list_ptr_float) -> element_float
 	// LINKED LIST implementation - returns head of cons cell
 	// Argument: rdi = list pointer (as float64 bits, 0.0 = nil)
 	// Returns: xmm0 = first element (or NaN if empty)
-	fc.eb.MarkLabel("_flap_list_head")
+	fc.eb.MarkLabel("_c67_list_head")
 
 	// Function prologue
 	fc.out.PushReg("rbp")
@@ -8592,11 +8592,11 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
-	// Generate _flap_list_tail(list_ptr_float) -> tail_ptr_float
+	// Generate _c67_list_tail(list_ptr_float) -> tail_ptr_float
 	// LINKED LIST implementation - returns tail of cons cell (O(1) operation)
 	// Argument: rdi = list pointer (as float64 bits, 0.0 = nil)
 	// Returns: xmm0 = tail pointer (as float64, 0.0 = nil)
-	fc.eb.MarkLabel("_flap_list_tail")
+	fc.eb.MarkLabel("_c67_list_tail")
 
 	// Function prologue
 	fc.out.PushReg("rbp")
@@ -8622,11 +8622,11 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
-	// Generate _flap_list_length(list_ptr_float) -> length_int
+	// Generate _c67_list_length(list_ptr_float) -> length_int
 	// LINKED LIST implementation - walks list and counts nodes (O(n))
 	// Argument: rdi = list pointer (as float64 bits, 0.0 = nil)
 	// Returns: rax = length as int64
-	fc.eb.MarkLabel("_flap_list_length")
+	fc.eb.MarkLabel("_c67_list_length")
 
 	// Function prologue
 	fc.out.PushReg("rbp")
@@ -8660,11 +8660,11 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
-	// Generate _flap_list_index(list_ptr_float, index_int) -> element_float
+	// Generate _c67_list_index(list_ptr_float, index_int) -> element_float
 	// LINKED LIST implementation - walks to index-th node (O(n))
 	// Arguments: rdi = list pointer (as float64 bits), rsi = index (int64)
 	// Returns: xmm0 = element at index (or NaN if out of bounds)
-	fc.eb.MarkLabel("_flap_list_index")
+	fc.eb.MarkLabel("_c67_list_index")
 
 	// Function prologue
 	fc.out.PushReg("rbp")
@@ -8722,12 +8722,12 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
-	// Generate _flap_list_update(list_ptr, index, value, arena_ptr) -> new_list_ptr
+	// Generate _c67_list_update(list_ptr, index, value, arena_ptr) -> new_list_ptr
 	// Updates a list element at the given index (functional - returns new list)
 	// Arguments: rdi = list_ptr, rsi = index (integer), xmm0 = new value (float64), rdx = arena_ptr
 	// Returns: rax = new list pointer
 	// Uses specified arena for allocation
-	fc.eb.MarkLabel("_flap_list_update")
+	fc.eb.MarkLabel("_c67_list_update")
 
 	// Function prologue
 	fc.out.PushReg("rbp")
@@ -8758,11 +8758,11 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.AddImmToReg("rax", 8)
 
 	// Allocate from specified arena
-	// Call flap_arena_alloc(rdi=arena_ptr, rsi=size)
+	// Call c67_arena_alloc(rdi=arena_ptr, rsi=size)
 	fc.out.MovRegToReg("rdi", "r15") // arena ptr in rdi
 	fc.out.MovRegToReg("rsi", "rax") // size in rsi
-	fc.trackFunctionCall("flap_arena_alloc")
-	fc.eb.GenerateCallInstruction("flap_arena_alloc")
+	fc.trackFunctionCall("c67_arena_alloc")
+	fc.eb.GenerateCallInstruction("c67_arena_alloc")
 	fc.out.MovRegToReg("r12", "rax") // r12 = new list ptr
 
 	// Write length to new list
@@ -8821,9 +8821,9 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
-	// Generate _flap_string_println(string_ptr) - prints string followed by newline
+	// Generate _c67_string_println(string_ptr) - prints string followed by newline
 	// Argument: rdi/rcx (platform-dependent) = string pointer (map with [count][0][char0][1][char1]...)
-	fc.eb.MarkLabel("_flap_string_println")
+	fc.eb.MarkLabel("_c67_string_println")
 
 	// For Windows, we use a simpler approach: call printf for each character
 	// For Unix, we use write syscall for efficiency
@@ -8864,7 +8864,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 		// Call putchar via printf
 		// printf("%c", char)
 		// Create format string "%c"
-		charFmtLabel := fmt.Sprintf("_flap_char_fmt_%d", fc.stringCounter)
+		charFmtLabel := fmt.Sprintf("_c67_char_fmt_%d", fc.stringCounter)
 		fc.stringCounter++
 		fc.eb.Define(charFmtLabel, "%c\x00")
 
@@ -8885,7 +8885,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 		fc.patchJumpImmediate(strPrintLoopEnd+2, int32(strPrintDonePos-strPrintLoopEndPos))
 
 		// Print newline: printf("\n")
-		newlineFmtLabel := fmt.Sprintf("_flap_newline_fmt_%d", fc.stringCounter)
+		newlineFmtLabel := fmt.Sprintf("_c67_newline_fmt_%d", fc.stringCounter)
 		fc.stringCounter++
 		fc.eb.Define(newlineFmtLabel, "\n\x00")
 
@@ -8975,7 +8975,7 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 		fc.out.Ret()
 	}
 
-	// Generate _flap_itoa for number to string conversion
+	// Generate _c67_itoa for number to string conversion
 	fc.generateItoa()
 
 	// Generate syscall-based print helpers for Linux
@@ -8984,14 +8984,14 @@ func (fc *FlapCompiler) generateRuntimeHelpers() {
 		fc.generatePrintlnSyscall()
 	}
 
-	// Generate _flap_arena_ensure_capacity if arenas are used
+	// Generate _c67_arena_ensure_capacity if arenas are used
 	if fc.usesArenas {
 		fc.generateArenaEnsureCapacity()
 	}
 }
 
 // initializeMetaArenaAndGlobalArena initializes the meta-arena and creates arena 0 (default arena)
-func (fc *FlapCompiler) initializeMetaArenaAndGlobalArena() {
+func (fc *C67Compiler) initializeMetaArenaAndGlobalArena() {
 	// Initialize meta-arena system - all arenas are malloc'd at runtime
 	const initialCapacity = 4
 
@@ -9013,12 +9013,12 @@ func (fc *FlapCompiler) initializeMetaArenaAndGlobalArena() {
 	fc.out.Syscall()
 
 	// Store meta-arena array pointer
-	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta")
+	fc.out.LeaSymbolToReg("rbx", "_c67_arena_meta")
 	fc.out.MovRegToMem("rax", "rbx", 0)
 
 	// Set meta-arena capacity
 	fc.out.MovImmToReg("rcx", fmt.Sprintf("%d", initialCapacity))
-	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta_cap")
+	fc.out.LeaSymbolToReg("rbx", "_c67_arena_meta_cap")
 	fc.out.MovRegToMem("rcx", "rbx", 0)
 
 	// Create default arena (arena 0) - 1MB mmap'd buffer
@@ -9055,20 +9055,20 @@ func (fc *FlapCompiler) initializeMetaArenaAndGlobalArena() {
 	fc.out.MovRegToMem("rcx", "rax", 24) // alignment = 8
 
 	// Store arena struct pointer in meta-arena[0]
-	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta")
+	fc.out.LeaSymbolToReg("rbx", "_c67_arena_meta")
 	fc.out.MovMemToReg("rbx", "rbx", 0) // rbx = meta-arena array
 	fc.out.MovRegToMem("rax", "rbx", 0) // meta-arena[0] = arena struct
 
 	// Set meta-arena len = 1 (one active arena)
 	fc.out.MovImmToReg("rcx", "1")
-	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta_len")
+	fc.out.LeaSymbolToReg("rbx", "_c67_arena_meta_len")
 	fc.out.MovRegToMem("rcx", "rbx", 0)
 }
 
 // cleanupAllArenas frees all arenas in the meta-arena
-func (fc *FlapCompiler) cleanupAllArenas() {
+func (fc *C67Compiler) cleanupAllArenas() {
 	// Load meta-arena pointer
-	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta")
+	fc.out.LeaSymbolToReg("rbx", "_c67_arena_meta")
 	fc.out.MovMemToReg("rbx", "rbx", 0) // rbx = meta-arena pointer
 
 	// Check if meta-arena is NULL (no arenas allocated)
@@ -9077,7 +9077,7 @@ func (fc *FlapCompiler) cleanupAllArenas() {
 	fc.out.JumpConditional(JumpEqual, 0) // je skip_cleanup
 
 	// Load meta-arena length
-	fc.out.LeaSymbolToReg("rax", "_flap_arena_meta_len")
+	fc.out.LeaSymbolToReg("rax", "_c67_arena_meta_len")
 	fc.out.MovMemToReg("rcx", "rax", 0) // rcx = number of arenas
 
 	// Loop through all arenas and free them
@@ -9158,16 +9158,16 @@ func (fc *FlapCompiler) cleanupAllArenas() {
 	fc.patchJumpImmediate(skipCleanupJump+2, int32(skipCleanup-(skipCleanupJump+ConditionalJumpSize)))
 }
 
-// generateItoa generates the _flap_itoa function
+// generateItoa generates the _c67_itoa function
 // Converts int64 to decimal string representation
 // Input: rdi = number
 // Output: rsi = buffer pointer, rdx = length
 // Uses a global buffer _itoa_buffer
-func (fc *FlapCompiler) generateItoa() {
+func (fc *C67Compiler) generateItoa() {
 	// Define global buffer for itoa (32 bytes)
 	fc.eb.DefineWritable("_itoa_buffer", string(make([]byte, 32)))
 
-	fc.eb.MarkLabel("_flap_itoa")
+	fc.eb.MarkLabel("_c67_itoa")
 
 	// Prologue
 	fc.out.PushReg("rbp")
@@ -9279,11 +9279,11 @@ func (fc *FlapCompiler) generateItoa() {
 	fc.out.Ret()
 }
 
-// generateArenaEnsureCapacity generates the _flap_arena_ensure_capacity function
+// generateArenaEnsureCapacity generates the _c67_arena_ensure_capacity function
 // This function ensures the meta-arena has enough capacity for the requested depth
 // Argument: rdi = required_depth
-func (fc *FlapCompiler) generateArenaEnsureCapacity() {
-	fc.eb.MarkLabel("_flap_arena_ensure_capacity")
+func (fc *C67Compiler) generateArenaEnsureCapacity() {
+	fc.eb.MarkLabel("_c67_arena_ensure_capacity")
 
 	// Function prologue
 	fc.out.PushReg("rbp")
@@ -9298,7 +9298,7 @@ func (fc *FlapCompiler) generateArenaEnsureCapacity() {
 	fc.out.MovRegToReg("r12", "rdi")
 
 	// Load current capacity
-	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta_cap")
+	fc.out.LeaSymbolToReg("rbx", "_c67_arena_meta_cap")
 	fc.out.MovMemToReg("r13", "rbx", 0) // r13 = current capacity
 
 	// Check if this is first allocation (capacity == 0)
@@ -9307,7 +9307,7 @@ func (fc *FlapCompiler) generateArenaEnsureCapacity() {
 	fc.out.JumpConditional(JumpEqual, 0) // je to first_alloc
 
 	// Not first time - load len
-	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta_len")
+	fc.out.LeaSymbolToReg("rbx", "_c67_arena_meta_len")
 	fc.out.MovMemToReg("r14", "rbx", 0) // r14 = current len
 
 	// Check if we already have enough arenas (required <= len)
@@ -9323,7 +9323,7 @@ func (fc *FlapCompiler) generateArenaEnsureCapacity() {
 	// Have capacity, just need to initialize more arenas
 	// r12 = required, r14 = current len
 	// Load meta-arena pointer into r15
-	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta")
+	fc.out.LeaSymbolToReg("rbx", "_c67_arena_meta")
 	fc.out.MovMemToReg("r15", "rbx", 0) // r15 = meta-arena pointer
 	fc.out.MovRegToReg("r13", "r14")    // r13 = current len (start index for init loop)
 	fc.generateArenaInitLoop()
@@ -9342,7 +9342,7 @@ func (fc *FlapCompiler) generateArenaEnsureCapacity() {
 	fc.generateArenaInitLoop()
 
 	// Update capacity
-	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta_cap")
+	fc.out.LeaSymbolToReg("rbx", "_c67_arena_meta_cap")
 	fc.out.MovRegToMem("r14", "rbx", 0)
 
 	// Jump to return
@@ -9362,7 +9362,7 @@ func (fc *FlapCompiler) generateArenaEnsureCapacity() {
 	fc.out.JumpConditional(JumpLessOrEqual, 0) // jle to return (no growth needed)
 
 	// Need to grow: load capacity into r13 for growth path
-	fc.out.LeaSymbolToReg("rbx", "_flap_arena_meta_cap")
+	fc.out.LeaSymbolToReg("rbx", "_c67_arena_meta_cap")
 	fc.out.MovMemToReg("r13", "rbx", 0) // r13 = capacity (8)
 
 	// Jump to growth path
@@ -9395,7 +9395,7 @@ func (fc *FlapCompiler) generateArenaEnsureCapacity() {
 	fc.eb.GenerateCallInstruction("exit")
 }
 
-func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
+func (fc *C67Compiler) compileStoredFunctionCall(call *CallExpr) {
 	// Check if this is actually a lambda/function or just a value
 	isLambda := fc.lambdaVars[call.Function]
 
@@ -9485,7 +9485,7 @@ func (fc *FlapCompiler) compileStoredFunctionCall(call *CallExpr) {
 	// Result is in xmm0
 }
 
-func (fc *FlapCompiler) compileLambdaDirectCall(call *CallExpr) {
+func (fc *C67Compiler) compileLambdaDirectCall(call *CallExpr) {
 	// Check if this is a pure function eligible for memoization
 	var targetLambda *LambdaFunc
 	for i := range fc.lambdaFuncs {
@@ -9568,7 +9568,7 @@ func (fc *FlapCompiler) compileLambdaDirectCall(call *CallExpr) {
 	// Result is in xmm0
 }
 
-func (fc *FlapCompiler) compileMemoizedCall(call *CallExpr, lambda *LambdaFunc) {
+func (fc *C67Compiler) compileMemoizedCall(call *CallExpr, lambda *LambdaFunc) {
 	cacheName := fmt.Sprintf("_memo_%s", lambda.Name)
 
 	// Evaluate argument (single argument for memoization)
@@ -9755,7 +9755,7 @@ func (fc *FlapCompiler) compileMemoizedCall(call *CallExpr, lambda *LambdaFunc) 
 // compileBinaryOpSafe compiles a binary operation with proper stack-based
 // intermediate storage to avoid register clobbering.
 // This is the recommended pattern for all binary operations.
-func (fc *FlapCompiler) compileBinaryOpSafe(left, right Expression, operator string) {
+func (fc *C67Compiler) compileBinaryOpSafe(left, right Expression, operator string) {
 	// Clear tail position - operands of binary expressions cannot be in tail position
 	// because the operation happens AFTER the operands are evaluated
 	savedTailPosition := fc.inTailPosition
@@ -9794,7 +9794,7 @@ func (fc *FlapCompiler) compileBinaryOpSafe(left, right Expression, operator str
 	// Result is in xmm0
 }
 
-func (fc *FlapCompiler) compileDirectCall(call *DirectCallExpr) {
+func (fc *C67Compiler) compileDirectCall(call *DirectCallExpr) {
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG compileDirectCall: callee type = %T\n", call.Callee)
 		if v, ok := call.Callee.(*IdentExpr); ok {
@@ -9939,7 +9939,7 @@ func (fc *FlapCompiler) compileDirectCall(call *DirectCallExpr) {
 // CString format: [length_byte][char0][char1]...[charn][newline][null]
 //
 //	^-- returned pointer points here
-func (fc *FlapCompiler) compileMapToCString(mapPtr, cstrPtr string) {
+func (fc *C67Compiler) compileMapToCString(mapPtr, cstrPtr string) {
 	// Allocate space on stack for CString (max 256 bytes + length + newline + null)
 	fc.out.SubImmFromReg("rsp", 260) // 1 (length) + 256 (chars) + 1 (newline) + 1 (null) + padding
 
@@ -10055,7 +10055,7 @@ func (fc *FlapCompiler) compileMapToCString(mapPtr, cstrPtr string) {
 // compilePrintMapAsString converts a string map to bytes for printing via syscall
 // Input: mapPtr (register) = pointer to string map, bufPtr (register) = buffer start
 // Output: rsi = pointer to string data, rdx = length (including newline)
-func (fc *FlapCompiler) compilePrintMapAsString(mapPtr, bufPtr string) {
+func (fc *C67Compiler) compilePrintMapAsString(mapPtr, bufPtr string) {
 	// Load count from map[0] (empty strings have count=0, not null)
 	fc.out.MovMemToXmm("xmm0", mapPtr, 0)
 	fc.out.Cvttsd2si("rcx", "xmm0") // rcx = character count
@@ -10139,7 +10139,7 @@ func (fc *FlapCompiler) compilePrintMapAsString(mapPtr, bufPtr string) {
 // compileFloatToString converts a float64 to ASCII string representation
 // Input: xmmReg = XMM register with float64, bufPtr = buffer pointer (register)
 // Output: rsi = string start, rdx = length (including newline)
-func (fc *FlapCompiler) compileFloatToString(xmmReg, bufPtr string) {
+func (fc *C67Compiler) compileFloatToString(xmmReg, bufPtr string) {
 	// Caller has already allocated buffer at bufPtr
 	// Save the float value in a temporary location (we'll use the end of the buffer)
 	fc.out.MovXmmToMem(xmmReg, bufPtr, 24)
@@ -10338,7 +10338,7 @@ func (fc *FlapCompiler) compileFloatToString(xmmReg, bufPtr string) {
 }
 
 // loadFloatConstant loads a float constant into an XMM register
-func (fc *FlapCompiler) loadFloatConstant(xmmReg string, value float64) {
+func (fc *C67Compiler) loadFloatConstant(xmmReg string, value float64) {
 	// Create a constant label for this float value
 	labelName := fmt.Sprintf("float_const_%d", fc.stringCounter)
 	fc.stringCounter++
@@ -10355,19 +10355,19 @@ func (fc *FlapCompiler) loadFloatConstant(xmmReg string, value float64) {
 }
 
 // compileIntToStringAtPos is like compileIntToString but writes at rsi position
-func (fc *FlapCompiler) compileIntToStringAtPos(intReg, posReg string) {
+func (fc *C67Compiler) compileIntToStringAtPos(intReg, posReg string) {
 	fc.compileWholeNumberToStringAtPos(intReg, posReg, true)
 }
 
 // compileIntToStringAtPosNoNewline writes integer without newline
-func (fc *FlapCompiler) compileIntToStringAtPosNoNewline(intReg, posReg string) {
+func (fc *C67Compiler) compileIntToStringAtPosNoNewline(intReg, posReg string) {
 	fc.compileWholeNumberToStringAtPos(intReg, posReg, false)
 }
 
 // compileWholeNumberToStringAtPos converts a whole number to ASCII at a given position
 // Input: intReg = register with int64, posReg = write position register
 // If addNewline is true, adds '\n' and sets rsi/rdx; otherwise just updates posReg
-func (fc *FlapCompiler) compileWholeNumberToStringAtPos(intReg, posReg string, addNewline bool) {
+func (fc *C67Compiler) compileWholeNumberToStringAtPos(intReg, posReg string, addNewline bool) {
 	// Store the starting position
 	startPosReg := "r14"
 	fc.out.MovRegToReg(startPosReg, posReg)
@@ -10429,7 +10429,7 @@ func (fc *FlapCompiler) compileWholeNumberToStringAtPos(intReg, posReg string, a
 // compileWholeNumberToString converts a whole number (truncated float) to ASCII string
 // Input: intReg = register with int64, bufPtr = buffer pointer (register)
 // Output: rsi = string start, rdx = length (including newline)
-func (fc *FlapCompiler) compileWholeNumberToString(intReg, bufPtr string) {
+func (fc *C67Compiler) compileWholeNumberToString(intReg, bufPtr string) {
 	// Special case: zero
 	fc.out.CmpRegToImm(intReg, 0)
 	zeroJump := fc.eb.text.Len()
@@ -10546,7 +10546,7 @@ func (fc *FlapCompiler) compileWholeNumberToString(intReg, bufPtr string) {
 	fc.patchJumpImmediate(normalEndJump+1, int32(normalEnd-normalEndEnd))
 }
 
-func (fc *FlapCompiler) compileTailCall(call *CallExpr) {
+func (fc *C67Compiler) compileTailCall(call *CallExpr) {
 	// Tail recursion optimization for "me" self-reference
 	// Instead of calling, we update parameters and jump to function start
 
@@ -10591,7 +10591,7 @@ func (fc *FlapCompiler) compileTailCall(call *CallExpr) {
 	fc.out.JumpUnconditional(jumpOffset)
 }
 
-func (fc *FlapCompiler) compileCachedCall(call *CallExpr) {
+func (fc *C67Compiler) compileCachedCall(call *CallExpr) {
 	if fc.currentLambda == nil {
 		compilerError("cme can only be used inside a lambda function")
 	}
@@ -10613,8 +10613,8 @@ func (fc *FlapCompiler) compileCachedCall(call *CallExpr) {
 	fc.out.MovMemToXmm("xmm0", "rsp", 0)
 	fc.out.MovqXmmToReg("rsi", "xmm0")
 
-	fc.trackFunctionCall("flap_cache_lookup")
-	fc.out.CallSymbol("flap_cache_lookup")
+	fc.trackFunctionCall("c67_cache_lookup")
+	fc.out.CallSymbol("c67_cache_lookup")
 
 	fc.out.CmpRegToImm("rax", 0)
 	cacheHitJump := fc.eb.text.Len()
@@ -10639,8 +10639,8 @@ func (fc *FlapCompiler) compileCachedCall(call *CallExpr) {
 	fc.out.MovMemToXmm("xmm0", "rsp", 8)
 	fc.out.MovqXmmToReg("rdx", "xmm0")
 
-	fc.trackFunctionCall("flap_cache_insert")
-	fc.out.CallSymbol("flap_cache_insert")
+	fc.trackFunctionCall("c67_cache_insert")
+	fc.out.CallSymbol("c67_cache_insert")
 
 	fc.out.MovMemToXmm("xmm0", "rsp", 8)
 
@@ -10658,7 +10658,7 @@ func (fc *FlapCompiler) compileCachedCall(call *CallExpr) {
 	fc.out.AddImmToReg("rsp", 32)
 }
 
-func (fc *FlapCompiler) compileTailRecursiveCall(call *CallExpr) {
+func (fc *C67Compiler) compileTailRecursiveCall(call *CallExpr) {
 	if fc.currentLambda == nil {
 		compilerError("tail call optimization requires lambda context")
 	}
@@ -10693,7 +10693,7 @@ func (fc *FlapCompiler) compileTailRecursiveCall(call *CallExpr) {
 	fc.out.JumpUnconditional(jumpOffset)
 }
 
-func (fc *FlapCompiler) compileRecursiveCall(call *CallExpr) {
+func (fc *C67Compiler) compileRecursiveCall(call *CallExpr) {
 	if fc.inTailPosition {
 		fc.tailCallsOptimized++
 		fc.compileTailRecursiveCall(call)
@@ -10790,7 +10790,7 @@ func (fc *FlapCompiler) compileRecursiveCall(call *CallExpr) {
 }
 
 // Confidence that this function is working: 85%
-func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, args []Expression) {
+func (fc *C67Compiler) compileCFunctionCall(libName string, funcName string, args []Expression) {
 	// Generate C FFI call
 	// Strategy for v1.1.0:
 	// 1. Marshal arguments according to System V AMD64 ABI
@@ -11017,7 +11017,7 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 				// Zero register for null pointer
 				fc.out.XorRegToReg("rax", "rax")
 			} else {
-				// Compile the inner expression (result in xmm0 for Flap values, rax for C strings)
+				// Compile the inner expression (result in xmm0 for C67 values, rax for C strings)
 				fc.compileExpression(innerExpr)
 			}
 
@@ -11047,18 +11047,18 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 						// String literal was compiled as C string - rax already contains the pointer
 						// No conversion needed, just store it
 					} else {
-						// Runtime string (Flap map format) - need to convert to C string
+						// Runtime string (C67 map format) - need to convert to C string
 						fc.out.SubImmFromReg("rsp", StackSlotSize)
 						fc.out.MovXmmToMem("xmm0", "rsp", 0)
 						fc.out.MovMemToReg("rax", "rsp", 0)
 						fc.out.AddImmToReg("rsp", StackSlotSize)
 
-						// Call flap_string_to_cstr(map_ptr) -> char*
+						// Call c67_string_to_cstr(map_ptr) -> char*
 						fc.out.SubImmFromReg("rsp", StackSlotSize)
 						fc.out.MovRegToMem("rax", "rsp", 0)
 						fc.out.MovMemToReg("rdi", "rsp", 0)
 						fc.out.AddImmToReg("rsp", StackSlotSize)
-						fc.out.CallSymbol("flap_string_to_cstr")
+						fc.out.CallSymbol("c67_string_to_cstr")
 						// Result in rax (C string pointer)
 					}
 
@@ -11217,14 +11217,14 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 			// Void return - set xmm0 to 0
 			fc.out.XorpdXmm("xmm0", "xmm0")
 		} else if isPointerType(returnType) || returnType == "" {
-			// Pointer type - keep raw integer value but convert to float64 for Flap
-			// (Flap internally represents everything as float64)
+			// Pointer type - keep raw integer value but convert to float64 for C67
+			// (C67 internally represents everything as float64)
 			// On Windows and Linux, pointers are 64-bit and returned in RAX correctly
 			// NOTE: When signature is unknown (returnType == ""), assume pointer/64-bit return
 			// This is safer than assuming 32-bit, and works for SDL functions
 			fc.out.Cvtsi2sd("xmm0", "rax")
 		} else {
-			// Integer result in rax - convert to float64 for Flap
+			// Integer result in rax - convert to float64 for C67
 			// On Windows: bool returns are 1 byte (AL), int returns are 4 bytes (EAX)
 			// Zero-extend to 64-bit RAX to avoid garbage in upper bits
 			if fc.eb.target.OS() == OSWindows {
@@ -11262,14 +11262,14 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 			// Void return - set xmm0 to 0
 			fc.out.XorpdXmm("xmm0", "xmm0")
 		} else if isPointerType(returnType) || returnType == "" {
-			// Pointer type - keep raw integer value but convert to float64 for Flap
-			// (Flap internally represents everything as float64)
+			// Pointer type - keep raw integer value but convert to float64 for C67
+			// (C67 internally represents everything as float64)
 			// On Windows and Linux, pointers are 64-bit and returned in RAX correctly
 			// NOTE: When signature is unknown (returnType == ""), assume pointer/64-bit return
 			// This is safer than assuming 32-bit, and works for SDL functions
 			fc.out.Cvtsi2sd("xmm0", "rax")
 		} else {
-			// Integer result in rax - convert to float64 for Flap
+			// Integer result in rax - convert to float64 for C67
 			// On Windows: bool returns are 1 byte (AL), int returns are 4 bytes (EAX)
 			// Zero-extend to 64-bit RAX to avoid garbage in upper bits
 			if fc.eb.target.OS() == OSWindows {
@@ -11288,7 +11288,7 @@ func (fc *FlapCompiler) compileCFunctionCall(libName string, funcName string, ar
 	}
 }
 
-func (fc *FlapCompiler) compileCall(call *CallExpr) {
+func (fc *C67Compiler) compileCall(call *CallExpr) {
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG compileCall: function='%s'\n", call.Function)
 		fmt.Fprintf(os.Stderr, "DEBUG compileCall: variables=%v\n", fc.variables)
@@ -11471,7 +11471,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.Emit([]byte{0x48, 0x25})             // and rax, immediate32
 		fc.out.Emit([]byte{0xff, 0xff, 0xff, 0xff}) // mask = 0xFFFFFFFF
 
-		// Convert 4-byte code to Flap string
+		// Convert 4-byte code to C67 string
 		// We need to create a string with up to 3 characters (strip null bytes)
 		// For simplicity, always create 3-char string (most error codes are 3 chars)
 
@@ -11775,7 +11775,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			}
 			return
 		} else if argType == "string" {
-			// String variable - call _flap_print_syscall helper
+			// String variable - call _c67_print_syscall helper
 			fc.compileExpression(arg)
 			// xmm0 contains string pointer
 
@@ -11789,14 +11789,14 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			if fc.eb.target.OS() == OSLinux {
 				// Call syscall-based helper
 				shadowSpace := fc.allocateShadowSpace()
-				fc.trackFunctionCall("_flap_print_syscall")
-				fc.eb.GenerateCallInstruction("_flap_print_syscall")
+				fc.trackFunctionCall("_c67_print_syscall")
+				fc.eb.GenerateCallInstruction("_c67_print_syscall")
 				fc.deallocateShadowSpace(shadowSpace)
 			} else {
-				// Call Windows helper (uses same _flap_string_println but without newline)
+				// Call Windows helper (uses same _c67_string_println but without newline)
 				shadowSpace := fc.allocateShadowSpace()
-				fc.trackFunctionCall("_flap_print_syscall") // Will need Windows version
-				fc.eb.GenerateCallInstruction("_flap_print_syscall")
+				fc.trackFunctionCall("_c67_print_syscall") // Will need Windows version
+				fc.eb.GenerateCallInstruction("_c67_print_syscall")
 				fc.deallocateShadowSpace(shadowSpace)
 			}
 			return
@@ -11813,13 +11813,13 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 			if fc.eb.target.OS() == OSLinux {
 				shadowSpace := fc.allocateShadowSpace()
-				fc.trackFunctionCall("_flap_print_syscall")
-				fc.eb.GenerateCallInstruction("_flap_print_syscall")
+				fc.trackFunctionCall("_c67_print_syscall")
+				fc.eb.GenerateCallInstruction("_c67_print_syscall")
 				fc.deallocateShadowSpace(shadowSpace)
 			} else {
 				shadowSpace := fc.allocateShadowSpace()
-				fc.trackFunctionCall("_flap_print_syscall")
-				fc.eb.GenerateCallInstruction("_flap_print_syscall")
+				fc.trackFunctionCall("_c67_print_syscall")
+				fc.eb.GenerateCallInstruction("_c67_print_syscall")
 				fc.deallocateShadowSpace(shadowSpace)
 			}
 			return
@@ -11829,16 +11829,16 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			// xmm0 contains float64 value
 
 			if fc.eb.target.OS() == OSLinux {
-				// Convert to int64 and use _flap_itoa + write syscall
+				// Convert to int64 and use _c67_itoa + write syscall
 				fc.out.Cvttsd2si("rdi", "xmm0")
 
 				// Allocate stack buffer
 				fc.out.SubImmFromReg("rsp", 32)
 				fc.out.MovRegToReg("r15", "rsp")
 
-				// Call _flap_itoa
-				fc.trackFunctionCall("_flap_itoa")
-				fc.eb.GenerateCallInstruction("_flap_itoa")
+				// Call _c67_itoa
+				fc.trackFunctionCall("_c67_itoa")
+				fc.eb.GenerateCallInstruction("_c67_itoa")
 
 				// Write to stdout
 				fc.out.MovImmToReg("rax", "1")
@@ -11940,11 +11940,11 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			// Call helper function (syscall-based on Linux, printf-based on Windows)
 			shadowSpace := fc.allocateShadowSpace()
 			if fc.eb.target.OS() == OSLinux {
-				fc.trackFunctionCall("_flap_println_syscall")
-				fc.eb.GenerateCallInstruction("_flap_println_syscall")
+				fc.trackFunctionCall("_c67_println_syscall")
+				fc.eb.GenerateCallInstruction("_c67_println_syscall")
 			} else {
-				fc.trackFunctionCall("_flap_string_println")
-				fc.eb.GenerateCallInstruction("_flap_string_println")
+				fc.trackFunctionCall("_c67_string_println")
+				fc.eb.GenerateCallInstruction("_c67_string_println")
 			}
 			fc.deallocateShadowSpace(shadowSpace)
 			return
@@ -11961,11 +11961,11 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 			shadowSpace := fc.allocateShadowSpace()
 			if fc.eb.target.OS() == OSLinux {
-				fc.trackFunctionCall("_flap_println_syscall")
-				fc.eb.GenerateCallInstruction("_flap_println_syscall")
+				fc.trackFunctionCall("_c67_println_syscall")
+				fc.eb.GenerateCallInstruction("_c67_println_syscall")
 			} else {
-				fc.trackFunctionCall("_flap_string_println")
-				fc.eb.GenerateCallInstruction("_flap_string_println")
+				fc.trackFunctionCall("_c67_string_println")
+				fc.eb.GenerateCallInstruction("_c67_string_println")
 			}
 			fc.deallocateShadowSpace(shadowSpace)
 			return
@@ -12070,16 +12070,16 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			// xmm0 contains float64 value
 
 			if fc.eb.target.OS() == OSLinux {
-				// Convert to int64 and use _flap_itoa + write syscall
+				// Convert to int64 and use _c67_itoa + write syscall
 				fc.out.Cvttsd2si("rdi", "xmm0") // Convert float to int64
 
 				// Allocate stack buffer for number string
 				fc.out.SubImmFromReg("rsp", 32)
 				fc.out.MovRegToReg("r15", "rsp") // Save buffer pointer
 
-				// Call _flap_itoa(rdi=number)
-				fc.trackFunctionCall("_flap_itoa")
-				fc.eb.GenerateCallInstruction("_flap_itoa")
+				// Call _c67_itoa(rdi=number)
+				fc.trackFunctionCall("_c67_itoa")
+				fc.eb.GenerateCallInstruction("_c67_itoa")
 				// Returns: rsi=string start, rdx=length
 
 				// Write to stdout: write(1, rsi, rdx)
@@ -12288,10 +12288,10 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 				intArgCount++
 			} else if stringPositions[argIdx] {
-				// %s: Flap string -> C string conversion
-				// xmm0 contains pointer to Flap string map [count][key0][val0][key1][val1]...
+				// %s: C67 string -> C string conversion
+				// xmm0 contains pointer to C67 string map [count][key0][val0][key1][val1]...
 				// Call helper function to convert to null-terminated C string
-				fc.out.CallSymbol("flap_string_to_cstr")
+				fc.out.CallSymbol("c67_string_to_cstr")
 				// Result in rax is C string pointer
 				fc.out.MovRegToReg(intRegs[intArgCount], "rax")
 				intArgCount++
@@ -12461,16 +12461,16 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 					fc.compileExpression(arg)
 					// Result in xmm0 (float64)
 
-					// Convert to int64 and use _flap_itoa + write syscall
+					// Convert to int64 and use _c67_itoa + write syscall
 					fc.out.Cvttsd2si("rdi", "xmm0")
 
 					// Allocate stack buffer
 					fc.out.SubImmFromReg("rsp", 32)
 					fc.out.MovRegToReg("r15", "rsp")
 
-					// Call _flap_itoa(rdi=number)
-					fc.trackFunctionCall("_flap_itoa")
-					fc.eb.GenerateCallInstruction("_flap_itoa")
+					// Call _c67_itoa(rdi=number)
+					fc.trackFunctionCall("_c67_itoa")
+					fc.eb.GenerateCallInstruction("_c67_itoa")
 					// Returns: rsi=string start, rdx=length
 
 					// Write to stderr: write(2, rsi, rdx)
@@ -12517,16 +12517,16 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 				fc.compileExpression(arg)
 				// Result in xmm0 (float64)
 
-				// Convert to int64 and use _flap_itoa + write syscall
+				// Convert to int64 and use _c67_itoa + write syscall
 				fc.out.Cvttsd2si("rdi", "xmm0")
 
 				// Allocate stack buffer
 				fc.out.SubImmFromReg("rsp", 32)
 				fc.out.MovRegToReg("r15", "rsp")
 
-				// Call _flap_itoa(rdi=number)
-				fc.trackFunctionCall("_flap_itoa")
-				fc.eb.GenerateCallInstruction("_flap_itoa")
+				// Call _c67_itoa(rdi=number)
+				fc.trackFunctionCall("_c67_itoa")
+				fc.eb.GenerateCallInstruction("_c67_itoa")
 				// Returns: rsi=string start, rdx=length
 
 				// Write to stderr: write(2, rsi, rdx)
@@ -12667,9 +12667,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 						fc.compileExpression(arg)
 
 						if needsConversion {
-							// Convert Flap string to C string
-							fc.trackFunctionCall("flap_string_to_cstr")
-							fc.eb.GenerateCallInstruction("flap_string_to_cstr")
+							// Convert C67 string to C string
+							fc.trackFunctionCall("c67_string_to_cstr")
+							fc.eb.GenerateCallInstruction("c67_string_to_cstr")
 							if targetReg != "" && strings.HasPrefix(targetReg, "xmm") {
 								fc.out.MovqRegToXmm(targetReg, "rax")
 							} else if targetReg != "" {
@@ -12740,9 +12740,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 							fc.compileExpression(arg)
 
 							if needsConversion {
-								// Convert Flap string to C string
-								fc.trackFunctionCall("flap_string_to_cstr")
-								fc.eb.GenerateCallInstruction("flap_string_to_cstr")
+								// Convert C67 string to C string
+								fc.trackFunctionCall("c67_string_to_cstr")
+								fc.eb.GenerateCallInstruction("c67_string_to_cstr")
 							} else {
 								// Already a char* from C FFI - just convert from float64 representation to pointer
 								fc.out.MovqXmmToReg("rax", "xmm0")
@@ -13192,7 +13192,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.compileExpression(call.Args[0])
 		// Convert float64 capacity to int64
 		fc.out.Cvttsd2si("rdi", "xmm0")
-		fc.out.CallSymbol("flap_arena_create")
+		fc.out.CallSymbol("c67_arena_create")
 		// Result in rax, convert to float64
 		fc.out.Cvtsi2sd("xmm0", "rax")
 
@@ -13208,7 +13208,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Second arg: size
 		fc.compileExpression(call.Args[1])
 		fc.out.Cvttsd2si("rsi", "xmm0")
-		fc.out.CallSymbol("flap_arena_alloc")
+		fc.out.CallSymbol("c67_arena_alloc")
 		// Result in rax, convert to float64
 		fc.out.Cvtsi2sd("xmm0", "rax")
 
@@ -13220,7 +13220,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		}
 		fc.compileExpression(call.Args[0])
 		fc.out.Cvttsd2si("rdi", "xmm0")
-		fc.out.CallSymbol("flap_arena_destroy")
+		fc.out.CallSymbol("c67_arena_destroy")
 		// No return value, set xmm0 to 0
 		fc.out.XorpdXmm("xmm0", "xmm0")
 
@@ -13232,7 +13232,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		}
 		fc.compileExpression(call.Args[0])
 		fc.out.Cvttsd2si("rdi", "xmm0")
-		fc.out.CallSymbol("flap_arena_reset")
+		fc.out.CallSymbol("c67_arena_reset")
 		// No return value, set xmm0 to 0
 		fc.out.XorpdXmm("xmm0", "xmm0")
 
@@ -13999,7 +13999,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Allocate 8 bytes in arena for result
 		offset := (fc.currentArena - 1) * 8
-		fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
+		fc.out.LeaSymbolToReg("rdi", "_c67_arena_meta")
 		fc.out.MovMemToReg("rdi", "rdi", 0)
 		fc.out.MovMemToReg("rdi", "rdi", offset)
 		fc.out.MovImmToReg("rsi", "8")
@@ -14008,7 +14008,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.SubImmFromReg("rsp", StackSlotSize)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
 
-		fc.out.CallSymbol("flap_arena_alloc")
+		fc.out.CallSymbol("c67_arena_alloc")
 
 		// rax = pointer, load result and store it
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
@@ -14095,11 +14095,11 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Allocate Result map (64 bytes)
 		offset := (fc.currentArena - 1) * 8
-		fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
+		fc.out.LeaSymbolToReg("rdi", "_c67_arena_meta")
 		fc.out.MovMemToReg("rdi", "rdi", 0)
 		fc.out.MovMemToReg("rdi", "rdi", offset)
 		fc.out.MovImmToReg("rsi", "64")
-		fc.out.CallSymbol("flap_arena_alloc")
+		fc.out.CallSymbol("c67_arena_alloc")
 
 		fc.out.MovRegToReg("rbx", "rax") // save map pointer
 
@@ -14154,11 +14154,11 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 		// Allocate Result map (64 bytes)
 		offset := (fc.currentArena - 1) * 8
-		fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
+		fc.out.LeaSymbolToReg("rdi", "_c67_arena_meta")
 		fc.out.MovMemToReg("rdi", "rdi", 0)
 		fc.out.MovMemToReg("rdi", "rdi", offset)
 		fc.out.MovImmToReg("rsi", "64")
-		fc.out.CallSymbol("flap_arena_alloc")
+		fc.out.CallSymbol("c67_arena_alloc")
 
 		fc.out.MovRegToReg("rbx", "rax") // save map pointer
 
@@ -14297,7 +14297,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 	case "str":
 		// Convert number to string
-		// str(x) converts a number to a Flap string (map[uint64]float64)
+		// str(x) converts a number to a C67 string (map[uint64]float64)
 		if len(call.Args) != 1 {
 			compilerError("str() requires exactly 1 argument")
 		}
@@ -14461,23 +14461,23 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 
 	case "num":
 		// Parse string to number
-		// num(string) converts a Flap string to a number
+		// num(string) converts a C67 string to a number
 		if len(call.Args) != 1 {
 			compilerError("num() requires exactly 1 argument")
 		}
 
-		// Compile argument (Flap string pointer in xmm0)
+		// Compile argument (C67 string pointer in xmm0)
 		fc.compileExpression(call.Args[0])
 
-		// Convert Flap string to C string
+		// Convert C67 string to C string
 		fc.out.SubImmFromReg("rsp", StackSlotSize)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
 		fc.out.MovMemToReg("rdi", "rsp", 0)
 		fc.out.AddImmToReg("rsp", StackSlotSize)
-		fc.out.CallSymbol("flap_string_to_cstr")
+		fc.out.CallSymbol("c67_string_to_cstr")
 
 		// Call strtod(str, NULL) to parse the string
-		// rdi = C string (already in rax from flap_string_to_cstr)
+		// rdi = C string (already in rax from c67_string_to_cstr)
 		fc.out.MovRegToReg("rdi", "rax")
 		fc.out.XorRegWithReg("rsi", "rsi") // endptr = NULL
 		fc.trackFunctionCall("strtod")
@@ -14491,7 +14491,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			compilerError("upper() requires exactly 1 argument")
 		}
 
-		// Compile argument (Flap string pointer in xmm0)
+		// Compile argument (C67 string pointer in xmm0)
 		fc.compileExpression(call.Args[0])
 
 		// Call runtime helper upper_string
@@ -14509,7 +14509,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			compilerError("lower() requires exactly 1 argument")
 		}
 
-		// Compile argument (Flap string pointer in xmm0)
+		// Compile argument (C67 string pointer in xmm0)
 		fc.compileExpression(call.Args[0])
 
 		// Call runtime helper lower_string
@@ -14527,7 +14527,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			compilerError("trim() requires exactly 1 argument")
 		}
 
-		// Compile argument (Flap string pointer in xmm0)
+		// Compile argument (C67 string pointer in xmm0)
 		fc.compileExpression(call.Args[0])
 
 		// Call runtime helper trim_string
@@ -14873,10 +14873,10 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 			compilerError("alloc() requires 1 argument (size)")
 		}
 
-		// Load arena pointer from meta-arena: _flap_arena_meta[currentArena-1]
+		// Load arena pointer from meta-arena: _c67_arena_meta[currentArena-1]
 		arenaIndex := fc.currentArena - 1 // Convert to 0-based index
 		offset := arenaIndex * 8
-		fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
+		fc.out.LeaSymbolToReg("rdi", "_c67_arena_meta")
 		fc.out.MovMemToReg("rdi", "rdi", 0)      // Load the meta-arena pointer
 		fc.out.MovMemToReg("rdi", "rdi", offset) // Load the arena pointer from slot
 
@@ -14885,13 +14885,13 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.Cvttsd2si("rsi", "xmm0") // size in rsi
 
 		// Call arena_alloc (with auto-growing via realloc)
-		fc.out.CallSymbol("flap_arena_alloc")
+		fc.out.CallSymbol("c67_arena_alloc")
 		// Result in rax, move raw bits to xmm0 (same as map literals)
 		EmitPointerToFloat64(fc.out, "xmm0", "rax")
 
 	case "dlopen":
 		// dlopen(path, flags) - Open a dynamic library
-		// path: string (Flap string), flags: number (RTLD_LAZY=1, RTLD_NOW=2)
+		// path: string (C67 string), flags: number (RTLD_LAZY=1, RTLD_NOW=2)
 		// Returns: library handle as float64
 		if len(call.Args) != 2 {
 			compilerError("dlopen() requires 2 arguments (path, flags)")
@@ -14904,17 +14904,17 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Save flags to stack
 		fc.out.Emit([]byte{0x41, 0x50}) // push r8
 
-		// Evaluate path argument (Flap string)
+		// Evaluate path argument (C67 string)
 		fc.compileExpression(call.Args[0])
-		// Convert Flap string to C string (xmm0 has map pointer)
+		// Convert C67 string to C string (xmm0 has map pointer)
 		// Save xmm0 to stack, call conversion function
 		fc.out.SubImmFromReg("rsp", StackSlotSize)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
 		fc.out.MovMemToReg("rdi", "rsp", 0) // C string pointer will be in rax after call
 		fc.out.AddImmToReg("rsp", StackSlotSize)
 
-		// Call flap_string_to_cstr (result in rax)
-		fc.out.CallSymbol("flap_string_to_cstr")
+		// Call c67_string_to_cstr (result in rax)
+		fc.out.CallSymbol("c67_string_to_cstr")
 
 		// Now rax = C string pointer
 		// Pop flags from stack to rsi
@@ -14948,7 +14948,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.Cvttsd2si("r8", "xmm0")
 		fc.out.Emit([]byte{0x41, 0x50}) // push r8
 
-		// Evaluate symbol (Flap string)
+		// Evaluate symbol (C67 string)
 		fc.compileExpression(call.Args[1])
 		fc.out.SubImmFromReg("rsp", StackSlotSize)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
@@ -14956,7 +14956,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.AddImmToReg("rsp", StackSlotSize)
 
 		// Convert to C string
-		fc.out.CallSymbol("flap_string_to_cstr")
+		fc.out.CallSymbol("c67_string_to_cstr")
 
 		// Pop handle to rdi
 		fc.out.Emit([]byte{0x41, 0x58})  // pop r8
@@ -15060,9 +15060,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		emptyPos := fc.eb.text.Len()
 		fc.patchJumpImmediate(emptyJumpPos+2, int32(emptyPos-(emptyJumpPos+6)))
 
-		// Convert C string to Flap string
+		// Convert C string to C67 string
 		// rdi already has lineptr
-		fc.out.CallSymbol("cstr_to_flap_string")
+		fc.out.CallSymbol("cstr_to_c67_string")
 		// Result in xmm0
 
 		// Save result
@@ -15092,7 +15092,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Clean up stack
 		fc.out.AddImmToReg("rsp", 16)
 
-		// Create empty Flap string (count = 0)
+		// Create empty C67 string (count = 0)
 		fc.out.MovImmToReg("rdi", "8") // Allocate 8 bytes for count
 		// Allocate from arena
 		fc.callArenaAlloc()
@@ -15106,28 +15106,28 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.patchJumpImmediate(endJumpPos+1, int32(endPos-(endJumpPos+5)))
 
 	case "read_file":
-		// read_file(path) - Read entire file, return as Flap string
+		// read_file(path) - Read entire file, return as C67 string
 		// Uses Linux syscalls (open/lseek/read/close) instead of libc for simplicity
 		if len(call.Args) != 1 {
 			compilerError("read_file() requires 1 argument (path)")
 		}
 
-		// Evaluate path argument (Flap string)
+		// Evaluate path argument (C67 string)
 		fc.compileExpression(call.Args[0])
 
-		// Convert Flap string to C string (null-terminated)
+		// Convert C67 string to C string (null-terminated)
 		fc.out.SubImmFromReg("rsp", StackSlotSize)
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
 		fc.out.MovMemToReg("rdi", "rsp", 0)
 		fc.out.AddImmToReg("rsp", StackSlotSize)
-		fc.out.CallSymbol("flap_string_to_cstr")
+		fc.out.CallSymbol("c67_string_to_cstr")
 
 		// Allocate stack frame: 32 bytes (fd, size, buffer, result)
 		fc.out.SubImmFromReg("rsp", 32)
 
 		// syscall open(path, O_RDONLY=0, mode=0)
 		// rax=2 (sys_open), rdi=path, rsi=flags, rdx=mode
-		fc.out.MovRegToReg("rdi", "rax")   // path from flap_string_to_cstr
+		fc.out.MovRegToReg("rdi", "rax")   // path from c67_string_to_cstr
 		fc.out.XorRegWithReg("rsi", "rsi") // O_RDONLY = 0
 		fc.out.XorRegWithReg("rdx", "rdx") // mode = 0
 		fc.out.MovImmToReg("rax", "2")     // sys_open = 2
@@ -15187,9 +15187,9 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.MovImmToReg("rax", "3")      // sys_close = 3
 		fc.out.Emit([]byte{0x0f, 0x05})     // syscall
 
-		// Convert buffer to Flap string
+		// Convert buffer to C67 string
 		fc.out.MovMemToReg("rdi", "rsp", 16) // buffer from [rsp+16]
-		fc.out.CallSymbol("cstr_to_flap_string")
+		fc.out.CallSymbol("cstr_to_c67_string")
 		// Result in xmm0
 
 		// Save result at [rsp+24]
@@ -15214,7 +15214,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Clean up stack
 		fc.out.AddImmToReg("rsp", 32)
 
-		// Create empty Flap string (count = 0)
+		// Create empty C67 string (count = 0)
 		fc.out.MovImmToReg("rdi", "8")
 		// Allocate from arena
 		fc.callArenaAlloc()
@@ -15239,7 +15239,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
 		fc.out.MovMemToReg("rdi", "rsp", 0)
 		fc.out.AddImmToReg("rsp", StackSlotSize)
-		fc.out.CallSymbol("flap_string_to_cstr")
+		fc.out.CallSymbol("c67_string_to_cstr")
 		fc.out.PushReg("rax") // Save content C string
 
 		// Evaluate and convert path
@@ -15248,7 +15248,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.MovXmmToMem("xmm0", "rsp", 0)
 		fc.out.MovMemToReg("rdi", "rsp", 0)
 		fc.out.AddImmToReg("rsp", StackSlotSize)
-		fc.out.CallSymbol("flap_string_to_cstr")
+		fc.out.CallSymbol("c67_string_to_cstr")
 
 		// Open file: fopen(path, "w")
 		fc.out.MovRegToReg("rdi", "rax") // path
@@ -15684,13 +15684,13 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		fc.out.XorRegWithReg("rax", "rax")
 		fc.out.Cvtsi2sd("xmm0", "rax")
 
-	case "__flap_map_update":
-		// __flap_map_update(list, index, value) - Update a list element (functional update)
-		// Calls runtime function: flap_list_update(list_ptr, index, value)
+	case "__c67_map_update":
+		// __c67_map_update(list, index, value) - Update a list element (functional update)
+		// Calls runtime function: c67_list_update(list_ptr, index, value)
 		// Arguments: rdi=list_ptr, rsi=index, xmm0=value
 		// Returns: rax=new_list_ptr (converted to xmm0)
 		if len(call.Args) != 3 {
-			compilerError("__flap_map_update() requires exactly 3 arguments (list, index, value)")
+			compilerError("__c67_map_update() requires exactly 3 arguments (list, index, value)")
 		}
 
 		// Compile arguments in reverse order (will use stack)
@@ -15707,7 +15707,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Compile value (leave in xmm0)
 		fc.compileExpression(call.Args[2]) // value -> xmm0
 
-		// Now setup arguments for flap_list_update(rdi=list_ptr, rsi=index, xmm0=value, rcx=arena_ptr)
+		// Now setup arguments for c67_list_update(rdi=list_ptr, rsi=index, xmm0=value, rcx=arena_ptr)
 		// Pop index into rsi
 		fc.out.MovMemToXmm("xmm1", "rsp", 0)
 		fc.out.AddImmToReg("rsp", 8)
@@ -15722,13 +15722,13 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 		// Load current arena pointer into rdx (4th argument)
 		arenaIndex := fc.currentArena - 1
 		arenaOffset := arenaIndex * 8
-		fc.out.LeaSymbolToReg("rdx", "_flap_arena_meta")
+		fc.out.LeaSymbolToReg("rdx", "_c67_arena_meta")
 		fc.out.MovMemToReg("rdx", "rdx", 0)           // rdx = meta-arena pointer
 		fc.out.MovMemToReg("rdx", "rdx", arenaOffset) // rdx = arena pointer from slot
 
 		// Call the runtime function
-		fc.trackFunctionCall("_flap_list_update")
-		fc.eb.GenerateCallInstruction("_flap_list_update")
+		fc.trackFunctionCall("_c67_list_update")
+		fc.eb.GenerateCallInstruction("_c67_list_update")
 
 		// Convert result (rax = pointer) to float64 in xmm0
 		fc.out.SubImmFromReg("rsp", 8)
@@ -15794,7 +15794,7 @@ func (fc *FlapCompiler) compileCall(call *CallExpr) {
 	}
 }
 
-func (fc *FlapCompiler) compilePipeExpr(expr *PipeExpr) {
+func (fc *C67Compiler) compilePipeExpr(expr *PipeExpr) {
 	// Use ParallelExpr implementation for list mapping
 	// Behavior depends on left type:
 	// - If list: map function over elements (use ParallelExpr)
@@ -15857,7 +15857,7 @@ func (fc *FlapCompiler) compilePipeExpr(expr *PipeExpr) {
 	}
 }
 
-func (fc *FlapCompiler) compileComposeExpr(expr *ComposeExpr) {
+func (fc *C67Compiler) compileComposeExpr(expr *ComposeExpr) {
 	// Function composition: f <> g creates a new function x -> f(g(x))
 	// For now, we'll create a simpler implementation that generates
 	// an inline lambda expression: (x -> left(right(x)))
@@ -15870,7 +15870,7 @@ func (fc *FlapCompiler) compileComposeExpr(expr *ComposeExpr) {
 		"Full composition support requires closure capture implementation")
 }
 
-func (fc *FlapCompiler) compileSendExpr(expr *SendExpr) {
+func (fc *C67Compiler) compileSendExpr(expr *SendExpr) {
 	// Send operator: target <== message
 	// Target must be a string: ":5000", "localhost:5000", "192.168.1.1:5000"
 	// Message should be a string
@@ -15936,7 +15936,7 @@ func (fc *FlapCompiler) compileSendExpr(expr *SendExpr) {
 	fc.out.MovRegToMem("rax", "rsp", 24)
 
 	// Step 4: Extract string bytes from message map to buffer at rsp+32
-	// Strings in Flap are stored as map[uint64]float64:
+	// Strings in C67 are stored as map[uint64]float64:
 	// [count][key0][val0][key1][val1]...
 	// Where count = length, keys = indices, vals = character codes
 
@@ -15978,7 +15978,7 @@ func (fc *FlapCompiler) compileSendExpr(expr *SendExpr) {
 	fc.out.Cvtsi2sd("xmm0", "rax")
 }
 
-func (fc *FlapCompiler) compileReceiveLoopStmt(stmt *ReceiveLoopStmt) {
+func (fc *C67Compiler) compileReceiveLoopStmt(stmt *ReceiveLoopStmt) {
 	// Receive loop: @ msg, from in ":5000" { }
 	// Target must be a string: ":5000"
 	// Creates socket, binds to port, loops forever receiving messages
@@ -16195,7 +16195,7 @@ func (fc *FlapCompiler) compileReceiveLoopStmt(stmt *ReceiveLoopStmt) {
 // Confidence that this function is working: 95%
 // createErrorResult creates an error Result with the given error code in xmm0
 // The error code should be a 3-4 character string like "out", "arg", "dv0", etc.
-func (fc *FlapCompiler) createErrorResult(errorCode string) {
+func (fc *C67Compiler) createErrorResult(errorCode string) {
 	// Pad error code to 4 bytes with null terminator if needed
 	code := errorCode
 	for len(code) < 4 {
@@ -16228,7 +16228,7 @@ func (fc *FlapCompiler) createErrorResult(errorCode string) {
 	fc.out.AddImmToReg("rsp", 8)
 }
 
-func (fc *FlapCompiler) trackFunctionCall(funcName string) {
+func (fc *C67Compiler) trackFunctionCall(funcName string) {
 	if !fc.usedFunctions[funcName] {
 		fc.usedFunctions[funcName] = true
 	}
@@ -16254,7 +16254,7 @@ func (fc *FlapCompiler) trackFunctionCall(funcName string) {
 //
 // If total is not a multiple of 16, we subtract 8 more from rsp before calling malloc.
 // The caller must restore rsp after the call.
-func (fc *FlapCompiler) callMallocAligned(sizeReg string, pushCount int) {
+func (fc *C67Compiler) callMallocAligned(sizeReg string, pushCount int) {
 	// Calculate current stack usage
 	// call (8) + push rbp (8) + pushes (8 * pushCount)
 	stackUsed := 16 + (8 * pushCount)
@@ -16652,7 +16652,7 @@ func processImports(program *Program, platform Platform) error {
 	}
 
 	if len(imports) == 0 {
-		return nil // No Flap imports to process
+		return nil // No C67 imports to process
 	}
 
 	if VerboseMode {
@@ -16681,22 +16681,22 @@ func processImports(program *Program, platform Platform) error {
 		}
 
 		// Resolve the import (library, git repo, or directory)
-		flapFiles, err := ResolveImport(spec, platform.OS.String(), platform.Arch.String())
+		c67Files, err := ResolveImport(spec, platform.OS.String(), platform.Arch.String())
 		if err != nil {
 			return fmt.Errorf("failed to resolve import %s: %v", imp.URL, err)
 		}
 
-		// Parse and merge each .flap file with namespace handling
-		for _, flapFile := range flapFiles {
-			depContent, err := os.ReadFile(flapFile)
+		// Parse and merge each .c67 file with namespace handling
+		for _, c67File := range c67Files {
+			depContent, err := os.ReadFile(c67File)
 			if err != nil {
 				if VerboseMode {
-					fmt.Fprintf(os.Stderr, "Warning: failed to read %s: %v\n", flapFile, err)
+					fmt.Fprintf(os.Stderr, "Warning: failed to read %s: %v\n", c67File, err)
 				}
 				continue
 			}
 
-			depParser := NewParserWithFilename(string(depContent), flapFile)
+			depParser := NewParserWithFilename(string(depContent), c67File)
 			depProgram := depParser.ParseProgram()
 
 			// Filter out private functions (names starting with _)
@@ -16711,7 +16711,7 @@ func processImports(program *Program, platform Platform) error {
 			// Prepend dependency program to main program
 			program.Statements = append(depProgram.Statements, program.Statements...)
 			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "Loaded %s from %s\n", flapFile, imp.URL)
+				fmt.Fprintf(os.Stderr, "Loaded %s from %s\n", c67File, imp.URL)
 			}
 		}
 	}
@@ -16740,7 +16740,7 @@ func processImports(program *Program, platform Platform) error {
 	return nil
 }
 
-// desugarClasses converts ClassDecl nodes into regular Flap code (maps and closures)
+// desugarClasses converts ClassDecl nodes into regular C67 code (maps and closures)
 func desugarClasses(program *Program) {
 	newStatements := make([]Statement, 0, len(program.Statements))
 
@@ -16761,7 +16761,7 @@ func desugarClasses(program *Program) {
 	program.Statements = newStatements
 }
 
-// desugarClass converts a single ClassDecl into regular Flap statements
+// desugarClass converts a single ClassDecl into regular C67 statements
 func desugarClass(class *ClassDecl) []Statement {
 	statements := make([]Statement, 0)
 
@@ -16877,11 +16877,11 @@ func addNamespaceToFunctions(program *Program, namespace string) {
 	}
 }
 
-func CompileFlap(inputPath string, outputPath string, platform Platform) (err error) {
-	return CompileFlapWithOptions(inputPath, outputPath, platform, WPOTimeout)
+func CompileC67(inputPath string, outputPath string, platform Platform) (err error) {
+	return CompileC67WithOptions(inputPath, outputPath, platform, WPOTimeout)
 }
 
-func CompileFlapWithOptions(inputPath string, outputPath string, platform Platform, wpoTimeout float64) (err error) {
+func CompileC67WithOptions(inputPath string, outputPath string, platform Platform, wpoTimeout float64) (err error) {
 	// Default to WPO if not explicitly set
 	if wpoTimeout == 0 {
 		wpoTimeout = 2.0
@@ -16926,7 +16926,7 @@ func CompileFlapWithOptions(inputPath string, outputPath string, platform Platfo
 		fmt.Fprintf(os.Stderr, "DEBUG: Parsed program (String() disabled to avoid crash)\n")
 	}
 
-	// Desugar classes to regular Flap code
+	// Desugar classes to regular C67 code
 	desugarClasses(program)
 
 	// Sibling loading is now handled later, after checking for unknown functions
@@ -16947,25 +16947,25 @@ func CompileFlapWithOptions(inputPath string, outputPath string, platform Platfo
 			fmt.Fprintf(os.Stderr, "Resolving dependencies for: %v\n", unknownFuncs)
 		}
 
-		// First, try to load sibling .flap files from the same directory
+		// First, try to load sibling .c67 files from the same directory
 		// This allows files in the same directory to share definitions
 		inputDir := filepath.Dir(inputPath)
 		inputBase := filepath.Base(inputPath)
 
 		// Skip sibling loading for system temp directories, test directories, or if --single flag is set
-		// Only skip /tmp if there are many .flap files (likely temp files from -c flag)
+		// Only skip /tmp if there are many .c67 files (likely temp files from -c flag)
 		skipSiblings := SingleFlag || strings.Contains(inputDir, "testprograms") // Skip for test directories or --single flag
 
 		dirEntries, err := os.ReadDir(inputDir)
 
 		// For /tmp, only skip if it's the root temp dir with many files
 		if (inputDir == "/tmp" || inputDir == "C:\\tmp" || strings.HasPrefix(inputDir, "/tmp/") || strings.HasPrefix(inputDir, "C:\\tmp\\")) && err == nil {
-			// Count .flap files - if there are more than 10, likely temp files
-			flapCount := 0
+			// Count .c67 files - if there are more than 10, likely temp files
+			c67Count := 0
 			for _, entry := range dirEntries {
-				if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".flap") {
-					flapCount++
-					if flapCount > 10 {
+				if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".c67") {
+					c67Count++
+					if c67Count > 10 {
 						skipSiblings = true
 						break
 					}
@@ -16976,8 +16976,8 @@ func CompileFlapWithOptions(inputPath string, outputPath string, platform Platfo
 			siblingFiles := []string{}
 			for _, entry := range dirEntries {
 				name := entry.Name()
-				// Include .flap files in same directory (except the input file itself)
-				if !entry.IsDir() && strings.HasSuffix(name, ".flap") && name != inputBase {
+				// Include .c67 files in same directory (except the input file itself)
+				if !entry.IsDir() && strings.HasSuffix(name, ".c67") && name != inputBase {
 					siblingPath := filepath.Join(inputDir, name)
 					siblingFiles = append(siblingFiles, siblingPath)
 				}
@@ -17034,23 +17034,23 @@ func CompileFlapWithOptions(inputPath string, outputPath string, platform Platfo
 					return fmt.Errorf("failed to fetch dependency %s: %v", repoURL, err)
 				}
 
-				// Find all .flap files in the repository
-				flapFiles, err := FindFlapFiles(repoPath)
+				// Find all .c67 files in the repository
+				c67Files, err := FindC67Files(repoPath)
 				if err != nil {
-					return fmt.Errorf("failed to find .flap files in %s: %v", repoPath, err)
+					return fmt.Errorf("failed to find .c67 files in %s: %v", repoPath, err)
 				}
 
-				// Parse and merge each .flap file
-				for _, flapFile := range flapFiles {
-					depContent, err := os.ReadFile(flapFile)
+				// Parse and merge each .c67 file
+				for _, c67File := range c67Files {
+					depContent, err := os.ReadFile(c67File)
 					if err != nil {
 						if VerboseMode {
-							fmt.Fprintf(os.Stderr, "Warning: failed to read %s: %v\n", flapFile, err)
+							fmt.Fprintf(os.Stderr, "Warning: failed to read %s: %v\n", c67File, err)
 						}
 						continue
 					}
 
-					depParser := NewParserWithFilename(string(depContent), flapFile)
+					depParser := NewParserWithFilename(string(depContent), c67File)
 					depProgram := depParser.ParseProgram()
 
 					// Prepend dependency program to main program (dependencies must be defined before use)
@@ -17058,7 +17058,7 @@ func CompileFlapWithOptions(inputPath string, outputPath string, platform Platfo
 					// Prepend dependency source to combined source
 					combinedSource = string(depContent) + "\n" + combinedSource
 					if VerboseMode {
-						fmt.Fprintf(os.Stderr, "Loaded %s from %s\n", flapFile, repoURL)
+						fmt.Fprintf(os.Stderr, "Loaded %s from %s\n", c67File, repoURL)
 					}
 				}
 			}
@@ -17106,7 +17106,7 @@ func CompileFlapWithOptions(inputPath string, outputPath string, platform Platfo
 	}
 
 	// Compile
-	compiler, err := NewFlapCompiler(platform)
+	compiler, err := NewC67Compiler(platform)
 	if err != nil {
 		return fmt.Errorf("failed to create compiler: %v", err)
 	}
@@ -17137,7 +17137,7 @@ func CompileFlapWithOptions(inputPath string, outputPath string, platform Platfo
 }
 
 // compileARM64 compiles a program for ARM64 architecture
-func (fc *FlapCompiler) compileARM64(program *Program, outputPath string) error {
+func (fc *C67Compiler) compileARM64(program *Program, outputPath string) error {
 	// Create ARM64 code generator
 	acg := NewARM64CodeGen(fc.eb, fc.cConstants)
 
@@ -17155,7 +17155,7 @@ func (fc *FlapCompiler) compileARM64(program *Program, outputPath string) error 
 }
 
 // compileRiscv64 compiles a program for RISC-V64 architecture
-func (fc *FlapCompiler) compileRiscv64(program *Program, outputPath string) error {
+func (fc *C67Compiler) compileRiscv64(program *Program, outputPath string) error {
 	// Create RISC-V64 code generator
 	rcg := NewRiscvCodeGen(fc.eb)
 

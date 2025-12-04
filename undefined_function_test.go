@@ -16,7 +16,7 @@ func compileTestCodeAllowError(t *testing.T, code string) (string, error) {
 	tmpDir := t.TempDir()
 
 	// Write source file
-	srcFile := filepath.Join(tmpDir, "test.flap")
+	srcFile := filepath.Join(tmpDir, "test.c67")
 	if err := os.WriteFile(srcFile, []byte(code), 0644); err != nil {
 		t.Fatalf("Failed to write source file: %v", err)
 	}
@@ -29,7 +29,7 @@ func compileTestCodeAllowError(t *testing.T, code string) (string, error) {
 		OS:   osType,
 		Arch: archType,
 	}
-	err := CompileFlapWithOptions(srcFile, exePath, platform, 0)
+	err := CompileC67WithOptions(srcFile, exePath, platform, 0)
 	if err != nil {
 		return "", err
 	}

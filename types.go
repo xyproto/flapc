@@ -1,11 +1,11 @@
 // Completion: 100% - Type system complete with C FFI integration
 package main
 
-// FlapType represents a type in the Flap type system
-type FlapType struct {
-	Kind     TypeKind  // The category of type
-	CType    string    // For Foreign types, the C type string (e.g., "char*", "SDL_Window*")
-	ElemType *FlapType // For container types, the element type
+// C67Type represents a type in the C67 type system
+type C67Type struct {
+	Kind     TypeKind // The category of type
+	CType    string   // For Foreign types, the C type string (e.g., "char*", "SDL_Window*")
+	ElemType *C67Type // For container types, the element type
 }
 
 // TypeKind represents the category of a type
@@ -13,10 +13,10 @@ type TypeKind int
 
 const (
 	TypeUnknown  TypeKind = iota
-	TypeNumber            // Flap's native float64 type
-	TypeString            // Flap's native string (map-based)
-	TypeList              // Flap's native list (map-based)
-	TypeMap               // Flap's native map
+	TypeNumber            // C67's native float64 type
+	TypeString            // C67's native string (map-based)
+	TypeList              // C67's native list (map-based)
+	TypeMap               // C67's native map
 	TypeCString           // C char* (null-terminated string)
 	TypeCInt              // C int, int32_t, etc.
 	TypeCLong             // C long, int64_t
@@ -28,7 +28,7 @@ const (
 )
 
 // String returns a human-readable representation of the type
-func (t *FlapType) String() string {
+func (t *C67Type) String() string {
 	switch t.Kind {
 	case TypeUnknown:
 		return "unknown"
@@ -64,8 +64,8 @@ func (t *FlapType) String() string {
 	}
 }
 
-// IsNative returns true if this is a native Flap type
-func (t *FlapType) IsNative() bool {
+// IsNative returns true if this is a native C67 type
+func (t *C67Type) IsNative() bool {
 	switch t.Kind {
 	case TypeNumber, TypeString, TypeList, TypeMap:
 		return true
@@ -75,30 +75,30 @@ func (t *FlapType) IsNative() bool {
 }
 
 // IsForeign returns true if this is a C foreign type
-func (t *FlapType) IsForeign() bool {
+func (t *C67Type) IsForeign() bool {
 	return !t.IsNative() && t.Kind != TypeUnknown
 }
 
 // IsPointer returns true if this represents a pointer type
-func (t *FlapType) IsPointer() bool {
+func (t *C67Type) IsPointer() bool {
 	return t.Kind == TypeCString || t.Kind == TypeCPointer
 }
 
 // NeedsConversionToC returns true if this type needs conversion when passing to C
-func (t *FlapType) NeedsConversionToC() bool {
-	// Flap strings need conversion to C strings
+func (t *C67Type) NeedsConversionToC() bool {
+	// C67 strings need conversion to C strings
 	return t.Kind == TypeString
 }
 
 // NeedsConversionFromC returns true if this type needs conversion when receiving from C
-func (t *FlapType) NeedsConversionFromC() bool {
-	// Currently no conversions needed from C to Flap
+func (t *C67Type) NeedsConversionFromC() bool {
+	// Currently no conversions needed from C to C67
 	// (C strings stay as cstrings until explicitly converted)
 	return false
 }
 
-// ParseCType converts a C type string to a FlapType
-func ParseCType(ctype string) *FlapType {
+// ParseCType converts a C type string to a C67Type
+func ParseCType(ctype string) *C67Type {
 	// Remove const, volatile, etc.
 	ctype = removeTypeQualifiers(ctype)
 
@@ -108,28 +108,28 @@ func ParseCType(ctype string) *FlapType {
 		baseType = removeTypeQualifiers(baseType)
 
 		if baseType == "char" {
-			return &FlapType{Kind: TypeCString, CType: ctype}
+			return &C67Type{Kind: TypeCString, CType: ctype}
 		}
-		return &FlapType{Kind: TypeCPointer, CType: ctype}
+		return &C67Type{Kind: TypeCPointer, CType: ctype}
 	}
 
 	// Check for basic types
 	switch ctype {
 	case "void":
-		return &FlapType{Kind: TypeCVoid}
+		return &C67Type{Kind: TypeCVoid}
 	case "int", "int32_t", "unsigned", "unsigned int", "uint32_t":
-		return &FlapType{Kind: TypeCInt, CType: ctype}
+		return &C67Type{Kind: TypeCInt, CType: ctype}
 	case "long", "int64_t", "uint64_t":
-		return &FlapType{Kind: TypeCLong, CType: ctype}
+		return &C67Type{Kind: TypeCLong, CType: ctype}
 	case "float":
-		return &FlapType{Kind: TypeCFloat, CType: ctype}
+		return &C67Type{Kind: TypeCFloat, CType: ctype}
 	case "double":
-		return &FlapType{Kind: TypeCDouble, CType: ctype}
+		return &C67Type{Kind: TypeCDouble, CType: ctype}
 	case "bool", "_Bool":
-		return &FlapType{Kind: TypeCBool, CType: ctype}
+		return &C67Type{Kind: TypeCBool, CType: ctype}
 	default:
 		// Unknown C type - treat as pointer
-		return &FlapType{Kind: TypeCPointer, CType: ctype}
+		return &C67Type{Kind: TypeCPointer, CType: ctype}
 	}
 }
 
@@ -172,10 +172,10 @@ func splitTypeWords(s string) []string {
 
 // Native type constructors
 var (
-	TypeNumberValue  = &FlapType{Kind: TypeNumber}
-	TypeStringValue  = &FlapType{Kind: TypeString}
-	TypeListValue    = &FlapType{Kind: TypeList}
-	TypeMapValue     = &FlapType{Kind: TypeMap}
-	TypeCStringValue = &FlapType{Kind: TypeCString, CType: "char*"}
-	TypeUnknownValue = &FlapType{Kind: TypeUnknown}
+	TypeNumberValue  = &C67Type{Kind: TypeNumber}
+	TypeStringValue  = &C67Type{Kind: TypeString}
+	TypeListValue    = &C67Type{Kind: TypeList}
+	TypeMapValue     = &C67Type{Kind: TypeMap}
+	TypeCStringValue = &C67Type{Kind: TypeCString, CType: "char*"}
+	TypeUnknownValue = &C67Type{Kind: TypeUnknown}
 )

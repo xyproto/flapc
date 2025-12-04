@@ -1,4 +1,4 @@
-module github.com/xyproto/flapc
+module github.com/xyproto/c67
 
 go 1.25.1
 

@@ -8,13 +8,13 @@ import (
 
 // VSQRTPD - Vector square root of packed double-precision floats
 //
-// Essential for Flap's numerical operations:
+// Essential for C67's numerical operations:
 //   - Distance calculations: sqrt(dx² + dy²)
 //   - Standard deviation: sqrt(variance)
 //   - Normalization: vector / sqrt(dot(vector, vector))
 //   - Physics simulations: many formulas require sqrt
 //
-// Example usage in Flap:
+// Example usage in C67:
 //   dist_sq = dxs *+ dxs + (dys *+ dys)
 //   distances = dist_sq || sqrt
 //

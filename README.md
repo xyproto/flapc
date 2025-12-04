@@ -1,22 +1,22 @@
-[![Go CI](https://github.com/xyproto/flapc/actions/workflows/ci.yml/badge.svg)](https://github.com/xyproto/flapc/actions/workflows/ci.yml)
+[![Go CI](https://github.com/xyproto/c67/actions/workflows/ci.yml/badge.svg)](https://github.com/xyproto/c67/actions/workflows/ci.yml)
 
-Flapc is a compiler for the Flap programming language.
+c67 is a compiler for the C67 programming language.
 
 ### Installation
 
-`go install github.com/xyproto/flapc@latest`
+`go install github.com/xyproto/c67@latest`
 
 ### Example use for Linux
 
 ```sh
-flapc sdl3example.flap -o sdl3example
+c67 sdl3example.c67 -o sdl3example
 ./sdl3example
 ```
 
 ### Example use for Linux + Wine
 
 ```sh
-flapc sdl3example.flap -o sdl3example.exe
+c67 sdl3example.c67 -o sdl3example.exe
 wine sdl3example.exe
 ```
 

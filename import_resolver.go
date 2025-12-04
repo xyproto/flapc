@@ -199,7 +199,7 @@ func isLikelyDirectory(source string) bool {
 	return strings.Contains(source, "/") || strings.Contains(source, "\\")
 }
 
-// resolveGitRepo clones or updates a git repository and returns paths to .flap files
+// resolveGitRepo clones or updates a git repository and returns paths to .c67 files
 func resolveGitRepo(spec *ImportSpec) ([]string, error) {
 	// Normalize the URL
 	repoURL := spec.Source
@@ -228,11 +228,11 @@ func resolveGitRepo(spec *ImportSpec) ([]string, error) {
 		return nil, err
 	}
 
-	// Find all top-level .flap files
-	return findFlapFiles(repoPath, false)
+	// Find all top-level .c67 files
+	return findC67Files(repoPath, false)
 }
 
-// resolveDirectory resolves a local directory import and returns paths to .flap files
+// resolveDirectory resolves a local directory import and returns paths to .c67 files
 func resolveDirectory(spec *ImportSpec) ([]string, error) {
 	dirPath := spec.Source
 
@@ -263,13 +263,13 @@ func resolveDirectory(spec *ImportSpec) ([]string, error) {
 		return nil, fmt.Errorf("not a directory: %s", dirPath)
 	}
 
-	// Find all top-level .flap files (not recursive for directories)
-	return findFlapFiles(dirPath, true)
+	// Find all top-level .c67 files (not recursive for directories)
+	return findC67Files(dirPath, true)
 }
 
-// findFlapFiles finds all .flap files in a directory
+// findC67Files finds all .c67 files in a directory
 // If topLevelOnly is true, only returns files in the root of the directory
-func findFlapFiles(dirPath string, topLevelOnly bool) ([]string, error) {
+func findC67Files(dirPath string, topLevelOnly bool) ([]string, error) {
 	var files []string
 
 	if topLevelOnly {
@@ -280,17 +280,17 @@ func findFlapFiles(dirPath string, topLevelOnly bool) ([]string, error) {
 		}
 
 		for _, entry := range entries {
-			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".flap") {
+			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".c67") {
 				files = append(files, filepath.Join(dirPath, entry.Name()))
 			}
 		}
 	} else {
-		// Recursively find all .flap files
+		// Recursively find all .c67 files
 		err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
-			if !info.IsDir() && strings.HasSuffix(path, ".flap") {
+			if !info.IsDir() && strings.HasSuffix(path, ".c67") {
 				files = append(files, path)
 			}
 			return nil
@@ -301,7 +301,7 @@ func findFlapFiles(dirPath string, topLevelOnly bool) ([]string, error) {
 	}
 
 	if len(files) == 0 {
-		return nil, fmt.Errorf("no .flap files found in: %s", dirPath)
+		return nil, fmt.Errorf("no .c67 files found in: %s", dirPath)
 	}
 
 	return files, nil

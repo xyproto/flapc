@@ -15,7 +15,7 @@ import (
 
 // A tiny compiler for x86_64, aarch64, and riscv64 for Linux, macOS, FreeBSD
 
-const versionString = "flapc 1.5.0"
+const versionString = "c67 1.5.0"
 
 // Architecture type
 type Arch int
@@ -875,10 +875,10 @@ func (eb *ExecutableBuilder) GenerateCallInstruction(funcName string) error {
 	}
 
 	// Strip leading underscore for Mach-O compatibility, but NOT for:
-	// - Internal Flap runtime functions (starting with _flap)
+	// - Internal C67 runtime functions (starting with _c67)
 	// - Functions starting with double underscore (like __acrt_iob_func on Windows)
 	targetName := funcName
-	if strings.HasPrefix(funcName, "_") && !strings.HasPrefix(funcName, "_flap") && !strings.HasPrefix(funcName, "__") {
+	if strings.HasPrefix(funcName, "_") && !strings.HasPrefix(funcName, "_c67") && !strings.HasPrefix(funcName, "__") {
 		targetName = funcName[1:] // Remove underscore for external C functions
 	}
 
@@ -938,11 +938,11 @@ func (eb *ExecutableBuilder) EmitArenaRuntimeCode() {
 		bytes[pos+3] = byte(offset >> 24)
 	}
 
-	// flap_arena_create(capacity) - creates an arena with given capacity
+	// c67_arena_create(capacity) - creates an arena with given capacity
 	// Argument: rdi = capacity
 	// Returns: rax = arena_ptr (pointer to 32-byte arena structure)
 	// Arena structure: [buffer_ptr, capacity, offset, alignment] = 32 bytes
-	eb.MarkLabel("flap_arena_create")
+	eb.MarkLabel("c67_arena_create")
 	out.PushReg("rbp")
 	out.MovRegToReg("rbp", "rsp")
 	out.PushReg("rbx")
@@ -1002,9 +1002,9 @@ func (eb *ExecutableBuilder) EmitArenaRuntimeCode() {
 	out.PopReg("rbp")
 	out.Ret()
 
-	// flap_arena_destroy(arena_ptr) - destroys an arena
+	// c67_arena_destroy(arena_ptr) - destroys an arena
 	// Argument: rdi = arena_ptr
-	eb.MarkLabel("flap_arena_destroy")
+	eb.MarkLabel("c67_arena_destroy")
 	out.PushReg("rbp")
 	out.MovRegToReg("rbp", "rsp")
 	out.PushReg("rbx")
@@ -1199,8 +1199,8 @@ func main() {
 	defaultOSStr := defaultPlatform.OS.String()
 
 	// NOTE: Go's flag package stops parsing at the first non-flag argument
-	// So flags must come BEFORE the filename: flapc --arch arm64 program.flap
-	// NOT: flapc program.flap --arch arm64
+	// So flags must come BEFORE the filename: c67 --arch arm64 program.c67
+	// NOT: c67 program.c67 --arch arm64
 	var archFlag = flag.String("arch", defaultArchStr, "target architecture (amd64, arm64, riscv64)")
 	var osFlag = flag.String("os", defaultOSStr, "target OS (linux, darwin, freebsd)")
 	var targetFlag = flag.String("target", "", "target platform (e.g., arm64-macos, amd64-linux, riscv64-linux)")
@@ -1212,10 +1212,10 @@ func main() {
 	var verboseLong = flag.Bool("verbose", false, "verbose mode (show build messages and detailed compilation info)")
 	var updateDeps = flag.Bool("u", false, "update all dependency repositories from Git")
 	var updateDepsLong = flag.Bool("update-deps", false, "update all dependency repositories from Git")
-	var codeFlag = flag.String("c", "", "execute Flap code from command line")
+	var codeFlag = flag.String("c", "", "execute C67 code from command line")
 	var optTimeout = flag.Float64("opt-timeout", 2.0, "optimization timeout in seconds (0 to disable)")
 	var watchFlag = flag.Bool("watch", false, "watch mode: recompile on file changes (requires hot functions)")
-	var singleFlag = flag.Bool("single", false, "compile single file only (don't load other .flap files from directory)")
+	var singleFlag = flag.Bool("single", false, "compile single file only (don't load other .c67 files from directory)")
 	var singleShort = flag.Bool("s", false, "shorthand for --single")
 	var compressFlag = flag.Bool("compress", false, "enable executable compression (experimental)")
 	_ = flag.Bool("tiny", false, "size optimization mode: remove debug strings and minimize runtime checks for demoscene/64k")
@@ -1362,7 +1362,7 @@ func main() {
 		firstArg := inputFiles[0]
 		// Check if it's a subcommand or looks like the new CLI style
 		if firstArg == "build" || firstArg == "run" || firstArg == "help" ||
-			(strings.HasSuffix(firstArg, ".flap") && *codeFlag == "") {
+			(strings.HasSuffix(firstArg, ".c67") && *codeFlag == "") {
 			// Use new CLI system
 			// Only pass outputFilename if user explicitly provided it
 			cliOutputPath := ""
@@ -1378,9 +1378,9 @@ func main() {
 		}
 	}
 
-	// FALLBACK: No arguments and no -c flag - check for .flap files or show help
+	// FALLBACK: No arguments and no -c flag - check for .c67 files or show help
 	if len(inputFiles) == 0 && *codeFlag == "" {
-		matches, err := filepath.Glob("*.flap")
+		matches, err := filepath.Glob("*.c67")
 		if err == nil && len(matches) > 0 {
 			// Use new CLI system to build directory
 			cliOutputPath := ""
@@ -1394,7 +1394,7 @@ func main() {
 			}
 			return
 		}
-		// No .flap files - show help
+		// No .c67 files - show help
 		RunCLI([]string{"help"}, targetPlatform, VerboseMode, QuietMode, *optTimeout, UpdateDepsFlag, SingleFlag, "")
 		return
 	}
@@ -1412,7 +1412,7 @@ func main() {
 	// Handle -c flag for inline code execution
 	if *codeFlag != "" {
 		// Create a temporary file with the inline code
-		tmpFile, err := os.CreateTemp("", "flapc_*.flap")
+		tmpFile, err := os.CreateTemp("", "c67_*.c67")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: Failed to create temp file: %v\n", err)
 			os.Exit(1)
@@ -1432,11 +1432,11 @@ func main() {
 		writeToFilename := outputFilename
 		inlineFlagProvided := outputFlagProvided
 		if outputFilename == defaultOutputFilename {
-			writeToFilename = filepath.Join(os.TempDir(), "flapc_inline")
+			writeToFilename = filepath.Join(os.TempDir(), "c67_inline")
 			inlineFlagProvided = false
 		}
 
-		err = CompileFlap(tmpFilename, writeToFilename, targetPlatform)
+		err = CompileC67(tmpFilename, writeToFilename, targetPlatform)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
 			os.Exit(1)
@@ -1455,19 +1455,19 @@ func main() {
 				fmt.Fprintf(os.Stderr, "source file: %s\n", file)
 			}
 
-			// Check if this is a Flap source file
-			if strings.HasSuffix(file, ".flap") {
+			// Check if this is a C67 source file
+			if strings.HasSuffix(file, ".c67") {
 				if VerboseMode {
-					fmt.Fprintln(os.Stderr, "-> Compiling Flap source")
+					fmt.Fprintln(os.Stderr, "-> Compiling C67 source")
 				}
 
 				writeToFilename := outputFilename
 				if !outputFlagProvided {
-					// No output filename specified - use input filename without .flap
-					writeToFilename = strings.TrimSuffix(filepath.Base(file), ".flap")
+					// No output filename specified - use input filename without .c67
+					writeToFilename = strings.TrimSuffix(filepath.Base(file), ".c67")
 				}
 
-				err := CompileFlap(file, writeToFilename, targetPlatform)
+				err := CompileC67(file, writeToFilename, targetPlatform)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "%v\n", err)
 					os.Exit(1)

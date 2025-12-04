@@ -14,7 +14,7 @@ import (
 // on ARM64 (Apple Silicon) architecture.
 
 // Confidence that this function is working: 60%
-func (fc *FlapCompiler) writeMachOARM64(outputPath string) error {
+func (fc *C67Compiler) writeMachOARM64(outputPath string) error {
 	// Build neededFunctions list from call patches (actual function calls made)
 	// Extract unique function names from callPatches
 	neededSet := make(map[string]bool)

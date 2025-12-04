@@ -1,8 +1,8 @@
-* **Flap** is a programming language for games, demos, and tools.
-* **Flapc** is a compiler written in Go that compiles `.flap` programs directly to machine code.
+* **C67** is a programming language for games, demos, and tools.
+* **c67** is a compiler written in Go that compiles `.c67` programs directly to machine code.
 * **Status (December 2025)**: All tests passing! Production-ready for x86_64 Linux/Windows.
 
-## What Makes Flap Special?
+## What Makes C67 Special?
 
 1. **Compiles to native machine code** - No VM, no interpreter, no LLVM
 2. **Compact executables** - Hello World is ~29KB on Linux
@@ -93,7 +93,7 @@ println("Done!")
 
 ---
 
-# Flap Tutorial
+# C67 Tutorial
 
 **Version**: 1.5.0
 **License**: BSD-3-Clause
@@ -101,17 +101,17 @@ println("Done!")
 ## Installation
 
 ```bash
-git clone https://github.com/xyproto/flapc
-cd flapc
+git clone https://github.com/xyproto/c67
+cd c67
 go build
-sudo cp flapc /usr/local/bin/
+sudo cp c67 /usr/local/bin/
 ```
 
 Test it:
 
 ```bash
-echo 'println("Hello, Flap!")' > hello.flap
-flapc hello.flap -o hello
+echo 'println("Hello, C67!")' > hello.c67
+c67 hello.c67 -o hello
 ./hello
 ```
 
@@ -121,9 +121,9 @@ flapc hello.flap -o hello
 
 ### 1. **Everything Is A Map**
 
-Flap has ONE universal type: maps all the way down.
+C67 has ONE universal type: maps all the way down.
 
-```flap
+```c67
 42                    // A number
 "Hello"               // A string (map of character codes)
 [1, 2, 3]            // A list (map with numeric keys)
@@ -133,11 +133,11 @@ Flap has ONE universal type: maps all the way down.
 This simplicity means:
 - No type annotations needed (usually)
 - No generic syntax complexity
-- C structs map directly to Flap maps
+- C structs map directly to C67 maps
 
 ### 2. **Variables: Immutable by Default**
 
-```flap
+```c67
 x = 42              // Immutable binding
 counter := 0        // Mutable variable (:= declares mutable)
 counter <- 10       // Update with <-
@@ -145,7 +145,7 @@ counter <- 10       // Update with <-
 
 ### 3. **Functions Are Values**
 
-```flap
+```c67
 square = x -> x * x
 add = (x, y) -> x + y
 
@@ -156,7 +156,7 @@ result = apply(square, 5)  // 25
 
 ### 4. **Loops with @**
 
-```flap
+```c67
 @ i in 0..<10 { println(i) }           // Range loop (0..9)
 @ item in list { process(item) }       // For-each
 @ condition { work() }                 // While loop
@@ -164,7 +164,7 @@ result = apply(square, 5)  // 25
 ```
 
 Break out with `break`:
-```flap
+```c67
 @ i in 0..<100 {
     | i > 50 => break
     println(i)
@@ -173,7 +173,7 @@ Break out with `break`:
 
 ### 5. **Pattern Matching**
 
-```flap
+```c67
 sign = x {
     | x > 0 => "positive"
     | x < 0 => "negative"
@@ -191,7 +191,7 @@ get_x = point {
 
 The `or!` operator checks for null/zero/error and executes alternative:
 
-```flap
+```c67
 window := sdl.SDL_CreateWindow("Game", 800, 600, 0) or! {
     exitln("Failed to create window")
 }
@@ -204,7 +204,7 @@ value := might_fail() or! 42
 
 Resources are freed in LIFO order:
 
-```flap
+```c67
 sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
 defer sdl.SDL_Quit()
 
@@ -221,7 +221,7 @@ defer sdl.SDL_DestroyRenderer(renderer)
 
 Bulk allocation and deallocation for performance:
 
-```flap
+```c67
 arena {
     // All allocations in this block use arena memory
     particles = @ i in 0..<1000 { create_particle(i) }
@@ -235,11 +235,11 @@ arena {
 
 Import C libraries directly:
 
-```flap
+```c67
 import sdl3 as sdl
 import c
 
-// Call C functions as if they were Flap functions
+// Call C functions as if they were C67 functions
 ptr := c.malloc(1024)
 defer c.free(ptr)
 
@@ -247,7 +247,7 @@ defer c.free(ptr)
 sdl.SDL_Init(sdl.SDL_INIT_VIDEO)
 ```
 
-Flapc parses C headers and generates bindings automatically.
+c67 parses C headers and generates bindings automatically.
 
 ### 10. **Compact, Fast Binaries**
 
@@ -262,19 +262,19 @@ Flapc parses C headers and generates bindings automatically.
 
 ### Hello World
 
-```flap
-println("Hello, Flap!")
+```c67
+println("Hello, C67!")
 ```
 
 Compile and run:
 ```bash
-flapc hello.flap -o hello
+c67 hello.c67 -o hello
 ./hello
 ```
 
 ### Variables and Math
 
-```flap
+```c67
 x = 42
 y := x * 2           // Mutable
 y <- y + 1           // Update
@@ -284,7 +284,7 @@ printf("x=%d, y=%d\n", x, y)
 
 ### Functions
 
-```flap
+```c67
 factorial = n {
     | n <= 1 => 1
     _ => n * factorial(n - 1)
@@ -295,7 +295,7 @@ println(factorial(10))  // 3628800
 
 ### Lists and Loops
 
-```flap
+```c67
 numbers = [1, 2, 3, 4, 5]
 
 // Map over list
@@ -312,7 +312,7 @@ println(squared)
 
 ## Building a Game: Pong
 
-```flap
+```c67
 import sdl3 as sdl
 
 // Constants
@@ -393,7 +393,7 @@ running := 1
 
 ### Variables
 
-```flap
+```c67
 x = 42              // Immutable
 counter := 0        // Mutable
 counter <- 10       // Update
@@ -401,7 +401,7 @@ counter <- 10       // Update
 
 ### Functions
 
-```flap
+```c67
 square = x -> x * x
 add = (x, y) -> x + y
 greet = name -> println(f"Hello, {name}!")
@@ -409,7 +409,7 @@ greet = name -> println(f"Hello, {name}!")
 
 ### Loops
 
-```flap
+```c67
 @ i in 0..<10 { println(i) }           // Range
 @ item in list { process(item) }       // For-each
 @ condition { work() }                 // While
@@ -418,7 +418,7 @@ greet = name -> println(f"Hello, {name}!")
 
 ### Match
 
-```flap
+```c67
 result = x {
     0 => "zero"
     1 => "one"
@@ -446,7 +446,7 @@ classify = {
 
 ### Import
 
-```flap
+```c67
 import sdl3 as sdl
 import raylib as rl
 import opengl as gl
@@ -454,7 +454,7 @@ import opengl as gl
 
 ---
 
-## Why Flap For Gamedev?
+## Why C67 For Gamedev?
 
 ### Compact Executables
 
@@ -486,7 +486,7 @@ Unsafe blocks for assembly. Direct memory access. SIMD intrinsics.
 
 ### Sprite Rendering
 
-```flap
+```c67
 import sdl3 as sdl
 
 // Load texture
@@ -507,7 +507,7 @@ defer sdl.SDL_DestroyTexture(texture)
 
 ### Particle System
 
-```flap
+```c67
 Particle = (x, y) -> {x: x, y: y, vx: ??, vy: ??}
 
 arena {
@@ -528,7 +528,7 @@ arena {
 
 ### Sound Effects
 
-```flap
+```c67
 import sdl3_mixer as mix
 
 mix.Mix_OpenAudio(44100, mix.MIX_DEFAULT_FORMAT, 2, 2048) or! exitln("Audio failed")
@@ -565,7 +565,7 @@ keys[sdl.SDL_SCANCODE_SPACE] { mix.Mix_PlayChannel(-1, jump_sound, 0) }
 
 ## Performance Tips
 
-```flap
+```c67
 // Use arenas for per-frame allocations
 arena {
     bullets = generate_bullets()
@@ -590,14 +590,14 @@ new_x = positions_x + velocities_x  // 4 adds in one instruction
 
 ## Philosophy
 
-**Flap is designed for:**
+**C67 is designed for:**
 
 1. **Games** - Fast, predictable, no GC pauses
 2. **Demos** - Small binaries, direct hardware access
 3. **Tools** - Quick compile times, C library access
 4. **Learning** - Simple semantics, one universal type
 
-**Flap is NOT for:**
+**C67 is NOT for:**
 
 - Web servers (use Go)
 - Machine learning (use Python)
@@ -608,8 +608,8 @@ new_x = positions_x + velocities_x  // 4 adds in one instruction
 ## Contributing
 
 ```bash
-git clone https://github.com/xyproto/flapc
-cd flapc
+git clone https://github.com/xyproto/c67
+cd c67
 go build
 go test -v
 ```
@@ -626,10 +626,10 @@ BSD 3-Clause. See [LICENSE](LICENSE).
 
 ## Community
 
-- **GitHub**: https://github.com/xyproto/flapc
-- **Issues**: https://github.com/xyproto/flapc/issues
-- **Discussions**: https://github.com/xyproto/flapc/discussions
+- **GitHub**: https://github.com/xyproto/c67
+- **Issues**: https://github.com/xyproto/c67/issues
+- **Discussions**: https://github.com/xyproto/c67/discussions
 
 ---
 
-**Start making games with Flap today. 🎮**
+**Start making games with C67 today. 🎮**

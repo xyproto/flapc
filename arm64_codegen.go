@@ -75,7 +75,7 @@ func NewARM64CodeGen(eb *ExecutableBuilder, cConstants map[string]*CHeaderConsta
 	}
 }
 
-// CompileProgram compiles a Flap program to ARM64
+// CompileProgram compiles a C67 program to ARM64
 func (acg *ARM64CodeGen) CompileProgram(program *Program) error {
 	// Initialize arena tracking
 	acg.currentArena = 0
@@ -409,7 +409,7 @@ func (acg *ARM64CodeGen) compileArenaStmt(stmt *ArenaStmt) error {
 func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 	switch e := expr.(type) {
 	case *NumberExpr:
-		// Flap uses float64 for all numbers
+		// C67 uses float64 for all numbers
 		// For whole numbers, convert via integer; for decimals, load from .rodata
 		if e.Value == float64(int64(e.Value)) {
 			// Whole number - convert to int64, then to float64
@@ -571,8 +571,8 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 				}
 				acg.out.AddImm64("sp", "sp", 16)
 
-				// Call _flap_list_concat(x0, x1) -> x0
-				if err := acg.eb.GenerateCallInstruction("_flap_list_concat"); err != nil {
+				// Call _c67_list_concat(x0, x1) -> x0
+				if err := acg.eb.GenerateCallInstruction("_c67_list_concat"); err != nil {
 					return err
 				}
 
@@ -625,8 +625,8 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 				}
 				acg.out.AddImm64("sp", "sp", 16)
 
-				// Call _flap_string_concat(x0, x1) -> x0
-				if err := acg.eb.GenerateCallInstruction("_flap_string_concat"); err != nil {
+				// Call _c67_string_concat(x0, x1) -> x0
+				if err := acg.eb.GenerateCallInstruction("_c67_string_concat"); err != nil {
 					return err
 				}
 
@@ -930,8 +930,8 @@ func (acg *ARM64CodeGen) compileExpression(expr Expression) error {
 			}
 			acg.out.AddImm64("sp", "sp", 16)
 
-			// Call _flap_list_cons(element, list) -> new_list
-			if err := acg.eb.GenerateCallInstruction("_flap_list_cons"); err != nil {
+			// Call _c67_list_cons(element, list) -> new_list
+			if err := acg.eb.GenerateCallInstruction("_c67_list_cons"); err != nil {
 				return err
 			}
 
@@ -1953,7 +1953,7 @@ func (acg *ARM64CodeGen) compileCall(call *CallExpr) error {
 	case "string_concat":
 		// Internal string concatenation function
 		// Arguments should already be in x0 and x1
-		return acg.eb.GenerateCallInstruction("_flap_string_concat")
+		return acg.eb.GenerateCallInstruction("_c67_string_concat")
 	case "write_i8", "write_i16", "write_i32", "write_i64",
 		"write_u8", "write_u16", "write_u32", "write_u64", "write_f64":
 		return acg.compileMemoryWrite(call)
@@ -2237,12 +2237,12 @@ func (acg *ARM64CodeGen) compilePrintln(call *CallExpr) error {
 	nonZeroPos := acg.eb.text.Len()
 	acg.patchJumpOffset(nonZeroJump, int32(nonZeroPos-nonZeroJump))
 
-	// For non-zero numbers, call _flap_itoa helper
+	// For non-zero numbers, call _c67_itoa helper
 	// x0 already has the integer value
 	// itoa uses global buffer, no need to allocate or pass buffer address
 
-	// Call _flap_itoa(x0=number) -> x1=buffer, x2=length
-	if err := acg.eb.GenerateCallInstruction("_flap_itoa"); err != nil {
+	// Call _c67_itoa(x0=number) -> x1=buffer, x2=length
+	if err := acg.eb.GenerateCallInstruction("_c67_itoa"); err != nil {
 		return err
 	}
 
@@ -3372,7 +3372,7 @@ func (acg *ARM64CodeGen) compileCFunctionCall(funcName string, args []Expression
 	// Return value: x0 (integer/pointer) or d0 (float)
 
 	// For simplicity, we'll assume:
-	// - All Flap values are float64 (our internal representation)
+	// - All C67 values are float64 (our internal representation)
 	// - Pointer types need conversion from float64 bits to integer register
 	// - Integer types need fcvtzs conversion from float64 to int
 	// - Float types stay in float registers
@@ -3771,12 +3771,12 @@ func (acg *ARM64CodeGen) getExprType(expr Expression) string {
 
 // generateRuntimeHelpers generates ARM64 runtime helper functions
 func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
-	// Generate _flap_list_concat(left_ptr, right_ptr) -> new_ptr
+	// Generate _c67_list_concat(left_ptr, right_ptr) -> new_ptr
 	// Arguments: x0 = left_ptr, x1 = right_ptr
 	// Returns: x0 = pointer to new concatenated list
 	// List format: [length (8 bytes)][elem0 (8 bytes)][elem1 (8 bytes)]...
 
-	acg.eb.MarkLabel("_flap_list_concat")
+	acg.eb.MarkLabel("_c67_list_concat")
 
 	// Function prologue
 	// stp x29, x30, [sp, #-N]! (save fp and lr, pre-decrement sp by N)
@@ -3907,12 +3907,12 @@ func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
 	acg.out.out.writer.WriteBytes([]byte{0xfd, 0x7b, 0xc4, 0xa8}) // ldp x29, x30, [sp], #64
 	acg.out.Return("x30")
 
-	// Generate _flap_string_concat(left_ptr, right_ptr) -> new_ptr
+	// Generate _c67_string_concat(left_ptr, right_ptr) -> new_ptr
 	// Arguments: x0 = left_ptr, x1 = right_ptr
 	// Returns: x0 = pointer to new concatenated string
 	// String format (map): [count (8 bytes)][key0 (8)][val0 (8)]...
 
-	acg.eb.MarkLabel("_flap_string_concat")
+	acg.eb.MarkLabel("_c67_string_concat")
 
 	// Function prologue - same as list concat
 	acg.out.out.writer.WriteBytes([]byte{0xfd, 0x7b, 0xbc, 0xa9}) // stp x29, x30, [sp, #-64]!
@@ -4055,11 +4055,11 @@ func (acg *ARM64CodeGen) generateRuntimeHelpers() error {
 	// Define a global buffer for itoa (32 bytes, writable)
 	acg.eb.DefineWritable("_itoa_buffer", string(make([]byte, 32)))
 
-	// Generate _flap_itoa(int64) -> (buffer_ptr, length)
+	// Generate _c67_itoa(int64) -> (buffer_ptr, length)
 	// Converts integer in x0 to decimal string
 	// Returns: x1 = buffer pointer (global), x2 = length
 	// Uses global _itoa_buffer, builds string backwards
-	acg.eb.MarkLabel("_flap_itoa")
+	acg.eb.MarkLabel("_c67_itoa")
 
 	// Prologue: save link register (no stack allocation needed)
 	acg.out.out.writer.WriteBytes([]byte{0xfd, 0x7b, 0xbe, 0xa9}) // stp x29, x30, [sp, #-32]!
@@ -5118,26 +5118,26 @@ func (acg *ARM64CodeGen) compileMemoryWrite(call *CallExpr) error {
 // generateArenaRuntimeARM64 generates arena runtime functions for ARM64
 func (acg *ARM64CodeGen) generateArenaRuntimeARM64() error {
 	// Define arena global variables in .data section
-	acg.eb.Define("_flap_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")     // Pointer to meta-arena array
-	acg.eb.Define("_flap_arena_meta_cap", "\x00\x00\x00\x00\x00\x00\x00\x00") // Capacity of meta-arena
-	acg.eb.Define("_flap_arena_meta_len", "\x00\x00\x00\x00\x00\x00\x00\x00") // Length (number of arenas)
+	acg.eb.Define("_c67_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")     // Pointer to meta-arena array
+	acg.eb.Define("_c67_arena_meta_cap", "\x00\x00\x00\x00\x00\x00\x00\x00") // Capacity of meta-arena
+	acg.eb.Define("_c67_arena_meta_len", "\x00\x00\x00\x00\x00\x00\x00\x00") // Length (number of arenas)
 
 	// Generate arena runtime functions
 	// These will be placeholders that call through to libc functions
 	// For now, we'll generate simple stub implementations
 
-	// _flap_arena_ensure_capacity(depth) - Ensure meta-arena can hold depth arenas
+	// _c67_arena_ensure_capacity(depth) - Ensure meta-arena can hold depth arenas
 	// Simplified stub: just return (arena allocation is done directly by alloc())
-	acg.eb.MarkLabel("_flap_arena_ensure_capacity")
+	acg.eb.MarkLabel("_c67_arena_ensure_capacity")
 	if err := acg.out.Return("x30"); err != nil {
 		return err
 	}
 
-	// flap_arena_create(capacity) -> arena_ptr
+	// c67_arena_create(capacity) -> arena_ptr
 	// Creates a new arena with the specified capacity
 	// Argument: x0 = capacity
 	// Returns: x0 = arena pointer
-	acg.eb.MarkLabel("flap_arena_create")
+	acg.eb.MarkLabel("c67_arena_create")
 	// Save link register
 	// stp x29, x30, [sp, #-16]!
 	acg.out.out.writer.WriteBytes([]byte{0xfd, 0x7b, 0xbf, 0xa9})
@@ -5156,11 +5156,11 @@ func (acg *ARM64CodeGen) generateArenaRuntimeARM64() error {
 		return err
 	}
 
-	// flap_arena_alloc(arena_ptr, size) -> allocation_ptr
+	// c67_arena_alloc(arena_ptr, size) -> allocation_ptr
 	// Allocates memory from the arena
 	// Arguments: x0 = arena_ptr, x1 = size
 	// Returns: x0 = allocated memory pointer
-	acg.eb.MarkLabel("flap_arena_alloc")
+	acg.eb.MarkLabel("c67_arena_alloc")
 	// Save link register
 	// stp x29, x30, [sp, #-16]!
 	acg.out.out.writer.WriteBytes([]byte{0xfd, 0x7b, 0xbf, 0xa9})
@@ -5178,10 +5178,10 @@ func (acg *ARM64CodeGen) generateArenaRuntimeARM64() error {
 		return err
 	}
 
-	// flap_arena_reset(arena_ptr)
+	// c67_arena_reset(arena_ptr)
 	// Resets the arena offset to 0
 	// Argument: x0 = arena_ptr
-	acg.eb.MarkLabel("flap_arena_reset")
+	acg.eb.MarkLabel("c67_arena_reset")
 	// No-op for now
 	if err := acg.out.Return("x30"); err != nil {
 		return err

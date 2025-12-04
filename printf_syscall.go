@@ -11,7 +11,7 @@ import (
 // GeneratePrintfSyscallRuntime generates syscall-based printf runtime helpers
 // Note: The main printf implementation uses compile-time parsing with inline code emission.
 // This function generates helper labels that might be used by some code paths.
-func (fc *FlapCompiler) GeneratePrintfSyscallRuntime() {
+func (fc *C67Compiler) GeneratePrintfSyscallRuntime() {
 	if fc.eb.target.OS() != OSLinux {
 		// On non-Linux systems, we still need libc printf
 		return
@@ -42,8 +42,8 @@ func (fc *FlapCompiler) GeneratePrintfSyscallRuntime() {
 // ============================================================================
 
 // generatePrintfMain generates the main printf dispatcher (UNUSED - see note above)
-func (fc *FlapCompiler) generatePrintfMain() {
-	fc.eb.MarkLabel("_flap_printf_syscall")
+func (fc *C67Compiler) generatePrintfMain() {
+	fc.eb.MarkLabel("_c67_printf_syscall")
 
 	// Prologue
 	fc.out.PushReg("rbp")
@@ -459,14 +459,14 @@ func (fc *FlapCompiler) generatePrintfMain() {
 }
 
 // Helper to patch short jumps (8-bit offset)
-func (fc *FlapCompiler) patchShortJump(offsetPos int, targetPos int) {
+func (fc *C67Compiler) patchShortJump(offsetPos int, targetPos int) {
 	bytes := fc.eb.text.Bytes()
 	offset := int8(targetPos - (offsetPos + 1))
 	bytes[offsetPos] = byte(offset)
 }
 
 // Helper to patch long jumps (32-bit offset)
-func (fc *FlapCompiler) patchJumpOffset(offsetPos int, targetPos int) {
+func (fc *C67Compiler) patchJumpOffset(offsetPos int, targetPos int) {
 	bytes := fc.eb.text.Bytes()
 	offset := int32(targetPos - (offsetPos + 4))
 	bytes[offsetPos] = byte(offset)
@@ -476,7 +476,7 @@ func (fc *FlapCompiler) patchJumpOffset(offsetPos int, targetPos int) {
 }
 
 // Helper to patch call offsets
-func (fc *FlapCompiler) patchCallOffset(offsetPos int, targetPos int) {
+func (fc *C67Compiler) patchCallOffset(offsetPos int, targetPos int) {
 	bytes := fc.eb.text.Bytes()
 	offset := int32(targetPos - (offsetPos + 4))
 	bytes[offsetPos] = byte(offset)
@@ -488,7 +488,7 @@ func (fc *FlapCompiler) patchCallOffset(offsetPos int, targetPos int) {
 // compilePrintfSyscall compiles a printf call using inline syscalls
 // This is a simplified approach that parses the format string at compile time
 // and emits inline syscalls for each segment
-func (fc *FlapCompiler) compilePrintfSyscall(call *CallExpr, formatStr *StringExpr) {
+func (fc *C67Compiler) compilePrintfSyscall(call *CallExpr, formatStr *StringExpr) {
 	processedFormat := processEscapeSequences(formatStr.Value)
 
 	// Parse format string and emit inline code for each segment
@@ -548,8 +548,8 @@ func (fc *FlapCompiler) compilePrintfSyscall(call *CallExpr, formatStr *StringEx
 
 			case 's': // String
 				fc.compileExpression(arg)
-				// xmm0 contains Flap string pointer - print it
-				fc.emitSyscallPrintFlapString()
+				// xmm0 contains C67 string pointer - print it
+				fc.emitSyscallPrintC67String()
 
 			case 'f', 'g': // Float
 				fc.compileExpression(arg)
@@ -585,7 +585,7 @@ func (fc *FlapCompiler) compilePrintfSyscall(call *CallExpr, formatStr *StringEx
 }
 
 // emitSyscallPrintLiteral emits code to print a literal string using syscalls
-func (fc *FlapCompiler) emitSyscallPrintLiteral(str string) {
+func (fc *C67Compiler) emitSyscallPrintLiteral(str string) {
 	labelName := fmt.Sprintf("printf_lit_%d", fc.stringCounter)
 	fc.stringCounter++
 	fc.eb.Define(labelName, str)
@@ -598,7 +598,7 @@ func (fc *FlapCompiler) emitSyscallPrintLiteral(str string) {
 }
 
 // emitSyscallPrintChar emits code to print a single character
-func (fc *FlapCompiler) emitSyscallPrintChar(ch rune) {
+func (fc *C67Compiler) emitSyscallPrintChar(ch rune) {
 	fc.out.SubImmFromReg("rsp", 8)
 	fc.out.MovImmToReg("rax", fmt.Sprintf("%d", ch))
 	fc.out.MovRegToMem("rax", "rsp", 0)
@@ -611,7 +611,7 @@ func (fc *FlapCompiler) emitSyscallPrintChar(ch rune) {
 }
 
 // emitSyscallPrintInteger emits code to print an integer in rax
-func (fc *FlapCompiler) emitSyscallPrintInteger() {
+func (fc *C67Compiler) emitSyscallPrintInteger() {
 	fc.out.PushReg("rbx")
 	fc.out.PushReg("rcx")
 	fc.out.PushReg("rdx")
@@ -671,15 +671,15 @@ func (fc *FlapCompiler) emitSyscallPrintInteger() {
 	fc.out.PopReg("rbx")
 }
 
-// emitSyscallPrintFlapString emits code to print a Flap string (in xmm0)
-func (fc *FlapCompiler) emitSyscallPrintFlapString() {
+// emitSyscallPrintC67String emits code to print a C67 string (in xmm0)
+func (fc *C67Compiler) emitSyscallPrintC67String() {
 	// Call the existing print syscall helper
 	fc.out.MovqXmmToReg("rdi", "xmm0")
-	fc.out.CallSymbol("_flap_print_syscall")
+	fc.out.CallSymbol("_c67_print_syscall")
 }
 
 // emitSyscallPrintBoolean emits code to print true/false based on xmm0
-func (fc *FlapCompiler) emitSyscallPrintBoolean() {
+func (fc *C67Compiler) emitSyscallPrintBoolean() {
 	// Convert to integer
 	fc.out.Cvttsd2si("rax", "xmm0")
 	fc.out.Emit([]byte{0x48, 0x85, 0xc0}) // test rax, rax
@@ -704,7 +704,7 @@ func (fc *FlapCompiler) emitSyscallPrintBoolean() {
 }
 
 // emitSyscallPrintBooleanYesNo emits code to print yes/no based on xmm0
-func (fc *FlapCompiler) emitSyscallPrintBooleanYesNo() {
+func (fc *C67Compiler) emitSyscallPrintBooleanYesNo() {
 	// Convert to integer
 	fc.out.Cvttsd2si("rax", "xmm0")
 	fc.out.Emit([]byte{0x48, 0x85, 0xc0}) // test rax, rax
@@ -729,7 +729,7 @@ func (fc *FlapCompiler) emitSyscallPrintBooleanYesNo() {
 }
 
 // generatePrintString generates helper to print C-style strings
-func (fc *FlapCompiler) generatePrintString() {
+func (fc *C67Compiler) generatePrintString() {
 	fc.eb.MarkLabel("_printf_print_string")
 
 	fc.out.PushReg("rbx")
@@ -760,7 +760,7 @@ func (fc *FlapCompiler) generatePrintString() {
 }
 
 // generatePrintInteger generates helper to print signed integers
-func (fc *FlapCompiler) generatePrintInteger() {
+func (fc *C67Compiler) generatePrintInteger() {
 	fc.eb.MarkLabel("_printf_print_integer")
 
 	fc.out.PushReg("rbx")
@@ -825,7 +825,7 @@ func (fc *FlapCompiler) generatePrintInteger() {
 }
 
 // generatePrintUnsigned generates helper to print unsigned integers
-func (fc *FlapCompiler) generatePrintUnsigned() {
+func (fc *C67Compiler) generatePrintUnsigned() {
 	fc.eb.MarkLabel("_printf_print_unsigned")
 
 	// Same as print_integer but without negative handling
@@ -869,7 +869,7 @@ func (fc *FlapCompiler) generatePrintUnsigned() {
 }
 
 // generatePrintFloat generates helper to print floats (simplified version)
-func (fc *FlapCompiler) generatePrintFloat() {
+func (fc *C67Compiler) generatePrintFloat() {
 	fc.eb.MarkLabel("_printf_print_float")
 
 	// For now, convert float to integer and print
@@ -939,7 +939,7 @@ func (fc *FlapCompiler) generatePrintFloat() {
 // emitSyscallPrintFloatPrecise prints a float with 6 decimal places
 // Input: xmm0 = float64 value
 // FULLY INLINE - zero function calls, direct syscalls only!
-func (fc *FlapCompiler) emitSyscallPrintFloatPrecise(precision int) {
+func (fc *C67Compiler) emitSyscallPrintFloatPrecise(precision int) {
 	// Allocate 160 bytes: 128 for work area + 32 for emitSyscallPrintInteger's stack use
 	// This ensures our saved value stays at a consistent offset
 	fc.out.SubImmFromReg("rsp", 160)
@@ -956,17 +956,17 @@ func (fc *FlapCompiler) emitSyscallPrintFloatPrecise(precision int) {
 	// ===== Print integer part INLINE (no function calls) =====
 	fc.out.MovMemToXmm("xmm0", "rsp", 152)
 	fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2c, 0xc0}) // cvttsd2si rax, xmm0
-	
+
 	// Convert integer to string inline
 	fc.out.PushReg("rbx")
 	fc.out.PushReg("rcx")
 	fc.out.PushReg("rdx")
-	
+
 	// Check if negative
 	fc.out.Emit([]byte{0x48, 0x85, 0xc0}) // test rax, rax
 	positiveJump := fc.eb.text.Len()
 	fc.out.Emit([]byte{0x79, 0x00}) // jns (will patch)
-	
+
 	// Negative: print minus, negate
 	fc.out.PushReg("rax")
 	fc.out.MovImmToReg("r15", "45") // '-'
@@ -978,36 +978,36 @@ func (fc *FlapCompiler) emitSyscallPrintFloatPrecise(precision int) {
 	fc.out.Syscall()
 	fc.out.PopReg("rax")
 	fc.out.NegReg("rax")
-	
+
 	// Patch positive jump
 	positiveStart := fc.eb.text.Len()
 	fc.eb.text.Bytes()[positiveJump+1] = byte(positiveStart - (positiveJump + 2))
-	
+
 	// Convert to string
 	fc.out.LeaMemToReg("rbx", "rsp", 32)
 	fc.out.MovImmToReg("rcx", "10")
-	
+
 	convertStart := fc.eb.text.Len()
 	fc.out.XorRegWithReg("rdx", "rdx")
 	fc.out.Emit([]byte{0x48, 0xf7, 0xf1}) // div rcx
 	fc.out.AddImmToReg("rdx", 48)
 	fc.out.DecReg("rbx")
-	fc.out.Emit([]byte{0x88, 0x13}) // mov [rbx], dl
+	fc.out.Emit([]byte{0x88, 0x13})       // mov [rbx], dl
 	fc.out.Emit([]byte{0x48, 0x85, 0xc0}) // test rax, rax
 	convertJump := fc.eb.text.Len()
 	fc.out.Emit([]byte{0x75, 0x00}) // jnz (will patch)
 	fc.eb.text.Bytes()[convertJump+1] = byte(convertStart - (convertJump + 2))
-	
+
 	// Calculate length
 	fc.out.LeaMemToReg("rdx", "rsp", 32)
 	fc.out.SubRegFromReg("rdx", "rbx")
-	
+
 	// Write
 	fc.out.MovImmToReg("rax", "1")
 	fc.out.MovImmToReg("rdi", "1")
 	fc.out.MovRegToReg("rsi", "rbx")
 	fc.out.Syscall()
-	
+
 	fc.out.PopReg("rdx")
 	fc.out.PopReg("rcx")
 	fc.out.PopReg("rbx")

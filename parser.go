@@ -1,13 +1,13 @@
-// parser.go - Flap Language Parser (Version 1.5.0)
+// parser.go - C67 Language Parser (Version 1.5.0)
 // Completion: 95%
 //
 // Status: Canonical Implementation of GRAMMAR.md and LANGUAGESPEC.md v1.5.0
 //
 // This parser is the authoritative implementation of GRAMMAR.md and LANGUAGESPEC.md v1.5.0.
-// It implements a complete recursive descent parser for the Flap programming
+// It implements a complete recursive descent parser for the C67 programming
 // language with direct machine code generation for x86_64, ARM64, and RISCV64.
 //
-// Key Features (Flap 3.0):
+// Key Features (C67 3.0):
 // - Universal type system: map[uint64]float64
 // - Block disambiguation: maps vs matches vs statements
 // - Value match (with expression) and guard match (with |)
@@ -26,12 +26,12 @@
 // - Guard syntax (| at line start)
 // - C FFI and syscall support
 //
-// This file contains the core parser that transforms Flap source code
+// This file contains the core parser that transforms C67 source code
 // into an Abstract Syntax Tree (AST). It handles:
 // - Tokenization and lexical analysis via Lexer
 // - Recursive descent parsing with operator precedence
 // - Expression parsing with proper precedence climbing
-// - Statement parsing for all Flap constructs
+// - Statement parsing for all C67 constructs
 // - AST node construction with semantic validation
 
 package main
@@ -271,7 +271,7 @@ func (p *Parser) synchronize() {
 // speculativeError is used to signal parse failure during speculative parsing
 type speculativeError struct{}
 
-// compilerError prints an error message and panics (to be recovered by CompileFlap)
+// compilerError prints an error message and panics (to be recovered by CompileC67)
 // Use this instead of fmt.Fprintf + os.Exit in code generation
 func compilerError(format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
@@ -410,7 +410,7 @@ func (p *Parser) parseImport() Statement {
 		return &CImportStmt{Library: filename, Alias: alias, SoPath: source}
 	}
 
-	// If it has a version or looks like a git URL, it's an ImportStmt (git/flap)
+	// If it has a version or looks like a git URL, it's an ImportStmt (git/c67)
 	if spec.Version != "" || isGitURL(source) ||
 		strings.Contains(source, "/") || strings.Contains(source, "\\") {
 		// Git repository or directory import
@@ -481,7 +481,7 @@ func (p *Parser) parseSpawnStmt() *SpawnStmt {
 		// For now, only support simple identifiers, not map destructuring
 		for {
 			if p.current.Type != TOKEN_IDENT {
-				p.error("expected identifier in flap pipe parameters")
+				p.error("expected identifier in c67 pipe parameters")
 			}
 			params = append(params, p.current.Value)
 			p.nextToken()
@@ -491,7 +491,7 @@ func (p *Parser) parseSpawnStmt() *SpawnStmt {
 			} else if p.current.Type == TOKEN_PIPE {
 				break
 			} else {
-				p.error("expected ',' or '|' in flap pipe parameters")
+				p.error("expected ',' or '|' in c67 pipe parameters")
 			}
 		}
 
@@ -499,7 +499,7 @@ func (p *Parser) parseSpawnStmt() *SpawnStmt {
 
 		// Parse block
 		if p.current.Type != TOKEN_LBRACE {
-			p.error("expected block after flap pipe parameters")
+			p.error("expected block after c67 pipe parameters")
 		}
 
 		// Parse as BlockExpr
@@ -517,7 +517,7 @@ func (p *Parser) parseSpawnStmt() *SpawnStmt {
 		}
 
 		if p.current.Type != TOKEN_RBRACE {
-			p.error("expected '}' at end of flap block")
+			p.error("expected '}' at end of c67 block")
 		}
 	}
 
@@ -1200,7 +1200,7 @@ func (p *Parser) parseAssignment() *AssignStmt {
 
 	// Check for type annotation: name: type
 	var precision string
-	var typeAnnotation *FlapType
+	var typeAnnotation *C67Type
 	if p.current.Type == TOKEN_COLON && p.peek.Type == TOKEN_IDENT {
 		p.nextToken() // skip ':'
 
@@ -3477,7 +3477,7 @@ func (p *Parser) parsePostfix() Expression {
 			// Parse the cast type
 			var castType string
 			if p.current.Type == TOKEN_IDENT {
-				// All Flap and C types are valid after 'as'
+				// All C67 and C types are valid after 'as'
 				validTypes := map[string]bool{
 					// C integer types
 					"int8": true, "int16": true, "int32": true, "int64": true,
@@ -3489,7 +3489,7 @@ func (p *Parser) parsePostfix() Expression {
 					"float": true, "float32": true, "float64": true, "double": true,
 					// C string/pointer types
 					"cstr": true, "cstring": true, "ptr": true, "pointer": true,
-					// Flap types
+					// C67 types
 					"number": true, "num": true, "string": true, "str": true,
 					"list": true, "map": true, "address": true, "addr": true,
 					"bool": true, "boolean": true,
@@ -4716,34 +4716,34 @@ func (p *Parser) parseUnsafeValue() interface{} {
 
 // parseTypeAnnotation parses a type annotation (after :)
 // Returns nil if no valid type annotation found
-func (p *Parser) parseTypeAnnotation() *FlapType {
-	// Native Flap types
+func (p *Parser) parseTypeAnnotation() *C67Type {
+	// Native C67 types
 	switch p.current.Value {
 	case "num":
-		return &FlapType{Kind: TypeNumber}
+		return &C67Type{Kind: TypeNumber}
 	case "str":
-		return &FlapType{Kind: TypeString}
+		return &C67Type{Kind: TypeString}
 	case "list":
-		return &FlapType{Kind: TypeList}
+		return &C67Type{Kind: TypeList}
 	case "map":
-		return &FlapType{Kind: TypeMap}
+		return &C67Type{Kind: TypeMap}
 	// Foreign C types
 	case "cstring":
-		return &FlapType{Kind: TypeCString, CType: "char*"}
+		return &C67Type{Kind: TypeCString, CType: "char*"}
 	case "cptr":
-		return &FlapType{Kind: TypeCPointer, CType: "void*"}
+		return &C67Type{Kind: TypeCPointer, CType: "void*"}
 	case "cint":
-		return &FlapType{Kind: TypeCInt, CType: "int"}
+		return &C67Type{Kind: TypeCInt, CType: "int"}
 	case "clong":
-		return &FlapType{Kind: TypeCLong, CType: "long"}
+		return &C67Type{Kind: TypeCLong, CType: "long"}
 	case "cfloat":
-		return &FlapType{Kind: TypeCFloat, CType: "float"}
+		return &C67Type{Kind: TypeCFloat, CType: "float"}
 	case "cdouble":
-		return &FlapType{Kind: TypeCDouble, CType: "double"}
+		return &C67Type{Kind: TypeCDouble, CType: "double"}
 	case "cbool":
-		return &FlapType{Kind: TypeCBool, CType: "bool"}
+		return &C67Type{Kind: TypeCBool, CType: "bool"}
 	case "cvoid":
-		return &FlapType{Kind: TypeCVoid}
+		return &C67Type{Kind: TypeCVoid}
 	default:
 		return nil
 	}

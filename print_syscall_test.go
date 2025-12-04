@@ -304,7 +304,7 @@ func compileTestBinary(t *testing.T, code string) string {
 	t.Helper()
 
 	tmpDir := t.TempDir()
-	srcFile := filepath.Join(tmpDir, "test.flap")
+	srcFile := filepath.Join(tmpDir, "test.c67")
 	if err := os.WriteFile(srcFile, []byte(code), 0644); err != nil {
 		t.Fatalf("Failed to write source: %v", err)
 	}
@@ -316,7 +316,7 @@ func compileTestBinary(t *testing.T, code string) string {
 		OS:   osType,
 		Arch: archType,
 	}
-	if err := CompileFlapWithOptions(srcFile, binPath, platform, 0); err != nil {
+	if err := CompileC67WithOptions(srcFile, binPath, platform, 0); err != nil {
 		t.Fatalf("Compilation failed: %v", err)
 	}
 

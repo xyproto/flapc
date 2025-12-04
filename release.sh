@@ -10,7 +10,7 @@ platforms="
 # darwin,arm64,,macos_aarch64_static,tar.gz
 # linux,riscv64,,linux_riscv64_static,tar.xz
 
-name=flapc
+name=c67
 version=$(grep -i version main.go | head -1 | cut -d' ' -f5 | cut -d'"' -f1)
 echo "Version $version"
 
@@ -35,9 +35,9 @@ compile_and_compress() {
 
   echo "Compressing $name-$version.$platform.$compression"
   mkdir "$name-$version-$platform"
-  cp flapc.1 "$name-$version-$platform/"
-  gzip "$name-$version-$platform/flapc.1"
-  cp "$name.$platform" "$name-$version-$platform/flapc"
+  cp c67.1 "$name-$version-$platform/"
+  gzip "$name-$version-$platform/c67.1"
+  cp "$name.$platform" "$name-$version-$platform/c67"
   cp LICENSE "$name-$version-$platform/"
 
   case "$compression" in

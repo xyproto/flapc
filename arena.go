@@ -1,4 +1,4 @@
-// Arena allocator for Flap runtime
+// Arena allocator for C67 runtime
 // Provides fast bump allocation with scope-based deallocation
 package main
 
@@ -38,7 +38,7 @@ type Arena struct {
 
 // generateArenaInit generates code to initialize an arena
 // This is called at program start or arena block entry
-func (fc *FlapCompiler) generateArenaInit(arena *Arena, sizeBytes int) {
+func (fc *C67Compiler) generateArenaInit(arena *Arena, sizeBytes int) {
 	// Allocate arena memory with mmap (Linux) or malloc (Windows/macOS)
 	if fc.eb.target.OS() == OSLinux {
 		// mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)
@@ -72,7 +72,7 @@ func (fc *FlapCompiler) generateArenaInit(arena *Arena, sizeBytes int) {
 
 // generateArenaAlloc generates code to allocate from current arena
 // Returns pointer in rax
-func (fc *FlapCompiler) generateArenaAlloc(sizeBytes int) {
+func (fc *C67Compiler) generateArenaAlloc(sizeBytes int) {
 	// Load current pointer
 	fc.out.MovMemToReg("rax", "rbp", -24) // rax = arena.current
 
@@ -91,7 +91,7 @@ func (fc *FlapCompiler) generateArenaAlloc(sizeBytes int) {
 }
 
 // generateArenaReset generates code to reset arena to initial state
-func (fc *FlapCompiler) generateArenaReset() {
+func (fc *C67Compiler) generateArenaReset() {
 	// Reset current = base
 	fc.out.MovMemToReg("rax", "rbp", -16) // Load arena.base
 	fc.out.MovRegToMem("rax", "rbp", -24) // Store to arena.current
@@ -103,7 +103,7 @@ func (fc *FlapCompiler) generateArenaReset() {
 
 // generateArenaFree generates code to free arena memory
 // This is called at program end or arena block exit
-func (fc *FlapCompiler) generateArenaFree() {
+func (fc *C67Compiler) generateArenaFree() {
 	// Load base pointer
 	fc.out.MovMemToReg("rdi", "rbp", -16) // rdi = arena.base
 
@@ -124,7 +124,7 @@ func (fc *FlapCompiler) generateArenaFree() {
 
 // Helper functions for calling C runtime
 
-func (fc *FlapCompiler) callMalloc() {
+func (fc *C67Compiler) callMalloc() {
 	// Import malloc if not already imported
 	if !fc.hasCFunction("malloc") {
 		fc.importCFunction("malloc", "libc.so.6")
@@ -138,7 +138,7 @@ func (fc *FlapCompiler) callMalloc() {
 	fc.out.CallSymbol(mallocSymbol)
 }
 
-func (fc *FlapCompiler) callRealloc() {
+func (fc *C67Compiler) callRealloc() {
 	// Similar to malloc
 	if !fc.hasCFunction("realloc") {
 		fc.importCFunction("realloc", "libc.so.6")
@@ -151,7 +151,7 @@ func (fc *FlapCompiler) callRealloc() {
 	fc.out.CallSymbol(reallocSymbol)
 }
 
-func (fc *FlapCompiler) callFree() {
+func (fc *C67Compiler) callFree() {
 	// Import free if not already imported
 	if !fc.hasCFunction("free") {
 		fc.importCFunction("free", "libc.so.6")
@@ -166,7 +166,7 @@ func (fc *FlapCompiler) callFree() {
 }
 
 // Check if C function is already imported
-func (fc *FlapCompiler) hasCFunction(name string) bool {
+func (fc *C67Compiler) hasCFunction(name string) bool {
 	// Check in imported functions
 	for _, fn := range fc.importedFunctions {
 		if fn == name {
@@ -177,7 +177,7 @@ func (fc *FlapCompiler) hasCFunction(name string) bool {
 }
 
 // Import a C function for calling
-func (fc *FlapCompiler) importCFunction(name, library string) {
+func (fc *C67Compiler) importCFunction(name, library string) {
 	// Add to dynamic linker if we have one
 	if fc.eb.dynlinker != nil {
 		fc.eb.dynlinker.ImportFunction(library, name)
@@ -190,7 +190,7 @@ func (fc *FlapCompiler) importCFunction(name, library string) {
 // Arena-aware allocation functions
 
 // compileStringLiteral now uses arena allocation
-func (fc *FlapCompiler) compileStringLiteralWithArena(s string) {
+func (fc *C67Compiler) compileStringLiteralWithArena(s string) {
 	// Calculate size needed (length + null terminator)
 	size := len(s) + 1
 
@@ -210,13 +210,13 @@ func (fc *FlapCompiler) compileStringLiteralWithArena(s string) {
 	fc.out.XorRegWithReg("rax", "rax")
 	fc.out.MovByteRegToMem("rax", "rdi", len(s))
 
-	// Convert pointer to float64 for Flap
+	// Convert pointer to float64 for C67
 	fc.out.Cvtsi2sd("xmm0", "rdi")
 }
 
 // compileListLiteral now uses arena allocation
-func (fc *FlapCompiler) compileListLiteralWithArena(elements []Expression) {
-	// Lists in Flap are maps with integer keys
+func (fc *C67Compiler) compileListLiteralWithArena(elements []Expression) {
+	// Lists in C67 are maps with integer keys
 	// Calculate size for map structure (simplified)
 	// For now: array of float64 values
 	size := len(elements) * 8 // 8 bytes per float64
@@ -238,7 +238,7 @@ func (fc *FlapCompiler) compileListLiteralWithArena(elements []Expression) {
 }
 
 // compileMapLiteral now uses arena allocation
-func (fc *FlapCompiler) compileMapLiteralWithArena(keys, values []Expression) {
+func (fc *C67Compiler) compileMapLiteralWithArena(keys, values []Expression) {
 	// Similar to list, but with key-value pairs
 	// For now: simple array of alternating keys and values
 	size := len(keys) * 16 // 16 bytes per pair (key + value)
@@ -285,8 +285,8 @@ const (
 // callArenaAlloc generates code to allocate from current arena
 // Input: rdi = size to allocate
 // Output: rax = pointer to allocated memory
-func (fc *FlapCompiler) callArenaAlloc() {
-	// Use the existing flap_arena_alloc runtime function
+func (fc *C67Compiler) callArenaAlloc() {
+	// Use the existing c67_arena_alloc runtime function
 	// It expects: rdi = arena_ptr, rsi = size
 	// Returns: rax = allocated pointer
 
@@ -298,7 +298,7 @@ func (fc *FlapCompiler) callArenaAlloc() {
 	arenaIndex := fc.currentArena - 1
 	offset := arenaIndex * 8
 
-	fc.out.LeaSymbolToReg("rdi", "_flap_arena_meta")
+	fc.out.LeaSymbolToReg("rdi", "_c67_arena_meta")
 	fc.out.MovMemToReg("rdi", "rdi", 0)      // rdi = meta-arena array pointer
 	fc.out.MovMemToReg("rdi", "rdi", offset) // rdi = arena struct pointer
 
@@ -306,8 +306,8 @@ func (fc *FlapCompiler) callArenaAlloc() {
 	fc.out.PopReg("rsi") // rsi = size
 
 	// Call arena allocator (rdi = arena_ptr, rsi = size)
-	fc.trackFunctionCall("flap_arena_alloc")
-	fc.out.CallSymbol("flap_arena_alloc")
+	fc.trackFunctionCall("c67_arena_alloc")
+	fc.out.CallSymbol("c67_arena_alloc")
 
 	// Result is in rax
 }

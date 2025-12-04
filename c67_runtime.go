@@ -5,28 +5,28 @@ import (
 	"fmt"
 )
 
-// FlapMap represents map[uint64]float64 - the foundation of all Flap values
+// C67Map represents map[uint64]float64 - the foundation of all C67 values
 // Memory layout: [size: uint64][capacity: uint64][entry0][entry1]...
 // Each entry: [key: uint64][value: float64]
 
-type FlapMapEntry struct {
+type C67MapEntry struct {
 	Key   uint64
 	Value float64
 }
 
-// Runtime functions for Flap map operations
-type FlapRuntime struct {
+// Runtime functions for C67 map operations
+type C67Runtime struct {
 	out *Out
 	eb  *ExecutableBuilder
 }
 
-func NewFlapRuntime(out *Out, eb *ExecutableBuilder) *FlapRuntime {
-	return &FlapRuntime{out: out, eb: eb}
+func NewC67Runtime(out *Out, eb *ExecutableBuilder) *C67Runtime {
+	return &C67Runtime{out: out, eb: eb}
 }
 
 // CreateScalar creates a map with single entry {0: value}
 // Returns pointer to map in rax
-func (fr *FlapRuntime) CreateScalar(value float64) {
+func (fr *C67Runtime) CreateScalar(value float64) {
 	// Allocate 32 bytes: [size=1][capacity=1][key=0][value]
 	size := uint64(32)
 
@@ -58,7 +58,7 @@ func (fr *FlapRuntime) CreateScalar(value float64) {
 // GetScalarValue extracts float64 value from map at index 0
 // Input: rax = pointer to map
 // Output: xmm0 = float64 value
-func (fr *FlapRuntime) GetScalarValue() {
+func (fr *C67Runtime) GetScalarValue() {
 	// Load value from [rax+24] (assumes single entry map with key=0)
 	fr.out.MovMemToXmm("xmm0", "rax", 24)
 }
@@ -66,7 +66,7 @@ func (fr *FlapRuntime) GetScalarValue() {
 // CreateMapFromInt creates a scalar map from integer in rax
 // Input: rax = int64 value
 // Output: rax = pointer to map{0: float64(value)}
-func (fr *FlapRuntime) CreateMapFromInt() {
+func (fr *C67Runtime) CreateMapFromInt() {
 	// Convert int in rax to float in xmm0
 	fr.out.MovRegToXmm("xmm0", "rax")
 	fr.out.Cvtsi2sd("xmm0", "rax")
@@ -95,7 +95,7 @@ func (fr *FlapRuntime) CreateMapFromInt() {
 // BinaryOpScalar performs binary operation on two scalar maps
 // Input: rbx = pointer to left map, rax = pointer to right map
 // Output: rax = pointer to result map
-func (fr *FlapRuntime) BinaryOpScalar(op string) {
+func (fr *C67Runtime) BinaryOpScalar(op string) {
 	// Load left value to xmm0
 	fr.out.MovMemToXmm("xmm0", "rbx", 24)
 
@@ -139,7 +139,7 @@ func (fr *FlapRuntime) BinaryOpScalar(op string) {
 // Each character is stored as float64 at sequential indices
 // Input: rsi = pointer to string, rdx = length
 // Output: rax = pointer to map
-func (fr *FlapRuntime) CreateString() {
+func (fr *C67Runtime) CreateString() {
 	// Calculate size: 16 (header) + length*16 (entries)
 	fr.out.MovRegToReg("rax", "rdx")
 	fr.out.ShlImmReg("rax", 4)    // rax = length * 16
@@ -166,6 +166,6 @@ func (fr *FlapRuntime) CreateString() {
 // These functions need to be emitted as assembly code in the executable
 
 // EmitArenaRuntime emits the arena allocator runtime code
-func (fr *FlapRuntime) EmitArenaRuntime() {
+func (fr *C67Runtime) EmitArenaRuntime() {
 	fr.eb.EmitArenaRuntimeCode()
 }

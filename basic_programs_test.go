@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// TestBasicPrograms tests simple Flap programs (print, arithmetic, etc.)
+// TestBasicPrograms tests simple C67 programs (print, arithmetic, etc.)
 func TestBasicPrograms(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -66,11 +66,11 @@ printf("The answer is %v\n", x)
 		},
 		{
 			name: "fstring_basic",
-			source: `name := "Flap"
+			source: `name := "C67"
 msg := f"Hello, {name}!"
 println(msg)
 `,
-			expected: "Hello, Flap!\n",
+			expected: "Hello, C67!\n",
 		},
 		{
 			name: "compound_assignment",
@@ -99,13 +99,13 @@ println(a != b)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			testInlineFlap(t, tt.name, tt.source, tt.expected)
+			testInlineC67(t, tt.name, tt.source, tt.expected)
 		})
 	}
 }
 
-// testInlineFlap compiles and runs inline Flap source code
-func testInlineFlap(t *testing.T, name, source, expected string) {
+// testInlineC67 compiles and runs inline C67 source code
+func testInlineC67(t *testing.T, name, source, expected string) {
 	result := compileAndRun(t, source)
 	if !strings.Contains(result, expected) {
 		t.Errorf("Output mismatch:\nExpected to contain:\n%s\nActual:\n%s", expected, result)
@@ -128,7 +128,7 @@ func TestExistingBasicPrograms(t *testing.T) {
 
 	for _, name := range tests {
 		t.Run(name, func(t *testing.T) {
-			srcPath := filepath.Join("testprograms", name+".flap")
+			srcPath := filepath.Join("testprograms", name+".c67")
 			resultPath := filepath.Join("testprograms", name+".result")
 
 			// Skip if source doesn't exist
@@ -148,7 +148,7 @@ func TestExistingBasicPrograms(t *testing.T) {
 
 			// Compile
 			platform := GetDefaultPlatform()
-			if err := CompileFlap(srcPath, exePath, platform); err != nil {
+			if err := CompileC67(srcPath, exePath, platform); err != nil {
 				t.Fatalf("Compilation failed: %v", err)
 			}
 

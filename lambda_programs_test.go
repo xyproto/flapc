@@ -51,7 +51,7 @@ println(factorial(5, 1))
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			testInlineFlap(t, tt.name, tt.source, tt.expected)
+			testInlineC67(t, tt.name, tt.source, tt.expected)
 		})
 	}
 }
@@ -72,7 +72,7 @@ func TestExistingLambdaPrograms(t *testing.T) {
 
 	for _, name := range tests {
 		t.Run(name, func(t *testing.T) {
-			srcPath := filepath.Join("testprograms", name+".flap")
+			srcPath := filepath.Join("testprograms", name+".c67")
 			resultPath := filepath.Join("testprograms", name+".result")
 
 			if _, err := os.Stat(srcPath); os.IsNotExist(err) {
@@ -89,7 +89,7 @@ func TestExistingLambdaPrograms(t *testing.T) {
 			exePath := filepath.Join(tmpDir, name)
 
 			platform := GetDefaultPlatform()
-			if err := CompileFlap(srcPath, exePath, platform); err != nil {
+			if err := CompileC67(srcPath, exePath, platform); err != nil {
 				t.Fatalf("Compilation failed: %v", err)
 			}
 

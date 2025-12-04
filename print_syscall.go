@@ -8,13 +8,13 @@ import (
 
 // generatePrintSyscall generates a syscall-based print function
 // This function writes directly to stdout (fd=1) using the write syscall
-// Signature: _flap_print_syscall(str_ptr) -> void
-func (fc *FlapCompiler) generatePrintSyscall() {
+// Signature: _c67_print_syscall(str_ptr) -> void
+func (fc *C67Compiler) generatePrintSyscall() {
 	if fc.eb.target.OS() != OSLinux {
 		return
 	}
 
-	fc.eb.MarkLabel("_flap_print_syscall")
+	fc.eb.MarkLabel("_c67_print_syscall")
 
 	// Prologue
 	fc.out.PushReg("rbp")
@@ -81,19 +81,19 @@ func (fc *FlapCompiler) generatePrintSyscall() {
 	fc.out.Ret()
 
 	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG: Generated _flap_print_syscall\n")
+		fmt.Fprintf(os.Stderr, "DEBUG: Generated _c67_print_syscall\n")
 	}
 }
 
 // generatePrintlnSyscall generates a syscall-based println function
 // This function writes to stdout followed by a newline
-// Signature: _flap_println_syscall(str_ptr) -> void
-func (fc *FlapCompiler) generatePrintlnSyscall() {
+// Signature: _c67_println_syscall(str_ptr) -> void
+func (fc *C67Compiler) generatePrintlnSyscall() {
 	if fc.eb.target.OS() != OSLinux {
 		return
 	}
 
-	fc.eb.MarkLabel("_flap_println_syscall")
+	fc.eb.MarkLabel("_c67_println_syscall")
 
 	// Prologue
 	fc.out.PushReg("rbp")
@@ -169,14 +169,14 @@ func (fc *FlapCompiler) generatePrintlnSyscall() {
 	fc.out.Ret()
 
 	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG: Generated _flap_println_syscall\n")
+		fmt.Fprintf(os.Stderr, "DEBUG: Generated _c67_println_syscall\n")
 	}
 }
 
 // generatePrintfSyscall generates printf using print + f-string infrastructure
-// This leverages the existing f-string compilation which calls _flap_concat_strings
+// This leverages the existing f-string compilation which calls _c67_concat_strings
 // Signature: printf(fstring_ptr) -> void
-func (fc *FlapCompiler) generatePrintfSyscall() {
+func (fc *C67Compiler) generatePrintfSyscall() {
 	// printf is just print with f-string support
 	// The f-string compilation handles formatting, then we print the result
 	// This is already handled in compileBuiltinCall for "printf"

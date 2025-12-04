@@ -101,7 +101,7 @@ func (eg *ENetCodeGenerator) CompileENetFunction(functionName, cCode string) ([]
 func (eg *ENetCodeGenerator) GenerateENetSendReceive() ([]byte, []byte, error) {
 	// Send function
 	sendCode := `
-int flap_enet_send(const char *address_str, const char *message, size_t len) {
+int c67_enet_send(const char *address_str, const char *message, size_t len) {
     // Initialize ENet if needed
     static int enet_initialized = 0;
     if (!enet_initialized) {
@@ -193,7 +193,7 @@ typedef struct {
     int success;
 } ENetRecvResult;
 
-void flap_enet_receive(const char *bind_address, ENetRecvResult *result, int timeout_ms) {
+void c67_enet_receive(const char *bind_address, ENetRecvResult *result, int timeout_ms) {
     result->success = 0;
     result->length = 0;
     
@@ -238,12 +238,12 @@ void flap_enet_receive(const char *bind_address, ENetRecvResult *result, int tim
 }
 `
 
-	sendMachineCode, err := eg.CompileENetFunction("flap_enet_send", sendCode)
+	sendMachineCode, err := eg.CompileENetFunction("c67_enet_send", sendCode)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to compile send: %v", err)
 	}
 
-	recvMachineCode, err := eg.CompileENetFunction("flap_enet_receive", recvCode)
+	recvMachineCode, err := eg.CompileENetFunction("c67_enet_receive", recvCode)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to compile receive: %v", err)
 	}

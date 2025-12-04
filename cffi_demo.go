@@ -11,7 +11,7 @@ import (
 
 // Demo program showing the C FFI manager capabilities
 func main() {
-	fmt.Println("=== Flapc C FFI Manager Demo ===\n")
+	fmt.Println("=== c67 C FFI Manager Demo ===\n")
 
 	// Create a new CFFI manager
 	cffi := NewCFFIManager()
@@ -66,39 +66,39 @@ extern const char* SDL_GetError(void);
 	// Show functions
 	fmt.Println("\nExtracted functions:")
 	for name, fn := range cffi.functions {
-		returnType := cffi.MapCTypeToFlap(fn.ReturnType)
+		returnType := cffi.MapCTypeToC67(fn.ReturnType)
 		fmt.Printf("  %s: ", name)
 		if fn.Library != "" {
 			fmt.Printf("[%s] ", fn.Library)
 		}
 		fmt.Printf("%s -> %s (", fn.ReturnType, returnType)
 		for i, param := range fn.Params {
-			flapType := cffi.MapCTypeToFlap(param.Type)
+			c67Type := cffi.MapCTypeToC67(param.Type)
 			if i > 0 {
 				fmt.Print(", ")
 			}
-			fmt.Printf("%s: %s->%s", param.Name, param.Type, flapType)
+			fmt.Printf("%s: %s->%s", param.Name, param.Type, c67Type)
 		}
 		fmt.Println(")")
 	}
 
-	// Try to generate Flap bindings
-	fmt.Println("\nGenerated Flap bindings:")
+	// Try to generate C67 bindings
+	fmt.Println("\nGenerated C67 bindings:")
 	for name := range cffi.functions {
-		if binding, err := cffi.GenerateFlapBinding(name); err == nil {
+		if binding, err := cffi.GenerateC67Binding(name); err == nil {
 			fmt.Printf("\n%s\n", binding)
 		}
 	}
 
 	// Show type mappings
-	fmt.Println("\n\nC to Flap type mappings:")
+	fmt.Println("\n\nC to C67 type mappings:")
 	testTypes := []string{
 		"int", "unsigned int", "char*", "const char*", "void*",
 		"int64_t", "uint64_t", "float", "double",
 	}
 	for _, cType := range testTypes {
-		flapType := cffi.MapCTypeToFlap(cType)
-		fmt.Printf("  %-20s -> %s\n", cType, flapType)
+		c67Type := cffi.MapCTypeToC67(cType)
+		fmt.Printf("  %-20s -> %s\n", cType, c67Type)
 	}
 
 	fmt.Println("\n=== Demo Complete ===")

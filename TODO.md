@@ -1,4 +1,4 @@
-# Flap TODO
+# C67 TODO
 
 ## Current Status (December 2025)
 
@@ -10,7 +10,7 @@
 
 ### Compilation
 - ✅ Direct to machine code (x86_64, ARM64, RISC-V)
-- ✅ Linux x86_64: Fully working, no libc required for pure Flap code
+- ✅ Linux x86_64: Fully working, no libc required for pure C67 code
 - ✅ Windows x86_64: Fully working with PE format
 - ✅ ELF and PE executable generation
 - ✅ Mach-O support (basic)

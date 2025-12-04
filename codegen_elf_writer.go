@@ -15,7 +15,7 @@ import (
 // executables for Linux/Unix systems on x86_64 architecture.
 
 // Confidence that this function is working: 85%
-func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
+func (fc *C67Compiler) writeELF(program *Program, outputPath string) error {
 	// Enable dynamic linking for ELF (required for WriteCompleteDynamicELF)
 	fc.eb.useDynamicLinking = true
 
@@ -35,7 +35,7 @@ func (fc *FlapCompiler) writeELF(program *Program, outputPath string) error {
 		if lambdaSet[funcName] {
 			continue
 		}
-		if strings.HasPrefix(funcName, "_flap") || strings.HasPrefix(funcName, "flap_") {
+		if strings.HasPrefix(funcName, "_c67") || strings.HasPrefix(funcName, "c67_") {
 			continue
 		}
 		if !pltSet[funcName] {

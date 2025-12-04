@@ -8,13 +8,13 @@ import (
 
 // VBROADCASTSD - Broadcast scalar double-precision float to all vector elements
 //
-// Essential for Flap's vectorized operations:
+// Essential for C67's vectorized operations:
 //   - Scaling: scale all elements by a constant
 //   - Comparison: compare all elements against a threshold
 //   - Initialization: fill vector with a value
 //   - Binary operations: operate vector with scalar
 //
-// Example usage in Flap:
+// Example usage in C67:
 //   values || map(x -> x * 2.0)  // Broadcast 2.0 to all elements
 //   values || map(x -> x > threshold)  // Broadcast threshold
 //

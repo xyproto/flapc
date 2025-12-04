@@ -7,7 +7,7 @@ import (
 
 // TestWindowsCompilation verifies that Windows PE executables can be compiled
 // This test only checks compilation, not execution (which would require Wine)
-// For actual testing on Windows, use windows.flap manually
+// For actual testing on Windows, use windows.c67 manually
 func TestWindowsCompilation(t *testing.T) {
 	code := `
 println("Hello Windows")
@@ -16,7 +16,7 @@ println(x)
 c.printf("C FFI works: %d\n", 42)
 `
 	// Create temp file
-	tmpFile, err := os.CreateTemp("", "windows_test_*.flap")
+	tmpFile, err := os.CreateTemp("", "windows_test_*.c67")
 	if err != nil {
 		t.Fatalf("Failed to create temp file: %v", err)
 	}
@@ -38,7 +38,7 @@ c.printf("C FFI works: %d\n", 42)
 		OS:   OSWindows,
 	}
 
-	err = CompileFlap(tmpPath, outputPath, platform)
+	err = CompileC67(tmpPath, outputPath, platform)
 	if err != nil {
 		t.Errorf("Windows compilation failed: %v", err)
 		return

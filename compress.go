@@ -123,14 +123,14 @@ func generateX64DecompressorStub(compressedSize, decompressedSize uint32) []byte
 
 	// Save registers we'll use
 	stub = append(stub, 0x53)       // push rbx
-	stub = append(stub, 0x55)       // push rbp  
+	stub = append(stub, 0x55)       // push rbp
 	stub = append(stub, 0x41, 0x54) // push r12
 	stub = append(stub, 0x41, 0x55) // push r13
 
 	// mmap(NULL, decompressedSize, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)
 	stub = append(stub, 0x48, 0x31, 0xFF) // xor rdi, rdi (addr = NULL)
 	stub = append(stub, 0x48, 0xC7, 0xC6) // mov rsi, decompressedSize (low 32 bits)
-	stub = append(stub, byte(decompressedSize), byte(decompressedSize>>8), 
+	stub = append(stub, byte(decompressedSize), byte(decompressedSize>>8),
 		byte(decompressedSize>>16), byte(decompressedSize>>24))
 	stub = append(stub, 0x48, 0xC7, 0xC2, 0x07, 0x00, 0x00, 0x00) // mov rdx, 7 (PROT_R|W|X)
 	stub = append(stub, 0x49, 0xC7, 0xC2, 0x22, 0x00, 0x00, 0x00) // mov r10, 0x22 (MAP_PRIVATE|ANON)
@@ -138,7 +138,7 @@ func generateX64DecompressorStub(compressedSize, decompressedSize uint32) []byte
 	stub = append(stub, 0x4D, 0x31, 0xC9)                         // xor r9, r9 (offset)
 	stub = append(stub, 0x48, 0xC7, 0xC0, 0x09, 0x00, 0x00, 0x00) // mov rax, 9 (sys_mmap)
 	stub = append(stub, 0x0F, 0x05)                               // syscall
-	
+
 	// Check for mmap failure
 	stub = append(stub, 0x48, 0x85, 0xC0) // test rax, rax
 	errorJmpPos := len(stub)
@@ -156,10 +156,10 @@ func generateX64DecompressorStub(compressedSize, decompressedSize uint32) []byte
 
 	// Skip the 4-byte size header
 	stub = append(stub, 0x48, 0x83, 0xC6, 0x04) // add rsi, 4
-	
+
 	// Calculate end of decompressed buffer: r12 = rdi + decompressedSize
-	stub = append(stub, 0x49, 0x89, 0xFC)       // mov r12, rdi
-	stub = append(stub, 0x49, 0x81, 0xC4)       // add r12, decompressedSize
+	stub = append(stub, 0x49, 0x89, 0xFC) // mov r12, rdi
+	stub = append(stub, 0x49, 0x81, 0xC4) // add r12, decompressedSize
 	stub = append(stub, byte(decompressedSize), byte(decompressedSize>>8),
 		byte(decompressedSize>>16), byte(decompressedSize>>24))
 
@@ -181,11 +181,11 @@ func generateX64DecompressorStub(compressedSize, decompressedSize uint32) []byte
 	stub = append(stub, 0x0F, 0xB7, 0xD8) // movzx ebx, ax (ebx = dist)
 	stub = append(stub, 0xAC)             // lodsb (al = len)
 	stub = append(stub, 0x0F, 0xB6, 0xD0) // movzx edx, al (edx = len)
-	
+
 	// Check for escaped 0xFF (dist==0, len==1)
 	stub = append(stub, 0x66, 0x85, 0xDB) // test bx, bx
 	copyMatchJmpPos := len(stub)
-	stub = append(stub, 0x75, 0x00) // jnz copy_match (will patch)
+	stub = append(stub, 0x75, 0x00)       // jnz copy_match (will patch)
 	stub = append(stub, 0x83, 0xFA, 0x01) // cmp edx, 1
 	copyMatchJmpPos2 := len(stub)
 	stub = append(stub, 0x75, 0x00) // jne copy_match (will patch)
@@ -272,7 +272,7 @@ func WrapWithDecompressor(originalELF []byte, arch string) ([]byte, error) {
 	// NOTE: Compressing the entire ELF doesn't work because the ELF headers,
 	// PLT, GOT, and relocations all assume specific virtual addresses.
 	// When we decompress to a different mmap'd address, everything breaks.
-	// 
+	//
 	// To properly implement compression, we would need to:
 	// 1. Extract only the .text section (machine code)
 	// 2. Compress that
@@ -280,7 +280,7 @@ func WrapWithDecompressor(originalELF []byte, arch string) ([]byte, error) {
 	// 4. Or implement position-independent decompression
 	//
 	// For now, disable compression to avoid segfaults.
-	
+
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG: Compression disabled for %s (needs position-independent code support)\n", arch)
 	}
@@ -288,26 +288,26 @@ func WrapWithDecompressor(originalELF []byte, arch string) ([]byte, error) {
 
 	// Keep the old code commented for reference:
 	/*
-	compressor := NewCompressor()
+		compressor := NewCompressor()
 
-	// Compress the entire ELF
-	compressed := compressor.Compress(originalELF)
+		// Compress the entire ELF
+		compressed := compressor.Compress(originalELF)
 
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG: Compressed %d -> %d bytes\n", len(originalELF), len(compressed))
-	}
-
-	// Generate decompressor stub
-	stub := generateDecompressorStub(arch, uint32(len(compressed)), uint32(len(originalELF)))
-	if len(stub) == 0 {
 		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG: No decompressor stub for arch %s\n", arch)
+			fmt.Fprintf(os.Stderr, "DEBUG: Compressed %d -> %d bytes\n", len(originalELF), len(compressed))
 		}
-		// Compression not supported for this arch, return original
-		return originalELF, nil
-	}
+
+		// Generate decompressor stub
+		stub := generateDecompressorStub(arch, uint32(len(compressed)), uint32(len(originalELF)))
+		if len(stub) == 0 {
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG: No decompressor stub for arch %s\n", arch)
+			}
+			// Compression not supported for this arch, return original
+			return originalELF, nil
+		}
 
 	*/
-	
+
 	// Rest of the function is never reached
 }

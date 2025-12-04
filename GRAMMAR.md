@@ -1,18 +1,18 @@
-# Flap Grammar Specification
+# C67 Grammar Specification
 
 **Version:** 1.5.0
 **Date:** 2025-12-03
-**Status:** Canonical Grammar Reference for Flap 3.0 Release
+**Status:** Canonical Grammar Reference for C67 3.0 Release
 
-This document defines the complete formal grammar of the Flap programming language using Extended Backus-Naur Form (EBNF).
+This document defines the complete formal grammar of the C67 programming language using Extended Backus-Naur Form (EBNF).
 
 ## ⚠️ CRITICAL: The Universal Type
 
-Flap has exactly ONE runtime type: `map[uint64]float64`, an ordered map.
+C67 has exactly ONE runtime type: `map[uint64]float64`, an ordered map.
 
 Not "represented as" or "backed by" — every value IS this map:
 
-```flap
+```c67
 42              // {0: 42.0}
 "Hello"         // {0: 72.0, 1: 101.0, 2: 108.0, 3: 108.0, 4: 111.0}
 [1, 2, 3]       // {0: 1.0, 1: 2.0, 2: 3.0}
@@ -23,7 +23,7 @@ Not "represented as" or "backed by" — every value IS this map:
 
 **Even C foreign types are stored as maps:**
 
-```flap
+```c67
 // C pointer (0x7fff1234) stored as float64 bits
 ptr: cptr = sdl.SDL_CreateWindow(...)  // {0: <pointer_as_float64>}
 
@@ -37,7 +37,7 @@ result: cint = sdl.SDL_Init(...)       // {0: 1.0} or {0: 0.0}
 There are NO special types, NO primitives, NO exceptions.
 Everything is a map from uint64 to float64.
 
-This is not an implementation detail — this IS Flap.
+This is not an implementation detail — this IS C67.
 
 ## Type Annotations
 
@@ -48,7 +48,7 @@ Type annotations are **metadata** that specify:
 
 They do NOT change the runtime representation (always `map[uint64]float64`).
 
-### Native Flap Types
+### Native C67 Types
 - `num` - number (default type)
 - `str` - string (map of char codes)
 - `list` - list (map with integer keys)
@@ -98,7 +98,7 @@ When the parser encounters `{`, it determines the block type by examining conten
 ### Rule 1: Map Literal
 **Condition:** First element contains `:` (before any `=>` or `~>`)
 
-```flap
+```c67
 config = { port: 8080, host: "localhost" }
 settings = { "key": value, "other": 42 }
 ```
@@ -111,7 +111,7 @@ There are TWO forms:
 #### Form A: Value Match (with expression before `{`)
 Evaluates expression, then matches its result against patterns:
 
-```flap
+```c67
 // Match on literal values
 x {
     0 => "zero"
@@ -129,7 +129,7 @@ x > 0 {
 #### Form B: Guard Match (no expression, uses `|` at line start)
 Each branch evaluates its own condition independently:
 
-```flap
+```c67
 // Guard branches with | at line start
 {
     | x == 0 => "zero"
@@ -145,7 +145,7 @@ Otherwise `|` is the pipe operator: `data | transform | filter`
 ### Rule 3: Statement Block
 **Condition:** No `=>` or `~>` in scope, not a map
 
-```flap
+```c67
 compute = x -> {
     temp = x * 2
     result = temp + 10
@@ -164,7 +164,7 @@ compute = x -> {
 
 ## Import System
 
-Flap's import system provides a unified way to import libraries, git repositories, and local directories.
+C67's import system provides a unified way to import libraries, git repositories, and local directories.
 
 ### Import Resolution Priority
 
@@ -184,17 +184,17 @@ Flap's import system provides a unified way to import libraries, git repositorie
 
 ### Import Syntax
 
-```flap
+```c67
 // Library import (uses pkg-config or finds .dll)
 import sdl3 as sdl
 import raylib as rl
 
 // Git repository import
-import github.com/xyproto/flap-math as math
-import github.com/xyproto/flap-math@v1.0.0 as math
-import github.com/xyproto/flap-math@latest as math
-import github.com/xyproto/flap-math@main as math
-import git@github.com:xyproto/flap-math.git as math
+import github.com/xyproto/c67-math as math
+import github.com/xyproto/c67-math@v1.0.0 as math
+import github.com/xyproto/c67-math@latest as math
+import github.com/xyproto/c67-math@main as math
+import git@github.com:xyproto/c67-math.git as math
 
 // Directory import
 import . as local                    // Current directory
@@ -209,8 +209,8 @@ import SDL3.dll as sdl
 ### Import Behavior
 
 - **Libraries**: Searches for library files and headers, parses C headers for FFI
-- **Git Repos**: Clones to `~/.cache/flapc/` (respects `XDG_CACHE_HOME`), imports all top-level `.flap` files
-- **Directories**: Imports all top-level `.flap` files from the directory
+- **Git Repos**: Clones to `~/.cache/c67/` (respects `XDG_CACHE_HOME`), imports all top-level `.c67` files
+- **Directories**: Imports all top-level `.c67` files from the directory
 - **Version Specifiers**:
   - `@v1.0.0` - Specific tag
   - `@main` or `@master` - Specific branch
@@ -219,14 +219,14 @@ import SDL3.dll as sdl
 
 ## Program Execution Model
 
-Flap programs can be structured in three ways:
+C67 programs can be structured in three ways:
 
 ### 1. Main Function
 When a `main` function is defined, it becomes the program entry point:
 
-```flap
+```c67
 main = { println("Hello!") }     // A lambda that returns the value returned from println (0)
-main = 42                        // A Flap number {0: 42.0}
+main = 42                        // A C67 number {0: 42.0}
 main = () -> { 100 }             // A lambda that returns 100
 main = { 100 }                   // A lambda that returns 100
 ```
@@ -240,7 +240,7 @@ main = { 100 }                   // A lambda that returns 100
 ### 2. Main Variable
 When a `main` variable (not a function) is defined without top-level code:
 
-```flap
+```c67
 main = 42        // Exit with code 42
 main = {}        // Exit with code 0 (empty map)
 main = []        // Exit with code 0 (empty list)
@@ -253,7 +253,7 @@ main = []        // Exit with code 0 (empty list)
 ### 3. Top-Level Code
 When there's no `main` function or variable, top-level code executes:
 
-```flap
+```c67
 println("Hello!")
 x := 42
 println(x)
@@ -273,7 +273,7 @@ println(x)
 - If top-level doesn't call `main()`, `main()` is never executed
 - Last expression in top-level code provides exit code
 
-```flap
+```c67
 // Top-level setup
 x := 100
 
@@ -288,7 +288,7 @@ main = { println(x); 42 }
 - `main` variable is accessible but not special
 - Last top-level expression provides exit code
 
-```flap
+```c67
 main = 99
 
 println("Setup")
@@ -604,12 +604,12 @@ Identifiers start with a letter and contain letters, digits, or underscores:
 - Can include Unicode letters
 
 **Valid examples:**
-```flap
+```c67
 x, count, user_name, myVar, value2, Temperature, λ
 ```
 
 **Invalid:**
-```flap
+```c67
 2count     // starts with digit
 _private   // starts with underscore
 my-var     // contains hyphen
@@ -624,7 +624,7 @@ number = [ "-" ] digit { digit } [ "." digit { digit } ] ;
 ```
 
 **Examples:**
-```flap
+```c67
 42              // {0: 42.0}
 3.14159         // {0: 3.14159}
 -17             // {0: -17.0}
@@ -648,7 +648,7 @@ string = '"' { character } '"' ;
 ```
 
 **Examples:**
-```flap
+```c67
 "Hello"         // {0: 72.0, 1: 101.0, 2: 108.0, 3: 108.0, 4: 111.0}
 "A"             // {0: 65.0}
 ""              // {} (empty map)
@@ -678,7 +678,7 @@ fstring = 'f"' { character | "{" expression "}" } '"' ;
 ```
 
 **Examples:**
-```flap
+```c67
 name = "World"
 greeting = f"Hello, {name}!"
 result = f"2 + 2 = {2 + 2}"
@@ -686,7 +686,7 @@ result = f"2 + 2 = {2 + 2}"
 
 ### Comments
 
-```flap
+```c67
 // Single-line comment (C++ style)
 ```
 
@@ -700,7 +700,7 @@ No multi-line comments.
 ret arena unsafe cstruct class as max this defer spawn import
 ```
 
-**Note:** In Flap 3.0, lambda definitions use `->` (thin arrow) and match arms use `=>` (fat arrow), similar to Rust syntax.
+**Note:** In C67 3.0, lambda definitions use `->` (thin arrow) and match arms use `=>` (fat arrow), similar to Rust syntax.
 
 **No-argument lambdas** can be written as `-> expr` or inferred from context in assignments: `name = { ... }`
 
@@ -708,7 +708,7 @@ ret arena unsafe cstruct class as max this defer spawn import
 
 Type annotations use these keywords (context-dependent):
 
-**Native Flap types:**
+**Native C67 types:**
 ```
 num str list map
 ```
@@ -725,7 +725,7 @@ cptr cstring number string address packed aligned
 ```
 
 **Usage:**
-```flap
+```c67
 // Type annotations (preferred)
 x: num = 42
 name: str = "Alice"
@@ -737,21 +737,21 @@ value = unsafe int32 { ... }
 
 Type keywords are contextual - you can still use them as variable names in most contexts:
 
-```flap
+```c67
 num = 100              // OK - variable named num
 x: num = num * 2       // OK - type annotation vs variable
 ```
 
 ## Memory Management and Builtins
 
-**CRITICAL DESIGN PRINCIPLE:** Flap keeps builtin functions to an ABSOLUTE MINIMUM.
+**CRITICAL DESIGN PRINCIPLE:** C67 keeps builtin functions to an ABSOLUTE MINIMUM.
 
 **Memory allocation:**
 - NO `malloc`, `free`, `realloc`, or `calloc` as builtins
 - Use arena allocators: `allocate()` within `arena {}` blocks (recommended)
 - Or use C FFI: `c.malloc`, `c.free`, `c.realloc`, `c.calloc` (explicit)
 
-```flap
+```c67
 // Recommended: arena allocator
 result = arena {
     data = allocate(1024)
@@ -871,7 +871,7 @@ All bitwise operators use `b` suffix:
 
 **Multiple Assignment (Tuple Unpacking):**
 
-```flap
+```c67
 // Functions can return multiple values as a list
 a, b = some_function()  // Unpack first two elements
 x, y, z := [1, 2, 3]    // Unpack list literal
@@ -948,25 +948,25 @@ From highest to lowest precedence:
 
 ### Minimal Parentheses Philosophy
 
-Flap minimizes parenthesis usage. Use parentheses only when:
+C67 minimizes parenthesis usage. Use parentheses only when:
 
 1. **Precedence override needed:**
-   ```flap
+   ```c67
    (x + y) * z      // Override precedence
    ```
 
 2. **Complex condition grouping:**
-   ```flap
+   ```c67
    (x > 0 && y < 10) { ... }  // Group condition
    ```
 
 3. **Multiple lambda parameters:**
-   ```flap
+   ```c67
    (x, y) -> x + y  // Multiple params
    ```
 
 **Not needed:**
-```flap
+```c67
 // Good: no unnecessary parens
 x > 0 { => "positive" ~> "negative" }
 result = x + y * z
@@ -981,7 +981,7 @@ compute = (x) -> (x * 2)
 
 Statements are terminated by newlines:
 
-```flap
+```c67
 x = 10
 y = 20
 z = x + y
@@ -989,7 +989,7 @@ z = x + y
 
 Multiple statements on one line require explicit semicolons:
 
-```flap
+```c67
 x = 10; y = 20; z = x + y
 ```
 
@@ -1005,7 +1005,7 @@ x = 10; y = 20; z = x + y
 
 The `|` character is context-dependent:
 
-```flap
+```c67
 // Pipe operator (| not at line start)
 result = data | transform | filter
 
@@ -1021,7 +1021,7 @@ classify = x -> {
 
 #### Arrow Disambiguation
 
-```flap
+```c67
 =>   Match arm result
 ~>   Default match arm
 ->   Lambda or receive
@@ -1029,7 +1029,7 @@ classify = x -> {
 
 Context determines meaning:
 
-```flap
+```c67
 f = x -> x + 1             // Lambda with one arg
 msg <- &8080               // Receive from channel
 x { 0 => "zero" }          // Match arm
@@ -1039,7 +1039,7 @@ greet = { println("Hi") }  // No-arg lambda
 
 #### No-Argument Lambdas
 
-```flap
+```c67
 // Inferred lambda (in assignment context):
 greet = { println("Hello!") }            // Inferred: greet = -> { println("Hello!") }
 worker = { @ { process_forever() } }     // Inferred: worker = -> { @ { process_forever() } }
@@ -1067,7 +1067,7 @@ process(-> get_data())                      // Function argument, need explicit 
 
 The `@` symbol introduces loops (one of three forms):
 
-```flap
+```c67
 @ { ... }                  // Infinite loop
 @ i in collection { ... }  // For-each loop
 @ condition { ... }        // While loop
@@ -1075,7 +1075,7 @@ The `@` symbol introduces loops (one of three forms):
 
 **Loop Control with `ret @` and Numbered Labels:**
 
-Instead of `break`/`continue` keywords, Flap uses `ret @` with automatically numbered loop labels.
+Instead of `break`/`continue` keywords, C67 uses `ret @` with automatically numbered loop labels.
 
 **Loop Numbering:** Loops are numbered from outermost to innermost:
 - `@1` = outermost loop
@@ -1083,7 +1083,7 @@ Instead of `break`/`continue` keywords, Flap uses `ret @` with automatically num
 - `@3` = third level (nested inside @2)
 - `@` = current/innermost loop
 
-```flap
+```c67
 // Exit current loop
 @ i in 0..<100 {
     i > 50 { ret @ }      // Exit current loop (same as ret @1 here)
@@ -1115,7 +1115,7 @@ compute = n -> {
 
 Loops with unknown bounds or modified counters require `max`:
 
-```flap
+```c67
 // Counter modified - needs max
 @ i in 0..<10 max 20 {
     i++  // Modified counter
@@ -1137,7 +1137,7 @@ defer_statement = "defer" expression ;
 ```
 
 **Examples:**
-```flap
+```c67
 // Resource cleanup with defer
 init_resources = () -> {
     file := open("data.txt") or! {
@@ -1174,7 +1174,7 @@ defer sdl.SDL_DestroyWindow(window)  // Executes before SDL_Quit
 
 **Execution Order:**
 Deferred calls execute in reverse order of declaration (LIFO):
-```flap
+```c67
 defer println("1")  // Executes third
 defer println("2")  // Executes second
 defer println("3")  // Executes first
@@ -1195,7 +1195,7 @@ defer println("3")  // Executes first
 5. Return from error blocks instead of `exit()` - defer ensures cleanup
 
 **Common Pattern:**
-```flap
+```c67
 // Railway-oriented with defer
 resource := acquire() or! {
     println("Acquisition failed")
@@ -1211,14 +1211,14 @@ defer cleanup(resource)
 
 The `&` symbol creates ENet addresses (network endpoints):
 
-```flap
+```c67
 &8080                      // Port only: & followed by digits
 &localhost:8080            // Host:port: & followed by identifier/IP + :
 &192.168.1.1:3000          // IP:port
 ```
 
 **Examples:**
-```flap
+```c67
 // Loops (statement context)
 @ { println("Forever") }           // Infinite loop
 @ i in [1, 2, 3] { println(i) }    // For-each loop
@@ -1238,7 +1238,7 @@ listen(&8080)                       // Function call with address
 
 Disambiguated by contents (see Block Disambiguation Rules above):
 
-```flap
+```c67
 { x: 10 }                // Map: contains :
 x { 0 -> "zero" }        // Match: contains ->
 { temp = x * 2; temp }   // Statement block: no : or ->
@@ -1246,7 +1246,7 @@ x { 0 -> "zero" }        // Match: contains ->
 
 ## Error Handling and Result Types
 
-Flap uses a **Result type** for operations that can fail. A Result is still `map[uint64]float64`, but with special semantic meaning tracked by the compiler.
+C67 uses a **Result type** for operations that can fail. A Result is still `map[uint64]float64`, but with special semantic meaning tracked by the compiler.
 
 ### Result Type Design
 
@@ -1259,11 +1259,11 @@ A Result is encoded as follows:
 
 **Type Bytes:**
 ```
-0x01 - Flap Number (success)
-0x02 - Flap String (success)
-0x03 - Flap List (success)
-0x04 - Flap Map (success)
-0x05 - Flap Address (success)
+0x01 - C67 Number (success)
+0x02 - C67 String (success)
+0x03 - C67 List (success)
+0x04 - C67 Map (success)
+0x05 - C67 Address (success)
 0xE0 - Error (failure, followed by 4-char error code)
 0x10 - C int8
 0x11 - C int16
@@ -1280,7 +1280,7 @@ A Result is encoded as follows:
 ```
 
 **Success case:**
-- Type byte indicates the Flap or C type
+- Type byte indicates the C67 or C type
 - Length field (uint64) indicates number of key-value pairs
 - Key-value pairs follow (each pair is uint64 key, float64 value)
 - Terminated with 0x00 byte
@@ -1315,7 +1315,7 @@ Every value has a `.error` accessor that:
 - Returns `""` (empty string) for success values
 - Returns the error code string (spaces stripped) for error values
 
-```flap
+```c67
 x = 10 / 2              // Success: returns 5.0
 x.error                 // Returns "" (empty)
 
@@ -1333,7 +1333,7 @@ result.error {
 
 The `or!` operator provides a default value or executes a block when the left side is an error or null:
 
-```flap
+```c67
 // Handle errors
 x = 10 / 0              // Error result
 safe = x or! 99         // Returns 99 (error case)
@@ -1375,7 +1375,7 @@ ptr := c_malloc(1024) or! 0  // Returns 0 if allocation failed
 
 ### Error Propagation Patterns
 
-```flap
+```c67
 // Check and early return
 process = input -> {
     step1 = validate(input)
@@ -1408,7 +1408,7 @@ result.error {
 
 Use the `error` function to create error Results:
 
-```flap
+```c67
 // Create error with code
 err = error("arg")  // Type byte 0xE0 + "arg "
 
@@ -1420,7 +1420,7 @@ fail = 0 / 0        // Returns error "dv0"
 
 The compiler tracks whether a value is a Result type:
 
-```flap
+```c67
 // Compiler knows this returns Result
 divide = (a, b) -> {
     b == 0 { ret error("dv0") }
@@ -1471,7 +1471,7 @@ The `or!` operator:
 
 ## Classes and Object-Oriented Programming
 
-Flap supports classes as syntactic sugar over maps and closures, providing a familiar OOP interface while maintaining the language's fundamental simplicity.
+C67 supports classes as syntactic sugar over maps and closures, providing a familiar OOP interface while maintaining the language's fundamental simplicity.
 
 ### Core Principles
 
@@ -1480,12 +1480,12 @@ Flap supports classes as syntactic sugar over maps and closures, providing a fam
 - **Composition over inheritance:** Use `<>` to compose with behavior maps
 - **Dot notation:** `.field` inside methods for instance fields
 - **Minimal syntax:** Only one new keyword (`class`)
-- **Desugars to regular Flap:** Classes compile to maps and lambdas
+- **Desugars to regular C67:** Classes compile to maps and lambdas
 - **`this` keyword:** Reference to current instance
 
 ### Class Declaration
 
-```flap
+```c67
 class Point {
     // Constructor (implicit)
     init = (x, y) -> {
@@ -1515,9 +1515,9 @@ p1.move(5, 5)
 
 ### Desugaring
 
-Classes desugar to regular Flap code:
+Classes desugar to regular C67 code:
 
-```flap
+```c67
 // class Point { ... } becomes:
 Point := (x, y) -> {
     instance := {}
@@ -1543,7 +1543,7 @@ Point := (x, y) -> {
 
 Use `.field` inside class methods to access instance state:
 
-```flap
+```c67
 class Counter {
     init = start -> {
         .count = start
@@ -1567,7 +1567,7 @@ println(c.get())  // 1
 
 Use `ClassName.field` for class-level state:
 
-```flap
+```c67
 class Entity {
     Entity.count = 0
     Entity.all = []
@@ -1589,7 +1589,7 @@ println(Entity.count)  // 2
 
 Extend classes with behavior maps using `<>`:
 
-```flap
+```c67
 Serializable = {
     to_json: {
         // Convert instance to JSON
@@ -1612,7 +1612,7 @@ json := p.to_json()
 
 **Multiple composition** - chain `<>` operators:
 
-```flap
+```c67
 class User {
     <> Serializable
     <> Validatable
@@ -1631,7 +1631,7 @@ Inside class methods:
 - `ClassName.field` → class field access
 - `other.field` → other instance field access
 
-```flap
+```c67
 class Point {
     Point.origin = nil  // Class field
 
@@ -1658,7 +1658,7 @@ Point.origin = Point(0, 0)  // Initialize class field
 
 Use underscore prefix for "private" methods (by convention):
 
-```flap
+```c67
 class Account {
     init = balance -> {
         .balance = balance
@@ -1682,7 +1682,7 @@ class Account {
 
 Combine classes with CStruct for performance:
 
-```flap
+```c67
 cstruct Vec2Data {
     x as float64,
     y as float64
@@ -1713,9 +1713,9 @@ class Vec2 {
 
 ### Operator Overloading via Methods
 
-While Flap doesn't have operator overloading syntax, you can define methods with operator-like names:
+While C67 doesn't have operator overloading syntax, you can define methods with operator-like names:
 
-```flap
+```c67
 class Complex {
     init = (real, imag) -> {
         .real = real
@@ -1744,7 +1744,7 @@ class_decl      = "class" identifier { "<>" identifier } "{" { class_member } "}
 
 Semantically:
 
-```flap
+```c67
 class Point {
     <> Serializable
     <> Validatable
@@ -1768,7 +1768,7 @@ Point = (...) -> {
 
 Methods that return `. ` (this) enable chaining:
 
-```flap
+```c67
 class Builder {
     init = () -> {
         .parts = []
@@ -1787,9 +1787,9 @@ result = Builder().add("A").add("B").add("C").build()
 
 ### No Inheritance
 
-Flap deliberately avoids inheritance hierarchies. Use composition:
+C67 deliberately avoids inheritance hierarchies. Use composition:
 
-```flap
+```c67
 // Instead of inheritance
 Drawable = {
     draw: { println("Drawing...") }
@@ -1855,7 +1855,7 @@ class {
 
 **Memory Management:**
 - **ALWAYS use arena allocation** instead of malloc/free when possible
-- The arena allocator (`flap_arena_alloc`) provides fast bump allocation with automatic growth
+- The arena allocator (`c67_arena_alloc`) provides fast bump allocation with automatic growth
 - Arena memory is freed in bulk, avoiding fragmentation
 - Only use malloc for external C library compatibility
 
@@ -1877,7 +1877,7 @@ Type annotations are **optional metadata** that specify semantic intent and guid
 ### Syntax
 
 **Variable declarations:**
-```flap
+```c67
 x: num = 42                    // Number annotation
 name: str = "Alice"            // String annotation
 items: list = [1, 2, 3]        // List annotation
@@ -1891,7 +1891,7 @@ value: cdouble = 3.14159
 ```
 
 **Function signatures:**
-```flap
+```c67
 // Parameter and return types
 add(x: num, y: num) -> num { x + y }
 
@@ -1929,30 +1929,30 @@ format_error(code: cint) -> str {
 
 Type annotations guide automatic conversions at C FFI boundaries:
 
-**Flap → C conversions:**
-```flap
-// Flap string → C string (calls flap_string_to_cstr)
+**C67 → C conversions:**
+```c67
+// C67 string → C string (calls c67_string_to_cstr)
 title: str = "Window"
 window = sdl.SDL_CreateWindow(title, 640, 480, 0)  // title converted to char*
 
-// Flap number → C int (extracts {0: value})
-result: cint = sdl.SDL_Init(0x00000020)  // Flap num → C int
+// C67 number → C int (extracts {0: value})
+result: cint = sdl.SDL_Init(0x00000020)  // C67 num → C int
 ```
 
-**C → Flap conversions:**
-```flap
+**C → C67 conversions:**
+```c67
 // C char* → cstring (stored as pointer in {0: <ptr>})
 err: cstring = sdl.SDL_GetError()  // char* stored as-is
 
 // When needed, convert cstring → str manually
-err_str: str = str(err)  // Convert C string to Flap string
+err_str: str = str(err)  // Convert C string to C67 string
 ```
 
 ### Type Inference
 
 When annotations are omitted, the compiler infers types:
 
-```flap
+```c67
 x = 42              // Inferred: num
 name = "Alice"      // Inferred: str
 items = [1, 2, 3]   // Inferred: list
@@ -1974,7 +1974,7 @@ ptr = sdl.SDL_CreateWindow(...)  // Inferred: cptr (from FFI signature)
 
 ---
 
-**Note:** This grammar is the canonical reference for Flap 3.0. The compiler implementation (lexer.go, parser.go) must match this specification exactly.
+**Note:** This grammar is the canonical reference for C67 3.0. The compiler implementation (lexer.go, parser.go) must match this specification exactly.
 
 **See also:**
 - [LANGUAGESPEC.md](LANGUAGESPEC.md) - Complete language semantics

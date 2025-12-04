@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// compileAndRun is a helper function that compiles and runs Flap code,
+// compileAndRun is a helper function that compiles and runs C67 code,
 // returning the output
 func compileAndRun(t *testing.T, code string) string {
 	t.Helper()
@@ -18,7 +18,7 @@ func compileAndRun(t *testing.T, code string) string {
 	tmpDir := t.TempDir()
 
 	// Write source file
-	srcFile := filepath.Join(tmpDir, "test.flap")
+	srcFile := filepath.Join(tmpDir, "test.c67")
 	if err := os.WriteFile(srcFile, []byte(code), 0644); err != nil {
 		t.Fatalf("Failed to write source file: %v", err)
 	}
@@ -31,7 +31,7 @@ func compileAndRun(t *testing.T, code string) string {
 		OS:   osType,
 		Arch: archType,
 	}
-	if err := CompileFlapWithOptions(srcFile, exePath, platform, 0); err != nil {
+	if err := CompileC67WithOptions(srcFile, exePath, platform, 0); err != nil {
 		t.Fatalf("Compilation failed: %v", err)
 	}
 
@@ -46,7 +46,7 @@ func compileAndRun(t *testing.T, code string) string {
 	return string(runOutput)
 }
 
-// compileAndRunWindows is a helper function that compiles and runs Flap code for Windows
+// compileAndRunWindows is a helper function that compiles and runs C67 code for Windows
 // under Wine (on non-Windows platforms), with a 3-second timeout
 func compileAndRunWindows(t *testing.T, code string) string {
 	t.Helper()
@@ -62,7 +62,7 @@ func compileAndRunWindows(t *testing.T, code string) string {
 	tmpDir := t.TempDir()
 
 	// Write source file
-	srcFile := filepath.Join(tmpDir, "test.flap")
+	srcFile := filepath.Join(tmpDir, "test.c67")
 	if err := os.WriteFile(srcFile, []byte(code), 0644); err != nil {
 		t.Fatalf("Failed to write source file: %v", err)
 	}
@@ -75,7 +75,7 @@ func compileAndRunWindows(t *testing.T, code string) string {
 		OS:   osType,
 		Arch: archType,
 	}
-	if err := CompileFlapWithOptions(srcFile, exePath, platform, 0); err != nil {
+	if err := CompileC67WithOptions(srcFile, exePath, platform, 0); err != nil {
 		t.Fatalf("Compilation failed: %v", err)
 	}
 

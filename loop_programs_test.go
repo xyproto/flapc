@@ -67,7 +67,7 @@ println(sum)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			testInlineFlap(t, tt.name, tt.source, tt.expected)
+			testInlineC67(t, tt.name, tt.source, tt.expected)
 		})
 	}
 }
@@ -87,7 +87,7 @@ func TestExistingLoopPrograms(t *testing.T) {
 
 	for _, name := range tests {
 		t.Run(name, func(t *testing.T) {
-			srcPath := filepath.Join("testprograms", name+".flap")
+			srcPath := filepath.Join("testprograms", name+".c67")
 			resultPath := filepath.Join("testprograms", name+".result")
 
 			if _, err := os.Stat(srcPath); os.IsNotExist(err) {
@@ -104,7 +104,7 @@ func TestExistingLoopPrograms(t *testing.T) {
 			exePath := filepath.Join(tmpDir, name)
 
 			platform := GetDefaultPlatform()
-			if err := CompileFlap(srcPath, exePath, platform); err != nil {
+			if err := CompileC67(srcPath, exePath, platform); err != nil {
 				t.Fatalf("Compilation failed: %v", err)
 			}
 
@@ -134,7 +134,7 @@ func TestInclusiveRange(t *testing.T) {
 }
 `
 	expected := "1\n2\n3\n4\n5\n"
-	testInlineFlap(t, "inclusive_range", source, expected)
+	testInlineC67(t, "inclusive_range", source, expected)
 }
 
 // TestDeeplyNestedLoops tests loops with 5+ levels of nesting (uses stack-based counters)
@@ -154,7 +154,7 @@ func TestDeeplyNestedLoops(t *testing.T) {
 }
 println(sum)
 `
-	testInlineFlap(t, "5_level_nesting", source5, "32\n")
+	testInlineC67(t, "5_level_nesting", source5, "32\n")
 
 	// Test 6-level nesting (all stack-based beyond first 3)
 	source6 := `count := 0
@@ -173,5 +173,5 @@ println(sum)
 }
 println(count)
 `
-	testInlineFlap(t, "6_level_nesting", source6, "64\n")
+	testInlineC67(t, "6_level_nesting", source6, "64\n")
 }

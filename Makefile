@@ -4,7 +4,7 @@ BINDIR ?= $(PREFIX)/bin
 
 GO ?= go
 GOFLAGS ?=
-PROGRAM := flapc
+PROGRAM := c67
 SOURCES := $(wildcard *.go)
 MODULE_FILES := go.mod $(wildcard go.sum)
 
@@ -12,7 +12,7 @@ MODULE_FILES := go.mod $(wildcard go.sum)
 
 .DEFAULT_GOAL := all
 
-all: flapc
+all: c67
 
 $(PROGRAM): $(SOURCES) $(MODULE_FILES)
 	$(GO) build $(GOFLAGS) -o $(PROGRAM) .
@@ -21,7 +21,7 @@ test:
 	@echo "Running tests..."
 	$(GO) test -failfast -timeout 1m ./...
 
-install: flapc
+install: c67
 	install -d "$(DESTDIR)$(BINDIR)"
 	install -m 755 $(PROGRAM) "$(DESTDIR)$(BINDIR)/$(PROGRAM)"
 

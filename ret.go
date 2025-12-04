@@ -7,7 +7,7 @@ import (
 )
 
 // RET instruction for returning from functions
-// Essential for implementing Flap's function returns:
+// Essential for implementing C67's function returns:
 //   - Normal returns: return expression
 //   - Early returns: x or return y
 //   - Guard returns: me.running or return "game stopped"
