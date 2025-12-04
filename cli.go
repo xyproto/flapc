@@ -155,7 +155,7 @@ func cmdBuild(ctx *CommandContext, args []string) error {
 	}
 
 	// Compile
-	err := CompileC67WithOptions(inputFile, outputPath, ctx.Platform, ctx.OptTimeout)
+	err := CompileC67WithOptions(inputFile, outputPath, ctx.Platform, ctx.OptTimeout, ctx.Verbose)
 	if err != nil {
 		return fmt.Errorf("compilation failed: %v", err)
 	}
@@ -199,7 +199,7 @@ func cmdRun(ctx *CommandContext, args []string) error {
 	}
 
 	// Compile
-	err := CompileC67WithOptions(inputFile, tmpExec, ctx.Platform, ctx.OptTimeout)
+	err := CompileC67WithOptions(inputFile, tmpExec, ctx.Platform, ctx.OptTimeout, ctx.Verbose)
 	if err != nil {
 		return fmt.Errorf("compilation failed: %v", err)
 	}
@@ -248,7 +248,7 @@ func cmdRunShebang(ctx *CommandContext, scriptPath string, scriptArgs []string) 
 	defer func() { SingleFlag = oldSingleFlag }()
 
 	// Compile (quietly unless verbose mode)
-	err := CompileC67WithOptions(scriptPath, tmpExec, ctx.Platform, ctx.OptTimeout)
+	err := CompileC67WithOptions(scriptPath, tmpExec, ctx.Platform, ctx.OptTimeout, ctx.Verbose)
 	if err != nil {
 		return fmt.Errorf("compilation failed: %v", err)
 	}
@@ -301,7 +301,7 @@ func cmdBuildDir(ctx *CommandContext, dirPath string) error {
 			fmt.Fprintf(os.Stderr, "Building %s -> %s (directory mode)\n", file, outputPath)
 		}
 
-		err := CompileC67WithOptions(file, outputPath, ctx.Platform, ctx.OptTimeout)
+		err := CompileC67WithOptions(file, outputPath, ctx.Platform, ctx.OptTimeout, ctx.Verbose)
 		if err != nil {
 			return fmt.Errorf("compilation of %s failed: %v", file, err)
 		}

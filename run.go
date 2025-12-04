@@ -31,7 +31,7 @@ func compileAndRun(t *testing.T, code string) string {
 		OS:   osType,
 		Arch: archType,
 	}
-	if err := CompileC67WithOptions(srcFile, exePath, platform, 0); err != nil {
+	if err := CompileC67WithOptions(srcFile, exePath, platform, 0, false); err != nil {
 		t.Fatalf("Compilation failed: %v", err)
 	}
 
@@ -75,7 +75,7 @@ func compileAndRunWindows(t *testing.T, code string) string {
 		OS:   osType,
 		Arch: archType,
 	}
-	if err := CompileC67WithOptions(srcFile, exePath, platform, 0); err != nil {
+	if err := CompileC67WithOptions(srcFile, exePath, platform, 0, false); err != nil {
 		t.Fatalf("Compilation failed: %v", err)
 	}
 

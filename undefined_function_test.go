@@ -29,7 +29,7 @@ func compileTestCodeAllowError(t *testing.T, code string) (string, error) {
 		OS:   osType,
 		Arch: archType,
 	}
-	err := CompileC67WithOptions(srcFile, exePath, platform, 0)
+	err := CompileC67WithOptions(srcFile, exePath, platform, 0, false)
 	if err != nil {
 		return "", err
 	}

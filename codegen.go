@@ -92,6 +92,7 @@ type C67Compiler struct {
 	lambdaBodyStart      int                           // Offset where lambda body starts (for tail recursion)
 	hasExplicitExit      bool                          // Track if program contains explicit exit() call
 	debug                bool                          // Enable debug output (set via DEBUG env var)
+	verbose              bool                          // Enable verbose output
 	cContext             bool                          // When true, compile expressions for C FFI (affects strings, pointers, ints)
 	currentArena         int                           // Current arena index (starts at 1 for global arena = meta-arena[0])
 	usesArenas           bool                          // Track if program uses any arena blocks
@@ -158,7 +159,7 @@ func (fc *C67Compiler) defineLabel(label string, pos int) {
 	fc.eb.labels[label] = pos
 }
 
-func NewC67Compiler(platform Platform) (*C67Compiler, error) {
+func NewC67Compiler(platform Platform, verbose bool) (*C67Compiler, error) {
 	// Create ExecutableBuilder
 	eb, err := NewWithPlatform(platform)
 	if err != nil {
@@ -199,6 +200,7 @@ func NewC67Compiler(platform Platform) (*C67Compiler, error) {
 		hotFunctions:        make(map[string]bool),
 		hotFunctionTable:    make(map[string]int),
 		debug:               debugEnabled,
+		verbose:             verbose,
 		currentArena:        1, // Start at arena 1 (which is meta-arena[0], the global arena)
 		regAlloc:            NewRegisterAllocator(platform.Arch),
 		regTracker:          NewRegisterTracker(),
@@ -422,8 +424,10 @@ func (fc *C67Compiler) processCImports(program *Program) {
 						fc.cConstants[cImport.Alias].Functions[k] = v
 					}
 				}
-				fmt.Fprintf(os.Stderr, "Extracted %d constants and %d functions from %s\n",
-					len(constants.Constants), len(constants.Functions), cImport.Library)
+				if fc.verbose {
+					fmt.Fprintf(os.Stderr, "Extracted %d constants and %d functions from %s\n",
+						len(constants.Constants), len(constants.Functions), cImport.Library)
+				}
 			}
 
 			// Fallback: Add known library functions from libdef.go if extraction failed/incomplete
@@ -16878,10 +16882,10 @@ func addNamespaceToFunctions(program *Program, namespace string) {
 }
 
 func CompileC67(inputPath string, outputPath string, platform Platform) (err error) {
-	return CompileC67WithOptions(inputPath, outputPath, platform, WPOTimeout)
+	return CompileC67WithOptions(inputPath, outputPath, platform, WPOTimeout, VerboseMode)
 }
 
-func CompileC67WithOptions(inputPath string, outputPath string, platform Platform, wpoTimeout float64) (err error) {
+func CompileC67WithOptions(inputPath string, outputPath string, platform Platform, wpoTimeout float64, verbose bool) (err error) {
 	// Default to WPO if not explicitly set
 	if wpoTimeout == 0 {
 		wpoTimeout = 2.0
@@ -17106,7 +17110,7 @@ func CompileC67WithOptions(inputPath string, outputPath string, platform Platfor
 	}
 
 	// Compile
-	compiler, err := NewC67Compiler(platform)
+	compiler, err := NewC67Compiler(platform, verbose)
 	if err != nil {
 		return fmt.Errorf("failed to create compiler: %v", err)
 	}
