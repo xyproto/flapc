@@ -100,4 +100,4 @@ defer sdl.SDL_DestroyTexture(tex)
 ### General info
 
 * License: BSD-3
-* Version: 1.5.0
+* Version: 1.5.1
