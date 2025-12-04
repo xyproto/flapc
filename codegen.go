@@ -565,7 +565,13 @@ func (fc *C67Compiler) Compile(program *Program, outputPath string) error {
 
 	// Two-pass compilation: First pass collects all variable declarations
 	// so that function/constant order doesn't matter
-	for _, stmt := range program.Statements {
+	for i, stmt := range program.Statements {
+		if VerboseMode && i < 10 {
+			if assign, ok := stmt.(*AssignStmt); ok {
+				fmt.Fprintf(os.Stderr, "DEBUG collectSymbols [%d]: %s (Mutable=%v, IsUpdate=%v)\n",
+					i, assign.Name, assign.Mutable, assign.IsUpdate)
+			}
+		}
 		if err := fc.collectSymbols(stmt); err != nil {
 			return err
 		}
@@ -6387,8 +6393,15 @@ func (fc *C67Compiler) generateLambdaFunctions() {
 		oldRuntimeStack := fc.runtimeStack
 
 		// Create new scope for lambda
+		// Copy outer scope variables so they're accessible inside the lambda
 		fc.variables = make(map[string]int)
+		for k, v := range oldVariables {
+			fc.variables[k] = v
+		}
 		fc.mutableVars = make(map[string]bool)
+		for k, v := range oldMutableVars {
+			fc.mutableVars[k] = v
+		}
 		fc.stackOffset = 0
 		fc.runtimeStack = 0 // Not used in new convention
 
@@ -16820,6 +16833,40 @@ func processImports(program *Program, platform Platform, sourceFilePath string) 
 		}
 	}
 	program.Statements = filteredStmts
+
+	// Reorder statements: variables first, then functions
+	// This ensures all variables are defined before functions that reference them
+	var varDecls []Statement
+	var funcDefs []Statement
+	var others []Statement
+	
+	for _, stmt := range program.Statements {
+		if assign, ok := stmt.(*AssignStmt); ok {
+			// := creates new mutable variables (variable declarations)
+			if assign.Mutable && !assign.IsUpdate {
+				varDecls = append(varDecls, stmt)
+			} else if !assign.Mutable && !assign.IsUpdate {
+				// = for immutable (typically function definitions)
+				funcDefs = append(funcDefs, stmt)
+			} else {
+				// <- updates (should come later)
+				others = append(others, stmt)
+			}
+		} else {
+			others = append(others, stmt)
+		}
+	}
+	
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "Statement reordering: %d varDecls, %d funcDefs, %d others\n",
+			len(varDecls), len(funcDefs), len(others))
+	}
+	
+	// Reconstruct: varDecls, then funcDefs, then others
+	program.Statements = nil
+	program.Statements = append(program.Statements, varDecls...)
+	program.Statements = append(program.Statements, funcDefs...)
+	program.Statements = append(program.Statements, others...)
 
 	// Debug: print final program
 	if os.Getenv("DEBUG") != "" {
