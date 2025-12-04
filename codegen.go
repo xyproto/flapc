@@ -16781,6 +16781,12 @@ func processImports(program *Program, platform Platform, sourceFilePath string) 
 			} else if depProgram.ExportMode == "*" {
 				// "export *" in imported file - no prefix
 				usePrefix = false
+				
+				// Warn if user explicitly provided an alias (not the default derived one)
+				derivedAlias := deriveAliasFromSource(imp.URL)
+				if imp.Alias != derivedAlias && imp.Alias != "" && imp.Alias != "*" {
+					fmt.Fprintf(os.Stderr, "Warning: Package %s has 'export *', so 'as %s' is unnecessary (functions are exported to global namespace)\n", imp.URL, imp.Alias)
+				}
 			}
 
 			if usePrefix {

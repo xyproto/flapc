@@ -1,5 +1,0 @@
-import "./lib_with_export_all.c67" as lib
-
-hello()
-result = add(5, 10)
-println(result)

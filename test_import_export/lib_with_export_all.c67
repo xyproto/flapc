@@ -1,7 +1,0 @@
-export *
-
-hello = println("Hello from lib!")
-
-add = (a, b) -> a + b
-
-mul = (a, b) -> a * b

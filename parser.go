@@ -383,17 +383,22 @@ func (p *Parser) parseImport() Statement {
 		return nil
 	}
 
-	// Parse 'as alias'
-	if p.current.Type != TOKEN_AS {
-		p.error("expected 'as' after import source")
-	}
-	p.nextToken()
+	// Parse optional 'as alias'
+	var alias string
+	if p.current.Type == TOKEN_AS {
+		p.nextToken()
 
-	if p.current.Type != TOKEN_IDENT && p.current.Type != TOKEN_STAR {
-		p.error("expected alias or '*' after 'as'")
+		if p.current.Type != TOKEN_IDENT && p.current.Type != TOKEN_STAR {
+			p.error("expected alias or '*' after 'as'")
+		}
+		alias = p.current.Value
+		p.nextToken()
+	} else {
+		// No "as" provided - derive alias from source
+		// For "github.com/user/repo" -> "repo"
+		// For "sdl3" -> "sdl3"
+		alias = deriveAliasFromSource(source)
 	}
-	alias := p.current.Value
-	p.nextToken()
 
 	// Parse the import spec
 	spec, err := ParseImportSource(source)

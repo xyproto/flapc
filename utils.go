@@ -4,6 +4,7 @@ package main
 import (
 	"hash/fnv"
 	"sort"
+	"strings"
 )
 
 // utils.go - Utility helper functions
@@ -118,4 +119,28 @@ func isUppercase(s string) bool {
 		}
 	}
 	return true
+}
+
+// deriveAliasFromSource extracts a suitable alias from an import source
+// Examples:
+// - "github.com/user/repo" -> "repo"
+// - "github.com/user/repo@v1.0.0" -> "repo"
+// - "sdl3" -> "sdl3"
+// - "./mylib" -> "mylib"
+func deriveAliasFromSource(source string) string {
+	// Remove version suffix if present
+	if idx := strings.Index(source, "@"); idx != -1 {
+		source = source[:idx]
+	}
+	
+	// Remove trailing slashes
+	source = strings.TrimRight(source, "/\\")
+	
+	// Get the last component
+	if lastSlash := strings.LastIndexAny(source, "/\\"); lastSlash != -1 {
+		return source[lastSlash+1:]
+	}
+	
+	// No slashes, use as-is
+	return source
 }
