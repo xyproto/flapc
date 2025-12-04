@@ -3,7 +3,7 @@ DESTDIR ?=
 BINDIR ?= $(PREFIX)/bin
 
 GO ?= go
-GOFLAGS ?=
+GOFLAGS ?= -mod=vendor
 PROGRAM := c67
 SOURCES := $(wildcard *.go)
 MODULE_FILES := go.mod $(wildcard go.sum)
@@ -15,7 +15,7 @@ MODULE_FILES := go.mod $(wildcard go.sum)
 all: c67
 
 $(PROGRAM): $(SOURCES) $(MODULE_FILES)
-	$(GO) build $(GOFLAGS) -o $(PROGRAM) .
+	$(GO) build $(GOFLAGS)
 
 test:
 	@echo "Running tests..."
