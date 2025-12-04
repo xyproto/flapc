@@ -101,11 +101,14 @@ println("Done!")
 ## Installation
 
 ```bash
-git clone https://github.com/xyproto/c67
-cd c67
-go build
-sudo cp c67 /usr/local/bin/
+go install github.com/xyproto/c67@latest
 ```
+
+Then add `~/go/bin` to your path, or use `~/go/bin/c67` to run it.
+
+Or install it to ie. `/usr/bin` with:
+
+    sudo install -Dm755 ~/go/bin/c67 /usr/bin/c67
 
 Test it:
 
@@ -121,14 +124,16 @@ c67 hello.c67 -o hello
 
 ### 1. **Everything Is A Map**
 
-C67 has ONE universal type: maps all the way down.
+C67 has ONE universal type: an ordered map from uint64 to float64
 
 ```c67
 42                    // A number
 "Hello"               // A string (map of character codes)
-[1, 2, 3]            // A list (map with numeric keys)
-{x: 10, y: 20}       // A struct-like map
+[1, 2, 3]             // A list (map with numeric keys)
+{x: 10, y: 20}        // A struct-like map
 ```
+
+("x" can be hashed to an uint64)
 
 This simplicity means:
 - No type annotations needed (usually)
@@ -163,10 +168,13 @@ result = apply(square, 5)  // 25
 @ { render(); delay(16) }              // Infinite loop
 ```
 
-Break out with `break`:
+Some loops require `max inf` or `max 123` where 123 is the maximum amount of allowed loops.
+
+Break out with `ret @`:
+
 ```c67
 @ i in 0..<100 {
-    | i > 50 => break
+    | i > 50 => ret @
     println(i)
 }
 ```
@@ -177,13 +185,13 @@ Break out with `break`:
 sign = x {
     | x > 0 => "positive"
     | x < 0 => "negative"
-    _ => "zero"
+    ~> "zero"
 }
 
 // Works on maps too
 get_x = point {
     | point.x != 0 => point.x
-    _ => 0.0
+    ~> 0.0
 }
 ```
 
@@ -287,7 +295,7 @@ printf("x=%d, y=%d\n", x, y)
 ```c67
 factorial = n {
     | n <= 1 => 1
-    _ => n * factorial(n - 1)
+    ~> n * factorial(n - 1)
 }
 
 println(factorial(10))  // 3628800
