@@ -97,19 +97,20 @@ func (p *Parser) parseNumberLiteral(s string) float64 {
 }
 
 type Parser struct {
-	lexer        *Lexer
-	current      Token
-	peek         Token
-	filename     string
-	source       string
-	loopDepth    int                     // Current loop nesting level (0 = not in loop, 1 = outer loop, etc.)
-	constants    map[string]Expression   // Compile-time constants (immutable literals)
-	aliases      map[string]TokenType    // Keyword aliases (e.g., "for" -> TOKEN_AT)
-	cstructs     map[string]*CStructDecl // CStruct declarations for metadata access
-	cImports     map[string]bool         // C import namespaces (e.g., "sdl", "c")
-	speculative  bool                    // True when in speculative parsing mode (suppress errors)
-	errors       *ErrorCollector         // Railway-oriented error collector
-	inMatchBlock bool                    // True when parsing inside a match block (prevents nested match parsing)
+	lexer            *Lexer
+	current          Token
+	peek             Token
+	filename         string
+	source           string
+	loopDepth        int                     // Current loop nesting level (0 = not in loop, 1 = outer loop, etc.)
+	constants        map[string]Expression   // Compile-time constants (immutable literals)
+	aliases          map[string]TokenType    // Keyword aliases (e.g., "for" -> TOKEN_AT)
+	cstructs         map[string]*CStructDecl // CStruct declarations for metadata access
+	cImports         map[string]bool         // C import namespaces (e.g., "sdl", "c")
+	speculative      bool                    // True when in speculative parsing mode (suppress errors)
+	errors           *ErrorCollector         // Railway-oriented error collector
+	inMatchBlock     bool                    // True when parsing inside a match block (prevents nested match parsing)
+	inConditionLoop  bool                    // True when parsing condition loop expression (prevents 'max' consumption)
 }
 
 type parserState struct {
@@ -2262,12 +2263,16 @@ func (p *Parser) parseLoopStatement() Statement {
 		}
 
 		// Check if this is @N (numbered loop) or @ ident (simple loop)
+		// But also check for condition loop: @ NUMBER max N { }
 		if p.current.Type == TOKEN_NUMBER {
-			// This is @N syntax, handle it in the jump statement section below
-			// by re-parsing this TOKEN_AT
-			p.current.Type = TOKEN_AT // restore token type (it's already @, but for clarity)
-			// Fall through to the jump statement section
-			goto handleJump
+			// Check if this is a condition loop: @ NUMBER max N {
+			// If peek is 'max', it's a condition loop, not a jump
+			if p.peek.Type != TOKEN_MAX {
+				// This is @N jump syntax, handle it in the jump statement section
+				p.current.Type = TOKEN_AT // restore token type
+				goto handleJump
+			}
+			// Otherwise, fall through to condition loop parsing below
 		}
 
 		// Check for infinite loop syntax: @ { ... }
@@ -2357,18 +2362,23 @@ func (p *Parser) parseLoopStatement() Statement {
 
 		if isConditionLoop {
 			// Condition loop: @ expr max N { ... }
-			// Parse the full condition expression
+			// Set flag to prevent parsePrimary from consuming 'max' as recursion limit
+			oldInConditionLoop := p.inConditionLoop
+			p.inConditionLoop = true
+			defer func() { p.inConditionLoop = oldInConditionLoop }()
+			
+			// Parse the condition expression using parseComparison
+			// This handles comparisons (i < 5), function calls (check()), etc.
+			// but avoids match block parsing that would consume the { token
 			condition := p.parseComparison()
 
-			// After parsing expression, advance to next token
-			p.nextToken()
-
-			// Condition loops MUST have explicit 'max' clause
-			if p.current.Type != TOKEN_MAX {
+			// After parsing postfix expression, peek should be on 'max'
+			if p.peek.Type != TOKEN_MAX {
 				p.error("condition loop requires 'max' clause (e.g., @ n < 5 max 10 { ... })")
 			}
-
-			p.nextToken() // skip 'max'
+			
+			p.nextToken() // move to 'max'
+			p.nextToken() // skip 'max', now current is on the number/inf
 
 			// Parse max iterations: either a number or 'inf'
 			var maxIterations int64
@@ -3835,9 +3845,10 @@ func (p *Parser) parsePrimary() Expression {
 
 			// Check for optional 'max' keyword after function call
 			// This will be validated during compilation to ensure it's present for recursive calls
+			// Skip this if we're parsing a condition loop expression (to avoid consuming loop's max clause)
 			var maxRecursion int64
 			needsCheck := false
-			if p.peek.Type == TOKEN_MAX {
+			if p.peek.Type == TOKEN_MAX && !p.inConditionLoop {
 				p.nextToken() // advance to 'max'
 				p.nextToken() // skip 'max', now on the value
 
