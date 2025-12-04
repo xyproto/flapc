@@ -1,106 +1,31 @@
-# C67 TODO
+# C67 Compiler TODO
 
-## Current Status (December 2025)
+## Critical Bugs
 
-### ✅ All Tests Passing
-- **Go test**: PASS (0.748s)
-- All 100+ tests pass reliably
+### 1. SDL3 Function Signatures
+- SDL_RenderFillRect expects (renderer, SDL_FRect*) but is being called with (renderer, x, y, w, h)
+- Need to support creating C structs on the stack and passing pointers
+- Alternatively, find SDL functions that accept individual parameters
 
-## ✅ Core Features Working
+### 2. Import System Issues
+- Lambdas from imported C67 packages may be generated multiple times
+- Need to verify closure object initialization for imported functions
+- Test: `import "github.com/user/package"` with functions that call other functions
 
-### Compilation
-- ✅ Direct to machine code (x86_64, ARM64, RISC-V)
-- ✅ Linux x86_64: Fully working, no libc required for pure C67 code
-- ✅ Windows x86_64: Fully working with PE format
-- ✅ ELF and PE executable generation
-- ✅ Mach-O support (basic)
+## Completed
 
-### Memory Management
-- ✅ Arena allocator with automatic cleanup
-- ✅ Default arena at program start
-- ✅ `arena { }` blocks with scope-based cleanup
-- ✅ Used for all internal allocations
+- ✅ Fixed nested loop iteration counter reset bug
+- ✅ Tests pass (`go test` works)
+- ✅ Float decimal printing works (inline assembly, no libc)
+- ✅ Conditional loops (@ condition max N)
+- ✅ Import system with GitHub repos
+- ✅ Export system (`export *` and `export funclist`)
+- ✅ PLT/GOT only generated when C functions are used
+- ✅ Executable compression infrastructure
 
-### Language Features
-- ✅ Functions as first-class values
-- ✅ Higher-order functions (map, filter, fold)
-- ✅ Pattern matching with guards
-- ✅ `defer` for LIFO cleanup
-- ✅ `or!` error handling operator
-- ✅ Loops: `@`, `@ in`, `@ condition`
-- ✅ Match expressions with guards
-- ✅ String interpolation
-- ✅ List comprehensions
+## Future Enhancements
 
-### I/O & Printing
-- ✅ Float printing (inline assembly, no libc)
-- ✅ SSE2-based decimal extraction
-- ✅ Printf format specifiers (%.2f, %.6f work correctly)
-- 🚧 High-precision float printing (>6 decimals has bugs)
-- ✅ Direct syscalls for I/O on Linux
-- ✅ Pure assembly number conversion
-
-### C FFI
-- ✅ Import C libraries (`import sdl3 as sdl`)
-- ✅ Header parsing for constants and functions
-- ✅ PLT/GOT dynamic linking
-- ✅ Conditional libc linking (only when C FFI used)
-- ✅ Windows DLL support
-- ✅ SDL3 bindings working
-
-## 🚧 Partial/Experimental Features
-
-### Optimization
-- 🚧 Tail call optimization (implemented but conservative)
-- 🚧 General optimizer disabled (needs type system)
-
-### Platform Support
-- 🚧 ARM64 backend (code exists, needs testing)
-- 🚧 RISC-V backend (code exists, needs testing)
-- 🚧 macOS support (will require libc for syscalls)
-
-### Advanced Features
-- ❌ Executable compression (needs position-independent decompression; LZ77 compressor works but can't decompress entire ELF)
-- 🚧 Function composition `<>` operator (partial)
-- ❌ Automatic memoization (not implemented)
-- 🚧 Parallel loops `@@` (basic support, needs testing)
-
-## ❌ Not Yet Implemented
-
-### Language Features
-- ❌ Automatic memoization for pure functions
-- ❌ SIMD operations
-- ❌ Inline assembly blocks
-
-### Tooling
-- ❌ Hot reload (infrastructure exists)
-- ❌ Interactive REPL
-- ❌ Language server protocol
-- ❌ Package manager
-- ❌ Debugger integration
-
-### Platform Support
-- ❌ Windows ARM64
-- ❌ macOS ARM64
-- ❌ WASM target
-- ❌ WebGPU bindings
-
-## 🎯 Priority Work Items
-
-### High Priority
-1. Test ARM64/RISC-V backends on real hardware
-2. Implement float printing for ARM64/RISC-V
-3. Complete type inference for optimizer
-4. Implement position-independent executable compression
-
-### Medium Priority
-5. Add more SDL3 examples
-6. Performance benchmarking suite
-7. Improve error messages
-8. Document all builtins
-
-### Low Priority
-9. REPL implementation
-10. Hot reload improvements
-11. Language server
-12. Package ecosystem
+- C struct support in function calls (passing pointers to stack-allocated structs)
+- Lambda capture optimization for imported packages
+- More comprehensive SDL3 wrapper library
+- Game development examples and tutorials
