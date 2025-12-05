@@ -6345,10 +6345,7 @@ func (fc *C67Compiler) generateLambdaFunctions() {
 			fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: generating lambda '%s' with body type %T\n", lambda.Name, lambda.Body)
 		}
 
-		// Check for unsupported pattern: local variables in lambda
-		if hasLocalVariables(lambda.Body) {
-			compilerError("local variables in lambda bodies are not yet supported\nUse lambda parameters instead, or hoist variables outside the lambda\nExample: f = x => x + 1  (instead of: f = x => { y = x + 1; y })")
-		}
+		// Local variables in lambdas are now supported via stack allocation
 
 		// Record the offset of this lambda function in .text
 		offsetBefore := fc.eb.text.Len()
