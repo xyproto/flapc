@@ -727,6 +727,13 @@ process = data -> {
     cleaned = data | x -> x.trim()
     cleaned | x -> x.length > 0
 }
+
+// Lambdas can have local variables
+compute = x -> {
+    temp = x * 2
+    result = temp + 10
+    result  // Returns 2*x + 10
+}
 ```
 
 ### Closures
