@@ -537,7 +537,7 @@ func (fc *C67Compiler) writeELF(program *Program, outputPath string) error {
 	// Update ELF with regenerated code (copies eb.text into ELF buffer)
 	fc.eb.patchTextInELF()
 	fc.eb.patchRodataInELF()
-	fc.eb.patchDataInELF()
+	// Note: data section is already written during WriteCompleteDynamicELF, no patching needed
 
 	// Output the executable file
 	elfBytes := fc.eb.Bytes()

@@ -11368,31 +11368,14 @@ func (fc *C67Compiler) compileCall(call *CallExpr) {
 		fmt.Fprintf(os.Stderr, "DEBUG compileCall: function=%s, isBuiltinOp=%v\n", call.Function, isBuiltinOp)
 	}
 
-	// Check if this is a stored function (variable containing function pointer)
-	// This check must come BEFORE the known lambda check, because closures
-	// with captured variables must be called through the closure object (to set up r15)
-	// BUT it must come AFTER the builtin operator check!
-	if !isBuiltinOp {
-		if _, isVariable := fc.variables[call.Function]; isVariable {
-			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "DEBUG compileCall: taking compileStoredFunctionCall path\n")
-			}
-			fc.compileStoredFunctionCall(call)
-			return
-		}
-	}
-
-	// Check if this is a known lambda function (for recursive calls)
+	// Check if this is a known lambda function
+	// Known lambdas can be called directly by label (no closure indirection needed)
 	isKnownLambda := false
 	for _, lambda := range fc.lambdaFuncs {
 		if lambda.Name == call.Function {
 			isKnownLambda = true
 			break
 		}
-	}
-
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG compileCall: isKnownLambda=%v\n", isKnownLambda)
 	}
 
 	// Also check pattern lambdas
@@ -11405,10 +11388,27 @@ func (fc *C67Compiler) compileCall(call *CallExpr) {
 		}
 	}
 
+	if VerboseMode {
+		fmt.Fprintf(os.Stderr, "DEBUG compileCall: isKnownLambda=%v\n", isKnownLambda)
+	}
+
 	if isKnownLambda {
 		// Direct call to a known lambda function
 		fc.compileLambdaDirectCall(call)
 		return
+	}
+
+	// Check if this is a stored function (variable containing function pointer)
+	// This handles first-class functions (functions passed as values/parameters)
+	// Note: known lambdas are handled above via direct call
+	if !isBuiltinOp {
+		if _, isVariable := fc.variables[call.Function]; isVariable {
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG compileCall: taking compileStoredFunctionCall path\n")
+			}
+			fc.compileStoredFunctionCall(call)
+			return
+		}
 	}
 
 	// Otherwise, handle builtin functions
