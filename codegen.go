@@ -631,10 +631,10 @@ func (fc *C67Compiler) Compile(program *Program, outputPath string) error {
 	skipLambdasJump := fc.eb.text.Len()
 	fc.out.JumpUnconditional(0) // Will be patched
 	skipLambdasEnd := fc.eb.text.Len()
-	
+
 	// Generate lambda functions here (before exit, but jumped over)
 	fc.generateLambdaFunctions()
-	
+
 	// Patch the jump to skip over lambdas
 	skipLambdasTarget := fc.eb.text.Len()
 	fc.patchJumpImmediate(skipLambdasJump+1, int32(skipLambdasTarget-skipLambdasEnd))
@@ -3598,7 +3598,7 @@ func (fc *C67Compiler) compileExpression(expr Expression) {
 			if e.Right == nil {
 				compilerError("or! operator requires a right-hand side expression or block")
 			}
-			
+
 			// Compile left expression into xmm0
 			fc.compileExpression(e.Left)
 
@@ -3655,39 +3655,39 @@ func (fc *C67Compiler) compileExpression(expr Expression) {
 		if e.Operator == "*" {
 			leftType := fc.getExprType(e.Left)
 			rightType := fc.getExprType(e.Right)
-			
+
 			if leftType == "list" && rightType == "number" {
 				// List repetition: [x] * n creates a new heap-allocated list
 				// NOT a compile-time .rodata constant (to allow mutations)
-				
+
 				// Compile list (result in xmm0 - pointer to list)
 				fc.compileExpression(e.Left)
 				fc.out.SubImmFromReg("rsp", 16)
 				fc.out.MovXmmToMem("xmm0", "rsp", 0)
-				
+
 				// Compile count (result in xmm0 - the number)
 				fc.compileExpression(e.Right)
 				fc.out.SubImmFromReg("rsp", 16)
 				fc.out.MovXmmToMem("xmm0", "rsp", 0)
-				
+
 				// Convert count to integer in rcx
 				fc.out.Cvttsd2si("rcx", "xmm0") // rcx = count
-				
+
 				// Load list pointer from stack to rdi
 				fc.out.MovMemToReg("rdi", "rsp", 16)
-				
+
 				// Save rcx (count) to rdx since we'll need it
 				fc.out.MovRegToReg("rdx", "rcx")
-				
+
 				// Clean up stack
 				fc.out.AddImmToReg("rsp", 32)
-				
+
 				// Call _c67_list_repeat(list_ptr in rdi, count in rdx)
 				// We need to implement this helper function
 				fc.out.SubImmFromReg("rsp", StackSlotSize)
 				fc.out.CallSymbol("_c67_list_repeat")
 				fc.out.AddImmToReg("rsp", StackSlotSize)
-				
+
 				// Result pointer is in rax, convert to xmm0
 				fc.out.SubImmFromReg("rsp", StackSlotSize)
 				fc.out.MovRegToMem("rax", "rsp", 0)
@@ -3696,7 +3696,7 @@ func (fc *C67Compiler) compileExpression(expr Expression) {
 				return
 			}
 		}
-		
+
 		// Check for string/list/map operations with + operator
 		if e.Operator == "+" {
 			leftType := fc.getExprType(e.Left)
@@ -17171,7 +17171,7 @@ func CompileC67WithOptions(inputPath string, outputPath string, platform Platfor
 	defer func() {
 		VerboseMode = oldVerbose
 	}()
-	
+
 	// Default to WPO if not explicitly set
 	if wpoTimeout == 0 {
 		wpoTimeout = 2.0

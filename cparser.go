@@ -287,7 +287,7 @@ func (p *CParser) parseTopLevel() {
 		p.skipUntil(";")
 		return
 	}
-	
+
 	// Handle standalone enum declarations
 	if tok.Type == CTokIdentifier && tok.Value == "enum" {
 		p.parseEnum()
@@ -756,12 +756,12 @@ func (p *CParser) match(value string) bool {
 func (p *CParser) tryParseTypedefEnum() bool {
 	saved := p.pos
 	p.advance() // Skip 'typedef'
-	
+
 	if p.isAtEnd() || p.peek().Value != "enum" {
 		p.pos = saved
 		return false
 	}
-	
+
 	p.parseEnum()
 	return true
 }
@@ -769,43 +769,43 @@ func (p *CParser) tryParseTypedefEnum() bool {
 // parseEnum parses an enum declaration
 func (p *CParser) parseEnum() {
 	p.advance() // Skip 'enum'
-	
+
 	// Optional enum name
 	if !p.isAtEnd() && p.peek().Type == CTokIdentifier && p.peek().Value != "{" {
 		p.advance() // Skip enum name
 	}
-	
+
 	// Find opening brace
 	if p.isAtEnd() || p.peek().Value != "{" {
 		return
 	}
 	p.advance() // Skip '{'
-	
+
 	enumValue := 0
 	for !p.isAtEnd() {
 		tok := p.peek()
-		
+
 		// End of enum
 		if tok.Value == "}" {
 			p.advance()
 			break
 		}
-		
+
 		// Skip commas
 		if tok.Value == "," {
 			p.advance()
 			continue
 		}
-		
+
 		// Enum member
 		if tok.Type == CTokIdentifier {
 			name := tok.Value
 			p.advance()
-			
+
 			// Check for explicit value
 			if !p.isAtEnd() && p.peek().Value == "=" {
 				p.advance() // Skip '='
-				
+
 				if !p.isAtEnd() {
 					valueTok := p.peek()
 					if valueTok.Type == CTokNumber {
@@ -813,7 +813,7 @@ func (p *CParser) parseEnum() {
 						valueStr := valueTok.Value
 						var parsedValue int64
 						var err error
-						
+
 						// Handle hex values
 						if strings.HasPrefix(valueStr, "0x") || strings.HasPrefix(valueStr, "0X") {
 							parsedValue, err = strconv.ParseInt(valueStr[2:], 16, 64)
@@ -822,7 +822,7 @@ func (p *CParser) parseEnum() {
 						} else {
 							parsedValue, err = strconv.ParseInt(valueStr, 10, 64)
 						}
-						
+
 						if err == nil {
 							enumValue = int(parsedValue)
 						}
@@ -830,20 +830,20 @@ func (p *CParser) parseEnum() {
 					}
 				}
 			}
-			
+
 			// Store the enum constant
 			p.results.Constants[name] = int64(enumValue)
 			if VerboseMode {
 				fmt.Fprintf(os.Stderr, "  Enum constant: %s = %d (0x%x)\n", name, enumValue, enumValue)
 			}
-			
+
 			enumValue++
 		} else {
 			// Skip unexpected tokens
 			p.advance()
 		}
 	}
-	
+
 	// Skip until semicolon (for typedef enum Name { ... } Name; pattern)
 	p.skipUntil(";")
 }

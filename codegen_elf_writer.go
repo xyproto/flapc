@@ -386,10 +386,10 @@ func (fc *C67Compiler) writeELF(program *Program, outputPath string) error {
 	skipLambdasJump := fc.eb.text.Len()
 	fc.out.JumpUnconditional(0) // Will be patched
 	skipLambdasEnd := fc.eb.text.Len()
-	
+
 	// Generate lambda functions here (before exit, but jumped over)
 	fc.generateLambdaFunctions()
-	
+
 	// Patch the jump to skip over lambdas
 	skipLambdasTarget := fc.eb.text.Len()
 	fc.patchJumpImmediate(skipLambdasJump+1, int32(skipLambdasTarget-skipLambdasEnd))

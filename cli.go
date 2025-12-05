@@ -305,10 +305,10 @@ func cmdBuildDir(ctx *CommandContext, dirPath string) error {
 		}
 		// Check for main function definition (various forms)
 		contentStr := string(content)
-		if strings.Contains(contentStr, "main = {") || 
-		   strings.Contains(contentStr, "main={") ||
-		   strings.Contains(contentStr, "main := ") ||
-		   strings.Contains(contentStr, "main:=") {
+		if strings.Contains(contentStr, "main = {") ||
+			strings.Contains(contentStr, "main={") ||
+			strings.Contains(contentStr, "main := ") ||
+			strings.Contains(contentStr, "main:=") {
 			mainFile = file
 			break
 		}
@@ -384,12 +384,12 @@ func cmdTest(ctx *CommandContext, args []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to read test file %s: %v", testFile, err)
 		}
-		
+
 		contentStr := string(content)
-		if strings.Contains(contentStr, "main = {") || 
-		   strings.Contains(contentStr, "main={") ||
-		   strings.Contains(contentStr, "main := ") ||
-		   strings.Contains(contentStr, "main:=") {
+		if strings.Contains(contentStr, "main = {") ||
+			strings.Contains(contentStr, "main={") ||
+			strings.Contains(contentStr, "main := ") ||
+			strings.Contains(contentStr, "main:=") {
 			return fmt.Errorf("test file %s should not contain a main function", testName)
 		}
 
@@ -409,7 +409,7 @@ func cmdTest(ctx *CommandContext, args []string) error {
 		// Generate a test runner in the same directory as the test file for proper imports
 		testDir := filepath.Dir(testFile)
 		testRunnerPath := filepath.Join(testDir, fmt.Sprintf("_test_runner_%d.c67", os.Getpid()))
-		
+
 		// Parse test file to find test functions
 		testFunctions, parseErr := findTestFunctions(testFile)
 		if parseErr != nil {
@@ -575,7 +575,7 @@ func findTestFunctions(testFile string) ([]string, error) {
 	// Parse the file
 	parser := NewParserWithFilename(string(content), testFile)
 	program := parser.ParseProgram()
-	
+
 	if parser.errors.HasErrors() {
 		return nil, fmt.Errorf("parse errors in %s", testFile)
 	}
@@ -604,7 +604,7 @@ func generateTestRunner(runnerPath, testFile string, testFunctions []string) err
 	}
 
 	var builder strings.Builder
-	
+
 	// Include the test file content directly (inline it)
 	// But remove any import statements from the test file
 	testLines := strings.Split(string(testContent), "\n")
@@ -616,15 +616,15 @@ func generateTestRunner(runnerPath, testFile string, testFunctions []string) err
 			builder.WriteString("\n")
 		}
 	}
-	
+
 	// Generate main function that calls all test functions
 	builder.WriteString("\nmain = {\n")
-	
+
 	for _, testFunc := range testFunctions {
 		// Call each test function - they contain or! internally to check assertions
 		builder.WriteString(fmt.Sprintf("    %s()\n", testFunc))
 	}
-	
+
 	builder.WriteString("    exit(0)\n")
 	builder.WriteString("}\n")
 

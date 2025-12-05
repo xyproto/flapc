@@ -3085,7 +3085,7 @@ func (p *Parser) parseErrorHandling() Expression {
 	if p.peek.Type == TOKEN_OR_BANG {
 		p.nextToken() // move to left
 		p.nextToken() // skip 'or!'
-		
+
 		var right Expression
 		if p.peek.Type == TOKEN_LBRACE {
 			// or! followed by a block: parse the block as a lambda
