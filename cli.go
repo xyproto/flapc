@@ -605,9 +605,6 @@ func generateTestRunner(runnerPath, testFile string, testFunctions []string) err
 
 	var builder strings.Builder
 	
-	// First, import the current directory to get non-test files (like game.c67)
-	builder.WriteString("import \".\"\n")
-	
 	// Include the test file content directly (inline it)
 	// But remove any import statements from the test file
 	testLines := strings.Split(string(testContent), "\n")
@@ -628,6 +625,7 @@ func generateTestRunner(runnerPath, testFile string, testFunctions []string) err
 		builder.WriteString(fmt.Sprintf("    %s()\n", testFunc))
 	}
 	
+	builder.WriteString("    exit(0)\n")
 	builder.WriteString("}\n")
 
 	// Write the runner file
