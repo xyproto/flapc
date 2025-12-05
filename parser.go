@@ -3473,6 +3473,7 @@ func (p *Parser) parsePostfix() Expression {
 			// or chained calls: f(1)(2)
 			p.nextToken() // skip current expr
 			p.nextToken() // skip '('
+			p.skipNewlines()
 			args := []Expression{}
 
 			if p.current.Type != TOKEN_RPAREN {
@@ -3480,9 +3481,11 @@ func (p *Parser) parsePostfix() Expression {
 				for p.peek.Type == TOKEN_COMMA {
 					p.nextToken() // skip current
 					p.nextToken() // skip ','
+					p.skipNewlines()
 					args = append(args, p.parseExpression())
 				}
 				// current should be on last arg, peek should be ')'
+				p.skipNewlines()
 				p.nextToken() // move to ')'
 			}
 			// current is now on ')', whether we had args or not

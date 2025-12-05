@@ -3149,6 +3149,8 @@ func (fc *C67Compiler) getExprType(expr Expression) string {
 // (IndexExpr with SIMD is very complex but tested; minor edge cases may exist)
 func (fc *C67Compiler) compileExpression(expr Expression) {
 	if expr == nil {
+		fmt.Fprintf(os.Stderr, "DEBUG: nil expression stack trace:\n")
+		debug.PrintStack()
 		compilerError("INTERNAL ERROR: compileExpression received nil expression")
 	}
 	if VerboseMode {
