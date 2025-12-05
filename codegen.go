@@ -3650,6 +3650,53 @@ func (fc *C67Compiler) compileExpression(expr Expression) {
 			return
 		}
 
+		// Check for list repetition with * operator: [0] * 10
+		// This MUST allocate on heap, not in .rodata, to allow list updates
+		if e.Operator == "*" {
+			leftType := fc.getExprType(e.Left)
+			rightType := fc.getExprType(e.Right)
+			
+			if leftType == "list" && rightType == "number" {
+				// List repetition: [x] * n creates a new heap-allocated list
+				// NOT a compile-time .rodata constant (to allow mutations)
+				
+				// Compile list (result in xmm0 - pointer to list)
+				fc.compileExpression(e.Left)
+				fc.out.SubImmFromReg("rsp", 16)
+				fc.out.MovXmmToMem("xmm0", "rsp", 0)
+				
+				// Compile count (result in xmm0 - the number)
+				fc.compileExpression(e.Right)
+				fc.out.SubImmFromReg("rsp", 16)
+				fc.out.MovXmmToMem("xmm0", "rsp", 0)
+				
+				// Convert count to integer in rcx
+				fc.out.Cvttsd2si("rcx", "xmm0") // rcx = count
+				
+				// Load list pointer from stack to rdi
+				fc.out.MovMemToReg("rdi", "rsp", 16)
+				
+				// Save rcx (count) to rdx since we'll need it
+				fc.out.MovRegToReg("rdx", "rcx")
+				
+				// Clean up stack
+				fc.out.AddImmToReg("rsp", 32)
+				
+				// Call _c67_list_repeat(list_ptr in rdi, count in rdx)
+				// We need to implement this helper function
+				fc.out.SubImmFromReg("rsp", StackSlotSize)
+				fc.out.CallSymbol("_c67_list_repeat")
+				fc.out.AddImmToReg("rsp", StackSlotSize)
+				
+				// Result pointer is in rax, convert to xmm0
+				fc.out.SubImmFromReg("rsp", StackSlotSize)
+				fc.out.MovRegToMem("rax", "rsp", 0)
+				fc.out.MovMemToXmm("xmm0", "rsp", 0)
+				fc.out.AddImmToReg("rsp", StackSlotSize)
+				return
+			}
+		}
+		
 		// Check for string/list/map operations with + operator
 		if e.Operator == "+" {
 			leftType := fc.getExprType(e.Left)
@@ -7696,6 +7743,87 @@ func (fc *C67Compiler) generateRuntimeHelpers() {
 	fc.out.PopReg("rbp")
 	fc.out.Ret()
 
+	// Generate _c67_list_repeat(list_ptr, count) -> new_ptr
+	// Arguments: rdi = list_ptr, rdx = count (integer)
+	// Returns: rax = pointer to new repeated list (heap-allocated)
+	// Simple implementation: just call list_concat repeatedly
+
+	fc.eb.MarkLabel("_c67_list_repeat")
+
+	// Function prologue
+	fc.out.PushReg("rbp")
+	fc.out.MovRegToReg("rbp", "rsp")
+	fc.out.PushReg("rbx")
+	fc.out.PushReg("r12")
+	fc.out.PushReg("r13")
+
+	// Save arguments
+	fc.out.MovRegToReg("r12", "rdi") // r12 = original list_ptr
+	fc.out.MovRegToReg("r13", "rdx") // r13 = count
+
+	// If count <= 0, return empty list
+	fc.out.TestRegReg("r13", "r13")
+	emptyJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpLessOrEqual, 0)
+
+	// If count == 1, return original list (already heap-allocated from literal)
+	// Actually no, we need to copy it to ensure it's mutable
+	// Start with result = original list
+	fc.out.MovRegToReg("rbx", "r12") // rbx = result (start with first copy)
+
+	// Dec count since we already have one copy
+	fc.out.Emit([]byte{0x49, 0xff, 0xcd}) // dec r13
+
+	// Loop: concat result with original list (count-1) times
+	loopStart := fc.eb.text.Len()
+	fc.out.TestRegReg("r13", "r13")
+	loopEndJumpPos := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpEqual, 0)
+
+	// Call _c67_list_concat(result, original)
+	fc.out.MovRegToReg("rdi", "rbx") // first arg = result so far
+	fc.out.MovRegToReg("rsi", "r12") // second arg = original list
+	fc.out.SubImmFromReg("rsp", StackSlotSize)
+	fc.out.CallSymbol("_c67_list_concat")
+	fc.out.AddImmToReg("rsp", StackSlotSize)
+	fc.out.MovRegToReg("rbx", "rax") // update result
+
+	fc.out.Emit([]byte{0x49, 0xff, 0xcd}) // dec r13
+	backJumpPos := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0)
+
+	// Patch loop jump
+	repeatLoopEnd := fc.eb.text.Len()
+	offset1 := int32(repeatLoopEnd - (loopEndJumpPos + ConditionalJumpSize))
+	fc.patchJumpImmediate(loopEndJumpPos+2, offset1)
+	offset2 := int32(loopStart - (backJumpPos + UnconditionalJumpSize))
+	fc.patchJumpImmediate(backJumpPos+1, offset2)
+
+	// Return result
+	fc.out.MovRegToReg("rax", "rbx")
+	doneJumpPos := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0)
+
+	// Empty list case: return an empty list
+	emptyLabel := fc.eb.text.Len()
+	fc.out.XorRegWithReg("rax", "rax") // return NULL for now
+
+	// Patch empty jump
+	offset3 := int32(emptyLabel - (emptyJumpPos + ConditionalJumpSize))
+	fc.patchJumpImmediate(emptyJumpPos+2, offset3)
+
+	// Done
+	doneLabel := fc.eb.text.Len()
+	offset4 := int32(doneLabel - (doneJumpPos + UnconditionalJumpSize))
+	fc.patchJumpImmediate(doneJumpPos+1, offset4)
+
+	// Restore registers
+	fc.out.PopReg("r13")
+	fc.out.PopReg("r12")
+	fc.out.PopReg("rbx")
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
+
 	// Generate _c67_string_eq(left_ptr, right_ptr) -> 1.0 or 0.0
 	// Arguments: rdi = left_ptr, rsi = right_ptr
 	// Returns: xmm0 = 1.0 if equal, 0.0 if not
@@ -7743,7 +7871,7 @@ func (fc *C67Compiler) generateRuntimeHelpers() {
 	// rbx = index counter
 	fc.out.XorRegWithReg("rbx", "rbx")
 
-	loopStart := fc.eb.text.Len()
+	loopStart2 := fc.eb.text.Len()
 
 	// Check if we've compared all characters
 	fc.out.CmpRegToReg("rbx", "r12")
@@ -7774,19 +7902,19 @@ func (fc *C67Compiler) generateRuntimeHelpers() {
 
 	// Increment index and continue
 	fc.out.AddImmToReg("rbx", 1)
-	loopJumpPos := fc.eb.text.Len()
+	loopJumpPos2 := fc.eb.text.Len()
 	fc.out.JumpUnconditional(0) // jump back to loop start
 
 	// Patch loop jump
-	offset := int32(loopStart - (loopJumpPos + UnconditionalJumpSize))
-	fc.patchJumpImmediate(loopJumpPos+1, offset)
+	offset5 := int32(loopStart2 - (loopJumpPos2 + UnconditionalJumpSize))
+	fc.patchJumpImmediate(loopJumpPos2+1, offset5)
 
 	// All characters matched - return 1.0
 	endLoopLabel := fc.eb.text.Len()
 	eqNullLabel := fc.eb.text.Len() // Same position as endLoopLabel
 	fc.out.MovImmToReg("rax", "1")
 	fc.out.Cvtsi2sd("xmm0", "rax")
-	doneJumpPos := fc.eb.text.Len()
+	doneJumpPos2 := fc.eb.text.Len()
 	fc.out.JumpUnconditional(0)
 
 	// Not equal - return 0.0
@@ -7795,33 +7923,33 @@ func (fc *C67Compiler) generateRuntimeHelpers() {
 	fc.out.Cvtsi2sd("xmm0", "rax")
 
 	// Done label
-	doneLabel := fc.eb.text.Len()
+	doneLabel2 := fc.eb.text.Len()
 
 	// Patch all jumps
 	// Patch eqNull jump to eqNullLabel
-	offset = int32(eqNullLabel - (eqNullJumpPos + ConditionalJumpSize))
-	fc.patchJumpImmediate(eqNullJumpPos+2, offset)
+	offset6 := int32(eqNullLabel - (eqNullJumpPos + ConditionalJumpSize))
+	fc.patchJumpImmediate(eqNullJumpPos+2, offset6)
 
 	// Patch neq jumps to neqLabel
-	offset = int32(neqLabel - (neqJumpPos1 + 6))
-	fc.patchJumpImmediate(neqJumpPos1+2, offset)
+	offset7 := int32(neqLabel - (neqJumpPos1 + 6))
+	fc.patchJumpImmediate(neqJumpPos1+2, offset7)
 
-	offset = int32(neqLabel - (neqJumpPos2 + 6))
-	fc.patchJumpImmediate(neqJumpPos2+2, offset)
+	offset8 := int32(neqLabel - (neqJumpPos2 + 6))
+	fc.patchJumpImmediate(neqJumpPos2+2, offset8)
 
-	offset = int32(neqLabel - (neqJumpPos3 + 6))
-	fc.patchJumpImmediate(neqJumpPos3+2, offset)
+	offset9 := int32(neqLabel - (neqJumpPos3 + 6))
+	fc.patchJumpImmediate(neqJumpPos3+2, offset9)
 
-	offset = int32(neqLabel - (neqJumpPos4 + 6))
-	fc.patchJumpImmediate(neqJumpPos4+2, offset)
+	offset10 := int32(neqLabel - (neqJumpPos4 + 6))
+	fc.patchJumpImmediate(neqJumpPos4+2, offset10)
 
 	// Patch endLoop jump to endLoopLabel
-	offset = int32(endLoopLabel - (endLoopJumpPos + ConditionalJumpSize))
-	fc.patchJumpImmediate(endLoopJumpPos+2, offset)
+	offset11 := int32(endLoopLabel - (endLoopJumpPos + ConditionalJumpSize))
+	fc.patchJumpImmediate(endLoopJumpPos+2, offset11)
 
-	// Patch done jump to doneLabel
-	offset = int32(doneLabel - (doneJumpPos + UnconditionalJumpSize))
-	fc.patchJumpImmediate(doneJumpPos+1, offset)
+	// Patch done jump to doneLabel2
+	offset12 := int32(doneLabel2 - (doneJumpPos2 + UnconditionalJumpSize))
+	fc.patchJumpImmediate(doneJumpPos2+1, offset12)
 
 	fc.out.PopReg("r13")
 	fc.out.PopReg("r12")
