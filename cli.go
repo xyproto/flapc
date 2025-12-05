@@ -275,43 +275,71 @@ func cmdRunShebang(ctx *CommandContext, scriptPath string, scriptArgs []string) 
 	return nil
 }
 
-// cmdBuildDir compiles all .c67 files in a directory
+// cmdBuildDir finds the main .c67 file in a directory and compiles it
+// (does not compile test files or library files)
 func cmdBuildDir(ctx *CommandContext, dirPath string) error {
 	matches, err := filepath.Glob(filepath.Join(dirPath, "*.c67"))
 	if err != nil {
 		return fmt.Errorf("failed to find .c67 files: %v", err)
 	}
 
-	if len(matches) == 0 {
-		return fmt.Errorf("no .c67 files found in %s", dirPath)
+	// Filter out test files
+	var nonTestFiles []string
+	for _, file := range matches {
+		baseName := filepath.Base(file)
+		if !strings.HasPrefix(baseName, "test_") {
+			nonTestFiles = append(nonTestFiles, file)
+		}
+	}
+
+	if len(nonTestFiles) == 0 {
+		return fmt.Errorf("no non-test .c67 files found in %s", dirPath)
+	}
+
+	// Find the file with main function
+	var mainFile string
+	for _, file := range nonTestFiles {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		// Check for main function definition (various forms)
+		contentStr := string(content)
+		if strings.Contains(contentStr, "main = {") || 
+		   strings.Contains(contentStr, "main={") ||
+		   strings.Contains(contentStr, "main := ") ||
+		   strings.Contains(contentStr, "main:=") {
+			mainFile = file
+			break
+		}
+	}
+
+	if mainFile == "" {
+		return fmt.Errorf("no main function found in .c67 files in %s", dirPath)
+	}
+
+	// Compile the main file
+	outputPath := strings.TrimSuffix(filepath.Base(mainFile), ".c67")
+	if ctx.Platform.OS == OSWindows {
+		outputPath += ".exe"
 	}
 
 	if ctx.Verbose {
-		fmt.Fprintf(os.Stderr, "Found %d .c67 file(s) in %s\n", len(matches), dirPath)
+		fmt.Fprintf(os.Stderr, "Building %s -> %s\n", mainFile, outputPath)
 	}
 
-	// When compiling a directory, don't enable single-file mode
-	// This allows files in the same directory to share definitions
+	// Don't use single-file mode - allow imports from same directory
 	oldSingleFlag := SingleFlag
 	SingleFlag = false
 	defer func() { SingleFlag = oldSingleFlag }()
 
-	// Compile each file
-	for _, file := range matches {
-		outputPath := strings.TrimSuffix(filepath.Base(file), ".c67")
+	err = CompileC67WithOptions(mainFile, outputPath, ctx.Platform, ctx.OptTimeout, ctx.Verbose)
+	if err != nil {
+		return fmt.Errorf("compilation of %s failed: %v", mainFile, err)
+	}
 
-		if ctx.Verbose {
-			fmt.Fprintf(os.Stderr, "Building %s -> %s (directory mode)\n", file, outputPath)
-		}
-
-		err := CompileC67WithOptions(file, outputPath, ctx.Platform, ctx.OptTimeout, ctx.Verbose)
-		if err != nil {
-			return fmt.Errorf("compilation of %s failed: %v", file, err)
-		}
-
-		if !ctx.Quiet {
-			fmt.Printf("Built: %s\n", outputPath)
-		}
+	if !ctx.Quiet {
+		fmt.Printf("Built: %s\n", outputPath)
 	}
 
 	return nil
@@ -347,9 +375,23 @@ func cmdTest(ctx *CommandContext, args []string) error {
 	failed := 0
 	failedTests := []string{}
 
-	// Run each test file
+	// Compile all test files together into one test executable with generated main
 	for _, testFile := range matches {
 		testName := filepath.Base(testFile)
+
+		// Validate test file - ensure no main function
+		content, err := os.ReadFile(testFile)
+		if err != nil {
+			return fmt.Errorf("failed to read test file %s: %v", testFile, err)
+		}
+		
+		contentStr := string(content)
+		if strings.Contains(contentStr, "main = {") || 
+		   strings.Contains(contentStr, "main={") ||
+		   strings.Contains(contentStr, "main := ") ||
+		   strings.Contains(contentStr, "main:=") {
+			return fmt.Errorf("test file %s should not contain a main function", testName)
+		}
 
 		if !ctx.Quiet {
 			fmt.Printf("Running %s... ", testName)
@@ -364,12 +406,45 @@ func cmdTest(ctx *CommandContext, args []string) error {
 		baseName := strings.TrimSuffix(testName, ".c67")
 		tmpExec := filepath.Join(tmpDir, fmt.Sprintf("c67_test_%s_%d", baseName, os.Getpid()))
 
+		// Generate a test runner in the same directory as the test file for proper imports
+		testDir := filepath.Dir(testFile)
+		testRunnerPath := filepath.Join(testDir, fmt.Sprintf("_test_runner_%d.c67", os.Getpid()))
+		
+		// Parse test file to find test functions
+		testFunctions, parseErr := findTestFunctions(testFile)
+		if parseErr != nil {
+			if !ctx.Quiet {
+				fmt.Printf("FAIL (parse error)\n")
+			}
+			if ctx.Verbose {
+				fmt.Fprintf(os.Stderr, "  Error: %v\n", parseErr)
+			}
+			failed++
+			failedTests = append(failedTests, testName)
+			continue
+		}
+
+		// Generate test runner
+		runnerErr := generateTestRunner(testRunnerPath, testFile, testFunctions)
+		if runnerErr != nil {
+			if !ctx.Quiet {
+				fmt.Printf("FAIL (runner generation error)\n")
+			}
+			if ctx.Verbose {
+				fmt.Fprintf(os.Stderr, "  Error: %v\n", runnerErr)
+			}
+			failed++
+			failedTests = append(failedTests, testName)
+			continue
+		}
+		defer os.Remove(testRunnerPath)
+
 		// Enable single-file mode for each test
 		oldSingleFlag := SingleFlag
-		SingleFlag = true
+		SingleFlag = false // Allow importing from same directory
 
-		// Compile the test
-		err := CompileC67WithOptions(testFile, tmpExec, ctx.Platform, ctx.OptTimeout, false)
+		// Compile the test runner
+		err = CompileC67WithOptions(testRunnerPath, tmpExec, ctx.Platform, ctx.OptTimeout, false)
 		SingleFlag = oldSingleFlag
 
 		if err != nil {
@@ -488,4 +563,74 @@ DOCUMENTATION:
 
 `)
 	return nil
+}
+
+// findTestFunctions parses a test file and finds all functions that start with test or Test
+func findTestFunctions(testFile string) ([]string, error) {
+	content, err := os.ReadFile(testFile)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse the file
+	parser := NewParserWithFilename(string(content), testFile)
+	program := parser.ParseProgram()
+	
+	if parser.errors.HasErrors() {
+		return nil, fmt.Errorf("parse errors in %s", testFile)
+	}
+
+	// Find all function definitions that start with test or Test
+	var testFuncs []string
+	for _, stmt := range program.Statements {
+		if assign, ok := stmt.(*AssignStmt); ok {
+			name := assign.Name
+			if strings.HasPrefix(name, "test") || strings.HasPrefix(name, "Test") {
+				testFuncs = append(testFuncs, name)
+			}
+		}
+	}
+
+	return testFuncs, nil
+}
+
+// generateTestRunner creates a test runner file that calls all test functions
+// The runner includes the test file content inline and imports the current directory
+func generateTestRunner(runnerPath, testFile string, testFunctions []string) error {
+	// Read the test file content
+	testContent, err := os.ReadFile(testFile)
+	if err != nil {
+		return err
+	}
+
+	var builder strings.Builder
+	
+	// First, import the current directory to get non-test files (like game.c67)
+	builder.WriteString("import \".\"\n\n")
+	
+	// Include the test file content directly (inline it)
+	// But remove any import statements from the test file
+	testLines := strings.Split(string(testContent), "\n")
+	for _, line := range testLines {
+		trimmed := strings.TrimSpace(line)
+		// Skip import statements
+		if !strings.HasPrefix(trimmed, "import ") {
+			builder.WriteString(line)
+			builder.WriteString("\n")
+		}
+	}
+	builder.WriteString("\n")
+	
+	// Generate main function that calls all test functions
+	builder.WriteString("main = {\n")
+	
+	for _, testFunc := range testFunctions {
+		// Call each test function directly (no namespace prefix) and check result with or!
+		builder.WriteString(fmt.Sprintf("    %s() or!\n", testFunc))
+	}
+	
+	builder.WriteString("}\n")
+
+	// Write the runner file
+	return os.WriteFile(runnerPath, []byte(builder.String()), 0644)
 }

@@ -424,8 +424,8 @@ func (p *Parser) parseImport() Statement {
 		return &CImportStmt{Library: filename, Alias: alias, SoPath: source}
 	}
 
-	// If it has a version or looks like a git URL, it's an ImportStmt (git/c67)
-	if spec.Version != "" || isGitURL(source) ||
+	// If it's a local path (., ./path, /path) or has version or looks like git URL, it's ImportStmt
+	if spec.IsLocal || spec.Version != "" || isGitURL(source) ||
 		strings.Contains(source, "/") || strings.Contains(source, "\\") {
 		// Git repository or directory import
 		return &ImportStmt{URL: spec.Source, Version: spec.Version, Alias: alias}
