@@ -3083,9 +3083,17 @@ func (p *Parser) parseErrorHandling() Expression {
 
 	// or! is right-associative and very low precedence
 	if p.peek.Type == TOKEN_OR_BANG {
-		p.nextToken()                   // move to left
-		p.nextToken()                   // skip 'or!'
-		right := p.parseErrorHandling() // right-associative recursion
+		p.nextToken() // move to left
+		p.nextToken() // skip 'or!'
+		
+		var right Expression
+		if p.peek.Type == TOKEN_LBRACE {
+			// or! followed by a block: parse the block as a lambda
+			right = p.parsePrimary()
+		} else {
+			// or! followed by an expression
+			right = p.parseErrorHandling() // right-associative recursion
+		}
 		return &BinaryExpr{Left: left, Operator: "or!", Right: right}
 	}
 
@@ -3152,17 +3160,11 @@ func (p *Parser) parseParallel() Expression {
 func (p *Parser) parseLogicalOr() Expression {
 	left := p.parseLogicalAnd()
 
-	for p.peek.Type == TOKEN_OR || p.peek.Type == TOKEN_XOR || p.peek.Type == TOKEN_ORBANG {
+	for p.peek.Type == TOKEN_OR || p.peek.Type == TOKEN_XOR {
 		p.nextToken() // skip current
 		op := p.current.Value
 		p.nextToken() // skip operator
-		var right Expression
-		if op == "or!" && p.peek.Type == TOKEN_LBRACE {
-			// or! followed by a block: parse the block as a lambda
-			right = p.parsePrimary()
-		} else {
-			right = p.parseLogicalAnd()
-		}
+		right := p.parseLogicalAnd()
 		left = &BinaryExpr{Left: left, Operator: op, Right: right}
 	}
 

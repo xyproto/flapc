@@ -3595,6 +3595,10 @@ func (fc *C67Compiler) compileExpression(expr Expression) {
 		// Special handling for or! operator (railway-oriented programming)
 		// or! requires conditional execution: only evaluate right side if left is error/null
 		if e.Operator == "or!" {
+			if e.Right == nil {
+				compilerError("or! operator requires a right-hand side expression or block")
+			}
+			
 			// Compile left expression into xmm0
 			fc.compileExpression(e.Left)
 

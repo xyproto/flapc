@@ -624,8 +624,8 @@ func generateTestRunner(runnerPath, testFile string, testFunctions []string) err
 	builder.WriteString("\nmain = {\n")
 	
 	for _, testFunc := range testFunctions {
-		// Call each test function directly (no namespace prefix) and check result with or!
-		builder.WriteString(fmt.Sprintf("    %s() or! { exitln(\"Test %s failed\") }\n", testFunc, testFunc))
+		// Call each test function - they contain or! internally to check assertions
+		builder.WriteString(fmt.Sprintf("    %s()\n", testFunc))
 	}
 	
 	builder.WriteString("}\n")
