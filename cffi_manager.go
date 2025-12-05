@@ -332,15 +332,14 @@ func (cm *CFFIManager) AutoLoadLibrary(libName string) error {
 		filepath.Join("/usr/local/include", fmt.Sprintf("%s.h", libName)),
 	}
 
-	// Special cases
-	switch libName {
-	case "sdl3", "SDL3":
-		headerPaths = append(headerPaths,
-			filepath.Join("SDL3", "SDL.h"),
-			filepath.Join(".", "include", "SDL3", "SDL.h"),
-			"/usr/include/SDL3/SDL.h",
-			"/usr/local/include/SDL3/SDL.h")
-	}
+	// Try uppercase library name patterns (e.g., SDL3/SDL.h)
+	upperLib := strings.ToUpper(libName)
+	headerPaths = append(headerPaths,
+		filepath.Join(upperLib, fmt.Sprintf("%s.h", upperLib)),
+		filepath.Join(".", "include", upperLib, fmt.Sprintf("%s.h", upperLib)),
+		filepath.Join("/usr/include", upperLib, fmt.Sprintf("%s.h", upperLib)),
+		filepath.Join("/usr/local/include", upperLib, fmt.Sprintf("%s.h", upperLib)),
+	)
 
 	var headerPath string
 	for _, path := range headerPaths {

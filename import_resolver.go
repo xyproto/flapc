@@ -160,10 +160,16 @@ func resolveWindowsLibrary(libName string) ([]string, error) {
 		return []string{dllName}, nil
 	}
 
-	// Check SDL3.dll specific case
-	if libName == "SDL3" || libName == "sdl3" {
-		if _, err := os.Stat("SDL3.dll"); err == nil {
-			return []string{"SDL3.dll"}, nil
+	// Check current directory for library-specific DLLs
+	upperLib := strings.ToUpper(libName)
+	potentialDLLs := []string{
+		fmt.Sprintf("%s.dll", upperLib),
+		fmt.Sprintf("%s.dll", libName),
+		fmt.Sprintf("lib%s.dll", libName),
+	}
+	for _, dll := range potentialDLLs {
+		if _, err := os.Stat(dll); err == nil {
+			return []string{dll}, nil
 		}
 	}
 
