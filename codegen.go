@@ -16769,6 +16769,17 @@ func processImports(program *Program, platform Platform, sourceFilePath string) 
 			return fmt.Errorf("failed to resolve import %s: %v", imp.URL, err)
 		}
 
+		// Filter out the current source file to avoid circular imports
+		var filteredFiles []string
+		absSourcePath, _ := filepath.Abs(sourceFilePath)
+		for _, f := range c67Files {
+			absF, _ := filepath.Abs(f)
+			if absF != absSourcePath {
+				filteredFiles = append(filteredFiles, f)
+			}
+		}
+		c67Files = filteredFiles
+
 		// Parse and merge each .c67 file with namespace handling
 		for _, c67File := range c67Files {
 			depContent, err := os.ReadFile(c67File)

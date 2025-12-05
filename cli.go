@@ -606,23 +606,22 @@ func generateTestRunner(runnerPath, testFile string, testFunctions []string) err
 	var builder strings.Builder
 	
 	// First, import the current directory to get non-test files (like game.c67)
-	builder.WriteString("import \".\"\n\n")
+	builder.WriteString("import \".\"\n")
 	
 	// Include the test file content directly (inline it)
 	// But remove any import statements from the test file
 	testLines := strings.Split(string(testContent), "\n")
 	for _, line := range testLines {
 		trimmed := strings.TrimSpace(line)
-		// Skip import statements
-		if !strings.HasPrefix(trimmed, "import ") {
+		// Skip import statements and empty lines
+		if !strings.HasPrefix(trimmed, "import ") && trimmed != "" {
 			builder.WriteString(line)
 			builder.WriteString("\n")
 		}
 	}
-	builder.WriteString("\n")
 	
 	// Generate main function that calls all test functions
-	builder.WriteString("main = {\n")
+	builder.WriteString("\nmain = {\n")
 	
 	for _, testFunc := range testFunctions {
 		// Call each test function directly (no namespace prefix) and check result with or!
