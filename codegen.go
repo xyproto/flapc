@@ -627,36 +627,33 @@ func (fc *C67Compiler) Compile(program *Program, outputPath string) error {
 
 	fc.popDeferScope()
 
+	// Jump over lambda functions to reach the main evaluation code
+	skipLambdasJump := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0) // Will be patched
+	skipLambdasEnd := fc.eb.text.Len()
+	
+	// Generate lambda functions here (before exit, but jumped over)
+	fc.generateLambdaFunctions()
+	
+	// Patch the jump to skip over lambdas
+	skipLambdasTarget := fc.eb.text.Len()
+	fc.patchJumpImmediate(skipLambdasJump+1, int32(skipLambdasTarget-skipLambdasEnd))
+
 	// Evaluate main (if it exists) to get the exit code BEFORE cleaning up arenas
 	// main can be a direct value (main = 42) or a function (main = { 42 })
-	offset, exists := fc.variables["main"]
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG: Checking for main: exists=%v, offset=%d, fc.variables=%v\n", exists, offset, fc.variables)
-	}
+	_, exists := fc.variables["main"]
 	if exists {
 		// main exists - check if it's a lambda/function or a direct value
 		if fc.lambdaVars["main"] {
 			// main is a lambda/function - call it with no arguments
-			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "DEBUG: Calling main function for exit code\n")
-			}
 			fc.compileExpression(&CallExpr{Function: "main", Args: []Expression{}})
 		} else {
 			// main is a direct value - just load it
-			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "DEBUG: Loading main value for exit code\n")
-			}
 			fc.compileExpression(&IdentExpr{Name: "main"})
 		}
 		// Result is in xmm0 (float64)
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG: Main expression compiled, converting to int32\n")
-		}
 	} else {
 		// No main - use exit code 0
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG: No main variable found, using exit code 0\n")
-		}
 		fc.out.XorRegWithReg("xmm0", "xmm0")
 	}
 
@@ -706,14 +703,7 @@ func (fc *C67Compiler) Compile(program *Program, outputPath string) error {
 		fc.eb.Emit("syscall") // invoke syscall directly
 	}
 
-	// Generate lambda functions
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG: About to generate lambda functions\n")
-	}
-	fc.generateLambdaFunctions()
-	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG: Finished generating lambda functions\n")
-	}
+	// Lambda functions were already generated and jumped over before main evaluation
 
 	// Generate runtime helpers (string conversion, concatenation, etc.)
 	// For ELF, this is done in writeELF() after second lambda pass
@@ -6335,11 +6325,6 @@ func (fc *C67Compiler) predeclareLambdaSymbols() {
 }
 
 func (fc *C67Compiler) generateLambdaFunctions() {
-	if fc.debug {
-		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG generateLambdaFunctions: generating %d lambdas\n", len(fc.lambdaFuncs))
-		}
-	}
 	// Use index-based loop to handle lambdas added during iteration (nested lambdas)
 	for i := 0; i < len(fc.lambdaFuncs); i++ {
 		lambda := fc.lambdaFuncs[i]
@@ -17046,6 +17031,15 @@ func CompileC67(inputPath string, outputPath string, platform Platform) (err err
 }
 
 func CompileC67WithOptions(inputPath string, outputPath string, platform Platform, wpoTimeout float64, verbose bool) (err error) {
+	// Set verbose mode
+	oldVerbose := VerboseMode
+	if verbose {
+		VerboseMode = true
+	}
+	defer func() {
+		VerboseMode = oldVerbose
+	}()
+	
 	// Default to WPO if not explicitly set
 	if wpoTimeout == 0 {
 		wpoTimeout = 2.0

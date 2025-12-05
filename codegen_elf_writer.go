@@ -382,18 +382,45 @@ func (fc *C67Compiler) writeELF(program *Program, outputPath string) error {
 
 	fc.popDeferScope()
 
+	// Jump over lambda functions to reach the main evaluation code
+	skipLambdasJump := fc.eb.text.Len()
+	fc.out.JumpUnconditional(0) // Will be patched
+	skipLambdasEnd := fc.eb.text.Len()
+	
+	// Generate lambda functions here (before exit, but jumped over)
+	fc.generateLambdaFunctions()
+	
+	// Patch the jump to skip over lambdas
+	skipLambdasTarget := fc.eb.text.Len()
+	fc.patchJumpImmediate(skipLambdasJump+1, int32(skipLambdasTarget-skipLambdasEnd))
+
+	// Evaluate main (if it exists) to get the exit code
+	_, exists := fc.variables["main"]
+	if exists {
+		// main exists - check if it's a lambda/function or a direct value
+		if fc.lambdaVars["main"] {
+			// main is a lambda/function - call it with no arguments
+			fc.compileExpression(&CallExpr{Function: "main", Args: []Expression{}})
+		} else {
+			// main is a direct value - just load it
+			fc.compileExpression(&IdentExpr{Name: "main"})
+		}
+		// Result is in xmm0 (float64)
+		// Convert float64 result in xmm0 to int32 in rdi (for exit code)
+		fc.out.Emit([]byte{0xf2, 0x48, 0x0f, 0x2c, 0xf8})
+	} else {
+		// No main - use exit code 0
+		fc.out.XorRegWithReg("rdi", "rdi")
+	}
+
 	// Always add implicit exit at the end of the program
 	// Use syscall exit on Linux (no libc dependency for syscall-based printf)
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG: Using syscall exit (no libc)\n")
 	}
-	fc.out.MovImmToReg("rax", "60")    // syscall number for exit
-	fc.out.XorRegWithReg("rdi", "rdi") // exit code 0
-	fc.eb.Emit("syscall")              // invoke syscall directly
-
-	// Generate lambda functions
-	// (lambdas are generated after the main code, so they can reference main code)
-	fc.generateLambdaFunctions()
+	fc.out.MovImmToReg("rax", "60") // syscall number for exit
+	// exit code is already in rdi (first syscall argument)
+	fc.eb.Emit("syscall") // invoke syscall directly
 
 	// Generate pattern lambda functions
 	fc.generatePatternLambdaFunctions()
