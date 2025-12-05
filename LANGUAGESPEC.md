@@ -1565,7 +1565,7 @@ The `export` statement at the top of a C67 file controls which functions are ava
    ```
 
 **Use cases:**
-- `export *`: Beginner-friendly libraries, game frameworks (QBASIC-like feel)
+- `export *`: Beginner-friendly libraries and frameworks
 - `export list`: Controlled public APIs with internal implementation details
 - No export: General libraries where namespace pollution matters
 
@@ -1648,7 +1648,7 @@ import "C:\\Projects\\mylib" as mylib
 ### Import Examples
 
 ```c67
-// Complete game development setup
+// Complete application setup
 import "sdl3" as sdl                           // System library
 import "github.com/xyproto/c67-math" as math  // Git repo
 import "./game_logic" as game                  // Local directory
@@ -3047,7 +3047,7 @@ Traditional approaches:
 1. **Familiar model:** Network programming concepts
 2. **Local or remote:** Same API for both
 3. **Simple implementation:** Thin wrapper over ENet library
-4. **Battle-tested:** ENet proven in game networking
+4. **Battle-tested:** ENet proven in real-time networking
 5. **Scales naturally:** From single machine to distributed
 
 **Design:**
@@ -3298,7 +3298,7 @@ Future: arena { ... } blocks:
 2. **Predictability**: Deterministic memory usage
 3. **No Fragmentation**: Memory is contiguous within an arena
 4. **Batch Deallocation**: Free entire arena at once
-5. **Game-Friendly**: Perfect for frame-based allocation patterns
+5. **Efficient**: Perfect for frame-based allocation patterns
 
 ## Machine Code Level
 
@@ -3647,13 +3647,13 @@ printf("%f\n", list[0]) # Should print "1.000000"
 - Growth: O(n) when realloc needed (rare)
 
 **vs. Malloc:**
-- ~10x faster for typical game allocations
+- ~10x faster for typical frame-based allocations
 - No fragmentation
 - Better cache locality
 - Batch deallocation is instant
 
 **Best Use Cases:**
-- Frame-based game loops (allocate per frame, free at frame end)
+- Frame-based event loops (allocate per frame, free at frame end)
 - Level loading (allocate for level, free when done)
 - String building (concatenate many strings, use once)
 - Temporary data structures

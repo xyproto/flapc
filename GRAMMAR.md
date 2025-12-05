@@ -217,28 +217,28 @@ The `export` statement controls which functions are available to importers:
    ```
 
 **Design rationale:**
-- `export *` is for beginner-friendly libraries (e.g., game frameworks that provide a QBASIC-like environment)
+- `export *` is for beginner-friendly libraries (e.g., frameworks that provide a simplified API)
 - `export func1 func2` is for controlled APIs with selective exposure
 - No export is for general libraries where namespace pollution is a concern
 
-**Example: Beginner-friendly game library**
+**Example: Beginner-friendly library**
 ```c67
-// c67game/main.c67
+// simplelib/main.c67
 export *
 
-// Game initialization
-init_game = (width, height, title) -> { ... }
+// Library initialization
+init_window = (width, height, title) -> { ... }
 
 // Drawing functions
 draw_rect = (x, y, w, h, color) -> { ... }
 draw_circle = (x, y, radius, color) -> { ... }
 clear_screen = color -> { ... }
 
-// Usage in game:
-import "github.com/xyproto/c67game" as game
+// Usage:
+import "github.com/user/simplelib" as lib
 
 // No prefixes needed - feels like built-in functions!
-init_game(800, 600, "My Game")
+init_window(800, 600, "My App")
 @ {
     clear_screen(0)
     draw_rect(100, 100, 50, 50, 0xFF0000)
@@ -303,8 +303,8 @@ When importing a C67 module:
 
 1. **If module has `export *`**: Functions available without prefix
    ```c67
-   import "github.com/user/gamelib" as game
-   init_game()  // No prefix needed
+   import "github.com/user/simplelib" as lib
+   init_window()  // No prefix needed
    ```
 
 2. **If module has `export func1 func2`**: Only listed functions available, prefix required

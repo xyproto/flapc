@@ -11,7 +11,7 @@ type ArenaScope int
 
 const (
 	ArenaGlobal   ArenaScope = iota // Program lifetime
-	ArenaFrame                      // Per-frame (game loop)
+	ArenaFrame                      // Per-frame allocation
 	ArenaFunction                   // Per-function call
 	ArenaBlock                      // arena { ... } block
 )
@@ -266,7 +266,7 @@ func (fc *C67Compiler) compileMapLiteralWithArena(keys, values []Expression) {
 
 // Default arena sizes and growth parameters
 const (
-	// Initial sizes - generous defaults for game/demoscene development
+	// Initial sizes - generous defaults for typical applications
 	DefaultGlobalArenaSize   = 16 * 1024 * 1024 // 16 MB (was 1MB)
 	DefaultFrameArenaSize    = 4 * 1024 * 1024  // 4 MB (was 256KB)
 	DefaultFunctionArenaSize = 1024 * 1024      // 1 MB (was 64KB)

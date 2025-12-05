@@ -1,4 +1,4 @@
-* **C67** is a programming language for games, demos, and tools.
+* **C67** is a systems programming language with first-class arena allocation.
 * **c67** is a compiler written in Go that compiles `.c67` programs directly to machine code.
 * **Status (December 2025)**: All tests passing! Production-ready for x86_64 Linux/Windows.
 
@@ -237,7 +237,7 @@ arena {
 }  // All arena memory freed here in one operation
 ```
 
-**No GC pauses. No individual free() calls. Perfect for games.**
+**No GC pauses. No individual free() calls. Perfect for real-time applications.**
 
 ### 9. **Direct C FFI**
 
@@ -318,7 +318,7 @@ println(squared)
 
 ---
 
-## Building a Game: Pong
+## Building an Interactive Application: Pong
 
 ```c67
 import sdl3 as sdl
@@ -393,7 +393,7 @@ running := 1
 }
 ```
 
-**100 lines. Full game. No build scripts. No dependencies.**
+**100 lines. Complete application. No build scripts. No dependencies.**
 
 ---
 
@@ -462,11 +462,11 @@ import opengl as gl
 
 ---
 
-## Why C67 For Gamedev?
+## Why C67?
 
 ### Compact Executables
 
-No heavyweight runtime means reasonable binary sizes. Ship indie games easily.
+No heavyweight runtime means reasonable binary sizes. Ship applications with minimal overhead.
 
 ### Fast Compile Times
 
@@ -600,7 +600,7 @@ new_x = positions_x + velocities_x  // 4 adds in one instruction
 
 **C67 is designed for:**
 
-1. **Games** - Fast, predictable, no GC pauses
+1. **Real-time systems** - Fast, predictable, no GC pauses
 2. **Demos** - Small binaries, direct hardware access
 3. **Tools** - Quick compile times, C library access
 4. **Learning** - Simple semantics, one universal type
@@ -640,4 +640,4 @@ BSD 3-Clause. See [LICENSE](LICENSE).
 
 ---
 
-**Start making games with C67 today. 🎮**
+**Start building with C67 today. 🚀**

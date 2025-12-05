@@ -28,4 +28,4 @@
 - C struct support in function calls (passing pointers to stack-allocated structs)
 - Lambda capture optimization for imported packages
 - More comprehensive SDL3 wrapper library
-- Game development examples and tutorials
+- Application development examples and tutorials
