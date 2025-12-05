@@ -292,7 +292,10 @@ func findC67Files(dirPath string, topLevelOnly bool) ([]string, error) {
 
 		for _, entry := range entries {
 			if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".c67") {
-				files = append(files, filepath.Join(dirPath, entry.Name()))
+				// Exclude test files (test_*.c67)
+				if !strings.HasPrefix(entry.Name(), "test_") {
+					files = append(files, filepath.Join(dirPath, entry.Name()))
+				}
 			}
 		}
 	} else {
@@ -302,7 +305,11 @@ func findC67Files(dirPath string, topLevelOnly bool) ([]string, error) {
 				return err
 			}
 			if !info.IsDir() && strings.HasSuffix(path, ".c67") {
-				files = append(files, path)
+				// Exclude test files (test_*.c67)
+				baseName := filepath.Base(path)
+				if !strings.HasPrefix(baseName, "test_") {
+					files = append(files, path)
+				}
 			}
 			return nil
 		})

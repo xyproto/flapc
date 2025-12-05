@@ -1077,15 +1077,15 @@ func (eb *ExecutableBuilder) patchTextInELF() {
 	}
 
 	// CRITICAL: The dynamic section starts 4 pages after text section
-	// Text section is pre-allocated 4 pages (16KB) at offset 0x3000
-	// Dynamic section starts at 0x7000
+	// Text section is pre-allocated 8 pages (32KB) at offset 0x3000
+	// Dynamic section starts at 0xB000
 	// Check if text exceeds the reserved space
 	textEndAligned := (textOffset + textSize + 7) & ^7
-	textReservedEnd := 0x7000 // End of 16KB text reservation
+	textReservedEnd := 0xB000 // End of 32KB text reservation
 
 	// Check if we would overflow past the reserved text space
 	if textEndAligned > textReservedEnd {
-		// Text section exceeds the reserved 16KB space!
+		// Text section exceeds the reserved 32KB space!
 		fmt.Fprintf(os.Stderr, "ERROR: Text section too large!\n")
 		fmt.Fprintf(os.Stderr, "  Text size: %d bytes (0x%x)\n", textSize, textSize)
 		fmt.Fprintf(os.Stderr, "  Text end (aligned): 0x%x\n", textEndAligned)

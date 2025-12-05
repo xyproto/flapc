@@ -158,7 +158,7 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	// .text (our code)
 	// Reserve 4 pages (16KB) for text section regardless of current size
 	// This ensures RIP-relative addresses remain valid when code grows
-	textReservedSize := uint64(pageSize * 4) // 16KB reserved
+	textReservedSize := uint64(pageSize * 8) // 32KB reserved
 
 	layout["text"] = struct {
 		offset uint64
@@ -169,7 +169,7 @@ func (eb *ExecutableBuilder) WriteCompleteDynamicELF(ds *DynamicSections, functi
 	currentOffset += textReservedSize
 	currentAddr += textReservedSize
 
-	// writable segment will now start at page 0x7000
+	// writable segment will now start at page 0xB000
 
 	// .dynamic
 	dynamicAddr := currentAddr
