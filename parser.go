@@ -3156,7 +3156,13 @@ func (p *Parser) parseLogicalOr() Expression {
 		p.nextToken() // skip current
 		op := p.current.Value
 		p.nextToken() // skip operator
-		right := p.parseLogicalAnd()
+		var right Expression
+		if op == "or!" && p.peek.Type == TOKEN_LBRACE {
+			// or! followed by a block: parse the block as a lambda
+			right = p.parsePrimary()
+		} else {
+			right = p.parseLogicalAnd()
+		}
 		left = &BinaryExpr{Left: left, Operator: op, Right: right}
 	}
 
