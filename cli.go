@@ -76,6 +76,9 @@ func RunCLI(args []string, platform Platform, verbose, quiet bool, optTimeout fl
 		}
 		return cmdRun(ctx, args[1:])
 
+	case "test":
+		return cmdTest(ctx, args[1:])
+
 	case "help", "--help", "-h":
 		return cmdHelp(ctx)
 
@@ -314,6 +317,122 @@ func cmdBuildDir(ctx *CommandContext, dirPath string) error {
 	return nil
 }
 
+// cmdTest runs all test_*.c67 files in the current directory
+func cmdTest(ctx *CommandContext, args []string) error {
+	// Determine directory to search
+	searchDir := "."
+	if len(args) > 0 {
+		searchDir = args[0]
+	}
+
+	// Find all test_*.c67 files
+	matches, err := filepath.Glob(filepath.Join(searchDir, "test_*.c67"))
+	if err != nil {
+		return fmt.Errorf("failed to find test files: %v", err)
+	}
+
+	if len(matches) == 0 {
+		if !ctx.Quiet {
+			fmt.Printf("No test files found in %s\n", searchDir)
+		}
+		return nil
+	}
+
+	if ctx.Verbose {
+		fmt.Fprintf(os.Stderr, "Found %d test file(s)\n", len(matches))
+	}
+
+	// Track test results
+	passed := 0
+	failed := 0
+	failedTests := []string{}
+
+	// Run each test file
+	for _, testFile := range matches {
+		testName := filepath.Base(testFile)
+		
+		if !ctx.Quiet {
+			fmt.Printf("Running %s... ", testName)
+		}
+
+		// Create temporary executable
+		tmpDir := "/dev/shm"
+		if _, err := os.Stat(tmpDir); os.IsNotExist(err) {
+			tmpDir = os.TempDir()
+		}
+
+		baseName := strings.TrimSuffix(testName, ".c67")
+		tmpExec := filepath.Join(tmpDir, fmt.Sprintf("c67_test_%s_%d", baseName, os.Getpid()))
+
+		// Enable single-file mode for each test
+		oldSingleFlag := SingleFlag
+		SingleFlag = true
+
+		// Compile the test
+		err := CompileC67WithOptions(testFile, tmpExec, ctx.Platform, ctx.OptTimeout, false)
+		SingleFlag = oldSingleFlag
+
+		if err != nil {
+			if !ctx.Quiet {
+				fmt.Printf("FAIL (compilation error)\n")
+			}
+			if ctx.Verbose {
+				fmt.Fprintf(os.Stderr, "  Error: %v\n", err)
+			}
+			failed++
+			failedTests = append(failedTests, testName)
+			continue
+		}
+
+		// Run the test
+		cmd := exec.Command(tmpExec)
+		cmd.Stdin = os.Stdin
+		if ctx.Verbose {
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+		}
+
+		err = cmd.Run()
+		os.Remove(tmpExec)
+
+		if err != nil {
+			if !ctx.Quiet {
+				fmt.Printf("FAIL\n")
+			}
+			if ctx.Verbose {
+				fmt.Fprintf(os.Stderr, "  Error: %v\n", err)
+			}
+			failed++
+			failedTests = append(failedTests, testName)
+		} else {
+			if !ctx.Quiet {
+				fmt.Printf("PASS\n")
+			}
+			passed++
+		}
+	}
+
+	// Print summary
+	if !ctx.Quiet {
+		fmt.Printf("\n")
+		if failed == 0 {
+			fmt.Printf("✓ All tests passed (%d/%d)\n", passed, passed+failed)
+		} else {
+			fmt.Printf("✗ %d test(s) failed, %d passed (%d total)\n", failed, passed, passed+failed)
+			fmt.Printf("\nFailed tests:\n")
+			for _, name := range failedTests {
+				fmt.Printf("  - %s\n", name)
+			}
+		}
+	}
+
+	if failed > 0 {
+		os.Exit(1)
+	}
+
+	return nil
+}
+
 // cmdHelp displays usage information
 func cmdHelp(ctx *CommandContext) error {
 	fmt.Printf(`c67 - The C67 Compiler (Version 1.5.0)
@@ -324,8 +443,9 @@ USAGE:
 COMMANDS:
     build <file.c67>      Compile a C67 source file to an executable
     run <file.c67>        Compile and run a C67 program immediately
-    help                   Show this help message
-    version                Show version information
+    test [directory]      Run all test_*.c67 files (default: current directory)
+    help                  Show this help message
+    version               Show version information
 
 SHORTHAND:
     c67 <file.c67>      Same as 'c67 build <file.c67>'
@@ -353,6 +473,10 @@ EXAMPLES:
 
     # Shorthand compilation
     c67 hello.c67
+
+    # Run tests
+    c67 test
+    c67 test ./tests
 
     # Shebang execution (add #!/usr/bin/c67 to first line of .c67 file)
     chmod +x script.c67

@@ -1235,8 +1235,8 @@ func main() {
 
 	// Set global verbosity flag (use whichever was specified)
 	VerboseMode = *verbose || *verboseLong
-	// Quiet mode is the default (UNIX style) - only show output if verbose
-	QuietMode = !VerboseMode
+	// Quiet mode is false by default (commands should show progress)
+	QuietMode = false
 
 	if VerboseMode {
 		fmt.Fprintf(os.Stderr, "DEBUG main: VerboseMode enabled\n")
@@ -1361,7 +1361,7 @@ func main() {
 	if len(inputFiles) > 0 {
 		firstArg := inputFiles[0]
 		// Check if it's a subcommand or looks like the new CLI style
-		if firstArg == "build" || firstArg == "run" || firstArg == "help" ||
+		if firstArg == "build" || firstArg == "run" || firstArg == "test" || firstArg == "help" ||
 			(strings.HasSuffix(firstArg, ".c67") && *codeFlag == "") {
 			// Use new CLI system
 			// Only pass outputFilename if user explicitly provided it
