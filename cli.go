@@ -350,7 +350,7 @@ func cmdTest(ctx *CommandContext, args []string) error {
 	// Run each test file
 	for _, testFile := range matches {
 		testName := filepath.Base(testFile)
-		
+
 		if !ctx.Quiet {
 			fmt.Printf("Running %s... ", testName)
 		}
