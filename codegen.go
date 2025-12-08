@@ -755,8 +755,14 @@ func (fc *C67Compiler) collectSymbols(stmt Statement) error {
 		_, exists := fc.variables[s.Name]
 
 		if VerboseMode {
-			fmt.Fprintf(os.Stderr, "DEBUG collectSymbols AssignStmt: name=%s, exists=%v, IsUpdate=%v, Mutable=%v, mutableVars[%s]=%v\n",
-				s.Name, exists, s.IsUpdate, s.Mutable, s.Name, fc.mutableVars[s.Name])
+			fmt.Fprintf(os.Stderr, "DEBUG collectSymbols AssignStmt: name=%s, exists=%v, IsUpdate=%v, Mutable=%v, mutableVars[%s]=%v, stackOffset=%d\n",
+				s.Name, exists, s.IsUpdate, s.Mutable, s.Name, fc.mutableVars[s.Name], fc.stackOffset)
+		}
+		
+		// Debug: print stack trace when we see the problematic variable
+		if s.Name == "r1" && exists {
+			fmt.Fprintf(os.Stderr, "DEBUG: Variable 'r1' already exists! Stack trace:\n")
+			debug.PrintStack()
 		}
 
 		if s.IsUpdate {
@@ -1047,7 +1053,8 @@ func (fc *C67Compiler) collectLoopsFromExpression(expr Expression) {
 		}
 
 	case *LambdaExpr:
-		fc.collectLoopsFromExpression(e.Body)
+		// Don't recurse into lambda bodies - they have their own scope
+		// Lambdas will be processed separately in generateLambdaFunctions()
 
 	case *ListExpr:
 		for _, elem := range e.Elements {
@@ -6642,8 +6649,8 @@ func (fc *C67Compiler) generateLambdaFunctions() {
 		fc.currentLambda = &lambda
 		fc.lambdaBodyStart = fc.eb.text.Len()
 
-		fc.labelCounter = 0
-		fc.collectLoopsFromExpression(lambda.Body)
+		// Note: Don't call collectLoopsFromExpression here - symbols will be collected
+		// when we compile the BlockExpr. Calling it here causes duplicate symbol collection.
 		fc.labelCounter = 0
 
 		fc.pushDeferScope()
