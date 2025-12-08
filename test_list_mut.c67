@@ -1,5 +1,0 @@
-nums := [5]
-nums[0] <- 10
-println(nums[0])
-
-main = { 0 }
