@@ -1,0 +1,12 @@
+counter := 0
+
+increment = {
+    counter <- counter + 1
+}
+
+main = {
+    increment()
+    increment()
+    println(counter)
+    0
+}

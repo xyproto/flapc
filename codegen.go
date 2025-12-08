@@ -124,6 +124,7 @@ type C67Compiler struct {
 	scopedMoved       []map[string]bool  // Stack of moved variables per scope
 	errors            *ErrorCollector    // Railway-oriented error collector
 	dynamicSymbols    *DynamicSections   // Dynamic symbol table (for updating lambda symbols post-generation)
+	moduleLevelVars   map[string]bool    // Track module-level variables (defined outside lambdas)
 }
 
 type FunctionSignature struct {
@@ -211,6 +212,7 @@ func NewC67Compiler(platform Platform, verbose bool) (*C67Compiler, error) {
 		scopedMoved:         []map[string]bool{make(map[string]bool)},
 		errors:              NewErrorCollector(10),
 		functionNamespace:   make(map[string]string),
+		moduleLevelVars:     make(map[string]bool),
 	}, nil
 }
 
@@ -781,6 +783,12 @@ func (fc *C67Compiler) collectSymbols(stmt Statement) error {
 			offset := fc.stackOffset
 			fc.variables[s.Name] = offset
 			fc.mutableVars[s.Name] = true
+			
+			// Track module-level variables (defined outside any lambda)
+			if fc.currentLambda == nil {
+				fc.moduleLevelVars[s.Name] = true
+			}
+			
 			if fc.debug {
 				if VerboseMode {
 					fmt.Fprintf(os.Stderr, "DEBUG collectSymbols: storing mutable variable '%s' at offset %d\n", s.Name, offset)
@@ -821,6 +829,12 @@ func (fc *C67Compiler) collectSymbols(stmt Statement) error {
 				offset := fc.stackOffset
 				fc.variables[s.Name] = offset
 				fc.mutableVars[s.Name] = false
+				
+				// Track module-level variables (defined outside any lambda)
+				if fc.currentLambda == nil {
+					fc.moduleLevelVars[s.Name] = true
+				}
+				
 				if fc.debug {
 					if VerboseMode {
 						fmt.Fprintf(os.Stderr, "DEBUG collectSymbols: storing immutable variable '%s' at offset %d\n", s.Name, offset)
@@ -6439,7 +6453,9 @@ func (fc *C67Compiler) generateLambdaFunctions() {
 		oldRuntimeStack := fc.runtimeStack
 
 		// Create new scope for lambda
-		// Copy outer scope variables so they're accessible inside the lambda
+		// CRITICAL: Copy ALL variables (including module-level) for lookup
+		// Module-level variables will reference the main function's stack frame via rbp
+		// This allows lambdas to properly read and update module-level mutable globals
 		fc.variables = make(map[string]int)
 		for k, v := range oldVariables {
 			fc.variables[k] = v

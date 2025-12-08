@@ -1,0 +1,10 @@
+counter := 42
+
+test = {
+    println(counter)
+}
+
+main = {
+    test()
+    0
+}
