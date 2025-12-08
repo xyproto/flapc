@@ -41,9 +41,11 @@ func compileTestCodeAllowError(t *testing.T, code string) (string, error) {
 // TestUndefinedFunctionDetection tests that calling undefined functions produces a compile error
 func TestUndefinedFunctionDetection(t *testing.T) {
 	code := `
+main = {
 // This should fail because foobar is not defined
 result := foobar(42)
 println(result)
+}
 `
 	// This should produce a compilation error
 	_, err := compileTestCodeAllowError(t, code)
@@ -61,9 +63,11 @@ func TestDefinedFunctionWorks(t *testing.T) {
 // Define a function
 double = x -> x * 2
 
+main = {
 // Use it
 result := double(21)
 println(result)
+}
 `
 	output := compileAndRun(t, code)
 	if !strings.Contains(output, "42") {
