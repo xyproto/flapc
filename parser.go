@@ -103,6 +103,7 @@ type Parser struct {
 	filename        string
 	source          string
 	loopDepth       int                     // Current loop nesting level (0 = not in loop, 1 = outer loop, etc.)
+	functionDepth   int                     // Current function nesting level (0 = module level, 1+ = inside function/lambda)
 	constants       map[string]Expression   // Compile-time constants (immutable literals)
 	aliases         map[string]TokenType    // Keyword aliases (e.g., "for" -> TOKEN_AT)
 	cstructs        map[string]*CStructDecl // CStruct declarations for metadata access
@@ -1243,6 +1244,15 @@ func (p *Parser) parseFString() Expression {
 // Confidence that this function is working: 100%
 func (p *Parser) parseAssignment() *AssignStmt {
 	name := p.current.Value
+	
+	// Enforce uppercase for module-level variables (functionDepth == 0)
+	// Local variables (inside functions/lambdas) can be lowercase
+	if p.functionDepth == 0 {
+		if !isUppercase(name) {
+			p.error(fmt.Sprintf("module-level variable '%s' must start with uppercase letter to avoid shadowing issues", name))
+		}
+	}
+	
 	p.nextToken() // skip identifier
 
 	// Check for type annotation: name: type
@@ -3236,6 +3246,10 @@ func (p *Parser) parseRange() Expression {
 // - Contains '->' or '~>' → match block (guard match if no expr before {)
 // - Otherwise → statement block
 func (p *Parser) parseLambdaBody() Expression {
+	// Increment function depth when entering lambda body
+	p.functionDepth++
+	defer func() { p.functionDepth-- }()
+	
 	// Check if lambda body is a block { ... }
 	if p.current.Type == TOKEN_LBRACE {
 		// Disambiguate block type

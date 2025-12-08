@@ -480,6 +480,10 @@ unsafe_statement = "unsafe" type_cast block [ block ] [ block ] ;
 
 identifier_list = identifier { "," identifier } ;
 
+// Module-level naming constraint (enforced by parser):
+// All assignments at module level (outside functions/lambdas) MUST use UPPERCASE identifiers.
+// This prevents shadowing and makes globals visually distinct from locals.
+
 type_annotation = native_type | foreign_type ;
 
 native_type     = "num" | "str" | "list" | "map" ;

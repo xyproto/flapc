@@ -548,8 +548,35 @@ func (fc *C67Compiler) compilePrintfSyscall(call *CallExpr, formatStr *StringExp
 
 			case 'v': // Value (smart format: print integers as int, floats as float)
 				fc.compileExpression(arg)
-				// For now, just print as float to see what value we have
+				// xmm0 contains the value
+				// Check if it's an exact integer by comparing with rounded value
+				fc.out.SubImmFromReg("rsp", 16)
+				fc.out.MovXmmToMem("xmm0", "rsp", 0)  // Save original
+				fc.out.Cvttsd2si("rax", "xmm0")        // Convert to int
+				fc.out.Cvtsi2sd("xmm1", "rax")         // Convert back to float
+				fc.out.Ucomisd("xmm0", "xmm1")         // Compare
+				fc.out.AddImmToReg("rsp", 16)
+				
+				// Jump if not equal or unordered (NaN) -> print as float
+				floatJump := fc.eb.text.Len()
+				fc.out.JumpConditional(JumpNotEqual, 0)
+				nanJump := fc.eb.text.Len()
+				fc.out.JumpConditional(JumpParity, 0)
+				
+				// Equal: print as integer
+				fc.emitSyscallPrintInteger()
+				intDone := fc.eb.text.Len()
+				fc.out.JumpUnconditional(0)
+				
+				// Not equal or NaN: print as float
+				floatStart := fc.eb.text.Len()
+				fc.patchJumpImmediate(floatJump+2, int32(floatStart-(floatJump+6)))
+				fc.patchJumpImmediate(nanJump+2, int32(floatStart-(nanJump+6)))
 				fc.emitSyscallPrintFloatPrecise(precision)
+				
+				// Done
+				donePos := fc.eb.text.Len()
+				fc.patchJumpImmediate(intDone+1, int32(donePos-(intDone+5)))
 
 			case 's': // String
 				fc.compileExpression(arg)

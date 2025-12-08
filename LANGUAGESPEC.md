@@ -455,6 +455,29 @@ x: num = num * 2       // OK - type annotation vs variable
 
 ## Variables and Assignment
 
+### Module-Level vs Local Variables
+
+**Module-Level Naming Rule:**
+All variables and constants defined at module level (outside of functions/lambdas) **MUST** start with an uppercase letter.
+
+```c67
+// Module level - MUST be uppercase
+PORT = 8080                 // ✓ OK: immutable constant
+Config := { host: "localhost" }  // ✓ OK: mutable global
+
+// Inside function/lambda - can be lowercase
+main = {
+    port := 8080            // ✓ OK: local mutable
+    config = { ... }        // ✓ OK: local immutable
+}
+```
+
+**Rationale:**
+- Eliminates shadowing confusion (module variables are visually distinct)
+- Makes code more readable (clear distinction between scopes)
+- Prevents accidental name collisions
+- Encourages thoughtful global variable usage
+
 ### Immutable Assignment (`=`)
 
 Creates immutable binding (cannot reassign variable or modify contents):
