@@ -2038,6 +2038,15 @@ See [PLATFORM_ARCHITECTURE.md](PLATFORM_ARCHITECTURE.md) for the full design rat
 ### Syntax
 
 ```c67
+unsafe {
+    # x86_64 block
+} {
+    # arm64 block
+} {
+    # riscv64 block
+} as return_type
+
+// Or the legacy syntax (type before blocks):
 unsafe return_type {
     # x86_64 block
 } {
@@ -2050,8 +2059,8 @@ unsafe return_type {
 ### Examples
 
 ```c67
-// Direct memory access (3 ISA variants)
-value = unsafe float64 {
+// Direct memory access (3 ISA variants) - new syntax
+value = unsafe {
     rax <- ptr           # x86_64
     rax <- [rax + offset]
 } {
@@ -2059,6 +2068,18 @@ value = unsafe float64 {
     x0 <- [x0 + offset]
 } {
     a0 <- ptr            # riscv64
+    a0 <- [a0 + offset]
+} as float64
+
+// Or legacy syntax:
+value = unsafe float64 {
+    rax <- ptr
+    rax <- [rax + offset]
+} {
+    x0 <- ptr
+    x0 <- [x0 + offset]
+} {
+    a0 <- ptr
     a0 <- [a0 + offset]
 }
 

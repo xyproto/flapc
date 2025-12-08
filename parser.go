@@ -4457,13 +4457,14 @@ func (p *Parser) parseLoopExpr() Expression {
 	}
 }
 
-// parseUnsafeExpr parses: unsafe [type] { x86_64 block } { arm64 block } { riscv64 block }
-// Example: unsafe int64 { rax <- 42 } { x0 <- 42 } { a0 <- 42 }
+// parseUnsafeExpr parses: unsafe [type] { x86_64 block } { arm64 block } { riscv64 block } [as type]
+// Example: unsafe { rax <- 42 } { x0 <- 42 } { a0 <- 42 } as int64
+// Legacy: unsafe int64 { rax <- 42 } { x0 <- 42 } { a0 <- 42 }
 // Default: unsafe { rax <- 42 } { x0 <- 42 } { a0 <- 42 } returns uint64
 func (p *Parser) parseUnsafeExpr() Expression {
 	p.nextToken() // skip 'unsafe'
 
-	// Parse return type (optional, defaults to uint64)
+	// Parse return type before blocks (legacy, optional, defaults to uint64)
 	returnType := "uint64" // default
 	if p.current.Type == TOKEN_IDENT {
 		// Check if this is a type name or if it's a block
@@ -4495,6 +4496,25 @@ func (p *Parser) parseUnsafeExpr() Expression {
 		p.error("expected '{' for riscv64 block in unsafe expression")
 	}
 	riscv64Stmts := p.parseUnsafeBlock()
+
+	// Check for 'as type' suffix (new syntax)
+	if p.current.Type == TOKEN_IDENT && p.current.Value == "as" {
+		p.nextToken() // skip 'as'
+		if p.current.Type == TOKEN_IDENT {
+			possibleType := p.current.Value
+			if possibleType == "int8" || possibleType == "int16" || possibleType == "int32" || possibleType == "int64" ||
+				possibleType == "uint8" || possibleType == "uint16" || possibleType == "uint32" || possibleType == "uint64" ||
+				possibleType == "float64" || possibleType == "float32" ||
+				possibleType == "ptr" || possibleType == "pointer" || possibleType == "cstr" {
+				returnType = possibleType
+				p.nextToken() // skip type
+			} else {
+				p.error("expected type name after 'as' in unsafe expression")
+			}
+		} else {
+			p.error("expected type name after 'as' in unsafe expression")
+		}
+	}
 
 	// Create return statements with the specified type
 	x86_64Ret := &UnsafeReturnStmt{Register: "rax", AsType: returnType}

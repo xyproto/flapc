@@ -594,7 +594,8 @@ arena_expr      = "arena" "{" { statement { newline } } [ expression ] "}" ;
 
 unsafe_expr     = "unsafe" "{" { statement { newline } } [ expression ] "}"
                   [ "{" { statement { newline } } [ expression ] "}" ]
-                  [ "{" { statement { newline } } [ expression ] "}" ] ;
+                  [ "{" { statement { newline } } [ expression ] "}" ]
+                  [ "as" type_cast ] ;
 
 lambda_expr     = [ parameter_list ] "->" lambda_body
                 | block ;  // Inferred lambda with no parameters in assignment context
