@@ -1,0 +1,5 @@
+x := 42 / 2
+printf("Direct: %v\n", x)
+divide := y -> 42 / y
+result := divide(2)
+printf("Lambda: %v\n", result)

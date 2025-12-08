@@ -1,0 +1,4 @@
+divide := x -> 42 / x
+result1 := divide(2)
+println(result1)
+println("done")

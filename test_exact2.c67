@@ -1,0 +1,8 @@
+divide := x -> 42 / x
+result1 := divide(2)
+printf("42 / 2 = %v\n", result1)
+result2 := divide(0)
+safe := result2 or! -999
+printf("42 / 0 with fallback = %v\n", safe)
+x := (10 / 0) or! (20 / 0) or! 42
+printf("Chained fallback = %v\n", x)

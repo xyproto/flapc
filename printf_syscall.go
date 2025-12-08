@@ -540,11 +540,16 @@ func (fc *C67Compiler) compilePrintfSyscall(call *CallExpr, formatStr *StringExp
 			argIndex++
 
 			switch next {
-			case 'd', 'i', 'v', 'l', 'u': // Integer/value/long/unsigned
+			case 'd', 'i', 'l', 'u': // Integer/long/unsigned
 				fc.compileExpression(arg)
 				// xmm0 contains the number - convert to int and print
 				fc.out.Cvttsd2si("rax", "xmm0")
 				fc.emitSyscallPrintInteger()
+
+			case 'v': // Value (smart format: print integers as int, floats as float)
+				fc.compileExpression(arg)
+				// For now, just print as float to see what value we have
+				fc.emitSyscallPrintFloatPrecise(precision)
 
 			case 's': // String
 				fc.compileExpression(arg)

@@ -1,0 +1,5 @@
+divide := x -> 42 / x
+result1 := divide(2)
+printf("42 / 2 = %v\n", result1)
+result2 := divide(0)
+printf("42 / 0 = %v\n", result2)

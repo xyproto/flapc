@@ -1,0 +1,3 @@
+f := -> 42 / 2
+result := f()
+printf("result = %v\n", result)
