@@ -16,6 +16,19 @@ func containsMainFunction(code string) bool {
 	return strings.Contains(code, "main =") || strings.Contains(code, "main :=")
 }
 
+// needsMainWrapper checks if code should be wrapped in main function
+func needsMainWrapper(code string) bool {
+	// Don't wrap if already has main
+	if containsMainFunction(code) {
+		return false
+	}
+	// Don't wrap if has imports (imports must be at module level)
+	if strings.Contains(code, "import ") {
+		return false
+	}
+	return true
+}
+
 // compileAndRun is a helper function that compiles and runs C67 code,
 // returning the output
 func compileAndRun(t *testing.T, code string) string {
@@ -26,7 +39,8 @@ func compileAndRun(t *testing.T, code string) string {
 
 	// Auto-wrap test code in main function if it doesn't have one
 	// This allows test snippets to use lowercase variables
-	if !containsMainFunction(code) {
+	// But don't wrap if code has imports (they must be at module level)
+	if needsMainWrapper(code) {
 		// Remove leading/trailing whitespace from each line to avoid parsing issues
 		lines := strings.Split(code, "\n")
 		var cleaned []string

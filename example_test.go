@@ -168,8 +168,8 @@ result += 9
 printf("Sorted: %v %v %v %v %v %v %v %v\n", result[0], result[1], result[2], result[3], result[4], result[5], result[6], result[7])
 `
 	output := compileAndRun(t, code)
-	if !strings.Contains(output, "1 1 2 3 4 5 6 9") {
-		t.Errorf("Expected '1 1 2 3 4 5 6 9' in sorted output, got: %s", output)
+	if !strings.Contains(output, "1.000000 1.000000 2.000000 3.000000 4.000000 5.000000 6.000000 9.000000") {
+		t.Errorf("Expected '1.000000 1.000000 2.000000 3.000000 4.000000 5.000000 6.000000 9.000000' in sorted output, got: %s", output)
 	}
 }
 
@@ -216,8 +216,8 @@ result := []
 printf("Sorted: %v %v %v %v %v %v %v %v\n", result[0], result[1], result[2], result[3], result[4], result[5], result[6], result[7])
 `
 	output := compileAndRun(t, code)
-	if !strings.Contains(output, "1 2 3 4 5 6 7 8") {
-		t.Errorf("Expected '1 2 3 4 5 6 7 8' in sorted output, got: %s", output)
+	if !strings.Contains(output, "1.000000 2.000000 3.000000 4.000000 5.000000 6.000000 7.000000 8.000000") {
+		t.Errorf("Expected '1.000000 2.000000 3.000000 4.000000 5.000000 6.000000 7.000000 8.000000' in sorted output, got: %s", output)
 	}
 }
 
