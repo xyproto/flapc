@@ -136,11 +136,13 @@ println("SDL quit")
 // TestMultipleUndefinedFunctions tests that multiple undefined functions are reported
 func TestMultipleUndefinedFunctions(t *testing.T) {
 	code := `
+main = {
 // Call multiple undefined functions
 x := foo(1)
 y := bar(2)
 z := baz(3)
 println(x + y + z)
+}
 `
 	_, err := compileTestCodeAllowError(t, code)
 	if err == nil {
@@ -161,12 +163,14 @@ println(x + y + z)
 // TestUndefinedFunctionInBlock tests that undefined functions in blocks are caught
 func TestUndefinedFunctionInBlock(t *testing.T) {
 	code := `
+main = {
 // Call undefined function in or! block
 x := 42 or! {
     undefined_func()
     exitln("error")
 }
 println(x)
+}
 `
 	_, err := compileTestCodeAllowError(t, code)
 	if err == nil {
@@ -185,8 +189,10 @@ mapper = x -> {
     result := not_defined(x)
     result * 2
 }
+main = {
 y := mapper(5)
 println(y)
+}
 `
 	_, err := compileTestCodeAllowError(t, code)
 	if err == nil {
@@ -200,10 +206,12 @@ println(y)
 // TestUndefinedFunctionInMatch tests that undefined functions in match expressions are caught
 func TestUndefinedFunctionInMatch(t *testing.T) {
 	code := `
+main = {
 // Call undefined function in match expression
 x := 5
 result = { | x > 10 => big_value() ~> medium_value() }
 println(result)
+}
 `
 	_, err := compileTestCodeAllowError(t, code)
 	if err == nil {

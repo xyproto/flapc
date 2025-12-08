@@ -12,8 +12,8 @@ import (
 
 // containsMainFunction checks if code contains a Main function definition
 func containsMainFunction(code string) bool {
-	// Simple check for Main = or Main :=
-	return strings.Contains(code, "Main =") || strings.Contains(code, "Main :=")
+	// Simple check for main = or main :=
+	return strings.Contains(code, "main =") || strings.Contains(code, "main :=")
 }
 
 // compileAndRun is a helper function that compiles and runs C67 code,
@@ -24,7 +24,7 @@ func compileAndRun(t *testing.T, code string) string {
 	// Create temporary directory
 	tmpDir := t.TempDir()
 
-	// Auto-wrap test code in Main function if it doesn't have one
+	// Auto-wrap test code in main function if it doesn't have one
 	// This allows test snippets to use lowercase variables
 	if !containsMainFunction(code) {
 		// Remove leading/trailing whitespace from each line to avoid parsing issues
@@ -36,7 +36,7 @@ func compileAndRun(t *testing.T, code string) string {
 				cleaned = append(cleaned, trimmed)
 			}
 		}
-		code = "Main = {\n" + strings.Join(cleaned, "\n") + "\n}"
+		code = "main = {\n" + strings.Join(cleaned, "\n") + "\n}"
 	}
 
 	// Write source file
@@ -61,7 +61,16 @@ func compileAndRun(t *testing.T, code string) string {
 	cmd := exec.Command(exePath)
 	cmd.Env = os.Environ()
 	runOutput, err := cmd.CombinedOutput()
+	// Note: C67 programs may return non-zero exit codes as their result value
+	// We only fail if there's an actual execution error (not just non-zero exit)
 	if err != nil {
+		// Check if it's just a non-zero exit code (which is normal for C67)
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			// Non-zero exit but program ran successfully - return output
+			_ = exitErr
+			return string(runOutput)
+		}
+		// Actual execution error (program didn't run)
 		t.Fatalf("Execution failed: %v\nOutput: %s", err, runOutput)
 	}
 
