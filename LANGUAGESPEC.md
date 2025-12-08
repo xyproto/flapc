@@ -458,14 +458,23 @@ x: num = num * 2       // OK - type annotation vs variable
 ### Module-Level vs Local Variables
 
 **Module-Level Naming Rule:**
-All variables and constants defined at module level (outside of functions/lambdas) **MUST** start with an uppercase letter.
+All non-function variables and constants defined at module level (outside of functions/lambdas) **MUST** be ALL_UPPERCASE.
+Function names can be any valid identifier.
 
 ```c67
-// Module level - MUST be uppercase
-PORT = 8080                 // ✓ OK: immutable constant
-Config := { host: "localhost" }  // ✓ OK: mutable global
+// Module level - non-functions MUST be ALL_UPPERCASE
+PORT = 8080                      // ✓ OK: immutable constant
+CONFIG := { host: "localhost" }  // ✓ OK: mutable global
+COLORS = [[255, 0, 0], [0, 255, 0]]  // ✓ OK: immutable list
 
-// Inside function/lambda - can be lowercase
+// Functions can use any case
+main = { ... }                   // ✓ OK: function
+init_window = { ... }            // ✓ OK: function
+handleEvent = { ... }            // ✓ OK: function
+
+port = 8080                      // ✗ ERROR: non-function must be uppercase
+
+// Inside function/lambda - can be any case
 main = {
     port := 8080            // ✓ OK: local mutable
     config = { ... }        // ✓ OK: local immutable
@@ -474,7 +483,7 @@ main = {
 
 **Rationale:**
 - Eliminates shadowing confusion (module variables are visually distinct)
-- Makes code more readable (clear distinction between scopes)
+- Makes code more readable (clear distinction between scopes and functions)
 - Prevents accidental name collisions
 - Encourages thoughtful global variable usage
 

@@ -121,6 +121,30 @@ func isUppercase(s string) bool {
 	return true
 }
 
+func isAllUppercase(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	for _, ch := range s {
+		if ch >= 'a' && ch <= 'z' {
+			return false
+		}
+		if ch >= 'A' && ch <= 'Z' {
+			continue
+		}
+		if ch >= '0' && ch <= '9' {
+			continue
+		}
+		if ch == '_' {
+			continue
+		}
+		return false
+	}
+	// Must start with uppercase letter
+	firstCh := rune(s[0])
+	return firstCh >= 'A' && firstCh <= 'Z'
+}
+
 // deriveAliasFromSource extracts a suitable alias from an import source
 // Examples:
 // - "github.com/user/repo" -> "repo"

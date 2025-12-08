@@ -14,15 +14,15 @@ func TestExportParsing(t *testing.T) {
 		{
 			name: "export all",
 			code: `export *
-hello = println "Hello"`,
+hello = { println("Hello") }`,
 			expectMode:  "*",
 			expectFuncs: nil,
 		},
 		{
 			name: "export specific functions",
 			code: `export hello goodbye
-hello = println "Hello"
-goodbye = println "Goodbye"`,
+hello = { println("Hello") }
+goodbye = { println("Goodbye") }`,
 			expectMode:  "",
 			expectFuncs: []string{"hello", "goodbye"},
 		},
@@ -37,7 +37,7 @@ mul = x -> x * 2`,
 		},
 		{
 			name:        "no export statement",
-			code:        `hello = println "Hello"`,
+			code:        `hello = { println("Hello") }`,
 			expectMode:  "",
 			expectFuncs: nil,
 		},

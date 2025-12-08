@@ -6,8 +6,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
+
+// containsMainFunction checks if code contains a Main function definition
+func containsMainFunction(code string) bool {
+	// Simple check for Main = or Main :=
+	return strings.Contains(code, "Main =") || strings.Contains(code, "Main :=")
+}
 
 // compileAndRun is a helper function that compiles and runs C67 code,
 // returning the output
@@ -16,6 +23,21 @@ func compileAndRun(t *testing.T, code string) string {
 
 	// Create temporary directory
 	tmpDir := t.TempDir()
+
+	// Auto-wrap test code in Main function if it doesn't have one
+	// This allows test snippets to use lowercase variables
+	if !containsMainFunction(code) {
+		// Remove leading/trailing whitespace from each line to avoid parsing issues
+		lines := strings.Split(code, "\n")
+		var cleaned []string
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed != "" {
+				cleaned = append(cleaned, trimmed)
+			}
+		}
+		code = "Main = {\n" + strings.Join(cleaned, "\n") + "\n}"
+	}
 
 	// Write source file
 	srcFile := filepath.Join(tmpDir, "test.c67")
@@ -60,6 +82,20 @@ func compileAndRunWindows(t *testing.T, code string) string {
 
 	// Create temporary directory
 	tmpDir := t.TempDir()
+
+	// Auto-wrap test code in Main function if it doesn't have one
+	if !containsMainFunction(code) {
+		// Remove leading/trailing whitespace from each line to avoid parsing issues
+		lines := strings.Split(code, "\n")
+		var cleaned []string
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if trimmed != "" {
+				cleaned = append(cleaned, trimmed)
+			}
+		}
+		code = "Main = {\n" + strings.Join(cleaned, "\n") + "\n}"
+	}
 
 	// Write source file
 	srcFile := filepath.Join(tmpDir, "test.c67")

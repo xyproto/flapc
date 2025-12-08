@@ -1245,12 +1245,12 @@ func (p *Parser) parseFString() Expression {
 func (p *Parser) parseAssignment() *AssignStmt {
 	name := p.current.Value
 	
-	// Enforce uppercase for module-level variables (functionDepth == 0)
-	// Local variables (inside functions/lambdas) can be lowercase
+	// Enforce ALL_UPPERCASE for module-level non-function variables (functionDepth == 0)
+	// Local variables (inside functions/lambdas) can be any case
+	// Functions can be any case at module level
 	if p.functionDepth == 0 {
-		if !isUppercase(name) {
-			p.error(fmt.Sprintf("module-level variable '%s' must start with uppercase letter to avoid shadowing issues", name))
-		}
+		// We'll check if this is a function assignment after parsing the expression
+		// For now, just store the name for later validation
 	}
 	
 	p.nextToken() // skip identifier
@@ -1399,10 +1399,24 @@ func (p *Parser) parseAssignment() *AssignStmt {
 		mutable = true
 	}
 
+	// Enforce ALL_UPPERCASE for module-level non-function variables
+	// Functions (lambdas) can be any case
+	if p.functionDepth == 0 {
+		isFunction := false
+		switch value.(type) {
+		case *LambdaExpr, *MultiLambdaExpr:
+			isFunction = true
+		}
+		
+		if !isFunction && !isAllUppercase(name) && name != "main" && name != "Main" {
+			p.error(fmt.Sprintf("module-level variable '%s' must be ALL_UPPERCASE (functions can be any case)", name))
+		}
+	}
+
 	// Check if this is a constant definition (uppercase immutable with literal value)
 	// Store compile-time constants for substitution
 	// Only uppercase identifiers are true constants (cannot be shadowed in practice)
-	if !mutable && !isUpdate && isUppercase(name) {
+	if !mutable && !isUpdate && isAllUppercase(name) {
 		// Store numbers, strings, and lists as compile-time constants
 		switch v := value.(type) {
 		case *NumberExpr:
@@ -4100,6 +4114,10 @@ func (p *Parser) parsePrimary() Expression {
 
 		case BlockTypeStatement:
 			// Parse as statement block
+			// Statement blocks in expression position will be wrapped in lambdas, so increment depth
+			p.functionDepth++
+			defer func() { p.functionDepth-- }()
+			
 			var statements []Statement
 			for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
 				stmt := p.parseStatement()

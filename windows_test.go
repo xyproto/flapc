@@ -9,12 +9,12 @@ import (
 // This test only checks compilation, not execution (which would require Wine)
 // For actual testing on Windows, use windows.c67 manually
 func TestWindowsCompilation(t *testing.T) {
-	code := `
+	code := `Main = {
 println("Hello Windows")
 x := 10 + 5
 println(x)
 c.printf("C FFI works: %d\n", 42)
-`
+}`
 	// Create temp file
 	tmpFile, err := os.CreateTemp("", "windows_test_*.c67")
 	if err != nil {
