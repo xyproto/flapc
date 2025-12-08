@@ -287,11 +287,18 @@ func (fc *C67Compiler) writeELF(program *Program, outputPath string) error {
 		currentAddr += uint64(len(value))
 	}
 
-	// Update .data addresses similarly
+	// Update .data addresses similarly (MUST use same sorted order as first pass!)
 	dataSymbols = fc.eb.DataSection()
 	if len(dataSymbols) > 0 {
 		dataBaseAddr := currentAddr // Follows .rodata
-		for symbol, value := range dataSymbols {
+		dataSymbolNames := make([]string, 0, len(dataSymbols))
+		for symbol := range dataSymbols {
+			dataSymbolNames = append(dataSymbolNames, symbol)
+		}
+		sort.Strings(dataSymbolNames)
+		
+		for _, symbol := range dataSymbolNames {
+			value := dataSymbols[symbol]
 			fc.eb.DefineAddr(symbol, dataBaseAddr)
 			dataBaseAddr += uint64(len(value))
 			if VerboseMode {

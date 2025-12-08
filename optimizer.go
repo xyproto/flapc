@@ -1175,7 +1175,8 @@ func collectCapturedVarsExpr(expr Expression, paramSet map[string]bool, captured
 
 // analyzeClosure detects and marks closures (lambdas that capture variables from outer scope)
 // This must be called during compilation to populate CapturedVars field
-func analyzeClosures(stmt Statement, availableVars map[string]bool) {
+// globalVars contains variables that should NOT be captured (they're globally accessible)
+func analyzeClosures(stmt Statement, availableVars map[string]bool, globalVars map[string]int) {
 	switch s := stmt.(type) {
 	case *AssignStmt:
 		// Add this variable to available vars
@@ -1186,10 +1187,10 @@ func analyzeClosures(stmt Statement, availableVars map[string]bool) {
 		newAvailableVars[s.Name] = true
 
 		// Analyze the value expression
-		analyzeClosuresExpr(s.Value, availableVars)
+		analyzeClosuresExpr(s.Value, availableVars, globalVars)
 
 	case *ExpressionStmt:
-		analyzeClosuresExpr(s.Expr, availableVars)
+		analyzeClosuresExpr(s.Expr, availableVars, globalVars)
 
 	case *LoopStmt:
 		// Add iterator to available vars for loop body
@@ -1199,20 +1200,20 @@ func analyzeClosures(stmt Statement, availableVars map[string]bool) {
 		}
 		newAvailableVars[s.Iterator] = true
 
-		analyzeClosuresExpr(s.Iterable, availableVars)
+		analyzeClosuresExpr(s.Iterable, availableVars, globalVars)
 		for _, bodyStmt := range s.Body {
-			analyzeClosures(bodyStmt, newAvailableVars)
+			analyzeClosures(bodyStmt, newAvailableVars, globalVars)
 		}
 
 	case *JumpStmt:
 		// Analyze the value expression of return/jump statements
 		if s.Value != nil {
-			analyzeClosuresExpr(s.Value, availableVars)
+			analyzeClosuresExpr(s.Value, availableVars, globalVars)
 		}
 	}
 }
 
-func analyzeClosuresExpr(expr Expression, availableVars map[string]bool) {
+func analyzeClosuresExpr(expr Expression, availableVars map[string]bool, globalVars map[string]int) {
 	switch e := expr.(type) {
 	case *LambdaExpr:
 		// This is a lambda - check if it captures any variables
@@ -1224,9 +1225,12 @@ func analyzeClosuresExpr(expr Expression, availableVars map[string]bool) {
 		}
 
 		// Filter captured vars to only include those available in outer scope
+		// EXCLUDING global variables (they don't need to be captured)
 		var capturedList []string
 		for varName := range captured {
-			if availableVars[varName] {
+			_, isGlobal := globalVars[varName]
+			if availableVars[varName] && !isGlobal {
+				// Variable is available in outer scope AND not a global
 				capturedList = append(capturedList, varName)
 			}
 		}
@@ -1246,42 +1250,42 @@ func analyzeClosuresExpr(expr Expression, availableVars map[string]bool) {
 		for _, param := range e.Params {
 			newAvailableVars[param] = true
 		}
-		analyzeClosuresExpr(e.Body, newAvailableVars)
+		analyzeClosuresExpr(e.Body, newAvailableVars, globalVars)
 
 	case *BinaryExpr:
-		analyzeClosuresExpr(e.Left, availableVars)
-		analyzeClosuresExpr(e.Right, availableVars)
+		analyzeClosuresExpr(e.Left, availableVars, globalVars)
+		analyzeClosuresExpr(e.Right, availableVars, globalVars)
 	case *CallExpr:
 		for _, arg := range e.Args {
-			analyzeClosuresExpr(arg, availableVars)
+			analyzeClosuresExpr(arg, availableVars, globalVars)
 		}
 	case *ListExpr:
 		for _, elem := range e.Elements {
-			analyzeClosuresExpr(elem, availableVars)
+			analyzeClosuresExpr(elem, availableVars, globalVars)
 		}
 	case *MapExpr:
 		for i := range e.Keys {
-			analyzeClosuresExpr(e.Keys[i], availableVars)
-			analyzeClosuresExpr(e.Values[i], availableVars)
+			analyzeClosuresExpr(e.Keys[i], availableVars, globalVars)
+			analyzeClosuresExpr(e.Values[i], availableVars, globalVars)
 		}
 	case *IndexExpr:
-		analyzeClosuresExpr(e.List, availableVars)
-		analyzeClosuresExpr(e.Index, availableVars)
+		analyzeClosuresExpr(e.List, availableVars, globalVars)
+		analyzeClosuresExpr(e.Index, availableVars, globalVars)
 	case *MatchExpr:
-		analyzeClosuresExpr(e.Condition, availableVars)
+		analyzeClosuresExpr(e.Condition, availableVars, globalVars)
 		for _, clause := range e.Clauses {
 			if clause.Guard != nil {
-				analyzeClosuresExpr(clause.Guard, availableVars)
+				analyzeClosuresExpr(clause.Guard, availableVars, globalVars)
 			}
-			analyzeClosuresExpr(clause.Result, availableVars)
+			analyzeClosuresExpr(clause.Result, availableVars, globalVars)
 		}
 		if e.DefaultExpr != nil {
-			analyzeClosuresExpr(e.DefaultExpr, availableVars)
+			analyzeClosuresExpr(e.DefaultExpr, availableVars, globalVars)
 		}
 	case *JumpExpr:
 		// Analyze the value expression of return/jump statements
 		if e.Value != nil {
-			analyzeClosuresExpr(e.Value, availableVars)
+			analyzeClosuresExpr(e.Value, availableVars, globalVars)
 		}
 	case *BlockExpr:
 		// Create a new scope for the block, accumulating available vars
@@ -1292,20 +1296,20 @@ func analyzeClosuresExpr(expr Expression, availableVars map[string]bool) {
 
 		// Process each statement, threading through newly defined variables
 		for _, stmt := range e.Statements {
-			analyzeClosures(stmt, blockAvailableVars)
+			analyzeClosures(stmt, blockAvailableVars, globalVars)
 			// If it's an assignment, add the variable to available vars for subsequent statements
 			if assign, ok := stmt.(*AssignStmt); ok {
 				blockAvailableVars[assign.Name] = true
 			}
 		}
 	case *UnaryExpr:
-		analyzeClosuresExpr(e.Operand, availableVars)
+		analyzeClosuresExpr(e.Operand, availableVars, globalVars)
 	case *ParallelExpr:
-		analyzeClosuresExpr(e.List, availableVars)
-		analyzeClosuresExpr(e.Operation, availableVars)
+		analyzeClosuresExpr(e.List, availableVars, globalVars)
+		analyzeClosuresExpr(e.Operation, availableVars, globalVars)
 	case *PipeExpr:
-		analyzeClosuresExpr(e.Left, availableVars)
-		analyzeClosuresExpr(e.Right, availableVars)
+		analyzeClosuresExpr(e.Left, availableVars, globalVars)
+		analyzeClosuresExpr(e.Right, availableVars, globalVars)
 	}
 }
 

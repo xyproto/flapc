@@ -17448,6 +17448,15 @@ func CompileC67WithOptions(inputPath string, outputPath string, platform Platfor
 	// Append main file source
 	combinedSource = combinedSource + string(content)
 
+	// First pass: identify global (module-level) variables
+	// These are variables defined at the top level (not inside any lambda)
+	globalVars := make(map[string]int)
+	for _, stmt := range program.Statements {
+		if assign, ok := stmt.(*AssignStmt); ok {
+			globalVars[assign.Name] = 0 // Value doesn't matter, we just need the key
+		}
+	}
+
 	// Analyze closures to detect which variables lambdas capture from outer scope
 	// This must be done before compilation so that CapturedVars is populated
 	if VerboseMode {
@@ -17455,7 +17464,7 @@ func CompileC67WithOptions(inputPath string, outputPath string, platform Platfor
 	}
 	availableVars := make(map[string]bool)
 	for _, stmt := range program.Statements {
-		analyzeClosures(stmt, availableVars)
+		analyzeClosures(stmt, availableVars, globalVars)
 		// Add any newly defined variables to available vars for subsequent statements
 		if assign, ok := stmt.(*AssignStmt); ok {
 			availableVars[assign.Name] = true
