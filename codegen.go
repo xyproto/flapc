@@ -125,6 +125,9 @@ type C67Compiler struct {
 	errors            *ErrorCollector    // Railway-oriented error collector
 	dynamicSymbols    *DynamicSections   // Dynamic symbol table (for updating lambda symbols post-generation)
 	moduleLevelVars   map[string]bool    // Track module-level variables (defined outside lambdas)
+	globalVars        map[string]int     // Global variable name -> .data offset
+	globalVarsMutable map[string]bool    // Global variable name -> is mutable
+	dataSection       []byte             // .data section contents
 }
 
 type FunctionSignature struct {
@@ -212,6 +215,9 @@ func NewC67Compiler(platform Platform, verbose bool) (*C67Compiler, error) {
 		scopedMoved:         []map[string]bool{make(map[string]bool)},
 		errors:              NewErrorCollector(10),
 		functionNamespace:   make(map[string]string),
+		globalVars:          make(map[string]int),
+		globalVarsMutable:   make(map[string]bool),
+		dataSection:         []byte{},
 		moduleLevelVars:     make(map[string]bool),
 	}, nil
 }
@@ -581,6 +587,11 @@ func (fc *C67Compiler) Compile(program *Program, outputPath string) error {
 		}
 	}
 
+	// Define global variables in .data section (after collecting symbols)
+	for varName := range fc.globalVars {
+		fc.eb.DefineWritable("_global_"+varName, "\x00\x00\x00\x00\x00\x00\x00\x00") // 8 bytes for float64
+	}
+
 	// currentArena is already set to 1 in NewC67Compiler (representing meta-arena[0])
 	// Arena initialization is needed for variadic function lists
 	fc.initializeMetaArenaAndGlobalArena()
@@ -772,26 +783,42 @@ func (fc *C67Compiler) collectSymbols(stmt Statement) error {
 			if !exists {
 				return fmt.Errorf("cannot update undefined variable '%s'", s.Name)
 			}
-			if !fc.mutableVars[s.Name] {
+			// Check both local mutableVars and global globalVarsMutable
+			isMutable := fc.mutableVars[s.Name] || fc.globalVarsMutable[s.Name]
+			if !isMutable {
 				return fmt.Errorf("cannot update immutable variable '%s' (use <- only for mutable variables)", s.Name)
 			}
 		} else if s.Mutable {
 			if exists {
 				return fmt.Errorf("variable '%s' already defined (use <- to update) [currently at offset %d]", s.Name, fc.variables[s.Name])
 			}
-			fc.updateStackOffset(16)
-			offset := fc.stackOffset
-			fc.variables[s.Name] = offset
-			fc.mutableVars[s.Name] = true
 			
-			// Track module-level variables (defined outside any lambda)
+			// Track module-level variables (defined outside any lambda) - allocate in .data
 			if fc.currentLambda == nil {
 				fc.moduleLevelVars[s.Name] = true
+				// Allocate in .data section
+				dataOffset := len(fc.dataSection)
+				fc.dataSection = append(fc.dataSection, make([]byte, 8)...) // 8 bytes for float64
+				fc.globalVars[s.Name] = dataOffset
+				fc.globalVarsMutable[s.Name] = true
+				// Don't use stack offset for globals
+				fc.variables[s.Name] = -1 // Mark as global
+				fc.mutableVars[s.Name] = true
+			} else {
+				// Local variable - use stack
+				fc.updateStackOffset(16)
+				offset := fc.stackOffset
+				fc.variables[s.Name] = offset
+				fc.mutableVars[s.Name] = true
 			}
 			
 			if fc.debug {
 				if VerboseMode {
-					fmt.Fprintf(os.Stderr, "DEBUG collectSymbols: storing mutable variable '%s' at offset %d\n", s.Name, offset)
+					if fc.currentLambda == nil {
+						fmt.Fprintf(os.Stderr, "DEBUG collectSymbols: storing mutable global variable '%s' at data offset %d\n", s.Name, fc.globalVars[s.Name])
+					} else {
+						fmt.Fprintf(os.Stderr, "DEBUG collectSymbols: storing mutable variable '%s' at offset %d\n", s.Name, fc.variables[s.Name])
+					}
 				}
 			}
 
@@ -825,19 +852,33 @@ func (fc *C67Compiler) collectSymbols(stmt Statement) error {
 				s.IsReuseMutable = true
 			} else {
 				// Create new immutable variable
-				fc.updateStackOffset(16)
-				offset := fc.stackOffset
-				fc.variables[s.Name] = offset
-				fc.mutableVars[s.Name] = false
 				
-				// Track module-level variables (defined outside any lambda)
+				// Track module-level variables (defined outside any lambda) - allocate in .data
 				if fc.currentLambda == nil {
 					fc.moduleLevelVars[s.Name] = true
+					// Allocate in .data section
+					dataOffset := len(fc.dataSection)
+					fc.dataSection = append(fc.dataSection, make([]byte, 8)...) // 8 bytes for float64
+					fc.globalVars[s.Name] = dataOffset
+					fc.globalVarsMutable[s.Name] = false
+					// Don't use stack offset for globals
+					fc.variables[s.Name] = -1 // Mark as global
+					fc.mutableVars[s.Name] = false
+				} else {
+					// Local variable - use stack
+					fc.updateStackOffset(16)
+					offset := fc.stackOffset
+					fc.variables[s.Name] = offset
+					fc.mutableVars[s.Name] = false
 				}
 				
 				if fc.debug {
 					if VerboseMode {
-						fmt.Fprintf(os.Stderr, "DEBUG collectSymbols: storing immutable variable '%s' at offset %d\n", s.Name, offset)
+						if fc.currentLambda == nil {
+							fmt.Fprintf(os.Stderr, "DEBUG collectSymbols: storing immutable global variable '%s' at data offset %d\n", s.Name, fc.globalVars[s.Name])
+						} else {
+							fmt.Fprintf(os.Stderr, "DEBUG collectSymbols: storing immutable variable '%s' at offset %d\n", s.Name, fc.variables[s.Name])
+						}
 					}
 				}
 
@@ -1248,34 +1289,48 @@ func (fc *C67Compiler) isExpressionPure(expr Expression, pureFunctions map[strin
 func (fc *C67Compiler) compileStatement(stmt Statement) {
 	switch s := stmt.(type) {
 	case *AssignStmt:
-		offset := fc.variables[s.Name]
-
 		if fc.debug {
 			if VerboseMode {
 				fmt.Fprintf(os.Stderr, "DEBUG compileStatement: compiling assignment '%s' (type: %T)\n", s.Name, s.Value)
 			}
 		}
 
-		// Only allocate new stack space if this is a new variable definition
-		// Don't allocate if:
-		// - IsUpdate (i.e., <- operator)
-		// - IsReuseMutable (i.e., = updating existing mutable variable)
-		// Note: Lambdas with local variables are rejected at compile time,
-		// so we don't need a special check here
-		if !s.IsUpdate && !s.IsReuseMutable {
-			fc.out.SubImmFromReg("rsp", 16)
-			fc.runtimeStack += 16
-		}
+		// Check if it's a global variable
+		if _, isGlobal := fc.globalVars[s.Name]; isGlobal {
+			// Compile the value
+			fc.currentAssignName = s.Name
+			fc.compileExpression(s.Value)
+			fc.currentAssignName = ""
+			// Store to .data section
+			// lea rax, [rel _global_varname]
+			// movsd [rax], xmm0
+			fc.out.LeaSymbolToReg("rax", "_global_"+s.Name)
+			fc.out.MovXmmToMem("xmm0", "rax", 0)
+		} else {
+			// Local variable
+			offset := fc.variables[s.Name]
 
-		fc.currentAssignName = s.Name
-		fc.compileExpression(s.Value)
-		fc.currentAssignName = ""
-		// Use r11 for parent variables in parallel loops, rbp for local variables
-		baseReg := "rbp"
-		if fc.parentVariables != nil && fc.parentVariables[s.Name] {
-			baseReg = "r11"
+			// Only allocate new stack space if this is a new variable definition
+			// Don't allocate if:
+			// - IsUpdate (i.e., <- operator)
+			// - IsReuseMutable (i.e., = updating existing mutable variable)
+			// Note: Lambdas with local variables are rejected at compile time,
+			// so we don't need a special check here
+			if !s.IsUpdate && !s.IsReuseMutable {
+				fc.out.SubImmFromReg("rsp", 16)
+				fc.runtimeStack += 16
+			}
+
+			fc.currentAssignName = s.Name
+			fc.compileExpression(s.Value)
+			fc.currentAssignName = ""
+			// Use r11 for parent variables in parallel loops, rbp for local variables
+			baseReg := "rbp"
+			if fc.parentVariables != nil && fc.parentVariables[s.Name] {
+				baseReg = "r11"
+			}
+			fc.out.MovXmmToMem("xmm0", baseReg, -offset)
 		}
-		fc.out.MovXmmToMem("xmm0", baseReg, -offset)
 
 	case *MultipleAssignStmt:
 		// Confidence that this function is working: 100%
@@ -3369,32 +3424,42 @@ func (fc *C67Compiler) compileExpression(expr Expression) {
 			compilerError("use of moved variable '%s' - value was transferred with '!'", e.Name)
 		}
 
-		// Load variable from stack into xmm0
-		offset, exists := fc.variables[e.Name]
-		if !exists {
-			if VerboseMode {
-				fmt.Fprintf(os.Stderr, "DEBUG: Undefined variable '%s', available vars: %v\n", e.Name, fc.variables)
-				fmt.Fprintf(os.Stderr, "DEBUG: Current lambda: %v\n", fc.currentLambda)
+		// Check if it's a global variable
+		if dataOffset, isGlobal := fc.globalVars[e.Name]; isGlobal {
+			// Load from .data section
+			// lea rax, [rel _global_varname]
+			// movsd xmm0, [rax]
+			fc.out.LeaSymbolToReg("rax", "_global_"+e.Name)
+			fc.out.MovMemToXmm("xmm0", "rax", 0)
+			_ = dataOffset // Will use this for actual .data section later
+		} else {
+			// Load variable from stack into xmm0
+			offset, exists := fc.variables[e.Name]
+			if !exists {
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "DEBUG: Undefined variable '%s', available vars: %v\n", e.Name, fc.variables)
+					fmt.Fprintf(os.Stderr, "DEBUG: Current lambda: %v\n", fc.currentLambda)
+				}
+				suggestions := findSimilarIdentifiers(e.Name, fc.variables, 3)
+				// Add to error collector (railway-oriented)
+				if len(suggestions) > 0 {
+					fc.addSemanticError(
+						fmt.Sprintf("undefined variable '%s'", e.Name),
+						fmt.Sprintf("Did you mean: %s?", strings.Join(suggestions, ", ")),
+					)
+					compilerError("undefined variable '%s'. Did you mean: %s?", e.Name, strings.Join(suggestions, ", "))
+				} else {
+					fc.addSemanticError(fmt.Sprintf("undefined variable '%s'", e.Name))
+					compilerError("undefined variable '%s'", e.Name)
+				}
 			}
-			suggestions := findSimilarIdentifiers(e.Name, fc.variables, 3)
-			// Add to error collector (railway-oriented)
-			if len(suggestions) > 0 {
-				fc.addSemanticError(
-					fmt.Sprintf("undefined variable '%s'", e.Name),
-					fmt.Sprintf("Did you mean: %s?", strings.Join(suggestions, ", ")),
-				)
-				compilerError("undefined variable '%s'. Did you mean: %s?", e.Name, strings.Join(suggestions, ", "))
-			} else {
-				fc.addSemanticError(fmt.Sprintf("undefined variable '%s'", e.Name))
-				compilerError("undefined variable '%s'", e.Name)
+			// Use r11 for parent variables in parallel loops, rbp for local variables
+			baseReg := "rbp"
+			if fc.parentVariables != nil && fc.parentVariables[e.Name] {
+				baseReg = "r11"
 			}
+			fc.out.MovMemToXmm("xmm0", baseReg, -offset)
 		}
-		// Use r11 for parent variables in parallel loops, rbp for local variables
-		baseReg := "rbp"
-		if fc.parentVariables != nil && fc.parentVariables[e.Name] {
-			baseReg = "r11"
-		}
-		fc.out.MovMemToXmm("xmm0", baseReg, -offset)
 
 	case *MoveExpr:
 		// Compile the expression being moved (loads into xmm0)
