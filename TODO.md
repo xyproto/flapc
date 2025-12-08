@@ -2,10 +2,17 @@
 
 ## Critical Bugs
 
-### 1. SDL3 Function Signatures
-- SDL_RenderFillRect expects (renderer, SDL_FRect*) but is being called with (renderer, x, y, w, h)
-- Need to support creating C structs on the stack and passing pointers
-- Alternatively, find SDL functions that accept individual parameters
+### 1. Module-Level Mutable Globals in Lambdas
+- **Status:** Identified, needs fix
+- When a lambda modifies a module-level mutable variable (`:=`), the change doesn't persist after lambda returns
+- Example:
+  ```c67
+  g_value := 0
+  set_value = (x) -> { g_value <- x }
+  main = { set_value(42); println(g_value) }  # Prints 0 instead of 42
+  ```
+- This affects libraries that use globals for state (like c67game)
+- **Workaround:** Pass state explicitly as parameters and return values
 
 ### 2. Import System Issues
 - Lambdas from imported C67 packages may be generated multiple times
@@ -22,10 +29,15 @@
 - ✅ Export system (`export *` and `export funclist`)
 - ✅ PLT/GOT only generated when C functions are used
 - ✅ Executable compression infrastructure
+- ✅ Lambda local variables work correctly (fixed duplicate symbol collection bug)
+- ✅ `unsafe { ... } as type` syntax for type conversions after unsafe blocks
+- ✅ SDL3 C FFI integration works perfectly for direct calls
+- ✅ Enum parsing from C headers
 
 ## Future Enhancements
 
+- Fix module-level mutable globals in lambdas
 - C struct support in function calls (passing pointers to stack-allocated structs)
 - Lambda capture optimization for imported packages
-- More comprehensive SDL3 wrapper library
+- Comprehensive SDL3/game library (after fixing globals issue)
 - Application development examples and tutorials
