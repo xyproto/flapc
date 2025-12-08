@@ -142,6 +142,7 @@ const (
 	TOKEN_CLASS    // class (class definition)
 	TOKEN_LTGT     // <> (composition operator)
 	TOKEN_RANDOM   // ??? (random number operator)
+	TOKEN_SHADOW   // shadow (explicit shadowing declaration)
 )
 
 // Code generation constants
@@ -472,6 +473,8 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: TOKEN_HAS, Value: value, Line: l.line, Column: tokenColumn}
 		case "class":
 			return Token{Type: TOKEN_CLASS, Value: value, Line: l.line, Column: tokenColumn}
+		case "shadow":
+			return Token{Type: TOKEN_SHADOW, Value: value, Line: l.line, Column: tokenColumn}
 		case "xor":
 			return Token{Type: TOKEN_XOR, Value: value, Line: l.line, Column: tokenColumn}
 			// Note: All type keywords (i8, i16, i32, i64, u8, u16, u32, u64, f32, f64,

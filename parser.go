@@ -112,6 +112,8 @@ type Parser struct {
 	errors          *ErrorCollector         // Railway-oriented error collector
 	inMatchBlock    bool                    // True when parsing inside a match block (prevents nested match parsing)
 	inConditionLoop bool                    // True when parsing condition loop expression (prevents 'max' consumption)
+	scopes          []map[string]bool       // Stack of variable scopes for shadow detection
+	lambdaParams    []string                // Temporary storage for lambda parameters being parsed
 }
 
 type parserState struct {
@@ -148,6 +150,7 @@ func NewParser(input string) *Parser {
 		cstructs:  make(map[string]*CStructDecl),
 		cImports:  make(map[string]bool),
 		errors:    NewErrorCollector(10),
+		scopes:    []map[string]bool{make(map[string]bool)}, // Start with module scope
 	}
 	// Register built-in C namespace
 	p.cImports["c"] = true
@@ -298,6 +301,36 @@ func (p *Parser) nextToken() {
 			p.peek.Type = aliasTarget
 		}
 	}
+}
+
+// Scope management for shadow keyword detection
+func (p *Parser) pushScope() {
+	p.scopes = append(p.scopes, make(map[string]bool))
+}
+
+func (p *Parser) popScope() {
+	if len(p.scopes) > 1 {
+		p.scopes = p.scopes[:len(p.scopes)-1]
+	}
+}
+
+func (p *Parser) declareVariable(name string) {
+	if len(p.scopes) > 0 {
+		p.scopes[len(p.scopes)-1][name] = true
+	}
+}
+
+func (p *Parser) wouldShadow(name string) bool {
+	// Check if name exists in any outer scope (case-insensitive)
+	nameLower := strings.ToLower(name)
+	for i := len(p.scopes) - 2; i >= 0; i-- { // Skip current scope
+		for varName := range p.scopes[i] {
+			if strings.ToLower(varName) == nameLower {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (p *Parser) skipNewlines() {
@@ -1052,6 +1085,11 @@ func (p *Parser) parseStatement() Statement {
 		}
 	}
 
+	// Check for shadow keyword (variable declaration)
+	if p.current.Type == TOKEN_SHADOW {
+		return p.parseAssignment()
+	}
+
 	// Check for assignment (=, :=, ->>, <-, with optional type annotation, and compound assignments)
 	if p.current.Type == TOKEN_IDENT {
 		// Check for multiple assignment: a, b, c = expr
@@ -1059,6 +1097,37 @@ func (p *Parser) parseStatement() Statement {
 			// Could be multiple assignment or lambda params - lookahead
 			if stmt := p.tryParseMultipleAssignment(); stmt != nil {
 				return stmt
+			}
+		}
+
+		// Check for type annotation: x: num = value
+		// This needs to be distinguished from map literal at module level
+		// Type annotation: x: <type_keyword> = ...
+		// Map literal starts with { or is part of an expression
+		if p.peek.Type == TOKEN_COLON && p.functionDepth == 0 {
+			// Look ahead to see if this is a type annotation
+			// Save state
+			saved := p.saveState()
+			p.nextToken() // skip identifier
+			p.nextToken() // skip ':'
+
+			// Check if next token is a type keyword (contextual - comes as IDENT)
+			isTypeAnnotation := false
+			if p.current.Type == TOKEN_IDENT {
+				switch p.current.Value {
+				case "num", "str", "list", "map",
+					"cstring", "cptr", "cint", "clong",
+					"cfloat", "cdouble", "cbool", "cvoid":
+					isTypeAnnotation = true
+				}
+			}
+
+			// Restore state
+			p.restoreState(saved)
+
+			// If it's a type annotation, parse as assignment
+			if isTypeAnnotation {
+				return p.parseAssignment()
 			}
 		}
 
@@ -1100,9 +1169,11 @@ func (p *Parser) tryParseNonParenLambda() Expression {
 	// Single param: x ->
 	firstParam := p.current.Value
 	if p.peek.Type == TOKEN_ARROW {
-		p.nextToken() // skip param
-		p.nextToken() // skip '->'
+		p.nextToken()                         // skip param
+		p.nextToken()                         // skip '->'
+		p.lambdaParams = []string{firstParam} // Store params for parseLambdaBody
 		body := p.parseLambdaBody()
+		p.lambdaParams = nil // Clear after use
 		return &LambdaExpr{Params: []string{firstParam}, VariadicParam: "", Body: body}
 	}
 
@@ -1132,9 +1203,11 @@ func (p *Parser) tryParseNonParenLambda() Expression {
 
 		if p.peek.Type == TOKEN_ARROW {
 			// Found the arrow! This is a lambda
-			p.nextToken() // skip last param
-			p.nextToken() // skip '->'
+			p.nextToken()           // skip last param
+			p.nextToken()           // skip '->'
+			p.lambdaParams = params // Store params for parseLambdaBody
 			body := p.parseLambdaBody()
+			p.lambdaParams = nil // Clear after use
 			return &LambdaExpr{Params: params, VariadicParam: "", Body: body}
 		}
 
@@ -1243,16 +1316,19 @@ func (p *Parser) parseFString() Expression {
 
 // Confidence that this function is working: 100%
 func (p *Parser) parseAssignment() *AssignStmt {
-	name := p.current.Value
-	
-	// Enforce ALL_UPPERCASE for module-level non-function variables (functionDepth == 0)
-	// Local variables (inside functions/lambdas) can be any case
-	// Functions can be any case at module level
-	if p.functionDepth == 0 {
-		// We'll check if this is a function assignment after parsing the expression
-		// For now, just store the name for later validation
+	// Check for shadow keyword
+	hasShadow := false
+	if p.current.Type == TOKEN_SHADOW {
+		hasShadow = true
+		p.nextToken() // skip 'shadow'
 	}
-	
+
+	if p.current.Type != TOKEN_IDENT {
+		p.error("expected identifier after 'shadow' keyword")
+		return nil
+	}
+
+	name := p.current.Value
 	p.nextToken() // skip identifier
 
 	// Check for type annotation: name: type
@@ -1301,6 +1377,16 @@ func (p *Parser) parseAssignment() *AssignStmt {
 	mutable := p.current.Type == TOKEN_COLON_EQUALS || isUpdate
 
 	p.nextToken() // skip '=' or ':=' or '<-' or compound operator
+
+	// For recursive functions, declare the name BEFORE parsing the value
+	// This allows the function to reference itself in its body
+	// But only for new declarations (not updates, not shadowing checks yet)
+	declareNowForRecursion := !isUpdate
+	if declareNowForRecursion {
+		// Don't check shadowing yet - just declare so recursion works
+		// We'll validate shadowing after parsing the value
+		p.declareVariable(name)
+	}
 
 	// Check for non-parenthesized lambda: x -> expr or x y -> expr
 	var value Expression
@@ -1399,17 +1485,28 @@ func (p *Parser) parseAssignment() *AssignStmt {
 		mutable = true
 	}
 
-	// Enforce ALL_UPPERCASE for module-level non-function variables
-	// Functions (lambdas) can be any case
-	if p.functionDepth == 0 {
-		isFunction := false
-		switch value.(type) {
-		case *LambdaExpr, *MultiLambdaExpr:
-			isFunction = true
-		}
-		
-		if !isFunction && !isAllUppercase(name) && name != "main" && name != "Main" {
-			p.error(fmt.Sprintf("module-level variable '%s' must be ALL_UPPERCASE (functions can be any case)", name))
+	// Check shadowing rules
+	// We already declared the variable above for recursion support
+	// Now validate that shadowing is correct
+	if !isUpdate {
+		// We need to check if it WOULD shadow (ignoring the declaration we just made)
+		// To do this, we temporarily remove it from current scope, check, then it's already there
+		if len(p.scopes) > 0 {
+			currentScope := p.scopes[len(p.scopes)-1]
+			delete(currentScope, name) // Temporarily remove
+
+			wouldShadowOuter := p.wouldShadow(name)
+
+			// Re-add it
+			currentScope[name] = true
+
+			if wouldShadowOuter && !hasShadow {
+				p.error(fmt.Sprintf("variable '%s' shadows an outer scope variable - use 'shadow %s = ...' to explicitly shadow", name, name))
+			}
+
+			if !wouldShadowOuter && hasShadow {
+				p.error(fmt.Sprintf("'shadow' keyword used but '%s' doesn't shadow any outer variable", name))
+			}
 		}
 	}
 
@@ -1741,8 +1838,23 @@ func (p *Parser) disambiguateBlock() BlockType {
 		} else if braceDepth == 1 {
 			// At top level of this block
 			if tok.Type == TOKEN_COLON && !foundArrow {
-				// Found ':' before any arrows → map literal
-				foundColon = true
+				// Check if this is a type annotation (x: num = ...) vs map literal (x: value)
+				// Type annotations have a type keyword (as identifier) after the colon
+				nextTok := tempLexer.NextToken()
+				isTypeAnnotation := false
+				// Type keywords are contextual - they come as TOKEN_IDENT with specific values
+				if nextTok.Type == TOKEN_IDENT {
+					switch nextTok.Value {
+					case "num", "str", "list", "map",
+						"cstring", "cptr", "cint", "clong",
+						"cfloat", "cdouble", "cbool", "cvoid":
+						isTypeAnnotation = true
+					}
+				}
+				if !isTypeAnnotation {
+					// Found ':' before any arrows and not a type annotation → map literal
+					foundColon = true
+				}
 			} else if tok.Type == TOKEN_FAT_ARROW || tok.Type == TOKEN_DEFAULT_ARROW {
 				// Found arrow → match block (=> or ~>)
 				foundArrow = true
@@ -3260,10 +3372,19 @@ func (p *Parser) parseRange() Expression {
 // - Contains '->' or '~>' → match block (guard match if no expr before {)
 // - Otherwise → statement block
 func (p *Parser) parseLambdaBody() Expression {
-	// Increment function depth when entering lambda body
+	// Increment function depth and push scope when entering lambda body
 	p.functionDepth++
-	defer func() { p.functionDepth-- }()
-	
+	p.pushScope()
+	defer func() {
+		p.functionDepth--
+		p.popScope()
+	}()
+
+	// Declare lambda parameters in the new scope
+	for _, param := range p.lambdaParams {
+		p.declareVariable(param)
+	}
+
 	// Check if lambda body is a block { ... }
 	if p.current.Type == TOKEN_LBRACE {
 		// Disambiguate block type
@@ -3755,8 +3876,10 @@ func (p *Parser) parsePrimary() Expression {
 	switch p.current.Type {
 	case TOKEN_ARROW:
 		// Explicit no-argument lambda: -> expr or -> { ... }
-		p.nextToken() // skip '->'
+		p.nextToken()               // skip '->'
+		p.lambdaParams = []string{} // No parameters
 		body := p.parseLambdaBody()
+		p.lambdaParams = nil
 		return &LambdaExpr{Params: []string{}, VariadicParam: "", Body: body}
 
 	case TOKEN_MINUS:
@@ -3962,9 +4085,11 @@ func (p *Parser) parsePrimary() Expression {
 		// Check for empty parameter list: () ->
 		if p.current.Type == TOKEN_RPAREN {
 			if p.peek.Type == TOKEN_ARROW {
-				p.nextToken() // skip ')'
-				p.nextToken() // skip '->'
+				p.nextToken()               // skip ')'
+				p.nextToken()               // skip '->'
+				p.lambdaParams = []string{} // No parameters
 				body := p.parseLambdaBody()
+				p.lambdaParams = nil
 				return &LambdaExpr{Params: []string{}, VariadicParam: "", Body: body}
 			}
 			// Empty parens without arrow is an error, but skip for now
@@ -4056,9 +4181,11 @@ func (p *Parser) parsePrimary() Expression {
 			// peek should be '->'
 			if p.peek.Type == TOKEN_ARROW {
 				// It's a lambda!
-				p.nextToken() // skip ')'
-				p.nextToken() // skip '->'
+				p.nextToken()           // skip ')'
+				p.nextToken()           // skip '->'
+				p.lambdaParams = params // Store params for parseLambdaBody
 				body := p.parseLambdaBody()
+				p.lambdaParams = nil
 				return &LambdaExpr{Params: params, VariadicParam: variadicParam, Body: body}
 			}
 
@@ -4114,10 +4241,14 @@ func (p *Parser) parsePrimary() Expression {
 
 		case BlockTypeStatement:
 			// Parse as statement block
-			// Statement blocks in expression position will be wrapped in lambdas, so increment depth
+			// Statement blocks in expression position will be wrapped in lambdas, so increment depth and push scope
 			p.functionDepth++
-			defer func() { p.functionDepth-- }()
-			
+			p.pushScope()
+			defer func() {
+				p.functionDepth--
+				p.popScope()
+			}()
+
 			var statements []Statement
 			for p.current.Type != TOKEN_RBRACE && p.current.Type != TOKEN_EOF {
 				stmt := p.parseStatement()

@@ -455,37 +455,50 @@ x: num = num * 2       // OK - type annotation vs variable
 
 ## Variables and Assignment
 
-### Module-Level vs Local Variables
+### Shadowing Rules
 
-**Module-Level Naming Rule:**
-All non-function variables and constants defined at module level (outside of functions/lambdas) **MUST** be ALL_UPPERCASE.
-Function names can be any valid identifier.
+**Shadow Keyword Requirement:**
+When declaring a variable that would shadow (hide) a variable from an outer scope, the `shadow` keyword is **required**. This prevents accidental shadowing bugs while allowing intentional shadowing.
 
 ```c67
-// Module level - non-functions MUST be ALL_UPPERCASE
-PORT = 8080                      // ✓ OK: immutable constant
-CONFIG := { host: "localhost" }  // ✓ OK: mutable global
-COLORS = [[255, 0, 0], [0, 255, 0]]  // ✓ OK: immutable list
+// Module level
+port = 8080
+config = { host: "localhost" }
 
-// Functions can use any case
-main = { ... }                   // ✓ OK: function
-init_window = { ... }            // ✓ OK: function
-handleEvent = { ... }            // ✓ OK: function
-
-port = 8080                      // ✗ ERROR: non-function must be uppercase
-
-// Inside function/lambda - can be any case
+// Function that intentionally shadows
 main = {
-    port := 8080            // ✓ OK: local mutable
-    config = { ... }        // ✓ OK: local immutable
+    shadow port = 9000        // ✓ OK: explicitly shadows module port
+    shadow config = {}        // ✓ OK: explicitly shadows module config
+    println(port)             // Prints 9000
+}
+
+// ERROR: Forgot shadow keyword
+test = {
+    port = 3000               // ✗ ERROR: would shadow module 'port' without 'shadow' keyword
+}
+
+// Nested scopes
+process = x -> {
+    shadow x = x * 2          // ✓ OK: shadows parameter x
+    inner = y -> {
+        shadow x = x + y      // ✓ OK: shadows outer x
+        x
+    }
+    inner(10)
+}
+
+// First declaration doesn't need shadow
+compute = {
+    value = 42                // ✓ OK: first declaration in this scope
+    result = value * 2        // ✓ OK: no shadowing
 }
 ```
 
 **Rationale:**
-- Eliminates shadowing confusion (module variables are visually distinct)
-- Makes code more readable (clear distinction between scopes and functions)
-- Prevents accidental name collisions
-- Encourages thoughtful global variable usage
+- **Prevents bugs**: Accidental shadowing is a common source of errors
+- **Makes intent clear**: Reader knows shadowing is intentional
+- **Helps refactoring**: Renaming outer variables won't silently break inner scopes
+- **Natural naming**: Variables can use natural names in all scopes (no ALL_UPPERCASE requirement)
 
 ### Immutable Assignment (`=`)
 

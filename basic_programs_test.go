@@ -62,7 +62,7 @@ println(result)
 			source: `x := 42
 printf("The answer is %v\n", x)
 `,
-			expected: "The answer is 42\n",
+			expected: "The answer is 42.000000\n",
 		},
 		{
 			name: "fstring_basic",

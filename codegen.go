@@ -771,7 +771,7 @@ func (fc *C67Compiler) collectSymbols(stmt Statement) error {
 			fmt.Fprintf(os.Stderr, "DEBUG collectSymbols AssignStmt: name=%s, exists=%v, IsUpdate=%v, Mutable=%v, mutableVars[%s]=%v, stackOffset=%d\n",
 				s.Name, exists, s.IsUpdate, s.Mutable, s.Name, fc.mutableVars[s.Name], fc.stackOffset)
 		}
-		
+
 		// Debug: print stack trace when we see the problematic variable
 		if s.Name == "r1" && exists {
 			fmt.Fprintf(os.Stderr, "DEBUG: Variable 'r1' already exists! Stack trace:\n")
@@ -792,7 +792,7 @@ func (fc *C67Compiler) collectSymbols(stmt Statement) error {
 			if exists {
 				return fmt.Errorf("variable '%s' already defined (use <- to update) [currently at offset %d]", s.Name, fc.variables[s.Name])
 			}
-			
+
 			// Track module-level variables (defined outside any lambda) - allocate in .data
 			if fc.currentLambda == nil {
 				fc.moduleLevelVars[s.Name] = true
@@ -811,7 +811,7 @@ func (fc *C67Compiler) collectSymbols(stmt Statement) error {
 				fc.variables[s.Name] = offset
 				fc.mutableVars[s.Name] = true
 			}
-			
+
 			if fc.debug {
 				if VerboseMode {
 					if fc.currentLambda == nil {
@@ -852,7 +852,7 @@ func (fc *C67Compiler) collectSymbols(stmt Statement) error {
 				s.IsReuseMutable = true
 			} else {
 				// Create new immutable variable
-				
+
 				// Track module-level variables (defined outside any lambda) - allocate in .data
 				if fc.currentLambda == nil {
 					fc.moduleLevelVars[s.Name] = true
@@ -871,7 +871,7 @@ func (fc *C67Compiler) collectSymbols(stmt Statement) error {
 					fc.variables[s.Name] = offset
 					fc.mutableVars[s.Name] = false
 				}
-				
+
 				if fc.debug {
 					if VerboseMode {
 						if fc.currentLambda == nil {
@@ -16790,16 +16790,43 @@ func collectFunctionCallsFromStmtWithParams(stmt Statement, calls map[string]boo
 func collectDefinedFunctions(program *Program) map[string]bool {
 	defined := make(map[string]bool)
 
+	// Collect from all statements recursively
 	for _, stmt := range program.Statements {
-		if assign, ok := stmt.(*AssignStmt); ok {
-			// Mark any variable as "defined" for the purpose of call checking
-			// This handles cases where a variable holds a lambda (like add5 = make_adder(5))
-			// and is later called (like add5(10))
-			defined[assign.Name] = true
-		}
+		collectDefinedFromStmt(stmt, defined)
 	}
 
 	return defined
+}
+
+// collectDefinedFromStmt recursively collects defined names from a statement
+func collectDefinedFromStmt(stmt Statement, defined map[string]bool) {
+	if assign, ok := stmt.(*AssignStmt); ok {
+		// Mark any variable as "defined" for the purpose of call checking
+		defined[assign.Name] = true
+
+		// Also recursively check the value (for nested blocks)
+		if lambda, ok := assign.Value.(*LambdaExpr); ok {
+			collectDefinedFromExpr(lambda.Body, defined)
+		}
+	} else if exprStmt, ok := stmt.(*ExpressionStmt); ok {
+		collectDefinedFromExpr(exprStmt.Expr, defined)
+	}
+}
+
+// collectDefinedFromExpr recursively collects defined names from an expression
+func collectDefinedFromExpr(expr Expression, defined map[string]bool) {
+	switch e := expr.(type) {
+	case *BlockExpr:
+		for _, stmt := range e.Statements {
+			collectDefinedFromStmt(stmt, defined)
+		}
+	case *MatchExpr:
+		for _, clause := range e.Clauses {
+			collectDefinedFromExpr(clause.Result, defined)
+		}
+	case *LambdaExpr:
+		collectDefinedFromExpr(e.Body, defined)
+	}
 }
 
 // Confidence that this function is working: 95%

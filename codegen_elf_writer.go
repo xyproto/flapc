@@ -296,7 +296,7 @@ func (fc *C67Compiler) writeELF(program *Program, outputPath string) error {
 			dataSymbolNames = append(dataSymbolNames, symbol)
 		}
 		sort.Strings(dataSymbolNames)
-		
+
 		for _, symbol := range dataSymbolNames {
 			value := dataSymbols[symbol]
 			fc.eb.DefineAddr(symbol, dataBaseAddr)

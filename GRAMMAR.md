@@ -70,6 +70,7 @@ Foreign types are used at FFI boundaries to guide marshalling.
 
 - [Grammar Notation](#grammar-notation)
 - [Block Disambiguation Rules](#block-disambiguation-rules)
+- [Shadow Keyword](#shadow-keyword)
 - [Complete Grammar](#complete-grammar)
 - [Lexical Elements](#lexical-elements)
 - [Keywords](#keywords)
@@ -161,6 +162,80 @@ compute = x -> {
 **Match block type:**
 - Has expression before `{` → Value match
 - No expression, has `|` at line start → Guard match
+
+## Shadow Keyword
+
+The `shadow` keyword is used to explicitly declare that a variable shadows (hides) an existing variable from an outer scope. This prevents accidental shadowing bugs while allowing intentional shadowing when needed.
+
+### Syntax
+
+```c67
+shadow identifier [: type] = expression
+shadow identifier [: type] := expression
+```
+
+### Rules
+
+1. **Shadow is required** when declaring a variable that would shadow:
+   - A module-level constant or variable
+   - A variable from an outer function scope
+   - A parameter from an outer lambda
+
+2. **Shadow is forbidden** for:
+   - Module-level declarations (nothing to shadow at top level)
+   - First declaration of a name in a scope (nothing being shadowed)
+
+3. **Without shadow**: Attempting to declare a variable with a name that exists in an outer scope is a compilation error
+
+### Examples
+
+```c67
+// Module level
+PORT = 8080
+config = { host: "localhost" }
+
+// Function that needs to use same name
+main = {
+    shadow PORT = 9000        // ✓ OK: explicitly shadows module PORT
+    shadow config = {}        // ✓ OK: explicitly shadows module config
+    println(PORT)             // Prints 9000
+}
+
+// Nested scopes
+process = x -> {
+    shadow x = x * 2          // ✓ OK: shadows parameter x
+    inner = y -> {
+        shadow x = x + y      // ✓ OK: shadows outer x
+        x
+    }
+    inner(10)
+}
+
+// Error cases
+main = {
+    x = 42                    // ✓ OK: first declaration
+    x = 100                   // ✗ ERROR: immutable, can't reassign
+    shadow x = 100            // ✗ ERROR: shadow not needed, x is local
+}
+
+X = 100                       // Module level
+test = {
+    x = 42                    // ✗ ERROR: would shadow X (case-insensitive check)
+    shadow x = 42             // ✓ OK: explicitly shadows
+}
+```
+
+### Rationale
+
+**Why require explicit shadowing?**
+1. **Prevents bugs**: Accidental shadowing is a common source of errors
+2. **Makes intent clear**: Reader knows shadowing is intentional
+3. **Helps refactoring**: Renaming outer variables won't silently break inner scopes
+4. **No ALL_UPPERCASE rule needed**: Variables can use natural naming in all scopes
+
+**Case sensitivity:**
+- Variable names are case-sensitive for lookup
+- Shadow checking is case-insensitive to catch `x` shadowing `X`
 
 ## Import and Export System
 
@@ -805,12 +880,14 @@ No multi-line comments.
 ### Reserved Keywords
 
 ```
-ret arena unsafe cstruct class as max this defer spawn import
+ret arena unsafe cstruct class as max this defer spawn import shadow
 ```
 
 **Note:** In C67 3.0, lambda definitions use `->` (thin arrow) and match arms use `=>` (fat arrow), similar to Rust syntax.
 
 **No-argument lambdas** can be written as `-> expr` or inferred from context in assignments: `name = { ... }`
+
+The `shadow` keyword is required when declaring a variable that would shadow an outer scope variable (see Shadow Keyword section above).
 
 ### Type Keywords
 
