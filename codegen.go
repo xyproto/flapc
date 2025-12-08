@@ -1407,16 +1407,37 @@ func (fc *C67Compiler) compileStatement(stmt Statement) {
 
 		// Check if variable exists and is mutable
 		offset, exists := fc.variables[s.MapName]
+		isGlobal := false
 		if !exists {
-			suggestions := findSimilarIdentifiers(s.MapName, fc.variables, 3)
-			if len(suggestions) > 0 {
-				compilerError("undefined variable '%s'. Did you mean: %s?", s.MapName, strings.Join(suggestions, ", "))
+			// Check if it's a global variable
+			if _, globalExists := fc.globalVars[s.MapName]; globalExists {
+				isGlobal = true
+				if VerboseMode {
+					fmt.Fprintf(os.Stderr, "DEBUG MapUpdateStmt: '%s' is a global variable\n", s.MapName)
+				}
 			} else {
-				compilerError("undefined variable '%s'", s.MapName)
+				suggestions := findSimilarIdentifiers(s.MapName, fc.variables, 3)
+				if len(suggestions) > 0 {
+					compilerError("undefined variable '%s'. Did you mean: %s?", s.MapName, strings.Join(suggestions, ", "))
+				} else {
+					compilerError("undefined variable '%s'", s.MapName)
+				}
+			}
+		} else if offset == -1 {
+			// offset == -1 means it's a global variable
+			isGlobal = true
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG MapUpdateStmt: '%s' is a global variable (offset -1)\n", s.MapName)
+			}
+		} else {
+			if VerboseMode {
+				fmt.Fprintf(os.Stderr, "DEBUG MapUpdateStmt: '%s' is a local variable at offset %d\n", s.MapName, offset)
 			}
 		}
 
-		if !fc.mutableVars[s.MapName] {
+		// Check mutability (check both local and global)
+		isMutable := fc.mutableVars[s.MapName] || fc.globalVarsMutable[s.MapName]
+		if !isMutable {
 			compilerError("cannot modify immutable list '%s'", s.MapName)
 		}
 
@@ -1444,7 +1465,13 @@ func (fc *C67Compiler) compileStatement(stmt Statement) {
 			fc.out.MovXmmToMem("xmm0", "rsp", 0)
 
 			// Load list pointer from variable
-			fc.out.MovMemToXmm("xmm1", baseReg, -offset)
+			if isGlobal {
+				// Load from .data section
+				fc.out.LeaSymbolToReg("rax", "_global_"+s.MapName)
+				fc.out.MovMemToXmm("xmm1", "rax", 0)
+			} else {
+				fc.out.MovMemToXmm("xmm1", baseReg, -offset)
+			}
 			// Convert list pointer to rax
 			fc.out.SubImmFromReg("rsp", 8)
 			fc.out.MovXmmToMem("xmm1", "rsp", 0)
@@ -1494,7 +1521,13 @@ func (fc *C67Compiler) compileStatement(stmt Statement) {
 			fc.out.MovXmmToMem("xmm0", "rsp", 0)
 
 			// Load map pointer from variable
-			fc.out.MovMemToXmm("xmm1", baseReg, -offset)
+			if isGlobal {
+				// Load from .data section
+				fc.out.LeaSymbolToReg("rax", "_global_"+s.MapName)
+				fc.out.MovMemToXmm("xmm1", "rax", 0)
+			} else {
+				fc.out.MovMemToXmm("xmm1", baseReg, -offset)
+			}
 			// Convert map pointer to rax
 			fc.out.SubImmFromReg("rsp", 8)
 			fc.out.MovXmmToMem("xmm1", "rsp", 0)
