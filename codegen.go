@@ -11502,10 +11502,13 @@ func (fc *C67Compiler) compileCall(call *CallExpr) {
 
 	// Check if this is a known lambda function
 	// Known lambdas can be called directly by label (no closure indirection needed)
+	// UNLESS they have captured variables, in which case they need their environment
 	isKnownLambda := false
+	hasCaptures := false
 	for _, lambda := range fc.lambdaFuncs {
 		if lambda.Name == call.Function {
 			isKnownLambda = true
+			hasCaptures = len(lambda.CapturedVars) > 0
 			break
 		}
 	}
@@ -11521,11 +11524,11 @@ func (fc *C67Compiler) compileCall(call *CallExpr) {
 	}
 
 	if VerboseMode {
-		fmt.Fprintf(os.Stderr, "DEBUG compileCall: isKnownLambda=%v\n", isKnownLambda)
+		fmt.Fprintf(os.Stderr, "DEBUG compileCall: isKnownLambda=%v, hasCaptures=%v\n", isKnownLambda, hasCaptures)
 	}
 
-	if isKnownLambda {
-		// Direct call to a known lambda function
+	if isKnownLambda && !hasCaptures {
+		// Direct call to a known lambda function (without captured variables)
 		fc.compileLambdaDirectCall(call)
 		return
 	}
