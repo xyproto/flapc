@@ -14822,7 +14822,7 @@ func (fc *C67Compiler) compileCall(call *CallExpr) {
 		// Result in xmm0
 
 	case "write_i8", "write_i16", "write_i32", "write_i64",
-		"write_u8", "write_u16", "write_u32", "write_u64", "write_f64":
+		"write_u8", "write_u16", "write_u32", "write_u64", "write_f32", "write_f64":
 		// FFI memory write: write_TYPE(ptr, index, value)
 		if len(call.Args) != 3 {
 			compilerError("%s() requires exactly 3 arguments (ptr, index, value)", call.Function)
@@ -14835,7 +14835,7 @@ func (fc *C67Compiler) compileCall(call *CallExpr) {
 			typeSize = 1
 		case "write_i16", "write_u16":
 			typeSize = 2
-		case "write_i32", "write_u32":
+		case "write_i32", "write_u32", "write_f32":
 			typeSize = 4
 		case "write_i64", "write_u64", "write_f64":
 			typeSize = 8
@@ -14883,6 +14883,20 @@ func (fc *C67Compiler) compileCall(call *CallExpr) {
 		if call.Function == "write_f64" {
 			// Write float64 directly
 			fc.out.MovXmmToMem("xmm0", "r10", 0)
+		} else if call.Function == "write_f32" {
+			// Convert double to float (xmm0 double -> xmm0 float)
+			// cvtsd2ss xmm0, xmm0
+			fc.out.Write(0xf2)
+			fc.out.Write(0x0f)
+			fc.out.Write(0x5a)
+			fc.out.Write(0xc0) // ModR/M: xmm0, xmm0
+			// Write float32 (4 bytes) to memory [r10]
+			// movss [r10], xmm0
+			fc.out.Write(0xf3)
+			fc.out.Write(0x41)
+			fc.out.Write(0x0f)
+			fc.out.Write(0x11)
+			fc.out.Write(0x02) // ModR/M: [r10]
 		} else {
 			// Convert to integer and write
 			fc.out.Cvttsd2si("rax", "xmm0")
@@ -16863,7 +16877,7 @@ func getUnknownFunctions(program *Program) []string {
 		"read_i8": true, "read_u8": true, "read_i16": true, "read_u16": true,
 		"read_i32": true, "read_u32": true, "read_i64": true, "read_u64": true, "read_f64": true,
 		"write_i8": true, "write_u8": true, "write_i16": true, "write_u16": true,
-		"write_i32": true, "write_u32": true, "write_i64": true, "write_u64": true, "write_f64": true,
+		"write_i32": true, "write_u32": true, "write_i64": true, "write_u64": true, "write_f32": true, "write_f64": true,
 		// Dynamic calling
 		"call": true, "arena_create": true, "arena_alloc": true, "arena_reset": true, "arena_destroy": true,
 	}

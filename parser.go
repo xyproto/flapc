@@ -171,6 +171,7 @@ func NewParserWithFilename(input, filename string) *Parser {
 		cstructs:  make(map[string]*CStructDecl),
 		cImports:  make(map[string]bool),
 		errors:    NewErrorCollector(10),
+		scopes:    []map[string]bool{make(map[string]bool)}, // Start with module scope
 	}
 	// Register built-in C namespace
 	p.cImports["c"] = true
@@ -1378,13 +1379,13 @@ func (p *Parser) parseAssignment() *AssignStmt {
 
 	p.nextToken() // skip '=' or ':=' or '<-' or compound operator
 
-	// For recursive functions, declare the name BEFORE parsing the value
+	// For recursive functions at module level, declare the name BEFORE parsing the value
 	// This allows the function to reference itself in its body
-	// But only for new declarations (not updates, not shadowing checks yet)
-	declareNowForRecursion := !isUpdate
+	// But only for module-level functions (functionDepth == 0)
+	// Local variables in functions don't need this (they can't recurse anyway)
+	declareNowForRecursion := !isUpdate && p.functionDepth == 0
 	if declareNowForRecursion {
-		// Don't check shadowing yet - just declare so recursion works
-		// We'll validate shadowing after parsing the value
+		// Declare function name in module scope for recursion
 		p.declareVariable(name)
 	}
 
