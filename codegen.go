@@ -5246,6 +5246,14 @@ func (fc *C67Compiler) compileExpression(expr Expression) {
 				// If it's an assignment, we need to load the assigned value
 				if assignStmt, ok := stmt.(*AssignStmt); ok {
 					fc.compileExpression(&IdentExpr{Name: assignStmt.Name})
+				} else if _, ok := stmt.(*MapUpdateStmt); ok {
+					// MapUpdateStmt (e.g., arr[i] <- val) doesn't produce a meaningful value
+					// Return 0 implicitly
+					fc.out.XorpdXmm("xmm0", "xmm0")
+				} else if _, ok := stmt.(*ExpressionStmt); !ok {
+					// Other statement types that aren't expressions (like future control flow)
+					// Return 0 implicitly
+					fc.out.XorpdXmm("xmm0", "xmm0")
 				}
 				// For ExpressionStmt, compileStatement already compiled the expression
 				// and left the result in xmm0, so we don't need to do anything here

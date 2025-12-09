@@ -779,6 +779,13 @@ compute = x -> {
     result = temp + 10
     result  // Returns 2*x + 10
 }
+
+// Implicit zero return for statement-only blocks
+init = {
+    config := load_config()
+    cache <- init_cache()
+    // Implicitly returns 0 (no explicit return needed)
+}
 ```
 
 ### Closures
