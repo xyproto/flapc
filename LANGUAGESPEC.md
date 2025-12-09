@@ -780,11 +780,11 @@ compute = x -> {
     result  // Returns 2*x + 10
 }
 
-// Implicit zero return for statement-only blocks
+// Implicit true (1.0) return for statement-only blocks
 init = {
     config := load_config()
     cache <- init_cache()
-    // Implicitly returns 0 (no explicit return needed)
+    // Implicitly returns true (1.0) - no explicit return needed
 }
 ```
 
@@ -2666,7 +2666,7 @@ C67 supports three program structures:
 When a `main` function is defined, it serves as the entry point:
 
 ```c67
-main = { println("Hello, World!") }    // main() called, returns 0
+main = { println("Hello, World!") }    // main() called, returns true (1.0)
 main = 42                               // Returns 42 as exit code
 main = () -> { println("Starting"); 1 } // Returns 1
 ```
@@ -2674,7 +2674,7 @@ main = () -> { println("Starting"); 1 } // Returns 1
 **Behavior:**
 - If `main` is callable (function/lambda): called automatically, return value becomes exit code
 - Return value is implicitly cast to int32 for the OS exit code
-- Empty blocks `{}` return 0
+- Empty blocks `{}` return true (1.0)
 - Numeric values are converted to int32
 
 #### 2. Main Variable (Non-callable)
@@ -2703,7 +2703,7 @@ println(f"Result: {result}")
 **Exit code determination:**
 - Last expression value becomes exit code
 - `ret` statement sets explicit exit code
-- No explicit return or value: defaults to 0
+- No explicit return or value: defaults to true (1.0)
 
 #### Mixed Cases
 

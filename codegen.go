@@ -5235,6 +5235,12 @@ func (fc *C67Compiler) compileExpression(expr Expression) {
 			}
 		}
 
+		// Empty block returns true (1.0)
+		if len(e.Statements) == 0 {
+			fc.compileExpression(&NumberExpr{Value: 1.0})
+			return
+		}
+
 		// Compile each statement in the block
 		// The last statement should leave its value in xmm0
 		for i, stmt := range e.Statements {
@@ -5247,13 +5253,13 @@ func (fc *C67Compiler) compileExpression(expr Expression) {
 				if assignStmt, ok := stmt.(*AssignStmt); ok {
 					fc.compileExpression(&IdentExpr{Name: assignStmt.Name})
 				} else if _, ok := stmt.(*MapUpdateStmt); ok {
-					// MapUpdateStmt (e.g., arr[i] <- val) doesn't produce a meaningful value
-					// Return 0 implicitly
-					fc.out.XorpdXmm("xmm0", "xmm0")
+					// MapUpdateStmt doesn't produce a meaningful value
+					// Return true (1.0) implicitly
+					fc.compileExpression(&NumberExpr{Value: 1.0})
 				} else if _, ok := stmt.(*ExpressionStmt); !ok {
-					// Other statement types that aren't expressions (like future control flow)
-					// Return 0 implicitly
-					fc.out.XorpdXmm("xmm0", "xmm0")
+					// Other statement types that aren't expressions
+					// Return true (1.0) implicitly
+					fc.compileExpression(&NumberExpr{Value: 1.0})
 				}
 				// For ExpressionStmt, compileStatement already compiled the expression
 				// and left the result in xmm0, so we don't need to do anything here

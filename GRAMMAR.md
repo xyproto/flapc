@@ -403,7 +403,7 @@ C67 programs can be structured in three ways:
 When a `main` function is defined, it becomes the program entry point:
 
 ```c67
-main = { println("Hello!") }     // A lambda that returns the value returned from println (0)
+main = { println("Hello!") }     // A lambda that returns the value returned from println (true/1.0)
 main = 42                        // A C67 number {0: 42.0}
 main = () -> { 100 }             // A lambda that returns 100
 main = { 100 }                   // A lambda that returns 100
@@ -411,7 +411,7 @@ main = { 100 }                   // A lambda that returns 100
 
 **Return value rules:**
 - If `main` is set to a number, it is converted to int32 for the exit code
-- If `main` returns an empty map `{}` or empty list `[]`: exit code 0
+- If `main` returns an empty map `{}` or empty list `[]` or true: exit code 0
 - If `main` is callable (function): called, result becomes exit code
 - Return values are implicitly cast to int32 for `_start`
 
@@ -441,7 +441,7 @@ println(x)
 **Exit code:**
 - Last expression value becomes exit code
 - `ret` keyword sets explicit exit code
-- No explicit return: exit code 0
+- No explicit return: returns true (1.0), exit code 0
 
 ### Mixed Cases
 
