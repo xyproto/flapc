@@ -30,7 +30,7 @@ func TestC67GameLibraryCompiles(t *testing.T) {
 	t.Log("c67game library compiled successfully")
 }
 
-// TestC67GameTest tests that c67game_test.c67 compiles and runs
+// TestC67GameTest tests that c67 test works in c67game directory
 func TestC67GameTest(t *testing.T) {
 	c67gameDir := filepath.Join(os.Getenv("HOME"), "clones", "c67game")
 	testPath := filepath.Join(c67gameDir, "c67game_test.c67")
@@ -39,31 +39,23 @@ func TestC67GameTest(t *testing.T) {
 		t.Skip("c67game_test.c67 not found")
 	}
 
-	tmpDir := t.TempDir()
-	binary := filepath.Join(tmpDir, "c67game_test")
-
-	cmd := exec.Command("./c67", testPath, "-o", binary)
+	// Run c67 test in the c67game directory
+	c67Binary := filepath.Join(filepath.Dir(c67gameDir), "c67", "c67")
+	cmd := exec.Command(c67Binary, "test")
+	cmd.Dir = c67gameDir
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
-		t.Logf("Compilation output: %s", output)
-		t.Fatalf("Failed to compile c67game_test.c67: %v", err)
-	}
-
-	// Run the test
-	cmd = exec.Command(binary)
-	output, err = cmd.CombinedOutput()
-
-	if err != nil {
 		t.Logf("Test output: %s", output)
-		t.Fatalf("c67game_test.c67 failed: %v", err)
+		t.Fatalf("c67 test failed: %v", err)
 	}
 
-	if !strings.Contains(string(output), "compiles successfully") {
-		t.Errorf("Expected success message in output, got: %s", output)
+	outputStr := string(output)
+	if !strings.Contains(outputStr, "PASS") {
+		t.Errorf("Expected PASS in output, got: %s", outputStr)
 	}
 
-	t.Log("c67game_test.c67 passed")
+	t.Log("c67game tests passed")
 }
 
 // TestC67GameSimpleProgram tests that a simple program using c67game compiles

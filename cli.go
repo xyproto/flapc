@@ -345,18 +345,40 @@ func cmdBuildDir(ctx *CommandContext, dirPath string) error {
 	return nil
 }
 
-// cmdTest runs all test_*.c67 files in the current directory
+// cmdTest runs all test_*.c67 and *_test.c67 files in the current directory
 func cmdTest(ctx *CommandContext, args []string) error {
-	// Determine directory to search
+	// Determine directory to search (only consider non-flag arguments)
 	searchDir := "."
-	if len(args) > 0 {
-		searchDir = args[0]
+	for _, arg := range args {
+		if !strings.HasPrefix(arg, "-") {
+			searchDir = arg
+			break
+		}
 	}
 
-	// Find all test_*.c67 files
-	matches, err := filepath.Glob(filepath.Join(searchDir, "test_*.c67"))
+	// Find all test files: test_*.c67 and *_test.c67
+	matchesPrefix, err := filepath.Glob(filepath.Join(searchDir, "test_*.c67"))
 	if err != nil {
 		return fmt.Errorf("failed to find test files: %v", err)
+	}
+
+	matchesSuffix, err := filepath.Glob(filepath.Join(searchDir, "*_test.c67"))
+	if err != nil {
+		return fmt.Errorf("failed to find test files: %v", err)
+	}
+
+	// Combine and deduplicate
+	matchMap := make(map[string]bool)
+	for _, m := range matchesPrefix {
+		matchMap[m] = true
+	}
+	for _, m := range matchesSuffix {
+		matchMap[m] = true
+	}
+
+	matches := make([]string, 0, len(matchMap))
+	for m := range matchMap {
+		matches = append(matches, m)
 	}
 
 	if len(matches) == 0 {
