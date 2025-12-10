@@ -250,7 +250,7 @@ The `export` statement controls which functions are available to importers:
 1. **`export *`** - Export all functions into global namespace (no prefix required)
    ```c67
    export *
-   
+
    hello = { println("Hello from this module!") }
    goodbye = { println("Goodbye!") }
    ```
@@ -264,7 +264,7 @@ The `export` statement controls which functions are available to importers:
 2. **`export func1 func2 ...`** - Export only listed functions (prefix required)
    ```c67
    export hello goodbye
-   
+
    hello = { println("Hello!") }
    goodbye = { println("Goodbye!") }
    internal_helper = { println("Internal") }  // Not exported
@@ -280,7 +280,7 @@ The `export` statement controls which functions are available to importers:
 3. **No export statement** - All functions available (prefix required)
    ```c67
    // No export statement
-   
+
    hello = { println("Hello!") }
    goodbye = { println("Goodbye!") }
    ```
@@ -523,11 +523,10 @@ class_field_decl = identifier "." identifier "=" expression ;
 
 method_decl     = identifier "=" lambda_expr ;
 
-| c_type          = "int8" | "int16"   | "int32"     | "int64"  |          |
-|--------------------------|-----------|-------------|----------|----------|
-|                          | "uint8"   | "uint16"    | "uint32" | "uint64" |
-|                          | "float32" | "float64"   |          |          |
-|                          | "cptr"    | "cstring" ; |          |          |
+c_type          = "int8" | "int16" | "int32" | "int64"
+                | "uint8" | "uint16" | "uint32" | "uint64"
+                | "float32" | "float64"
+                | "cptr" | "cstring" ;
 
 arena_statement = "arena" block ;
 
@@ -539,17 +538,14 @@ parallel_statement = "||" identifier "in" expression block ;
 
 unsafe_statement = "unsafe" type_cast block [ block ] [ block ] ;
 
-| type_cast       = "int8" | "int16"   | "int32"     | "int64"  |           |
-|--------------------------|-----------|-------------|----------|-----------|
-|                          | "uint8"   | "uint16"    | "uint32" | "uint64"  |
-|                          | "float32" | "float64"   |          |           |
-|                          | "number"  | "string"    | "list"   | "address" |
-|                          | "packed"  | "aligned" ; |          |           |
+type_cast       = "int8" | "int16" | "int32" | "int64"
+                | "uint8" | "uint16" | "uint32" | "uint64"
+                | "float32" | "float64"
+                | "number" | "string" | "list" | "address"
+                | "packed" | "aligned" ;
 
-| assignment      = identifier [ ":" type_annotation ] ("=" | ":="             | "<-") expression |      |      |      |                   |
-|-----------------------------------------------------------|------------------|------------------|------|------|------|-------------------|
-|                                                           | identifier ("+=" | "-="             | "*=" | "/=" | "%=" | "**=") expression |
-
+assignment      = identifier [ ":" type_annotation ] ("=" | ":=" | "<-") expression
+                | identifier ("+=" | "-=" | "*=" | "/=" | "%=" | "**=") expression
                 | indexed_expr "<-" expression
                 | identifier_list ("=" | ":=" | "<-") expression ;  // Multiple assignment
 
@@ -563,9 +559,8 @@ type_annotation = native_type | foreign_type ;
 
 native_type     = "num" | "str" | "list" | "map" ;
 
-| foreign_type    = "cstring" | "cptr"   | "cint"    | "clong" |           |
-|-----------------------------|----------|-----------|---------|-----------|
-|                             | "cfloat" | "cdouble" | "cbool" | "cvoid" ; |
+foreign_type    = "cstring" | "cptr" | "cint" | "clong"
+                | "cfloat" | "cdouble" | "cbool" | "cvoid" ;
 
 indexed_expr    = identifier "[" expression "]" ;
 
@@ -773,11 +768,9 @@ fstring         = 'f"' { character | "{" expression "}" } '"' ;
 Identifiers start with a letter and contain letters, digits, or underscores:
 
 ```ebnf
-| identifier = letter { letter | digit | "_" } ; |       |     |     |     |       |
-|------------------------------|-------|---------|-------|-----|-----|-----|-------|
-| letter     = "a"             | "b"   | ...     | "z"   | "A" | "B" | ... | "Z" ; |
-| digit      = "0"             | "1"   | ...     | "9" ; |     |     |     |       |
-
+identifier = letter { letter | digit | "_" } ;
+letter     = "a" | "b" | ... | "z" | "A" | "B" | ... | "Z" ;
+digit      = "0" | "1" | ... | "9" ;
 ```
 
 **Rules:**
@@ -883,7 +876,7 @@ No multi-line comments.
 ret arena unsafe cstruct class as max this defer spawn import shadow
 ```
 
-**Note:** In C67 3.0, lambda definitions use `->` (thin arrow) and match arms use `=>` (fat arrow), similar to Rust syntax.
+**Note:** In C67, lambda definitions use `->` (thin arrow) and match arms use `=>` (fat arrow), similar to Rust syntax, except that `~>` is used for the default case.
 
 **No-argument lambdas** can be written as `-> expr` or inferred from context in assignments: `name = { ... }`
 
@@ -999,8 +992,9 @@ defer c.free(ptr)
 ### Logical Operators
 
 ```
-&&   Logical AND (short-circuit)
-||   Logical OR (short-circuit)
+and  Logical AND (short-circuit)
+or   Logical OR (short-circuit)
+xor  Logical XOR
 !    Logical NOT
 ```
 
@@ -1216,7 +1210,7 @@ Context determines meaning:
 
 ```c67
 f = x -> x + 1             // Lambda with one arg
-msg <- &8080               // Receive from channel
+msg <= &8080               // Receive from channel
 x { 0 => "zero" }          // Match arm
 x { ~> "default" }         // Default arm
 greet = { println("Hi") }  // No-arg lambda

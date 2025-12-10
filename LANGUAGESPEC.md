@@ -74,31 +74,31 @@ Blocks `{ ... }` are disambiguated by their contents:
 // Map literal: contains key: value
 config = { port: 8080, host: "localhost" }
 
-// Statement block: no -> or ~> arrows
-compute = x => {
+// Statement block: no => or ~> arrows
+compute = x -> {
     temp = x * 2
     result = temp + 10
     result  // last value returned
 }
 
-// Value match: expression before {, patterns with ->
-classify = x => x {
-    0 -> "zero"
-    5 -> "five"
+// Value match: expression before {, patterns with =>
+classify = x -> x {
+    0 => "zero"
+    5 => "five"
     ~> "other"
 }
 
 // Guard match: no expression before {, branches with | at line start
-classify = x => {
-    | x == 0 -> "zero"
-    | x > 0 -> "positive"
+classify = x -> {
+    | x == 0 => "zero"
+    | x > 0 => "positive"
     ~> "negative"
 }
 ```
 
 **Block disambiguation rules:**
 1. Contains `:` (before arrows) → Map literal
-2. Contains `->` or `~>` → Match block (value or guard)
+2. Contains `=>` or `~>` → Match block (value or guard)
 3. Otherwise → Statement block
 
 This unifies maps, pattern matching, guards, and function bodies into one syntax.
@@ -217,7 +217,7 @@ Network-style message passing for concurrency:
 
 ```c67
 &8080 <- "Hello"     // Send to channel
-msg = => &8080       // Receive from channel
+msg <= &8080         // Receive from channel
 ```
 
 ### 9. Fork-Based Process Model
@@ -595,12 +595,12 @@ quotient, remainder = divmod(17, 5)
 
 ```c67
 // Standard (use =)
-add = (x, y) => x + y
-factorial = n => n { 0 -> 1 ~> n * factorial(n-1) }
+add = (x, y) -> x + y
+factorial = n -> n { 0 => 1 ~> n * factorial(n-1) }
 
 // Only use := if reassigning
-handler := x => println(x)
-handler := x => println("DEBUG:", x)  // reassign
+handler := x -> println(x)
+handler <- x -> println("DEBUG:", x)  // reassign
 ```
 
 ### Mutability Semantics
@@ -973,7 +973,7 @@ C67 uses `ret @` with loop labels instead of `break`/`continue`:
 }
 
 // ret without @ returns from function
-compute = n => {
+compute = n -> {
     @ i in 0..<100 {
         i == n { ret i }  // Return from function with value
         i == 50 { ret @ } // Exit loop only, continue function
@@ -1058,26 +1058,26 @@ C67 uses **ENet-style message passing** for concurrency:
 ### Receive Messages
 
 ```c67
-msg = => &8080            // Receive from port 8080
-data = => &"server:9000"  // Receive from remote
+msg <= &8080              // Receive from port 8080
+data <= &"server:9000"    // Receive from remote
 ```
 
 ### Channel Patterns
 
 ```c67
 // Worker pattern
-worker =>> {
+worker = -> {
     @ {
-        task = => &8080
+        task <= &8080
         result = process(task)
         &8081 <- result
     }
 }
 
 // Pipeline pattern
-stage1 =>> @ { &8080 <- generate_data() }
-stage2 =>> @ { data = => &8080; &8081 <- transform(data) }
-stage3 =>> @ { result = => &8081; save(result) }
+stage1 = -> @ { &8080 <- generate_data() }
+stage2 = -> @ { data <= &8080; &8081 <- transform(data) }
+stage3 = -> @ { result <= &8081; save(result) }
 ```
 
 **Note:** ENet channels are compiled directly into machine code that uses ENet library calls.
@@ -1143,10 +1143,10 @@ class Counter {
 }
 
 // Desugars to this:
-Counter := start => {
+Counter := start -> {
     instance := {}
     instance["count"] = start
-    instance["increment"] = () => {
+    instance["increment"] = () -> {
         instance["count"] <- instance["count"] + 1
     }
     ret instance
@@ -1163,7 +1163,7 @@ class List {
         .items = []
     }
 
-    add = item => {
+    add = item -> {
         .items <- .items :: item
         ret .   // Return this (self) for chaining
     }
@@ -1184,11 +1184,11 @@ println(list.size())  // 3
 
 ```c67
 class Account {
-    init = balance => {
+    init = balance -> {
         .balance = balance
     }
 
-    withdraw = amount => {
+    withdraw = amount -> {
         amount > .balance {
             ret -1  // Insufficient funds
         }
@@ -1196,7 +1196,7 @@ class Account {
         ret 0
     }
 
-    deposit = amount => {
+    deposit = amount -> {
         .balance <- .balance + amount
     }
 
@@ -1304,7 +1304,7 @@ class Math {
     Math.PI = 3.14159
 
     // Note: no init, Math is never instantiated
-    Math.circle_area = radius => Math.PI * radius * radius
+    Math.circle_area = radius -> Math.PI * radius * radius
 }
 
 area := Math.circle_area(10)
@@ -1353,7 +1353,7 @@ class StringBuilder {
         .parts = []
     }
 
-    append = str => {
+    append = str -> {
         .parts <- .parts :: str
         ret .  // Return this (self)
     }
@@ -1474,7 +1474,7 @@ class Stack {
         .items = []
     }
 
-    push = item => {
+    push = item -> {
         .items <- .items :: item
     }
 
@@ -1949,7 +1949,7 @@ defer expression
 
 **Basic Example:**
 ```c67
-open_file = filename => {
+open_file = filename -> {
     file := c.fopen(filename, "r") or! {
         println("Failed to open:", filename)
         ret 0
@@ -2433,7 +2433,7 @@ result := sdl.SDL_Init(sdl.SDL_INIT_VIDEO) or! {
 
 ```c67
 // Check and early return
-process = input => {
+process = input -> {
     step1 = validate(input)
     step1.error { != "" -> step1 }  // Return error early
 
@@ -2444,7 +2444,7 @@ process = input => {
 }
 
 // Default values with or!
-compute = input => {
+compute = input -> {
     x = parse(input) or! 0     // Use 0 if parse fails
     y = divide(100, x) or! -1  // Use -1 if division fails
     y * 2
@@ -2483,7 +2483,7 @@ init_sdl = () => {
 }
 
 // Simpler pattern with defaults
-allocate_buffer = size => {
+allocate_buffer = size -> {
     ptr := c.malloc(size) or! 0
     ptr == 0 {
         ret error("mem")  // Out of memory
@@ -2498,7 +2498,7 @@ Use the `error` function to create error Results:
 
 ```c67
 // Create error with code
-validate = x => {
+validate = x -> {
     x < 0 { ret error("arg") }  // Negative argument
     x
 }
@@ -2525,13 +2525,13 @@ divide = (a, b) => {
 }
 
 // Compiler propagates Result type
-compute = x => {
+compute = x -> {
     y = divide(100, x)  // y has Result type
     y or! 0             // Handles potential error
 }
 
 // Compiler warns if Result not checked
-risky = x => {
+risky = x -> {
     y = divide(100, x)  // Warning: unchecked Result
     println(y)          // May print error value
 }
@@ -2610,7 +2610,7 @@ result = fetch_data()  // May be error
 process(result)        // May process error value
 
 // Bad: vague error code
-validate = x => x < 0 { ret error("bad") }  // Use "arg" instead
+validate = x -> x < 0 { ret error("bad") }  // Use "arg" instead
 ```
 
 ## Compilation and Execution
@@ -2750,7 +2750,7 @@ println("Hello, World!")
 
 ```c67
 // Iterative
-factorial = n => {
+factorial = n -> {
     result := 1
     @ i in 1..n {
         result *= i
@@ -2793,10 +2793,10 @@ println(factorial(5, 1))  // 120
 numbers = [1, 2, 3, 4, 5]
 
 // Map: double each number
-doubled = numbers | x => x * 2
+doubled = numbers | x -> x * 2
 
 // Filter: only even numbers
-evens = numbers | x => x % 2 == 0 { 1 -> x ~> [] }
+evens = numbers | x -> x % 2 == 0 { 1 => x ~> [] }
 
 println(f"Evens: {evens}")
 ```
@@ -2805,7 +2805,7 @@ println(f"Evens: {evens}")
 
 ```c67
 // Value match
-classify_number = x => x {
+classify_number = x -> x {
     0 -> "zero"
     1 -> "one"
     2 -> "two"
@@ -2813,7 +2813,7 @@ classify_number = x => x {
 }
 
 // Guard match
-classify_age = age => {
+classify_age = age -> {
     | age < 13 -> "child"
     | age < 18 -> "teen"
     | age < 65 -> "adult"
@@ -2821,7 +2821,7 @@ classify_age = age => {
 }
 
 // Nested match
-check_value = x => x {
+check_value = x -> x {
     0 -> "zero"
     ~> x > 0 {
         1 -> "positive"
@@ -2859,7 +2859,7 @@ compute = (a, b) => {
 data = [1, 2, 3, 4, 5, 6, 7, 8]
 
 // Process in parallel
-results = data || x => expensive_computation(x)
+results = data || x -> expensive_computation(x)
 
 println(f"Results: {results}")
 ```
@@ -2870,14 +2870,14 @@ println(f"Results: {results}")
 // Simple echo server
 server =>> {
     @ {
-        request = => &8080
+        request <= &8080
         println(f"Received: {request}")
         &8080 <- f"Echo: {request}"
     }
 }
 
 // HTTP-like handler
-handle_request = req => {
+handle_request = req -> {
     method = req.method
     path = req.path
 
@@ -2906,7 +2906,7 @@ cstruct Buffer {
 }
 
 // Use C functions with or! for clean error handling
-create_buffer = size => {
+create_buffer = size -> {
     ptr := c.malloc(size) or! {
         println("Memory allocation failed!")
         ret Buffer(0, 0, 0)
@@ -2915,7 +2915,7 @@ create_buffer = size => {
 }
 
 // Simpler version with default
-create_buffer_safe = size => {
+create_buffer_safe = size -> {
     ptr := c.malloc(size) or! 0
     Buffer(ptr, 0, size)
 }
@@ -2931,7 +2931,7 @@ write_buffer = (buf, data) => {
     }
 }
 
-free_buffer = buf => {
+free_buffer = buf -> {
     buf.data != 0 { c.free(buf.data) }
 }
 
@@ -3000,7 +3000,7 @@ main()
 
 ```c67
 // Arena allocator pattern
-process_requests = requests => {
+process_requests = requests -> {
     arena {
         results := []
         @ req in requests {
@@ -3017,7 +3017,7 @@ process_requests = requests => {
 
 ```c67
 // Direct syscall (Linux x86_64)
-print_fast = msg => {
+print_fast = msg -> {
     len = msg.length
     unsafe {
         rax <- 1         // sys_write
@@ -3127,7 +3127,7 @@ Traditional approaches:
 ```c67
 &8080 <- msg           // Send to local port
 &"host:9000" <- msg    // Send to remote host
-data = => &8080        // Receive from port
+data <= &8080        // Receive from port
 ```
 
 Clean, minimal, network-inspired.
