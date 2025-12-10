@@ -8,10 +8,10 @@ The C67 compiler includes several modern CPU instruction optimizations that prov
 
 ### 1. FMA (Fused Multiply-Add) 🚀
 
-**Status:** ✅ Core Implementation Complete (2025-12-10)  
-**CPU Requirements:** Intel Haswell (2013+), AMD Piledriver (2012+) or newer  
-**CPU Coverage:** ~98% of modern x86-64 CPUs  
-**Performance Impact:** 1.5-2.0x speedup on numerical code  
+**Status:** ✅ Core Implementation Complete (2025-12-10)
+**CPU Requirements:** Intel Haswell (2013+), AMD Piledriver (2012+) or newer
+**CPU Coverage:** ~98% of modern x86-64 CPUs
+**Performance Impact:** 1.5-2.0x speedup on numerical code
 **Architecture Support:** x86-64 (FMA3/AVX-512), ARM64 (NEON/SVE), RISC-V (RVV)
 
 #### What is FMA?
@@ -29,7 +29,7 @@ The compiler automatically detects and optimizes these patterns:
 // Pattern 1: (a * b) + c
 result := x * y + z  // Optimized to VFMADD132SD
 
-// Pattern 2: c + (a * b)  
+// Pattern 2: c + (a * b)
 result := z + x * y  // Optimized to VFMADD132SD
 
 // Pattern 3: Polynomial evaluation
@@ -103,9 +103,9 @@ The instruction encoders in `vfmadd.go` handle all three architectures with comp
 
 ### 2. Bit Manipulation Instructions ⚡
 
-**Status:** ✅ Fully Implemented  
-**CPU Requirements:** Intel Nehalem (2008+), AMD K10 (2007+) or newer  
-**CPU Coverage:** ~95% of x86-64 CPUs  
+**Status:** ✅ Fully Implemented
+**CPU Requirements:** Intel Nehalem (2008+), AMD K10 (2007+) or newer
+**CPU Coverage:** ~95% of x86-64 CPUs
 **Performance Impact:** 10-50x speedup for bit counting operations
 
 #### POPCNT - Population Count
@@ -224,9 +224,9 @@ POPCNT instruction:    98 ms  (8.7x faster)
 
 ## AVX-512 for Hashmaps 🔥
 
-**Status:** ✅ Implemented  
-**CPU Requirements:** Intel Skylake-X (2017+), AMD Zen 4 (2022+) or newer  
-**CPU Coverage:** ~30% (high on servers, growing on desktop)  
+**Status:** ✅ Implemented
+**CPU Requirements:** Intel Skylake-X (2017+), AMD Zen 4 (2022+) or newer
+**CPU Coverage:** ~30% (high on servers, growing on desktop)
 **Performance Impact:** 4-8x speedup for hashmap lookups
 
 ### What is AVX-512?
@@ -280,8 +280,8 @@ The compiler generates both AVX-512 and SSE2 paths:
 
 ### AVX2 Loop Vectorization
 
-**Effort:** 2-4 weeks  
-**Impact:** 3-4x for array operations, 7x for matrices  
+**Effort:** 2-4 weeks
+**Impact:** 3-4x for array operations, 7x for matrices
 **Status:** Infrastructure exists (20+ SIMD instruction files), needs wiring
 
 Process 4 float64 values simultaneously:
@@ -294,8 +294,8 @@ for i in 0..length {
 
 ### General AVX-512 Vectorization
 
-**Effort:** 3-4 weeks  
-**Impact:** 6-8x for vectorizable loops  
+**Effort:** 3-4 weeks
+**Impact:** 6-8x for vectorizable loops
 **Status:** Infrastructure ready, needs loop analysis and transformation
 
 Process 8 float64 values simultaneously:
@@ -320,7 +320,7 @@ for i in 0..length {
 
 Comprehensive test suite in `optimization_test.go`:
 - FMA pattern detection tests
-- Bit manipulation correctness tests  
+- Bit manipulation correctness tests
 - CPU feature detection tests
 - Precision tests for FMA
 

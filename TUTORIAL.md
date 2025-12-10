@@ -95,7 +95,7 @@ println("Done!")
 
 # C67 Tutorial
 
-**Version**: 1.5.1
+**Version**: 1.5.2
 **License**: BSD-3-Clause
 
 ## Installation

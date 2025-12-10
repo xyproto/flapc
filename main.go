@@ -15,7 +15,7 @@ import (
 
 // A tiny compiler for x86_64, aarch64, and riscv64 for Linux, macOS, FreeBSD
 
-const versionString = "c67 1.5.1"
+const versionString = "c67 1.5.2"
 
 // Architecture type
 type Arch int
