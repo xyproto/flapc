@@ -468,6 +468,25 @@ func (b *BinaryExpr) String() string {
 }
 func (b *BinaryExpr) expressionNode() {}
 
+// FMAExpr represents a Fused Multiply-Add pattern: a * b + c or a * b - c
+// This is recognized by the optimizer and can be compiled to FMA instructions (VFMADD/VFMSUB)
+type FMAExpr struct {
+	A        Expression // First multiplicand
+	B        Expression // Second multiplicand
+	C        Expression // Addend/subtrahend
+	IsSub    bool       // true for FMSUB (a * b - c), false for FMADD (a * b + c)
+	IsNegMul bool       // true for FNMADD (-(a * b) + c), not currently detected
+}
+
+func (f *FMAExpr) String() string {
+	op := "+"
+	if f.IsSub {
+		op = "-"
+	}
+	return fmt.Sprintf("fma(%s * %s %s %s)", f.A.String(), f.B.String(), op, f.C.String())
+}
+func (f *FMAExpr) expressionNode() {}
+
 // UnaryExpr represents a unary operation: not, -, #, ++expr, --expr
 type UnaryExpr struct {
 	Operator string

@@ -106,6 +106,34 @@ func foldConstantExpr(expr Expression) Expression {
 		e.Left = foldConstantExpr(e.Left)
 		e.Right = foldConstantExpr(e.Right)
 
+		// Detect FMA patterns: a * b + c or a * b - c
+		// Transform into FMAExpr for later code generation optimization
+		if e.Operator == "+" || e.Operator == "-" {
+			if mulExpr, ok := e.Left.(*BinaryExpr); ok && mulExpr.Operator == "*" {
+				// Pattern: (a * b) + c  or  (a * b) - c
+				return &FMAExpr{
+					A:        mulExpr.Left,
+					B:        mulExpr.Right,
+					C:        e.Right,
+					IsSub:    e.Operator == "-", // true for FMSUB
+					IsNegMul: false,
+				}
+			}
+			// Also check: c + (a * b)
+			if e.Operator == "+" {
+				if mulExpr, ok := e.Right.(*BinaryExpr); ok && mulExpr.Operator == "*" {
+					// Pattern: c + (a * b)
+					return &FMAExpr{
+						A:        mulExpr.Left,
+						B:        mulExpr.Right,
+						C:        e.Left,
+						IsSub:    false,
+						IsNegMul: false,
+					}
+				}
+			}
+		}
+
 		// Check if both operands are now constants
 		leftNum, leftOk := e.Left.(*NumberExpr)
 		rightNum, rightOk := e.Right.(*NumberExpr)
@@ -498,6 +526,12 @@ func strengthReduceExpr(expr Expression) Expression {
 		e.Operand = strengthReduceExpr(e.Operand)
 		return e
 
+	case *FMAExpr:
+		e.A = strengthReduceExpr(e.A)
+		e.B = strengthReduceExpr(e.B)
+		e.C = strengthReduceExpr(e.C)
+		return e
+
 	default:
 		return expr
 	}
@@ -692,6 +726,12 @@ func propagateConstantsExpr(expr Expression, constMap map[string]*NumberExpr) Ex
 		// The variable must exist at runtime for move semantics to work
 		return e
 
+	case *FMAExpr:
+		e.A = propagateConstantsExpr(e.A, constMap)
+		e.B = propagateConstantsExpr(e.B, constMap)
+		e.C = propagateConstantsExpr(e.C, constMap)
+		return e
+
 	default:
 		return expr
 	}
@@ -847,6 +887,10 @@ func collectUsedVariablesExpr(expr Expression, usedVars map[string]bool) {
 		// LoopStateExpr doesn't reference variables
 	case *JumpExpr:
 		// JumpExpr doesn't reference variables directly
+	case *FMAExpr:
+		collectUsedVariablesExpr(e.A, usedVars)
+		collectUsedVariablesExpr(e.B, usedVars)
+		collectUsedVariablesExpr(e.C, usedVars)
 	}
 }
 
@@ -930,6 +974,8 @@ func hasSideEffects(expr Expression) bool {
 	case *BlockExpr:
 		// Blocks can have side effects if any statement does
 		return true
+	case *FMAExpr:
+		return hasSideEffects(e.A) || hasSideEffects(e.B) || hasSideEffects(e.C)
 	default:
 		return false // Literals, identifiers, etc. have no side effects
 	}
@@ -1004,6 +1050,10 @@ func analyzePurityExpr(expr Expression, pureFunctions map[string]bool) {
 		for _, stmt := range e.Statements {
 			analyzePurity(stmt, pureFunctions)
 		}
+	case *FMAExpr:
+		analyzePurityExpr(e.A, pureFunctions)
+		analyzePurityExpr(e.B, pureFunctions)
+		analyzePurityExpr(e.C, pureFunctions)
 	}
 }
 
@@ -1089,6 +1139,10 @@ func callsImpureFunctions(expr Expression, pureFunctions map[string]bool) bool {
 	case *BlockExpr:
 		// Conservative: blocks might have impure statements
 		return true
+	case *FMAExpr:
+		return callsImpureFunctions(e.A, pureFunctions) ||
+			callsImpureFunctions(e.B, pureFunctions) ||
+			callsImpureFunctions(e.C, pureFunctions)
 	default:
 		return false
 	}
@@ -1158,6 +1212,10 @@ func collectCapturedVarsExpr(expr Expression, paramSet map[string]bool, captured
 		if e.Value != nil {
 			collectCapturedVarsExpr(e.Value, paramSet, captured)
 		}
+	case *FMAExpr:
+		collectCapturedVarsExpr(e.A, paramSet, captured)
+		collectCapturedVarsExpr(e.B, paramSet, captured)
+		collectCapturedVarsExpr(e.C, paramSet, captured)
 	case *BlockExpr:
 		// For blocks, we need to track locally defined variables
 		// so they aren't treated as captured
@@ -1318,6 +1376,10 @@ func analyzeClosuresExpr(expr Expression, availableVars map[string]bool, globalV
 	case *PipeExpr:
 		analyzeClosuresExpr(e.Left, availableVars, globalVars)
 		analyzeClosuresExpr(e.Right, availableVars, globalVars)
+	case *FMAExpr:
+		analyzeClosuresExpr(e.A, availableVars, globalVars)
+		analyzeClosuresExpr(e.B, availableVars, globalVars)
+		analyzeClosuresExpr(e.C, availableVars, globalVars)
 	}
 }
 
@@ -1444,6 +1506,10 @@ func countCallsExpr(expr Expression, counts map[string]int) {
 		}
 	case *LambdaExpr:
 		countCallsExpr(e.Body, counts)
+	case *FMAExpr:
+		countCallsExpr(e.A, counts)
+		countCallsExpr(e.B, counts)
+		countCallsExpr(e.C, counts)
 	}
 }
 
@@ -1534,6 +1600,11 @@ func inlineFunctionsExpr(expr Expression, candidates map[string]*LambdaExpr, cal
 	case *LambdaExpr:
 		e.Body = inlineFunctionsExpr(e.Body, candidates, callCounts)
 		return e
+	case *FMAExpr:
+		e.A = inlineFunctionsExpr(e.A, candidates, callCounts)
+		e.B = inlineFunctionsExpr(e.B, candidates, callCounts)
+		e.C = inlineFunctionsExpr(e.C, candidates, callCounts)
+		return e
 	default:
 		return expr
 	}
@@ -1589,6 +1660,14 @@ func deepCopyExpr(expr Expression) Expression {
 			Params: paramsCopy,
 			Body:   deepCopyExpr(e.Body),
 			IsPure: e.IsPure,
+		}
+	case *FMAExpr:
+		return &FMAExpr{
+			A:        deepCopyExpr(e.A),
+			B:        deepCopyExpr(e.B),
+			C:        deepCopyExpr(e.C),
+			IsSub:    e.IsSub,
+			IsNegMul: e.IsNegMul,
 		}
 	default:
 		// For other types, return as-is (may need to extend this)
@@ -1685,6 +1764,14 @@ func substituteParamsExpr(expr Expression, substMap map[string]Expression) Expre
 			newStatements[i] = substituteParamsStmt(stmt, substMap)
 		}
 		return &BlockExpr{Statements: newStatements}
+	case *FMAExpr:
+		return &FMAExpr{
+			A:        substituteParamsExpr(e.A, substMap),
+			B:        substituteParamsExpr(e.B, substMap),
+			C:        substituteParamsExpr(e.C, substMap),
+			IsSub:    e.IsSub,
+			IsNegMul: e.IsNegMul,
+		}
 	default:
 		// Literals (NumberExpr, StringExpr, etc.) are returned as-is
 		return expr

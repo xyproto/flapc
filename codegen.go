@@ -550,34 +550,54 @@ func (fc *C67Compiler) Compile(program *Program, outputPath string) error {
 	fc.out.XorRegWithReg("rdi", "rdi")
 	fc.out.XorRegWithReg("rsi", "rsi")
 
-	// ===== AVX-512 CPU DETECTION =====
-	// Check CPUID for AVX-512 support and store result
-	// Required for safe use of AVX-512 instructions in map lookups
-	fc.eb.DefineWritable("cpu_has_avx512", "\x00") // 1 byte: 0=no, 1=yes (must be writable!)
+	// ===== CPU FEATURE DETECTION =====
+	// Detect FMA, AVX2, POPCNT, and AVX-512 support at runtime
+	// This enables dynamic optimization for available CPU features
 
-	// Check CPUID leaf 7, subleaf 0, EBX bit 16 (AVX512F)
+	fc.eb.DefineWritable("cpu_has_fma", "\x00")    // FMA3 support (Haswell 2013+)
+	fc.eb.DefineWritable("cpu_has_avx2", "\x00")   // AVX2 support (Haswell 2013+)
+	fc.eb.DefineWritable("cpu_has_popcnt", "\x00") // POPCNT support (Nehalem 2008+)
+	fc.eb.DefineWritable("cpu_has_avx512", "\x00") // AVX-512F support (Skylake-X 2017+)
+
+	// Check CPUID leaf 1 for FMA and POPCNT
+	fc.out.MovImmToReg("rax", "1")     // CPUID leaf 1
+	fc.out.XorRegWithReg("rcx", "rcx") // subleaf 0
+	fc.out.Emit([]byte{0x0f, 0xa2})    // cpuid
+
+	// Test ECX bit 12 (FMA)
+	fc.out.Emit([]byte{0x0f, 0xba, 0xe1, 0x0c}) // bt ecx, 12
+	fc.out.Emit([]byte{0x0f, 0x92, 0xc0})       // setc al
+	fc.out.LeaSymbolToReg("rbx", "cpu_has_fma")
+	fc.out.MovByteRegToMem("rax", "rbx", 0)
+
+	// Test ECX bit 23 (POPCNT)
+	fc.out.Emit([]byte{0x0f, 0xba, 0xe1, 0x17}) // bt ecx, 23
+	fc.out.Emit([]byte{0x0f, 0x92, 0xc0})       // setc al
+	fc.out.LeaSymbolToReg("rbx", "cpu_has_popcnt")
+	fc.out.MovByteRegToMem("rax", "rbx", 0)
+
+	// Check CPUID leaf 7 for AVX2 and AVX-512
 	fc.out.MovImmToReg("rax", "7")     // CPUID leaf 7
 	fc.out.XorRegWithReg("rcx", "rcx") // subleaf 0
 	fc.out.Emit([]byte{0x0f, 0xa2})    // cpuid
 
+	// Test EBX bit 5 (AVX2)
+	fc.out.Emit([]byte{0x0f, 0xba, 0xe3, 0x05}) // bt ebx, 5
+	fc.out.Emit([]byte{0x0f, 0x92, 0xc0})       // setc al
+	fc.out.LeaSymbolToReg("rbx", "cpu_has_avx2")
+	fc.out.MovByteRegToMem("rax", "rbx", 0)
+
 	// Test EBX bit 16 (AVX512F - foundation)
-	fc.out.Emit([]byte{0xf6, 0xc3, 0x01}) // test bl, 1 (bit 0 after shift)
-	// Actually test bit 16 of ebx: bt ebx, 16
 	fc.out.Emit([]byte{0x0f, 0xba, 0xe3, 0x10}) // bt ebx, 16
-
-	// Set carry flag if supported
-	// setc al (set AL to 1 if carry flag set)
-	fc.out.Emit([]byte{0x0f, 0x92, 0xc0}) // setc al
-
-	// Store result to cpu_has_avx512 (only write AL, not full RAX!)
+	fc.out.Emit([]byte{0x0f, 0x92, 0xc0})       // setc al
 	fc.out.LeaSymbolToReg("rbx", "cpu_has_avx512")
-	fc.out.MovByteRegToMem("rax", "rbx", 0) // Write only the low byte (AL)
+	fc.out.MovByteRegToMem("rax", "rbx", 0)
 
 	// Clear registers used for CPUID
 	fc.out.XorRegWithReg("rax", "rax")
 	fc.out.XorRegWithReg("rbx", "rbx")
 	fc.out.XorRegWithReg("rcx", "rcx")
-	// ===== END AVX-512 DETECTION =====
+	// ===== END CPU FEATURE DETECTION =====
 
 	// Two-pass compilation: First pass collects all variable declarations
 	// so that function/constant order doesn't matter
@@ -3709,6 +3729,49 @@ func (fc *C67Compiler) compileExpression(expr Expression) {
 	case *PostfixExpr:
 		// PostfixExpr (x++, x--) can only be used as statements, not expressions
 		compilerError("%s can only be used as a statement, not in an expression (like Go)", e.Operator)
+
+	case *FMAExpr:
+		// Fused Multiply-Add: result = a * b + c (or a * b - c for FMSUB)
+		// Detected by optimizer from patterns like (a * b) + c
+		// Compile to single FMA instruction on x86-64 (FMA3/AVX-512), ARM64 (NEON/SVE), RISC-V (RVV)
+		savedTailPosition := fc.inTailPosition
+		fc.inTailPosition = false
+		defer func() { fc.inTailPosition = savedTailPosition }()
+
+		// Allocate registers for operands
+		regA := fc.regTracker.AllocXMM("fma_a")
+		regB := fc.regTracker.AllocXMM("fma_b")
+		regC := fc.regTracker.AllocXMM("fma_c")
+		if regA == "" || regB == "" || regC == "" {
+			// Fallback to scalar registers if SIMD not available
+			regA, regB, regC = "xmm1", "xmm2", "xmm3"
+		}
+
+		// Compile operands
+		fc.compileExpression(e.A)
+		fc.out.MovXmmToXmm(regA, "xmm0")
+
+		fc.compileExpression(e.B)
+		fc.out.MovXmmToXmm(regB, "xmm0")
+
+		fc.compileExpression(e.C)
+		fc.out.MovXmmToXmm(regC, "xmm0")
+
+		// Emit FMA instruction: result = a * b + c or a * b - c
+		// The FMA instruction does: dst = src1 * src2 +/- src3
+		// So we want: xmm0 = regA * regB +/- regC
+		if e.IsSub {
+			// FMSUB: xmm0 = regA * regB - regC
+			fc.out.VFmsubPDVectorToVector("xmm0", regA, regB, regC)
+		} else {
+			// FMADD: xmm0 = regA * regB + regC
+			fc.out.VFmaddPDVectorToVector("xmm0", regA, regB, regC)
+		}
+
+		fc.regTracker.FreeXMM(regA)
+		fc.regTracker.FreeXMM(regB)
+		fc.regTracker.FreeXMM(regC)
+		return
 
 	case *BinaryExpr:
 		// Confidence that this function is working: 98%
@@ -10091,10 +10154,119 @@ func (fc *C67Compiler) compileMemoizedCall(call *CallExpr, lambda *LambdaFunc) {
 	fc.memoCaches[cacheName] = true
 }
 
+// isFMAPattern detects if an expression is a FMA pattern: a * b + c
+// Returns (true, a, b, c) if pattern matches, (false, nil, nil, nil) otherwise
+func (fc *C67Compiler) isFMAPattern(expr Expression) (bool, Expression, Expression, Expression) {
+	// Check if this is an addition
+	if call, ok := expr.(*DirectCallExpr); ok {
+		if ident, ok := call.Callee.(*IdentExpr); ok && ident.Name == "+" && len(call.Args) == 2 {
+			// Check if left is multiplication: (a * b) + c
+			if leftCall, ok := call.Args[0].(*DirectCallExpr); ok {
+				if leftIdent, ok := leftCall.Callee.(*IdentExpr); ok && leftIdent.Name == "*" && len(leftCall.Args) == 2 {
+					// Pattern: (a * b) + c
+					return true, leftCall.Args[0], leftCall.Args[1], call.Args[1]
+				}
+			}
+			// Check if right is multiplication: c + (a * b)
+			if rightCall, ok := call.Args[1].(*DirectCallExpr); ok {
+				if rightIdent, ok := rightCall.Callee.(*IdentExpr); ok && rightIdent.Name == "*" && len(rightCall.Args) == 2 {
+					// Pattern: c + (a * b)
+					return true, rightCall.Args[0], rightCall.Args[1], call.Args[0]
+				}
+			}
+		}
+	}
+	return false, nil, nil, nil
+}
+
+// compileFMA compiles a fused multiply-add: result = a * b + c
+// Uses VFMADD132SD if FMA is available, falls back to mul+add otherwise
+func (fc *C67Compiler) compileFMA(a, b, c Expression) {
+	savedTailPosition := fc.inTailPosition
+	fc.inTailPosition = false
+
+	// Compile c into xmm0 (accumulator)
+	fc.compileExpression(c)
+	fc.out.SubImmFromReg("rsp", 16)
+	fc.out.MovXmmToMem("xmm0", "rsp", 0)
+
+	// Compile a into xmm0
+	fc.compileExpression(a)
+	fc.out.SubImmFromReg("rsp", 16)
+	fc.out.MovXmmToMem("xmm0", "rsp", 8)
+
+	// Compile b into xmm1
+	fc.compileExpression(b)
+	fc.out.MovRegToReg("xmm1", "xmm0")
+
+	// Restore a into xmm0
+	fc.out.MovMemToXmm("xmm0", "rsp", 8)
+
+	// Restore c into xmm2
+	fc.out.MovMemToXmm("xmm2", "rsp", 16)
+	fc.out.AddImmToReg("rsp", 32)
+
+	fc.inTailPosition = savedTailPosition
+
+	// Generate FMA with runtime check
+	// if (cpu_has_fma) { vfmadd132sd xmm0, xmm2, xmm1 } else { mulsd + addsd }
+
+	// Load cpu_has_fma flag
+	fc.out.LeaSymbolToReg("rax", "cpu_has_fma")
+	fc.out.Emit([]byte{0x0f, 0xb6, 0x00}) // movzx eax, byte [rax]
+	fc.out.Emit([]byte{0x85, 0xc0})       // test eax, eax
+
+	// Jump to fallback if no FMA
+	jzPos := fc.eb.text.Len()
+	fc.out.Emit([]byte{0x0f, 0x84, 0x00, 0x00, 0x00, 0x00}) // jz fallback (6 bytes)
+
+	// FMA path: xmm0 = xmm0 * xmm1 + xmm2
+	// VFMADD132SD xmm0, xmm2, xmm1 => xmm0 = xmm0 * xmm1 + xmm2
+	fc.out.Emit([]byte{0xc4, 0xe2, 0xe9, 0x99, 0xc1}) // vfmadd132sd xmm0, xmm2, xmm1
+
+	// Jump over fallback
+	jmpOverPos := fc.eb.text.Len()
+	fc.out.Emit([]byte{0xeb, 0x00}) // jmp end (2 bytes)
+
+	// Fallback path: mul + add
+	fallbackPos := fc.eb.text.Len()
+	fc.out.MulsdXmm("xmm0", "xmm1") // xmm0 = xmm0 * xmm1
+	fc.out.AddsdXmm("xmm0", "xmm2") // xmm0 = xmm0 + xmm2
+
+	// End position
+	endPos := fc.eb.text.Len()
+
+	// Patch jumps
+	fc.patchJumpImmediate(jzPos+2, int32(fallbackPos-(jzPos+6)))
+	fc.eb.text.Bytes()[jmpOverPos+1] = byte(endPos - (jmpOverPos + 2))
+
+	// Result is in xmm0
+}
+
 // compileBinaryOpSafe compiles a binary operation with proper stack-based
 // intermediate storage to avoid register clobbering.
 // This is the recommended pattern for all binary operations.
 func (fc *C67Compiler) compileBinaryOpSafe(left, right Expression, operator string) {
+	// Check for FMA pattern: (a * b) + c or c + (a * b)
+	if operator == "+" {
+		// Try to detect FMA on left side: (a * b) + c
+		if leftCall, ok := left.(*DirectCallExpr); ok {
+			if leftIdent, ok := leftCall.Callee.(*IdentExpr); ok && leftIdent.Name == "*" && len(leftCall.Args) == 2 {
+				// Pattern: (a * b) + c
+				fc.compileFMA(leftCall.Args[0], leftCall.Args[1], right)
+				return
+			}
+		}
+		// Try to detect FMA on right side: c + (a * b)
+		if rightCall, ok := right.(*DirectCallExpr); ok {
+			if rightIdent, ok := rightCall.Callee.(*IdentExpr); ok && rightIdent.Name == "*" && len(rightCall.Args) == 2 {
+				// Pattern: c + (a * b)
+				fc.compileFMA(rightCall.Args[0], rightCall.Args[1], left)
+				return
+			}
+		}
+	}
+
 	// Clear tail position - operands of binary expressions cannot be in tail position
 	// because the operation happens AFTER the operands are evaluated
 	savedTailPosition := fc.inTailPosition
@@ -14652,6 +14824,181 @@ func (fc *C67Compiler) compileCall(call *CallExpr) {
 		fc.out.MovMemToXmm("xmm0", "rsp", 0)
 		fc.out.AddImmToReg("rsp", 16)
 
+	// ===== BIT MANIPULATION BUILTINS =====
+	// High-performance CPU instructions for bit operations
+	// with graceful fallback for older CPUs
+
+	case "popcount":
+		// popcount(x) - Count number of set bits (population count)
+		// Returns float64 representing the count
+		// Uses POPCNT instruction if available (3 cycles), falls back to loop (~25 cycles)
+		if len(call.Args) != 1 {
+			compilerError("popcount() requires exactly 1 argument")
+		}
+
+		// Compile argument and convert to integer
+		fc.compileExpression(call.Args[0])
+		fc.out.Cvttsd2si("rax", "xmm0") // Convert float64 to int64
+
+		// Check if POPCNT is available
+		fc.out.LeaSymbolToReg("rcx", "cpu_has_popcnt")
+		fc.out.Emit([]byte{0x0f, 0xb6, 0x09}) // movzx ecx, byte [rcx]
+		fc.out.Emit([]byte{0x85, 0xc9})       // test ecx, ecx
+
+		// Jump to fallback if no POPCNT
+		jzPos := fc.eb.text.Len()
+		fc.out.Emit([]byte{0x0f, 0x84, 0x00, 0x00, 0x00, 0x00}) // jz fallback
+
+		// POPCNT path: popcnt rax, rax
+		fc.out.Emit([]byte{0xf3, 0x48, 0x0f, 0xb8, 0xc0}) // popcnt rax, rax
+
+		// Jump over fallback
+		jmpOverPos := fc.eb.text.Len()
+		fc.out.Emit([]byte{0xeb, 0x00}) // jmp end
+
+		// Fallback path: loop implementation
+		fallbackPos := fc.eb.text.Len()
+		// rcx = count (result), rdx = temp
+		fc.out.XorRegWithReg("rcx", "rcx") // count = 0
+		fc.out.MovRegToReg("rdx", "rax")   // rdx = x (preserve rax for comparison)
+
+		// Loop: while (rdx != 0) { count += rdx & 1; rdx >>= 1; }
+		loopStart := fc.eb.text.Len()
+		fc.out.Emit([]byte{0x48, 0x85, 0xd2}) // test rdx, rdx
+		loopEndJump := fc.eb.text.Len()
+		fc.out.Emit([]byte{0x74, 0x00}) // jz loop_end (2 bytes)
+
+		fc.out.MovRegToReg("rax", "rdx")            // rax = rdx
+		fc.out.Emit([]byte{0x48, 0x83, 0xe0, 0x01}) // and rax, 1
+		fc.out.AddRegToReg("rcx", "rax")            // count += (rdx & 1)
+		fc.out.ShrRegByImm("rdx", 1)                // rdx >>= 1
+
+		// Jump back to loop start
+		backOffset := loopStart - (fc.eb.text.Len() + 2)
+		fc.out.Emit([]byte{0xeb, byte(backOffset)}) // jmp loop_start
+
+		// Loop end
+		loopEndPos := fc.eb.text.Len()
+		fc.eb.text.Bytes()[loopEndJump+1] = byte(loopEndPos - (loopEndJump + 2))
+
+		fc.out.MovRegToReg("rax", "rcx") // Move result to rax
+
+		// End position
+		endPos := fc.eb.text.Len()
+
+		// Patch jumps
+		fc.patchJumpImmediate(jzPos+2, int32(fallbackPos-(jzPos+6)))
+		fc.eb.text.Bytes()[jmpOverPos+1] = byte(endPos - (jmpOverPos + 2))
+
+		// Convert result to float64
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "clz":
+		// clz(x) - Count leading zeros
+		// Returns float64 representing the count (0-64)
+		// Uses LZCNT instruction if available, falls back to BSR + adjustment
+		if len(call.Args) != 1 {
+			compilerError("clz() requires exactly 1 argument")
+		}
+
+		fc.compileExpression(call.Args[0])
+		fc.out.Cvttsd2si("rax", "xmm0") // Convert to int64
+
+		// Check if POPCNT is available (LZCNT came with same CPU generation)
+		fc.out.LeaSymbolToReg("rcx", "cpu_has_popcnt")
+		fc.out.Emit([]byte{0x0f, 0xb6, 0x09}) // movzx ecx, byte [rcx]
+		fc.out.Emit([]byte{0x85, 0xc9})       // test ecx, ecx
+
+		jzPos := fc.eb.text.Len()
+		fc.out.Emit([]byte{0x0f, 0x84, 0x00, 0x00, 0x00, 0x00}) // jz fallback
+
+		// LZCNT path: lzcnt rax, rax
+		fc.out.Emit([]byte{0xf3, 0x48, 0x0f, 0xbd, 0xc0}) // lzcnt rax, rax
+
+		jmpOverPos := fc.eb.text.Len()
+		fc.out.Emit([]byte{0xeb, 0x00}) // jmp end
+
+		// Fallback path: use BSR (bit scan reverse)
+		fallbackPos := fc.eb.text.Len()
+		fc.out.Emit([]byte{0x48, 0x85, 0xc0}) // test rax, rax
+
+		zeroJump := fc.eb.text.Len()
+		fc.out.Emit([]byte{0x74, 0x00}) // jz is_zero (2 bytes)
+
+		// BSR: finds position of highest set bit
+		fc.out.Emit([]byte{0x48, 0x0f, 0xbd, 0xc8}) // bsr rcx, rax
+		fc.out.MovImmToReg("rax", "63")
+		fc.out.SubRegFromReg("rax", "rcx") // clz = 63 - bsr_result
+
+		jmpEndPos := fc.eb.text.Len()
+		fc.out.Emit([]byte{0xeb, 0x00}) // jmp end
+
+		// Zero case: return 64
+		zeroPos := fc.eb.text.Len()
+		fc.eb.text.Bytes()[zeroJump+1] = byte(zeroPos - (zeroJump + 2))
+		fc.out.MovImmToReg("rax", "64")
+
+		// End position
+		endPos := fc.eb.text.Len()
+		fc.patchJumpImmediate(jzPos+2, int32(fallbackPos-(jzPos+6)))
+		fc.eb.text.Bytes()[jmpOverPos+1] = byte(endPos - (jmpOverPos + 2))
+		fc.eb.text.Bytes()[jmpEndPos+1] = byte(endPos - (jmpEndPos + 2))
+
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	case "ctz":
+		// ctz(x) - Count trailing zeros
+		// Returns float64 representing the count (0-64)
+		// Uses TZCNT instruction if available, falls back to BSF
+		if len(call.Args) != 1 {
+			compilerError("ctz() requires exactly 1 argument")
+		}
+
+		fc.compileExpression(call.Args[0])
+		fc.out.Cvttsd2si("rax", "xmm0") // Convert to int64
+
+		// Check if POPCNT is available (TZCNT came with same CPU generation)
+		fc.out.LeaSymbolToReg("rcx", "cpu_has_popcnt")
+		fc.out.Emit([]byte{0x0f, 0xb6, 0x09}) // movzx ecx, byte [rcx]
+		fc.out.Emit([]byte{0x85, 0xc9})       // test ecx, ecx
+
+		jzPos := fc.eb.text.Len()
+		fc.out.Emit([]byte{0x0f, 0x84, 0x00, 0x00, 0x00, 0x00}) // jz fallback
+
+		// TZCNT path: tzcnt rax, rax
+		fc.out.Emit([]byte{0xf3, 0x48, 0x0f, 0xbc, 0xc0}) // tzcnt rax, rax
+
+		jmpOverPos := fc.eb.text.Len()
+		fc.out.Emit([]byte{0xeb, 0x00}) // jmp end
+
+		// Fallback path: use BSF (bit scan forward)
+		fallbackPos := fc.eb.text.Len()
+		fc.out.Emit([]byte{0x48, 0x85, 0xc0}) // test rax, rax
+
+		zeroJump := fc.eb.text.Len()
+		fc.out.Emit([]byte{0x74, 0x00}) // jz is_zero (2 bytes)
+
+		// BSF: finds position of lowest set bit (already gives us trailing zeros!)
+		fc.out.Emit([]byte{0x48, 0x0f, 0xbc, 0xc0}) // bsf rax, rax
+
+		jmpEndPos := fc.eb.text.Len()
+		fc.out.Emit([]byte{0xeb, 0x00}) // jmp end
+
+		// Zero case: return 64
+		zeroPos := fc.eb.text.Len()
+		fc.eb.text.Bytes()[zeroJump+1] = byte(zeroPos - (zeroJump + 2))
+		fc.out.MovImmToReg("rax", "64")
+
+		// End position
+		endPos := fc.eb.text.Len()
+		fc.patchJumpImmediate(jzPos+2, int32(fallbackPos-(jzPos+6)))
+		fc.eb.text.Bytes()[jmpOverPos+1] = byte(endPos - (jmpOverPos + 2))
+		fc.eb.text.Bytes()[jmpEndPos+1] = byte(endPos - (jmpEndPos + 2))
+
+		fc.out.Cvtsi2sd("xmm0", "rax")
+
+	// ===== END BIT MANIPULATION BUILTINS =====
+
 	case "str":
 		// Convert number to string
 		// str(x) converts a number to a C67 string (map[uint64]float64)
@@ -17061,6 +17408,8 @@ func getUnknownFunctions(program *Program) []string {
 		"exp": true, "log": true, "pow": true,
 		"floor": true, "ceil": true, "round": true,
 		"abs": true, "approx": true,
+		// Bit manipulation functions (CPU instructions with fallback)
+		"popcount": true, "clz": true, "ctz": true,
 		// Channel primitives
 		"chan": true, "close": true,
 		// List methods

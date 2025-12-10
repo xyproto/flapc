@@ -1009,3 +1009,13 @@ func (r *RiscvOut) Sb(src, base string, offset int32) error {
 	r.encodeInstr(instr)
 	return nil
 }
+
+// LeaSymbolToReg loads the effective address of a symbol (PC-relative)
+func (r *RiscvOut) LeaSymbolToReg(dst, symbol string) {
+	// Delegate to the RISC-V backend's implementation
+	if r.out.backend != nil {
+		if rvBackend, ok := r.out.backend.(*RISCV64Backend); ok {
+			rvBackend.LeaSymbolToReg(dst, symbol)
+		}
+	}
+}
