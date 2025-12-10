@@ -543,7 +543,7 @@ func (fc *C67Compiler) Compile(program *Program, outputPath string) error {
 	fc.eb.Define("_str_meta_arena_ptr", "alloc: meta-arena pointer=%p\n\x00")
 	fc.eb.Define("_str_ensure_capacity_called", "ensure_capacity called with required_depth=%ld\n\x00")
 	fc.eb.Define("_str_capacity_value", "current capacity=%ld\n\x00")
-	fc.eb.Define("_count_mismatch_error", "ERROR: Count write/read mismatch!\n")
+	fc.eb.Define("_count_mismatch_error", "ERROR: Count write/read mismatch!\n\x00")
 
 	// Initialize registers at entry (where _start jumps to)
 	fc.out.XorRegWithReg("rax", "rax")
@@ -16134,7 +16134,7 @@ func (fc *C67Compiler) compileCall(call *CallExpr) {
 		// Create format string for printf
 		fmtLabel := fmt.Sprintf("printa_fmt_%d", fc.stringCounter)
 		fc.stringCounter++
-		fc.eb.Define(fmtLabel, "rax = %ld (0x%lx)\n")
+		fc.eb.Define(fmtLabel, "rax = %ld (0x%lx)\n\x00")
 
 		// Load rax value into both rsi and rdx for the two format specifiers
 		fc.out.MovRegToReg("rsi", "rax") // First %ld
