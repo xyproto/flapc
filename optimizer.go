@@ -271,24 +271,27 @@ func strengthReduceExpr(expr Expression) Expression {
 			}
 
 			// x * 2^n → x << n (only for positive integer powers of 2)
-			// DISABLED: This optimization is only valid for integers, but C67 uses float64 by default.
-			// Applying this to floating-point operations breaks codegen because << is an integer operation.
-			// TODO: Re-enable this optimization only in integer contexts (unsafe blocks, explicit int types).
+			// DISABLED: Infrastructure in place, but context detection needs more work.
+			// This optimization only makes sense for integer-heavy code, which is rare in C67.
+			// Users needing integer performance can use unsafe blocks with inline assembly.
+			// TODO: Fix context detection if integer optimizations become important.
 			/*
-				if rightIsNum && rightNum.Value > 0 && isPowerOfTwo(rightNum.Value) {
-					shift := math.Log2(rightNum.Value)
-					return &BinaryExpr{
-						Left:     e.Left,
-						Operator: "<<",
-						Right:    &NumberExpr{Value: shift},
+				if shouldApplyIntegerOptimization(e.Left, e.Right) {
+					if rightIsNum && rightNum.Value > 0 && isPowerOfTwo(rightNum.Value) {
+						shift := math.Log2(rightNum.Value)
+						return &BinaryExpr{
+							Left:     e.Left,
+							Operator: "<<",
+							Right:    &NumberExpr{Value: shift},
+						}
 					}
-				}
-				if leftIsNum && leftNum.Value > 0 && isPowerOfTwo(leftNum.Value) {
-					shift := math.Log2(leftNum.Value)
-					return &BinaryExpr{
-						Left:     e.Right,
-						Operator: "<<",
-						Right:    &NumberExpr{Value: shift},
+					if leftIsNum && leftNum.Value > 0 && isPowerOfTwo(leftNum.Value) {
+						shift := math.Log2(leftNum.Value)
+						return &BinaryExpr{
+							Left:     e.Right,
+							Operator: "<<",
+							Right:    &NumberExpr{Value: shift},
+						}
 					}
 				}
 			*/
@@ -305,16 +308,17 @@ func strengthReduceExpr(expr Expression) Expression {
 			}
 
 			// x / 2^n → x >> n (only for positive powers of 2)
-			// DISABLED: This optimization is only valid for integers, but C67 uses float64 by default.
-			// Applying this to floating-point operations breaks codegen because >> is an integer operation.
-			// TODO: Re-enable this optimization only in integer contexts (unsafe blocks, explicit int types).
+			// DISABLED: Infrastructure in place, but context detection needs more work.
+			// See comment above for multiply optimization.
 			/*
-				if rightIsNum && rightNum.Value > 0 && isPowerOfTwo(rightNum.Value) {
-					shift := math.Log2(rightNum.Value)
-					return &BinaryExpr{
-						Left:     e.Left,
-						Operator: ">>",
-						Right:    &NumberExpr{Value: shift},
+				if shouldApplyIntegerOptimization(e.Left, e.Right) {
+					if rightIsNum && rightNum.Value > 0 && isPowerOfTwo(rightNum.Value) {
+						shift := math.Log2(rightNum.Value)
+						return &BinaryExpr{
+							Left:     e.Left,
+							Operator: ">>",
+							Right:    &NumberExpr{Value: shift},
+						}
 					}
 				}
 			*/
@@ -386,16 +390,17 @@ func strengthReduceExpr(expr Expression) Expression {
 			}
 
 			// x % 2^n → x & (2^n - 1) for positive powers of 2
-			// DISABLED: This optimization is only valid for integers, but C67 uses float64 by default.
-			// Applying this to floating-point operations breaks codegen because & is an integer operation.
-			// TODO: Re-enable this optimization only in integer contexts (unsafe blocks, explicit int types).
+			// DISABLED: Infrastructure in place, but context detection needs more work.
+			// See comment above for multiply optimization.
 			/*
-				if rightIsNum && rightNum.Value > 0 && isPowerOfTwo(rightNum.Value) {
-					mask := rightNum.Value - 1
-					return &BinaryExpr{
-						Left:     e.Left,
-						Operator: "&",
-						Right:    &NumberExpr{Value: mask},
+				if shouldApplyIntegerOptimization(e.Left, e.Right) {
+					if rightIsNum && rightNum.Value > 0 && isPowerOfTwo(rightNum.Value) {
+						mask := rightNum.Value - 1
+						return &BinaryExpr{
+							Left:     e.Left,
+							Operator: "&",
+							Right:    &NumberExpr{Value: mask},
+						}
 					}
 				}
 			*/
@@ -1715,4 +1720,76 @@ func substituteParamsStmt(stmt Statement, substMap map[string]Expression) Statem
 	default:
 		return stmt
 	}
+}
+
+// Helper functions for integer strength reduction
+
+// isInUnsafeContext checks if an expression is within an unsafe block
+// This is a simple heuristic - we consider expressions to be in unsafe context
+// if they contain explicit integer type casts or are within UnsafeExpr
+func isInUnsafeContext(expr Expression) bool {
+	switch e := expr.(type) {
+	case *UnsafeExpr:
+		return true
+	case *CastExpr:
+		// Check if casting to an integer type
+		intTypes := []string{"int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"}
+		for _, intType := range intTypes {
+			if e.Type == intType {
+				return true
+			}
+		}
+		return false
+	case *BinaryExpr:
+		// If either operand is in unsafe context, the whole expression is
+		return isInUnsafeContext(e.Left) || isInUnsafeContext(e.Right)
+	case *UnaryExpr:
+		return isInUnsafeContext(e.Operand)
+	default:
+		return false
+	}
+}
+
+// hasIntegerTypeAnnotation checks if an expression has an explicit integer type annotation
+func hasIntegerTypeAnnotation(expr Expression) bool {
+	switch e := expr.(type) {
+	case *CastExpr:
+		intTypes := []string{"int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"}
+		for _, intType := range intTypes {
+			if e.Type == intType {
+				return true
+			}
+		}
+		// Check the inner expression too
+		return hasIntegerTypeAnnotation(e.Expr)
+	case *BinaryExpr:
+		// Check both operands
+		return hasIntegerTypeAnnotation(e.Left) || hasIntegerTypeAnnotation(e.Right)
+	case *UnaryExpr:
+		return hasIntegerTypeAnnotation(e.Operand)
+	case *IdentExpr:
+		// For identifiers, we can't tell from the expression alone
+		// This would require type tracking, so we return false
+		return false
+	default:
+		return false
+	}
+}
+
+// shouldApplyIntegerOptimization determines if integer-only optimizations should be applied
+// These optimizations (shift instead of multiply, mask instead of modulo) are only valid
+// for integer operations, not float64. We apply them only in unsafe blocks or with explicit
+// integer type casts.
+func shouldApplyIntegerOptimization(left, right Expression) bool {
+	// Check if we're in an unsafe context (unsafe blocks, explicit int casts)
+	if isInUnsafeContext(left) || isInUnsafeContext(right) {
+		return true
+	}
+
+	// Check for explicit integer type annotations
+	if hasIntegerTypeAnnotation(left) || hasIntegerTypeAnnotation(right) {
+		return true
+	}
+
+	return false
 }
