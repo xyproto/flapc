@@ -8772,10 +8772,7 @@ func (fc *C67Compiler) generateRuntimeHelpers() {
 	fc.patchJumpImmediate(arenaDoneJump2+1, int32(arenaDoneLabel-(arenaDoneJump2+5)))
 	fc.eb.MarkLabel("_arena_alloc_done")
 
-	// DEBUG: Force return a known value
-	if true {
-		fc.out.MovImmToReg("rax", "0xAABBCCDD")
-	}
+	// rax already contains the allocated pointer - don't overwrite it!
 
 	fc.out.PopReg("r14") // Pop extra register for stack alignment
 	fc.out.PopReg("r13")
