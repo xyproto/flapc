@@ -536,7 +536,13 @@ func (fc *C67Compiler) Compile(program *Program, outputPath string) error {
 	fc.eb.DefineWritable("_c67_arena_meta", "\x00\x00\x00\x00\x00\x00\x00\x00")     // Pointer to arena array
 	fc.eb.DefineWritable("_c67_arena_meta_cap", "\x00\x00\x00\x00\x00\x00\x00\x00") // Capacity (number of slots)
 	fc.eb.DefineWritable("_c67_arena_meta_len", "\x00\x00\x00\x00\x00\x00\x00\x00") // Length (number of active arenas)
-	fc.eb.Define("_arena_null_error", "ERROR: Arena alloc returned NULL\n")
+	fc.eb.Define("_arena_null_error", "ERROR: Arena alloc returned NULL\n\x00")
+	fc.eb.Define("_str_arena_ptr_fmt", "arena_alloc: arena_ptr=%p\n\x00")
+	fc.eb.Define("_str_alloc_loading_arena", "alloc: loading arena pointer\n\x00")
+	fc.eb.Define("_str_meta_arena_addr", "alloc: meta-arena address=%p\n\x00")
+	fc.eb.Define("_str_meta_arena_ptr", "alloc: meta-arena pointer=%p\n\x00")
+	fc.eb.Define("_str_ensure_capacity_called", "ensure_capacity called with required_depth=%ld\n\x00")
+	fc.eb.Define("_str_capacity_value", "current capacity=%ld\n\x00")
 	fc.eb.Define("_count_mismatch_error", "ERROR: Count write/read mismatch!\n")
 
 	// Initialize registers at entry (where _start jumps to)
@@ -3284,7 +3290,7 @@ func (fc *C67Compiler) compileExpression(expr Expression) {
 		}
 
 	case *RandomExpr:
-		// ??? operator: secure random float64 in [0.0, 1.0) using getrandom syscall
+		// ?? operator: secure random float64 in [0.0, 1.0) using getrandom syscall
 		// getrandom syscall: rax=318, rdi=buffer, rsi=length, rdx=flags
 		// We need 8 random bytes for a uint64
 
@@ -5280,6 +5286,9 @@ func (fc *C67Compiler) compileExpression(expr Expression) {
 
 	case *SendExpr:
 		fc.compileSendExpr(e)
+
+	case *ReceiveExpr:
+		fc.compileReceiveExpr(e)
 
 	case *CastExpr:
 		fc.compileCastExpr(e)
@@ -8584,6 +8593,36 @@ func (fc *C67Compiler) generateRuntimeHelpers() {
 	fc.out.MovRegToReg("rbx", "rdi") // rbx = arena_ptr (preserve across calls)
 	fc.out.MovRegToReg("r12", "rsi") // r12 = size (preserve across calls)
 
+	// Check if arena pointer is NULL
+	fc.out.TestRegReg("rbx", "rbx")
+	arenaNotNullJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpNotEqual, 0) // jne arena_not_null
+
+	// Arena is NULL - print error and return NULL
+	fc.out.LeaSymbolToReg("rdi", "_arena_null_error")
+	fc.trackFunctionCall("printf")
+	fc.eb.GenerateCallInstruction("printf")
+	fc.out.XorRegWithReg("rax", "rax") // return NULL
+	fc.out.PopReg("r14")
+	fc.out.PopReg("r13")
+	fc.out.PopReg("r12")
+	fc.out.PopReg("rbx")
+	fc.out.PopReg("rbp")
+	fc.out.Ret()
+
+	// arena_not_null:
+	arenaNotNullLabel := fc.eb.text.Len()
+	fc.patchJumpImmediate(arenaNotNullJump+2, int32(arenaNotNullLabel-(arenaNotNullJump+6)))
+
+	// DEBUG: Print arena pointer value
+	if false { // Disabled for now - causes stack alignment issues
+		fc.out.MovRegToReg("rsi", "rbx") // arena ptr in rsi for printf
+		fc.out.LeaSymbolToReg("rdi", "_str_debug_arena_value")
+		fc.trackFunctionCall("printf")
+		fc.eb.GenerateCallInstruction("printf")
+		// rbx is callee-saved, so it's preserved across the call
+	}
+
 	// Load arena fields
 	fc.out.MovMemToReg("r8", "rbx", 0)   // r8 = buffer_ptr
 	fc.out.MovMemToReg("r9", "rbx", 8)   // r9 = capacity
@@ -8732,6 +8771,11 @@ func (fc *C67Compiler) generateRuntimeHelpers() {
 	fc.patchJumpImmediate(arenaDoneJump+1, int32(arenaDoneLabel-(arenaDoneJump+5)))
 	fc.patchJumpImmediate(arenaDoneJump2+1, int32(arenaDoneLabel-(arenaDoneJump2+5)))
 	fc.eb.MarkLabel("_arena_alloc_done")
+
+	// DEBUG: Force return a known value
+	if true {
+		fc.out.MovImmToReg("rax", "0xAABBCCDD")
+	}
 
 	fc.out.PopReg("r14") // Pop extra register for stack alignment
 	fc.out.PopReg("r13")
@@ -9312,6 +9356,25 @@ func (fc *C67Compiler) initializeMetaArenaAndGlobalArena() {
 	fc.out.MovImmToReg("r9", "0")        // offset = 0
 	fc.out.MovImmToReg("rax", "9")       // syscall number for mmap
 	fc.out.Syscall()
+
+	// Check if mmap failed (returns -1 on error)
+	fc.out.MovImmToReg("rcx", "-1")
+	fc.out.CmpRegToReg("rax", "rcx")
+	mmapOkJump := fc.eb.text.Len()
+	fc.out.JumpConditional(JumpNotEqual, 0) // jne mmap_ok
+
+	// mmap failed - print error and exit
+	fc.out.LeaSymbolToReg("rdi", "_malloc_failed_msg")
+	fc.trackFunctionCall("printf")
+	fc.eb.GenerateCallInstruction("printf")
+	fc.out.MovImmToReg("rdi", "1")  // exit code 1
+	fc.out.MovImmToReg("rax", "60") // sys_exit
+	fc.out.Syscall()
+
+	// mmap_ok:
+	mmapOkLabel := fc.eb.text.Len()
+	fc.patchJumpImmediate(mmapOkJump+2, int32(mmapOkLabel-(mmapOkJump+6)))
+
 	fc.out.MovRegToReg("r12", "rax") // r12 = arena buffer
 
 	// Allocate arena struct using mmap: 32 bytes (round up to page size 4096)
@@ -15184,19 +15247,36 @@ func (fc *C67Compiler) compileCall(call *CallExpr) {
 			compilerError("alloc() requires 1 argument (size)")
 		}
 
+		if fc.currentArena == 0 {
+			compilerError("alloc() called outside of arena context (currentArena=0)")
+		}
+
+		// Compile size argument FIRST (before loading arena pointer)
+		fc.compileExpression(call.Args[0])
+		fc.out.Cvttsd2si("rdi", "xmm0") // size in rdi temporarily
+
+		// Save size to stack
+		fc.out.PushReg("rdi")
+
 		// Load arena pointer from meta-arena: _c67_arena_meta[currentArena-1]
 		arenaIndex := fc.currentArena - 1 // Convert to 0-based index
 		offset := arenaIndex * 8
 		fc.out.LeaSymbolToReg("rdi", "_c67_arena_meta")
-		fc.out.MovMemToReg("rdi", "rdi", 0)      // Load the meta-arena pointer
+		fc.out.MovMemToReg("rdi", "rdi", 0) // Load the meta-arena pointer
+
 		fc.out.MovMemToReg("rdi", "rdi", offset) // Load the arena pointer from slot
 
-		// Compile size argument
-		fc.compileExpression(call.Args[0])
-		fc.out.Cvttsd2si("rsi", "xmm0") // size in rsi
+		// Restore size to rsi
+		fc.out.PopReg("rsi") // size in rsi
 
 		// Call arena_alloc (with auto-growing via realloc)
 		fc.out.CallSymbol("c67_arena_alloc")
+
+		// DEBUG: Force return a fixed value
+		if false {
+			fc.out.MovImmToReg("rax", "0x1234567890") // Test value
+		}
+
 		// Result in rax, move raw bits to xmm0 (same as map literals)
 		EmitPointerToFloat64(fc.out, "xmm0", "rax")
 
@@ -16289,6 +16369,115 @@ func (fc *C67Compiler) compileSendExpr(expr *SendExpr) {
 	fc.out.Cvtsi2sd("xmm0", "rax")
 }
 
+func (fc *C67Compiler) compileReceiveExpr(expr *ReceiveExpr) {
+	// Receive operator: <= source
+	// Source must be an address literal: &8080 or &host:8080
+	// Receives one message from the address and returns it as a string
+
+	// For now, only support AddressLiteralExpr
+	addrExpr, ok := expr.Source.(*AddressLiteralExpr)
+	if !ok {
+		compilerError("receive operator source must be an address literal (e.g., &8080)")
+	}
+
+	// Extract port from address literal
+	addr := addrExpr.Value
+	var port int
+
+	// Parse address: &8080, &:8080, &localhost:8080, &192.168.1.1:8080
+	colonIdx := -1
+	for i, ch := range addr {
+		if ch == ':' {
+			colonIdx = i
+			break
+		}
+	}
+
+	if colonIdx == -1 {
+		// No colon - just port number after &
+		var err error
+		port, err = strconv.Atoi(addr[1:]) // Skip &
+		if err != nil || port < 1 || port > 65535 {
+			compilerError("invalid port in receive address: %s", addr)
+		}
+	} else {
+		// Has colon - parse port after colon
+		var err error
+		port, err = strconv.Atoi(addr[colonIdx+1:])
+		if err != nil || port < 1 || port > 65535 {
+			compilerError("invalid port in receive address: %s", addr)
+		}
+	}
+
+	// Allocate stack space for: socket fd (8), sockaddr_in (16), sender addr (16), buffer (256), result map (8)
+	stackSpace := int64(304)
+	fc.out.SubImmFromReg("rsp", stackSpace)
+	fc.runtimeStack += int(stackSpace)
+
+	// Step 1: Create UDP socket (syscall 41: socket)
+	fc.out.MovImmToReg("rax", "41") // socket syscall
+	fc.out.MovImmToReg("rdi", "2")  // AF_INET
+	fc.out.MovImmToReg("rsi", "2")  // SOCK_DGRAM
+	fc.out.MovImmToReg("rdx", "0")  // protocol
+	fc.out.Syscall()
+	fc.out.MovRegToMem("rax", "rsp", 0) // socket fd at rsp+0
+
+	// Step 2: Build sockaddr_in for binding at rsp+8
+	fc.out.MovImmToReg("rax", "2")
+	fc.out.MovU16RegToMem("ax", "rsp", 8) // sin_family = AF_INET
+
+	// sin_port = htons(port)
+	portNetOrder := (port&0xff)<<8 | (port>>8)&0xff
+	fc.out.MovImmToReg("rax", fmt.Sprintf("%d", portNetOrder))
+	fc.out.MovU16RegToMem("ax", "rsp", 10)
+
+	// sin_addr = INADDR_ANY (0.0.0.0)
+	fc.out.MovImmToReg("rax", "0")
+	fc.out.MovRegToMem("rax", "rsp", 12)
+	fc.out.MovRegToMem("rax", "rsp", 16) // sin_zero
+
+	// Step 3: Bind socket (syscall 49: bind)
+	fc.out.MovMemToReg("rdi", "rsp", 0)                            // socket fd
+	fc.out.LeaMemToReg("rsi", "rsp", 8)                            // sockaddr_in
+	fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", socketStructSize)) // addrlen
+	fc.out.MovImmToReg("rax", "49")                                // bind syscall
+	fc.out.Syscall()
+
+	// Step 4: Receive message (syscall 45: recvfrom)
+	fc.out.MovMemToReg("rdi", "rsp", 0)                            // socket fd
+	fc.out.LeaMemToReg("rsi", "rsp", 40)                           // buffer at rsp+40
+	fc.out.MovImmToReg("rdx", fmt.Sprintf("%d", stringBufferSize)) // buffer size
+	fc.out.MovImmToReg("r10", "0")                                 // flags
+	fc.out.LeaMemToReg("r8", "rsp", 24)                            // sender sockaddr_in at rsp+24
+	fc.out.LeaMemToReg("r9", "rsp", 296)                           // sender addrlen at rsp+296
+	fc.out.MovImmToReg("rax", fmt.Sprintf("%d", socketStructSize))
+	fc.out.MovRegToMem("rax", "rsp", 296) // initialize addrlen
+	fc.out.MovImmToReg("rax", "45")       // recvfrom syscall
+	fc.out.Syscall()
+
+	// rax = bytes received (or -1 on error)
+	fc.out.MovRegToReg("rbx", "rax") // save length
+
+	// Step 5: Close socket (syscall 3: close)
+	fc.out.MovMemToReg("rdi", "rsp", 0) // socket fd
+	fc.out.MovImmToReg("rax", "3")      // close syscall
+	fc.out.Syscall()
+
+	// Step 6: Convert received bytes to C67 string (map[uint64]float64)
+	// For simplicity, create a string map with the bytes as character codes
+	// This requires allocating a map and populating it
+	// For now, return the buffer pointer as a number (temp implementation)
+
+	fc.out.LeaMemToReg("rax", "rsp", 40) // buffer address
+	fc.out.Cvtsi2sd("xmm0", "rax")       // convert to float64
+
+	// TODO: Properly convert buffer to C67 string map
+
+	// Clean up stack
+	fc.out.AddImmToReg("rsp", stackSpace)
+	fc.runtimeStack -= int(stackSpace)
+}
+
 func (fc *C67Compiler) compileReceiveLoopStmt(stmt *ReceiveLoopStmt) {
 	// Receive loop: @ msg, from in ":5000" { }
 	// Target must be a string: ":5000"
@@ -16662,6 +16851,8 @@ func collectFunctionCallsWithParams(expr Expression, calls map[string]bool, para
 	case *SendExpr:
 		collectFunctionCallsWithParams(e.Target, calls, params)
 		collectFunctionCallsWithParams(e.Message, calls, params)
+	case *ReceiveExpr:
+		collectFunctionCallsWithParams(e.Source, calls, params)
 	case *MatchExpr:
 		collectFunctionCallsWithParams(e.Condition, calls, params)
 		for _, clause := range e.Clauses {

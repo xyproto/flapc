@@ -820,6 +820,9 @@ func collectUsedVariablesExpr(expr Expression, usedVars map[string]bool) {
 		// SendExpr has Target and Message
 		collectUsedVariablesExpr(e.Target, usedVars)
 		collectUsedVariablesExpr(e.Message, usedVars)
+	case *ReceiveExpr:
+		// ReceiveExpr has Source
+		collectUsedVariablesExpr(e.Source, usedVars)
 	case *UnsafeExpr:
 		// UnsafeExpr has architecture-specific blocks
 		for _, stmt := range e.X86_64Block {

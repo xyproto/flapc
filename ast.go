@@ -381,10 +381,10 @@ func (n *NumberExpr) String() string  { return fmt.Sprintf("%g", n.Value) }
 func (n *NumberExpr) expressionNode() {}
 
 type RandomExpr struct {
-	// Represents the ??? operator - secure random float64 in [0.0, 1.0) using getrandom
+	// Represents the ?? operator - secure random float64 in [0.0, 1.0) using getrandom
 }
 
-func (r *RandomExpr) String() string  { return "???" }
+func (r *RandomExpr) String() string  { return "??" }
 func (r *RandomExpr) expressionNode() {}
 
 type StringExpr struct {
@@ -823,14 +823,23 @@ func (b *BackgroundExpr) String() string {
 func (b *BackgroundExpr) expressionNode() {}
 
 type SendExpr struct {
-	Target  Expression // Port or address to send to (e.g., :5000, "192.168.1.1:5000")
+	Target  Expression // Port or address to send to (e.g., &8080)
 	Message Expression // Message to send (typically string)
 }
 
 func (s *SendExpr) String() string {
-	return s.Target.String() + " <= " + s.Message.String()
+	return s.Target.String() + " <- " + s.Message.String()
 }
 func (s *SendExpr) expressionNode() {}
+
+type ReceiveExpr struct {
+	Source Expression // Port or address to receive from (e.g., &8080)
+}
+
+func (r *ReceiveExpr) String() string {
+	return "<= " + r.Source.String()
+}
+func (r *ReceiveExpr) expressionNode() {}
 
 type LengthExpr struct {
 	Operand Expression

@@ -3211,14 +3211,74 @@ func (p *Parser) parseExpression() Expression {
 		debug.PrintStack()
 		p.error(fmt.Sprintf("infinite recursion in parseExpression: count=%d, token type=%v value='%v' line=%d", globalParseCallCount, p.current.Type, p.current.Value, p.current.Line))
 	}
-	return p.parseErrorHandling()
+	return p.parsePipe()
 }
 
-// parseErrorHandling handles the or! operator (lowest precedence, right-associative)
-func (p *Parser) parseErrorHandling() Expression {
-	left := p.parseCompose()
+// parsePipe handles | and || operators (lowest precedence)
+// Grammar: pipe_expr = reduce_expr { ("|" | "||") reduce_expr }
+func (p *Parser) parsePipe() Expression {
+	left := p.parseReduce()
 
-	// or! is right-associative and very low precedence
+	for p.peek.Type == TOKEN_PIPE || p.peek.Type == TOKEN_PIPEPIPE {
+		op := p.peek.Type
+		p.nextToken() // skip current
+		p.nextToken() // skip '|' or '||'
+		right := p.parseReduce()
+
+		if op == TOKEN_PIPE {
+			left = &PipeExpr{Left: left, Right: right}
+		} else {
+			// TOKEN_PIPEPIPE - parallel map
+			left = &ParallelExpr{List: left, Operation: right}
+		}
+	}
+
+	return left
+}
+
+// parseReduce handles reduce expressions (passthrough for now)
+// Grammar: reduce_expr = receive_expr
+func (p *Parser) parseReduce() Expression {
+	return p.parseReceive()
+}
+
+// parseReceive handles the <= prefix operator for receiving from channels
+// Grammar: receive_expr = "<=" pipe_expr | or_bang_expr
+func (p *Parser) parseReceive() Expression {
+	// Check for <= prefix (receive operator)
+	// Only treat <= as receive if it appears at the beginning of an expression
+	// (i.e., current token is not something that could be part of a binary expression)
+	// This prevents "x <= y" from being parsed as "x" followed by "<= y"
+
+	isExpressionStart := p.current.Type == TOKEN_NEWLINE ||
+		p.current.Type == TOKEN_SEMICOLON ||
+		p.current.Type == TOKEN_LPAREN ||
+		p.current.Type == TOKEN_LBRACE ||
+		p.current.Type == TOKEN_COMMA ||
+		p.current.Type == TOKEN_EQUALS ||
+		p.current.Type == TOKEN_COLON_EQUALS ||
+		p.current.Type == TOKEN_LEFT_ARROW ||
+		p.current.Type == TOKEN_PIPE ||
+		p.current.Type == TOKEN_PIPEPIPE ||
+		p.current.Type == TOKEN_FAT_ARROW ||
+		p.current.Type == TOKEN_DEFAULT_ARROW
+
+	if isExpressionStart && p.peek.Type == TOKEN_LE {
+		p.nextToken()           // move to current (TOKEN_LE)
+		p.nextToken()           // skip '<=', move to next
+		source := p.parsePipe() // Note: recursive to allow nested receives
+		return &ReceiveExpr{Source: source}
+	}
+
+	return p.parseOrBang()
+}
+
+// parseOrBang handles the or! operator
+// Grammar: or_bang_expr = send_expr { "or!" send_expr }
+func (p *Parser) parseOrBang() Expression {
+	left := p.parseSend()
+
+	// or! is right-associative
 	if p.peek.Type == TOKEN_OR_BANG {
 		p.nextToken() // move to left
 		p.nextToken() // skip 'or!'
@@ -3229,7 +3289,7 @@ func (p *Parser) parseErrorHandling() Expression {
 			right = p.parsePrimary()
 		} else {
 			// or! followed by an expression
-			right = p.parseErrorHandling() // right-associative recursion
+			right = p.parseOrBang() // right-associative recursion
 		}
 		return &BinaryExpr{Left: left, Operator: "or!", Right: right}
 	}
@@ -3237,10 +3297,27 @@ func (p *Parser) parseErrorHandling() Expression {
 	return left
 }
 
+// parseSend handles the <- infix operator for sending to channels
+// Grammar: send_expr = or_expr { "<-" or_expr }
+func (p *Parser) parseSend() Expression {
+	left := p.parseCompose()
+
+	// Check for send operator: expr <- expr
+	// Left side should be an address literal (e.g., &8080)
+	for p.peek.Type == TOKEN_LEFT_ARROW {
+		p.nextToken() // move to left
+		p.nextToken() // skip '<-'
+		right := p.parseCompose()
+		left = &SendExpr{Target: left, Message: right}
+	}
+
+	return left
+}
+
 // parseCompose handles the <> (function composition) operator
-// Right-associative: f <> g <> h means f <> (g <> h), evaluates as x -> f(g(h(x)))
+// Right-associative: f <> g <> h means f <> (g <> h)
 func (p *Parser) parseCompose() Expression {
-	left := p.parsePipe()
+	left := p.parseLogicalOr()
 
 	if p.peek.Type == TOKEN_LTGT {
 		p.nextToken()             // move to left
@@ -3252,48 +3329,10 @@ func (p *Parser) parseCompose() Expression {
 	return left
 }
 
-func (p *Parser) parsePipe() Expression {
-	left := p.parseSend()
-
-	for p.peek.Type == TOKEN_PIPE {
-		p.nextToken() // skip current
-		p.nextToken() // skip '|'
-		right := p.parseSend()
-		left = &PipeExpr{Left: left, Right: right}
-	}
-
-	return left
-}
-
-func (p *Parser) parseSend() Expression {
-	left := p.parseParallel()
-
-	// Check for send operator: @address <= expr
-	// If left is an address literal and next token is <=, it's a send operation
-	// Otherwise, <= is treated as less-than-or-equal in parseComparison
-	if _, isAddress := left.(*AddressLiteralExpr); isAddress && p.peek.Type == TOKEN_LE {
-		p.nextToken() // move to left expr
-		p.nextToken() // skip '<='
-		right := p.parseParallel()
-		return &SendExpr{Target: left, Message: right}
-	}
-
-	return left
-}
-
-func (p *Parser) parseParallel() Expression {
-	left := p.parseLogicalOr()
-
-	for p.peek.Type == TOKEN_PIPEPIPE {
-		p.nextToken() // skip current
-		p.nextToken() // skip '||'
-		right := p.parseLogicalOr()
-		left = &ParallelExpr{List: left, Operation: right}
-	}
-
-	return left
-}
-
+// parseLogicalOr handles the 'or' and 'xor' keywords
+// Grammar: or_expr = and_expr { "or" and_expr }
+//
+//	xor_expr = and_expr { "xor" and_expr }
 func (p *Parser) parseLogicalOr() Expression {
 	left := p.parseLogicalAnd()
 
